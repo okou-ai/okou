@@ -26,7 +26,6 @@ import {
 import {
   createAgentCatalogIdentity,
   createAgentCatalogProjectionRows,
-  countConnectorCatalogRuntimeProjectionRows,
   validateConnectorCatalogRuntimeProjectionRows,
   type CapturedAgentCatalog,
 } from "./connector-catalog-runtime-projection.service";
@@ -69,8 +68,11 @@ import {
 } from "./execution-agent-workflows.service";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { variables } from "@okouai/db/schema/variable";
-import { and, asc, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
-import { db$, type ReadonlyDb } from "../external/db";
+import { and, asc, count, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { connectorCatalogRuntimeProjections } from "@okouai/db/schema/connector-catalog";
+import type { ConnectorCatalogArtifactConnector } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import { db$ } from "../external/db";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
 export interface BootstrapFeatureSwitchContext {
@@ -181,256 +183,308 @@ export function createAgentBootstrap(
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
-  const connectorSnapshot$ = createBootstrapConnectorSnapshot(
-    userId,
-    orgId,
-    environmentSnapshot$,
-    customConnectorDefinitions$,
-  );
-  const catalog$ = createBootstrapCatalog(connectorSelection$);
-  const decryptedCredentials$ = createBootstrapDecryptedCredentials(
-    connectorSnapshot$,
-    catalog$,
-  );
-  return computed(async (get): Promise<AgentBootstrap> => {
-    const [
-      agent,
-      memberMetadata,
-      connectorSelection,
-      permissionGrants,
-      workflows,
-      featureSwitchContext,
-      disabledPaidTools,
-      environment,
-      customConnectorDefinitions,
-      catalog,
-      connectorSnapshot,
-      decryptedConnectorCredentials,
-    ] = await Promise.all([
-      get(agent$),
-      get(memberMetadata$),
-      get(connectorSelection$),
-      get(permissionGrants$),
-      get(workflows$),
-      get(featureSwitchContext$),
-      get(disabledPaidTools$),
-      get(environment$),
-      get(customConnectorDefinitions$),
-      get(catalog$),
-      get(connectorSnapshot$),
-      get(decryptedCredentials$),
-    ]);
-    return {
-      agent,
-      memberMetadata,
-      connectorSelection,
-      permissionGrants,
-      workflows,
-      featureSwitchContext,
-      disabledPaidToolIds: disabledPaidTools,
-      environment,
-      customConnectorDefinitions,
-      catalog,
-      connectorAccounts: connectorSnapshot.accounts,
-      connectorSources: connectorSnapshot.sources,
-      decryptedConnectorCredentials,
-    };
-  });
-}
-
-function createBootstrapConnectorSnapshot(
-  userId: string,
-  orgId: string,
-  environmentSnapshot$: ReturnType<typeof createAgentEnvironment>,
-  customConnectorDefinitions$: Computed<
-    Promise<readonly CustomConnectorExecutionDefinition[]>
-  >,
-) {
-  return computed(async (get) => {
+  const connectorSnapshot$ = computed(async (get) => {
     const [snapshot, definitions] = await Promise.all([
       get(environmentSnapshot$),
       get(customConnectorDefinitions$),
     ]);
-    const byId = new Map(
-      definitions.map((definition) => {
-        return [definition.id, definition];
-      }),
-    );
-    const accounts = snapshot.accounts.map((row): BootstrapConnectorAccount => {
-      const definition =
-        row.customConnectorId === null
-          ? undefined
-          : byId.get(row.customConnectorId);
-      return {
-        ...row,
-        connectorId: row.id,
-        customOrgId: definition?.orgId ?? null,
-        customEnabled: definition !== undefined,
-        customDefinitionId: definition?.id ?? null,
-        providerAdapter: definition?.oauthConfig?.providerAdapter ?? null,
-        definitionAuthMode: definition?.authMode ?? null,
-        definitionStorageVersion: definition?.storageVersion ?? null,
-        definitionMcpTransport:
-          definition?.kind === "mcp" ? definition.transport : null,
-      };
-    });
-    const sources = accounts.flatMap((row): ConnectorSourceIdentity[] => {
-      return row.customConnectorId !== null
-        ? [
-            {
-              kind: "custom",
-              customConnectorId: row.customConnectorId,
-              sourceId: row.id,
-            },
-          ]
-        : row.connectorSlug !== null
-          ? [
-              {
-                kind: "builtin",
-                connectorSlug: row.connectorSlug,
-                sourceId: row.id,
-              },
-            ]
-          : [];
-    });
-    return {
-      accounts,
-      sources: connectorSourceSnapshotsFromRows(
-        { userId, orgId, sources },
-        accounts,
-        snapshot.values,
-      ),
-    };
+    return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
   });
-}
-
-function createBootstrapDecryptedCredentials(
-  connectorSnapshot$: ReturnType<typeof createBootstrapConnectorSnapshot>,
-  catalog$: ReturnType<typeof createBootstrapCatalog>,
-) {
-  return computed(async (get) => {
-    const [{ sources }, catalog] = await Promise.all([
+  const catalogIdentity$ = createAgentCatalogIdentity();
+  const catalogRequest$ = computed(async (get) => {
+    return bootstrapCatalogRequest(await get(connectorSelection$));
+  });
+  const catalogCapture$ = computed(async (get) => {
+    const requested = await get(catalogRequest$);
+    return requested
+      ? { requested, captured: await get(catalogIdentity$) }
+      : null;
+  });
+  const catalogProjection$ = computed(async (get) => {
+    const input = await get(catalogCapture$);
+    if (!input || input.captured.projection.kind !== "ready") {
+      return null;
+    }
+    const projection = input.captured.projection.projection;
+    const cached = takeCachedProjectedConnectors(
+      projection.identity,
+      requestedProjectionConnectorSlugs(input.requested),
+    );
+    const rows = await get(
+      createAgentCatalogProjectionRows(
+        projection.identity.projectionSetId,
+        cached.uncachedSlugs,
+      ),
+    );
+    const validated = validateConnectorCatalogRuntimeProjectionRows({
+      rows,
+      connectorSlugs: cached.uncachedSlugs,
+    });
+    const actualCount =
+      validated.kind === "ready" && validated.missingConnectorSlugs.length > 0
+        ? requiredProjectionCount(
+            (
+              await get(db$)
+                .select({ value: count() })
+                .from(connectorCatalogRuntimeProjections)
+                .where(
+                  eq(
+                    connectorCatalogRuntimeProjections.projectionSetId,
+                    projection.identity.projectionSetId,
+                  ),
+                )
+            )[0],
+          )
+        : undefined;
+    return { projection, cached: cached.cached, validated, actualCount };
+  });
+  const catalog$ = computed(
+    async (get): Promise<ConnectorRuntimeSelection | null> => {
+      const input = await get(catalogCapture$);
+      return input
+        ? await bootstrapCatalogSelection(input, await get(catalogProjection$))
+        : null;
+    },
+  );
+  const decryptedCredentials$ = computed(async (get) => {
+    const [snapshot, catalog] = await Promise.all([
       get(connectorSnapshot$),
       get(catalog$),
     ]);
-    const credentials = sources.flatMap((source) => {
-      if (
-        source.kind !== "available" ||
-        source.snapshot.source.kind !== "builtin" ||
-        !catalog
-      ) {
-        return [];
-      }
-      const connectorSlug = source.snapshot.source.connectorSlug;
-      const connector = getConnectorRuntimeConnector(catalog, connectorSlug);
-      if (!connector || connector.catalogConnector.mcp) {
-        return [];
-      }
-      const method = getConnectorRuntimeMethod({
-        snapshot: catalog,
-        connectorSlug,
-        authMethodId: source.snapshot.connection.authMethod,
-      });
-      if (!method?.executable) {
-        return [];
-      }
-      const names = new Set(connectorAuthMethodOwnedSecretNames(method.method));
-      return source.snapshot.credentials.filter((credential) => {
-        return names.has(credential.name);
-      });
-    });
-    // An unused account's malformed credential must not fail another account's
-    // run. Preserve each result; only the selected, catalog-owned names consume it.
-    const decrypted = await mapConcurrent(
-      credentials,
-      4,
-      async (credential) => {
-        return [
-          credential.id,
-          await settle(decryptStoredSecretValue(credential.encryptedValue)),
-        ] as const;
-      },
+    return await bootstrapDecryptedCredentials(snapshot, catalog);
+  });
+  return computed(async (get): Promise<AgentBootstrap> => {
+    return assembledBootstrap(
+      await Promise.all([
+        get(agent$),
+        get(memberMetadata$),
+        get(connectorSelection$),
+        get(permissionGrants$),
+        get(workflows$),
+        get(featureSwitchContext$),
+        get(disabledPaidTools$),
+        get(environment$),
+        get(customConnectorDefinitions$),
+        get(catalog$),
+        get(connectorSnapshot$),
+        get(decryptedCredentials$),
+      ]),
     );
-    return new Map(decrypted);
   });
 }
 
-function createBootstrapCatalog(
-  connectorSelection$: ReturnType<typeof createAgentConnectorSelection>,
+function requiredProjectionCount(
+  row: { readonly value: number } | undefined,
+): number {
+  if (!row) {
+    throw new Error("Connector runtime projection count query returned no row");
+  }
+  return row.value;
+}
+
+function assembledBootstrap([
+  agent,
+  memberMetadata,
+  connectorSelection,
+  permissionGrants,
+  workflows,
+  featureSwitchContext,
+  disabledPaidTools,
+  environment,
+  customConnectorDefinitions,
+  catalog,
+  connectorSnapshot,
+  decryptedConnectorCredentials,
+]: readonly [
+  BootstrapAgent | null,
+  ExecutionMemberMetadata,
+  AgentConnectorSelection,
+  readonly ConnectorPermissionGrant[],
+  readonly SelectedAgentWorkflow[],
+  BootstrapFeatureSwitchContext,
+  readonly string[],
+  BootstrapEnvironment,
+  readonly CustomConnectorExecutionDefinition[],
+  ConnectorRuntimeSelection | null,
+  ReturnType<typeof bootstrapConnectorSnapshot>,
+  AgentBootstrap["decryptedConnectorCredentials"],
+]): AgentBootstrap {
+  return {
+    agent,
+    memberMetadata,
+    connectorSelection,
+    permissionGrants,
+    workflows,
+    featureSwitchContext,
+    disabledPaidToolIds: disabledPaidTools,
+    environment,
+    customConnectorDefinitions,
+    catalog,
+    connectorAccounts: connectorSnapshot.accounts,
+    connectorSources: connectorSnapshot.sources,
+    decryptedConnectorCredentials,
+  };
+}
+
+function bootstrapConnectorSnapshot(
+  userId: string,
+  orgId: string,
+  snapshot: BootstrapEnvironmentSnapshot,
+  definitions: readonly CustomConnectorExecutionDefinition[],
 ) {
-  const identity$ = createAgentCatalogIdentity();
-  return computed(async (get): Promise<ConnectorRuntimeSelection | null> => {
-    const selection = await get(connectorSelection$);
-    const scope = agentConnectorScopeFromRows({
-      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-        return {
-          connectorSlug,
-        };
-      }),
-      customConnectorRows: selection.customConnectors,
-    });
-    const metadataSlugs = catalogMetadataSlugs(selection);
-    const connectorSlugs = requestedProjectionConnectorSlugs({
-      runtimeConnectorSlugs: scope.allowedConnectorSlugs,
-      metadataConnectorSlugs: metadataSlugs,
-    });
-    if (
-      scope.allowedConnectorSlugs.length === 0 &&
-      scope.allowedCustomConnectorIds.length === 0
-    ) {
-      return null;
-    }
-    const captured = await get(identity$);
-    // Reuse the existing accepted-catalog cache for fallback bytes. A valid
-    // projection remains authoritative even when those bytes are malformed.
-    const accepted = await settle(bootstrapAcceptedCatalog(captured));
-    const requested = {
-      runtimeConnectorSlugs: scope.allowedConnectorSlugs,
-      metadataConnectorSlugs: metadataSlugs,
+  const byId = new Map(
+    definitions.map((definition) => {
+      return [definition.id, definition];
+    }),
+  );
+  const accounts = snapshot.accounts.map((row): BootstrapConnectorAccount => {
+    const definition =
+      row.customConnectorId === null
+        ? undefined
+        : byId.get(row.customConnectorId);
+    return {
+      ...row,
+      connectorId: row.id,
+      customOrgId: definition?.orgId ?? null,
+      customEnabled: definition !== undefined,
+      customDefinitionId: definition?.id ?? null,
+      providerAdapter: definition?.oauthConfig?.providerAdapter ?? null,
+      definitionAuthMode: definition?.authMode ?? null,
+      definitionStorageVersion: definition?.storageVersion ?? null,
+      definitionMcpTransport:
+        definition?.kind === "mcp" ? definition.transport : null,
     };
-    if (captured.projection.kind === "ready") {
-      const projection = captured.projection.projection;
-      const { cached, uncachedSlugs } = takeCachedProjectedConnectors(
-        projection.identity,
-        connectorSlugs,
-      );
-      const rows = await get(
-        createAgentCatalogProjectionRows(
-          projection.identity.projectionSetId,
-          uncachedSlugs,
-        ),
-      );
-      const validated = validateConnectorCatalogRuntimeProjectionRows({
-        rows,
-        connectorSlugs: uncachedSlugs,
-      });
-      if (validated.kind === "ready") {
-        const complete =
-          validated.missingConnectorSlugs.length === 0 ||
-          (await countConnectorCatalogRuntimeProjectionRows({
-            db: get(db$),
-            identity: projection.identity,
-          })) === projection.identity.connectorCount;
-        if (complete) {
-          rememberProjectedConnectors(
-            projection.identity,
-            validated.connectors,
-          );
-          return materializeProjectedRuntimeSelection({
-            projection,
-            connectors: [...cached, ...validated.connectors],
-            ...requested,
-          });
-        }
-      }
+  });
+  const sources = accounts.flatMap((row): ConnectorSourceIdentity[] => {
+    return row.customConnectorId !== null
+      ? [
+          {
+            kind: "custom",
+            customConnectorId: row.customConnectorId,
+            sourceId: row.id,
+          },
+        ]
+      : row.connectorSlug !== null
+        ? [
+            {
+              kind: "builtin",
+              connectorSlug: row.connectorSlug,
+              sourceId: row.id,
+            },
+          ]
+        : [];
+  });
+  return {
+    accounts,
+    sources: connectorSourceSnapshotsFromRows(
+      { userId, orgId, sources },
+      accounts,
+      snapshot.values,
+    ),
+  };
+}
+
+async function bootstrapDecryptedCredentials(
+  snapshot: ReturnType<typeof bootstrapConnectorSnapshot>,
+  catalog: ConnectorRuntimeSelection | null,
+) {
+  const { sources } = snapshot;
+  const credentials = sources.flatMap((source) => {
+    if (
+      source.kind !== "available" ||
+      source.snapshot.source.kind !== "builtin" ||
+      !catalog
+    ) {
+      return [];
     }
-    if (!accepted.ok) {
-      throw accepted.error;
+    const connectorSlug = source.snapshot.source.connectorSlug;
+    const connector = getConnectorRuntimeConnector(catalog, connectorSlug);
+    if (!connector || connector.catalogConnector.mcp) {
+      return [];
     }
-    return runtimeSelectionFromAcceptedSnapshot({
-      acceptedSnapshot: accepted.value,
-      ...requested,
+    const method = getConnectorRuntimeMethod({
+      snapshot: catalog,
+      connectorSlug,
+      authMethodId: source.snapshot.connection.authMethod,
     });
+    if (!method?.executable) {
+      return [];
+    }
+    const names = new Set(connectorAuthMethodOwnedSecretNames(method.method));
+    return source.snapshot.credentials.filter((credential) => {
+      return names.has(credential.name);
+    });
+  });
+  // An unused account's malformed credential must not fail another account's
+  // run. Preserve each result; only the selected, catalog-owned names consume it.
+  const decrypted = await mapConcurrent(credentials, 4, async (credential) => {
+    return [
+      credential.id,
+      await settle(decryptStoredSecretValue(credential.encryptedValue)),
+    ] as const;
+  });
+  return new Map(decrypted);
+}
+
+function bootstrapCatalogRequest(selection: AgentConnectorSelection) {
+  const scope = agentConnectorScopeFromRows({
+    connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
+      return { connectorSlug };
+    }),
+    customConnectorRows: selection.customConnectors,
+  });
+  return scope.allowedConnectorSlugs.length === 0 &&
+    scope.allowedCustomConnectorIds.length === 0
+    ? null
+    : {
+        runtimeConnectorSlugs: scope.allowedConnectorSlugs,
+        metadataConnectorSlugs: catalogMetadataSlugs(selection),
+      };
+}
+
+type BootstrapProjection = {
+  readonly projection: Extract<
+    CapturedAgentCatalog["projection"],
+    { kind: "ready" }
+  >["projection"];
+  readonly cached: readonly ConnectorCatalogArtifactConnector[];
+  readonly validated: ReturnType<
+    typeof validateConnectorCatalogRuntimeProjectionRows
+  >;
+  readonly actualCount: number | undefined;
+};
+
+async function bootstrapCatalogSelection(
+  input: {
+    readonly captured: CapturedAgentCatalog;
+    readonly requested: NonNullable<ReturnType<typeof bootstrapCatalogRequest>>;
+  },
+  projected: BootstrapProjection | null,
+): Promise<ConnectorRuntimeSelection> {
+  // Only the fallback consumes its error: valid projected rows can execute even
+  // if the same generation's fallback bytes are malformed.
+  const accepted = await settle(bootstrapAcceptedCatalog(input.captured));
+  if (
+    projected?.validated.kind === "ready" &&
+    (projected.validated.missingConnectorSlugs.length === 0 ||
+      projected.actualCount === projected.projection.identity.connectorCount)
+  ) {
+    rememberProjectedConnectors(
+      projected.projection.identity,
+      projected.validated.connectors,
+    );
+    return materializeProjectedRuntimeSelection({
+      projection: projected.projection,
+      connectors: [...projected.cached, ...projected.validated.connectors],
+      ...input.requested,
+    });
+  }
+  if (!accepted.ok) {
+    throw accepted.error;
+  }
+  return runtimeSelectionFromAcceptedSnapshot({
+    acceptedSnapshot: accepted.value,
+    ...input.requested,
   });
 }
 
@@ -507,16 +561,19 @@ const bootstrapCredentialsDecoder = zodDriverValueDecoder(
   ),
 );
 
+type BootstrapEnvironmentSnapshot =
+  ReturnType<typeof createAgentEnvironment> extends Computed<Promise<infer T>>
+    ? T
+    : never;
+
 function createAgentEnvironment(userId: string, orgId: string) {
   return computed(async (get) => {
     const db = get(db$);
-    const variableRows = bootstrapVariableRows(db, userId, orgId);
-    const variableSnapshot = bootstrapVariableSnapshot(db, variableRows);
-    const connectorVariableSnapshot = bootstrapConnectorVariableSnapshot(
-      db,
-      variableRows,
-    );
-    const credentialSnapshot = bootstrapCredentialSnapshot(db, userId, orgId);
+    const variableRows = bootstrapVariableRows(userId, orgId);
+    const variableSnapshot = bootstrapVariableSnapshot(variableRows);
+    const connectorVariableSnapshot =
+      bootstrapConnectorVariableSnapshot(variableRows);
+    const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
     // A single statement owns the account revision and its credential values.
     // It also supplies Agent variables, including the empty-account case.
     const rows = await db
@@ -617,7 +674,8 @@ function createAgentEnvironment(userId: string, orgId: string) {
   });
 }
 
-function bootstrapVariableRows(db: ReadonlyDb, userId: string, orgId: string) {
+function bootstrapVariableRows(userId: string, orgId: string) {
+  const db = new QueryBuilder();
   return db.$with("bootstrap_variables").as(
     db
       .select({
@@ -646,9 +704,9 @@ function bootstrapVariableRows(db: ReadonlyDb, userId: string, orgId: string) {
 }
 
 function bootstrapVariableSnapshot(
-  db: ReadonlyDb,
   rows: ReturnType<typeof bootstrapVariableRows>,
 ) {
+  const db = new QueryBuilder();
   return db.$with("bootstrap_user_variables").as(
     db
       .select({
@@ -665,9 +723,9 @@ function bootstrapVariableSnapshot(
 }
 
 function bootstrapConnectorVariableSnapshot(
-  db: ReadonlyDb,
   rows: ReturnType<typeof bootstrapVariableRows>,
 ) {
+  const db = new QueryBuilder();
   return db.$with("bootstrap_connector_variables").as(
     db
       .select({
@@ -684,11 +742,8 @@ function bootstrapConnectorVariableSnapshot(
   );
 }
 
-function bootstrapCredentialSnapshot(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-) {
+function bootstrapCredentialSnapshot(userId: string, orgId: string) {
+  const db = new QueryBuilder();
   return db.$with("bootstrap_credentials").as(
     db
       .select({

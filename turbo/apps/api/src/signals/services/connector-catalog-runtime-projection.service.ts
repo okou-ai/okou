@@ -533,11 +533,8 @@ export function createAgentCatalogIdentity() {
       cached.identity.capabilityDigest === capabilityDigest
         ? cached
         : undefined;
-    const row = await queryCapturedAgentCatalogRow(
-      get(db$),
-      sourceId,
-      capabilityDigest,
-      reusable,
+    const row = await get(
+      createCapturedAgentCatalogRow(sourceId, capabilityDigest, reusable),
     );
     return {
       // Capture fallback bytes in the same read as the identity. A later catalog
@@ -598,115 +595,116 @@ export function createAgentCatalogProjectionRows(
   );
 }
 
-async function queryCapturedAgentCatalogRow(
-  db: ReadonlyDb,
+function createCapturedAgentCatalogRow(
   sourceId: string,
   capabilityDigest: string,
   reusable: AcceptedConnectorCatalogSnapshot | undefined,
 ) {
-  const catalogGzip =
-    reusable === undefined
-      ? connectorCatalogActiveSnapshot.catalogGzip
-      : sql`CASE WHEN ${and(
-          eq(
-            connectorCatalogActiveSnapshot.catalogVersion,
-            reusable.identity.catalogVersion,
-          ),
-          eq(
-            connectorCatalogActiveSnapshot.catalogDigest,
-            reusable.identity.catalogDigest,
-          ),
-        )} THEN NULL ELSE ${connectorCatalogActiveSnapshot.catalogGzip} END`.mapWith(
-          nullableDriverValueDecoder(
-            connectorCatalogActiveSnapshot.catalogGzip,
-          ),
-        );
-  const [row] = await db
-    .select({
-      catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-      catalogGzip,
-      catalogValidationBackendVersion:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-      catalogValidationBuildCommitSha:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-      executableCapabilityDigest:
-        connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-      projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-      schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-      catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-      catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-      projectionVersion:
-        connectorCatalogRuntimeProjectionSets.projectionVersion,
-      connectorCount: connectorCatalogRuntimeProjectionSets.connectorCount,
-      projectionValidationBackendVersion:
-        connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-      projectionValidationBuildCommitSha:
-        connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-      evaluatedCapabilityDigest:
-        connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-      compatibilityValidationBackendVersion:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-      compatibilityValidationBuildCommitSha:
-        connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-      filteredAuthMethods:
-        connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-    })
-    .from(connectorCatalogActiveSnapshot)
-    .leftJoin(
-      connectorCatalogRuntimeProjectionSets,
-      and(
-        eq(
-          connectorCatalogRuntimeProjectionSets.sourceId,
-          connectorCatalogActiveSnapshot.sourceId,
-        ),
-        eq(
-          connectorCatalogRuntimeProjectionSets.schemaVersion,
-          connectorCatalogActiveSnapshot.schemaVersion,
-        ),
-        eq(
-          connectorCatalogRuntimeProjectionSets.catalogVersion,
-          connectorCatalogActiveSnapshot.catalogVersion,
-        ),
-        eq(
-          connectorCatalogRuntimeProjectionSets.catalogDigest,
-          connectorCatalogActiveSnapshot.catalogDigest,
-        ),
-      ),
-    )
-    .leftJoin(
-      connectorCatalogCompatibilityEvaluation,
-      and(
-        eq(
-          connectorCatalogCompatibilityEvaluation.sourceId,
-          connectorCatalogActiveSnapshot.sourceId,
-        ),
-        eq(
-          connectorCatalogCompatibilityEvaluation.schemaVersion,
-          connectorCatalogActiveSnapshot.schemaVersion,
-        ),
-        eq(
-          connectorCatalogCompatibilityEvaluation.catalogVersion,
-          connectorCatalogActiveSnapshot.catalogVersion,
-        ),
-        eq(
-          connectorCatalogCompatibilityEvaluation.catalogDigest,
-          connectorCatalogActiveSnapshot.catalogDigest,
-        ),
-        eq(
+  return computed(async (get) => {
+    const catalogGzip =
+      reusable === undefined
+        ? connectorCatalogActiveSnapshot.catalogGzip
+        : sql`CASE WHEN ${and(
+            eq(
+              connectorCatalogActiveSnapshot.catalogVersion,
+              reusable.identity.catalogVersion,
+            ),
+            eq(
+              connectorCatalogActiveSnapshot.catalogDigest,
+              reusable.identity.catalogDigest,
+            ),
+          )} THEN NULL ELSE ${connectorCatalogActiveSnapshot.catalogGzip} END`.mapWith(
+            nullableDriverValueDecoder(
+              connectorCatalogActiveSnapshot.catalogGzip,
+            ),
+          );
+    const [row] = await get(db$)
+      .select({
+        catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
+        catalogGzip,
+        catalogValidationBackendVersion:
+          connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+        catalogValidationBuildCommitSha:
+          connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+        executableCapabilityDigest:
           connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-          capabilityDigest,
+        projectionSetId: connectorCatalogRuntimeProjectionSets.id,
+        schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+        catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+        catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+        projectionVersion:
+          connectorCatalogRuntimeProjectionSets.projectionVersion,
+        connectorCount: connectorCatalogRuntimeProjectionSets.connectorCount,
+        projectionValidationBackendVersion:
+          connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
+        projectionValidationBuildCommitSha:
+          connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
+        evaluatedCapabilityDigest:
+          connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+        compatibilityValidationBackendVersion:
+          connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+        compatibilityValidationBuildCommitSha:
+          connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+        filteredAuthMethods:
+          connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+      })
+      .from(connectorCatalogActiveSnapshot)
+      .leftJoin(
+        connectorCatalogRuntimeProjectionSets,
+        and(
+          eq(
+            connectorCatalogRuntimeProjectionSets.sourceId,
+            connectorCatalogActiveSnapshot.sourceId,
+          ),
+          eq(
+            connectorCatalogRuntimeProjectionSets.schemaVersion,
+            connectorCatalogActiveSnapshot.schemaVersion,
+          ),
+          eq(
+            connectorCatalogRuntimeProjectionSets.catalogVersion,
+            connectorCatalogActiveSnapshot.catalogVersion,
+          ),
+          eq(
+            connectorCatalogRuntimeProjectionSets.catalogDigest,
+            connectorCatalogActiveSnapshot.catalogDigest,
+          ),
         ),
-      ),
-    )
-    .where(
-      and(
-        eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-        eq(
-          connectorCatalogActiveSnapshot.schemaVersion,
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+      )
+      .leftJoin(
+        connectorCatalogCompatibilityEvaluation,
+        and(
+          eq(
+            connectorCatalogCompatibilityEvaluation.sourceId,
+            connectorCatalogActiveSnapshot.sourceId,
+          ),
+          eq(
+            connectorCatalogCompatibilityEvaluation.schemaVersion,
+            connectorCatalogActiveSnapshot.schemaVersion,
+          ),
+          eq(
+            connectorCatalogCompatibilityEvaluation.catalogVersion,
+            connectorCatalogActiveSnapshot.catalogVersion,
+          ),
+          eq(
+            connectorCatalogCompatibilityEvaluation.catalogDigest,
+            connectorCatalogActiveSnapshot.catalogDigest,
+          ),
+          eq(
+            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+            capabilityDigest,
+          ),
         ),
-      ),
-    )
-    .limit(1);
-  return row;
+      )
+      .where(
+        and(
+          eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+          eq(
+            connectorCatalogActiveSnapshot.schemaVersion,
+            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+          ),
+        ),
+      )
+      .limit(1);
+    return row;
+  });
 }
