@@ -2759,7 +2759,10 @@ describe("workflows", () => {
       [200],
     );
     expect(initial.body.instruction).toBe("# duplicate path volume");
+    // Public detail preserves both archive entries. Packaging reads the final
+    // contents of the repeated path for each entry.
     expect(initial.body.fileContents).toStrictEqual([
+      { path: "duplicate.txt", content: "second duplicate" },
       { path: "duplicate.txt", content: "second duplicate" },
     ]);
 
