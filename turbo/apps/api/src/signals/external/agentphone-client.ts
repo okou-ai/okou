@@ -5,10 +5,9 @@ const log = logger("api:agentphone");
 
 interface AgentPhoneSentMessage {
   readonly id: string;
-  readonly status: string;
   readonly channel: string | null;
   readonly fromNumber: string | null;
-  readonly toNumber: string | null;
+  readonly toNumber: string;
   readonly mediaUrls: readonly string[];
 }
 
@@ -94,7 +93,11 @@ export async function sendAgentPhoneMessage(
     throw makeAgentPhoneApiError(response.status, text);
   }
 
-  const result = (await response.json()) as Record<string, unknown>;
+  const result = valueObject(await response.json());
+  const id = typeof result.id === "string" ? result.id : undefined;
+  if (!id?.trim()) {
+    throw new Error("AgentPhone send response is missing a message id");
+  }
   const mediaUrls = Array.isArray(result.media_urls)
     ? result.media_urls.filter((item): item is string => {
         return typeof item === "string";
@@ -102,8 +105,7 @@ export async function sendAgentPhoneMessage(
     : [];
 
   return {
-    id: typeof result.id === "string" ? result.id : "unknown",
-    status: typeof result.status === "string" ? result.status : "sent",
+    id,
     channel: typeof result.channel === "string" ? result.channel : null,
     fromNumber:
       typeof result.from_number === "string" ? result.from_number : null,
@@ -111,6 +113,66 @@ export async function sendAgentPhoneMessage(
       typeof result.to_number === "string" ? result.to_number : opts.toNumber,
     mediaUrls,
   };
+}
+
+export async function getAgentPhoneConversationParticipants(
+  opts: { readonly conversationId: string },
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const response = await fetch(
+    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(
+      opts.conversationId,
+    )}`,
+    {
+      headers: { Authorization: `Bearer ${agentPhoneApiKey()}` },
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    log.warn("AgentPhone conversation lookup failed", {
+      status: response.status,
+    });
+    throw makeAgentPhoneApiError(response.status, "");
+  }
+
+  const result = valueObject(await response.json());
+  const data = valueObject(result.data);
+  const conversation =
+    valueObject(result.conversation).participants !== undefined
+      ? valueObject(result.conversation)
+      : valueObject(data.conversation);
+  const source =
+    Object.keys(conversation).length > 0
+      ? conversation
+      : Object.keys(data).length > 0
+        ? data
+        : result;
+  const participants = Array.isArray(source.participants)
+    ? source.participants
+    : [];
+
+  return participants
+    .map((participant) => {
+      if (typeof participant === "string") {
+        return participant;
+      }
+      return typeof participant === "object" &&
+        participant !== null &&
+        "identifier" in participant &&
+        typeof participant.identifier === "string"
+        ? participant.identifier
+        : null;
+    })
+    .filter((identifier): identifier is string => {
+      return Boolean(identifier);
+    });
+}
+
+function valueObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 export async function sendAgentPhoneTypingIndicator(

@@ -282,3 +282,11 @@ _Avoid_: Second attachment, rewritten original
 Composer-owned transient working state initialized from image annotations and
 discarded with its owning composer.
 _Avoid_: Global annotation session, saved annotation
+
+### iMessage Group History
+
+**iMessage group message visibility**:
+Only linked Okou accounts present in a message's participant list at that
+message's time can read it. Joining the group or linking an account later does
+not grant access to earlier messages.
+_Avoid_: Current-member history access, retroactive history grant

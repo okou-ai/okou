@@ -36,12 +36,7 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
-import {
-  stageBrowserUserActionClosureFixture,
-  stageBrowserUserActionCompletedAtFixture,
-  stageRetiredDirectBrowserUserActionFixture,
-  stageStuckBrowserUserActionFixture,
-} from "../../../test-fixtures/browser-user-action";
+import { stageRetiredDirectBrowserUserActionFixture } from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -4957,10 +4952,18 @@ describe("Browser user-action route", () => {
       [201],
     );
     const writesBeforeStuckRecovery = browserInputWrites().length;
-    await stageStuckBrowserUserActionFixture({
-      requestToken: stuckCandidate.body.action.requestToken,
-      applyStartedAt: new Date(STARTED_AT_MS - MINUTE_MS - 1),
+    // Hold a claimed apply at its provider read, then let the app clock pass
+    // the stuck-apply deadline so the public read performs recovery.
+    const stuckEntered = createDeferredPromise<void>(context.signal);
+    const stuckRelease = createDeferredPromise<void>(context.signal);
+    providerReadBarrier = { entered: stuckEntered, release: stuckRelease };
+    const stalledApply = userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: stuckCandidate.body.action.requestToken },
+      body: { values: [{ key: "code", value: "001234" }] },
     });
+    await stuckEntered.promise;
+    mockNow(STARTED_AT_MS + MINUTE_MS + 1);
     const recovered = await accept(
       userActionClient().get({
         headers: { authorization: "Bearer clerk-session" },
@@ -4975,6 +4978,20 @@ describe("Browser user-action route", () => {
       body: { values: [{ key: "code", value: "must-not-replay" }] },
     });
     expect(stuckRetry.status).toBe(409);
+    providerStopped = true;
+    stuckRelease.resolve(undefined);
+    const stalled = await stalledApply;
+    providerStopped = false;
+    expect(stalled).toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    await expect(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: stuckCandidate.body.action.requestToken },
+      }),
+    ).resolves.toMatchObject({ status: 200, body: { state: "uncertain" } });
     expect(browserInputWrites()).toHaveLength(writesBeforeStuckRecovery);
 
     const concurrentCandidate = await accept(
@@ -5238,6 +5255,13 @@ describe("Browser user-action route", () => {
     });
 
     const providerId = randomUUID();
+    let providerStopped = false;
+    let providerReadBarrier:
+      | {
+          readonly entered: ReturnType<typeof createDeferredPromise<void>>;
+          readonly release: ReturnType<typeof createDeferredPromise<void>>;
+        }
+      | undefined;
     acceptBrowserUseCdpSessions([providerId]);
     mockNativeInputTarget();
     server.use(
@@ -5252,8 +5276,18 @@ describe("Browser user-action route", () => {
       http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
-        return HttpResponse.json(providerBrowser(providerId));
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async () => {
+        const barrier = providerReadBarrier;
+        if (barrier) {
+          providerReadBarrier = undefined;
+          barrier.entered.resolve(undefined);
+          await barrier.release.promise;
+        }
+        return HttpResponse.json(
+          providerBrowser(providerId, {
+            status: providerStopped ? "stopped" : "active",
+          }),
+        );
       }),
     );
     await accept(
@@ -5277,10 +5311,6 @@ describe("Browser user-action route", () => {
     const cancelled = await createInputAction("cancelled completion");
     const raced = await createInputAction("concurrent completion or closure");
 
-    await stageStuckBrowserUserActionFixture({
-      requestToken: applying.body.action.requestToken,
-      applyStartedAt: new Date(STARTED_AT_MS),
-    });
     await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -5297,13 +5327,28 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
+    // Hold one claimed apply at its provider read so it is still applying
+    // when the Browser closes.
+    const applyingEntered = createDeferredPromise<void>(context.signal);
+    const applyingRelease = createDeferredPromise<void>(context.signal);
+    providerReadBarrier = {
+      entered: applyingEntered,
+      release: applyingRelease,
+    };
+    const heldApply = userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: applying.body.action.requestToken },
+      body: { values: [{ key: "password", value: "secret" }] },
+    });
+    await applyingEntered.promise;
+
+    // The provider reports the Browser stopped; the public reconciler records
+    // the closure at the app clock while apply and cancel race it.
     const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
     mockNow(finishedAt.getTime());
-    const [capturedProviderId, applyRace, cancelRace] = await Promise.all([
-      stageBrowserUserActionClosureFixture({
-        requestToken: raced.body.action.requestToken,
-        finishedAt,
-      }),
+    providerStopped = true;
+    const [closure, applyRace, cancelRace] = await Promise.all([
+      reconcileBrowsers(current.threadId),
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: raced.body.action.requestToken },
@@ -5315,8 +5360,8 @@ describe("Browser user-action route", () => {
         body: {},
       }),
     ]);
-    expect(capturedProviderId).toBe(providerId);
-    expect([200, 409, 410]).toContain(applyRace.status);
+    expect(closure.body).toMatchObject({ errors: 0 });
+    expect([200, 409, 410, 502]).toContain(applyRace.status);
     expect([200, 409, 410]).toContain(cancelRace.status);
     expect(
       [applyRace, cancelRace].filter((response) => {
@@ -5325,6 +5370,20 @@ describe("Browser user-action route", () => {
     ).toHaveLength(
       applyRace.status === 200 || cancelRace.status === 200 ? 1 : 0,
     );
+    applyingRelease.resolve(undefined);
+    await expect(heldApply).resolves.toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    await expect(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { browser: { status: "suspended", suspensionReason: "provider" } },
+    });
 
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: false,
@@ -5380,7 +5439,7 @@ describe("Browser user-action route", () => {
     expect(convertedActions[2]?.body.state).toBe("succeeded");
     expect(convertedActions[3]?.body.state).toBe("cancelled");
     expect(convertedActions[4]?.body.state).toMatch(
-      /^(succeeded|cancelled|stale|uncertain)$/u,
+      /^(cancelled|stale|uncertain)$/u,
     );
 
     const repeated = await reconcileBrowsers(current.threadId);
@@ -5428,6 +5487,7 @@ describe("Browser user-action route", () => {
     const providerId = randomUUID();
     const providerProfileId = randomUUID();
     const deletedProfiles: string[] = [];
+    let providerStopped = false;
     acceptBrowserUseCdpSessions([providerId]);
     mockNativeInputTarget();
     server.use(
@@ -5450,7 +5510,11 @@ describe("Browser user-action route", () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
       http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
-        return HttpResponse.json(providerBrowser(providerId));
+        return HttpResponse.json(
+          providerBrowser(providerId, {
+            status: providerStopped ? "stopped" : "active",
+          }),
+        );
       }),
     );
     await accept(
@@ -5479,6 +5543,11 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
+    const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
+    const laterCompletedAt = new Date(finishedAt.getTime() + MINUTE_MS);
+    // The later terminal action commits its completion after the Browser's
+    // finish boundary; the app clock records that order through public routes.
+    mockNow(laterCompletedAt.getTime());
     await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -5487,18 +5556,6 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
-
-    const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
-    const laterCompletedAt = new Date(finishedAt.getTime() + MINUTE_MS);
-    const capturedProviderId = await stageBrowserUserActionClosureFixture({
-      requestToken: tokens[0] ?? "",
-      finishedAt,
-    });
-    expect(capturedProviderId).toBe(providerId);
-    await stageBrowserUserActionCompletedAtFixture({
-      requestToken: laterTerminal.body.action.requestToken,
-      completedAt: laterCompletedAt,
-    });
 
     const sortedTokens = [...tokens].sort((left, right) => {
       return browserUserActionTokenHash(left).localeCompare(
@@ -5511,8 +5568,20 @@ describe("Browser user-action route", () => {
         params: { requestToken },
       });
     };
+    // The provider reports the Browser stopped, so the public reconciler
+    // records its finish at the app clock and converts the first batch.
     mockNow(finishedAt.getTime());
+    providerStopped = true;
     await reconcileBrowsers(current.threadId);
+    await expect(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { browser: { status: "suspended" } },
+    });
     const firstConversion = await Promise.all(sortedTokens.map(getAction));
     for (const response of firstConversion.slice(0, 20)) {
       expect(response).toMatchObject({
@@ -6750,10 +6819,8 @@ describe("okou browser route", () => {
       }),
     ).toHaveLength(1);
 
-    // Root deletion preserves browser ownership, so the missing-thread
-    // reconciler remains the sole durable provider teardown path.
-    await deleteAgentRunRootFixture(first.runId);
-    await deleteAgentRunRootFixture(other.runId);
+    // The missing-thread reconciler remains the durable provider teardown
+    // path after the thread is gone.
     await reconcileBrowsers(first.threadId, other.threadId);
     expect(providerStops()).toBe(3);
     expect(

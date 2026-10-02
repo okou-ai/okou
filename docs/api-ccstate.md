@@ -12,6 +12,9 @@ atoms to three.
 The general ccstate rules live in the [ccstate skill](../.claude/skills/ccstate/SKILL.md)
 and its [command reference](../.claude/skills/ccstate/references/commands.md).
 This document adds API-specific guidance for per-request and per-claim graphs.
+The database ownership and signal-parameter restrictions below are stricter than
+patterns permitted by the general command reference; apply these API rules when
+building API graphs.
 
 The central rule is:
 
@@ -32,15 +35,27 @@ Each node expresses one thing:
 - The **entry point** (route handler, ingress processor, automation trigger)
   calls commands in order and owns background scheduling.
 
+The target shape is:
+
+1. Database handles are never passed as parameters, including inside args or
+   runtime objects, or hidden behind callbacks and escaping closures.
+2. Prefer one atomic SQL statement with a conditional `UPDATE ... WHERE`,
+   `INSERT ... ON CONFLICT`, or a CTE, backed by the actual business unique key.
+   Keep only necessary short, lightweight transactions inside their owning
+   command callbacks, with no `tx` escape.
+3. Each file exposes a small public computed/command surface for business
+   operations. Keep the internal graph private and do not pass computed or
+   command nodes as parameters, directly or through objects and callbacks.
+
 ## Node Roles
 
-| Node               | Use for                                                                  | Do not use for                                                 |
-| ------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| Factory argument   | Plain values known when the graph is built (`claim`, `orgId`, thread id) | Values that must be queried first                              |
-| `computed`         | Reads and anything derivable from other nodes                            | Results of writes; values set by a command before a read       |
-| `command`          | One write or one action; returns its result; `signal` is the final arg   | Passing parameters into computeds; dispatching callbacks       |
-| `state`            | Results of writes that later computeds read; revision counters           | Inputs, intermediate conclusions, early-exit results, timing   |
-| `db$` / `writeDb$` | Database handles, read inside the node that needs them                   | Passing handles through state, factory arguments, or callbacks |
+| Node               | Use for                                                                  | Do not use for                                                                          |
+| ------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Factory argument   | Plain values known when the graph is built (`claim`, `orgId`, thread id) | Database handles, computed/command nodes, signals, or values that must be queried first |
+| `computed`         | Reads and anything derivable from other nodes                            | Results of writes; values set by a command before a read                                |
+| `command`          | One write or one action; returns its result; `signal` is the final arg   | Passing parameters into computeds; dispatching callbacks                                |
+| `state`            | Results of writes that later computeds read; revision counters           | Inputs, intermediate conclusions, early-exit results, timing                            |
+| `db$` / `writeDb$` | Database handles, read inside the node that needs them                   | Passing handles through parameters, args/runtime objects, state, or escaping closures   |
 
 ## Rules
 
@@ -49,6 +64,12 @@ Each node expresses one thing:
 A signal factory such as `createThreadClaimRunObjects(claim)` receives a plain value
 that is already decided. Nodes read it through the closure. Each claim builds a
 fresh graph, so a value scoped to one claim needs no reset.
+
+Build the owning graph before commands execute. Do not call `command()` inside
+another command callback, including indirectly through a factory. Private nodes
+share dependencies through the owning graph's lexical scope, not node-valued
+parameters to helper functions or sub-factories. Pass plain business values and
+returned results across operation boundaries instead.
 
 ### 2. Do not use state to pass parameters to a computed
 
@@ -203,6 +224,60 @@ is deleted. The exception is a declared historical persisted-state case. See
 [Testing](./testing.md) and
 [external behavior testing](./testing/testing-external-behavior.md).
 
+### 10. Keep database handles local and prefer atomic SQL
+
+Outside `signals/external/db.ts`, no function or method accepts a `Db`,
+`ReadonlyDb`, `Tx`, `WriteTx`, `DbTransaction`, or equivalent database handle.
+This includes narrowed handles such as `Pick<Db, "select">`, handles in args or
+runtime objects, handles copied into state, and callbacks or returned closures
+that hide access to them. Reads obtain `get(db$)` inside their node; writes obtain
+`set(writeDb$)` inside their command.
+
+A single SQL statement is already atomic. Remove its transaction wrapper. Remove
+read-only transactions unless a consistent multi-statement snapshot or
+transaction-local setting is part of the contract. Prefer conditional writes,
+upserts, business-key uniqueness, and gated CTEs over read-then-write in
+application code. Preserve authorization, idempotency, returned outcomes,
+snapshot and clock boundaries, and material query cost; fewer transaction call
+sites alone do not prove correctness.
+
+When multiple statements must commit together and one statement cannot preserve
+the invariant, keep a short, lightweight transaction inside one owning command.
+Use `tx` only in that transaction callback and write its database statements
+inline. Never pass it to a helper or sub-command, capture it in a returned
+closure, or store it. Do not run external I/O such as fetch, KMS, S3, or Ably
+inside the transaction: prepare before it and publish after it. Do not split one
+atomic business operation into independently committing sub-commands merely to
+remove `tx` parameters.
+
+Shared transaction logic becomes pure builders that return values, conditions,
+or SQL fragments, never functions that execute queries. Document the invariant
+or transaction-local setting that requires each remaining transaction. Follow
+[query contracts](../.claude/skills/database-development/references/query-contracts.md)
+for SQL rewrites; do not add locks, retries, or timeouts to compensate for a
+changed transaction boundary.
+
+### 11. Keep a small public surface and a closed internal graph
+
+Export only the computeds and commands that callers need for business operations.
+Keep intermediate reads, preparation steps, and state private. A factory's
+returned interface is also a public surface: do not expose every internal node
+through a large signal bundle, re-exports, or spreads.
+
+Do not accept computed or command nodes as function, command, or factory
+parameters, including through args objects, signal-group interfaces, callbacks,
+or closure adapters. This rule also applies to internal helpers and
+sub-factories. Replacing a database parameter with a getter, setter, or
+node-valued parameter does not satisfy the target shape. Ordinary ccstate
+`get(node$)` and `set(command$, args, signal)` calls inside an owning node are not
+node injection into a domain helper and remain the way to read or invoke nodes.
+
+Keep a shared reactive dependency in its owning graph and derive private nodes
+there. At an operation boundary, return plain captured facts or a prepared plan
+and pass those values to a stable, named command. Do not move inputs into state
+slots, rebuild graphs during command execution, or repeat source queries merely
+to avoid passing nodes. Preserve the single-read and lifecycle ownership rules.
+
 ## Design Checklist
 
 Answer these questions when you add or review an API ccstate node:
@@ -217,6 +292,14 @@ Answer these questions when you add or review an API ccstate node:
    takes no callbacks and does not call `waitUntil`.
 5. **Does a test need a change in production code?** If so, the design is
    wrong. Build the scenario through public interfaces, or delete the test.
+6. **Does a handle or computed/command node cross a parameter boundary?** Remove
+   it, including object-wrapped and callback forms. Obtain handles inside nodes
+   and keep reactive dependencies private to their owning graph.
+7. **Can one conditional statement or business-key upsert preserve the write?**
+   Prefer it. Otherwise, name the invariant or local setting requiring a short
+   transaction and keep all its SQL inside one command's transaction callback.
+8. **Does the public surface expose implementation steps?** Keep them private;
+   export only the necessary business queries and commands.
 
 ## Allowed State
 
@@ -233,6 +316,13 @@ When you need a new state atom, check that it is a write result or a revision.
 Anything else should be a factory argument or a `computed`.
 
 ## Reference Implementation
+
+These references illustrate derived reads, limited state, and entry-owned
+orchestration from #37430. They are not proof that the referenced files already
+meet every target rule above. In particular, remaining database-handle passing,
+node-valued parameters, or command construction during execution are migration
+work, not patterns to copy. Transaction and handle cleanup is tracked in
+[#37513](https://github.com/okou-ai/okou/issues/37513).
 
 - `turbo/apps/api/src/signals/services/thread-claim-run.service.ts`: the claim
   graph (`createThreadClaimRunObjects`), with derived head, model inputs, model

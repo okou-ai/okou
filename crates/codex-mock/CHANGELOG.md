@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.51](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.50...codex-mock-v0.11.51) (2026-10-02)
+
+
+### Bug Fixes
+
+* **guest-agent:** increase cli event delivery buffer to 32 mib ([#37556](https://github.com/okou-ai/okou/issues/37556)) ([eb0e3b8](https://github.com/okou-ai/okou/commit/eb0e3b8b3573636b234812ac61306539d970d1f6))
+
 ## [0.11.50](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.49...codex-mock-v0.11.50) (2026-10-01)
 
 ## [0.11.49](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.48...codex-mock-v0.11.49) (2026-09-30)

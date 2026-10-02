@@ -106,6 +106,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: body.text,
     channel: sent.channel,
     userChannel,
+    visibilityRecipients: [],
   });
   signal.throwIfAborted();
 

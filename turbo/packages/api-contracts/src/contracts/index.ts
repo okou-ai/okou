@@ -342,10 +342,6 @@ export {
   type TestModelProviderStateContract,
 } from "./test-model-provider-state";
 export {
-  testMailDraftStateContract,
-  type TestMailDraftStateContract,
-} from "./test-mail-draft-state";
-export {
   testEmailOutboxStateActionBodySchema,
   testEmailOutboxStateActionResponseSchema,
   testEmailOutboxStateCleanupBodySchema,

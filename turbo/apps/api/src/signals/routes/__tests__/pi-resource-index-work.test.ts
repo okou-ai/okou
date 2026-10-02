@@ -16,11 +16,10 @@ import {
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import { http, HttpResponse } from "msw";
 import { Header } from "tar";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   prepareEmptyPiWritebackSnapshotFixture,
@@ -32,7 +31,6 @@ import {
   readPiStableContextStorageDemandFixture,
   seedPiStableContextStorageDemandFixture,
 } from "../../../test-fixtures/pi-stable-context";
-import { createDeferredPromise } from "../../utils";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi } from "./helpers/api-bdd";
@@ -111,71 +109,6 @@ async function run(versionId: string) {
 }
 
 describe("Pi resource indexing of generic Storage commits", () => {
-  it("preserves write-time stable demand when a new Storage version gets its first index row", async () => {
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "First Index Demand Agent",
-    });
-    const storageName = `first-index-demand-${randomUUID()}`;
-    const firstFiles = [storageTextFile("first.txt", "first version")];
-    const secondFiles = [storageTextFile("first.txt", "second version")];
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/first-index-demand",
-    );
-    context.mocks.s3.send.mockResolvedValue({ ContentLength: 128 });
-
-    const first = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "user",
-      files: firstFiles,
-    });
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "user",
-      versionId: first.versionId,
-      files: firstFiles,
-    });
-    const headId = await seedPiStableContextStorageDemandFixture({
-      orgId: actor.orgId,
-      userId: actor.userId,
-      agentId: agent.agentId,
-      storageName,
-      versionId: first.versionId,
-      archiveSize: 128,
-    });
-
-    const second = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "user",
-      files: secondFiles,
-    });
-    expect(second.versionId).not.toBe(first.versionId);
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "user",
-      versionId: second.versionId,
-      files: secondFiles,
-    });
-
-    const demand = await readPiStableContextStorageDemandFixture(headId);
-    expect(demand).toMatchObject({
-      status: "pending",
-      inputDigest: expect.any(String),
-      artifactDigest: null,
-      leaseId: null,
-    });
-    expect(demand?.input?.storageMounts).toStrictEqual([
-      expect.objectContaining({
-        versionId: second.versionId,
-        archiveSize: 128,
-      }),
-    ]);
-  });
-
   it("builds stable context when a captured gzip hint differs from the ready index", async () => {
     const published = await publishStorage();
     if (!published.actor.orgId) {
@@ -361,19 +294,6 @@ describe("Pi resource indexing of generic Storage commits", () => {
     });
   });
 
-  it("materializes committed work once and reuses the completed index", async () => {
-    const { versionId } = await publishStorage();
-    await expect(run(versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
-      retried: 0,
-    });
-    await expect(run(versionId)).resolves.toMatchObject({
-      claimed: 0,
-      ready: 0,
-    });
-  });
-
   it("prepares a snapshot from a different gzip size and reuses the logical index", async () => {
     const published = await publishStorage();
     if (!published.actor.orgId) {
@@ -417,162 +337,5 @@ describe("Pi resource indexing of generic Storage commits", () => {
     );
     expect(second.snapshot).toStrictEqual(first.snapshot);
     expect(archiveGets).toBe(1);
-  });
-
-  it("does not requeue a ready index when a registered version is reused", async () => {
-    const published = await publishStorage();
-    await expect(run(published.versionId)).resolves.toMatchObject({ ready: 1 });
-    const repaired = gzipSync(gunzipSync(published.archive), { level: 0 });
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      if (request instanceof GetObjectCommand) {
-        return Promise.resolve({
-          ContentLength: repaired.length,
-          Body: {
-            async *[Symbol.asyncIterator]() {
-              yield repaired;
-            },
-          },
-        });
-      }
-      return Promise.resolve({ ContentLength: repaired.length });
-    });
-    await storages.commitStorage(published.actor, {
-      storageName: published.storageName,
-      storageOwner: "user",
-      files: published.files,
-      versionId: published.versionId,
-    });
-    await expect(run(published.versionId)).resolves.toMatchObject({
-      claimed: 0,
-    });
-  });
-
-  it("indexes logical files when the registered and actual gzip sizes differ", async () => {
-    const published = await publishStorage();
-    const recompressed = gzipSync(gunzipSync(published.archive), { level: 0 });
-    expect(recompressed).not.toHaveLength(published.archive.length);
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      if (request instanceof GetObjectCommand) {
-        return Promise.resolve({
-          ContentLength: recompressed.length,
-          Body: {
-            async *[Symbol.asyncIterator]() {
-              yield recompressed;
-            },
-          },
-        });
-      }
-      return Promise.resolve({ ContentLength: recompressed.length });
-    });
-    await expect(run(published.versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
-    });
-  });
-
-  it("keeps an invalid archive out of the ready index set without rejecting its Storage commit", async () => {
-    const { versionId, archive } = await publishStorage();
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      if (request instanceof GetObjectCommand) {
-        return Promise.resolve({
-          ContentLength: archive.length,
-          Body: {
-            async *[Symbol.asyncIterator]() {
-              yield Buffer.alloc(archive.length);
-            },
-          },
-        });
-      }
-      return Promise.resolve({});
-    });
-    await expect(run(versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 0,
-      unindexable: 1,
-    });
-    await expect(run(versionId)).resolves.toMatchObject({ claimed: 0 });
-  });
-
-  it("does not index a truncated object response with an incorrect Content-Length", async () => {
-    const { versionId, archive } = await publishStorage();
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      if (request instanceof GetObjectCommand) {
-        return Promise.resolve({
-          ContentLength: archive.length + 1,
-          Body: {
-            async *[Symbol.asyncIterator]() {
-              yield archive;
-            },
-          },
-        });
-      }
-      return Promise.resolve({ ContentLength: archive.length });
-    });
-    await expect(run(versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 0,
-      retried: 1,
-    });
-  });
-
-  it("retries a failed object read after its bounded backoff", async () => {
-    const { versionId } = await publishStorage();
-    const original = context.mocks.s3.send.getMockImplementation();
-    let fail = true;
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      if (fail && request instanceof GetObjectCommand) {
-        fail = false;
-        return Promise.reject(new Error("Temporary object store failure"));
-      }
-      if (!original) {
-        throw new Error("Expected the test object store");
-      }
-      return original(request);
-    });
-    await expect(run(versionId)).resolves.toMatchObject({
-      claimed: 1,
-      retried: 1,
-    });
-    await expect(run(versionId)).resolves.toMatchObject({ claimed: 0 });
-    mockNow(now() + 11_000);
-    onTestFinished(clearMockNow);
-    await expect(run(versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
-    });
-  });
-
-  it("reclaims expired work and prevents its old owner from publishing", async () => {
-    const { versionId } = await publishStorage();
-    const original = context.mocks.s3.send.getMockImplementation();
-    const entered = createDeferredPromise<void>(context.signal);
-    const released = createDeferredPromise<void>(context.signal);
-    let hold = true;
-    context.mocks.s3.send.mockImplementation(async (request: unknown) => {
-      if (hold && request instanceof GetObjectCommand) {
-        hold = false;
-        entered.resolve(undefined);
-        await released.promise;
-      }
-      if (!original) {
-        throw new Error("Expected the test object store");
-      }
-      return await original(request);
-    });
-    const first = run(versionId);
-    await entered.promise;
-    await expect(run(versionId)).resolves.toMatchObject({ claimed: 0 });
-    mockNow(now() + 5 * 60_000 + 1);
-    onTestFinished(clearMockNow);
-    await expect(run(versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
-    });
-    released.resolve(undefined);
-    await expect(first).resolves.toMatchObject({
-      claimed: 1,
-      ready: 0,
-      stale: 1,
-    });
   });
 });

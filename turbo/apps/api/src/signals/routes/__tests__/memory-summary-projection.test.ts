@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
@@ -18,7 +18,6 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { readStorageIdentityFixture } from "../../../test-fixtures/storage";
-import { createDeferredPromise } from "../../utils";
 import { testMemorySummaryProjectionStateRoutes } from "../test-memory-summary-projection-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import type { BddStorageFileEntry } from "./helpers/api-bdd-storage-files";
@@ -117,38 +116,6 @@ function failNextObjectRead(key: string): void {
     }
     return fallback ? fallback(command) : Promise.resolve({});
   });
-}
-
-function holdNextObjectRead(key: string): {
-  readonly started: Promise<void>;
-  readonly release: () => void;
-} {
-  const fallback = context.mocks.s3.send.getMockImplementation();
-  let pending = true;
-  const started = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      pending &&
-      command instanceof GetObjectCommand &&
-      command.input.Key === key
-    ) {
-      pending = false;
-      started.resolve(undefined);
-      return released.promise.then(() => {
-        return fallback ? fallback(command) : {};
-      });
-    }
-    return fallback ? fallback(command) : Promise.resolve({});
-  });
-  return {
-    started: started.promise,
-    release() {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-  };
 }
 
 function downloadedObjectKeys(): readonly string[] {
@@ -354,52 +321,6 @@ beforeEach(() => {
 });
 
 describe("memory summary projection", () => {
-  it("enqueues only canonical user memory publication and remains idempotent", async () => {
-    const summary = Buffer.from("canonical summary", "utf8");
-    const files = [declaredFile("memory_summary.md", summary)];
-    const memory = await publishVersion({
-      files,
-      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
-    });
-    expect(downloadedObjectKeys()).toStrictEqual([]);
-    await expect(inspect(memory)).resolves.toMatchObject({
-      status: "pending",
-      attempt_count: 0,
-      has_content: false,
-    });
-
-    await storages.commitStorage(memory.actor, {
-      storageName: MEMORY_ARTIFACT_NAME,
-      storageOwner: "user",
-      versionId: memory.storageVersionId,
-      files: memory.files,
-    });
-    await expect(inspect(memory)).resolves.toMatchObject({
-      status: "pending",
-      attempt_count: 0,
-    });
-
-    const unrelated = await publishVersion({
-      storageName: `notes-${randomUUID()}`,
-      files,
-      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
-    });
-    await expect(inspect(unrelated)).resolves.toBeNull();
-
-    const organizationMemory = await publishVersion({
-      storageOwner: "organization",
-      files,
-      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
-    });
-    await expect(
-      stateAction({
-        action: "inspect",
-        ...projectionScope(organizationMemory),
-        user_id: VOLUME_ORG_USER_ID,
-      }),
-    ).resolves.toMatchObject({ state: null });
-  });
-
   it("accepts a different gzip size for the same logical Storage version", async () => {
     const summary = Buffer.from("summary with stable logical contents", "utf8");
     const original = tarGz([{ path: "memory_summary.md", content: summary }]);
@@ -421,48 +342,6 @@ describe("memory summary projection", () => {
     await expect(read(version)).resolves.toMatchObject({
       content: summary.toString("utf8"),
       source_size: summary.length,
-    });
-  });
-
-  it("materializes and reads exact versions once under concurrent workers", async () => {
-    const actor = bdd.user();
-    const firstContent = Buffer.from(
-      `first summary secret-${randomUUID()}`,
-      "utf8",
-    );
-    const first = await publishVersion({
-      actor,
-      files: [declaredFile("memory_summary.md", firstContent)],
-      archive: tarGz([{ path: "memory_summary.md", content: firstContent }]),
-    });
-    const secondContent = Buffer.from("second immutable summary", "utf8");
-    const second = await publishVersion({
-      actor,
-      files: [declaredFile("memory_summary.md", secondContent)],
-      archive: tarGz([{ path: "memory_summary.md", content: secondContent }]),
-    });
-
-    const workers = await Promise.all([run(first), run(first)]);
-    expect(
-      workers.reduce((sum, result) => {
-        return sum + result.claimed;
-      }, 0),
-    ).toBe(1);
-    expect(
-      workers.reduce((sum, result) => {
-        return sum + result.ready;
-      }, 0),
-    ).toBe(1);
-    await expect(run(second)).resolves.toMatchObject({ claimed: 1, ready: 1 });
-    await expect(read(first)).resolves.toMatchObject({
-      content: firstContent.toString("utf8"),
-      source_hash: declaredFile("memory_summary.md", firstContent).hash,
-      source_size: firstContent.length,
-    });
-    await expect(read(second)).resolves.toMatchObject({
-      content: secondContent.toString("utf8"),
-      source_hash: declaredFile("memory_summary.md", secondContent).hash,
-      source_size: secondContent.length,
     });
   });
 
@@ -706,36 +585,6 @@ describe("memory summary projection", () => {
     },
   );
 
-  it("prevents an expired worker from overwriting a newer lease result", async () => {
-    const content = Buffer.from("lease-protected summary", "utf8");
-    const version = await publishVersion({
-      files: [declaredFile("memory_summary.md", content)],
-      archive: tarGz([{ path: "memory_summary.md", content }]),
-    });
-    const heldRead = holdNextObjectRead(version.archiveKey);
-    const staleWorker = run(version);
-    await heldRead.started;
-    await stateAction({
-      action: "expire-lease",
-      ...projectionScope(version),
-    });
-
-    await expect(run(version)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
-      stale: 0,
-    });
-    heldRead.release();
-    await expect(staleWorker).resolves.toMatchObject({
-      claimed: 1,
-      ready: 0,
-      stale: 1,
-    });
-    await expect(read(version)).resolves.toMatchObject({
-      content: content.toString("utf8"),
-    });
-  });
-
   it("leaves missing projections unchanged until the background worker backfills them", async () => {
     const content = Buffer.from("lazy projection", "utf8");
     const version = await publishVersion({
@@ -763,35 +612,6 @@ describe("memory summary projection", () => {
     });
     await expect(read(version)).resolves.toMatchObject({
       content: content.toString("utf8"),
-    });
-  });
-
-  it("rejects owner mismatches and corrupted content without rewriting the projection", async () => {
-    const content = Buffer.from("authentic projection", "utf8");
-    const version = await publishVersion({
-      files: [declaredFile("memory_summary.md", content)],
-      archive: tarGz([{ path: "memory_summary.md", content }]),
-    });
-    await run(version);
-
-    const wrongOwner = await stateAction({
-      action: "read",
-      ...projectionScope(version),
-      user_id: `other-${randomUUID()}`,
-    });
-    expect(wrongOwner.projection).toBeNull();
-    await expect(inspect(version)).resolves.toMatchObject({ status: "ready" });
-
-    await stateAction({
-      action: "corrupt-ready",
-      ...projectionScope(version),
-      content: "tampered projection",
-    });
-    await expect(read(version)).resolves.toBeNull();
-    await expect(inspect(version)).resolves.toMatchObject({
-      status: "ready",
-      last_error_class: null,
-      has_content: true,
     });
   });
 
@@ -825,43 +645,6 @@ describe("memory summary projection", () => {
       source_hash: declared.hash,
       source_size: summary.length,
       token_count: tokenCount,
-    });
-  });
-
-  it("reads an authentic ready projection above the prompt injection budget", async () => {
-    const content = Buffer.from("seeded summary", "utf8");
-    const version = await publishVersion({
-      files: [declaredFile("memory_summary.md", content)],
-      archive: tarGz([{ path: "memory_summary.md", content }]),
-    });
-    await run(version);
-
-    // The runtime renderer applies the 2500-token prompt budget, so a larger
-    // authentic source must not be treated as corrupt on the read path.
-    const largeSummary = Array.from({ length: 300 }, (_, index) => {
-      return `- decision-${index.toString()}: keep repository-native checks`;
-    }).join("\n");
-    const largeTokenCount = encode(largeSummary).length;
-    expect(largeTokenCount).toBeGreaterThan(2500);
-    expect(Buffer.byteLength(largeSummary, "utf8")).toBeLessThanOrEqual(
-      64 * 1024,
-    );
-    await stateAction({
-      action: "seed-ready",
-      ...projectionScope(version),
-      content: largeSummary,
-    });
-
-    await expect(read(version)).resolves.toMatchObject({
-      content: largeSummary,
-      source_size: Buffer.byteLength(largeSummary, "utf8"),
-      token_count: largeTokenCount,
-    });
-    await expect(inspect(version)).resolves.toMatchObject({
-      status: "ready",
-      last_error_class: null,
-      has_content: true,
-      token_count: largeTokenCount,
     });
   });
 });

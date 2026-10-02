@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import {
   upsertOrgPlanEntitlementFixture,
   deleteOrgPlanEntitlementFixture,
@@ -1331,6 +1332,8 @@ describe("member-effective model policy contract", () => {
   it("keeps administrative GET and PUT fields identical for two real members", async () => {
     const f = await fixture("claude-code-oauth-token", false);
     await configureOrganizationApi(f, "custom");
+    const addableModel = await insertBuiltInModelMirrorFixture(f.model);
+    onTestFinished(addableModel.restore);
     const bdd = createBddApi(context);
     const member = bdd.user({ orgId: f.actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
@@ -1350,7 +1353,9 @@ describe("member-effective model policy contract", () => {
     });
     const administrative = (response: typeof before) => {
       return {
-        ...response,
+        modelMode: response.modelMode,
+        revision: response.revision,
+        writePreconditionRequired: response.writePreconditionRequired,
         policies: response.policies.map((policy) => {
           return {
             ...policy,
@@ -1360,6 +1365,13 @@ describe("member-effective model policy contract", () => {
       };
     };
     expect(administrative(before)).toStrictEqual(administrative(other));
+    // Addable choices derive from the live operator catalog, not persisted org
+    // policy. Other files may add/remove their own models between these reads.
+    // This case owns one catalog identity and verifies it for both members.
+    for (const response of [before, other]) {
+      expect(response.modelsAvailableToAdd).toContain(addableModel.model);
+      expect(response.modelsAvailableToAdd).not.toContain(f.model);
+    }
     expect(JSON.stringify(before)).not.toContain(f.connected.id);
     expect(JSON.stringify(before)).not.toContain(f.connected.token);
     const put = await misc.updateModelPolicies(
@@ -1382,6 +1394,11 @@ describe("member-effective model policy contract", () => {
       credentialScope: "org",
       memberEffective: configuredPolicy(other, f.model)?.memberEffective,
     });
+    expect(administrative(put.body)).toStrictEqual(administrative(after));
+    for (const response of [put.body, after]) {
+      expect(response.modelsAvailableToAdd).toContain(addableModel.model);
+      expect(response.modelsAvailableToAdd).not.toContain(f.model);
+    }
     expect(
       (await misc.updateModelPolicies(member, before.policies, [403])).status,
     ).toBe(403);

@@ -74,10 +74,12 @@ interface ClaimedBuiltInRun {
   readonly selectedModel: string;
 }
 
-async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
+async function createClaimedBuiltInRun(
+  selectedModel: string = SEEDED_SYSTEM_DEFAULT_MODEL,
+): Promise<ClaimedBuiltInRun> {
   const keyFixture = await seedBuiltInModelCandidateKeys(
     context,
-    SEEDED_SYSTEM_DEFAULT_MODEL,
+    selectedModel,
   );
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -86,7 +88,7 @@ async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   const { providerId } = await runs.ensureOrgModelProvider(actor);
-  // A BYOK default route and a selectable built-in route.
+  // A BYOK default route and an explicitly selectable built-in fixture route.
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-sonnet-5",
@@ -96,7 +98,7 @@ async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
       modelProviderId: providerId,
     },
     {
-      model: SEEDED_SYSTEM_DEFAULT_MODEL,
+      model: selectedModel,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -108,7 +110,7 @@ async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "report a built-in model provider failure",
-    model: SEEDED_SYSTEM_DEFAULT_MODEL,
+    model: selectedModel,
   });
   const runnerIdentity = {
     runnerId: randomUUID(),
@@ -491,6 +493,61 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       });
     },
   );
+
+  it("keeps the intervention deadline against a competing bounded report on an owned model", async () => {
+    const startedAt = Date.UTC(2026, 7, 21, 0, 10, 0);
+    const mirror = await insertBuiltInModelMirrorFixture(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
+    onTestFinished(mirror.restore);
+    const claimed = await createClaimedBuiltInRun(mirror.model);
+    await expect(
+      runs.readRun(claimed.actor, claimed.runId),
+    ).resolves.toMatchObject({ source: { model: mirror.model } });
+    const primary = await resolveBuiltInModelRouteFixture(
+      context,
+      claimed.selectedModel,
+    );
+    if (!primary) {
+      throw new Error("Expected a built-in model primary route");
+    }
+    registerBuiltInCandidateCooldownCleanup(
+      context,
+      claimed.selectedModel,
+      primary,
+    );
+    await withMockNowForTest(startedAt, async () => {
+      const outcomes = await Promise.all([
+        runs.reportRunnerModelProviderFailure(claimed.runId, {
+          failureKind: "authentication",
+        }),
+        runs.reportRunnerModelProviderFailure(claimed.runId, {
+          failureKind: "rate_limit",
+          retryAfterSeconds: 120,
+        }),
+      ]);
+      expect(outcomes).toStrictEqual([
+        { outcome: "recorded" },
+        { outcome: "recorded" },
+      ]);
+    });
+    await withMockNowForTest(startedAt + 30 * 60_000 - 1, async () => {
+      await expect(
+        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
+      ).resolves.not.toMatchObject({
+        provider_type: primary.provider_type,
+        upstream_model: primary.upstream_model,
+      });
+    });
+    await withMockNowForTest(startedAt + 30 * 60_000, async () => {
+      await expect(
+        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
+      ).resolves.toMatchObject({
+        provider_type: primary.provider_type,
+        upstream_model: primary.upstream_model,
+      });
+    });
+  });
 
   it("requires an inclusive 60-second upstream transport streak", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 15, 0);
