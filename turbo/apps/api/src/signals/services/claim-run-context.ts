@@ -10930,7 +10930,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     shared: selectedRunContextShared,
   } = graph;
   const contextInput$ = computed(
-    async (get): Promise<PrepareRunContextInput> => {
+    async (get): Promise<{ readonly args: CreateAgentRunArgs }> => {
       const selected = await get(selectedRunContextRunArgs$);
       if (!selected || "status" in selected) {
         throw new Error("Run context requires an authorized ready input");
@@ -10945,7 +10945,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             },
           }
         : selected.args;
-      return { db: get(db$), args };
+      return { args };
     },
   );
   const resolutionOptions$ = computed(async (get) => {
@@ -10957,7 +10957,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const options = await get(resolutionOptions$);
       const body = initialRunBody(input.args);
       if (
-        options.testOnlyResolveDirectRun ||
+        options.capturedDirectExecution !== undefined ||
         body.sessionId ||
         options.productAgentExecutionPlan?.identity === "no-agent" ||
         !body.agentId
@@ -10979,7 +10979,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           agentOwner: preloaded.ownerUserId,
         };
       }
-      const [row] = await input.db
+      const [row] = await get(db$)
         .select({
           agentId: agents.id,
           agentOrgId: agents.orgId,
@@ -10997,7 +10997,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const options = await get(resolutionOptions$);
       const agentSessionId = initialRunBody(input.args).sessionId;
       if (
-        options.testOnlyResolveDirectRun ||
+        options.capturedDirectExecution !== undefined ||
         !agentSessionId ||
         options.productAgentExecutionPlan?.identity === "no-agent"
       ) {
@@ -11006,11 +11006,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (options.sessionSnapshot) {
         return options.sessionSnapshot;
       }
-      const {
-        db,
-        args: { userId, orgId },
-      } = input;
-      const [snapshot] = await db
+      const { userId, orgId } = input.args;
+      const [snapshot] = await get(db$)
         .select({
           session: {
             id: agentSessions.id,
@@ -11072,7 +11069,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(runSessionSnapshot$),
     ]);
     return await resolveAgentExecution(
-      input.db,
       initialRunBody(input.args),
       input.args.userId,
       input.args.orgId,

@@ -18,6 +18,7 @@ import { badRequestMessage, notFound } from "../lib/error";
 import { now } from "../lib/time";
 import { createAgentRun$ } from "../signals/services/background-agent-run.service";
 import type { CreateAgentRunArgs } from "../signals/services/agent-run-execution.service";
+import type { ApiDispatchTimingCollector } from "../signals/services/api-dispatch-timing.service";
 import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
 import { agentRunList } from "../signals/services/agent-runs.service";
 import {
@@ -64,11 +65,13 @@ export async function clearRunLaunchSnapshotFixture(
   }
 }
 
-type DirectRunResolver = NonNullable<
-  CreateAgentRunArgs["testOnlyResolveDirectRun"]
+type DirectRunResolution = NonNullable<
+  CreateAgentRunArgs["capturedDirectExecution"]
 >;
-type DirectRunResolution = Awaited<ReturnType<DirectRunResolver>>;
-type DirectRunResolverArgs = Parameters<DirectRunResolver>[0];
+type DirectRunResolverArgs = Pick<
+  CreateAgentRunArgs,
+  "body" | "userId" | "orgId"
+> & { readonly timing?: ApiDispatchTimingCollector };
 type ResolvedDirectRun = Extract<
   DirectRunResolution,
   { readonly agentId: string }
@@ -183,7 +186,7 @@ async function resolveDirectAgentRun(
     args.timing,
     "api_dispatch_resolve_agent_execution_lookup_agent",
     async () => {
-      return await args.db
+      return await db()
         .select({
           id: agents.id,
           name: agents.name,
@@ -217,7 +220,7 @@ async function loadDirectSessionSnapshot(
     args.timing,
     "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
     async () => {
-      return await args.db
+      return await db()
         .select({
           session: {
             id: agentSessions.id,
@@ -320,14 +323,16 @@ async function resolveDirectSessionRun(
   };
 }
 
-const resolveDirectRun: DirectRunResolver = async (args) => {
+async function resolveDirectRun(
+  args: DirectRunResolverArgs,
+): Promise<DirectRunResolution> {
   if (args.body.sessionId) {
     return await resolveDirectSessionRun(args, args.body.sessionId);
   }
   return args.body.agentId
     ? await resolveDirectAgentRun(args, args.body.agentId)
     : badRequestMessage("Missing agentId or sessionId");
-};
+}
 
 export type DirectRunFixtureRequest = Omit<
   CreateAgentRunArgs["body"],
@@ -410,6 +415,15 @@ export async function createDirectRunFixture(args: {
       args.signal,
     );
   args.signal.throwIfAborted();
+  // Retained direct-run preparation is a fixture-owned read. Only its ordinary
+  // captured facts cross into the production command, never an executable
+  // resolver or database handle.
+  const capturedDirectExecution = await resolveDirectRun({
+    body: { ...body, triggerSource: body.triggerSource ?? "test" },
+    userId: args.userId,
+    orgId: args.orgId,
+  });
+  args.signal.throwIfAborted();
   return await store.set(
     createAgentRun$,
     {
@@ -420,7 +434,7 @@ export async function createDirectRunFixture(args: {
       modelProviderType: selectedModelProviderType ?? body.modelProviderType,
       ...(selectedModelOverride === undefined ? {} : { selectedModelOverride }),
       piExecution: false,
-      testOnlyResolveDirectRun: resolveDirectRun,
+      capturedDirectExecution,
       connectorScope: connectorScope ?? {
         allowedConnectorSlugs: [],
         allowedCustomConnectorIds: [],

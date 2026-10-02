@@ -4278,20 +4278,14 @@ interface AgentExecutionRequestObservation {
 interface ResolveAgentExecutionOptions {
   readonly agentObservation?: RunAgentObservation;
   readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
-  readonly testOnlyResolveDirectRun?: TestOnlyDirectRunResolver;
+  readonly capturedDirectExecution?:
+    | ResolvedAgentExecution
+    | CreateRunErrorResult;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
   readonly resetNativeSession?: boolean;
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
-
-type TestOnlyDirectRunResolver = (args: {
-  readonly db: ReadonlyDb;
-  readonly body: CreateRunBody;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly timing?: ApiDispatchTimingCollector;
-}) => Promise<ResolvedAgentExecution | CreateRunErrorResult>;
 
 type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
 
@@ -4686,11 +4680,13 @@ export interface CreateAgentRunArgs {
    */
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   /**
-   * Retired direct-run test support. Production callers must supply a canonical
-   * productAgentExecutionPlan; keeping legacy reads in the test fixture
-   * preserves historical runner coverage without restoring a runtime dual-read.
+   * Captured execution facts for retained direct-run fixtures. The fixture owns
+   * its legacy reads before invoking this command; production callers supply a
+   * canonical productAgentExecutionPlan, never a database-executing callback.
    */
-  readonly testOnlyResolveDirectRun?: TestOnlyDirectRunResolver;
+  readonly capturedDirectExecution?:
+    | ResolvedAgentExecution
+    | CreateRunErrorResult;
   readonly okouTokenComputerUseHostId?: string;
   readonly okouTokenCloudBrowserEnabled?: boolean;
   readonly platformEnvironment?: Record<string, string>;
@@ -8605,14 +8601,13 @@ async function resolveCapturedAgentExecution(
 }
 
 export async function resolveAgentExecution(
-  db: ReadonlyDb,
   body: CreateRunBody,
   userId: string,
   orgId: string,
   options: ResolveAgentExecutionOptions,
 ): Promise<ResolvedRunExecution | CreateRunErrorResult> {
-  const testOnlyResolver = options.testOnlyResolveDirectRun;
-  if (testOnlyResolver) {
+  const captured = options.capturedDirectExecution;
+  if (captured !== undefined) {
     if (!body.sessionId && !body.agentId) {
       return badRequestMessage("Missing agentId or sessionId");
     }
@@ -8622,14 +8617,8 @@ export async function resolveAgentExecution(
         ? "api_dispatch_resolve_agent_execution_by_session_id"
         : "api_dispatch_resolve_agent_execution_by_agent_id",
       "nested",
-      async () => {
-        return await testOnlyResolver({
-          db,
-          body,
-          userId,
-          orgId,
-          timing: options.timing,
-        });
+      () => {
+        return Promise.resolve(captured);
       },
     );
     if (!isRouteError(resolved) && options.resetNativeSession) {
@@ -11816,16 +11805,16 @@ export function agentRunResolutionOptions(
 ): Pick<
   ResolveAgentExecutionOptions,
   | "productAgentExecutionPlan"
-  | "testOnlyResolveDirectRun"
+  | "capturedDirectExecution"
   | "preloadedAgentExecutionObservation"
   | "resetNativeSession"
   | "sessionSnapshot"
 > {
   const productAgentExecutionPlan = args.productAgentExecutionPlan;
-  const testOnlyResolveDirectRun = args.testOnlyResolveDirectRun;
+  const capturedDirectExecution = args.capturedDirectExecution;
   if (
     productAgentExecutionPlan === undefined &&
-    testOnlyResolveDirectRun === undefined
+    capturedDirectExecution === undefined
   ) {
     throw new Error(
       "Product Agent execution plan is required for Agent run preparation",
@@ -11833,7 +11822,7 @@ export function agentRunResolutionOptions(
   }
   if (
     productAgentExecutionPlan !== undefined &&
-    testOnlyResolveDirectRun !== undefined
+    capturedDirectExecution !== undefined
   ) {
     throw new Error(
       "Agent run preparation cannot mix product and direct-run resolution",
@@ -11851,7 +11840,7 @@ export function agentRunResolutionOptions(
   }
   return {
     productAgentExecutionPlan,
-    testOnlyResolveDirectRun,
+    capturedDirectExecution,
     preloadedAgentExecutionObservation: args.preloadedAgentExecutionObservation,
     resetNativeSession: args.threadSessionResolution?.resetNativeSession,
     sessionSnapshot: args.threadSessionResolution?.executionSnapshot,
@@ -15200,15 +15189,15 @@ function createRunContextObjects(
     const input = await get(input$);
     const body = initialRunBody(input.args);
     const options = agentRunResolutionOptions(input.args);
-    const legacyExecution = options.testOnlyResolveDirectRun
-      ? await resolveAgentExecution(
-          get(db$),
-          body,
-          input.args.userId,
-          input.args.orgId,
-          { ...options, timing: input.timing },
-        )
-      : undefined;
+    const legacyExecution =
+      options.capturedDirectExecution !== undefined
+        ? await resolveAgentExecution(
+            body,
+            input.args.userId,
+            input.args.orgId,
+            { ...options, timing: input.timing },
+          )
+        : undefined;
     const featureSnapshot = shared
       ? await get(shared.featureSwitchContext$)
       : undefined;
