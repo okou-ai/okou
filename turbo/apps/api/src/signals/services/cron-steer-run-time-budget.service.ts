@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -5,10 +7,10 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
-import { notifyRunningChatRunOfPendingInput } from "./chat-thread-queue-drain.service";
-import { insertChatEvent } from "./chat-event.service";
+import { notifyRunningChatRunOfPendingInput$ } from "./chat-thread-queue-drain.service";
+import { chatEventInsertSql } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 
 const RUN_TIME_BUDGET_LIMIT_MS = 120 * 60 * 1000;
@@ -36,125 +38,155 @@ interface RunTimeBudgetCandidateScope {
   readonly runId: string;
 }
 
-async function loadRunTimeBudgetCandidates(
-  db: Db,
-  startedBefore: Date,
-  scope: RunTimeBudgetCandidateScope | undefined,
-): Promise<readonly RunTimeBudgetCandidate[]> {
-  return await db
-    .select({
-      runId: agentRuns.id,
-      chatThreadId: chatThreads.id,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .where(
-      and(
-        eq(agentRuns.status, "running"),
-        lte(agentRuns.startedAt, startedBefore),
-        isNotNull(agentRuns.triggerSource),
-        scope ? eq(agentRuns.id, scope.runId) : undefined,
-      ),
-    )
-    .orderBy(agentRuns.startedAt)
-    .limit(scope ? 1 : RUN_TIME_BUDGET_SCAN_LIMIT);
-}
+const loadRunTimeBudgetCandidates$ = command(
+  async (
+    { get },
+    startedBefore: Date,
+    scope: RunTimeBudgetCandidateScope | undefined,
+    signal: AbortSignal,
+  ): Promise<readonly RunTimeBudgetCandidate[]> => {
+    const db = get(db$);
+
+    const rows = await db
+      .select({
+        runId: agentRuns.id,
+        chatThreadId: chatThreads.id,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.status, "running"),
+          lte(agentRuns.startedAt, startedBefore),
+          isNotNull(agentRuns.triggerSource),
+          scope ? eq(agentRuns.id, scope.runId) : undefined,
+        ),
+      )
+      .orderBy(agentRuns.startedAt)
+      .limit(scope ? 1 : RUN_TIME_BUDGET_SCAN_LIMIT);
+    signal.throwIfAborted();
+    return rows;
+  },
+);
 
 /**
  * Insert the steer once per run. The event id is derived from the run id, so a
  * later scan of the same run conflicts on it instead of steering twice.
  */
-async function persistRunTimeBudgetInput(
-  db: Db,
-  args: {
-    readonly candidate: RunTimeBudgetCandidate;
-    readonly startedBefore: Date;
-    readonly createdAt: Date;
+const persistRunTimeBudgetInput$ = command(
+  async (
+    { set },
+    args: {
+      readonly candidate: RunTimeBudgetCandidate;
+      readonly startedBefore: Date;
+      readonly createdAt: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+
+    const inserted = await db.transaction(async (tx) => {
+      // The run row lock and running recheck serialize against completion and
+      // timeout, which expire pending budget input before the run ends.
+      const [run] = await tx
+        .select({
+          chatThreadId: agentRuns.chatThreadId,
+          agentId: agents.id,
+        })
+        .from(agentRuns)
+        .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+        .where(
+          and(
+            eq(agentRuns.id, args.candidate.runId),
+            eq(agentRuns.status, "running"),
+            eq(agentRuns.chatThreadId, args.candidate.chatThreadId),
+            lte(agentRuns.startedAt, args.startedBefore),
+            isNotNull(agentRuns.triggerSource),
+          ),
+        )
+        .for("update", { of: agentRuns })
+        .limit(1);
+      if (!run?.chatThreadId) {
+        return false;
+      }
+
+      const inserted =
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql(
+              {
+                id: runTimeBudgetEventIdForRun(args.candidate.runId),
+                chatThreadId: run.chatThreadId,
+                eventType: "input.budget",
+                runId: null,
+                userMessage: createUserMessageDocument({
+                  text: RUN_TIME_BUDGET_MESSAGE,
+                }),
+                agentRunContext: {
+                  sourceRunId: args.candidate.runId,
+                  sourceChatThreadId: run.chatThreadId,
+                  sourceAgentId: run.agentId,
+                },
+                createdAt: args.createdAt,
+              },
+              "id",
+            ),
+          ),
+        )[0] ?? null;
+      return inserted !== null;
+    });
+    signal.throwIfAborted();
+    return inserted;
   },
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    // The run row lock and running recheck serialize against completion and
-    // timeout, which expire pending budget input before the run ends.
-    const [run] = await tx
-      .select({
-        chatThreadId: agentRuns.chatThreadId,
-        agentId: agents.id,
-      })
-      .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(
-        and(
-          eq(agentRuns.id, args.candidate.runId),
-          eq(agentRuns.status, "running"),
-          eq(agentRuns.chatThreadId, args.candidate.chatThreadId),
-          lte(agentRuns.startedAt, args.startedBefore),
-          isNotNull(agentRuns.triggerSource),
-        ),
-      )
-      .for("update", { of: agentRuns })
-      .limit(1);
-    if (!run?.chatThreadId) {
-      return false;
-    }
+);
 
-    const inserted = await insertChatEvent(
-      tx,
-      {
-        id: runTimeBudgetEventIdForRun(args.candidate.runId),
-        chatThreadId: run.chatThreadId,
-        eventType: "input.budget",
-        runId: null,
-        userMessage: createUserMessageDocument({
-          text: RUN_TIME_BUDGET_MESSAGE,
-        }),
-        agentRunContext: {
-          sourceRunId: args.candidate.runId,
-          sourceChatThreadId: run.chatThreadId,
-          sourceAgentId: run.agentId,
-        },
-        createdAt: args.createdAt,
-      },
-      "id",
+const steerOwnedRunsNearTimeBudget$ = command(
+  async (
+    { set },
+    scope: RunTimeBudgetCandidateScope | undefined,
+    signal: AbortSignal,
+  ): Promise<{ readonly scanned: number; readonly steered: number }> => {
+    const createdAt = nowDate();
+    const startedBefore = new Date(
+      createdAt.getTime() - RUN_TIME_BUDGET_STEER_AT_MS,
     );
-    return inserted !== null;
-  });
-}
+    const candidates = await set(
+      loadRunTimeBudgetCandidates$,
+      startedBefore,
+      scope,
+      signal,
+    );
+    signal.throwIfAborted();
 
-async function steerRunsNearTimeBudget(
-  db: Db,
-  scope: RunTimeBudgetCandidateScope | undefined,
-  signal: AbortSignal,
-): Promise<{ readonly scanned: number; readonly steered: number }> {
-  const createdAt = nowDate();
-  const startedBefore = new Date(
-    createdAt.getTime() - RUN_TIME_BUDGET_STEER_AT_MS,
-  );
-  const candidates = await loadRunTimeBudgetCandidates(
-    db,
-    startedBefore,
-    scope,
-  );
-  signal.throwIfAborted();
-
-  let steered = 0;
-  for (const candidate of candidates) {
-    if (
-      await persistRunTimeBudgetInput(db, {
-        candidate,
-        startedBefore,
-        createdAt,
-      })
-    ) {
-      steered += 1;
+    let steered = 0;
+    for (const candidate of candidates) {
+      if (
+        await set(
+          persistRunTimeBudgetInput$,
+          {
+            candidate,
+            startedBefore,
+            createdAt,
+          },
+          signal,
+        )
+      ) {
+        steered += 1;
+      }
+      signal.throwIfAborted();
+      await set(
+        notifyRunningChatRunOfPendingInput$,
+        candidate.chatThreadId,
+        signal,
+      );
+      signal.throwIfAborted();
     }
-    signal.throwIfAborted();
-    await notifyRunningChatRunOfPendingInput(db, candidate.chatThreadId);
-    signal.throwIfAborted();
-  }
 
-  return { scanned: candidates.length, steered };
-}
+    return { scanned: candidates.length, steered };
+  },
+);
 
 /**
  * Steer every chat run that reached its time budget. A run stays a candidate
@@ -163,15 +195,17 @@ async function steerRunsNearTimeBudget(
  */
 export const steerRunsNearTimeBudget$ = command(
   async ({ set }, signal: AbortSignal) => {
-    return await steerRunsNearTimeBudget(set(writeDb$), undefined, signal);
+    return await set(steerOwnedRunsNearTimeBudget$, undefined, signal);
   },
 );
 
 /** Scope the global sweep to one owned run for shared-database route tests. */
-export async function steerRunNearTimeBudgetForTest(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<{ readonly scanned: number; readonly steered: number }> {
-  return await steerRunsNearTimeBudget(db, { runId }, signal);
-}
+export const steerRunNearTimeBudgetForTest$ = command(
+  async (
+    { set },
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<{ readonly scanned: number; readonly steered: number }> => {
+    return await set(steerOwnedRunsNearTimeBudget$, { runId }, signal);
+  },
+);

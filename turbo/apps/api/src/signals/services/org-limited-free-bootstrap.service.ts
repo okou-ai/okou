@@ -1,3 +1,6 @@
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -18,13 +21,10 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import {
-  commitPreparedAgentInstructionsStorageInTransaction,
-  prepareAgentInstructionsStorage$,
-} from "./agent-instructions-storage.service";
+import { prepareAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import {
-  enqueueStorageObjectCleanup,
+  storageObjectCleanupJobValues,
   executeStorageObjectCleanupWork$,
 } from "./storage-object-cleanup.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
@@ -46,7 +46,7 @@ import {
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import { onRejection, settleIncludingAbort } from "../utils";
-import { loadSystemDefaultRunModel } from "./model-catalog.service";
+import { modelCatalog$, type ModelCatalog } from "./model-catalog.service";
 
 const L = logger("org-limited-free-bootstrap.service");
 const PAID_TIERS = ["pro", "team", "custom"] as const;
@@ -134,19 +134,22 @@ async function enqueueBootstrapPrefixCleanup(
   s3Prefix: string,
   signal: AbortSignal,
 ): Promise<string> {
-  return await enqueueStorageObjectCleanup(
-    tx,
-    {
-      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-      target: { kind: "prefix", value: s3Prefix },
-      orgId: args.orgId,
-      userId: args.ownerUserId,
-    },
-    signal,
-  );
+  const receipt = storageObjectCleanupJobValues({
+    bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    target: { kind: "prefix", value: s3Prefix },
+    orgId: args.orgId,
+    userId: args.ownerUserId,
+  });
+  await tx
+    .insert(backgroundJobs)
+    .values(receipt)
+    .onConflictDoNothing({ target: backgroundJobs.id });
+  signal.throwIfAborted();
+  return receipt.id;
 }
 
 async function publishBootstrap(
+  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: EnsureOrgLimitedFreeBootstrapArgs & {
     readonly agentId: string;
@@ -210,7 +213,7 @@ async function publishBootstrap(
     }
     const result = existingAgentId
       ? { bootstrapped: false, agentId: existingAgentId }
-      : await finalizeBootstrap(tx, args);
+      : await finalizeBootstrap(catalogSnapshot, tx, args);
     signal.throwIfAborted();
     return { result, cleanupJobIds };
   }
@@ -240,11 +243,16 @@ async function publishBootstrap(
     );
   }
 
-  await commitPreparedAgentInstructionsStorageInTransaction(
-    { tx, volume: args.volume },
-    signal,
+  const publishedStorage = await tx.execute(
+    preparedVolumePublicationSql(args.volume, nowDate()),
   );
-  const result = await finalizeBootstrap(tx, args);
+  signal.throwIfAborted();
+  if (publishedStorage.rowCount !== 1) {
+    throw new StorageVersionIdentityConflictError(
+      args.volume.version.versionId,
+    );
+  }
+  const result = await finalizeBootstrap(catalogSnapshot, tx, args);
   signal.throwIfAborted();
   return { result, cleanupJobIds };
 }
@@ -386,6 +394,7 @@ async function reserveBootstrapAgent(
 }
 
 async function finalizeBootstrap(
+  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: {
     readonly orgId: string;
@@ -445,7 +454,7 @@ async function finalizeBootstrap(
     return { bootstrapped: true, agentId: agentRow.id };
   }
 
-  const systemDefaultModel = await loadSystemDefaultRunModel(tx);
+  const systemDefaultModel = catalogSnapshot.systemDefaultModel;
   const hasConfiguredPolicies = exists(
     tx
       .select({ id: orgModelPolicies.id })
@@ -526,7 +535,7 @@ async function finalizeBootstrap(
 
 export const ensureOrgLimitedFreeBootstrap$ = command(
   async (
-    { set },
+    { get, set },
     args: EnsureOrgLimitedFreeBootstrapArgs,
     signal: AbortSignal,
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
@@ -549,7 +558,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       {
         orgId: args.orgId,
         type: "built-in",
-        selectedModel: await loadSystemDefaultRunModel(writeDb),
+        selectedModel: (await get(modelCatalog$)).systemDefaultModel,
       },
       signal,
     );
@@ -573,6 +582,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       return await writeDb.transaction(
         async (tx) => {
           return await publishBootstrap(
+            await get(modelCatalog$),
             tx,
             { ...args, agentId: reservation.agentId, candidate, volume },
             signal,

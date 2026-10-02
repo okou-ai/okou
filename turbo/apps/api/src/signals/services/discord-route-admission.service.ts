@@ -3,7 +3,7 @@ import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 
 import {
   discordMessageCreateSchema,
@@ -333,12 +333,15 @@ const createDiscordAdmissionRoute$ = command(
     const route = await set(
       ensureCanonicalDiscordChatThreadRoute$,
       {
-        initialModel: await resolveDefaultModelFirstPin(
-          set(writeDb$),
-          binding.orgId,
-          binding.userId,
-          undefined,
-          undefined,
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: binding.orgId,
+            userId: binding.userId,
+            defaultSource: undefined,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
         ),
         ...routeKey,
         orgId: binding.orgId,

@@ -6,8 +6,6 @@ import {
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
-import { nowDate } from "../../lib/time";
 
 export interface NotionQueueSource {
   readonly automationId: string;
@@ -29,7 +27,7 @@ export class NotionAutomationSourceChangedError extends Error {
     this.name = "NotionAutomationSourceChangedError";
   }
 }
-function notionConfigMatchesPendingEvent(
+export function notionConfigMatchesPendingEvent(
   eventType: string | null,
   eventConfig: unknown,
   pending: NotionQueueSource["pending"],
@@ -77,10 +75,8 @@ function notionConfigMatchesPendingEvent(
 function notionQueueAdmissionSql(args: {
   readonly source: NotionQueueSource;
   readonly connectorId: string;
-  readonly chatThreadId: string;
   readonly eventType: string | null;
   readonly eventConfig: unknown;
-  readonly currentTime: Date;
 }) {
   return sql`SELECT 1 WHERE EXISTS (
       SELECT 1 FROM ${workflowAutomations}
@@ -94,84 +90,23 @@ function notionQueueAdmissionSql(args: {
     )`;
 }
 
-/** Admit one prepared page event only for its still-current source and receipt. */
-export async function persistNotionWorkflowSource(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly source: NotionQueueSource;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const { source } = args;
-  const connectorId = source.pending.connectorId;
-  if (connectorId === null) {
-    throw new NotionAutomationSourceChangedError();
-  }
-  const [automation] = await tx
-    .select({
-      eventType: workflowAutomations.eventType,
-      eventConfig: workflowAutomations.eventConfig,
-    })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, source.automationId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.eventConnectorId, connectorId),
-      ),
-    )
-    .limit(1);
-  if (
-    !automation ||
-    !notionConfigMatchesPendingEvent(
-      automation.eventType,
-      automation.eventConfig,
-      source.pending,
-    )
-  ) {
-    throw new NotionAutomationSourceChangedError();
-  }
-  const currentTime = nowDate();
-  const [processed] = await tx
-    .update(notionWorkflowPendingEvents)
-    .set({
-      status: "processed",
-      pageTitle: source.pageTitle,
-      pageUrl: source.pageUrl,
-      parentTitle: source.parentTitle,
-      parentUrl: source.parentUrl,
-      processedAt: currentTime,
-      updatedAt: currentTime,
-    })
-    .where(
-      and(
-        eq(notionWorkflowPendingEvents.id, source.pending.id),
-        eq(notionWorkflowPendingEvents.automationId, source.automationId),
-        eq(notionWorkflowPendingEvents.connectorId, connectorId),
-        eq(notionWorkflowPendingEvents.status, "running"),
-      ),
-    )
-    .returning({ id: notionWorkflowPendingEvents.id });
-  if (!processed) {
-    throw new NotionAutomationSourceChangedError();
-  }
-  if (
-    (
-      await tx.execute(
-        notionQueueAdmissionSql({
-          source,
-          connectorId,
-          chatThreadId: args.chatThreadId,
-          eventType: automation.eventType,
-          eventConfig: automation.eventConfig,
-          currentTime,
-        }),
-      )
-    ).rowCount === 0
-  ) {
-    throw new NotionAutomationSourceChangedError();
-  }
-  signal.throwIfAborted();
+/** CAS receipt publication is gated by the exact prepared consumer config. */
+export function notionQueueReceiptSql(args: {
+  readonly source: NotionQueueSource;
+  readonly connectorId: string;
+  readonly eventType: string | null;
+  readonly eventConfig: unknown;
+  readonly currentTime: Date;
+}) {
+  const timestamp = args.currentTime.toISOString();
+  return sql`UPDATE ${notionWorkflowPendingEvents}
+    SET status = 'processed', page_title = ${args.source.pageTitle}, page_url = ${args.source.pageUrl},
+      parent_title = ${args.source.parentTitle}, parent_url = ${args.source.parentUrl},
+      processed_at = ${timestamp}::timestamp, updated_at = ${timestamp}::timestamp
+    WHERE ${and(
+      eq(notionWorkflowPendingEvents.id, args.source.pending.id),
+      eq(notionWorkflowPendingEvents.automationId, args.source.automationId),
+      eq(notionWorkflowPendingEvents.connectorId, args.connectorId),
+      eq(notionWorkflowPendingEvents.status, "running"),
+    )} AND EXISTS (${notionQueueAdmissionSql(args)}) RETURNING id`;
 }

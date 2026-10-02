@@ -7,8 +7,7 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpChatOutputTimestampSchema } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
-import { computed, type Computed } from "ccstate";
-import { sql } from "drizzle-orm";
+import { command } from "ccstate";
 import { z } from "zod";
 
 import {
@@ -18,17 +17,16 @@ import {
 import { env } from "../../lib/env";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { now } from "../../lib/time";
-import type { Db } from "../external/db";
-import { awaitWithSignal, safeJsonParse, settle } from "../utils";
+import { safeJsonParse, settle } from "../utils";
 import {
   createMcpChatHistoryBudget,
   McpMessageHistoryError,
-  readMcpChatMessageHistory,
+  readMcpChatMessageHistory$,
 } from "./mcp-chat-message-history.service";
 import { projectMcpChatMessages } from "./mcp-chat-messages.service";
 import {
   MCP_SEARCH_CANDIDATE_LIMIT,
-  mcpChatSearchCandidates,
+  mcpChatSearchCandidates$,
   type McpSearchCandidate,
 } from "./mcp-chat-search-query";
 
@@ -168,24 +166,37 @@ function searchMatch(
   };
 }
 
-interface SearchRuntime {
-  readonly db: Db;
-  readonly bucket: string;
-  readonly historyBudget: ReturnType<typeof createMcpChatHistoryBudget>;
+interface SearchHistoryFacts {
+  readonly principal: Principal;
+  readonly candidates: readonly McpSearchCandidate[];
+  readonly threadId: string;
 }
 
-function searchHistory(
-  runtime: SearchRuntime,
-  principal: Principal,
-  candidates: readonly McpSearchCandidate[],
-  threadId: string,
-  signal: AbortSignal,
-): Computed<Promise<Map<number, Message>>> {
-  return computed(async (get) => {
-    const history = await get(
-      readMcpChatMessageHistory(runtime, principal, threadId, signal),
+interface SearchPageFacts {
+  readonly principal: Principal;
+  readonly input: McpSearchChatMessagesInput;
+  readonly query: {
+    readonly tsquery: string;
+    readonly cursor: Cursor | null;
+    readonly filters: string;
+  };
+}
+
+const searchHistory$ = command(
+  async (
+    { set },
+    { principal, candidates, threadId }: SearchHistoryFacts,
+    budget: ReturnType<typeof createMcpChatHistoryBudget>,
+    signal: AbortSignal,
+  ): Promise<Map<number, Message>> => {
+    const history = await set(
+      readMcpChatMessageHistory$,
+      principal,
+      threadId,
+      budget,
+      signal,
     );
-    runtime.historyBudget.check();
+    budget.check();
     const wanted = new Set(
       candidates
         .filter((row) => {
@@ -196,10 +207,7 @@ function searchHistory(
         }),
     );
     return new Map(
-      (history === null
-        ? []
-        : projectMcpChatMessages(history, runtime.historyBudget.check)
-      )
+      (history === null ? [] : projectMcpChatMessages(history, budget.check))
         .filter((message) => {
           return wanted.has(message.ref.seqId);
         })
@@ -207,39 +215,21 @@ function searchHistory(
           return [message.ref.seqId, message];
         }),
     );
-  });
-}
-
-function searchPage(
-  runtime: SearchRuntime,
-  principal: Principal,
-  input: McpSearchChatMessagesInput,
-  query: {
-    readonly tsquery: string;
-    readonly cursor: Cursor | null;
-    readonly filters: string;
   },
-  signal: AbortSignal,
-): Computed<Promise<McpChatSearchResult>> {
-  return computed(async (get): Promise<McpChatSearchResult> => {
+);
+
+const searchPage$ = command(
+  async (
+    { set },
+    { principal, input, query }: SearchPageFacts,
+    budget: ReturnType<typeof createMcpChatHistoryBudget>,
+    signal: AbortSignal,
+  ): Promise<McpChatSearchResult> => {
     const { tsquery, cursor, filters } = query;
-    const budget = runtime.historyBudget;
-    const candidates = await awaitWithSignal(
-      runtime.db.transaction(
-        async (tx) => {
-          budget.check();
-          await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
-          budget.check();
-          return await mcpChatSearchCandidates(
-            tx,
-            principal,
-            input,
-            tsquery,
-            cursor,
-          );
-        },
-        { isolationLevel: "repeatable read", accessMode: "read only" },
-      ),
+    budget.check();
+    const candidates = await set(
+      mcpChatSearchCandidates$,
+      { principal, input, tsquery, cursor },
       signal,
     );
     budget.check();
@@ -276,14 +266,11 @@ function searchPage(
       }
       let messages = byThread.get(candidate.threadId);
       if (!messages) {
-        messages = await get(
-          searchHistory(
-            runtime,
-            principal,
-            candidates,
-            candidate.threadId,
-            signal,
-          ),
+        messages = await set(
+          searchHistory$,
+          { principal, candidates, threadId: candidate.threadId },
+          budget,
+          signal,
         );
         budget.check();
         byThread.set(candidate.threadId, messages);
@@ -325,17 +312,17 @@ function searchPage(
         scanLimited: hasMore && consumed === MCP_SEARCH_CANDIDATE_LIMIT,
       },
     };
-  });
-}
+  },
+);
 
 /** Bounded index discovery followed by the same canonical visibility as context reads. */
-export function searchMcpChatMessages(
-  runtime: { readonly db: Db; readonly bucket: string },
-  principal: Principal,
-  input: McpSearchChatMessagesInput,
-  signal: AbortSignal,
-): Computed<Promise<McpChatSearchResult>> {
-  return computed(async (get): Promise<McpChatSearchResult> => {
+export const searchMcpChatMessages$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpSearchChatMessagesInput,
+    signal: AbortSignal,
+  ): Promise<McpChatSearchResult> => {
     const tsquery = chatSearchBigramTsquery(input.query);
     if (tsquery === null) {
       return {
@@ -371,14 +358,11 @@ export function searchMcpChatMessages(
     ]);
     const budget = createMcpChatHistoryBudget(operationSignal);
     const result = await settle(
-      get(
-        searchPage(
-          { ...runtime, historyBudget: budget },
-          principal,
-          input,
-          { tsquery, cursor, filters },
-          operationSignal,
-        ),
+      set(
+        searchPage$,
+        { principal, input, query: { tsquery, cursor, filters } },
+        budget,
+        operationSignal,
       ),
       signal,
     );
@@ -404,5 +388,5 @@ export function searchMcpChatMessages(
       };
     }
     return result.value;
-  });
-}
+  },
+);

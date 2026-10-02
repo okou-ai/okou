@@ -1,5 +1,5 @@
-import { command, computed } from "ccstate";
-import { and, asc, count, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
+import { command } from "ccstate";
+import { and, asc, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages } from "@okouai/db/schema/storage";
@@ -7,8 +7,8 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
-import type { Tx } from "../../lib/db-types";
-import type { Db } from "../external/db";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { db$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { visibleWorkflowCondition } from "./workflow-data.service";
 
@@ -39,14 +39,14 @@ export const authorizeUserExportPage$ = command(
   async (
     { get },
     args: {
-      readonly db: Db;
       readonly jobId: string;
       readonly userId: string;
       readonly cursor: number;
     },
     signal: AbortSignal,
   ): Promise<{ readonly cursor: number; readonly done: boolean }> => {
-    const { db, userId } = args;
+    const db = get(db$);
+    const { userId } = args;
     const rows = await db
       .select({
         ordinal: userExportEntries.ordinal,
@@ -148,11 +148,12 @@ interface PublicationAuthority {
   readonly orgIds: readonly string[];
 }
 
-export function currentUserExportMemberships(
-  userId: string,
-  signal: AbortSignal,
-) {
-  return computed(async (get): Promise<readonly string[]> => {
+export const currentUserExportMemberships$ = command(
+  async (
+    { get },
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<readonly string[]> => {
     const memberships = await listAllUserOrganizationMemberships(
       get(clerk$).users,
       userId,
@@ -163,18 +164,15 @@ export function currentUserExportMemberships(
     return memberships.map((membership) => {
       return membership.organization.id;
     });
-  });
-}
-
-type AuthorityDb = Pick<Tx, "select" | "selectDistinct">;
+  },
+);
 
 function authorityIds(
-  db: AuthorityDb,
   args: PublicationAuthority,
   kinds: readonly string[],
   field: string,
 ) {
-  return db
+  return new QueryBuilder()
     .selectDistinct({
       id: sql`(${userExportEntries.metadata}->>${field})::uuid`,
     })
@@ -187,44 +185,16 @@ function authorityIds(
     );
 }
 
-async function requireLockedResources(
-  db: AuthorityDb,
-  ids: SQL,
-  readable: SQL,
-  signal: AbortSignal,
-): Promise<void> {
-  // Aggregate in PostgreSQL so the terminal fence does not load every source
-  // into the function. Share locks prevent a visibility/ownership write from
-  // committing between this check and the publication in the same transaction.
-  const [expected] = await db
-    .select({ count: count() })
-    .from(sql`(${ids}) expected_resources`);
-  signal.throwIfAborted();
-  const [actual] = await db
-    .select({ count: count() })
-    .from(sql`(${readable}) locked_resources`);
-  signal.throwIfAborted();
-  if (!expected || !actual) {
-    throw new Error("Publication authority count query returned no row");
-  }
-  if (expected.count !== actual.count) {
-    throw new Error(
-      "Access to an exported resource changed before publication",
-    );
-  }
-}
-
 /** Re-entry must always reacquire this terminal authority, never trust a saved authorization cursor. */
-export async function lockUserExportPublicationAuthority(
-  db: AuthorityDb,
+export function userExportPublicationChecks(
   args: PublicationAuthority,
-  signal: AbortSignal,
-): Promise<void> {
-  const agentIds = authorityIds(db, args, ["agent"], "agentId");
-  await requireLockedResources(
-    db,
-    agentIds.getSQL(),
-    db
+): readonly { readonly expected: SQL; readonly readable: SQL }[] {
+  const db = new QueryBuilder();
+  const checks: { readonly expected: SQL; readonly readable: SQL }[] = [];
+  const agentIds = authorityIds(args, ["agent"], "agentId");
+  checks.push({
+    expected: agentIds.getSQL(),
+    readable: db
       .select({ id: agents.id })
       .from(agents)
       .where(
@@ -237,13 +207,11 @@ export async function lockUserExportPublicationAuthority(
       .orderBy(asc(agents.id))
       .for("share")
       .getSQL(),
-    signal,
-  );
-  const workflowIds = authorityIds(db, args, ["workflow"], "workflowId");
-  await requireLockedResources(
-    db,
-    workflowIds.getSQL(),
-    db
+  });
+  const workflowIds = authorityIds(args, ["workflow"], "workflowId");
+  checks.push({
+    expected: workflowIds.getSQL(),
+    readable: db
       .select({ id: workflows.id })
       .from(workflows)
       .innerJoin(agents, eq(agents.id, workflows.agentId))
@@ -257,18 +225,15 @@ export async function lockUserExportPublicationAuthority(
       .orderBy(asc(workflows.id))
       .for("share", { of: [workflows, agents] })
       .getSQL(),
-    signal,
-  );
+  });
   const threadIds = authorityIds(
-    db,
     args,
     ["chat-thread", "chat-snapshot", "chat-tail"],
     "threadId",
   );
-  await requireLockedResources(
-    db,
-    threadIds.getSQL(),
-    db
+  checks.push({
+    expected: threadIds.getSQL(),
+    readable: db
       .select({ id: chatThreads.id })
       .from(chatThreads)
       .where(
@@ -280,13 +245,11 @@ export async function lockUserExportPublicationAuthority(
       .orderBy(asc(chatThreads.id))
       .for("share")
       .getSQL(),
-    signal,
-  );
-  const storageIds = authorityIds(db, args, ["memory"], "storageId");
-  await requireLockedResources(
-    db,
-    storageIds.getSQL(),
-    db
+  });
+  const storageIds = authorityIds(args, ["memory"], "storageId");
+  checks.push({
+    expected: storageIds.getSQL(),
+    readable: db
       .select({ id: storages.id })
       .from(storages)
       .where(
@@ -295,6 +258,6 @@ export async function lockUserExportPublicationAuthority(
       .orderBy(asc(storages.id))
       .for("share")
       .getSQL(),
-    signal,
-  );
+  });
+  return checks;
 }

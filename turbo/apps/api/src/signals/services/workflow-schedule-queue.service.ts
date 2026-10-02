@@ -1,16 +1,7 @@
-import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
-import { nowDate } from "../../lib/time";
-import {
-  morningBriefScheduleWhere,
-  type MorningBriefNativeScheduleRow,
-} from "./morning-brief-native-schedule.service";
+import type { MorningBriefNativeScheduleRow } from "./morning-brief-native-schedule.service";
 import { SCHEDULE_GRACE_MS } from "./schedule-expiry-policy";
-import {
-  ScheduleOccurrenceUnavailableError,
-  type WorkflowScheduleClaimPlan,
-} from "./workflow-automation-enqueue.service";
+import type { WorkflowScheduleClaimPlan } from "./workflow-automation-enqueue.service";
 
 /** Distinguishes a failed admission from preparation that never attempted it. */
 export class WorkflowScheduleAdmissionError extends Error {
@@ -33,7 +24,7 @@ export class WorkflowScheduleAdmissionError extends Error {
  * concurrent claim, expiry, toggle or settlement that moved the anchor makes
  * this statement return no row.
  */
-function consumeWorkflowScheduleAnchorSql(
+export function consumeWorkflowScheduleAnchorSql(
   claim: WorkflowScheduleClaimPlan,
   native: MorningBriefNativeScheduleRow | undefined,
   admittedAt: Date,
@@ -76,7 +67,7 @@ function consumeWorkflowScheduleAnchorSql(
  * claim for this automation can be in flight and the next sequence is read
  * from a snapshot that includes every committed claim.
  */
-function journalWorkflowScheduleClaimSql(
+export function journalWorkflowScheduleClaimSql(
   claim: WorkflowScheduleClaimPlan,
   queueEventId: string,
   admittedAt: Date,
@@ -94,40 +85,4 @@ function journalWorkflowScheduleClaimSql(
         ORDER BY claim_sequence DESC LIMIT 1), 0) + 1,
       ${queueEventId}::uuid, ${admittedAt}
   `;
-}
-
-export async function persistWorkflowScheduleOccurrence(
-  tx: Tx,
-  claim: WorkflowScheduleClaimPlan,
-  eventId: string,
-): Promise<void> {
-  const [native] = await tx
-    .select()
-    .from(morningBriefNativeSchedules)
-    .where(
-      morningBriefScheduleWhere({
-        orgId: claim.orgId,
-        userId: claim.ownerUserId,
-      }),
-    )
-    .limit(1);
-  const admittedAt = nowDate();
-  if (
-    (
-      await tx.execute(
-        consumeWorkflowScheduleAnchorSql(claim, native, admittedAt),
-      )
-    ).rowCount !== 1
-  ) {
-    throw new ScheduleOccurrenceUnavailableError();
-  }
-  if (
-    (
-      await tx.execute(
-        journalWorkflowScheduleClaimSql(claim, eventId, admittedAt),
-      )
-    ).rowCount !== 1
-  ) {
-    throw new Error("Morning Brief schedule claim was not journaled");
-  }
 }

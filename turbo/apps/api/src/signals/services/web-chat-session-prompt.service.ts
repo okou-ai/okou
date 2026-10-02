@@ -290,7 +290,7 @@ function lastRunMessageSeqIds(
         chatEventTypeIn(CHAT_EVENT_CONTENT_TEXT_TYPES),
         isNotNull(canonicalChatEventContent()),
         inArray(chatEvents.runId, [...runIds]),
-        visibleChatEventCondition(db),
+        visibleChatEventCondition(),
       ),
     )
     .groupBy(chatEvents.runId);
@@ -355,7 +355,7 @@ function createWebChatPriorRunEventRowsObject(
           eq(chatEvents.chatThreadId, threadId),
           chatEventTextCondition(),
           inArray(chatEvents.runId, runIds),
-          visibleChatEventCondition(db),
+          visibleChatEventCondition(),
           or(
             chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
             inArray(

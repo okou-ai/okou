@@ -40,7 +40,7 @@ import {
   loadOrgPlanCapabilities$,
 } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
-import { readUsageAllowanceAvailabilitySnapshot } from "./usage-allowance.service";
+import type { UsageAllowanceAvailabilitySnapshot } from "./usage-allowance.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
 export interface ManagedUsageErrorResponse {
@@ -218,6 +218,7 @@ export async function checkManagedCreditsSnapshotInDb(
   writeDb: Db,
   args: ManagedUsageCreditCheckArgs,
   pricingResolution: UsagePricingResolution,
+  allowance: UsageAllowanceAvailabilitySnapshot,
   signal: AbortSignal,
 ): Promise<ManagedUsageErrorResponse | "allowance_refresh_required" | null> {
   const balance = await checkManagedCreditBalance(
@@ -229,11 +230,6 @@ export async function checkManagedCreditsSnapshotInDb(
   if (!balance || "status" in balance) {
     return balance;
   }
-  const allowance = await readUsageAllowanceAvailabilitySnapshot(
-    writeDb,
-    args.orgId,
-  );
-  signal.throwIfAborted();
   if (allowance === "allowance_refresh_required") {
     return allowance;
   }

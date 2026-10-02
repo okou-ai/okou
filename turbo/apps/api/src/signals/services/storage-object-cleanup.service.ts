@@ -5,18 +5,17 @@ import { eq, or, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 
-import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsPage } from "../external/s3";
 import { settleIncludingAbort } from "../utils";
 import {
-  claimBackgroundJob,
-  completeBackgroundJob,
-  enqueueBackgroundJob,
-  retryBackgroundJob,
-  yieldBackgroundJob,
+  claimBackgroundJob$,
+  completeBackgroundJob$,
+  retryBackgroundJob$,
+  yieldBackgroundJob$,
   type ClaimedBackgroundJob,
+  backgroundJobDatabaseNow,
 } from "./background-job.service";
 
 export const STORAGE_OBJECT_CLEANUP_JOB_KIND = "storage-object-cleanup";
@@ -33,96 +32,94 @@ const inputSchema = z.object({
 });
 type CleanupInput = z.infer<typeof inputSchema>;
 
-/** The caller deletes the corresponding DB references in this same transaction.
- * The inventory has no owner FK, so removing the owner cannot lose R2 work. */
-export async function enqueueStorageObjectCleanup(
-  tx: Tx,
+/** Pure admission values; the reference-deletion owner writes this durable receipt. */
+export function storageObjectCleanupJobValues(
   args: CleanupInput & { readonly userId: string; readonly orgId: string },
-  signal: AbortSignal,
-): Promise<string> {
+) {
   const input = inputSchema.parse({ bucket: args.bucket, target: args.target });
   const id = uuidv5(
     `${input.bucket}\0${input.target.kind}\0${input.target.value}\0${args.userId}\0${args.orgId}`,
     JOB_NAMESPACE,
   );
-  await enqueueBackgroundJob(
-    tx,
-    {
-      id,
-      kind: STORAGE_OBJECT_CLEANUP_JOB_KIND,
-      handlerVersion: HANDLER_VERSION,
-      userId: args.userId,
-      orgId: args.orgId,
-      input,
-    },
-    signal,
-  );
-  return id;
+  return {
+    id,
+    kind: STORAGE_OBJECT_CLEANUP_JOB_KIND,
+    handlerVersion: HANDLER_VERSION,
+    userId: args.userId,
+    orgId: args.orgId,
+    input,
+    availableAt: backgroundJobDatabaseNow,
+    createdAt: backgroundJobDatabaseNow,
+    updatedAt: backgroundJobDatabaseNow,
+  };
 }
 
-async function assertUnreferenced(
-  db: Db,
-  target: CleanupInput["target"],
-  signal: AbortSignal,
-): Promise<void> {
-  if (target.kind === "prefix") {
-    const prefix = target.value.replace(/\/+$/, "");
-    if (!prefix) {
-      throw new Error("Storage cleanup cannot erase an empty prefix");
+const assertUnreferenced$ = command(
+  async (
+    { get },
+    target: CleanupInput["target"],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = get(db$);
+    if (target.kind === "prefix") {
+      const prefix = target.value.replace(/\/+$/, "");
+      if (!prefix) {
+        throw new Error("Storage cleanup cannot erase an empty prefix");
+      }
+      const [storage] = await db
+        .select({ id: storages.id })
+        .from(storages)
+        .where(
+          or(
+            eq(storages.s3Prefix, prefix),
+            sql`starts_with(${storages.s3Prefix}, ${`${prefix}/`})`,
+            sql`starts_with(${prefix}, ${storages.s3Prefix} || '/')`,
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      const [exportJob] = await db
+        .select({ id: exportJobs.id })
+        .from(exportJobs)
+        .where(sql`starts_with(${exportJobs.s3Key}, ${`${prefix}/`})`)
+        .limit(1);
+      signal.throwIfAborted();
+      if (storage || exportJob) {
+        throw new Error("Storage cleanup prefix still has a live DB reference");
+      }
+      return;
     }
-    const [storage] = await db
-      .select({ id: storages.id })
-      .from(storages)
+    const [exportJob] = await db
+      .select({ id: exportJobs.id })
+      .from(exportJobs)
+      .where(eq(exportJobs.s3Key, target.value))
+      .limit(1);
+    signal.throwIfAborted();
+    const [version] = await db
+      .select({ id: storageVersions.id })
+      .from(storageVersions)
       .where(
         or(
-          eq(storages.s3Prefix, prefix),
-          sql`starts_with(${storages.s3Prefix}, ${`${prefix}/`})`,
-          sql`starts_with(${prefix}, ${storages.s3Prefix} || '/')`,
+          eq(sql`${storageVersions.s3Key} || '/archive.tar.gz'`, target.value),
+          eq(sql`${storageVersions.s3Key} || '/manifest.json'`, target.value),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    const [exportJob] = await db
-      .select({ id: exportJobs.id })
-      .from(exportJobs)
-      .where(sql`starts_with(${exportJobs.s3Key}, ${`${prefix}/`})`)
-      .limit(1);
-    signal.throwIfAborted();
-    if (storage || exportJob) {
-      throw new Error("Storage cleanup prefix still has a live DB reference");
+    if (exportJob || version) {
+      throw new Error("Storage cleanup key still has a live DB reference");
     }
-    return;
-  }
-  const [exportJob] = await db
-    .select({ id: exportJobs.id })
-    .from(exportJobs)
-    .where(eq(exportJobs.s3Key, target.value))
-    .limit(1);
-  signal.throwIfAborted();
-  const [version] = await db
-    .select({ id: storageVersions.id })
-    .from(storageVersions)
-    .where(
-      or(
-        eq(sql`${storageVersions.s3Key} || '/archive.tar.gz'`, target.value),
-        eq(sql`${storageVersions.s3Key} || '/manifest.json'`, target.value),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (exportJob || version) {
-    throw new Error("Storage cleanup key still has a live DB reference");
-  }
-}
+  },
+);
 
 const cleanPage$ = command(
   async (
-    { get },
-    args: { readonly db: Db; readonly input: CleanupInput },
+    { get, set },
+    args: { readonly input: CleanupInput },
     signal: AbortSignal,
   ): Promise<boolean> => {
     const { bucket, target } = args.input;
-    await assertUnreferenced(args.db, target, signal);
+    await set(assertUnreferenced$, target, signal);
     if (target.kind === "key") {
       await get(deleteS3Objects(bucket, [target.value], signal));
       signal.throwIfAborted();
@@ -158,41 +155,48 @@ const cleanPage$ = command(
   },
 );
 
-async function settleCleanupAttempt(
-  db: Db,
-  job: ClaimedBackgroundJob,
-  work: Promise<boolean>,
-): Promise<void> {
-  const attempt = await settleIncludingAbort(work);
-  // Cancellation ends the external work, not its persistence obligation.
-  // A crashed worker is reclaimed by the ordinary expired-lease path.
-  const persistenceSignal = AbortSignal.timeout(5000);
-  const saved = attempt.ok
-    ? attempt.value
-      ? await completeBackgroundJob(db, { job }, persistenceSignal)
-      : await yieldBackgroundJob(db, { job, checkpoint: {} }, persistenceSignal)
-    : await retryBackgroundJob(
-        db,
-        {
-          job,
-          error:
-            attempt.error instanceof Error
-              ? attempt.error.message
-              : "Storage object cleanup failed",
-          availableAt: new Date(
-            nowDate().getTime() +
-              Math.min(
-                15 * 60_000,
-                60_000 * 2 ** Math.min(job.failureCount, 4),
-              ),
-          ),
-        },
-        persistenceSignal,
-      );
-  if (!saved) {
-    throw new Error("Storage object cleanup lost its job lease");
-  }
-}
+const settleCleanupAttempt$ = command(
+  async (
+    { set },
+    job: ClaimedBackgroundJob,
+    attempt: Awaited<ReturnType<typeof settleIncludingAbort<boolean>>>,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    // Cancellation ends the external work, not its persistence obligation.
+    // A crashed worker is reclaimed by the ordinary expired-lease path.
+    const persistenceSignal = signal;
+    const saved = attempt.ok
+      ? attempt.value
+        ? await set(completeBackgroundJob$, { job }, persistenceSignal)
+        : await set(
+            yieldBackgroundJob$,
+            { job, checkpoint: {} },
+            persistenceSignal,
+          )
+      : await set(
+          retryBackgroundJob$,
+          {
+            job,
+            error:
+              attempt.error instanceof Error
+                ? attempt.error.message
+                : "Storage object cleanup failed",
+            availableAt: new Date(
+              nowDate().getTime() +
+                Math.min(
+                  15 * 60_000,
+                  60_000 * 2 ** Math.min(job.failureCount, 4),
+                ),
+            ),
+          },
+          persistenceSignal,
+        );
+    if (!saved) {
+      throw new Error("Storage object cleanup lost its job lease");
+    }
+  },
+);
 
 export const executeStorageObjectCleanupWork$ = command(
   async (
@@ -200,7 +204,6 @@ export const executeStorageObjectCleanupWork$ = command(
     args: { readonly jobIds?: readonly string[] },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
-    const db = set(writeDb$);
     const workSignal = AbortSignal.any([signal, AbortSignal.timeout(40_000)]);
     const count = Math.min(
       args.jobIds?.length ?? WORK_BATCH_SIZE,
@@ -208,8 +211,8 @@ export const executeStorageObjectCleanupWork$ = command(
     );
     let processed = 0;
     for (let index = 0; index < count; index++) {
-      const job = await claimBackgroundJob(
-        db,
+      const job = await set(
+        claimBackgroundJob$,
         {
           jobId: args.jobIds?.[index],
           kind: STORAGE_OBJECT_CLEANUP_JOB_KIND,
@@ -223,9 +226,14 @@ export const executeStorageObjectCleanupWork$ = command(
       }
       const work = async () => {
         const input = inputSchema.parse(job.input);
-        return await set(cleanPage$, { db, input }, workSignal);
+        return await set(cleanPage$, { input }, workSignal);
       };
-      await settleCleanupAttempt(db, job, work());
+      await set(
+        settleCleanupAttempt$,
+        job,
+        await settleIncludingAbort(work()),
+        AbortSignal.timeout(5000),
+      );
       signal.throwIfAborted();
       processed++;
       workSignal.throwIfAborted();

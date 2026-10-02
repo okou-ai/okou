@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { command, computed, type Computed } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
-import { enqueueBackgroundJob } from "./background-job.service";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
+import { backgroundJobDatabaseNow } from "./background-job.service";
 import type {
   UserExportJob,
   UserExportStartResponse,
@@ -12,7 +13,7 @@ import { exportJobs } from "@okouai/db/schema/export-job";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { env } from "../../lib/env";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { generatePresignedGetUrl } from "../external/s3";
@@ -43,11 +44,6 @@ type StartUserExportResult =
   | { readonly kind: "rate_limited" };
 
 class UserExportCooldownError extends Error {}
-
-interface ExportRuntime {
-  readonly db: Db;
-  readonly bucket: string;
-}
 
 interface ClerkEmailAddress {
   readonly id: string;
@@ -264,18 +260,17 @@ export const startUserExport$ = command(
           // Roll back the claim; a rejected request must not leave an active job.
           throw new UserExportCooldownError("Export cooldown has not expired");
         }
-        await enqueueBackgroundJob(
-          tx,
-          {
-            id: jobId,
-            kind: "user-export",
-            handlerVersion: 1,
-            userId: args.userId,
-            orgId: args.orgId,
-            input: {},
-          },
-          signal,
-        );
+        await tx.insert(backgroundJobs).values({
+          id: jobId,
+          kind: "user-export",
+          handlerVersion: 1,
+          userId: args.userId,
+          orgId: args.orgId,
+          input: {},
+          availableAt: backgroundJobDatabaseNow,
+          createdAt: backgroundJobDatabaseNow,
+          updatedAt: backgroundJobDatabaseNow,
+        });
         signal.throwIfAborted();
         return {
           kind: "accepted",
@@ -296,13 +291,14 @@ export const startUserExport$ = command(
   },
 );
 
-function getCachedUserEmail(
-  runtime: ExportRuntime,
-  userId: string,
-  signal: AbortSignal,
-): Computed<Promise<string>> {
-  return computed(async (get) => {
-    const [cached] = await runtime.db
+const getCachedUserEmail$ = command(
+  async (
+    { get, set },
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const db = set(writeDb$);
+    const [cached] = await db
       .select({ email: userCache.email, cachedAt: userCache.cachedAt })
       .from(userCache)
       .where(eq(userCache.userId, userId))
@@ -328,7 +324,7 @@ function getCachedUserEmail(
       throw new Error(`No primary email found for user ${userId}`);
     }
 
-    await runtime.db
+    await db
       .insert(userCache)
       .values({
         userId,
@@ -349,21 +345,21 @@ function getCachedUserEmail(
     signal.throwIfAborted();
 
     return email;
-  });
-}
-
-export function userExportReadyEmail(
-  runtime: ExportRuntime,
-  args: {
-    readonly userId: string;
-    readonly downloadUrl: string;
-    readonly expiresAt: Date;
-    readonly artifactCount: number;
   },
-  signal: AbortSignal,
-): Computed<Promise<typeof emailOutbox.$inferInsert>> {
-  return computed(async (get): Promise<typeof emailOutbox.$inferInsert> => {
-    const email = await get(getCachedUserEmail(runtime, args.userId, signal));
+);
+
+export const userExportReadyEmail$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly downloadUrl: string;
+      readonly expiresAt: Date;
+      readonly artifactCount: number;
+    },
+    signal: AbortSignal,
+  ): Promise<typeof emailOutbox.$inferInsert> => {
+    const email = await set(getCachedUserEmail$, args.userId, signal);
     signal.throwIfAborted();
     const formattedExpiry = args.expiresAt.toLocaleString("en-US", {
       year: "numeric",
@@ -390,8 +386,8 @@ export function userExportReadyEmail(
       status: "pending",
       attempts: 0,
     };
-  });
-}
+  },
+);
 
 function exportStartResponse(
   result: Extract<StartUserExportResult, { readonly kind: "accepted" }>,

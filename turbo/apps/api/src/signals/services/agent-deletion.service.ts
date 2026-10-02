@@ -36,7 +36,7 @@ import {
   revokeMorningBriefNativeAuthority,
 } from "./morning-brief-native-schedule.service";
 import { nowDate } from "../../lib/time";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 
 const log = logger("api:agent-deletion");
 const THREAD_DELETION_READ_PAGE_SIZE = 500;
@@ -353,13 +353,15 @@ async function appendDeletedAgentThreadEvents(
     );
     const results = await Promise.allSettled(
       batch.map(async (thread) => {
-        await appendChatThreadEvent(db, {
-          kind: "deleted",
-          userId: thread.userId,
-          orgId: thread.orgId,
-          chatThreadId: thread.id,
-          agentId,
-        });
+        await db.execute(
+          chatThreadEventInsertSql({
+            kind: "deleted",
+            userId: thread.userId,
+            orgId: thread.orgId,
+            chatThreadId: thread.id,
+            agentId,
+          }),
+        );
       }),
     );
     const failed = results.filter((result) => {

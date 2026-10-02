@@ -1435,10 +1435,12 @@ describe("member-effective model policy contract", () => {
     if (runId === undefined) {
       throw new Error("Expected a member run");
     }
-    await expect(readRunModelSourceFixture(runId)).resolves.toMatchObject({
-      modelProvider: "anthropic-api-key",
-      modelProviderCredentialScope: "org",
-      selectedModel: f.model,
+    await expect(runs.readRun(member, runId)).resolves.toMatchObject({
+      source: {
+        providerType: "anthropic-api-key",
+        credentialScope: "org",
+        model: f.model,
+      },
     });
     await runs.requestCancelRun(member, runId, [200]);
     await flushWaitUntilForTest();
@@ -1467,11 +1469,32 @@ describe("member-effective model policy contract", () => {
       model: "gpt-5.6-luna",
       prompt: "Claude cannot authorize this model",
     });
-    await expect(readRunModelSourceFixture(sent.runId)).resolves.toMatchObject({
-      modelProvider: "openai-api-key",
-      modelProviderId: configured.providerId,
-      modelProviderCredentialScope: "org",
-      selectedModel: "gpt-5.6-luna",
+    await expect(runs.readRun(f.actor, sent.runId)).resolves.toMatchObject({
+      source: {
+        providerType: "openai-api-key",
+        credentialScope: "org",
+        model: "gpt-5.6-luna",
+      },
+    });
+    const claim = await f.claim(sent.runId);
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected the configured organization credential");
+    }
+    const resolved = await firewall.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENAI_API_KEY")}`,
+        },
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+      },
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: "Bearer openai-org-key" },
     });
     await runs.requestCancelRun(f.actor, sent.runId, [200]);
   });
@@ -1724,6 +1747,7 @@ describe("personal priority gateway and session boundaries", () => {
   it("keeps a selected subscription personal when credential decryption fails", async () => {
     const f = await fixture("codex-oauth-token");
     await configureOrganizationApi(f, "custom");
+    const billingBefore = await runs.readBillingStatus(f.actor);
     const runId = await f.start();
     const claim = await f.claim(runId);
     onTestFinished(async () => {
@@ -1754,14 +1778,16 @@ describe("personal priority gateway and session boundaries", () => {
     });
     expect(kms.decryptCalls).toBeGreaterThan(0);
     expect(claim.billableFirewalls).toStrictEqual([]);
-    await expect(readRunModelSourceFixture(runId)).resolves.toMatchObject({
-      modelProvider: f.type,
-      modelProviderId: f.connected.id,
-      modelProviderCredentialScope: "member",
-      creditAdmitted: false,
-      builtInModelKeyId: null,
+    await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
+      source: {
+        providerType: f.type,
+        credentialScope: "member",
+        account: { status: "connected", id: f.connected.id },
+      },
     });
-    await expect(readRunUsageEventsFixture(runId)).resolves.toHaveLength(0);
+    await expect(runs.readBillingStatus(f.actor)).resolves.toMatchObject({
+      credits: billingBefore.credits,
+    });
   });
 
   it.each(["deleted", "unmapped"] as const)(

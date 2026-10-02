@@ -32,21 +32,21 @@ import {
   type CanonicalSlackInputAsset,
 } from "./canonical-asset.service";
 import {
-  canonicalSlackThreadStatusTargetForIngress,
-  clearCanonicalSlackThreadStatusIfIdle,
+  canonicalSlackThreadStatusTargetForIngress$,
+  clearCanonicalSlackThreadStatusIfIdle$,
 } from "./canonical-slack-thread-status.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
@@ -462,7 +462,6 @@ const settleCanonicalSlackStatusAfterPick$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     const notice = chatQueueWaitNotice(args.reason);
     if (notice) {
       await postCanonicalSlackWaitNotice(args.ingress, args.ingressId, notice);
@@ -470,8 +469,8 @@ const settleCanonicalSlackStatusAfterPick$ = command(
       return;
     }
     await tapError(
-      clearCanonicalSlackThreadStatusIfIdle(
-        db,
+      set(
+        clearCanonicalSlackThreadStatusIfIdle$,
         {
           chatThreadId: args.ingress.chatThreadId,
           channelId: args.ingress.channelId,
@@ -573,11 +572,15 @@ const enqueueCanonicalSlackMessage$ = command(
       id: args.ingress.ingressId,
       chatThreadId: args.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: args.chatThreadId,
-        orgId: args.orgId,
-        userId: args.ingress.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: args.chatThreadId,
+          orgId: args.orgId,
+          userId: args.ingress.userId,
+        },
+        signal,
+      ),
       userMessage: createUserMessageDocument({
         text: args.displayContent,
         files: canonicalInputMessageFiles(args.canonicalAssets),
@@ -718,10 +721,11 @@ const persistClaimedCanonicalSlackIngress$ = command(
     const orgId = ingress.orgId;
     const event = requireMatchingEvent(ingress.payload, ingress);
     const threadTs = slackPhysicalThreadTs(event);
-    const featureContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
       orgId,
       ingress.userId,
+      signal,
     );
     signal.throwIfAborted();
     const botToken = await decryptPersistentSecretValue(
@@ -897,7 +901,13 @@ export const processCanonicalSlackIngress$ = command(
         waitUntil(
           set(finishCanonicalSlackEnqueue$, ingress, args.ingressId, signal),
         );
-        waitUntil(notifyRunningChatRunOfPendingInput(db, ingress.chatThreadId));
+        waitUntil(
+          set(
+            notifyRunningChatRunOfPendingInput$,
+            ingress.chatThreadId,
+            signal,
+          ),
+        );
         return true;
       })(),
       signal,
@@ -916,13 +926,14 @@ export const processCanonicalSlackIngress$ = command(
     signal.throwIfAborted();
     await tapError(
       (async () => {
-        const target = await canonicalSlackThreadStatusTargetForIngress(
-          db,
+        const target = await set(
+          canonicalSlackThreadStatusTargetForIngress$,
           args.ingressId,
+          signal,
         );
         signal.throwIfAborted();
         if (target) {
-          await clearCanonicalSlackThreadStatusIfIdle(db, target, signal);
+          await set(clearCanonicalSlackThreadStatusIfIdle$, target, signal);
         }
       })(),
       (error) => {

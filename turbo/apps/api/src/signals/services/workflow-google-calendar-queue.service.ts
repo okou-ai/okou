@@ -2,7 +2,6 @@ import { connectors } from "@okouai/db/schema/connector";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 
 export interface GoogleCalendarQueueSource {
   readonly orgId: string;
@@ -44,7 +43,9 @@ function googleCalendarQueueAutomationCondition(
 }
 
 /** Queue admission gated by the current account, consumer and channel rows. */
-function googleCalendarQueueAdmissionSql(source: GoogleCalendarQueueSource) {
+export function googleCalendarQueueAdmissionSql(
+  source: GoogleCalendarQueueSource,
+) {
   return sql`SELECT 1 WHERE EXISTS (
       SELECT 1 FROM ${connectors}
       WHERE ${and(
@@ -72,23 +73,4 @@ function googleCalendarQueueAdmissionSql(source: GoogleCalendarQueueSource) {
         isNull(googleCalendarWatchStates.actionRequiredAt),
       )}
     )`;
-}
-
-/** Authorize the current channel and consumer in the local queue transaction. */
-export async function persistGoogleCalendarWorkflowSource(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly source: GoogleCalendarQueueSource;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const { source } = args;
-  if (
-    (await tx.execute(googleCalendarQueueAdmissionSql(source))).rowCount === 0
-  ) {
-    throw new GoogleCalendarSourceTransitionChangedError();
-  }
-  signal.throwIfAborted();
 }

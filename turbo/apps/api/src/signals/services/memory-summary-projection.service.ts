@@ -19,7 +19,7 @@ import {
 } from "@okouai/core/storage-names";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { command, computed, state, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, asc, eq, isNull, lte, ne, or } from "drizzle-orm";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { Parser } from "tar";
@@ -28,7 +28,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -831,7 +831,6 @@ function readyProjectionIsAuthentic(
 }
 
 export interface MemorySummaryProjectionReadInput {
-  readonly db: ReadonlyDb;
   readonly args: ReadMemorySummaryProjectionArgs;
 }
 
@@ -893,99 +892,76 @@ export function memorySummaryProjectionReadResult(
     : { input, ready: null, unavailableReason: "invalid" };
 }
 
-function createMemorySummaryProjectionReadObject(
-  input$: Computed<
-    | MemorySummaryProjectionReadInput
-    | undefined
-    | Promise<MemorySummaryProjectionReadInput | undefined>
-  >,
-) {
-  return computed(
-    async (get): Promise<MemorySummaryProjectionReadResult | null> => {
-      const input = await get(input$);
-      if (!input) {
-        return null;
-      }
-      const { db, args } = input;
-      const [row] = await db
-        .select({
-          storageId: storages.id,
-          storageOrgId: storages.orgId,
-          storageUserId: storages.userId,
-          storageName: storages.name,
-          projectionStatus: memorySummaryProjections.status,
-          content: memorySummaryProjections.content,
-          sourceHash: memorySummaryProjections.sourceHash,
-          sourceSize: memorySummaryProjections.sourceSize,
-          tokenCount: memorySummaryProjections.tokenCount,
-        })
-        .from(storages)
-        .innerJoin(
-          storageVersions,
-          and(
-            eq(storageVersions.storageId, storages.id),
-            eq(storageVersions.id, args.storageVersionId),
-          ),
-        )
-        .leftJoin(
-          memorySummaryProjections,
-          and(
-            eq(memorySummaryProjections.memoryStorageId, storages.id),
-            eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-            eq(memorySummaryProjections.orgId, args.orgId),
-            eq(memorySummaryProjections.userId, args.userId),
-          ),
-        )
-        .where(
-          and(
-            eq(storages.id, args.memoryStorageId),
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, args.userId),
-            eq(storages.name, MEMORY_ARTIFACT_NAME),
-            ne(storages.userId, VOLUME_ORG_USER_ID),
-          ),
-        )
-        .limit(1);
-      return memorySummaryProjectionReadResult(input, row);
-    },
-  );
-}
-
 /** Read one immutable projection snapshot without scheduling repair. */
-export function createMemorySummaryProjectionObjects(
-  input$: Parameters<typeof createMemorySummaryProjectionReadObject>[0],
-) {
-  const projection$ = createMemorySummaryProjectionReadObject(input$);
-  return { projection$ };
-}
+export const readMemorySummaryProjectionObservation$ = command(
+  async (
+    { get },
+    args: ReadMemorySummaryProjectionArgs,
+    signal: AbortSignal,
+  ): Promise<MemorySummaryProjectionReadResult> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        storageId: storages.id,
+        storageOrgId: storages.orgId,
+        storageUserId: storages.userId,
+        storageName: storages.name,
+        projectionStatus: memorySummaryProjections.status,
+        content: memorySummaryProjections.content,
+        sourceHash: memorySummaryProjections.sourceHash,
+        sourceSize: memorySummaryProjections.sourceSize,
+        tokenCount: memorySummaryProjections.tokenCount,
+      })
+      .from(storages)
+      .innerJoin(
+        storageVersions,
+        and(
+          eq(storageVersions.storageId, storages.id),
+          eq(storageVersions.id, args.storageVersionId),
+        ),
+      )
+      .leftJoin(
+        memorySummaryProjections,
+        and(
+          eq(memorySummaryProjections.memoryStorageId, storages.id),
+          eq(memorySummaryProjections.storageVersionId, storageVersions.id),
+          eq(memorySummaryProjections.orgId, args.orgId),
+          eq(memorySummaryProjections.userId, args.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(storages.id, args.memoryStorageId),
+          eq(storages.orgId, args.orgId),
+          eq(storages.userId, args.userId),
+          eq(storages.name, MEMORY_ARTIFACT_NAME),
+          ne(storages.userId, VOLUME_ORG_USER_ID),
+        ),
+      )
+      .limit(1);
 
-function createReadMemorySummaryProjectionCommand() {
-  const internalInput$ = state<MemorySummaryProjectionReadInput | undefined>(
-    undefined,
-  );
-  const input$ = computed((get) => {
-    return get(internalInput$);
-  });
-  const { projection$ } = createMemorySummaryProjectionObjects(input$);
-  return command(
-    async (
-      { get, set },
-      args: ReadMemorySummaryProjectionArgs,
-      signal: AbortSignal,
-    ): Promise<ReadyMemorySummaryProjection | null> => {
-      set(internalInput$, { db: set(writeDb$), args });
-      const observation = await get(projection$);
-      signal.throwIfAborted();
-      if (observation?.unavailableReason) {
-        log.warn("Memory summary projection is not ready", {
-          ...args,
-          reason: observation.unavailableReason,
-        });
-      }
-      return observation?.ready ?? null;
-    },
-  );
-}
+    signal.throwIfAborted();
+    return memorySummaryProjectionReadResult({ args }, row);
+  },
+);
 
-export const readMemorySummaryProjection$ =
-  createReadMemorySummaryProjectionCommand();
+export const readMemorySummaryProjection$ = command(
+  async (
+    { set },
+    args: ReadMemorySummaryProjectionArgs,
+    signal: AbortSignal,
+  ): Promise<ReadyMemorySummaryProjection | null> => {
+    const observation = await set(
+      readMemorySummaryProjectionObservation$,
+      args,
+      signal,
+    );
+    if (observation.unavailableReason) {
+      log.warn("Memory summary projection is not ready", {
+        ...args,
+        reason: observation.unavailableReason,
+      });
+    }
+    return observation.ready;
+  },
+);

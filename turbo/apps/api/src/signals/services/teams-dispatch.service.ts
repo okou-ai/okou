@@ -1,4 +1,4 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
@@ -50,7 +50,7 @@ import { bestEffort, safeJsonParse, settle } from "../utils";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -84,7 +84,7 @@ import {
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT =
   "`help`, `connect`, `disconnect`, `model`";
@@ -1574,12 +1574,15 @@ const persistTeamsChatMessage$ = command(
     const route = await set(
       ensureTeamsChatThreadRoute$,
       {
-        initialModel: await resolveDefaultModelFirstPin(
-          set(writeDb$),
-          args.installation.orgId,
-          args.connection.userId,
-          undefined,
-          undefined,
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: args.installation.orgId,
+            userId: args.connection.userId,
+            defaultSource: undefined,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
         ),
         connectionId: args.connection.id,
         conversationId: args.activity.conversationId,
@@ -1624,11 +1627,15 @@ const persistTeamsChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: route.chatThreadId,
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: route.chatThreadId,
+          orgId: args.installation.orgId,
+          userId: args.connection.userId,
+        },
+        signal,
+      ),
       userMessage: createUserMessageDocument({
         text: [
           args.activity.text,
@@ -1805,7 +1812,9 @@ const runAgentForTeams$ = command(
         }
       })(),
     );
-    waitUntil(notifyRunningChatRunOfPendingInput(db, persisted.chatThreadId));
+    waitUntil(
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
+    );
     return { kind: "accepted" };
   },
 );

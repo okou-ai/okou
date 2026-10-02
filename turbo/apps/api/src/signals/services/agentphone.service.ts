@@ -1,4 +1,4 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -57,7 +57,7 @@ import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -72,7 +72,7 @@ import {
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -1472,12 +1472,15 @@ const persistAgentPhoneChatMessage$ = command(
     const route = await set(
       ensureAgentPhoneChatThreadRoute$,
       {
-        initialModel: await resolveDefaultModelFirstPin(
-          set(writeDb$),
-          args.userLink.orgId,
-          args.userLink.userId,
-          undefined,
-          undefined,
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: args.userLink.orgId,
+            userId: args.userLink.userId,
+            defaultSource: undefined,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
         ),
         agentphoneUserLinkId: args.userLink.id,
         rootMessageId: args.rootMessageId,
@@ -1519,11 +1522,15 @@ const persistAgentPhoneChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: route.chatThreadId,
-        orgId: args.userLink.orgId,
-        userId: args.userLink.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: route.chatThreadId,
+          orgId: args.userLink.orgId,
+          userId: args.userLink.userId,
+        },
+        signal,
+      ),
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? args.event.body.trim() : args.prompt,
         files: integrationInputMessageFiles(assets),
@@ -1669,7 +1676,7 @@ const runAgentForAgentPhone$ = command(
       })(),
     );
     waitUntil(
-      notifyRunningChatRunOfPendingInput(args.db, persisted.chatThreadId),
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
     );
   },
 );

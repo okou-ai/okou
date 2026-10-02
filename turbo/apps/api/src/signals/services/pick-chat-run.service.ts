@@ -1,4 +1,4 @@
-import { computed, command, state, type Command } from "ccstate";
+import { computed, command, state, type Computed } from "ccstate";
 import {
   count,
   eq,
@@ -17,6 +17,7 @@ import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-s
 import {
   createOrgModelBootstrap,
   type PrefetchedModelBootstrap,
+  type OrgModelBootstrap,
 } from "./model-bootstrap.service";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
@@ -33,67 +34,31 @@ import {
   type ThreadClaim,
 } from "./thread-claim-run.service";
 
-interface OrgPickCursor {
+export interface OrgPickCursor {
   readonly queuedAt: Date;
   readonly chatThreadId: string;
   readonly visitedThreadIds: readonly string[];
 }
 
-/**
- * The captured lease plus the `queuedAt` observed when it was taken. Only the
- * plain `{ orgId, chatThreadId, claimId }` identity crosses into the child.
- */
+/** Actual lease-write receipt, including this invocation's plain prefetch. */
 interface LeasedThreadClaim extends ThreadClaim {
   readonly queuedAt: Date;
+  readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
+  readonly prefetchedModels?: PrefetchedModelBootstrap;
 }
 
 /** Fixed chat thread lease; it is never renewed. */
 const CHAT_THREAD_LEASE_MS = 10_000;
 
-/**
- * One pick's outcome: the launched run, a claim released because the
- * organization had no free concurrency slot, or nothing launched.
- */
+/** One pick launches a run, observes full capacity, or launches nothing. */
 export type PickResult =
   | { readonly kind: "launched"; readonly runId: string }
   | { readonly kind: "org-full" }
   | { readonly kind: "none" };
 
-export interface PickObjects {
-  readonly pick$: Command<Promise<PickResult>, [signal: AbortSignal]>;
-}
-
-export function createPickObjects(
-  orgId: string,
-  fixedThreadId?: string,
-  prefetchedBootstrap?: PrefetchedAgentBootstrap,
-  prefetchedModels?: PrefetchedModelBootstrap,
-): PickObjects {
-  const orgModels$ = computed((get) => {
-    return prefetchedModels?.orgId === orgId
-      ? prefetchedModels.org
-      : get(createOrgModelBootstrap(orgId));
-  });
-  const internalReloadPick$ = state(0);
-  const internalSelectedClaim$ = state<LeasedThreadClaim | null>(null);
-  const selectedClaimRunObjects$ = computed((get) => {
-    const claim = get(internalSelectedClaim$);
-    return claim
-      ? createThreadClaimRunObjects(
-          {
-            orgId: claim.orgId,
-            chatThreadId: claim.chatThreadId,
-            claimId: claim.claimId,
-          },
-          prefetchedBootstrap,
-          prefetchedModels,
-          orgModels$,
-        )
-      : null;
-  });
-  const internalOrgCursor$ = state<OrgPickCursor | null>(null);
+/** An independent observation, evaluated only when its owner first reads it. */
+function createOrgHasCapacity(orgId: string, models: OrgModelBootstrap) {
   const orgActiveRunCount$ = computed(async (get) => {
-    get(internalReloadPick$);
     const database = get(db$);
     const [row] = await database
       .select({ count: count() })
@@ -106,16 +71,12 @@ export function createPickObjects(
   });
 
   const orgCapacity$ = computed(async (get) => {
-    get(internalReloadPick$);
     const database = get(db$);
     const at = nowDate();
-    const [models, subscriptions] = await Promise.all([
-      get(orgModels$),
-      database
-        .select({ slots: orgConcurrencySubscriptions.slots })
-        .from(orgConcurrencySubscriptions)
-        .where(activeConcurrencySubscriptionPredicate(orgId, at)),
-    ]);
+    const subscriptions = await database
+      .select({ slots: orgConcurrencySubscriptions.slots })
+      .from(orgConcurrencySubscriptions)
+      .where(activeConcurrencySubscriptionPredicate(orgId, at));
     const limit = totalConcurrencyLimit({
       baseLimit: cappedBaseConcurrencyLimit(
         models.capabilities?.baseConcurrencyLimit ?? 0,
@@ -127,131 +88,213 @@ export function createPickObjects(
     return Number.isFinite(limit) ? limit : 0;
   });
 
-  const orgHasCapacity$ = computed(async (get) => {
+  return computed(async (get) => {
     const [activeCount, capacity] = await Promise.all([
       get(orgActiveRunCount$),
       get(orgCapacity$),
     ]);
     return capacity === 0 || activeCount < capacity;
   });
+}
 
-  const nextOrgThread$ = computed(async (get) => {
-    get(internalReloadPick$);
-    const after = get(internalOrgCursor$);
-    const database = get(db$);
-    const at = nowDate();
-    const [row] = await database
-      .select({
-        chatThreadId: queuedChatThreads.chatThreadId,
-        queuedAt: queuedChatThreads.queuedAt,
-      })
-      .from(queuedChatThreads)
-      .where(
-        and(
-          eq(queuedChatThreads.orgId, orgId),
-          or(
-            isNull(queuedChatThreads.claimExpiresAt),
-            lte(queuedChatThreads.claimExpiresAt, at),
-          ),
-          after === null
-            ? undefined
-            : or(
-                gt(queuedChatThreads.queuedAt, after.queuedAt),
-                and(
-                  eq(queuedChatThreads.queuedAt, after.queuedAt),
-                  gt(queuedChatThreads.chatThreadId, after.chatThreadId),
-                ),
-              ),
-          after === null
-            ? undefined
-            : notInArray(queuedChatThreads.chatThreadId, [
-                ...after.visitedThreadIds,
-              ]),
-          notExists(
-            database
-              .select({ runId: activeAgentRuns.runId })
-              .from(activeAgentRuns)
-              .where(
-                eq(
-                  activeAgentRuns.chatThreadId,
-                  queuedChatThreads.chatThreadId,
-                ),
-              ),
-          ),
-        ),
-      )
-      .orderBy(
-        asc(queuedChatThreads.queuedAt),
-        asc(queuedChatThreads.chatThreadId),
-      )
-      .limit(1);
-    return row ?? null;
+function createCapturedClaimObjects(
+  claim: LeasedThreadClaim,
+  models: OrgModelBootstrap,
+) {
+  const preparation = createThreadClaimRunObjects(
+    {
+      orgId: claim.orgId,
+      chatThreadId: claim.chatThreadId,
+      claimId: claim.claimId,
+    },
+    claim.prefetchedBootstrap,
+    claim.prefetchedModels,
+    models,
+  );
+  const orgHasCapacity$ = createOrgHasCapacity(claim.orgId, models);
+  // This separate, predeclared graph is first evaluated after an org-full
+  // release. Re-reading the initial memoized graph would lose a slot wakeup.
+  const orgHasCapacityAfterRelease$ = createOrgHasCapacity(claim.orgId, models);
+  return { ...preparation, orgHasCapacity$, orgHasCapacityAfterRelease$ };
+}
+
+interface PickInput {
+  readonly orgId: string;
+  readonly chatThreadId?: string;
+  readonly after?: OrgPickCursor | null;
+  readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
+  readonly prefetchedModels?: PrefetchedModelBootstrap;
+}
+
+export interface PickIteration {
+  readonly result: PickResult;
+  readonly cursor: OrgPickCursor | null;
+}
+
+function createPickObjects() {
+  // Append only actual conditional-write receipts, not a latest-input slot.
+  const claimReceipts$ = state<readonly LeasedThreadClaim[]>([]);
+  const graphCache$ = computed(() => {
+    return new WeakMap<
+      LeasedThreadClaim,
+      Computed<Promise<ReturnType<typeof createCapturedClaimObjects>>>
+    >();
+  });
+  const capturedClaims$ = computed((get) => {
+    const graphCache = get(graphCache$);
+    const graphs = new Map<
+      string,
+      Computed<Promise<ReturnType<typeof createCapturedClaimObjects>>>
+    >();
+    for (const claim of get(claimReceipts$)) {
+      let graph = graphCache.get(claim);
+      if (!graph) {
+        // Install the private receipt node synchronously, before its model
+        // promise can yield. Concurrent receipt-list evaluations share it.
+        graph = computed(async (read) => {
+          const models =
+            claim.prefetchedModels?.orgId === claim.orgId
+              ? await claim.prefetchedModels.org
+              : await read(createOrgModelBootstrap(claim.orgId));
+          return createCapturedClaimObjects(claim, models);
+        });
+        graphCache.set(claim, graph);
+      }
+      graphs.set(claim.claimId, graph);
+    }
+    return graphs;
   });
 
-  const claim$ = command(async ({ get, set }, signal: AbortSignal) => {
-    let threadId = fixedThreadId;
-    if (threadId === undefined) {
-      const candidate = await get(nextOrgThread$);
+  const nextOrgThread$ = command(
+    async ({ get }, input: PickInput, signal: AbortSignal) => {
+      const { orgId } = input;
+      const after = input.after ?? null;
+      const database = get(db$);
+      const at = nowDate();
+      const [row] = await database
+        .select({
+          chatThreadId: queuedChatThreads.chatThreadId,
+          queuedAt: queuedChatThreads.queuedAt,
+        })
+        .from(queuedChatThreads)
+        .where(
+          and(
+            eq(queuedChatThreads.orgId, orgId),
+            or(
+              isNull(queuedChatThreads.claimExpiresAt),
+              lte(queuedChatThreads.claimExpiresAt, at),
+            ),
+            after === null
+              ? undefined
+              : or(
+                  gt(queuedChatThreads.queuedAt, after.queuedAt),
+                  and(
+                    eq(queuedChatThreads.queuedAt, after.queuedAt),
+                    gt(queuedChatThreads.chatThreadId, after.chatThreadId),
+                  ),
+                ),
+            after === null
+              ? undefined
+              : notInArray(queuedChatThreads.chatThreadId, [
+                  ...after.visitedThreadIds,
+                ]),
+            notExists(
+              database
+                .select({ runId: activeAgentRuns.runId })
+                .from(activeAgentRuns)
+                .where(
+                  eq(
+                    activeAgentRuns.chatThreadId,
+                    queuedChatThreads.chatThreadId,
+                  ),
+                ),
+            ),
+          ),
+        )
+        .orderBy(
+          asc(queuedChatThreads.queuedAt),
+          asc(queuedChatThreads.chatThreadId),
+        )
+        .limit(1);
       signal.throwIfAborted();
-      if (!candidate) {
-        return null;
-      }
-      set(internalOrgCursor$, (previous) => {
-        return {
+      return row ?? null;
+    },
+  );
+
+  const claim$ = command(
+    async ({ set }, input: PickInput, signal: AbortSignal) => {
+      const { orgId, prefetchedBootstrap, prefetchedModels } = input;
+      let threadId = input.chatThreadId;
+      let cursor = input.after ?? null;
+      if (threadId === undefined) {
+        const candidate = await set(nextOrgThread$, input, signal);
+        if (!candidate) {
+          return { claim: null, cursor };
+        }
+        cursor = {
           ...candidate,
           visitedThreadIds: [
-            ...(previous?.visitedThreadIds ?? []),
+            ...(cursor?.visitedThreadIds ?? []),
             candidate.chatThreadId,
           ],
         };
-      });
-      threadId = candidate.chatThreadId;
-    }
-    const database = set(writeDb$);
-    const at = nowDate();
-    const claimId = randomUUID();
-    const [row] = await database
-      .update(queuedChatThreads)
-      .set({
-        claimId,
-        claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
-      })
-      .where(
-        and(
-          eq(queuedChatThreads.orgId, orgId),
-          eq(queuedChatThreads.chatThreadId, threadId),
-          or(
-            isNull(queuedChatThreads.claimExpiresAt),
-            lte(queuedChatThreads.claimExpiresAt, at),
-          ),
-          notExists(
-            database
-              .select({ runId: activeAgentRuns.runId })
-              .from(activeAgentRuns)
-              .where(eq(activeAgentRuns.chatThreadId, threadId)),
-          ),
-        ),
-      )
-      .returning({
-        chatThreadId: queuedChatThreads.chatThreadId,
-        queuedAt: queuedChatThreads.queuedAt,
-      });
-    signal.throwIfAborted();
-    const claim = row
-      ? {
-          orgId,
-          chatThreadId: row.chatThreadId,
-          claimId,
-          queuedAt: row.queuedAt,
-        }
-      : null;
-    return claim;
-  });
+        threadId = candidate.chatThreadId;
+      }
+      const database = set(writeDb$);
+      const at = nowDate();
+      const claimId = randomUUID();
+      const row = (
+        await database
+          .update(queuedChatThreads)
+          .set({
+            claimId,
+            claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
+          })
+          .where(
+            and(
+              eq(queuedChatThreads.orgId, orgId),
+              eq(queuedChatThreads.chatThreadId, threadId),
+              or(
+                isNull(queuedChatThreads.claimExpiresAt),
+                lte(queuedChatThreads.claimExpiresAt, at),
+              ),
+              notExists(
+                database
+                  .select({ runId: activeAgentRuns.runId })
+                  .from(activeAgentRuns)
+                  .where(eq(activeAgentRuns.chatThreadId, threadId)),
+              ),
+            ),
+          )
+          .returning({
+            chatThreadId: queuedChatThreads.chatThreadId,
+            queuedAt: queuedChatThreads.queuedAt,
+          })
+      )[0];
+      const claim: LeasedThreadClaim | null = row
+        ? Object.freeze({
+            orgId,
+            chatThreadId: row.chatThreadId,
+            claimId,
+            queuedAt: row.queuedAt,
+            ...(prefetchedBootstrap === undefined
+              ? {}
+              : { prefetchedBootstrap }),
+            ...(prefetchedModels === undefined ? {} : { prefetchedModels }),
+          })
+        : null;
+      if (claim) {
+        // Preserve the actual SQL receipt before observing cancellation.
+        set(claimReceipts$, (previous) => {
+          return [...previous, claim];
+        });
+      }
+      signal.throwIfAborted();
+      return { claim, cursor };
+    },
+  );
 
-  /**
-   * Release this claim's lease. Returns whether the lease was still ours; a
-   * lease lost to expiry and another picker releases nothing.
-   */
+  /** Release only this token; a replacement lease is never released. */
   const releaseClaim$ = command(
     async (
       { set },
@@ -274,28 +317,20 @@ export function createPickObjects(
     },
   );
 
-  /**
-   * New input may remain behind this claim, so discover it with one fresh
-   * fixed-thread pick in the background, as the enqueue scheduler does after
-   * a commit. The scheduler lives in chat-thread-queue-drain, which imports
-   * this module, so the pick is built here on the same request Store. This is
-   * new work, not a retry: `pick$` never loops.
-   */
-  const nextThreadPickObjects$ = computed((get) => {
-    const claim = get(internalSelectedClaim$);
-    return claim ? createPickObjects(claim.orgId, claim.chatThreadId) : null;
-  });
+  /** New work uses the same stable command, without reusing S1 prefetch. */
   const scheduleThreadPick$ = command(
-    ({ get, set }, signal: AbortSignal): void => {
-      const next = get(nextThreadPickObjects$);
-      if (!next) {
-        throw new Error("Rescheduling requires a selected thread claim");
-      }
-      waitUntil(set(next.pick$, signal));
+    ({ set }, claim: LeasedThreadClaim, signal: AbortSignal): void => {
+      signal.throwIfAborted();
+      waitUntil(
+        set(
+          pick$,
+          { orgId: claim.orgId, chatThreadId: claim.chatThreadId },
+          signal,
+        ),
+      );
     },
   );
 
-  /** Release a claim that left input in the queue and pick the thread again. */
   const releaseClaimAndSchedulePick$ = command(
     async (
       { set },
@@ -303,16 +338,12 @@ export function createPickObjects(
       signal: AbortSignal,
     ): Promise<void> => {
       if (await set(releaseClaim$, claim, signal)) {
-        set(scheduleThreadPick$, signal);
+        set(scheduleThreadPick$, claim, signal);
       }
     },
   );
 
-  /**
-   * Delete the empty queue row only while both the token and `queuedAt` are
-   * unchanged. A miss while the lease is still ours means input arrived under
-   * this lease; its enqueuer's pick could not claim, so release and pick again.
-   */
+  /** An enqueue under this lease advances queuedAt and prevents deletion. */
   const deleteEmptyQueue$ = command(
     async (
       { set },
@@ -337,40 +368,31 @@ export function createPickObjects(
     },
   );
 
-  /** Schedule one Thread owner; durable creation and startup are private to it. */
-  const pick$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<PickResult> => {
+  /** The Thread child exclusively owns creation, rejection and startup. */
+  const pickClaim$ = command(
+    async (
+      { get, set },
+      claim: LeasedThreadClaim,
+      signal: AbortSignal,
+    ): Promise<PickResult> => {
       signal.throwIfAborted();
-      set(internalReloadPick$, (revision) => {
-        return revision + 1;
-      });
-      const claim = await set(claim$, signal);
+      const captured = get(capturedClaims$).get(claim.claimId);
+      if (!captured) {
+        throw new Error("Successful queue claim has no captured run graph");
+      }
+      const claimed = await get(captured);
       signal.throwIfAborted();
-      if (!claim) {
-        return { kind: "none" };
-      }
-      set(internalSelectedClaim$, claim);
-      const claimed = get(selectedClaimRunObjects$);
-      if (!claimed) {
-        throw new Error("Selected thread claim is missing");
-      }
       const [hasCapacity, hasInput] = await Promise.all([
-        get(orgHasCapacity$),
+        get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
       ]);
       signal.throwIfAborted();
       if (!hasCapacity) {
         if (await set(releaseClaim$, claim, signal)) {
-          // A slot released while this lease was held saw the thread as
-          // claimed and skipped it; re-read capacity after releasing so that
-          // wakeup is not lost.
-          set(internalReloadPick$, (revision) => {
-            return revision + 1;
-          });
-          const freed = await get(orgHasCapacity$);
+          const freed = await get(claimed.orgHasCapacityAfterRelease$);
           signal.throwIfAborted();
           if (freed) {
-            set(scheduleThreadPick$, signal);
+            set(scheduleThreadPick$, claim, signal);
           }
         }
         return { kind: "org-full" };
@@ -387,5 +409,23 @@ export function createPickObjects(
       return { kind: "launched", runId };
     },
   );
+
+  const pick$ = command(
+    async (
+      { set },
+      input: PickInput,
+      signal: AbortSignal,
+    ): Promise<PickIteration> => {
+      signal.throwIfAborted();
+      const { claim, cursor } = await set(claim$, input, signal);
+      return {
+        result: claim ? await set(pickClaim$, claim, signal) : { kind: "none" },
+        cursor,
+      };
+    },
+  );
   return { pick$ };
 }
+
+/** Stable entry; successful write receipts own per-Store memoized child graphs. */
+export const pickChatThread$ = createPickObjects().pick$;

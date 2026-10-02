@@ -17,7 +17,8 @@ import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
 } from "./chat-event-append.service";
-import { markChatThreadQueued } from "./queued-chat-thread.service";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
 
 type IntegrationIngressReceipt =
   | {
@@ -144,14 +145,20 @@ export const enqueueIntegrationChatInput$ = command(
             ),
           );
       }
-      if (!event) {
-        return null;
+      if (event) {
+        // The queue row is locked last and only advances queuedAt; a live
+        // claim lease stays with its holder (docs/chat-run-pick.md).
+        const plan = queuedChatThreadEnqueuePlan({
+          chatThreadId,
+          orgId: args.orgId,
+        });
+        await tx
+          .insert(queuedChatThreads)
+          .values(plan.values)
+          .onConflictDoUpdate(plan.conflict);
+        signal.throwIfAborted();
       }
-      // The queue row is locked last and only advances queuedAt; a live
-      // claim lease stays with its holder (docs/chat-run-pick.md).
-      await markChatThreadQueued(tx, { chatThreadId, orgId: args.orgId });
-      signal.throwIfAborted();
-      return event.id;
+      return event?.id ?? null;
     });
   },
 );

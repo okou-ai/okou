@@ -26,7 +26,7 @@ import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { safeJsonParse } from "../utils";
-import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
+import { mcpChatThreadModels$ } from "./mcp-chat-thread-model.service";
 
 interface Principal {
   readonly userId: string;
@@ -132,7 +132,7 @@ const threadQuery$ = command(
       readonly cursor: Cursor | null;
       readonly threadId?: string;
     },
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ) => {
     const { principal, input, cursor, threadId } = args;
     const db = set(writeDb$);
@@ -197,7 +197,7 @@ const threadQuery$ = command(
       },
       { accessMode: "read only" },
     );
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     return rows;
   },
 );
@@ -222,16 +222,16 @@ const projectThreads$ = command(
     { set },
     principal: Principal,
     rows: readonly ThreadRow[],
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<McpChatThread[]> => {
-    const models = await mcpChatThreadModels(
-      set(writeDb$),
+    const models = await set(
+      mcpChatThreadModels$,
       principal,
       rows.map((row) => {
         return row.selectedModel;
       }),
+      signal,
     );
-    signal?.throwIfAborted();
     return rows.map((row) => {
       const model = models.get(row.selectedModel);
       if (!model) {
@@ -265,7 +265,7 @@ export const listMcpChatThreads$ = command(
     { set },
     principal: Principal,
     input: McpListChatThreadsInput,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<McpThreadReadResult<McpListChatThreadsOutput>> => {
     const filters = filterIdentity(input);
     const cursor = input.cursor
@@ -279,7 +279,6 @@ export const listMcpChatThreads$ = command(
       };
     }
     const rows = await set(threadQuery$, { principal, input, cursor }, signal);
-    signal?.throwIfAborted();
     const page = rows.slice(0, input.limit);
     const last = page.at(-1);
     const issuedAt = cursor?.issuedAt ?? now();
@@ -312,7 +311,7 @@ export const getMcpChatThread$ = command(
     { set },
     principal: Principal,
     input: McpGetChatThreadInput,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<McpThreadReadResult<McpGetChatThreadOutput>> => {
     const rows = await set(
       threadQuery$,
@@ -324,7 +323,7 @@ export const getMcpChatThread$ = command(
       },
       signal,
     );
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     if (rows.length === 0) {
       return {
         kind: "not_found" as const,

@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { Buffer } from "node:buffer";
 import { createHmac, createSign, timingSafeEqual } from "node:crypto";
 
@@ -30,7 +35,6 @@ import { now } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { githubAppUrl } from "../../lib/github-official-app";
 import { encryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 const L = logger("GithubOAuth");
 const INSTALLATION_ID_RE = /^\d+$/;
@@ -837,10 +841,22 @@ export async function loadComposeFeatureSwitchContext(
     throw new Error(`Agent compose not found: composeId=${args.composeId}`);
   }
 
-  return await loadUserFeatureSwitchContext(
-    args.db,
+  const featureSwitchContextRows0 = await args.db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(
+      userFeatureSwitchRowCondition(
+        compose.orgId,
+        args.userId ?? compose.userId,
+      ),
+    );
+  return featureSwitchContextFromRows(
     compose.orgId,
     args.userId ?? compose.userId,
+    featureSwitchContextRows0,
   );
 }
 

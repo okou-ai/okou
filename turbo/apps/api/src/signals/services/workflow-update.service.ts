@@ -1,3 +1,12 @@
+import { parseRawRows } from "../../lib/db-raw-rows";
+import {
+  piStableContextGenerationReceiptSchema,
+  beginPiStableContextPublicationSql,
+  piStableContextPublicationFromReceipt,
+  piStableContextWorkflowPublicationKey,
+} from "./pi-stable-context-generation.service";
+import { randomUUID } from "node:crypto";
+
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import type { WorkflowUpdateRequest } from "@okouai/api-contracts/contracts/workflows";
@@ -18,11 +27,6 @@ import {
   SKILL_FILENAME,
 } from "./workflow-volume.service";
 import type { WorkflowRow } from "./workflow-data.service";
-import {
-  beginPiStableContextPublication,
-  piStableContextWorkflowInvalidationOptions,
-  piStableContextWorkflowPublicationKey,
-} from "./pi-stable-context-generation.service";
 
 interface UpdateWorkflowInput {
   readonly workflow: WorkflowRow;
@@ -80,25 +84,31 @@ async function commitWorkflowMetadata(
     if (!updated) {
       return { updated: false as const };
     }
+    const piMutation0Scope = {
+      orgId: workflow.orgId,
+      agentId: workflow.agentId,
+      ...(workflow.visibility === "private"
+        ? { userId: workflow.ownerUserId }
+        : {}),
+    };
+    const piMutation0Key = piStableContextWorkflowPublicationKey(workflow.id);
+    const piMutation0Token = randomUUID();
     const stableContextPublication = derived.volumeChanged
-      ? await beginPiStableContextPublication(
-          tx,
-          {
-            orgId: workflow.orgId,
-            agentId: workflow.agentId,
-            ...(workflow.visibility === "private"
-              ? { userId: workflow.ownerUserId }
-              : {}),
-          },
-          piStableContextWorkflowPublicationKey(workflow.id),
-          piStableContextWorkflowInvalidationOptions({
-            kind: "upsert",
-            workflow: {
-              workflowId: workflow.id,
-              name: derived.nextName,
-              officialDefinitionName: workflow.officialDefinitionName,
-            },
-          }),
+      ? piStableContextPublicationFromReceipt(
+          parseRawRows(
+            piStableContextGenerationReceiptSchema,
+            await tx.execute(
+              beginPiStableContextPublicationSql(
+                piMutation0Scope,
+                piMutation0Key,
+                piMutation0Token,
+                nowDate(),
+              ),
+            ),
+          ),
+          piMutation0Scope,
+          piMutation0Key,
+          piMutation0Token,
         )
       : undefined;
     return { updated: true as const, stableContextPublication };

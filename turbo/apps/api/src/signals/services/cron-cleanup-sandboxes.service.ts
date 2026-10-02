@@ -43,10 +43,12 @@ import {
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
-import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
+import {
+  pickAllQueuedOrgs$,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import { cleanupExpiredPiLaunchArtifacts$ } from "./pi-launch-artifacts-cleanup.service";
-import { createPickObjects } from "./pick-chat-run.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import {
   cleanupThreadlessRuns$,
@@ -647,8 +649,7 @@ const cleanupFixtureMaintenance$ = command(
       .where(inArray(queuedChatThreads.chatThreadId, [...scope.chatThreadIds]));
     signal.throwIfAborted();
     for (const thread of queuedThreads) {
-      const { pick$ } = createPickObjects(thread.orgId, thread.chatThreadId);
-      await set(pick$, signal);
+      await set(pickEnqueuedChatThread$, thread, signal);
       signal.throwIfAborted();
     }
   },

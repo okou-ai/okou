@@ -1,4 +1,9 @@
 import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import {
   and,
   asc,
   desc,
@@ -28,7 +33,7 @@ import { storages } from "@okouai/db/schema/storage";
 import type { ApiDb, Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import {
   admitPiMemoryStage1Candidate,
   getPiMemoryStage1AdmissionPrerequisiteSkipReason,
@@ -86,20 +91,6 @@ function sourceArgs(run: Run) {
  * row was inserted earlier in `tx`, so its persisted launch fields are the
  * Stage 1 source.
  */
-export async function requestPiMemoryStage1DayForAdmittedRun(
-  tx: Tx,
-  runId: string,
-): Promise<void> {
-  const [run] = await tx
-    .select(sourceRunColumns)
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!run) {
-    throw new Error(`Admitted run ${runId} is missing from its transaction`);
-  }
-  await requestPiMemoryStage1Day(tx, run);
-}
 
 // Called only inside the successful pending admission transaction.
 // No history scan, Storage creation, blob read, or external call under its locks.
@@ -115,7 +106,18 @@ export async function requestPiMemoryStage1Day(
   if (reason || !run.chatThreadId || run.status !== "pending") {
     return;
   }
-  const context = await loadUserFeatureSwitchContext(tx, run.orgId, run.userId);
+  const featureSwitchContextRows0 = await tx
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(run.orgId, run.userId));
+  const context = featureSwitchContextFromRows(
+    run.orgId,
+    run.userId,
+    featureSwitchContextRows0,
+  );
   if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
     log.debug("Pi memory Stage 1 startup", {
       userId: run.userId,
@@ -374,7 +376,18 @@ async function commitSelectedPiMemoryStage1Day(
   if (!day || day.day !== piMemoryStage1UtcDay(nowDate())) {
     return;
   }
-  const context = await loadUserFeatureSwitchContext(tx, day.orgId, day.userId);
+  const featureSwitchContextRows1 = await tx
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(day.orgId, day.userId));
+  const context = featureSwitchContextFromRows(
+    day.orgId,
+    day.userId,
+    featureSwitchContextRows1,
+  );
   let count = 0;
   if (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
     for (const threadId of chosen) {
@@ -466,10 +479,17 @@ export async function consumePiMemoryStage1Days(
     .orderBy(asc(piMemoryStage1Days.userId))
     .limit(64);
   for (const request of requests) {
-    const ownerContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContextRows2 = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(request.orgId, request.userId));
+    const ownerContext = featureSwitchContextFromRows(
       request.orgId,
       request.userId,
+      featureSwitchContextRows2,
     );
     if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, ownerContext)) {
       await db
@@ -607,10 +627,17 @@ export async function validatePiMemoryStage1Selection(
   if (!frozen || selection.day !== piMemoryStage1UtcDay(nowDate())) {
     return false;
   }
-  const context = await loadUserFeatureSwitchContext(
-    tx,
+  const featureSwitchContextRows3 = await tx
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(selection.orgId, selection.userId));
+  const context = featureSwitchContextFromRows(
     selection.orgId,
     selection.userId,
+    featureSwitchContextRows3,
   );
   if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
     return false;

@@ -1,86 +1,195 @@
-import { randomUUID } from "node:crypto";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
+import type { JsonSchemaType } from "@modelcontextprotocol/server";
+import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
+import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import {
+  mcpGetChatThreadOutputSchema,
+  mcpListChatThreadsOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-threads";
+import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
+import { mcpGetChatStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-status";
+import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { mcpServerRoutes } from "../mcp-server";
-import { createRouteMocks } from "./helpers/route-test";
-import {
-  resource,
-  issuer,
-  readScope,
-  orgScope,
-  requiredScopes,
-  defaultScopes,
-  rpc,
-  requestBody,
-  protocolHeaders,
-  createMcpServerTestApi,
-} from "./helpers/mcp-server";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
-const { client, fixture } = createMcpServerTestApi(context);
-
-describe("external MCP entry", () => {
-  it("publishes public cross-origin metadata without authentication", async () => {
-    mockEnv("MCP_RESOURCE_URL", resource);
-    mockEnv("MCP_OAUTH_ISSUER", issuer);
-    const response = await accept(
-      client().metadata({
-        extraHeaders: { Origin: "https://client.example.test" },
-      }),
-      [200],
-    );
-    expect(response.body).toMatchObject({
-      resource,
-      authorization_servers: [issuer],
-      scopes_supported: defaultScopes.split(" "),
-      bearer_methods_supported: ["header"],
-    });
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+const resource = "https://api.mcp.example.test/mcp";
+const issuer = "https://clerk.mcp.example.test";
+const orgScope = "user:org:read";
+const readScope = "okou:chat:read";
+const requiredScopes = `${orgScope} ${readScope}`;
+const defaultScopes =
+  "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
+const modernVersion = "2026-07-28";
+function client() {
+  return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
+}
+function rpc(body: unknown): unknown {
+  if (typeof body !== "string") {
+    return body;
+  }
+  const frame = body.split("\n").find((line) => {
+    return line.startsWith("data: ");
   });
-
-  it("isolates absent MCP configuration from first-party feature access", async () => {
-    mockEnv("MCP_RESOURCE_URL", undefined);
-    mockEnv("MCP_OAUTH_ISSUER", undefined);
-    await expect(client().metadata()).resolves.toMatchObject({ status: 503 });
-    createRouteMocks(context).clerk.session(
-      `user_${randomUUID()}`,
-      `org_${randomUUID()}`,
-    );
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
+  if (!frame) {
+    throw new Error("Expected a complete MCP SSE response");
+  }
+  return JSON.parse(frame.slice(6)) as unknown;
+}
+function requestBody(
+  method: string,
+  modern = true,
+  params: Record<string, unknown> = {},
+) {
+  return {
+    jsonrpc: "2.0",
+    id: 1,
+    method,
+    params: {
+      ...params,
+      ...(modern
+        ? {
+            _meta: {
+              "io.modelcontextprotocol/protocolVersion": modernVersion,
+              "io.modelcontextprotocol/clientCapabilities": {},
+              "io.modelcontextprotocol/clientInfo": {
+                name: "okou-test",
+                version: "1",
+              },
+            },
+          }
+        : {}),
+    },
+  };
+}
+function protocolHeaders(
+  token: string,
+  method: string,
+  modern = true,
+  toolName = "list_chat_threads",
+) {
+  return {
+    authorization: `Bearer ${token}`,
+    accept: "application/json, text/event-stream",
+    "MCP-Protocol-Version": modern ? modernVersion : "2025-11-25",
+    ...(modern ? { "MCP-Method": method } : {}),
+    ...(modern && method === "tools/call" ? { "MCP-Name": toolName } : {}),
+  };
+}
+function fixture() {
+  mockEnv("MCP_RESOURCE_URL", resource);
+  mockEnv("MCP_OAUTH_ISSUER", issuer);
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const kid = randomUUID();
+  server.use(
+    http.get("https://api.clerk.com/v1/jwks", () => {
+      return HttpResponse.json({
+        keys: [
+          {
+            ...keys.publicKey.export({ format: "jwk" }),
+            kid,
+            alg: "RS256",
+            use: "sig",
+          },
+        ],
+      });
+    }),
+  );
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: [
+      { id: randomUUID(), role: "org:member", organization: { id: orgId } },
+    ],
+    totalCount: 1,
   });
-
-  it("challenges unauthenticated calls and ignores a session cookie", async () => {
-    await fixture();
-    const response = await accept(
-      client().request({
-        body: requestBody("tools/list"),
-        extraHeaders: { cookie: "__session=clerk-session" },
+  function token(overrides: Record<string, unknown> = {}, typ = "at+jwt") {
+    const seconds = Math.floor(now() / 1000);
+    const header = Buffer.from(
+      JSON.stringify({ alg: "RS256", kid, typ }),
+    ).toString("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({
+        iss: issuer,
+        aud: resource,
+        sub: userId,
+        org_id: orgId,
+        client_id: "mcp_test_client",
+        scope: requiredScopes,
+        iat: seconds,
+        nbf: seconds - 1,
+        exp: seconds + 3600,
+        ...overrides,
       }),
-      [401],
-    );
-    expect(response.body).toStrictEqual({ error: "unauthorized" });
-    expect(response.headers.get("www-authenticate")).toBe(
-      `Bearer resource_metadata="https://api.mcp.example.test/.well-known/oauth-protected-resource/mcp", scope="${defaultScopes}"`,
-    );
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    ).toString("base64url");
+    const input = `${header}.${payload}`;
+    return `${input}.${sign("RSA-SHA256", Buffer.from(input), keys.privateKey).toString("base64url")}`;
+  }
+  return { token, userId, orgId };
+}
+async function callTool(
+  token: string,
+  name: string,
+  args: Record<string, unknown> = {},
+) {
+  const response = await accept(
+    client().request({
+      extraHeaders: protocolHeaders(token, "tools/call", true, name),
+      body: requestBody("tools/call", true, { name, arguments: args }),
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  return z
+    .object({
+      result: z.object({
+        isError: z.boolean().optional(),
+        content: z.array(
+          z.object({ type: z.literal("text"), text: z.string() }),
+        ),
+        structuredContent: z.unknown().optional(),
+      }),
+    })
+    .parse(rpc(response.body)).result;
+}
+function structuredToolError(result: Awaited<ReturnType<typeof callTool>>) {
+  expect(result.isError).toBeTruthy();
+  return mcpToolErrorContentSchema.parse(result.structuredContent).error;
+}
+async function conversationFixture() {
+  const auth = fixture();
+  const api = createBddApi(context);
+  const chat = createChatFilesBddApi(context);
+  const actor = api.user({ userId: auth.userId, orgId: auth.orgId });
+  api.acceptAgentStorageWrites();
+  const agent = await api.createAgent(actor, {
+    displayName: "MCP parity Agent",
+    visibility: "private",
   });
+  await createRunsApi(context).ensureOrgModelProvider(actor);
+  const token = auth.token({ scope: defaultScopes });
+  return { auth, api, chat, actor, agentId: agent.agentId, token };
+}
 
+describe("external MCP authentication and transport", () => {
   it.each([
     { iss: "https://other-clerk.example.test" },
     { aud: "https://different-resource.example.test/mcp" },
@@ -451,5 +560,462 @@ describe("external MCP entry", () => {
         body: requestBody("tools/list"),
       }),
     ).resolves.toMatchObject({ status: 200 });
+  });
+});
+
+describe("MCP Web parity", () => {
+  it.each([true, false])(
+    "advertises one protocol through the SDK with modern=%s",
+    async (modern) => {
+      const auth = fixture();
+      const app = createAppWithRoutes({
+        routes: mcpServerRoutes,
+        signal: context.signal,
+      });
+      const transport = new StreamableHTTPClientTransport(new URL(resource), {
+        authProvider: {
+          token: () => {
+            return Promise.resolve(auth.token({ scope: defaultScopes }));
+          },
+        },
+        fetch: async (input, init) => {
+          return await app.request(new Request(input, init));
+        },
+      });
+      const sdk = new Client(
+        { name: "okou-parity-test", version: "1" },
+        {
+          versionNegotiation: {
+            mode: modern ? { pin: modernVersion } : "legacy",
+          },
+        },
+      );
+      onTestFinished(() => {
+        return sdk.close();
+      });
+      await sdk.connect(transport);
+      const tools = await sdk.listTools();
+      expect(
+        tools.tools.map((tool) => {
+          return tool.name;
+        }),
+      ).not.toContain("create_chat_thread");
+      expect(
+        tools.tools.map((tool) => {
+          return tool.name;
+        }),
+      ).toContain("send_chat_message");
+      const validator = new AjvJsonSchemaValidator();
+      for (const tool of tools.tools) {
+        expect(() => {
+          validator.getValidator(tool.inputSchema as JsonSchemaType);
+          validator.getValidator(tool.outputSchema as JsonSchemaType);
+        }).not.toThrow();
+      }
+      const send = tools.tools.find((tool) => {
+        return tool.name === "send_chat_message";
+      });
+      expect(send?.inputSchema).toMatchObject({
+        type: "object",
+        required: ["agentId", "prompt"],
+      });
+      expect(JSON.stringify(send?.inputSchema)).not.toMatch(
+        /requestId|inputRef|waitMs/u,
+      );
+      const listed = await sdk.callTool({
+        name: "list_chat_threads",
+        arguments: {},
+      });
+      expect(listed).toMatchObject({
+        structuredContent: { threads: [], nextCursor: null },
+      });
+    },
+  );
+
+  it("creates and continues ordinary conversations without a request identity", async () => {
+    const f = await conversationFixture();
+    const first = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          prompt: "First ordinary MCP input",
+        })
+      ).structuredContent,
+    );
+    const continued = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          threadId: first.threadId,
+          prompt: "Second ordinary MCP input",
+        })
+      ).structuredContent,
+    );
+    expect(continued.threadId).toBe(first.threadId);
+    expect(first.runId).toBeNull();
+    const history = mcpGetChatMessagesOutputSchema.parse(
+      (
+        await callTool(f.token, "get_chat_messages", {
+          threadId: first.threadId,
+        })
+      ).structuredContent,
+    );
+    expect(
+      history.messages
+        .filter((message) => {
+          return message.role === "user";
+        })
+        .map((message) => {
+          return message.text;
+        }),
+    ).toStrictEqual(["First ordinary MCP input", "Second ordinary MCP input"]);
+    const web = await f.chat.listThreadEvents(f.actor, first.threadId);
+    expect(JSON.stringify(web.events)).toContain("mcp_test_client");
+    expect(first).not.toHaveProperty("inputRef");
+    expect(first).not.toHaveProperty("replayed");
+  });
+
+  it("does not deduplicate two new sends with identical text", async () => {
+    const f = await conversationFixture();
+    const first = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          prompt: "Repeated intended text",
+        })
+      ).structuredContent,
+    );
+    const second = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          prompt: "Repeated intended text",
+        })
+      ).structuredContent,
+    );
+    expect(second.threadId).not.toBe(first.threadId);
+  });
+
+  it.each([
+    { requestId: randomUUID() },
+    { text: "old send input" },
+    { inputRef: { threadId: randomUUID(), eventId: randomUUID(), seqId: 1 } },
+    { waitMs: 10 },
+    { orgId: "org_override" },
+    { clientEventId: randomUUID() },
+  ])("rejects removed protocol and identity overrides %j", async (extra) => {
+    const f = await conversationFixture();
+    const error = structuredToolError(
+      await callTool(f.token, "send_chat_message", {
+        agentId: f.agentId,
+        prompt: "Must not be sent",
+        ...extra,
+      }),
+    );
+    expect(error.code).toBe("invalid_arguments");
+    const listed = mcpListChatThreadsOutputSchema.parse(
+      (await callTool(f.token, "list_chat_threads")).structuredContent,
+    );
+    expect(listed.threads).toStrictEqual([]);
+  });
+
+  it("applies sparse metadata using the Web update and does not revert a newer update", async () => {
+    const f = await conversationFixture();
+    const sent = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          prompt: "Metadata test",
+        })
+      ).structuredContent,
+    );
+    const changed = mcpUpdateChatThreadOutputSchema.parse(
+      (
+        await callTool(f.token, "update_chat_thread", {
+          threadId: sent.threadId,
+          patch: { title: "First title" },
+        })
+      ).structuredContent,
+    );
+    expect(changed.title).toBe("First title");
+    await callTool(f.token, "update_chat_thread", {
+      threadId: sent.threadId,
+      patch: { title: "Newer title" },
+    });
+    const read = mcpGetChatThreadOutputSchema.parse(
+      (await callTool(f.token, "get_chat_thread", { threadId: sent.threadId }))
+        .structuredContent,
+    );
+    expect(read.thread.title).toBe("Newer title");
+    expect(read.thread.model.selectedModel).toBe(changed.selectedModel);
+    expect(changed).not.toHaveProperty("retryUntil");
+    expect(
+      structuredToolError(
+        await callTool(f.token, "update_chat_thread", {
+          threadId: sent.threadId,
+          requestId: randomUUID(),
+          patch: { title: "Old protocol" },
+        }),
+      ).code,
+    ).toBe("invalid_arguments");
+  });
+
+  it("preserves owner and organization isolation across send, read and update", async () => {
+    const f = await conversationFixture();
+    const sent = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          prompt: "Private conversation",
+        })
+      ).structuredContent,
+    );
+    const beforeEvents = await f.chat.listThreadEvents(f.actor, sent.threadId);
+    const beforeThread = mcpGetChatThreadOutputSchema.parse(
+      (await callTool(f.token, "get_chat_thread", { threadId: sent.threadId }))
+        .structuredContent,
+    );
+    const peerActor = f.api.user({
+      orgId: f.auth.orgId,
+      orgRole: "org:member",
+    });
+    const peer = f.auth.token({ sub: peerActor.userId, scope: defaultScopes });
+    const send = {
+      agentId: f.agentId,
+      threadId: sent.threadId,
+      prompt: "Forbidden continuation",
+    };
+    // The same private-Agent guard precedes thread ownership in Web and MCP.
+    // Exercise the production Web route rather than imposing an MCP-only 404.
+    const webDenied = await f.chat.requestSendEvent(peerActor, send, [403]);
+    if (webDenied.status !== 403) {
+      throw new Error(
+        "Expected the Web private-Agent send guard to deny the peer",
+      );
+    }
+    expect(webDenied.body).toStrictEqual({
+      error: {
+        code: "FORBIDDEN",
+        message: "Only the private agent owner can run this agent",
+      },
+    });
+    expect(
+      structuredToolError(await callTool(peer, "send_chat_message", send)),
+    ).toStrictEqual({
+      code: webDenied.body.error.code.toLowerCase(),
+      message: webDenied.body.error.message,
+      retryable: false,
+    });
+    expect(
+      structuredToolError(
+        await callTool(peer, "get_chat_messages", { threadId: sent.threadId }),
+      ).code,
+    ).toBe("not_found");
+    expect(
+      structuredToolError(
+        await callTool(peer, "update_chat_thread", {
+          threadId: sent.threadId,
+          patch: { title: "Forbidden title" },
+        }),
+      ).code,
+    ).toBe("not_found");
+    await expect(
+      f.chat.listThreadEvents(f.actor, sent.threadId),
+    ).resolves.toStrictEqual(beforeEvents);
+    expect(
+      mcpGetChatThreadOutputSchema.parse(
+        (
+          await callTool(f.token, "get_chat_thread", {
+            threadId: sent.threadId,
+          })
+        ).structuredContent,
+      ),
+    ).toStrictEqual(beforeThread);
+    const foreignOrg = `org_${randomUUID()}`;
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          id: randomUUID(),
+          role: "org:member",
+          organization: { id: foreignOrg },
+        },
+      ],
+      totalCount: 1,
+    });
+    const foreign = f.auth.token({
+      sub: `user_${randomUUID()}`,
+      org_id: foreignOrg,
+      scope: defaultScopes,
+    });
+    expect(
+      structuredToolError(
+        await callTool(foreign, "get_chat_thread", { threadId: sent.threadId }),
+      ).code,
+    ).toBe("not_found");
+  });
+
+  it("requires the send scope even when manually invoking the tool", async () => {
+    const f = await conversationFixture();
+    const readOnlyToken = f.auth.token();
+    const catalog = await accept(
+      client().request({
+        extraHeaders: protocolHeaders(readOnlyToken, "tools/list"),
+        body: requestBody("tools/list"),
+      }),
+      [200],
+    );
+    const tools = z
+      .object({
+        result: z.object({ tools: z.array(z.object({ name: z.string() })) }),
+      })
+      .parse(rpc(catalog.body)).result.tools;
+    expect(
+      tools.map((tool) => {
+        return tool.name;
+      }),
+    ).not.toContain("send_chat_message");
+    // An ungranted tool is not registered. The SDK rejects manual invocation
+    // with a protocol error, not a business tool result with isError.
+    const denied = await accept(
+      client().request({
+        extraHeaders: protocolHeaders(
+          readOnlyToken,
+          "tools/call",
+          true,
+          "send_chat_message",
+        ),
+        body: requestBody("tools/call", true, {
+          name: "send_chat_message",
+          arguments: { agentId: f.agentId, prompt: "No send grant" },
+        }),
+      }),
+      [200],
+    );
+    const error = z
+      .object({ error: z.object({ code: z.number(), message: z.string() }) })
+      .parse(rpc(denied.body)).error;
+    expect(error).toStrictEqual({
+      code: -32_602,
+      message: "Tool send_chat_message not found",
+    });
+    expect(rpc(denied.body)).not.toHaveProperty("result");
+    expect(
+      mcpListChatThreadsOutputSchema.parse(
+        (await callTool(f.token, "list_chat_threads")).structuredContent,
+      ).threads,
+    ).toStrictEqual([]);
+  });
+
+  it("pages canonical messages and binds cursors to the same owner and filters", async () => {
+    const f = await conversationFixture();
+    const first = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          prompt: "Cursor first",
+        })
+      ).structuredContent,
+    );
+    await callTool(f.token, "send_chat_message", {
+      agentId: f.agentId,
+      threadId: first.threadId,
+      prompt: "Cursor second",
+    });
+    const page = mcpGetChatMessagesOutputSchema.parse(
+      (
+        await callTool(f.token, "get_chat_messages", {
+          threadId: first.threadId,
+          limit: 1,
+        })
+      ).structuredContent,
+    );
+    expect(page.messages[0]?.text).toBe("Cursor second");
+    expect(page.olderCursor).not.toBeNull();
+    const older = mcpGetChatMessagesOutputSchema.parse(
+      (
+        await callTool(f.token, "get_chat_messages", {
+          threadId: first.threadId,
+          limit: 1,
+          cursor: page.olderCursor,
+        })
+      ).structuredContent,
+    );
+    expect(older.messages[0]?.text).toBe("Cursor first");
+    expect(
+      structuredToolError(
+        await callTool(f.token, "get_chat_messages", {
+          threadId: first.threadId,
+          limit: 2,
+          cursor: page.olderCursor,
+        }),
+      ).code,
+    ).toBe("invalid_cursor");
+    const peer = f.auth.token({
+      sub: `user_${randomUUID()}`,
+      scope: defaultScopes,
+    });
+    expect(
+      structuredToolError(
+        await callTool(peer, "get_chat_messages", {
+          threadId: first.threadId,
+          limit: 1,
+          cursor: page.olderCursor,
+        }),
+      ).code,
+    ).toBe("invalid_cursor");
+  });
+
+  it("reads ordinary Run state and denies a peer's cancellation", async () => {
+    const f = await conversationFixture();
+    const runs = createRunsApi(context);
+    runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    await runs.grantProEntitlement(f.actor);
+    const run = await runs.createThreadRun(f.actor, {
+      agentId: f.agentId,
+      prompt: "Ordinary Run state",
+    });
+    const read = mcpGetChatStatusOutputSchema.parse(
+      (await callTool(f.token, "get_chat_status", { runId: run.runId }))
+        .structuredContent,
+    );
+    const web = await runs.readRun(f.actor, run.runId);
+    expect(read).toStrictEqual(web);
+    const peer = f.auth.token({
+      sub: `user_${randomUUID()}`,
+      scope: defaultScopes,
+    });
+    expect(
+      structuredToolError(
+        await callTool(peer, "get_chat_status", { runId: run.runId }),
+      ).code,
+    ).toBe("not_found");
+    expect(
+      structuredToolError(
+        await callTool(peer, "cancel_run", { runId: run.runId }),
+      ),
+    ).toStrictEqual({
+      code: "not_found",
+      message: `No such run: '${run.runId}'`,
+      retryable: false,
+    });
+    expect(
+      structuredToolError(
+        await callTool(f.token, "get_chat_status", {
+          runId: run.runId,
+          waitMs: 1,
+        }),
+      ).code,
+    ).toBe("invalid_arguments");
+    const cancelled = await callTool(f.token, "cancel_run", {
+      runId: run.runId,
+    });
+    expect(cancelled.isError).not.toBeTruthy();
+    expect(cancelled.structuredContent).toMatchObject({
+      runId: run.runId,
+      status: "cancelled",
+    });
+    expect((await runs.readRun(f.actor, run.runId)).status).toBe("cancelled");
   });
 });

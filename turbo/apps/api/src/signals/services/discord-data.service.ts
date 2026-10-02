@@ -15,7 +15,7 @@ import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
 import {
   discordIntegrationEnabledForOwner,
-  discordIntegrationEnabledForOwnerInDb,
+  discordIntegrationEnabledForOwner$,
   getDiscordAppConfig,
   type DiscordAppConfig,
 } from "./discord-config";
@@ -273,15 +273,6 @@ async function selectDiscordDmBinding(
     if (!current) {
       return false;
     }
-    const enabled = await discordIntegrationEnabledForOwnerInDb(
-      tx,
-      binding.orgId,
-      binding.userId,
-    );
-    signal.throwIfAborted();
-    if (!enabled) {
-      return false;
-    }
     await tx
       .insert(discordUserDmPreferences)
       .values({
@@ -328,6 +319,15 @@ export const selectDiscordDmBinding$ = command(
       );
     });
     if (!binding) {
+      return false;
+    }
+    const enabled = await set(
+      discordIntegrationEnabledForOwner$,
+      binding.orgId,
+      binding.userId,
+      signal,
+    );
+    if (!enabled) {
       return false;
     }
     return await selectDiscordDmBinding(

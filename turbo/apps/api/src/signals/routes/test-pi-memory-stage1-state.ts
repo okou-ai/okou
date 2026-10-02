@@ -46,7 +46,7 @@ import {
 } from "../services/pi-memory-stage1-worker.service";
 import { recordPiMemoryStage1Usage } from "../services/pi-memory-stage1-usage.service";
 import { piMemoryStage1ModelPricingThreshold } from "../services/pi-memory-stage1-credential.service";
-import { loadModelCatalog } from "../services/model-catalog.service";
+import { modelCatalog$ } from "../services/model-catalog.service";
 import {
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   PI_MEMORY_STAGE1_BYOK_MODEL,
@@ -719,7 +719,7 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
         sourceHistoryHash: body.source_history_hash,
         model: stage1ModelForBillingMode(body.billing_mode),
         longContextMinTotalInputTokens: piMemoryStage1ModelPricingThreshold(
-          await loadModelCatalog(db),
+          await get(modelCatalog$),
           stage1ModelForBillingMode(body.billing_mode),
         ),
         responseSourceId: body.response_source_id,

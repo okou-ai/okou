@@ -167,7 +167,7 @@ function incompleteRoundAnchorQuery(
                 eq(chatEvents.chatThreadId, threadId),
                 eq(chatEvents.runId, incompleteAnchorCandidate.runId),
                 runOwnedChatEventCondition(),
-                visibleChatEventCondition(db),
+                visibleChatEventCondition(),
                 or(isSuccessfulRun, chatEventTypeIn(CHAT_EVENT_TYPES)),
               ),
             ),
@@ -270,7 +270,7 @@ function createIncompleteRoundEventsObject(
           eq(chatEvents.chatThreadId, threadId),
           inArray(chatEvents.runId, runIds),
           chatEventTextCondition(),
-          visibleChatEventCondition(db),
+          visibleChatEventCondition(),
         ),
       )
       .orderBy(asc(chatEvents.seqId));

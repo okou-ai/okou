@@ -1,3 +1,4 @@
+import { invalidateAllPiStableContextsSql } from "./pi-stable-context-generation.service";
 import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import type {
   OfficialWorkflowAcceptedDefinition,
@@ -40,7 +41,7 @@ import {
   type ValidatedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-validation.service";
 import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "./official-workflow-catalog-source";
-import { invalidateAllPiStableContexts } from "./pi-stable-context-generation.service";
+
 import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
@@ -819,7 +820,7 @@ async function activateCandidate(
       { previous: current, payload: candidate.payload, releaseId },
       signal,
     );
-    await invalidateAllPiStableContexts(tx);
+    await tx.execute(invalidateAllPiStableContextsSql(nowDate()));
     return {
       outcome: "accepted" as const,
       releaseId,

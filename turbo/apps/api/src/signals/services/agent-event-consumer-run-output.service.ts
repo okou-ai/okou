@@ -18,7 +18,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import {
-  appendAssistantEventRows,
+  appendAssistantEventRows$,
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
 import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-assistant-event-metric.service";
@@ -436,98 +436,103 @@ async function materializeAdmittedRunOutputEvents(
   };
 }
 
-async function materializePreparedRunOutputEvents(
-  writeDb: Db,
-  args: {
-    readonly prepared: ReturnType<typeof preparedRunOutputProjection>;
-    readonly preparedOwnership: NonNullable<
-      Awaited<ReturnType<typeof prepareRunOutputOwnership>>
-    >;
-    readonly diagnostics: RunOutputDiagnostics;
-  },
-  signal: AbortSignal,
-): Promise<RunOutputMaterializationResult> {
-  const { prepared, preparedOwnership, diagnostics } = args;
-  const { ownership } = preparedOwnership;
-  const { payload } = prepared;
-  const items = assistantEventItems({
-    events: prepared.payload.events,
-    modelProvider: preparedOwnership.modelProvider,
-  });
-  // No transaction or run lock: a timeout committed after preparation may admit
-  // this batch. The single reserve+insert statement is the only write here.
-  assertRunOutputOwner(ownership, payload.context);
-  const thread =
-    ownership.triggerSource !== null && ownership.thread
-      ? { ...ownership.thread, orgId: ownership.orgId }
-      : null;
-  diagnostics.enter("chat_event_append");
-  const insertion = thread
-    ? await appendAssistantEventRows(
-        writeDb,
-        {
-          runId: payload.runId,
-          threadId: thread.chatThreadId,
-          userId: thread.userId,
-          orgId: thread.orgId,
-          items,
-        },
-        signal,
-      )
-    : undefined;
-  signal.throwIfAborted();
-  // Auxiliary failures must not hide a committed event from live clients.
-  // Retried receipts dedupe the row and therefore cannot own this wakeup.
-  const eventPublished = Boolean(thread && insertion?.insertedRowCount);
-  if (eventPublished && thread) {
-    await publishChatThreadMessageCreatedSafely({
-      userId: thread.userId,
-      orgId: thread.orgId,
-      threadId: thread.chatThreadId,
-    });
-  }
-  return await materializeAdmittedRunOutputEvents(
-    {
-      db: writeDb,
-      ownership,
-      payload: prepared.payload,
-      thread,
-      latestResult: prepared.latestResult,
-      latestOutput: prepared.latestOutput,
-      citations: prepared.citations,
-      insertion,
-      eventPublished,
-      diagnostics,
+const materializePreparedRunOutputEvents$ = command(
+  async (
+    { set },
+    args: {
+      readonly prepared: ReturnType<typeof preparedRunOutputProjection>;
+      readonly preparedOwnership: NonNullable<
+        Awaited<ReturnType<typeof prepareRunOutputOwnership>>
+      >;
+      readonly diagnostics: RunOutputDiagnostics;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<RunOutputMaterializationResult> => {
+    const database = set(writeDb$);
+    const { prepared, preparedOwnership, diagnostics } = args;
+    const { ownership } = preparedOwnership;
+    const { payload } = prepared;
+    const items = assistantEventItems({
+      events: prepared.payload.events,
+      modelProvider: preparedOwnership.modelProvider,
+    });
+    // No transaction or run lock: a timeout committed after preparation may admit
+    // this batch. The single reserve+insert statement is the only write here.
+    assertRunOutputOwner(ownership, payload.context);
+    const thread =
+      ownership.triggerSource !== null && ownership.thread
+        ? { ...ownership.thread, orgId: ownership.orgId }
+        : null;
+    diagnostics.enter("chat_event_append");
+    const insertion = thread
+      ? await set(
+          appendAssistantEventRows$,
+          {
+            runId: payload.runId,
+            threadId: thread.chatThreadId,
+            userId: thread.userId,
+            orgId: thread.orgId,
+            items,
+          },
+          signal,
+        )
+      : undefined;
+    signal.throwIfAborted();
+    // Auxiliary failures must not hide a committed event from live clients.
+    // Retried receipts dedupe the row and therefore cannot own this wakeup.
+    const eventPublished = Boolean(thread && insertion?.insertedRowCount);
+    if (eventPublished && thread) {
+      await publishChatThreadMessageCreatedSafely({
+        userId: thread.userId,
+        orgId: thread.orgId,
+        threadId: thread.chatThreadId,
+      });
+    }
+    return await materializeAdmittedRunOutputEvents(
+      {
+        db: database,
+        ownership,
+        payload: prepared.payload,
+        thread,
+        latestResult: prepared.latestResult,
+        latestOutput: prepared.latestOutput,
+        citations: prepared.citations,
+        insertion,
+        eventPublished,
+        diagnostics,
+      },
+      signal,
+    );
+  },
+);
 
-export async function materializeRunOutputEvents(
-  writeDb: Db,
-  admission: RunOutputEventAdmission,
-  signal: AbortSignal,
-): Promise<RunOutputMaterializationResult> {
-  const { payload, suppliedCitations, diagnostics } = admission;
-  diagnostics.startAttempt("preparation");
-  const prepared = preparedRunOutputProjection(payload, suppliedCitations);
+const prepareAndMaterializeRunOutputEvents$ = command(
+  async (
+    { set },
+    admission: RunOutputEventAdmission,
+    signal: AbortSignal,
+  ): Promise<RunOutputMaterializationResult> => {
+    const { payload, suppliedCitations, diagnostics } = admission;
+    diagnostics.startAttempt("preparation");
+    const prepared = preparedRunOutputProjection(payload, suppliedCitations);
 
-  const preparedOwnership = await prepareRunOutputOwnership(
-    writeDb,
-    payload.runId,
-    diagnostics,
-  );
-  signal.throwIfAborted();
-  if (!preparedOwnership) {
-    return { outcome: "ignored-timeout" };
-  }
-  diagnostics.enter("preparation");
-  return await materializePreparedRunOutputEvents(
-    writeDb,
-    { prepared, preparedOwnership, diagnostics },
-    signal,
-  );
-}
+    const preparedOwnership = await prepareRunOutputOwnership(
+      set(writeDb$),
+      payload.runId,
+      diagnostics,
+    );
+    signal.throwIfAborted();
+    if (!preparedOwnership) {
+      return { outcome: "ignored-timeout" };
+    }
+    diagnostics.enter("preparation");
+    return await set(
+      materializePreparedRunOutputEvents$,
+      { prepared, preparedOwnership, diagnostics },
+      signal,
+    );
+  },
+);
 
 export const materializeRunOutputEvents$ = command(
   async (
@@ -536,7 +541,7 @@ export const materializeRunOutputEvents$ = command(
     signal: AbortSignal,
   ): Promise<RunOutputMaterializationResult> => {
     const result = await settleIncludingAbort(
-      materializeRunOutputEvents(set(writeDb$), admission, signal),
+      set(prepareAndMaterializeRunOutputEvents$, admission, signal),
     );
     if (signal.aborted) {
       admission.diagnostics.clear();

@@ -20,7 +20,7 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
   computerUseHostIsOnline,
   listComputerUseHosts$,
@@ -328,16 +328,18 @@ async function applyChatAuthorizationScope(args: {
     if (!thread?.agentId) {
       return false;
     }
-    await appendChatThreadEvent(tx, {
-      kind: "computer_use_host_updated",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      computerUseHostId: args.computerUseHostId,
-      cloudBrowserEnabled: false,
-      createdAt: args.now,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        kind: "computer_use_host_updated",
+        userId: args.userId,
+        orgId: args.orgId,
+        chatThreadId: thread.id,
+        agentId: thread.agentId,
+        computerUseHostId: args.computerUseHostId,
+        cloudBrowserEnabled: false,
+        createdAt: args.now,
+      }),
+    );
     return true;
   });
 }
@@ -397,16 +399,18 @@ async function applyTeamsAuthorizationScope(args: {
     if (!thread?.agentId) {
       return false;
     }
-    await appendChatThreadEvent(tx, {
-      kind: "computer_use_host_updated",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      computerUseHostId: args.computerUseHostId,
-      cloudBrowserEnabled: false,
-      createdAt: args.now,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        kind: "computer_use_host_updated",
+        userId: args.userId,
+        orgId: args.orgId,
+        chatThreadId: thread.id,
+        agentId: thread.agentId,
+        computerUseHostId: args.computerUseHostId,
+        cloudBrowserEnabled: false,
+        createdAt: args.now,
+      }),
+    );
     return true;
   });
 }

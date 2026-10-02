@@ -109,7 +109,7 @@ import {
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
 import { reportBuiltInModelProviderFailure$ } from "../services/built-in-model-provider-failure.service";
-import { notifyRunningChatRunOfPendingInput } from "../services/chat-thread-queue-drain.service";
+import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets } from "../services/connector-runtime-sync.service";
@@ -3045,9 +3045,10 @@ const declareSteeredInputInner$ = command(
         threadId: result.chatThreadId,
       });
       signal.throwIfAborted();
-      await notifyRunningChatRunOfPendingInput(
-        set(writeDb$),
+      await set(
+        notifyRunningChatRunOfPendingInput$,
         result.chatThreadId,
+        signal,
       );
       signal.throwIfAborted();
     }

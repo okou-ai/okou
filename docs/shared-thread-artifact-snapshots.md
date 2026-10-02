@@ -93,13 +93,26 @@ blocked to prevent independently cached derivatives.
 
 ## Publication and removal
 
-Publication creates a preparing policy and durable database identity, then locks
-that identity, rechecks current Clerk membership, copies the complete snapshot,
-conditionally activates the R2 policy for the reserved aliases. Public thread reads
-also require the active policy. All started copies settle before cleanup on a
+Publication creates a preparing policy and durable database identity, rechecks
+current Clerk membership, copies the complete snapshot, and conditionally
+activates the R2 policy for the reserved aliases. Copying, membership checks,
+title generation and policy writes run independently of SQL transactions or row
+locks. The existing policy ETag fences activation against revocation; no new
+coordination state or retries are introduced. Public thread reads also require
+the active policy. The catalog projection is inserted only while the owned
+identity still exists. Ordinary message-only shares create their identity and
+catalog projection in one gated SQL CTE. All started copies settle before cleanup on a
 failure or request cancellation; cleanup revokes the policy before removing
 copied bytes and the database identity. Failed cleanup retains the identity for
-retry. An ambiguous final R2 write may already have activated the complete
+retry. Cleanup removes a SQL identity only when this request actually inserted
+it, not merely because it claimed a create-only policy at the same client ID.
+Deletion revokes before removing bytes, removes the SQL identity and its
+catalog projection in one data-modifying CTE statement, and can complete while
+a copy is in flight. A surviving
+creator drains its started copies and cleans its own snapshot on failure; it
+cannot reactivate a revoked policy. Process termination during copying still
+requires existing owner cleanup of the retained identity; this change does not
+introduce a crash-recovery protocol. An ambiguous final R2 write may already have activated the complete
 snapshot; callers must reload or revoke that identity rather than assume the
 write was rolled back. Incomplete copies are never activated.
 
@@ -116,6 +129,15 @@ policy and can remain usable until their existing expiry or snapshot-byte
 cleanup. Previously cached browser copies can remain readable for their cache
 lifetime; downloaded bytes and requests authorized before revocation cannot be
 recalled.
+
+Shared-thread historical reads capture the current archive head and PostgreSQL
+tail in a read-only repeatable-read SQL transaction, then download and validate
+the immutable archive outside it. This is the only transaction retained by the
+shared-thread create/read path: a concurrent archival deletion must not create a
+gap between the captured head and tail. The shared-thread caller was the only
+consumer of this history service; its old handle-parameter reader helpers are
+removed. Other chat history consumers and historical source decoding are
+unchanged.
 
 ## Deployment
 

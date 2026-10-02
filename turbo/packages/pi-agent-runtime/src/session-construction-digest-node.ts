@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import type { PiPreheatedResourceSnapshot } from "./api-types";
+import { PI_MODEL_LIMIT_OVERRIDES } from "./model-limits";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiAgentModelConfig } from "./types";
 
@@ -56,14 +57,16 @@ export interface PiSessionConstructionProfileDocument {
 }
 
 export interface PiSessionConstructionDocument {
-  readonly version: 1;
+  readonly version: 2;
+  readonly modelLimitOverrides: typeof PI_MODEL_LIMIT_OVERRIDES;
   readonly profiles: readonly PiSessionConstructionProfileDocument[];
 }
 
 /**
- * Construct every profile through the shared session entry and capture the
- * bytes the parity contract is about: the system prompt and the ordered tool
- * schemas as the model receives them.
+ * Capture verified model-limit corrections alongside the constructed prompt
+ * and ordered tool schemas. Limits-only changes must also invalidate stale
+ * installed CLIs, even when their prompt/tool profiles are identical. The
+ * returned document owns its limit snapshot, not the live runtime registry.
  */
 export async function computePiSessionConstructionDocument(): Promise<PiSessionConstructionDocument> {
   const profiles: PiSessionConstructionProfileDocument[] = [];
@@ -96,7 +99,11 @@ export async function computePiSessionConstructionDocument(): Promise<PiSessionC
       created.session.dispose();
     }
   }
-  return { version: 1, profiles };
+  return {
+    version: 2,
+    modelLimitOverrides: structuredClone(PI_MODEL_LIMIT_OVERRIDES),
+    profiles,
+  };
 }
 
 /** Lowercase hex SHA-256 over the canonical JSON of the document. */

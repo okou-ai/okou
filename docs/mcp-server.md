@@ -1,237 +1,88 @@
 # External MCP server
 
-The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
-official MCP SDK and serves `list_agents`, `list_models`, `create_chat_thread`,
-`get_chat_indicators`, `list_chat_threads`, `get_chat_thread`,
-`get_chat_messages`, `search_chat_messages`, `get_chat_status`, `send_chat_message`,
-`revoke_queued_message`, `cancel_run` and `update_chat_thread`. The read tools query current
-user/organization-owned conversations; mutations reuse the existing input queue
-and run lifecycle. The OAuth
-foundation shipped in #34931; discovery and current context are tracked by
-#34932 under #34890. Message history is delivered in #34933 and search in
-#35100; sending and cancellation are delivered in #34934, status in #35101,
-and Agent/model discovery and empty conversation creation in #35102.
-Atomic creation with an optional first message is delivered in #35540.
-Successful results keep the complete machine-readable value in
-`structuredContent` and include a tool-specific human summary of at most 512
-UTF-8 bytes in text content; they do not duplicate the full JSON value as text.
+The Hono API exposes the official MCP SDK's stateless Streamable HTTP resource
+server at `/mcp`. MCP is identity/parameter adaptation to ordinary Web chat
+commands and simple result serialization, not a second execution product.
+OAuth, scopes, current organization membership, tenant and conversation ownership
+remain required. Successful results return machine-readable `structuredContent`
+and a human summary of at most 512 UTF-8 bytes; JSON is not duplicated as text.
 
-## Timestamp contract
+## Breaking protocol simplification (#37513)
 
-All MCP chat output timestamps are UTC RFC 3339 strings with exactly six
-fractional-second digits, for example `2026-09-21T01:02:03.123000Z`. Time-filter
-inputs continue to accept zero through six fractional-second digits. Each field
-names one clock; callers must not substitute another timestamp from the same
-response:
-
-| Field               | Meaning                                                                                         |
-| ------------------- | ----------------------------------------------------------------------------------------------- |
-| `createdAt`         | Conversation creation time.                                                                     |
-| `acceptedAt`        | Server acceptance/persistence time for the submitted mutation or input.                         |
-| `messageAt`         | Original accepted-input time for a visible user message, or output-event time for an assistant. |
-| `sourceEventAt`     | Indexed source-event time used by search bounds, ordering and continuation.                     |
-| `metadataUpdatedAt` | Conversation metadata-row update time; ordinary message activity does not advance it.           |
-| `lastMessageAt`     | Conversation activity time used by thread bounds, ordering and continuation.                    |
-| `observedAt`        | Completion time of a bounded status observation.                                                |
-| `retryUntil`        | Absolute end of the relevant idempotent retry window.                                           |
-
-Replacement processing can make `messageAt` and `sourceEventAt` differ for the
-same visible message reference. Metadata edits can advance `metadataUpdatedAt`
-without advancing `lastMessageAt`; later message activity can do the reverse.
-No timestamp proves archive completeness, search-index freshness, message
-delivery, or run completion; retain each tool's separate guarantees below.
-
-## Tool errors and CLI exit status
-
-MCP server-declared tool failures use `isError: true` and content for human
-inspection; MCP does not require structured error metadata. Okou chat tools also
-return the optional `structuredContent.error` extension with a stable `code`,
-human-readable `message`, explicit `retryable` boolean, and optional bounded
-validation `issues` containing field paths, issue codes and messages. Invalid
-tool arguments use `invalid_arguments`; an idempotency key reused for a different
-request uses `request_id_conflict`. A retryable value is metadata, not permission
-to automatically replay a tool call.
-
-For `okou mcp call`, a successful invocation exits `0`. A server result with
-`isError: true`, a protocol failure, a transport failure, or an action-level
-client failure exits nonzero. Successful `--json` output remains the raw MCP
-result. Failed `--json` output uses `{status:"error", error:{kind,code,message,retryable}}`;
-server-declared tool failures also preserve the complete raw MCP result under
-`result`. When the optional Okou extension is absent or invalid, the CLI reports
-`tool` / `tool_error` with a fixed generic message; it does not infer machine
-fields from human text. Without `--json`, tool errors continue to print the
-complete raw result for inspection before exiting nonzero. Commander syntax and
-option-conflict errors occur before the action and retain the CLI's standard
-error format.
-
-The CLI never automatically retries a tool call. A timeout, connection failure,
-or error result does not prove that a remote side effect did not happen; follow
-the tool's documented idempotency and inspection guidance before retrying.
-
-The catalog publishes `idempotentHint: false` for creation, metadata updates and
-message sends because their request identities are retained for a bounded time,
-not permanently. Current creations, updates, and source-bearing message sends
-support identical replay within 24 hours. Pre-cutover text-only MCP inputs,
-including a combined creation's initial message, are an exception after #37276:
-retrying them can conflict within that window. After a successful response, use
-its `retryUntil` as the deadline; after a lost response, retry the identical
-request immediately within that documented window for current inputs.
-The positive hints on queued-input revocation and run cancellation instead
-describe target-state mutations whose repeated calls do not recreate missing
-work.
-
-## Starting a conversation
-
-Call `list_agents` and `list_models` before `create_chat_thread` when selecting
-explicit values. Discovery requires `okou:chat:read`; creation additionally
-requires `okou:chat:manage`. The optional first-message branch also requires
-`okou:chat:send`. All calls retain the endpoint's organization/read-scope
-requirements.
-
-`list_agents` accepts optional `limit` (default 20, maximum 50) and `cursor`.
-It lists public or caller-owned Agents in the authorized organization, with
-`agentId`, name, a description bounded to 500 Unicode characters,
-`descriptionTruncated`, and `isDefault`. Instructions and private configuration
-are excluded. Pages use ascending Agent UUID order. Follow `nextCursor` with the
-same limit; the 16 KiB response budget may shorten a page. Cursors bind the caller,
-organization and page size, expire after 24 hours, and recheck current visibility
-on each page. Restart without a cursor after an invalid or expired cursor.
-
-`list_models` takes `{}` and reads persisted active model policies without
-initializing or repairing them. Each model includes `id`, `name`, `selectable`,
-`availability`, and an optional explanation in `reason`. Availability is
-`available`, `reconnect_required`, `connection_required`, `plan_restricted`, or
-`unavailable`. `selectable` describes whether canonical model selection accepts
-the configuration; a selectable model can still require a connection or plan
-change before execution. `available` is a metadata observation, not a credential
-probe or admission guarantee. `defaultModel` chooses a valid member preference,
-then the organization default, or returns null model/source. The organization
-default is the global model catalog's system default (currently `okou-1.0`,
-Auto) and cannot be changed per organization. Provider account
-identifiers, credentials and configuration are excluded. Missing policies or
-defaults awaiting canonical repair after a plan change return a setup error.
-Open model settings to synchronize the policies, then retry discovery. Discovery
-reads enforce a 15-second deadline, three-second SQL limits and a 16 KiB data budget.
-
-To create an empty conversation, only `requestId` is required:
+There is no `create_chat_thread` tool. `send_chat_message` takes `agentId`,
+`prompt`, optional `threadId` and optional `model`, just like ordinary Web text
+sending. Omit `threadId` to create a conversation; provide it to continue an
+owned conversation belonging to that Agent. Discovery through `list_agents` and
+`list_models` helps select values; it never authorizes execution.
 
 ```json
 {
-  "requestId": "<new UUID for this intended conversation>"
+  "agentId": "<Agent UUID>",
+  "prompt": "Summarize the risks and propose next steps."
 }
 ```
-
-The response points `nextAction` to `send_chat_message`; no message is submitted
-and no run starts. Sending later uses its own request ID and self-contained text.
-
-To atomically create a conversation and accept its first input, add `message`.
-All selection fields remain optional:
 
 ```json
 {
-  "requestId": "<new UUID for this intended conversation and input>",
-  "message": "Summarize the risks and propose next steps."
+  "agentId": "<Agent UUID>",
+  "threadId": "<conversation UUID>",
+  "prompt": "Continue with a plan."
 }
 ```
 
-In either mode, optional `agentId`, `title`, and `model` select explicit values.
-An omitted Agent resolves to the currently visible organization default and is
-stored concretely on the thread. An omitted title stays null until the first
-text run triggers automatic title generation. An omitted model resolves the
-current member default, then the catalog system default (currently `okou-1.0`), and stores that choice
-when the thread is created. Later default changes do not affect the thread. The response exposes the selected/effective model and `source`. `message`
-uses the same nonblank, 32,000 UTF-16-unit limit as `send_chat_message` and
-preserves its exact accepted text.
+The same `sendNormalEvent$` command as Web performs auth, model selection, queue
+acceptance and dispatch. The response is Web's `{threadId, runId, createdAt}`
+acceptance body. `runId` is null at acceptance: sending enqueues input, it does
+not prove launch, completion, delivery or readable output. Read conversation
+messages/events to discover a Run ID, then `get_chat_status` with `{runId}`.
+Status uses the ordinary Web Run reader and its response schema. It does not
+wait or derive another lifecycle, outcome or output-readiness state.
 
-The thread and canonical input event commit in one transaction. Only after that
-commit does the shared scheduler attempt to start, queue, or steer execution.
-The response therefore reports the durable `input` receipt and its current
-`disposition`; it does not claim delivery or run success. Its `nextAction`
-points to `get_chat_status` with only the complete stable `inputRef`. Use that handoff
-and then `get_chat_messages` to observe output.
+MCP no longer accepts `requestId`, `inputRef`, `waitMs` or the old `text` input.
+It returns no receipt, disposition, replay flag, retry deadline, waiter admission,
+observation count or `nextAction` chain. There is no 24-hour exact replay contract,
+combined derived UUID, old-protocol fallback or dual send path. Each new send is
+new intended work. **Never automatically retry an uncertain send.** A failed or
+lost response can follow a committed operation; inspect the conversation before
+intentionally sending new work. Web client-event identities and historical
+persisted source decoding are unchanged. Verified MCP source annotations remain
+ordinary message provenance, not replay evidence.
 
-Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
-current title, selected/effective model, service tier, creation time in `createdAt`,
-authenticated App URL, `replayed`, and `retryUntil`. Existing media/reasoning
-defaults apply; a new thread captures the member model and service tier, or the
-organization default when the member preference is unavailable. Credentials, quota, and execution
-policy are checked when the initial or later input is dispatched, as indicated
-by `admission: "checked_on_send"`.
+`update_chat_thread` takes `{threadId, patch:{title?, model?}}` and uses the same
+metadata command as Web without an MCP mutation identity. Omitted fields stay
+unchanged; `model:null` clears the pin. Changes do not reroute queued inputs or
+an active Run. Read `get_chat_thread` after an uncertain update. Its result
+contains current metadata, `selectedModel`, `metadataUpdatedAt` and the App URL.
 
-Retry an uncertain creation within 24 hours using the identical request ID,
-operation mode, exact values, and optional-field presence. Combined retries keep
-the same derived input reference. Concurrent identical requests converge on one
-thread and, when present, one input. Switching between empty and combined modes,
-changing a message, or changing omitted-versus-explicit Agent/title/model intent
-is a conflict. Replay returns current stored thread settings without undoing
-later edits. An originally omitted model is resolved and stored when the thread is created.
-Each input captures the thread model at enqueue, using the organization default
-if the thread model is unavailable. Later settings changes do not reroute queued inputs. Deleted conversations, expired
-retries, or missing canonical evidence return an error while either half of the
-retained identity remains. Thread events become eligible for snapshot-backed
-pruning after seven days. If the thread remains after its creation event is
-pruned, the missing evidence still conflicts; if the thread was also deleted,
-the same old arguments can create new work because neither identity remains.
-There is no permanent request-ID ledger. This complete lifecycle is why the
-catalog does not mark creation as generally idempotent. Never automatically
-retry an uncertain old request after the window; inspect the original thread
-before intentionally creating new work. No new table or schema migration is
-introduced.
+`revoke_queued_message` takes `{agentId, threadId, revokesEventId}` and calls the
+ordinary Web recall command. It has exactly Web's revocability and ownership
+semantics; it does not cancel a Run. `cancel_run` takes `{runId}` and uses Web's
+cooperative cancellation command and side effects. Cancellation neither undoes
+past effects nor recalls unrelated queued inputs; worker cleanup can finish
+later. Completed/failed Runs cannot be cancelled.
 
-Creation checks current Agent visibility and account-content admission in its
-transaction, including the Agent owner's account. It uses the existing creation
-event and publishes thread-list changes after commit. Once admitted, finite
-mutation work retains server ownership if the HTTP client disconnects; the
-client must use the same retry identity when the result was not received.
+## Errors and timestamps
 
-## Updating conversation metadata
+Invalid arguments return `isError:true` with `structuredContent.error` containing
+`code`, `message`, `retryable` and optional bounded validation issues. Business
+rejections preserve the common command's error; uncertain mutation failures are
+not automatically retryable. `retryable` on a read is metadata, not authorization
+for a new send. The CLI exits nonzero on tool, transport or protocol errors and
+never automatically retries a call.
 
-`update_chat_thread` requires `okou:chat:manage` and accepts one explicit sparse
-patch:
+Send and Run timestamps use their ordinary Web response formats. MCP thread,
+message, search and metadata projection timestamps remain UTC RFC 3339 with six
+fractional digits. Message filters accept zero through six digits. `messageAt`
+is original accepted-input time for users and output-event time for assistants;
+`sourceEventAt` is search ordering time, `lastMessageAt` conversation activity,
+and `metadataUpdatedAt` metadata change. These clocks are not interchangeable
+and none proves delivery, index/archive completeness or Run success.
 
-```json
-{
-  "requestId": "<new UUID for this intended update>",
-  "threadId": "<owned conversation UUID>",
-  "patch": {
-    "title": "Quarterly plan review",
-    "model": "<selectable model id, or null>"
-  }
-}
-```
-
-The patch must contain `title` and/or `model`. Omitted fields remain unchanged;
-`model: null` clears the thread model pin. Each subsequent input captures the
-organization default at enqueue without rewriting the thread selection. A title is nonblank and at most 200
-UTF-16 units. The patch never implicitly changes service tier, per-model
-reasoning settings, image/video models, computer-use or browser settings. A
-preserved setting that is incompatible with the requested model makes the whole
-update fail.
-
-Title and model validation, metadata changes and durable sidebar events commit in
-one transaction. Failure leaves both fields and their events unchanged. A title
-patch is a manual rename: it records rename precedence, so a title generation that
-finishes later cannot overwrite it. A model patch changes only later run creation.
-An existing run retains its run-scoped model, and a message steered into that run
-continues with the existing model.
-
-The result contains the current bounded title, selected/effective model and source,
-current service tier, `metadataUpdatedAt`, authenticated App URL and retry metadata.
-Generate one UUID `requestId` for each intended patch. Retry an uncertain response
-with the identical request ID, thread ID, exact field presence and exact values
-within 24 hours. Concurrent identical requests converge. Exact replay does not
-reapply old intent: it returns current state, so retrying update A after update B
-cannot restore A. Reusing the key with a different patch conflicts.
-
-After the retry window, inspect `get_chat_thread` before making a new intended
-change. Do not automatically retry an uncertain old request. Deduplication is not
-promised beyond retained mutation identity. Thread mutation events become
-eligible for snapshot-backed pruning after seven days; once those event IDs are
-gone, reusing an old request ID is a new update and can restore its old patch.
-The catalog therefore does not mark updates as generally idempotent. As with
-other MCP mutations, admitted finite work remains server-owned after HTTP
-disconnection, and thread-list invalidation is published only after a new
-commit.
+`list_models` adapts the ordinary Web policy projection and current member
+preference. It does not maintain a second route/admission implementation;
+`selectable` and `availability` remain observations, and actual permission,
+credentials, money and quota are checked on send. Missing stored policies do
+not cause MCP-specific repair writes.
 
 ## Conversation discovery
 
@@ -456,284 +307,6 @@ recommend narrowing thread/Agent/time filters or retrying; reducing page size ca
 one oversized history readable. These source-size caps are not absolute process
 memory limits. Search reuses existing lexical indexes and adds no migration.
 
-## Sending and cancellation
-
-`send_chat_message` sends text to an existing conversation. It requires
-`threadId`, nonblank `text` of at most 32,000 UTF-16 units, and a caller-generated
-UUID `requestId`. Text is preserved exactly, including surrounding whitespace.
-UUID letter case is normalized; uppercase and lowercase identifiers resolve to
-the same submission. Withdrawal and run cancellation normalize their UUID
-inputs in the same way before applying lifecycle locks or selecting an active
-cancellation controller.
-The 64 KiB HTTP request-body limit also applies. The server derives the Agent
-from the authorized thread and uses its current model configuration and ordinary
-admission checks. This tool does not accept Agent/model overrides, attachments,
-or an explicit choice between a new run and steering an active run.
-
-At acceptance, the server appends the signed OAuth token's `client_id` as an
-immutable `source.kind: "mcp"` part of the same input. Callers cannot set or
-override this source. For a matching HTTPS CIMD client ID, valid and available
-metadata may supply a snapshotted `client_name`; this is self-declared display
-text, not proof of which software is running. Web Chat shows the MCP mark with
-that name, or a generic `MCP` label when no name is saved. Older messages are
-not relabeled. The optional first message of `create_chat_thread` uses the same
-source rule; an empty creation has no input to attribute.
-
-The optional display-name lookup emits one best-effort API operation-timing
-observation per invocation (including ineligible IDs and retries) through
-`recordApiOperationTimings` to `vm0-sandbox-op-log-<AXIOM_DATASET_SUFFIX>`.
-Filter `operation_domain = "api"` and
-`op_type = "mcp_client_display_name_lookup"` over an explicit UTC interval.
-Each row has a bounded numeric `duration_ms` for the lookup, `success` only
-when a validated name was returned, a finite `lookup_outcome` (`ineligible`,
-`validated`, `invalid_metadata`, `http_unavailable`, `unsafe_url`,
-`lookup_failed`, `timeout`, or `caller_cancelled`), and `fetch_invoked`.
-`fetch_invoked` counts calls to the safe metadata fetch, **not** physical
-network requests (URL/DNS checks may reject first and redirects may add
-requests). No raw client ID, metadata URL, name, message text, token, or error
-payload is recorded. Aggregate counts by outcome and percentiles of
-`duration_ms` for eligible outcomes; compare comparable UTC windows only after
-production build info confirms the writer and instrumentation are serving.
-For a production baseline, supply a fixed UTC `startTime`/`endTime` in the
-Axiom APL request envelope after the production build includes this writer:
-
-```kusto
-['vm0-sandbox-op-log-prod']
-| where operation_domain == 'api' and op_type == 'mcp_client_display_name_lookup'
-| summarize attempts = count(), p50 = percentile(duration_ms, 50),
-    p95 = percentile(duration_ms, 95) by lookup_outcome, fetch_invoked
-```
-
-Report the window, observation count, eligible versus ineligible outcomes,
-fetch invocations and latency tails alongside any known ingestion gaps.
-Missing/unconfigured ingestion means missing observations, not zero lookups.
-These timings do not measure the complete send path, and do not imply a cache
-hit rate or determine a cache TTL by themselves. Telemetry failures cannot
-change admission, the generic display fallback, or cancellation.
-
-The queue can leave the input queued or associate it with a run: a new run, or
-the active run that it is steered into. The response returns:
-
-| Field                      | Meaning                                                                                                   |
-| -------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `inputRef`                 | Original durable `{threadId,eventId,seqId}` input reference; `eventId` equals `requestId`.                |
-| `acceptedAt`, `retryUntil` | Input persistence time and the absolute end of its 24-hour retry window.                                  |
-| `replayed`                 | Whether this request resolved a previously persisted matching submission.                                 |
-| `disposition`              | Current bounded observation: `queued`, `reserved`, `associated`, `rejected`, `revoked`, or `unavailable`. |
-| `runId`                    | Known associated/reserving run, or null.                                                                  |
-| `url`                      | Authenticated conversation URL.                                                                           |
-| `nextAction`               | Ready-to-use `get_chat_status` call containing the complete `inputRef`.                                   |
-
-Acceptance means an input was persisted. It does not guarantee model admission,
-delivery, compliance, completion, or a new run. `associated` does not prove
-successful execution. `reserved` remains in the contract for compatibility, but
-steering no longer records a reservation, so current APIs do not return it.
-A definitive admission failure after input persistence can leave its disposition
-`rejected` or `revoked`. `unavailable` means retained live evidence cannot resolve
-its current disposition; it does not mean the input was never accepted.
-This call does not wait for the whole run. A later read can observe a newer state.
-
-`inputRef` identifies the original submission for withdrawal and input
-status reads. Queue dispatch or active-input delivery can append a replacement
-event, so the currently visible message from `get_chat_messages` can have a
-different reference. Do not assume the original input is a valid visible
-`around` anchor after association. Use message-reader references for visible
-history and retain the original `inputRef` separately.
-
-For a retry after timeout or a lost response, use the **same requestId, threadId
-and exact text within 24 hours of acceptance**. A matching authorized
-MCP-attributed input is reused without submitting it again. Changed text,
-thread, user or organization conflicts. The UUID shares the existing
-`clientEventId` namespace: a same-ID first-party text-only input is not an MCP
-replay. A pre-cutover text-only MCP input is also no longer replayable after
-#37276, even if its original 24-hour window remains open; the requester waived
-the old-writer drain and such a retry can return `request_id_conflict`. A
-source-bearing input can be replayed by a different authorized OAuth client;
-the first source and name remain unchanged and the later client's ID is not
-part of retry identity. An input with different structured content conflicts.
-To intentionally submit another message, generate a new request ID.
-
-There is no deduplication guarantee after 24 hours. A retained original
-source-bearing input past that window is rejected as expired; a pre-cutover
-text-only input conflicts instead while its event remains. Once the live event
-has been removed by retention, its old request ID may be treated as a new
-submission. Inspect the conversation before intentionally submitting new work
-after the window; do not retry an uncertain old request automatically. The
-catalog therefore does not mark sends as generally idempotent even though exact
-source-bearing replay remains safe before the returned `retryUntil`.
-
-Retry protection covers input creation and dispatch. Ordinary send preparation
-can reconcile obsolete model settings with current policy before a later
-admission failure or concurrent identity conflict, as it does for first-party
-sends. MCP does not accept explicit model or service-tier changes here.
-
-Retry resolution reads the original immutable `chat_events` input, checks its
-exact text and single MCP source part, and derives the receipt from its ID,
-sequence and creation time. The existing 30-day live-event retention covers the
-24-hour retry window for source-bearing inputs. A locked recheck
-and the event's unique ID prevent concurrent duplicate enqueue; losing writes
-roll back. No extra table, fingerprint, permanent identity record or migration
-is added. Current thread ownership is checked before resolving a receipt;
-deleting the thread ends the retry contract. The OAuth configuration is unchanged.
-
-### Input, execution and output status
-
-Call `get_chat_status` with the complete original `inputRef` returned by send
-(`threadId`, `eventId`, `seqId`) to observe only that input's associated or
-reserved run. Execute the send or combined-creation `nextAction.arguments`
-unchanged; do not repeat the thread identity outside the reference. To observe
-the latest authorized run instead, call status with exactly `threadId`. Latest
-selection uses creation time with run ID as a deterministic tie breaker. A
-queued, revoked, missing or inaccessible exact-input association never falls
-back to another run in the conversation.
-
-The result exposes lifecycle as its complete public status model. Internal
-input, delivery, run, cancellation-recovery and output observations are used to
-derive it but are not returned:
-
-| Field          | Meaning                                                                                                                                                    |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lifecycle`    | Sole `{phase, outcome, output}` status result. Its strict union permits only documented combinations.                                                      |
-| `messages`     | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
-| `wait`         | For positive `waitMs`, requested/effective wait, elapsed time, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.               |
-| `messagePage`  | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
-| `retryAfterMs` | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
-
-Lifecycle does not expose or prove launch versus steer delivery, model
-compliance, timestamps, cancellation-recovery details or internal output
-reasons. Several inputs may share one run and its conversation output. Reads
-never submit, revoke, cancel, change recency or mark a conversation read.
-
-`lifecycle.phase` is `idle`, `queued`, `running`, `finalizing`, `settled`, or
-`unavailable`. Its `outcome` is `completed`, `failed`, `timeout`,
-`cancelled`, `rejected`, `revoked`, or null; `output` is `pending`, `partial`,
-`ready`, `none`, or `unavailable`. Exact-input observation takes precedence:
-missing or inaccessible input is unavailable, rejected and revoked
-inputs are settled with no output, and queued or reserved inputs remain queued
-without inheriting output from a shared run. With no selected run, the phase is
-idle and output is none; this means no work was selected by that observation,
-not that the conversation has no queued input in latest-thread mode.
-
-For a selected run, queued and pending run states map to the queued phase, and
-running maps to the running phase. A terminal run with pending or partial output
-is finalizing while preserving its completed, failed, timeout, or cancelled
-outcome. It becomes settled only when output is ready or confirmed absent
-(`none`). Failure, timeout and cancellation remain visible even if output is
-ready. Pending cancellation recovery also remains finalizing. This summary is a
-current server observation, not proof of delivery mode, model compliance, or a
-single immutable final answer.
-
-Internally, actual visible assistant output plus the matching canonical
-terminal marker is required for `ready`; unresolved cancellation recovery keeps
-the lifecycle finalizing. Without messages, lifecycle output stays `pending`
-until materialization completes and then becomes `none`. Missing associations
-map to idle or the exact-input outcome above. Terminal error/control markers
-are not fabricated as messages. Read `lifecycle.outcome` to distinguish
-success, failure, timeout and cancellation.
-
-`ready` describes the current materialized view, not an immutable final answer:
-late output can still arrive. Internally, cancellation recovery can be pending,
-complete or not applicable; a stale recovery barrier does not count as complete
-merely because the scheduler permits another run. Those details are not exposed
-in the public status response.
-
-Status uses the same verified archive plus live tail as message history, with
-run/receipt metadata inside that reader's repeatable-read, read-only snapshot.
-`observedAt` records completion of that bounded observation; concurrent later
-changes appear on the next call. Every call reconstructs the supported history
-and inherits the limits above, including three-second SQL statements and a
-15-second overall budget. Disconnect cancels the read only.
-Status data is capped at 16 KiB, leaving transport, summary and JSON-envelope
-headroom below 64 KiB. Oversized historical reference metadata fails
-explicitly instead of truncating identities. Poll no faster
-than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
-and stop automatic polling when it is null or the tool returns a resource
-error. A queued input with no run has `lifecycle.output: "pending"` plus a
-non-null retry delay: continue tracking that original input instead of
-submitting it again.
-
-Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
-exact-input observation immediate; latest-thread `{threadId}` status is always
-immediate. A positive value is a client preference up
-to 60 seconds and is currently clamped to an 8-second server dwell after the
-initial observation. Each fresh observation keeps its independent 15-second
-history budget, so total request time also includes the initial and final
-bounded reads. The waiter follows `retryAfterMs`, completes at most five
-canonical observations, and never holds a transaction, connection, snapshot or
-authorization decision between them.
-
-`wait.outcome` is `ready` only at the same materialized-output condition used by
-ordinary status. `deadline` returns the last fresh retryable state after the
-effective dwell; `status` returns a non-retryable state or a capacity fallback.
-Inspect `returnReason` to distinguish those cases. Deadline, capacity and the
-observation limit are successful reads, not run completion or tool failure.
-Ready wait responses include `messagePage`, a first limit-20 page made from the
-same final authorized history snapshot. Its signed page/content cursors,
-segmentation and artifact authorization are identical to `get_chat_messages`.
-The combined status and page data is capped at 192 KiB; follow the existing
-handoff/cursors for more content.
-
-At most two active waits per principal and 32 per API runtime are admitted after
-the initial retryable observation. Capacity exhaustion returns current status
-immediately. Cancellation or disconnect releases the abortable timer and slot
-and stops only this read; it never cancels or revokes accepted work. These are
-runtime resource limits, not a deployment-global lease. MCP Tasks remains the
-longer-term negotiated protocol for durable work; bounded status wait is the
-compatibility optimization for current clients.
-
-Each positive wait also adds an identifier-free `mcp.chat_status.wait` event to
-the request trace. It records requested/effective/elapsed milliseconds,
-observations, outcome and return reason, principal/runtime occupancy and
-capacity, final input/run/output state categories, and whether content was
-included. Use these fields to validate live timeout margin and capacity before
-raising the server dwell limit.
-
-Original input lookup lasts while the exact canonical input and linkage remain
-in readable retained thread history. It continues through archives after the
-30-day live-event window, within the stated history limits; it is not a new
-permanent identity store. Deleted/mismatched/absent references return
-`lifecycle.phase: "unavailable"`; corrupt, missing or oversized required
-archives fail the tool explicitly. Historical launch/steer provenance is not
-part of the status response. None of this extends the independent 24-hour send
-retry guarantee. References and artifact links retain their existing
-user/org/thread authorization and grant no new access.
-
-Combined native Codex acceptance in #34936 should exercise send returning a
-null run ID → status by inputRef → queued/associated execution → partial/ready
-output → `get_chat_messages`, then repeat with an active steer, queued revoke
-and cancellation recovery. Also verify that a missing reference does not show
-an unrelated latest run. ChatGPT acceptance remains deferred.
-
-`revoke_queued_message` takes the complete original `inputRef` unchanged. It
-validates `threadId`, `eventId`, and `seqId` under the canonical queue lock
-before mutation and returns that reference, a nullable `runId`, and
-`outcome`: `revoked`, `already_revoked`, `not_revocable`, or `unavailable`.
-Withdrawal uses the canonical queue lock and appends a revocation event; it
-does not delete history or cancel a run. Only a pending, unreserved input can be
-withdrawn. If reservation or association wins the race, the result is
-`not_revocable` with reason `reserved_or_associated`; this is not delivery
-confirmation. Other nonqueued inputs use reason `not_queued`. An inaccessible
-thread or unavailable input returns `unavailable`. Repeated withdrawal of a
-retained revoked input returns `already_revoked`.
-
-`cancel_run` takes `runId` and returns `{runId,status:"cancelled",alreadyCancelled}`.
-It cancels the whole authorized user's run in the selected organization through
-the existing cooperative cancellation path. Already-cancelled runs succeed
-idempotently and can redrive retry-safe recovery effects. Other terminal runs
-return a tool error. The response confirms canonical cancellation, not that the
-executor has physically stopped or that callback/queue recovery has finished.
-Cancelling a run can allow queued input to proceed; use `revoke_queued_message`
-to withdraw a specific input that has not been reserved or associated.
-
-Both target-state tools retain `idempotentHint: true`: repeating revocation or
-cancellation converges on the retained target state, and an unavailable target
-is not recreated by either operation.
-
-After a mutation is admitted, its finite business operation and cancellation
-effects are tracked independently of the HTTP response. Disconnecting stops
-waiting for a response; it does not undo accepted input or cancel a business run.
-Use the same send identity to recover an ambiguous outcome.
-
 ## Configuration and authorization
 
 Metadata is public; discovery and tool calls require authorization.
@@ -802,19 +375,15 @@ Tokens with just these two scopes remain valid for reads.
 A `403 insufficient_scope` challenge names those required scopes.
 Mutation permissions are checked on every tool invocation:
 
-| Tool                                  | Additional required scope                                           |
-| ------------------------------------- | ------------------------------------------------------------------- |
-| `create_chat_thread`                  | `okou:chat:manage`; plus `okou:chat:send` when `message` is present |
-| `send_chat_message`                   | `okou:chat:send`                                                    |
-| `revoke_queued_message`, `cancel_run` | `okou:run:cancel`                                                   |
+| Tool                                  | Additional required scope |
+| ------------------------------------- | ------------------------- |
+| `update_chat_thread`                  | `okou:chat:manage`        |
+| `send_chat_message`                   | `okou:chat:send`          |
+| `revoke_queued_message`, `cancel_run` | `okou:run:cancel`         |
 
-`create_chat_thread` is advertised when manage scope is present so the empty
-mode remains discoverable; its message branch independently checks send scope
-at invocation. Other mutation tools requiring a missing scope are not
-advertised. Direct invocation without the applicable scope is rejected and
-performs no operation.
-Title/model editing is delivered separately. A tool argument cannot select or override
-the organization. Existing grants do not automatically gain scopes; clients must
+Mutation tools requiring a missing scope are not advertised. Direct invocation
+without the applicable scope is rejected and performs no operation. A tool
+argument cannot select or override the organization. Existing grants do not automatically gain scopes; clients must
 reauthorize to obtain additional permissions.
 
 ## Provider setup gate
@@ -882,14 +451,15 @@ HTTP with SSE responses. The 2026-07-28 protocol uses the SDK's envelope and
 `MCP-Method`/`MCP-Name` headers with automatic JSON/SSE response selection. Clients
 should use a conforming SDK instead of implementing these envelopes themselves.
 
-The 13 advertised tools each include a human-readable `annotations.title`. Their
+The 12 advertised tools each include a human-readable `annotations.title`. Their
 input and output JSON Schemas inline local references, so the advertised schemas
-contain no `$ref` or `$defs`; field types and validation constraints are unchanged.
+contain no `$ref` or `$defs`; field types and validation constraints match their current contracts.
 
 No persistent MCP session, standalone event feed, subscription, or resumability
 is offered; stateless GET/DELETE requests return 405. POST bodies are limited to
-64 KiB. Transport/request cancellation stops reads or waiting for an admitted
-mutation response; it never acts as business-run cancellation.
+64 KiB. Transport/request cancellation stops request-owned work; it never acts as
+business-run cancellation. A mutation may already have committed before a
+disconnect, so an uncertain send must not be automatically retried.
 
 Browser Origins must exactly match the fixed allowlist in
 [`mcp-server-config.ts`](../turbo/apps/api/src/lib/mcp-server-config.ts). The list
@@ -901,19 +471,17 @@ bearer/protocol headers and responses expose the authentication
 challenge and protocol headers. Cookie credentials are not used. Protected-resource
 metadata supports public cross-origin discovery.
 
-## Acceptance evidence
+## Acceptance boundary
 
-Automated route tests use real Hono routing, SDK transport, RSA signature checks,
-and the membership service. Only external provider/network
-boundaries are simulated. They cover both protocol eras, complete response
-consumption, invalid grants, scope/membership isolation, Origin checks and
-provider outages.
+Route tests retain token/membership/transport isolation and canonical history,
+search, pagination, byte limits and archive integrity coverage. New public-boundary
+tests cover SDK registration without creation, ordinary create/continue sends,
+strict removal of protocol fields, sparse metadata and ordinary Run reads.
+Synthetic signed tokens do not prove real Clerk consent/issuance/refresh or
+production activation. Those require the provider setup gate above.
 
-Before enabling broader access, record a generic MCP client/Inspector check
-against a real hosted preview or staging endpoint, including complete JSON and
-SSE response delivery. Then record basic OAuth, discovery and current-tool
-workflow results for Claude, ChatGPT, Claude Code and Codex, with client
-version/account conditions. Local HTTP tests do not establish hosted-client
-reachability. OAuth foundation and discovery shipped separately in #34931 and
-#34932. The client matrix for the full tool set remains #34936; the new
-message-reader tests do not establish that broader hosted acceptance.
+History SQL owns one short repeatable-read transaction for authorized snapshot
+pointer, byte preflight and tail consistency; archive S3 reads occur after that
+transaction commits. Agent/thread/candidate reads retain short read-only
+transactions only to scope their existing three-second `SET LOCAL` deadline.
+No mutation-specific transaction, lock, retry or coordination protocol is added.

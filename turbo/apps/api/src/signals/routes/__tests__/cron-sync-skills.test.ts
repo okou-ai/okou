@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { extractFilesFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
 import { readPiResourceIndexStatusFixture } from "../../../test-fixtures/pi-resource-index";
 import {
@@ -77,6 +78,7 @@ interface CronSyncSkillsFixture {
   readonly skillNamePrefix: string;
   readonly requiredSeedSkillNames: readonly string[];
   readonly existingSkillName: string;
+  readonly sentinelSkillNamePrefix: string;
   readonly sentinelSkillName: string;
   readonly alphaSkill: MockSkillEntry;
   readonly betaSkill: MockSkillEntry;
@@ -87,6 +89,7 @@ interface CronSyncSkillsFixture {
 function createCronSyncSkillsFixture(): CronSyncSkillsFixture {
   const fixtureId = randomUUID().replaceAll("-", "");
   const skillNamePrefix = `api-test-skill-${fixtureId}-`;
+  const sentinelSkillNamePrefix = `api-test-skill-${randomUUID().replaceAll("-", "")}-`;
   const alphaName = `${skillNamePrefix}alpha`;
   const betaName = `${skillNamePrefix}beta`;
   return {
@@ -95,7 +98,8 @@ function createCronSyncSkillsFixture(): CronSyncSkillsFixture {
       return `${skillNamePrefix}${name}`;
     }),
     existingSkillName: `${skillNamePrefix}existing`,
-    sentinelSkillName: `api-test-sentinel-${fixtureId}-existing`,
+    sentinelSkillNamePrefix,
+    sentinelSkillName: `${sentinelSkillNamePrefix}existing`,
     alphaSkill: {
       name: alphaName,
       files: [
@@ -358,6 +362,78 @@ async function seedCurrentSeedSkillVersions(
   await seedCurrentSkillVersions(fixture, seedSkillEntries(fixture));
 }
 
+// The production cron scans every system skill. The existing prefix-scoped
+// route runs that same sync against this test's owned names (API testing guide,
+// Shared Persistent State); prior versions also go through GitHub and S3.
+async function publishSeedSkills(
+  fixture: CronSyncSkillsFixture,
+): Promise<void> {
+  const commitSha = newCommitSha();
+  setupMswHandlers(commitSha, createFullTarball(fixture, []));
+  await expect(syncOwnedSkills(fixture)).resolves.toStrictEqual({
+    success: true,
+    commitSha,
+    synced: fixture.requiredSeedSkillNames.length,
+    skipped: 0,
+    failed: 0,
+    removed: 0,
+    total: fixture.requiredSeedSkillNames.length,
+  });
+  context.mocks.s3.send.mockClear();
+}
+
+async function publishSentinelSkill(
+  fixture: CronSyncSkillsFixture,
+  commitSha: string,
+): Promise<void> {
+  const name = fixture.sentinelSkillName;
+  setupMswHandlers(
+    commitSha,
+    createMockTarball(fixture, [
+      {
+        name,
+        files: [
+          {
+            path: "SKILL.md",
+            content: `---\nname: ${name}\ndescription: Sentinel skill\n---\n\n# Sentinel`,
+          },
+        ],
+      },
+    ]),
+  );
+  await expect(
+    syncOwnedSkillsState(context, {
+      skillNamePrefix: fixture.sentinelSkillNamePrefix,
+      requiredSkillNames: [name],
+    }),
+  ).resolves.toStrictEqual({
+    success: true,
+    commitSha,
+    synced: 1,
+    skipped: 0,
+    failed: 0,
+    removed: 0,
+    total: 1,
+  });
+  context.mocks.s3.send.mockClear();
+}
+
+async function expectCompletedCommit(
+  fixture: CronSyncSkillsFixture,
+  commitSha: string,
+): Promise<void> {
+  setupGitRefsHandler(commitSha);
+  await expect(syncOwnedSkills(fixture)).resolves.toStrictEqual({
+    success: true,
+    commitSha,
+    synced: 0,
+    skipped: 0,
+    failed: 0,
+    removed: 0,
+    total: 0,
+  });
+}
+
 function useCronSyncSkillsFixture(): CronSyncSkillsFixture {
   const fixture = createCronSyncSkillsFixture();
   onTestFinished(async () => {
@@ -415,6 +491,53 @@ function s3CallsByName(name: string): unknown[] {
     });
 }
 
+function expectUploadedSkill(skill: MockSkillEntry): {
+  readonly archiveKey: string;
+  readonly archive: Buffer;
+} {
+  const versionHash = computeMockSkillVersionHash(skill);
+  const uploads = s3CallsByName("PutObjectCommand").map(commandInput);
+  const archives = uploads.filter((upload) => {
+    return (
+      typeof upload.Key === "string" &&
+      upload.Key.endsWith(`/${versionHash}/archive.tar.gz`)
+    );
+  });
+  expect(archives).toHaveLength(1);
+  const archive = archives[0]!;
+  if (typeof archive.Key !== "string" || !Buffer.isBuffer(archive.Body)) {
+    throw new Error("Expected an uploaded skill archive");
+  }
+  const archiveKey = archive.Key;
+  const manifests = uploads.filter((upload) => {
+    return (
+      upload.Key === archiveKey.replace(/archive\.tar\.gz$/, "manifest.json")
+    );
+  });
+  expect(manifests).toHaveLength(1);
+  const manifest = manifests[0]!;
+  if (!Buffer.isBuffer(manifest.Body)) {
+    throw new Error("Expected an uploaded skill manifest");
+  }
+  expect(JSON.parse(manifest.Body.toString("utf8"))).toMatchObject({
+    version: 1,
+    files: skill.files.map((file) => {
+      return {
+        path: file.path,
+        hash: createHash("sha256").update(file.content).digest("hex"),
+        size: Buffer.byteLength(file.content),
+      };
+    }),
+  });
+  const byPath = (left: { path: string }, right: { path: string }) => {
+    return left.path.localeCompare(right.path);
+  };
+  expect([...extractFilesFromTarGz(archive.Body)].sort(byPath)).toStrictEqual(
+    [...skill.files].sort(byPath),
+  );
+  return { archiveKey: archive.Key, archive: archive.Body };
+}
+
 function setupS3ListObjects(keys: readonly string[]): void {
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     if (commandName(command) === "ListObjectsV2Command") {
@@ -468,11 +591,13 @@ describe("GET /api/cron/sync-skills", () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
     const sentinelCommitSha = newCommitSha();
-    await setOwnedSkillsCommitSha(fixture, sentinelCommitSha, [
-      fixture.sentinelSkillName,
-    ]);
-    await setOwnedSkillsCommitSha(fixture, commitSha);
-    setupGitRefsHandler(commitSha);
+    await publishSentinelSkill(fixture, sentinelCommitSha);
+    setupMswHandlers(commitSha, createFullTarball(fixture, []));
+    await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
+      synced: fixture.requiredSeedSkillNames.length,
+      failed: 0,
+    });
+    context.mocks.s3.send.mockClear();
 
     const response = await syncOwnedSkills(fixture);
 
@@ -485,17 +610,28 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 0,
       total: 0,
     });
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
+    setupGitRefsHandler(sentinelCommitSha);
     await expect(
-      findSkillByUrl(testSkillUrl(fixture.sentinelSkillName)),
-    ).resolves.toMatchObject({ commitSha: sentinelCommitSha });
+      syncOwnedSkillsState(context, {
+        skillNamePrefix: fixture.sentinelSkillNamePrefix,
+        requiredSkillNames: [fixture.sentinelSkillName],
+      }),
+    ).resolves.toStrictEqual({
+      success: true,
+      commitSha: sentinelCommitSha,
+      synced: 0,
+      skipped: 0,
+      failed: 0,
+      removed: 0,
+      total: 0,
+    });
   });
 
   it("does not skip when the matching commit is outside the active URL prefix", async () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
-    await setOwnedSkillsCommitSha(fixture, commitSha, [
-      fixture.sentinelSkillName,
-    ]);
+    await publishSentinelSkill(fixture, commitSha);
     setupMswHandlers(
       commitSha,
       createFullTarball(fixture, [fixture.alphaSkill]),
@@ -512,15 +648,14 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 0,
       total: fixture.requiredSeedSkillNames.length + 1,
     });
-    await expect(
-      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
-    ).resolves.toMatchObject({ commitSha });
+    expectUploadedSkill(fixture.alphaSkill);
+    await expectCompletedCommit(fixture, commitSha);
   });
 
   it("syncs new skills from the repository tarball", async () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
-    await seedCurrentSeedSkillVersions(fixture);
+    await publishSeedSkills(fixture);
     setupMswHandlers(
       commitSha,
       createFullTarball(fixture, [fixture.alphaSkill, fixture.betaSkill]),
@@ -538,56 +673,10 @@ describe("GET /api/cron/sync-skills", () => {
       total: fixture.requiredSeedSkillNames.length + 2,
     });
 
-    const alphaSkill = await findSkillByUrl(
-      testSkillUrl(fixture.alphaSkill.name),
-    );
-    expect(alphaSkill).toMatchObject({
-      name: fixture.alphaSkill.name,
-      fullPath: `okou-ai/okou-skills/tree/main/${fixture.alphaSkill.name}`,
-      commitSha,
-      fileCount: 2,
-      frontmatter: {
-        name: fixture.alphaSkill.name,
-        description: "Alpha integration skill",
-      },
-    });
-    expect(alphaSkill?.versionHash).toBe(
-      buildMockSkillVersion(fixture, fixture.alphaSkill).versionHash,
-    );
-
-    const alphaStorage = await findSystemStorageByName(
-      getSkillStorageName(
-        `okou-ai/okou-skills/tree/main/${fixture.alphaSkill.name}`,
-      ),
-    );
-    if (!alphaStorage) {
-      throw new Error("Expected the alpha skill storage");
-    }
-    const alphaVersion = buildMockSkillVersion(fixture, fixture.alphaSkill);
-    const alphaArchiveKey = `${alphaStorage.s3Prefix}/${alphaVersion.versionHash}/archive.tar.gz`;
-    const alphaArchivePut = s3CallsByName("PutObjectCommand").find(
-      (command) => {
-        return commandInput(command).Key === alphaArchiveKey;
-      },
-    );
-    const alphaArchiveBody = commandInput(alphaArchivePut).Body;
-    if (!Buffer.isBuffer(alphaArchiveBody)) {
-      throw new Error("Expected the alpha skill archive upload body");
-    }
-    expect(alphaStorage).toMatchObject({
-      headVersionId: alphaVersion.versionHash,
-      size: alphaVersion.size,
-      versionSize: alphaVersion.size,
-      archiveSize: alphaArchiveBody.length,
-    });
-    expect(
-      s3CallsByName("PutObjectCommand").map((command) => {
-        return commandInput(command).Key;
-      }),
-    ).toContain(
-      `${alphaStorage.s3Prefix}/${alphaVersion.versionHash}/manifest.json`,
-    );
+    expectUploadedSkill(fixture.alphaSkill);
+    expectUploadedSkill(fixture.betaSkill);
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(4);
+    await expectCompletedCommit(fixture, commitSha);
   });
 
   it("syncs isolated counterparts for the current default seed skills", async () => {
@@ -605,39 +694,22 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 0,
       total: fixture.requiredSeedSkillNames.length,
     });
-    const syncedSkills = await Promise.all(
-      fixture.requiredSeedSkillNames.map((name) => {
-        return findSkillByUrl(testSkillUrl(name));
-      }),
-    );
-    expect(
-      syncedSkills.map((skill) => {
-        return skill?.name;
-      }),
-    ).toStrictEqual(fixture.requiredSeedSkillNames);
-    expect(
-      new Set(
-        syncedSkills.map((skill) => {
-          return skill?.versionHash;
-        }),
-      ).size,
-    ).toBe(fixture.requiredSeedSkillNames.length);
-
-    const storages = await Promise.all(
-      fixture.requiredSeedSkillNames.map((name) => {
-        const fullPath = `${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${name}`;
-        return findSystemStorageByName(getSkillStorageName(fullPath));
-      }),
-    );
-    const objectPrefixes = storages.map((storage) => {
-      if (!storage) {
-        throw new Error("Expected an isolated seed skill storage");
-      }
-      return storage.s3Prefix;
+    const archives = seedSkillEntries(fixture).map((skill) => {
+      return expectUploadedSkill(skill);
+    });
+    const objectPrefixes = archives.map(({ archiveKey }) => {
+      return archiveKey.slice(
+        0,
+        archiveKey.lastIndexOf("/", archiveKey.lastIndexOf("/") - 1),
+      );
     });
     expect(new Set(objectPrefixes).size).toBe(
       fixture.requiredSeedSkillNames.length,
     );
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(
+      fixture.requiredSeedSkillNames.length * 2,
+    );
+    await expectCompletedCommit(fixture, commitSha);
   });
 
   it("excludes repository directories without a SKILL.md file", async () => {
@@ -647,7 +719,7 @@ describe("GET /api/cron/sync-skills", () => {
       name: `${fixture.skillNamePrefix}no-skill-md`,
       files: [{ path: "README.md", content: "Not a skill." }],
     };
-    await seedCurrentSeedSkillVersions(fixture);
+    await publishSeedSkills(fixture);
     setupMswHandlers(
       commitSha,
       createFullTarball(fixture, [
@@ -668,9 +740,10 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 0,
       total: fixture.requiredSeedSkillNames.length + 2,
     });
-    await expect(
-      findSkillByUrl(testSkillUrl(nonSkillDirectory.name)),
-    ).resolves.toBeNull();
+    expectUploadedSkill(fixture.alphaSkill);
+    expectUploadedSkill(fixture.betaSkill);
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(4);
+    await expectCompletedCommit(fixture, commitSha);
   });
 
   it("retries the same commit after a partial sync failure", async () => {
@@ -695,7 +768,7 @@ describe("GET /api/cron/sync-skills", () => {
         },
       ],
     };
-    await seedCurrentSeedSkillVersions(fixture);
+    await publishSeedSkills(fixture);
     setupMswHandlers(
       commitSha,
       createFullTarball(fixture, [fixture.alphaSkill, badSkill]),
@@ -712,12 +785,9 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 0,
       total: fixture.requiredSeedSkillNames.length + 2,
     });
-    await expect(
-      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
-    ).resolves.toMatchObject({ commitSha: null });
-    await expect(
-      findSkillByUrl(testSkillUrl(badSkill.name)),
-    ).resolves.toBeNull();
+    expectUploadedSkill(fixture.alphaSkill);
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(2);
+    context.mocks.s3.send.mockClear();
 
     const repairedSkill = {
       ...badSkill,
@@ -744,12 +814,9 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 0,
       total: fixture.requiredSeedSkillNames.length + 2,
     });
-    await expect(
-      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
-    ).resolves.toMatchObject({ commitSha });
-    await expect(
-      findSkillByUrl(testSkillUrl(badSkill.name)),
-    ).resolves.toMatchObject({ commitSha });
+    expectUploadedSkill(repairedSkill);
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(2);
+    await expectCompletedCommit(fixture, commitSha);
   });
 
   it("retains archive expansion limits when indexing unchanged skill versions", async () => {
@@ -781,7 +848,7 @@ describe("GET /api/cron/sync-skills", () => {
   it("only uploads changed skills during incremental sync", async () => {
     const fixture = useCronSyncSkillsFixture();
     const firstCommitSha = newCommitSha();
-    await seedCurrentSeedSkillVersions(fixture);
+    await publishSeedSkills(fixture);
     setupMswHandlers(
       firstCommitSha,
       createFullTarball(fixture, [fixture.alphaSkill, fixture.betaSkill]),
@@ -825,15 +892,8 @@ describe("GET /api/cron/sync-skills", () => {
     });
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(2);
 
-    await expect(
-      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
-    ).resolves.toMatchObject({
-      commitSha: nextCommitSha,
-      frontmatter: {
-        name: fixture.alphaSkill.name,
-        description: "Updated alpha skill",
-      },
-    });
+    expectUploadedSkill(modifiedAlpha);
+    await expectCompletedCommit(fixture, nextCommitSha);
   });
 
   it("reuses a previously registered skill version after A to B to A", async () => {
@@ -893,7 +953,7 @@ describe("GET /api/cron/sync-skills", () => {
     "registers a new skill version only after its %s upload succeeds",
     async (filename) => {
       const fixture = useCronSyncSkillsFixture();
-      await seedCurrentSeedSkillVersions(fixture);
+      await publishSeedSkills(fixture);
       const commitSha = newCommitSha();
       const tarball = createFullTarball(fixture, [fixture.alphaSkill]);
       setupMswHandlers(commitSha, tarball);
@@ -913,28 +973,17 @@ describe("GET /api/cron/sync-skills", () => {
         synced: 0,
         failed: 1,
       });
-      await expect(findSkillByUrl(version.url)).resolves.toBeNull();
-      await expect(
-        findSystemStorageByName(version.storageName),
-      ).resolves.toMatchObject({
-        headVersionId: null,
-        archiveSize: null,
-      });
+      expect(s3CallsByName("PutObjectCommand")).toHaveLength(2);
+      context.mocks.s3.send.mockClear();
 
       context.mocks.s3.send.mockResolvedValue({});
       await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
         synced: 1,
         failed: 0,
       });
-      await expect(
-        findSystemStorageByName(version.storageName),
-      ).resolves.toMatchObject({
-        headVersionId: version.versionHash,
-      });
-      await expect(findSkillByUrl(version.url)).resolves.toMatchObject({
-        versionHash: version.versionHash,
-        commitSha,
-      });
+      expectUploadedSkill(fixture.alphaSkill);
+      expect(s3CallsByName("PutObjectCommand")).toHaveLength(2);
+      await expectCompletedCommit(fixture, commitSha);
     },
   );
 
@@ -1118,7 +1167,7 @@ describe("GET /api/cron/sync-skills", () => {
   it("keeps DB orphan removal when S3 cleanup fails", async () => {
     const fixture = useCronSyncSkillsFixture();
     const firstCommitSha = newCommitSha();
-    await seedCurrentSeedSkillVersions(fixture);
+    await publishSeedSkills(fixture);
     setupMswHandlers(
       firstCommitSha,
       createFullTarball(fixture, [fixture.alphaSkill, fixture.betaSkill]),
@@ -1148,9 +1197,25 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 1,
       total: fixture.requiredSeedSkillNames.length + 1,
     });
-    await expect(
-      findSkillByUrl(testSkillUrl(fixture.betaSkill.name)),
-    ).resolves.toBeNull();
+    await expectCompletedCommit(fixture, nextCommitSha);
+    context.mocks.s3.send.mockResolvedValue({});
+    context.mocks.s3.send.mockClear();
+    const restoredCommitSha = newCommitSha();
+    setupMswHandlers(
+      restoredCommitSha,
+      createFullTarball(fixture, [fixture.alphaSkill, fixture.betaSkill]),
+    );
+    await expect(syncOwnedSkills(fixture)).resolves.toStrictEqual({
+      success: true,
+      commitSha: restoredCommitSha,
+      synced: 1,
+      skipped: fixture.requiredSeedSkillNames.length + 1,
+      failed: 0,
+      removed: 0,
+      total: fixture.requiredSeedSkillNames.length + 2,
+    });
+    expectUploadedSkill(fixture.betaSkill);
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(2);
   });
 
   it("restores missing required skills after a source rollback", async () => {
@@ -1194,11 +1259,8 @@ describe("GET /api/cron/sync-skills", () => {
       removed: omittedSkills.length,
       total: keptSkills.length,
     });
-    await Promise.all(
-      omittedSkills.map(async (name) => {
-        await expect(findSkillByUrl(testSkillUrl(name))).resolves.toBeNull();
-      }),
-    );
+    await expectCompletedCommit(fixture, removalCommitSha);
+    context.mocks.s3.send.mockClear();
 
     setupMswHandlers(initialCommitSha, createFullTarball(fixture, []));
     const rollbackResponse = await syncOwnedSkills(fixture);
@@ -1212,12 +1274,14 @@ describe("GET /api/cron/sync-skills", () => {
       removed: 0,
       total: fixture.requiredSeedSkillNames.length,
     });
-    await Promise.all(
-      omittedSkills.map(async (name) => {
-        await expect(findSkillByUrl(testSkillUrl(name))).resolves.toMatchObject(
-          { commitSha: initialCommitSha },
-        );
-      }),
+    for (const skill of seedSkillEntries(fixture)) {
+      if (omittedSkillSet.has(skill.name)) {
+        expectUploadedSkill(skill);
+      }
+    }
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(
+      omittedSkills.length * 2,
     );
+    await expectCompletedCommit(fixture, initialCommitSha);
   });
 });

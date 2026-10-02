@@ -13,7 +13,7 @@ import {
 } from "../../../lib/db-instrumentation";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import { nowDate } from "../../../lib/time";
-import { writeDb$, type Db } from "../../external/db";
+import { writeDb$ } from "../../external/db";
 import {
   createStorageManifestPresignedUrlCacheRows,
   readOnlyStoragePresignedUrlCacheKey,
@@ -287,7 +287,6 @@ function repeatedFixture(
 }
 
 const internalCacheFixture$ = state<{
-  readonly db: Db;
   readonly fixture: BenchFixture;
 } | null>(null);
 const cacheInput$ = computed((get) => {
@@ -295,9 +294,8 @@ const cacheInput$ = computed((get) => {
   if (!input) {
     return Promise.resolve(undefined);
   }
-  const { db, fixture } = input;
+  const { fixture } = input;
   return Promise.resolve({
-    db,
     input: {
       systemRequests: fixture.systemRequests,
       workflowSkillRequests: fixture.workflowSkillRequests,
@@ -311,12 +309,15 @@ const cacheInput$ = computed((get) => {
     ],
   });
 });
-const cacheRows$ = createStorageManifestPresignedUrlCacheRows(cacheInput$);
+const cacheRows$ = computed(async (get) => {
+  const input = await get(cacheInput$);
+  return await get(createStorageManifestPresignedUrlCacheRows(input));
+});
 
 async function prefetchFixture(fixture: BenchFixture) {
   // A fresh input invalidates the fixed reader on every iteration, including
   // repeated fixtures and concurrent reads; no benchmark result is memoized.
-  store.set(internalCacheFixture$, { db: store.set(writeDb$), fixture });
+  store.set(internalCacheFixture$, { fixture });
   return await store.get(cacheRows$);
 }
 

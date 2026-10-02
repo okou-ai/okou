@@ -1,3 +1,8 @@
+import {
+  chatEventAppendResultSchema,
+  chatEventCommandResultSchema,
+} from "../signals/services/chat-event-append.service";
+import { parseRawRows } from "../lib/db-raw-rows";
 import { createHash, randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -18,10 +23,12 @@ import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
 import {
-  insertChatEvent,
-  insertChatEvents,
-  replaceChatEvent,
-  revokeChatEvent,
+  chatEventInsertSql,
+  chatEventsInsertSql,
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
 } from "../signals/services/chat-event.service";
 
 const RETENTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -44,13 +51,20 @@ export const seedRetentionOutputEvent$ = command(
     signal: AbortSignal,
   ): Promise<string> => {
     const inserted = await set(writeDb$).transaction(async (tx) => {
-      return await insertChatEvent(tx, {
-        chatThreadId: args.chatThreadId,
-        eventType: "output.message",
-        runId: args.runId ?? null,
-        content: args.content ?? `retention-output-${randomUUID()}`,
-        createdAt: retentionCreatedAt(args.offsetMs),
-      });
+      return (
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql({
+              chatThreadId: args.chatThreadId,
+              eventType: "output.message",
+              runId: args.runId ?? null,
+              content: args.content ?? `retention-output-${randomUUID()}`,
+              createdAt: retentionCreatedAt(args.offsetMs),
+            }),
+          ),
+        )[0] ?? null
+      );
     });
     signal.throwIfAborted();
     if (inserted === null) {
@@ -71,17 +85,21 @@ export const seedRetentionOutputEvents$ = command(
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
     const inserted = await set(writeDb$).transaction(async (tx) => {
-      return await insertChatEvents(
-        tx,
-        Array.from({ length: args.count }, (_, index) => {
-          return {
-            chatThreadId: args.chatThreadId,
-            eventType: "output.message" as const,
-            runId: null,
-            content: `retention-output-${index.toString()}-${randomUUID()}`,
-            createdAt: retentionCreatedAt(args.offsetMs),
-          };
-        }),
+      return parseRawRows(
+        chatEventAppendResultSchema,
+        await tx.execute(
+          chatEventsInsertSql(
+            Array.from({ length: args.count }, (_, index) => {
+              return {
+                chatThreadId: args.chatThreadId,
+                eventType: "output.message" as const,
+                runId: null,
+                content: `retention-output-${index.toString()}-${randomUUID()}`,
+                createdAt: retentionCreatedAt(args.offsetMs),
+              };
+            }),
+          ),
+        ),
       );
     });
     signal.throwIfAborted();
@@ -101,17 +119,24 @@ export const seedRetentionPendingEvent$ = command(
     signal: AbortSignal,
   ): Promise<string> => {
     const inserted = await set(writeDb$).transaction(async (tx) => {
-      return await insertChatEvent(tx, {
-        chatThreadId: args.chatThreadId,
-        eventType: "input.prompt",
-        runId: null,
-        contextType: "web",
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: `pending-${randomUUID()}` }],
-        },
-        createdAt: retentionCreatedAt(args.offsetMs),
-      });
+      return (
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql({
+              chatThreadId: args.chatThreadId,
+              eventType: "input.prompt",
+              runId: null,
+              contextType: "web",
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: `pending-${randomUUID()}` }],
+              },
+              createdAt: retentionCreatedAt(args.offsetMs),
+            }),
+          ),
+        )[0] ?? null
+      );
     });
     signal.throwIfAborted();
     if (inserted === null) {
@@ -132,31 +157,53 @@ export const seedRetentionInvisibleReplacement$ = command(
     signal: AbortSignal,
   ): Promise<{ readonly targetId: string; readonly replacementId: string }> => {
     const result = await set(writeDb$).transaction(async (tx) => {
-      const target = await insertChatEvent(tx, {
-        chatThreadId: args.chatThreadId,
-        eventType: "input.prompt",
-        runId: null,
-        contextType: "web",
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: `replaced-${randomUUID()}` }],
-        },
-        createdAt: retentionCreatedAt(args.targetOffsetMs),
-      });
+      const target =
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql({
+              chatThreadId: args.chatThreadId,
+              eventType: "input.prompt",
+              runId: null,
+              contextType: "web",
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: `replaced-${randomUUID()}` }],
+              },
+              createdAt: retentionCreatedAt(args.targetOffsetMs),
+            }),
+          ),
+        )[0] ?? null;
       if (target === null) {
         throw new Error("Expected retention replacement target insertion");
       }
-      const replacement = await replaceChatEvent(tx, target.id, {
-        chatThreadId: args.chatThreadId,
-        eventType: "input.prompt",
-        runId: null,
-        contextType: "web",
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: `replacement-${randomUUID()}` }],
-        },
-        createdAt: retentionCreatedAt(args.replacementOffsetMs),
-      });
+      const replacement =
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventReplacementInsertSql(
+              requireChatEventReplacementTarget(
+                parseRawRows(
+                  chatEventReplacementTargetSchema,
+                  await tx.execute(chatEventReplacementTargetSql(target.id)),
+                ),
+              ),
+              {
+                chatThreadId: args.chatThreadId,
+                eventType: "input.prompt",
+                runId: null,
+                contextType: "web",
+                userMessage: {
+                  version: 1,
+                  parts: [
+                    { type: "text", text: `replacement-${randomUUID()}` },
+                  ],
+                },
+                createdAt: retentionCreatedAt(args.replacementOffsetMs),
+              },
+            ),
+          ),
+        )[0] ?? null;
       if (replacement === null) {
         throw new Error("Expected retention replacement insertion");
       }
@@ -178,12 +225,28 @@ export const revokeRetentionEvent$ = command(
     signal: AbortSignal,
   ): Promise<string> => {
     const revoker = await set(writeDb$).transaction(async (tx) => {
-      return await revokeChatEvent(tx, args.eventId, {
-        chatThreadId: args.chatThreadId,
-        eventType: "control.revoke",
-        runId: null,
-        createdAt: retentionCreatedAt(args.offsetMs),
-      });
+      return (
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventReplacementInsertSql(
+              requireChatEventReplacementTarget(
+                parseRawRows(
+                  chatEventReplacementTargetSchema,
+                  await tx.execute(chatEventReplacementTargetSql(args.eventId)),
+                ),
+              ),
+              {
+                chatThreadId: args.chatThreadId,
+                eventType: "control.revoke",
+                runId: null,
+                createdAt: retentionCreatedAt(args.offsetMs),
+                content: null,
+              },
+            ),
+          ),
+        )[0] ?? null
+      );
     });
     signal.throwIfAborted();
     if (revoker === null) {

@@ -1,10 +1,7 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import {
-  loadSystemDefaultRunModel,
-  type ModelCatalog,
-} from "./model-catalog.service";
+import type { ModelCatalog } from "./model-catalog.service";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
@@ -13,9 +10,8 @@ import {
   reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db } from "../external/db";
 import {
-  isMemberSubscriptionRoute,
   loadMemberModelRouteContext,
   type MemberModelRouteContext,
   type PreparedMemberModelRouteContext,
@@ -156,40 +152,12 @@ export async function loadMemberSubscriptionModels(
 }
 
 /**
- * Admission read of `isMemberSubscriptionRoute` from current connection facts:
- * in Auto and Custom mode alike, only the member's own valid subscription on
- * the model's catalog subscription route is plan-exempt.
- */
-export async function isPersonalSubscriptionRoute(args: {
-  db: ReadonlyDb;
-  catalog: ModelCatalog;
-  orgId: string;
-  userId: string;
-  model: string | null | undefined;
-  providerType: string | null | undefined;
-}): Promise<boolean> {
-  if (
-    !args.model ||
-    (args.providerType !== "claude-code-oauth-token" &&
-      args.providerType !== "codex-oauth-token")
-  ) {
-    return false;
-  }
-  return isMemberSubscriptionRoute({
-    catalog: args.catalog,
-    member: await loadMemberModelRouteContext(args.db, args.orgId, args.userId),
-    model: args.model,
-    providerType: args.providerType,
-    credentialScope: "member",
-  });
-}
-
-/**
  * A disconnected subscription stops backing an Auto member's selection. Return
  * that member to the system default when no policy or remaining subscription
  * still offers the saved model.
  */
 export async function resetStaleAutoMemberSelection(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   orgId: string,
   userId: string,
@@ -239,7 +207,7 @@ export async function resetStaleAutoMemberSelection(
   await db
     .update(orgMembersMetadata)
     .set({
-      selectedModel: await loadSystemDefaultRunModel(db),
+      selectedModel: await catalogSnapshot.systemDefaultModel,
       serviceTier: null,
       updatedAt: nowDate(),
     })

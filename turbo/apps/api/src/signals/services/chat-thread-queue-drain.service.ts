@@ -1,6 +1,9 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEvents,
+  chatEventRunlessInputPredicate,
+} from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
 import {
@@ -8,155 +11,127 @@ import {
   count,
   eq,
   isNotNull,
+  inArray,
   isNull,
   lte,
   notExists,
   or,
 } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { nowDate } from "../../lib/time";
+import { db$, writeDb$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
-import { safeSync, settle, tapError } from "../utils";
+import { settle, tapError } from "../utils";
 import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
 import type { PrefetchedModelBootstrap } from "./model-bootstrap.service";
-import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
   chatInputEnqueueCommits$,
   type ChatInputEnqueueCommit,
 } from "./chat-input-enqueue-observation";
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
-import { createPickObjects } from "./pick-chat-run.service";
 import {
-  listQueuedChatThreadOrgIds,
-  markChatThreadQueued,
-} from "./queued-chat-thread.service";
+  pickChatThread$,
+  type OrgPickCursor,
+  type PickIteration,
+} from "./pick-chat-run.service";
+import { listQueuedChatThreadOrgIds$ } from "./queued-chat-thread.service";
 
 const L = logger("ChatThreadQueue");
-
-export type EnqueueChatInputStep = "transaction" | "callback" | "queue_upsert";
-
-export interface EnqueueChatInput {
-  readonly chatThreadId: string;
-  readonly orgId: string;
-  /**
-   * Write the run-less `input.prompt` / `input.automation` event (and, for a
-   * new thread, its minimal `chat_threads` row) in the enqueue transaction.
-   * Returns the event id, or null when an idempotent retry appended nothing.
-   * Entry-specific context rows are written by the entry in this transaction.
-   */
-  readonly appendInput: (tx: Tx) => Promise<string | null>;
-  /** The producer's own write that commits with the input, when it has one. */
-  readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
-  /** Captures a local receipt; observation failure cannot change a committed input. */
-  readonly onCommitted?: (receipt: ChatInputEnqueueCommit) => void;
-  /** Optional, fail-open observation for the workflow producer; no other ingress opts in. */
-  readonly measureStep?: <T>(
-    step: EnqueueChatInputStep,
-    operation: () => Promise<T>,
-  ) => Promise<T>;
-}
-
-async function measureEnqueueStep<T>(
-  input: EnqueueChatInput,
-  step: EnqueueChatInputStep,
-  operation: () => Promise<T>,
-): Promise<T> {
-  return input.measureStep
-    ? await input.measureStep(step, operation)
-    : await operation();
-}
-
-/**
- * The single enqueue for every chat input: web, CLI and MCP sends,
- * integrations, and every workflow trigger. One transaction appends the
- * run-less input and upserts the thread's `queued_chat_threads` row, advancing
- * its `queuedAt` without touching a live lease; a lease holder whose
- * empty-queue delete misses that change releases and schedules one new pick.
- * The entry captures the input's model at enqueue; the pick resolves that
- * decision's route and performs credit admission. Enqueue adds no explicit
- * row lock.
- */
-export async function enqueueChatInput(
-  db: Db,
-  input: EnqueueChatInput,
-): Promise<string | null> {
-  return await measureEnqueueStep(input, "transaction", async () => {
-    const eventId = await db.transaction(async (tx) => {
-      return await measureEnqueueStep(input, "callback", async () => {
-        const eventId = await input.appendInput(tx);
-        if (eventId === null) {
-          return null;
-        }
-        await input.persistSourceTransition?.(tx, eventId);
-        await measureEnqueueStep(input, "queue_upsert", async () => {
-          await markChatThreadQueued(tx, {
-            chatThreadId: input.chatThreadId,
-            orgId: input.orgId,
-          });
-        });
-        return eventId;
-      });
-    });
-    const committedAt = now();
-    if (eventId !== null) {
-      safeSync(() => {
-        input.onCommitted?.({ eventId, committedAt });
-      });
-    }
-    return eventId;
-  });
-}
 
 /**
  * Tell the thread's running run, if any, that it has a pending input to
  * steer, through its runner group. The runner also reads pending input at
  * startup and after its Ably subscription reconnects.
  */
-export async function notifyRunningChatRunOfPendingInput(
-  db: Db,
-  chatThreadId: string,
-): Promise<boolean> {
-  const [run] = await db
-    .select({
-      id: agentRuns.id,
-      runnerGroup: agentRuns.runnerGroup,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, chatThreadId),
-        eq(agentRuns.status, "running"),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run) {
-    return false;
-  }
-  const pendingInput = await listPendingChatInputs(db, {
-    chatThreadId,
-    eventTypes: ["input.prompt"],
-    budgetForRunId: run.id,
-  });
-  if (pendingInput.length === 0) {
-    return false;
-  }
-  if (run.runnerGroup) {
-    await tapError(
-      publishActiveInputToRunnerGroup(run.runnerGroup, run.id),
-      (error) => {
-        L.warn("Failed to notify runner about active input", {
-          chatThreadId,
-          runId: run.id,
-          error,
-        });
-      },
+export const notifyRunningChatRunOfPendingInput$ = command(
+  async (
+    { get },
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const database = get(db$);
+    const [run] = await database
+      .select({
+        id: agentRuns.id,
+        runnerGroup: agentRuns.runnerGroup,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.chatThreadId, chatThreadId),
+          eq(agentRuns.status, "running"),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run) {
+      return false;
+    }
+    const candidates = await database
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, chatThreadId),
+          chatEventRunlessInputPredicate(
+            chatEvents.runId,
+            chatEvents.eventType,
+          ),
+          or(
+            eq(chatEvents.eventType, "input.prompt"),
+            and(
+              eq(chatEvents.eventType, "input.budget"),
+              eq(chatEvents.contextType, "agent_run"),
+              eq(chatEvents.contextId, run.id),
+            ),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    if (candidates.length === 0) {
+      return false;
+    }
+    const revokers = await database
+      .select({ eventId: chatEvents.revokesEventId })
+      .from(chatEvents)
+      .where(
+        inArray(
+          chatEvents.revokesEventId,
+          candidates.map((event) => {
+            return event.id;
+          }),
+        ),
+      );
+    signal.throwIfAborted();
+    const revoked = new Set(
+      revokers.map((event) => {
+        return event.eventId;
+      }),
     );
-  }
-  return true;
-}
+    if (
+      candidates.every((event) => {
+        return revoked.has(event.id);
+      })
+    ) {
+      return false;
+    }
+    if (run.runnerGroup) {
+      await tapError(
+        publishActiveInputToRunnerGroup(run.runnerGroup, run.id),
+        (error) => {
+          L.warn("Failed to notify runner about active input", {
+            chatThreadId,
+            runId: run.id,
+            error,
+          });
+        },
+      );
+    }
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
 /**
  * User-facing observation of one enqueued input for integrations, taken after
@@ -232,13 +207,8 @@ export const pickEnqueuedChatThread$ = command(
         return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
-    const { pick$ } = createPickObjects(
-      input.orgId,
-      input.chatThreadId,
-      input.prefetchedBootstrap,
-      input.prefetchedModels,
-    );
-    return await set(pick$, signal);
+    const { result } = await set(pickChatThread$, input, signal);
+    return result;
   },
 );
 
@@ -247,7 +217,7 @@ const PICK_PAGE_SIZE = 100;
 
 /**
  * A finite organization pass handles at most the queued-thread count captured
- * at entry. One factory owns the keyset cursor and skips active/leased work;
+ * at entry. Each invocation owns its keyset cursor and skips active/leased work;
  * each candidate is visited once, even when it has no input, loses its claim,
  * or rejects its head. A `none` pick is not a signal that the organization is
  * empty; the pass stops early only when a pick found the organization full.
@@ -288,10 +258,15 @@ export const pickOrgQueuedChatThreads$ = command(
     if (!snapshot) {
       throw new Error("Queued chat thread count returned no row");
     }
-    const { pick$ } = createPickObjects(input.orgId);
+    let cursor: OrgPickCursor | null = null;
     let launched = 0;
     for (let visited = 0; visited < snapshot.count; visited++) {
-      const picked = await set(pick$, signal);
+      const { result: picked, cursor: nextCursor }: PickIteration = await set(
+        pickChatThread$,
+        { orgId: input.orgId, after: cursor },
+        signal,
+      );
+      cursor = nextCursor;
       signal.throwIfAborted();
       if (picked.kind === "org-full") {
         return launched;
@@ -310,14 +285,17 @@ export const pickOrgQueuedChatThreads$ = command(
  */
 export const pickAllQueuedOrgs$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {
-    const db = set(writeDb$);
     let launched = 0;
     let after: string | undefined;
     while (true) {
-      const orgIds = await listQueuedChatThreadOrgIds(db, {
-        limit: PICK_PAGE_SIZE,
-        ...(after === undefined ? {} : { after }),
-      });
+      const orgIds = await set(
+        listQueuedChatThreadOrgIds$,
+        {
+          limit: PICK_PAGE_SIZE,
+          ...(after === undefined ? {} : { after }),
+        },
+        signal,
+      );
       signal.throwIfAborted();
       for (const orgId of orgIds) {
         const picked = await settle(

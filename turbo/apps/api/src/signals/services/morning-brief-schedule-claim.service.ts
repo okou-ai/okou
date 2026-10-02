@@ -12,12 +12,13 @@ import {
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gt, type SQL } from "drizzle-orm";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
@@ -549,57 +550,36 @@ export const settleMorningBriefSchedulePreRunFailure$ = command(
   },
 );
 
-export async function bindMorningBriefScheduleClaimRun(
-  db: Db | Tx,
-  args: { readonly queueEventId: string; readonly runId: string },
-): Promise<void> {
-  await db
-    .update(morningBriefScheduleClaims)
-    .set({
-      runId: args.runId,
-      queueDisposition: "claimed",
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.queueEventId, args.queueEventId),
-        isNull(morningBriefScheduleClaims.runId),
-      ),
-    );
-}
+export const morningBriefScheduleClaimBound$ = command(
+  async ({ get }, runId: string, signal: AbortSignal): Promise<boolean> => {
+    const [bound] = await get(db$)
+      .select({ id: morningBriefScheduleClaims.id })
+      .from(morningBriefScheduleClaims)
+      .where(eq(morningBriefScheduleClaims.runId, runId))
+      .limit(1);
+    signal.throwIfAborted();
+    return bound !== undefined;
+  },
+);
 
-export async function morningBriefScheduleClaimBound(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<boolean> {
-  const [bound] = await db
-    .select({ id: morningBriefScheduleClaims.id })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.runId, runId))
-    .limit(1);
-  return bound !== undefined;
-}
-
-export async function morningBriefScheduleClaimSuperseded(
-  tx: Tx,
-  runId: string,
-): Promise<boolean> {
-  const [own] = await tx
-    .select({
-      automationId: morningBriefScheduleClaims.automationId,
-      claimSequence: morningBriefScheduleClaims.claimSequence,
-    })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.runId, runId))
-    .limit(1);
-  if (!own) {
-    return false;
-  }
-  const [current] = await tx
-    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.automationId, own.automationId))
-    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-    .limit(1);
-  return (current?.claimSequence ?? own.claimSequence) > own.claimSequence;
+/** Pure predicate, evaluated by the post-commit owner after its existing lock. */
+export function morningBriefScheduleClaimSupersededCondition(runId: string) {
+  const own = alias(morningBriefScheduleClaims, "own_schedule_claim");
+  const successor = alias(
+    morningBriefScheduleClaims,
+    "successor_schedule_claim",
+  );
+  return exists(
+    new QueryBuilder()
+      .select({ id: successor.id })
+      .from(own)
+      .innerJoin(
+        successor,
+        and(
+          eq(successor.automationId, own.automationId),
+          gt(successor.claimSequence, own.claimSequence),
+        ),
+      )
+      .where(eq(own.runId, runId)),
+  );
 }

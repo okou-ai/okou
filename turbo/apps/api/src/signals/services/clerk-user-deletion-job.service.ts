@@ -4,14 +4,13 @@ import { z } from "zod";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import {
-  claimBackgroundJob,
-  checkpointBackgroundJob,
-  completeBackgroundJob,
-  enqueueBackgroundJob,
-  retryBackgroundJob,
+  claimBackgroundJob$,
+  checkpointBackgroundJob$,
+  completeBackgroundJob$,
+  enqueueBackgroundJob$,
+  retryBackgroundJob$,
   type ClaimedBackgroundJob,
 } from "./background-job.service";
 import { cleanupClerkDeletedUser$ } from "./webhooks-clerk-cleanup.service";
@@ -27,48 +26,59 @@ const checkpointSchema = z.object({
   emptyOrgIds: z.array(z.string()).optional(),
 });
 
-async function settleDeletionAttempt(
-  db: Db,
-  job: ClaimedBackgroundJob,
-  work: Promise<void>,
-): Promise<void> {
-  const attempt = await settleIncludingAbort(work);
-  // Cleanup may have been aborted. Use a fresh deadline to release the lease.
-  const persistenceSignal = AbortSignal.timeout(5000);
-  if (attempt.ok) {
-    const saved = await completeBackgroundJob(db, { job }, persistenceSignal);
-    if (!saved) {
-      throw new Error("User deletion lost its job lease");
+const settleDeletionAttempt$ = command(
+  async (
+    { set },
+    job: ClaimedBackgroundJob,
+    attempt: Awaited<ReturnType<typeof settleIncludingAbort<void>>>,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    // Cleanup may have been aborted. Use a fresh deadline to release the lease.
+    const persistenceSignal = signal;
+    if (attempt.ok) {
+      const saved = await set(
+        completeBackgroundJob$,
+        { job },
+        persistenceSignal,
+      );
+      signal.throwIfAborted();
+      persistenceSignal.throwIfAborted();
+      if (!saved) {
+        throw new Error("User deletion lost its job lease");
+      }
+    } else {
+      L.error("user.deleted cleanup failed", {
+        userId: job.userId,
+        error: attempt.error,
+      });
+      const saved = await set(
+        retryBackgroundJob$,
+        {
+          job,
+          error:
+            attempt.error instanceof Error
+              ? attempt.error.message
+              : "User deletion cleanup failed",
+          availableAt: new Date(nowDate().getTime() + RETRY_DELAY_MS),
+        },
+        persistenceSignal,
+      );
+      signal.throwIfAborted();
+      persistenceSignal.throwIfAborted();
+      if (!saved) {
+        throw new Error("User deletion lost its job lease");
+      }
     }
-  } else {
-    L.error("user.deleted cleanup failed", {
-      userId: job.userId,
-      error: attempt.error,
-    });
-    const saved = await retryBackgroundJob(
-      db,
-      {
-        job,
-        error:
-          attempt.error instanceof Error
-            ? attempt.error.message
-            : "User deletion cleanup failed",
-        availableAt: new Date(nowDate().getTime() + RETRY_DELAY_MS),
-      },
-      persistenceSignal,
-    );
-    if (!saved) {
-      throw new Error("User deletion lost its job lease");
-    }
-  }
-  persistenceSignal.throwIfAborted();
-}
+    persistenceSignal.throwIfAborted();
+  },
+);
 
 export const enqueueClerkUserDeletion$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<string> => {
     const jobId = uuidv5(userId, JOB_NAMESPACE);
-    await enqueueBackgroundJob(
-      set(writeDb$),
+    await set(
+      enqueueBackgroundJob$,
       {
         id: jobId,
         kind: JOB_KIND,
@@ -91,9 +101,8 @@ export const executeClerkUserDeletionWork$ = command(
     args: { readonly jobId?: string },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
-    const db = set(writeDb$);
-    const job = await claimBackgroundJob(
-      db,
+    const job = await set(
+      claimBackgroundJob$,
       {
         jobId: args.jobId,
         kind: JOB_KIND,
@@ -112,11 +121,12 @@ export const executeClerkUserDeletionWork$ = command(
         userId: job.userId,
         emptyOrgIds,
         checkpointEmptyOrgIds: async (orgIds, checkpointSignal) => {
-          const saved = await checkpointBackgroundJob(
-            db,
+          const saved = await set(
+            checkpointBackgroundJob$,
             { job, checkpoint: { emptyOrgIds: [...orgIds] } },
             checkpointSignal,
           );
+          checkpointSignal.throwIfAborted();
           if (!saved) {
             throw new Error("User deletion lost its job lease");
           }
@@ -124,7 +134,12 @@ export const executeClerkUserDeletionWork$ = command(
       },
       signal,
     );
-    await settleDeletionAttempt(db, job, work);
+    await set(
+      settleDeletionAttempt$,
+      job,
+      await settleIncludingAbort(work),
+      AbortSignal.timeout(5000),
+    );
     signal.throwIfAborted();
     return { processed: 1 };
   },

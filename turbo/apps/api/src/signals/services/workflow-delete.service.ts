@@ -1,3 +1,13 @@
+import { nowDate } from "../../lib/time";
+import { piStableContextGenerations } from "@okouai/db/schema/pi-stable-context";
+import {
+  piStableContextGenerationValues,
+  retirePiStableContextPublicationSql,
+  publicationScopePendingSql,
+  publicationReadinessSql,
+  invalidatePiStableContextSql,
+  piStableContextWorkflowPublicationKey,
+} from "./pi-stable-context-generation.service";
 import {
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
@@ -14,13 +24,6 @@ import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { lockAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
-import {
-  invalidatePiStableContext,
-  lockPiStableContextGenerationScopes,
-  piStableContextWorkflowInvalidationOptions,
-  piStableContextWorkflowPublicationKey,
-  retirePiStableContextPublication,
-} from "./pi-stable-context-generation.service";
 
 interface DeleteWorkflowInput {
   readonly orgId: string;
@@ -60,26 +63,22 @@ async function retireDeletedWorkflowStableContext(
       userId: args.workflow.ownerUserId,
     },
   ] as const;
-  await lockPiStableContextGenerationScopes(tx, scopes);
+  await tx
+    .insert(piStableContextGenerations)
+    .values(piStableContextGenerationValues(scopes))
+    .onConflictDoNothing();
   const publicationKey = piStableContextWorkflowPublicationKey(
     args.workflow.id,
   );
   for (const scope of scopes) {
-    await retirePiStableContextPublication(tx, scope, publicationKey);
+    await tx.execute(publicationScopePendingSql(scope, nowDate()));
+    await tx.execute(
+      retirePiStableContextPublicationSql(scope, publicationKey),
+    );
+    await tx.execute(publicationReadinessSql(scope, nowDate()));
   }
   for (const scope of scopes) {
-    await invalidatePiStableContext(
-      tx,
-      scope,
-      piStableContextWorkflowInvalidationOptions({
-        kind: "delete",
-        workflow: {
-          workflowId: args.workflow.id,
-          name: args.workflow.name,
-          officialDefinitionName: args.workflow.officialDefinitionName,
-        },
-      }),
-    );
+    await tx.execute(invalidatePiStableContextSql(scope, nowDate()));
   }
 }
 

@@ -19,11 +19,13 @@ import {
   isNotNull,
   isNull,
   not,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { stripMarkdown } from "../../lib/strip-markdown";
-import { waitUntil } from "../context/wait-until";
+import { command } from "ccstate";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   AUXILIARY_TEXT_MAX_TOKENS,
   FAST_PATH_MODEL,
@@ -32,7 +34,7 @@ import {
   openRouterTokenCounts,
 } from "../external/openrouter";
 import { publishThreadListChanged } from "../external/realtime";
-import type { Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { safeJsonParse, tapError } from "../utils";
 import {
@@ -40,12 +42,12 @@ import {
   type RecordAuxiliaryGenerationDetail,
 } from "./auxiliary-generation.service";
 import { chatEventTextCondition } from "./chat-event-type.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
+import { visibleChatEventPredicate } from "./chat-event-shared.service";
 import {
   RECOMMENDED_FOLLOWUP_LIMIT,
   normalizeRecommendedFollowups,
 } from "./chat-recommended-followups.service";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { queuedUserMessageExists } from "./chat-queued-event.service";
 import {
   projectUserMessage,
@@ -146,16 +148,14 @@ interface ChatCompletionContextRow {
   readonly userMessage: ChatEventUserMessage | null;
 }
 
-type SelectDb = Pick<Db, "select">;
-
-function completedConversationContextMessageCondition(db: SelectDb) {
+function completedConversationContextMessageCondition() {
   return and(
-    not(queuedUserMessageExists(db)),
+    not(queuedUserMessageExists()),
     not(
       and(
         isNotNull(chatEvents.runId),
         exists(
-          db
+          new QueryBuilder()
             .select({ one: agentRuns.id })
             .from(agentRuns)
             .where(
@@ -228,6 +228,7 @@ async function generateFastPathText(
 function generateChatTitle(
   input: ChatTitleInput,
   record: RecordAuxiliaryGenerationDetail,
+  signal: AbortSignal,
 ): Promise<string | null> {
   const sections: string[] = [];
 
@@ -264,6 +265,7 @@ function generateChatTitle(
     ],
     AUXILIARY_TEXT_MAX_TOKENS,
     { record },
+    signal,
   );
 }
 
@@ -312,164 +314,166 @@ export async function generateSharedThreadTitle(
   return title || "Shared conversation";
 }
 
-async function getLatestTitleContextMessages(
-  db: SelectDb,
-  threadId: string,
-): Promise<ChatCompletionContextMessage[]> {
-  const rows = await db
-    .select({
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    })
-    .from(chatEvents)
-    .leftJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        chatEventTextCondition(),
-        visibleChatEventCondition(db),
-        completedConversationContextMessageCondition(db),
-      ),
-    )
-    .orderBy(desc(chatEvents.seqId))
-    .limit(TITLE_PRIOR_MESSAGE_CAP);
+const loadTitleContext$ = command(
+  async (
+    { get },
+    threadId: string,
+    signal: AbortSignal,
+  ): Promise<ChatCompletionContextMessage[]> => {
+    const rows = await get(db$)
+      .select({
+        eventType: chatEvents.eventType,
+        content: canonicalChatEventContent(),
+        userMessage: canonicalChatEventUserMessage(),
+        createdAt: chatEvents.createdAt,
+        sequenceNumber: chatEvents.runEventSequenceNumber,
+      })
+      .from(chatEvents)
+      .leftJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, threadId),
+          chatEventTextCondition(),
+          visibleChatEventPredicate(),
+          completedConversationContextMessageCondition(),
+        ),
+      )
+      .orderBy(desc(chatEvents.seqId))
+      .limit(TITLE_PRIOR_MESSAGE_CAP);
 
-  return rows.reverse().flatMap((row) => {
-    return chatCompletionContextMessage(row);
-  });
-}
+    signal.throwIfAborted();
+    return rows.reverse().flatMap((row) => {
+      return chatCompletionContextMessage(row);
+    });
+  },
+);
 
-async function updateChatThreadTitle(
-  db: Db,
-  threadId: string,
-  userId: string,
-  orgId: string,
-  title: string,
-): Promise<void> {
-  const updated = await db.transaction(async (tx) => {
-    const [thread] = await tx
+const persistChatThreadTitle$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly title: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { threadId, userId, orgId, title } = args;
+    const db = set(writeDb$);
+    const update = db
       .update(chatThreads)
       .set({ title, updatedAt: nowDate() })
       .where(
         and(
           eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, userId),
           isNull(chatThreads.title),
           isNull(chatThreads.renamedAt),
           isNotNull(chatThreads.agentId),
         ),
       )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
+      .returning({ agentId: chatThreads.agentId });
+    // Reserve a list sequence only if this statement won the conditional title
+    // write. A member rename or concurrent generator leaves no extra event.
+    const { rowCount } = await db.execute(
+      chatThreadEventInsertSql(
+        { kind: "renamed", userId, orgId, chatThreadId: threadId, title },
+        {
+          cte: sql`updated AS (${update.getSQL()})`,
+          gate: sql`EXISTS (SELECT 1 FROM updated)`,
+          agentId: sql`(SELECT agent_id FROM updated)`,
+        },
+      ),
+    );
+
+    signal.throwIfAborted();
+    if (rowCount === 0) {
+      return;
     }
-    await appendChatThreadEvent(tx, {
-      kind: "renamed",
-      userId,
-      orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      title,
-    });
-    return true;
-  });
 
-  if (!updated) {
-    return;
-  }
+    await publishThreadListChanged({ userId, orgId });
+    signal.throwIfAborted();
+  },
+);
 
-  await publishThreadListChanged({ userId, orgId });
-}
+const shouldGenerateChatThreadTitle$ = command(
+  async ({ get }, threadId: string, signal: AbortSignal): Promise<boolean> => {
+    const [thread] = await get(db$)
+      .select({ title: chatThreads.title, renamedAt: chatThreads.renamedAt })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, threadId))
+      .limit(1);
 
-async function shouldGenerateChatThreadTitle(
-  db: SelectDb,
-  threadId: string,
-): Promise<boolean> {
-  const [thread] = await db
-    .select({ title: chatThreads.title, renamedAt: chatThreads.renamedAt })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
+    signal.throwIfAborted();
+    return Boolean(
+      thread && thread.title === null && thread.renamedAt === null,
+    );
+  },
+);
 
-  return Boolean(thread && thread.title === null && thread.renamedAt === null);
-}
-
-async function generateAndPersistChatThreadTitle(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly prompt: string;
-  readonly includePriorRounds: boolean;
-}): Promise<void> {
-  await tapError(
-    (async () => {
-      if (!(await shouldGenerateChatThreadTitle(args.db, args.threadId))) {
-        return;
-      }
-
-      const priorRounds = args.includePriorRounds
-        ? await getLatestTitleContextMessages(args.db, args.threadId)
-        : [];
-      const title = await generateAuxiliary({
-        feature: "chat_title",
-        generate: (record) => {
-          return generateChatTitle(
-            {
-              currentUserMessage: args.prompt,
-              priorRounds: priorRounds.length > 0 ? priorRounds : undefined,
-            },
-            record,
-          );
-        },
-        usable: (value) => {
-          return Boolean(value);
-        },
-        diagnosticContext: { threadId: args.threadId },
-      });
-      if (title) {
-        await updateChatThreadTitle(
-          args.db,
-          args.threadId,
-          args.userId,
-          args.orgId,
-          title,
-        );
-      }
-    })(),
-    (err) => {
-      log.warn("Chat title persistence failed", {
-        threadId: args.threadId,
-        err,
-      });
+/** The ingress owns background scheduling; this action owns title persistence. */
+export const generateAndPersistChatThreadTitle$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly prompt: string;
+      readonly includePriorRounds: boolean;
     },
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!isLlmConfigured() || args.prompt.trim().length === 0) {
+      return;
+    }
+    await tapError(
+      (async () => {
+        if (
+          !(await set(shouldGenerateChatThreadTitle$, args.threadId, signal))
+        ) {
+          return;
+        }
 
-/**
- * Fire-and-forget eager title generation, shared by the inline web send route
- * and the queue drain. Every chat-thread-bound run passes through one of the
- * two, so the trigger source no longer decides whether a thread is titled
- * before its run finishes.
- */
-export function scheduleChatThreadTitleGeneration(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly prompt: string;
-  readonly includePriorRounds: boolean;
-}): void {
-  if (!isLlmConfigured() || args.prompt.trim().length === 0) {
-    return;
-  }
-  waitUntil(generateAndPersistChatThreadTitle(args));
-}
+        const priorRounds = args.includePriorRounds
+          ? await set(loadTitleContext$, args.threadId, signal)
+          : [];
+        const title = await generateAuxiliary(
+          {
+            feature: "chat_title",
+            generate: (record) => {
+              return generateChatTitle(
+                {
+                  currentUserMessage: args.prompt,
+                  priorRounds: priorRounds.length > 0 ? priorRounds : undefined,
+                },
+                record,
+                signal,
+              );
+            },
+            usable: (value) => {
+              return Boolean(value);
+            },
+            diagnosticContext: { threadId: args.threadId },
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        if (title) {
+          await set(persistChatThreadTitle$, { ...args, title }, signal);
+        }
+      })(),
+      (err) => {
+        log.warn("Chat title persistence failed", {
+          threadId: args.threadId,
+          err,
+        });
+      },
+    );
+    signal.throwIfAborted();
+  },
+);
 
 export async function generateChatNotificationSummary(
   args: {
@@ -528,34 +532,41 @@ function parseRecommendedFollowups(text: string): ChatRecommendedFollowup[] {
   return normalizeRecommendedFollowups(safeJsonParse(unfenced));
 }
 
-async function getLatestFollowupContextMessages(
-  db: SelectDb,
-  threadId: string,
-): Promise<ChatCompletionContextMessage[]> {
-  const rows = await db
-    .select({
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        chatEventTextCondition(),
-        visibleChatEventCondition(db),
-        completedConversationContextMessageCondition(db),
-      ),
-    )
-    .orderBy(desc(chatEvents.seqId))
-    .limit(FOLLOWUP_CONTEXT_MESSAGE_CAP);
+export const loadChatThreadRecommendedFollowupContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ChatCompletionContextMessage[]> => {
+    const { threadId } = args;
+    const rows = await get(db$)
+      .select({
+        eventType: chatEvents.eventType,
+        content: canonicalChatEventContent(),
+        userMessage: canonicalChatEventUserMessage(),
+        createdAt: chatEvents.createdAt,
+        sequenceNumber: chatEvents.runEventSequenceNumber,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, threadId),
+          chatEventTextCondition(),
+          visibleChatEventPredicate(),
+          completedConversationContextMessageCondition(),
+        ),
+      )
+      .orderBy(desc(chatEvents.seqId))
+      .limit(FOLLOWUP_CONTEXT_MESSAGE_CAP);
 
-  return rows.reverse().flatMap((row) => {
-    return chatCompletionContextMessage(row);
-  });
-}
+    signal.throwIfAborted();
+    return rows.reverse().flatMap((row) => {
+      return chatCompletionContextMessage(row);
+    });
+  },
+);
 
 async function generateRecommendedFollowups(
   messages: readonly ChatCompletionContextMessage[],
@@ -588,13 +599,6 @@ async function generateRecommendedFollowups(
   );
 
   return text === null ? [] : parseRecommendedFollowups(text);
-}
-
-export async function loadChatThreadRecommendedFollowupContext(args: {
-  readonly db: SelectDb;
-  readonly threadId: string;
-}): Promise<ChatCompletionContextMessage[]> {
-  return await getLatestFollowupContextMessages(args.db, args.threadId);
 }
 
 export async function generateChatThreadRecommendedFollowupsFromContext(

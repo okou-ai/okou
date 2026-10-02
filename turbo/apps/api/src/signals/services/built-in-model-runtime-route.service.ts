@@ -11,7 +11,6 @@ import { nowDate } from "../../lib/time";
 import { db$, type ReadonlyDb } from "../external/db";
 import {
   catalogBuiltInCandidates,
-  loadModelCatalog,
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
@@ -175,11 +174,12 @@ export const builtInModelKeyIdsByVendor$: Computed<
 
 /** Loads the catalog once; callers that already hold it use the variant below. */
 export async function resolveBuiltInModelRuntimeRoute(
+  catalogSnapshot: ModelCatalog,
   db: ReadonlyDb,
   selectedModel: string,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   const [catalog, keyIdsByVendor] = await Promise.all([
-    loadModelCatalog(db),
+    catalogSnapshot,
     loadBuiltInModelKeyIdsByVendor(db),
   ]);
   return await resolveBuiltInModelRuntimeRouteWithKeys(

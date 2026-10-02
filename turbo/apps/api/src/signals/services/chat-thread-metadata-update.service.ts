@@ -1,4 +1,8 @@
-import { createHash } from "node:crypto";
+import { z } from "zod";
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -10,34 +14,29 @@ import type {
   CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { v5 as uuidv5 } from "uuid";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { settle } from "../utils";
 import {
-  ChatThreadEventIdConflictError,
   chatThreadServiceTierFromCodex,
   chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  resolveModelSelectionPin,
+  resolveModelSelectionPin$,
   validateCodexServiceTier,
   type ModelFirstPin,
 } from "./model-selection.service";
 import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
-const UPDATE_RETRY_MS = 24 * 60 * 60 * 1000;
-const MODEL_EVENT_NAMESPACE = "be62e24f-d82d-42bf-bdbf-7bc199e18bc8";
+import { settle } from "../utils";
 
 interface Principal {
   readonly userId: string;
@@ -65,7 +64,6 @@ interface ChatThreadMetadataUpdateArgs {
     | { readonly kind: "set"; readonly value: CodexServiceTier | null };
   readonly emitServiceTierEvent: boolean;
   readonly eventIds?: EventIds;
-  readonly mutationId?: string;
 }
 
 interface ChatThreadMetadataState {
@@ -82,21 +80,12 @@ type ChatThreadMetadataUpdateResult =
   | {
       readonly kind: "ok";
       readonly state: ChatThreadMetadataState;
-      readonly acceptedAt: Date;
-      readonly retryUntil: Date;
-      readonly replayed: boolean;
     }
   | { readonly kind: "not_found" }
-  | { readonly kind: "conflict"; readonly message: string }
-  | { readonly kind: "expired"; readonly message: string }
   | {
       readonly kind: "response";
       readonly response: { readonly status: number; readonly body: unknown };
     };
-
-interface ExistingMutation {
-  readonly acceptedAt: Date;
-}
 
 interface CurrentModelState {
   readonly modelSettings: ModelSettings;
@@ -118,8 +107,6 @@ type UpdateOperationResult = Exclude<
   { readonly kind: "not_found" }
 >;
 
-class MetadataMutationConflictError extends Error {}
-
 function hasTitle(
   patch: ChatThreadMetadataPatch,
 ): patch is ChatThreadMetadataPatch & {
@@ -134,106 +121,6 @@ function hasModel(
   readonly model: string | null;
 } {
   return Object.hasOwn(patch, "model");
-}
-
-function modelEventId(mutationId: string): string {
-  return uuidv5(`${mutationId}:model`, MODEL_EVENT_NAMESPACE);
-}
-
-function patchFingerprint(patch: ChatThreadMetadataPatch): string {
-  const canonical = JSON.stringify({
-    title: hasTitle(patch) ? { present: true, value: patch.title } : null,
-    model: hasModel(patch) ? { present: true, value: patch.model } : null,
-  });
-  return createHash("sha256").update(canonical).digest("hex");
-}
-
-const mutationSelection = Object.freeze({
-  id: chatThreadEvents.id,
-  userId: chatThreadEvents.userId,
-  orgId: chatThreadEvents.orgId,
-  threadId: chatThreadEvents.chatThreadId,
-  agentId: chatThreadEvents.agentId,
-  kind: chatThreadEvents.kind,
-  title: chatThreadEvents.title,
-  selectedModel: chatThreadEvents.selectedModel,
-  createdAt: chatThreadEvents.createdAt,
-});
-
-type MutationRow = Pick<
-  typeof chatThreadEvents.$inferSelect,
-  | "id"
-  | "userId"
-  | "orgId"
-  | "chatThreadId"
-  | "agentId"
-  | "kind"
-  | "title"
-  | "selectedModel"
-  | "createdAt"
-> & { readonly threadId: string };
-
-function readMutation(
-  args: ChatThreadMetadataUpdateArgs,
-  rows: readonly Omit<MutationRow, "chatThreadId">[],
-): ExistingMutation | null {
-  const mutationId = args.mutationId;
-  if (mutationId === undefined) {
-    return null;
-  }
-  const secondaryId = modelEventId(mutationId);
-  const primary = rows.find((row) => {
-    return row.id === mutationId;
-  });
-  const secondary = rows.find((row) => {
-    return row.id === secondaryId;
-  });
-  if (!primary && !secondary) {
-    return null;
-  }
-  // Integration threads can move to a new organization default Agent after
-  // acceptance. Replay belongs to the original principal and thread identity.
-  const matchesIdentity = (row: (typeof rows)[number]) => {
-    return (
-      row.userId === args.principal.userId &&
-      row.orgId === args.principal.orgId &&
-      row.threadId === args.threadId
-    );
-  };
-  if (!primary || !matchesIdentity(primary)) {
-    throw new MetadataMutationConflictError();
-  }
-
-  let acceptedPatch: ChatThreadMetadataPatch;
-  if (primary.kind === "renamed" && primary.title !== null) {
-    if (secondary) {
-      if (
-        !matchesIdentity(secondary) ||
-        secondary.agentId !== primary.agentId ||
-        secondary.kind !== "model_selection_updated" ||
-        secondary.createdAt.getTime() !== primary.createdAt.getTime()
-      ) {
-        throw new MetadataMutationConflictError();
-      }
-      acceptedPatch = {
-        title: primary.title,
-        model: secondary.selectedModel,
-      };
-    } else {
-      acceptedPatch = { title: primary.title };
-    }
-  } else if (
-    primary.kind === "model_selection_updated" &&
-    secondary === undefined
-  ) {
-    acceptedPatch = { model: primary.selectedModel };
-  } else {
-    throw new MetadataMutationConflictError();
-  }
-  if (patchFingerprint(acceptedPatch) !== patchFingerprint(args.patch)) {
-    throw new MetadataMutationConflictError();
-  }
-  return { acceptedAt: primary.createdAt };
 }
 
 const currentSelection = Object.freeze({
@@ -261,12 +148,6 @@ function threadCondition(args: ChatThreadMetadataUpdateArgs) {
   );
 }
 
-function mutationIds(args: ChatThreadMetadataUpdateArgs) {
-  return args.mutationId === undefined
-    ? []
-    : [args.mutationId, modelEventId(args.mutationId)];
-}
-
 type PreparedPin =
   | ModelFirstPin
   | { readonly status: number; readonly body: unknown }
@@ -274,30 +155,13 @@ type PreparedPin =
 
 function metadataResult(
   state: Omit<ChatThreadMetadataState, "serviceTier">,
-  acceptedAt: Date,
-  replayed: boolean,
 ): ChatThreadMetadataUpdateResult {
-  if (replayed && acceptedAt.getTime() + UPDATE_RETRY_MS <= now()) {
-    return {
-      kind: "expired",
-      message:
-        "The 24-hour update retry window has expired. Inspect the conversation before making a new change; this request was not applied again.",
-    };
-  }
   return {
     kind: "ok",
     state: {
-      threadId: state.threadId,
-      title: state.title,
-      titleTruncated: state.titleTruncated,
-      selectedModel: state.selectedModel,
-      codexServiceTier: state.codexServiceTier,
-      updatedAt: state.updatedAt,
+      ...state,
       serviceTier: chatThreadServiceTierFromCodex(state.codexServiceTier),
     },
-    acceptedAt,
-    retryUntil: new Date(acceptedAt.getTime() + UPDATE_RETRY_MS),
-    replayed,
   };
 }
 
@@ -380,8 +244,7 @@ function metadataEvents(
             ...base,
             kind: "renamed" as const,
             title: args.patch.title,
-            eventId: args.mutationId ?? args.eventIds?.title,
-            strict: args.mutationId !== undefined,
+            eventId: args.eventIds?.title,
           },
         ]
       : []),
@@ -392,13 +255,7 @@ function metadataEvents(
             kind: "model_selection_updated" as const,
             selectedModel: args.patch.model,
             modelSettingsPatch: columns?.modelSettingsPatch,
-            eventId:
-              args.mutationId === undefined
-                ? args.eventIds?.model
-                : hasTitle(args.patch)
-                  ? modelEventId(args.mutationId)
-                  : args.mutationId,
-            strict: args.mutationId !== undefined,
+            eventId: args.eventIds?.model,
           },
         ]
       : []),
@@ -411,64 +268,91 @@ function metadataEvents(
               columns?.codexServiceTier ?? null,
             ),
             eventId: args.eventIds?.serviceTier,
-            strict: false,
           },
         ]
       : []),
   ];
 }
 
+interface PreparedMetadataModel {
+  readonly catalog: ModelCatalog | null;
+  readonly pin: PreparedPin;
+}
+
+type PreparedMetadataOutcome =
+  | { readonly ok: true; readonly value: PreparedMetadataModel }
+  | { readonly ok: false; readonly error: unknown };
+
+/** Capture one catalog snapshot and resolve routing before the SQL write. */
 const prepareMetadataModel$ = command(
   async (
     { set },
     args: ChatThreadMetadataUpdateArgs,
     signal: AbortSignal,
-  ): Promise<PreparedPin> => {
-    if (!hasModel(args.patch) || args.patch.model === null) {
-      return null;
+  ): Promise<PreparedMetadataModel> => {
+    if (!hasModel(args.patch)) {
+      return { catalog: null, pin: null };
     }
-    const db = set(writeDb$);
-    const [thread] = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(threadCondition(args))
-      .limit(1);
+    const catalog = await set(loadModelCatalog$, signal);
     signal.throwIfAborted();
-    if (!thread) {
-      return null;
+    if (args.patch.model === null) {
+      return { catalog, pin: null };
     }
-    const ids = mutationIds(args);
-    const existing = ids.length
-      ? await db
-          .select(mutationSelection)
-          .from(chatThreadEvents)
-          .where(inArray(chatThreadEvents.id, ids))
-      : [];
-    signal.throwIfAborted();
-    if (readMutation(args, existing)) {
-      return null;
-    }
-    return await resolveModelSelectionPin({
-      db: set(writeDb$),
-      ...args.principal,
-      modelSelection: {
-        modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-        selectedModel: args.patch.model,
+    const pin = await set(
+      resolveModelSelectionPin$,
+      {
+        ...args.principal,
+        catalog,
+        modelSelection: {
+          modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+          selectedModel: args.patch.model,
+        },
       },
-    });
+      signal,
+    );
+    return { catalog, pin };
   },
 );
+
+function metadataPreparationDisposition(prepared: PreparedMetadataOutcome) {
+  if (!prepared.ok) {
+    return { kind: "error" as const, error: prepared.error };
+  }
+  const pin = prepared.value.pin;
+  if (pin !== null && "status" in pin) {
+    return { kind: "response" as const, response: pin };
+  }
+  return { kind: "ready" as const, value: prepared.value };
+}
 
 const commitMetadata$ = command(
   async (
     { set },
     args: ChatThreadMetadataUpdateArgs,
-    pin: PreparedPin,
+    prepared: PreparedMetadataOutcome,
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
-    const db = set(writeDb$);
-    const catalog = await loadModelCatalog(db);
     signal.throwIfAborted();
+    const db = set(writeDb$);
+    const proposal = metadataPreparationDisposition(prepared);
+    if (proposal.kind !== "ready") {
+      const [owned] = await db
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(threadCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!owned) {
+        return { kind: "not_found" };
+      }
+      if (proposal.kind === "error") {
+        throw proposal.error;
+      }
+      return proposal;
+    }
+    // Preserve the current model settings and service tier while applying the
+    // model change and its ordered events. This is the only metadata write
+    // that needs a read/write snapshot; renames use one gated statement.
     return await db.transaction(async (tx) => {
       const [current] = await tx
         .select(currentSelection)
@@ -480,24 +364,16 @@ const commitMetadata$ = command(
       if (!current?.agentId) {
         return { kind: "not_found" };
       }
-      const ids = mutationIds(args);
-      const rows = ids.length
-        ? await tx
-            .select(mutationSelection)
-            .from(chatThreadEvents)
-            .where(inArray(chatThreadEvents.id, ids))
-        : [];
-      signal.throwIfAborted();
-      const existing = readMutation(args, rows);
-      if (existing) {
-        return metadataResult(current, existing.acceptedAt, true);
+      const { catalog, pin } = proposal.value;
+      if (catalog === null) {
+        throw new Error("Prepared model catalog is missing");
       }
       const model = resolveModelColumns(catalog, args, current, pin);
       if (model.kind === "response") {
         return model;
       }
       const updatedAt = nowDate();
-      await tx
+      const [state] = await tx
         .update(chatThreads)
         .set({
           updatedAt,
@@ -506,7 +382,8 @@ const commitMetadata$ = command(
             : {}),
           ...model.columns,
         })
-        .where(eq(chatThreads.id, args.threadId));
+        .where(eq(chatThreads.id, args.threadId))
+        .returning(currentSelection);
       signal.throwIfAborted();
       for (const event of metadataEvents(
         args,
@@ -514,23 +391,85 @@ const commitMetadata$ = command(
         model.columns,
         updatedAt,
       )) {
-        const { rowCount } = await tx.execute(chatThreadEventInsertSql(event));
+        await tx.execute(chatThreadEventInsertSql(event));
         signal.throwIfAborted();
-        if (event.strict && rowCount === 0) {
-          throw new ChatThreadEventIdConflictError();
-        }
       }
-      const [state] = await tx
-        .select(currentSelection)
-        .from(chatThreads)
-        .where(threadCondition(args))
-        .limit(1);
-      signal.throwIfAborted();
       if (!state) {
         throw new Error("Updated chat thread state is missing");
       }
-      return metadataResult(state, updatedAt, false);
+      return metadataResult(state);
     });
+  },
+);
+
+const titleMetadataStateSchema = z.object({
+  threadId: z.string().uuid(),
+  title: z.string().nullable(),
+  titleTruncated: z.boolean(),
+  selectedModel: z.string().nullable(),
+  codexServiceTier: z.enum(["fast", "ultrafast"]).nullable(),
+  updatedAt: pgTimestampWithoutTimezoneToDateSchema,
+});
+
+/** One statement owns a manual rename and its ordered list event. */
+const commitTitleMetadata$ = command(
+  async (
+    { set },
+    args: ChatThreadMetadataUpdateArgs,
+    signal: AbortSignal,
+  ): Promise<ChatThreadMetadataUpdateResult> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    const update = db
+      .update(chatThreads)
+      .set({
+        updatedAt,
+        ...(hasTitle(args.patch)
+          ? { title: args.patch.title, renamedAt: updatedAt }
+          : {}),
+      })
+      .where(threadCondition(args));
+    if (!hasTitle(args.patch)) {
+      const [state] = await update.returning(currentSelection);
+      signal.throwIfAborted();
+      return state ? metadataResult(state) : { kind: "not_found" };
+    }
+    const updated = update.returning({
+      id: chatThreads.id,
+      title: chatThreads.title,
+      selectedModel: chatThreads.selectedModel,
+      codexServiceTier: chatThreads.codexServiceTier,
+      updatedAt: chatThreads.updatedAt,
+      agentId: chatThreads.agentId,
+    });
+    const [state] = parseRawRows(
+      titleMetadataStateSchema,
+      await db.execute(
+        chatThreadEventInsertSql(
+          {
+            kind: "renamed",
+            userId: args.principal.userId,
+            orgId: args.principal.orgId,
+            chatThreadId: args.threadId,
+            title: args.patch.title,
+            eventId: args.eventIds?.title,
+            createdAt: updatedAt,
+          },
+          {
+            cte: sql`updated AS (${updated.getSQL()})`,
+            gate: sql`EXISTS (SELECT 1 FROM updated)`,
+            agentId: sql`(SELECT agent_id FROM updated)`,
+            result: sql`SELECT id AS "threadId", left(title, 500) AS title,
+        COALESCE(length(title) > 500, false) AS "titleTruncated",
+        selected_model AS "selectedModel", codex_service_tier AS "codexServiceTier",
+        updated_at::text AS "updatedAt" FROM updated`,
+          },
+        ),
+      ),
+    );
+    signal.throwIfAborted();
+    return state ? metadataResult(state) : { kind: "not_found" };
   },
 );
 
@@ -541,27 +480,16 @@ export const updateChatThreadMetadata$ = command(
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
     signal.throwIfAborted();
-    const outcome = await settle(
-      (async () => {
-        const pin = await set(prepareMetadataModel$, args, signal);
-        signal.throwIfAborted();
-        return await set(commitMetadata$, args, pin, signal);
-      })(),
+    if (!hasModel(args.patch)) {
+      return await set(commitTitleMetadata$, args, signal);
+    }
+    // Ownership remains the first returned refusal even if independent model
+    // preparation fails. No preparation error enters the write transaction.
+    const prepared = await settle(
+      set(prepareMetadataModel$, args, signal),
       signal,
     );
-    if (!outcome.ok) {
-      if (
-        outcome.error instanceof MetadataMutationConflictError ||
-        outcome.error instanceof ChatThreadEventIdConflictError
-      ) {
-        return {
-          kind: "conflict",
-          message:
-            "requestId is already in use for a different thread update. Retry only with the original thread and exact patch.",
-        };
-      }
-      throw outcome.error;
-    }
-    return outcome.value;
+    signal.throwIfAborted();
+    return await set(commitMetadata$, args, prepared, signal);
   },
 );

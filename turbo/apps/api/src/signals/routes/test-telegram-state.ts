@@ -1,3 +1,7 @@
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../services/model-catalog.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -414,13 +418,14 @@ async function seedTelegramPostDefaultAgent(
 }
 
 async function seedTelegramPostModelKeys(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   seed: TelegramPostFixtureSeed,
   signal: AbortSignal,
 ): Promise<void> {
   await acquireBuiltInModelKeyFixture(db, seed.composeId, [
     {
-      vendor: await loadSystemDefaultBuiltInVendor(db),
+      vendor: await loadSystemDefaultBuiltInVendor(catalogSnapshot),
       apiKey: `built-in-key-default-${seed.composeId}`,
     },
     {
@@ -454,6 +459,7 @@ async function seedTelegramPostLinks(
 }
 
 async function seedTelegramPostFixtureForAction(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   body: Record<string, unknown>,
   signal: AbortSignal,
@@ -486,7 +492,7 @@ async function seedTelegramPostFixtureForAction(
   if (readActionBoolean(body, "seed_default_agent", true)) {
     await seedTelegramPostDefaultAgent(db, seed, signal);
   }
-  await seedTelegramPostModelKeys(db, seed, signal);
+  await seedTelegramPostModelKeys(catalogSnapshot, db, seed, signal);
   await seedTelegramPostLinks(db, body, seed, signal);
 
   return actionOk({
@@ -962,7 +968,6 @@ const telegramStateActionHandlers = {
   "seed-org-default-agent": seedOrgDefaultAgentForAction,
   "seed-official-user-link": seedOfficialUserLinkForAction,
   "seed-agent-run-callback": seedAgentRunCallbackForAction,
-  "seed-post-fixture": seedTelegramPostFixtureForAction,
   "delete-post-fixture": deleteTelegramPostFixtureForAction,
   "get-post-run-state": getTelegramPostRunStateForAction,
   "get-telegram-link-id": getTelegramLinkIdForAction,
@@ -975,16 +980,25 @@ const telegramStateActionHandlers = {
   "find-chat-thread-route": findChatThreadRouteForAction,
   "delete-fixture": deleteTelegramFixtureForAction,
 } satisfies Record<
-  TestTelegramStateActionBody["action"],
+  Exclude<TestTelegramStateActionBody["action"], "seed-post-fixture">,
   TelegramStateActionHandler
 >;
 
 async function mutateTestTelegramStateAction(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   body: Record<string, unknown>,
   action: TestTelegramStateActionBody["action"],
   signal: AbortSignal,
 ) {
+  if (action === "seed-post-fixture") {
+    return await seedTelegramPostFixtureForAction(
+      catalogSnapshot,
+      db,
+      body,
+      signal,
+    );
+  }
   return await telegramStateActionHandlers[action](db, body, signal);
 }
 
@@ -1002,6 +1016,7 @@ const mutateTestTelegramState$ = command(
 
     const body = bodyResult.data as Record<string, unknown>;
     return await mutateTestTelegramStateAction(
+      await get(modelCatalog$),
       set(writeDb$),
       body,
       bodyResult.data.action,

@@ -1,4 +1,9 @@
 import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import {
   usagePricingResolution$,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
@@ -10,8 +15,8 @@ import {
   checkPiMemoryQuota,
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
-import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
-import { loadModelCatalog } from "./model-catalog.service";
+import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
+import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
@@ -64,7 +69,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -784,10 +789,17 @@ async function partitionWorkByPiMemorySwitch(
   const disabled: ClaimedPiMemoryStage1Work[] = [];
   for (const work of claimed) {
     // Each candidate's own owner decides, never the cron caller.
-    const context = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContextRows0 = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(work.orgId, work.userId));
+    const context = featureSwitchContextFromRows(
       work.orgId,
       work.userId,
+      featureSwitchContextRows0,
     );
     signal.throwIfAborted();
     (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)
@@ -807,6 +819,7 @@ const prepareSourceWork$ = command(
     const history = await set(loadAndProjectHistory$, { work }, signal);
     signal.throwIfAborted();
     const credential = await resolvePiMemoryStage1Credential(
+      await set(loadModelCatalog$, signal),
       set(writeDb$),
       {
         sourceRunId: work.selection.sourceRunId,
@@ -900,139 +913,189 @@ async function recordObservedUsage(
 }
 
 interface ProcessPreparedWorkArgs {
-  readonly db: Db;
   readonly prepared: RoutedWork;
   readonly pricingResolution: UsagePricingResolution;
 }
 
-async function processPreparedWork(
-  args: ProcessPreparedWorkArgs,
-  signal: AbortSignal,
-): Promise<WorkOutcome> {
-  const startedAt = performance.now();
-  const requestId = randomUUID();
-  let requestPrepared = false;
-  const provider = await settleIncludingAbort(
-    runPiMemoryStage1Extraction(
+const checkPreparedStage1Request$ = command(
+  async (
+    { set },
+    catalog: ModelCatalog,
+    prepared: RoutedWork,
+    signal: AbortSignal,
+  ) => {
+    const admission = await set(
+      checkOrgCreditsForRunAdmission$,
       {
-        model: args.prepared.credential.model,
-        evidence: args.prepared.evidence,
-        requestId,
-        beforeRequest: async (requestSignal) => {
-          const admission = await checkOrgCreditsForRunAdmission({
-            db: args.db,
-            catalog: await loadModelCatalog(args.db),
-            ...args.prepared.credential.billing,
-            modelProviderType: args.prepared.credential.modelProviderType,
-            selectedModel: args.prepared.credential.selectedModel,
-          });
-          requestSignal.throwIfAborted();
-          if (admission) {
-            throw new RetryableWorkError("source_admission_denied");
-          }
-          await checkPiMemoryQuota(
-            args.db,
-            {
-              ...args.prepared.credential.billing,
-              stage: "stage1",
-              source: args.prepared.credential.quota,
-            },
-            requestSignal,
-          );
-          await args.prepared.credential.validate(requestSignal);
-          await validatePreparedWork(
-            args.db,
-            args.prepared.work,
-            requestSignal,
-          );
-          requestPrepared = true;
-        },
+        catalog,
+        ...prepared.credential.billing,
+        modelProviderType: prepared.credential.modelProviderType,
+        selectedModel: prepared.credential.selectedModel,
       },
       signal,
-    ),
-  );
-  const observedResult = provider.ok
-    ? provider.value
-    : provider.error instanceof PiMemoryStage1ProviderError
-      ? provider.error.result
-      : undefined;
-  if (observedResult) {
-    const recordedUsage = await recordObservedUsage(
-      args.db,
-      args.prepared,
-      observedResult,
-      requestId,
-      args.pricingResolution,
     );
-    if (!recordedUsage.ok) {
-      return await failWork(
-        args.db,
-        args.prepared.work,
-        new RetryableWorkError(
-          recordedUsage.error instanceof Error &&
-            recordedUsage.error.message ===
-              "Pi memory Stage 1 usage identity collision"
-            ? "usage_identity_collision"
-            : "usage_persistence_failure",
+    if (admission) {
+      throw new RetryableWorkError("source_admission_denied");
+    }
+    const db = set(writeDb$);
+    await checkPiMemoryQuota(
+      db,
+      {
+        ...prepared.credential.billing,
+        stage: "stage1",
+        source: prepared.credential.quota,
+      },
+      signal,
+    );
+    await prepared.credential.validate(signal);
+    await validatePreparedWork(db, prepared.work, signal);
+  },
+);
+
+const processPreparedWork$ = command(
+  async (
+    { set },
+    catalogSnapshot: ModelCatalog,
+    args: ProcessPreparedWorkArgs,
+    signal: AbortSignal,
+  ): Promise<WorkOutcome> => {
+    const startedAt = performance.now();
+    const requestId = randomUUID();
+    let requestPrepared = false;
+    // Return the complete irreversible-result reconciliation. The batch owner
+    // joins every provider branch before propagating cancellation, so one
+    // aborted request cannot abandon a sibling's observed usage receipt.
+    return await set(settlePreparedWork$, args, {
+      provider: await settleIncludingAbort(
+        runPiMemoryStage1Extraction(
+          {
+            model: args.prepared.credential.model,
+            evidence: args.prepared.evidence,
+            requestId,
+            beforeRequest: async (requestSignal) => {
+              await set(
+                checkPreparedStage1Request$,
+                catalogSnapshot,
+                args.prepared,
+                requestSignal,
+              );
+              requestPrepared = true;
+            },
+          },
+          signal,
         ),
+      ),
+      requestId,
+      requestPrepared,
+      startedAt,
+    });
+  },
+);
+
+type Stage1ProviderOutcome =
+  | {
+      readonly ok: true;
+      readonly value: Awaited<ReturnType<typeof runPiMemoryStage1Extraction>>;
+    }
+  | { readonly ok: false; readonly error: unknown };
+
+/** Finite reconciliation of an irreversible provider result, even after abort. */
+const settlePreparedWork$ = command(
+  async (
+    { set },
+    args: ProcessPreparedWorkArgs,
+    observation: {
+      readonly provider: Stage1ProviderOutcome;
+      readonly requestId: string;
+      readonly requestPrepared: boolean;
+      readonly startedAt: number;
+    },
+  ): Promise<WorkOutcome> => {
+    const db = set(writeDb$);
+    const { provider, requestId, requestPrepared, startedAt } = observation;
+    const observedResult = provider.ok
+      ? provider.value
+      : provider.error instanceof PiMemoryStage1ProviderError
+        ? provider.error.result
+        : undefined;
+    if (observedResult) {
+      const recordedUsage = await recordObservedUsage(
+        db,
+        args.prepared,
+        observedResult,
+        requestId,
+        args.pricingResolution,
+      );
+      if (!recordedUsage.ok) {
+        return await failWork(
+          db,
+          args.prepared.work,
+          new RetryableWorkError(
+            recordedUsage.error instanceof Error &&
+              recordedUsage.error.message ===
+                "Pi memory Stage 1 usage identity collision"
+              ? "usage_identity_collision"
+              : "usage_persistence_failure",
+          ),
+          startedAt,
+        );
+      }
+    } else if (requestPrepared) {
+      await observePiMemoryStage1MissingUsage(
+        args.prepared.credential.billing.mode,
+        args.prepared.credential.selectedModel,
+      );
+    }
+    if (!provider.ok) {
+      if (provider.error instanceof StaleWorkError) {
+        logOutcome({
+          work: args.prepared.work,
+          outcome: "stale_discarded",
+          durationMs: performance.now() - startedAt,
+          errorClass: "stale_selection",
+        });
+        return { kind: "stale_discarded" };
+      }
+      return await failWork(
+        db,
+        args.prepared.work,
+        classifyProviderFailure(provider.error),
         startedAt,
       );
     }
-  } else if (requestPrepared) {
-    await observePiMemoryStage1MissingUsage(
-      args.prepared.credential.billing.mode,
-      args.prepared.credential.selectedModel,
+    const providerResult = provider.value;
+
+    const parsed = safeSync(() => {
+      return parseProviderOutput(providerResult.responseText);
+    });
+    if (!("ok" in parsed)) {
+      return await failWork(db, args.prepared.work, parsed.error, startedAt);
+    }
+    const result = parsed.ok;
+    const committed = await settleIncludingAbort(
+      commitWorkResult(db, args.prepared.work, result),
     );
-  }
-  if (!provider.ok) {
-    if (provider.error instanceof StaleWorkError) {
+    if (!committed.ok || !committed.value) {
       logOutcome({
         work: args.prepared.work,
         outcome: "stale_discarded",
         durationMs: performance.now() - startedAt,
-        errorClass: "stale_selection",
+        inputTokens: providerResult.usage.input,
+        outputTokens: providerResult.usage.output,
+        errorClass: committed.ok ? undefined : "commit_failed",
       });
       return { kind: "stale_discarded" };
     }
-    return await failWork(
-      args.db,
-      args.prepared.work,
-      classifyProviderFailure(provider.error),
-      startedAt,
-    );
-  }
-  const providerResult = provider.value;
-
-  const parsed = safeSync(() => {
-    return parseProviderOutput(providerResult.responseText);
-  });
-  if (!("ok" in parsed)) {
-    return await failWork(args.db, args.prepared.work, parsed.error, startedAt);
-  }
-  const result = parsed.ok;
-  const committed = await settleIncludingAbort(
-    commitWorkResult(args.db, args.prepared.work, result),
-  );
-  if (!committed.ok || !committed.value) {
     logOutcome({
       work: args.prepared.work,
-      outcome: "stale_discarded",
+      outcome: result.kind,
       durationMs: performance.now() - startedAt,
       inputTokens: providerResult.usage.input,
       outputTokens: providerResult.usage.output,
-      errorClass: committed.ok ? undefined : "commit_failed",
     });
-    return { kind: "stale_discarded" };
-  }
-  logOutcome({
-    work: args.prepared.work,
-    outcome: result.kind,
-    durationMs: performance.now() - startedAt,
-    inputTokens: providerResult.usage.input,
-    outputTokens: providerResult.usage.output,
-  });
-  return { kind: result.kind };
-}
+    return { kind: result.kind };
+  },
+);
 
 function countOutcomes(
   base: Omit<PiMemoryStage1WorkerResult, "claimed">,
@@ -1168,9 +1231,10 @@ export const executePiMemoryStage1Work$ = command(
       prepared
         .slice(0, PI_MEMORY_STAGE1_PROVIDER_CONCURRENCY)
         .map(async (item) => {
-          return await processPreparedWork(
+          return await set(
+            processPreparedWork$,
+            await set(loadModelCatalog$, signal),
             {
-              db,
               prepared: item,
               pricingResolution: get(usagePricingResolution$),
             },

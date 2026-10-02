@@ -213,7 +213,7 @@ async function visibleSearchEventIds(
     .select({ id: chatEvents.id })
     .from(chatEvents)
     .where(
-      and(inArray(chatEvents.id, [...eventIds]), visibleChatEventCondition(tx)),
+      and(inArray(chatEvents.id, [...eventIds]), visibleChatEventCondition()),
     );
   return new Set(
     rows.map((row) => {

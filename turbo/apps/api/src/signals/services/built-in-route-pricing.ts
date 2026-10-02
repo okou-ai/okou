@@ -5,7 +5,8 @@ import {
   resolveUsagePricingProvider,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
-import type { ReadonlyDb } from "../external/db";
+import { computed } from "ccstate";
+import { db$ } from "../external/db";
 import {
   catalogBuiltInCandidates,
   type CatalogRoute,
@@ -120,66 +121,68 @@ export interface BuiltInRoutePricing {
   readonly serviceTier: RunServiceTier;
 }
 
-export async function loadBuiltInRoutePricing(
-  db: Pick<ReadonlyDb, "select">,
-  args: {
-    readonly catalog: ModelCatalog;
-    readonly model: string;
-    readonly serviceTier: RunServiceTier;
-    readonly resolution: UsagePricingResolution;
-  },
-): Promise<BuiltInRoutePricing> {
-  const links = catalogBuiltInCandidates(args.catalog, args.model).flatMap(
-    (route) => {
-      return route.pricingKind && route.pricingProvider
-        ? [
-            {
-              kind: route.pricingKind,
-              provider: resolveUsagePricingProvider(
-                args.resolution,
-                route.pricingKind,
-                route.pricingProvider,
+interface BuiltInRoutePricingInput {
+  readonly catalog: ModelCatalog;
+  readonly model: string;
+  readonly serviceTier: RunServiceTier;
+  readonly resolution: UsagePricingResolution;
+}
+
+export function builtInRoutePricing(args: BuiltInRoutePricingInput) {
+  return computed(async (get): Promise<BuiltInRoutePricing> => {
+    const db = get(db$);
+    const links = catalogBuiltInCandidates(args.catalog, args.model).flatMap(
+      (route) => {
+        return route.pricingKind && route.pricingProvider
+          ? [
+              {
+                kind: route.pricingKind,
+                provider: resolveUsagePricingProvider(
+                  args.resolution,
+                  route.pricingKind,
+                  route.pricingProvider,
+                ),
+              },
+            ]
+          : [];
+      },
+    );
+    const kinds = [
+      ...new Set(
+        links.map((link) => {
+          return link.kind;
+        }),
+      ),
+    ];
+    const providers = [
+      ...new Set(
+        links.map((link) => {
+          return link.provider;
+        }),
+      ),
+    ];
+    const rows =
+      providers.length === 0
+        ? []
+        : await db
+            .select({
+              kind: usagePricing.kind,
+              provider: usagePricing.provider,
+              category: usagePricing.category,
+            })
+            .from(usagePricing)
+            .where(
+              and(
+                inArray(usagePricing.kind, kinds),
+                inArray(usagePricing.provider, providers),
               ),
-            },
-          ]
-        : [];
-    },
-  );
-  const kinds = [
-    ...new Set(
-      links.map((link) => {
-        return link.kind;
-      }),
-    ),
-  ];
-  const providers = [
-    ...new Set(
-      links.map((link) => {
-        return link.provider;
-      }),
-    ),
-  ];
-  const rows =
-    providers.length === 0
-      ? []
-      : await db
-          .select({
-            kind: usagePricing.kind,
-            provider: usagePricing.provider,
-            category: usagePricing.category,
-          })
-          .from(usagePricing)
-          .where(
-            and(
-              inArray(usagePricing.kind, kinds),
-              inArray(usagePricing.provider, providers),
-            ),
-          );
-  return {
-    byKey: usagePricingByKey(rows),
-    resolution: args.resolution,
-    serviceTier: args.serviceTier,
-  };
+            );
+    return {
+      byKey: usagePricingByKey(rows),
+      resolution: args.resolution,
+      serviceTier: args.serviceTier,
+    };
+  });
 }
 
 /**
@@ -342,24 +345,28 @@ export function prepareModelUsageContext(args: {
  * The pricing snapshot of a Built-in run's model candidates (one read), or
  * null for every other run.
  */
-export async function loadRunRoutePricing(
-  db: ReadonlyDb,
-  args: {
-    readonly catalog: ModelCatalog;
-    readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    readonly serviceTier: CodexServiceTier | undefined;
-    readonly resolution: UsagePricingResolution;
-  },
-): Promise<BuiltInRoutePricing | null> {
-  const selectedModel = args.modelProvider?.selectedModel;
-  if (!selectedModel || !isBuiltInModelProviderType(args.modelProvider?.type)) {
-    return null;
-  }
-  return await loadBuiltInRoutePricing(db, {
-    catalog: args.catalog,
-    model: normalizeRunModelId(selectedModel),
-    serviceTier: args.serviceTier,
-    resolution: args.resolution,
+export function runRoutePricing(args: {
+  readonly catalog: ModelCatalog;
+  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+  readonly serviceTier: CodexServiceTier | undefined;
+  readonly resolution: UsagePricingResolution;
+}) {
+  return computed(async (get): Promise<BuiltInRoutePricing | null> => {
+    const selectedModel = args.modelProvider?.selectedModel;
+    if (
+      !selectedModel ||
+      !isBuiltInModelProviderType(args.modelProvider?.type)
+    ) {
+      return null;
+    }
+    return await get(
+      builtInRoutePricing({
+        catalog: args.catalog,
+        model: normalizeRunModelId(selectedModel),
+        serviceTier: args.serviceTier,
+        resolution: args.resolution,
+      }),
+    );
   });
 }
 

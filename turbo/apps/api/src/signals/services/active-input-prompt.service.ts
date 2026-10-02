@@ -27,7 +27,7 @@ import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 type ChatEventContextType = NonNullable<
   (typeof chatEvents.$inferSelect)["contextType"]
@@ -136,10 +136,11 @@ export const materializeActiveInputSource$ = command(
     if (source.contextType === null) {
       throw new Error("Pending active input is missing its context type");
     }
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
       auth.orgId,
       auth.userId,
+      signal,
     );
     signal.throwIfAborted();
     return await set(

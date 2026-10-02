@@ -1,4 +1,9 @@
 import "./env";
+import { createStore } from "ccstate";
+import { closeDbPool } from "../../src/lib/db";
+import { mockEnv, clearMockedEnv } from "../../src/lib/env";
+import { chatEventCommandResultSchema } from "../../src/signals/services/chat-event-append.service";
+import { parseRawRows } from "../../src/lib/db-raw-rows";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -9,10 +14,10 @@ import { Client, Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { createUserMessageDocument } from "../../src/signals/services/chat-user-message.service";
 import {
-  insertChatEvent,
-  insertChatEventContext,
+  chatEventContextInsertSql,
+  chatEventInsertSql,
 } from "../../src/signals/services/chat-event.service";
-import { touchNativeChatThread } from "../../src/signals/services/native-chat-event-write.service";
+import { touchNativeChatThread$ } from "../../src/signals/services/native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "../../src/signals/services/queued-launch-enrichment.service";
 import { flushLogs } from "../../src/lib/log";
 
@@ -33,8 +38,10 @@ databaseUrl.pathname = `/${databaseName}`;
 const admin = new Client({ connectionString: process.env.DATABASE_URL });
 const client = new Client({ connectionString: databaseUrl.toString() });
 const schema = `chat_context_${suffix}`;
-// The API writers take the pooled database type; one connection keeps the
-// isolated schema on its search path.
+const commandStore = createStore();
+const commandController = new AbortController();
+// One connection keeps this isolated schema on its search path; the fixture
+// executes the pure production SQL on its own connection.
 const pool = new Pool({
   connectionString: databaseUrl.toString(),
   max: 1,
@@ -103,8 +110,16 @@ async function appendEntryInput(
   db: ReturnType<typeof drizzle<Record<string, never>, Pool>>,
   input: ReturnType<typeof agentphoneInput>,
 ) {
-  await insertChatEventContext(db, input);
-  return await insertChatEvent(db, input, "id");
+  const contextInsert = chatEventContextInsertSql(input);
+  if (contextInsert) {
+    await db.execute(contextInsert);
+  }
+  return (
+    parseRawRows(
+      chatEventCommandResultSchema,
+      await db.execute(chatEventInsertSql(input, "id")),
+    )[0] ?? null
+  );
 }
 
 async function count(sql: string, values: readonly unknown[]) {
@@ -155,6 +170,13 @@ try {
     [agentId, orgId, userId],
   );
   const db = drizzle(pool);
+  const commandDatabaseUrl = new URL(databaseUrl);
+  commandDatabaseUrl.searchParams.set(
+    "options",
+    `-c search_path=${schema},public`,
+  );
+  mockEnv("DATABASE_URL", commandDatabaseUrl.toString());
+  mockEnv("DB_POOL_MAX", 1);
 
   const controller = new AbortController();
   const failOptionalLookup = () => {
@@ -243,11 +265,15 @@ try {
     db,
     agentphoneInput(committedEventId, touchThreadId),
   );
-  await touchNativeChatThread(db, {
-    chatThreadId: touchThreadId,
-    createdAt: new Date(),
-    eventId: committedEventId,
-  });
+  await commandStore.set(
+    touchNativeChatThread$,
+    {
+      chatThreadId: touchThreadId,
+      createdAt: new Date(),
+      eventId: committedEventId,
+    },
+    commandController.signal,
+  );
   assert.equal(
     await count(
       "SELECT count(*)::int AS count FROM chat_thread_events WHERE chat_thread_id=$1 AND kind='sort_touched'",
@@ -266,6 +292,9 @@ try {
     "Chat context acceptance passed: required context failures reject input and redelivery is accepted.\n",
   );
 } finally {
+  commandController.abort();
+  await closeDbPool();
+  clearMockedEnv();
   await flushLogs();
   await pool.end();
   await client.end();

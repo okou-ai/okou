@@ -68,10 +68,12 @@ import {
 } from "./model-provider.service";
 import {
   frameworkForProviderSelection,
-  loadModelCatalog,
+  loadModelCatalog$,
+  type ModelCatalog,
 } from "./model-catalog.service";
 import {
-  loadRunRoutePricing,
+  runRoutePricing,
+  type BuiltInRoutePricing,
   prepareModelUsageContext,
 } from "./built-in-route-pricing";
 import {
@@ -94,13 +96,22 @@ import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
-  activateUsageAllowanceWindowsForRun,
   type PreparedUsageAllowanceRefresh,
-  prepareUsageAllowanceRefresh,
+  createUsageAllowanceRefreshObject,
 } from "./usage-allowance.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { and, eq, isNull } from "drizzle-orm";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { entitlementQuery } from "./usage-allowance-settlement-plan";
+import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
 import {
-  checkOrgCreditsForRunAdmission,
+  pendingRunAllowancePlan,
+  pendingRunAllowanceWindowsPlan,
+  allowanceSnapshotSchema,
+} from "./pending-launch-allowance-plan";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import {
+  checkOrgCreditsForRunAdmission$,
   isFreePlanForCreditAdmission,
 } from "./run-admission.service";
 import {
@@ -144,10 +155,7 @@ import {
   networkPoliciesRecordToEntries,
 } from "./run-context-snapshot.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
-import {
-  isPersonalSubscriptionProviderType,
-  validatePersonalSubscriptionAdmission,
-} from "./model-provider-account.service";
+import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 
@@ -261,67 +269,88 @@ function maintenanceCallbackPayload(
   };
 }
 
-/** Pi-owned admission: feature, current credential, credits and quota. */
-async function admitMaintenance(
-  db: Db,
-  job: ClaimedPiMemoryPhase2Job,
-  signal: AbortSignal,
-) {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    job.orgId,
-    job.userId,
-  );
-  signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
-    throw new PiMaintenanceDispositionError("pi_memory_disabled");
-  }
-  const credential = await resolvePiMemoryPhase2Credential(db, job, signal);
-  const catalog = await loadModelCatalog(db);
-  signal.throwIfAborted();
-  // Prepare ordinary credit admission first; quota then sees locally
-  // reconciled usage. The final transaction remains authoritative.
-  const admission = await checkOrgCreditsForRunAdmission({
-    db,
-    catalog,
-    orgId: job.orgId,
-    userId: job.userId,
-    modelProviderType: credential.pin.modelProvider,
-    selectedModel: credential.pin.selectedModel,
-  });
-  signal.throwIfAborted();
-  if (admission) {
-    throw new PiMaintenanceDispositionError("source_admission_denied");
-  }
-  await checkPiMemoryQuota(
-    db,
-    {
-      orgId: job.orgId,
-      userId: job.userId,
-      stage: "phase2",
-      source: credential.quota,
-    },
-    signal,
-  );
-  const selectedModel = credential.pin.selectedModel;
-  const modelProviderType = modelProviderTypeSchema.parse(
-    credential.pin.modelProvider,
-  );
-  const framework = selectedModel
-    ? frameworkForProviderSelection(catalog, modelProviderType, selectedModel)
-    : null;
-  if (!selectedModel || !framework) {
-    throw new PiMaintenanceDispositionError("model_route_unavailable");
-  }
-  return {
-    featureSwitchContext,
-    credential,
-    catalog,
-    selectedModel,
-    framework,
-  };
+interface MaintenanceAdmission {
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly credential: PiMaintenanceCredential;
+  readonly catalog: ModelCatalog;
+  readonly selectedModel: string;
+  readonly framework: NonNullable<
+    ReturnType<typeof frameworkForProviderSelection>
+  >;
 }
-type MaintenanceAdmission = Awaited<ReturnType<typeof admitMaintenance>>;
+
+/** Pi-owned admission: feature, current credential, credits and quota. */
+const admitMaintenance$ = command(
+  async (
+    { set },
+    job: ClaimedPiMemoryPhase2Job,
+    signal: AbortSignal,
+  ): Promise<MaintenanceAdmission> => {
+    const db = set(writeDb$);
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
+      job.orgId,
+      job.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
+      throw new PiMaintenanceDispositionError("pi_memory_disabled");
+    }
+    const catalog = await set(loadModelCatalog$, signal);
+    const credential = await resolvePiMemoryPhase2Credential(
+      catalog,
+      db,
+      job,
+      signal,
+    );
+    signal.throwIfAborted();
+    // Prepare ordinary credit admission first; quota then sees locally
+    // reconciled usage. The final transaction remains authoritative.
+    const admission = await set(
+      checkOrgCreditsForRunAdmission$,
+      {
+        catalog,
+        orgId: job.orgId,
+        userId: job.userId,
+        modelProviderType: credential.pin.modelProvider,
+        selectedModel: credential.pin.selectedModel,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (admission) {
+      throw new PiMaintenanceDispositionError("source_admission_denied");
+    }
+    await checkPiMemoryQuota(
+      db,
+      {
+        orgId: job.orgId,
+        userId: job.userId,
+        stage: "phase2",
+        source: credential.quota,
+      },
+      signal,
+    );
+    const selectedModel = credential.pin.selectedModel;
+    const modelProviderType = modelProviderTypeSchema.parse(
+      credential.pin.modelProvider,
+    );
+    const framework = selectedModel
+      ? frameworkForProviderSelection(catalog, modelProviderType, selectedModel)
+      : null;
+    if (!selectedModel || !framework) {
+      throw new PiMaintenanceDispositionError("model_route_unavailable");
+    }
+    return {
+      featureSwitchContext,
+      credential,
+      catalog,
+      selectedModel,
+      framework,
+    };
+  },
+);
 
 /** Exact pinned source → resolved runtime → Pi model configuration. */
 async function prepareMaintenanceModel(
@@ -528,10 +557,11 @@ function maintenanceModelPermissionManifest(
 /** Model firewall/permission manifest and usage pricing for the run. */
 async function prepareMaintenanceUsage(args: {
   readonly db: ReadonlyDb;
-  readonly resolution: Parameters<typeof loadRunRoutePricing>[1]["resolution"];
+  readonly resolution: Parameters<typeof runRoutePricing>[0]["resolution"];
   readonly catalog: MaintenanceAdmission["catalog"];
   readonly modelProvider: ResolvedModelProviderEnvironment;
   readonly timing: ApiDispatchTimingCollector;
+  readonly routePricing: BuiltInRoutePricing | null;
 }) {
   const { catalog, modelProvider } = args;
   const permissionManifest = await measureApiDispatchTiming(
@@ -546,12 +576,7 @@ async function prepareMaintenanceUsage(args: {
     catalog,
     modelProvider,
     permissionManifest,
-    routePricing: await loadRunRoutePricing(args.db, {
-      catalog,
-      modelProvider,
-      serviceTier: undefined,
-      resolution: args.resolution,
-    }),
+    routePricing: args.routePricing,
   });
   if ("kind" in usage) {
     throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
@@ -766,12 +791,29 @@ async function commitMaintenanceRun(
       },
     });
     if (enforceBuiltInCredits) {
-      await activateUsageAllowanceWindowsForRun(tx, {
+      const activation = {
         orgId: job.orgId,
         runId: record.runId,
         runCreatedAt: rows.createdAt,
         refresh: args.allowanceRefresh,
-      });
+      };
+      const [owned] = await tx.select().from(entitlementQuery(job.orgId));
+      const planned = pendingRunAllowancePlan(owned, activation, nowDate());
+      const [published] = planned.publication
+        ? parseRawRows(
+            allowanceSnapshotSchema,
+            await tx.execute(planned.publication),
+          )
+        : [];
+      const windows = pendingRunAllowanceWindowsPlan(
+        planned,
+        activation,
+        published,
+      );
+      if (windows) {
+        await tx.execute(windows.insert);
+        requireRunAllowanceWindowPair(await tx.select().from(windows.windows));
+      }
     }
     // The unique active-run insert stays the final statement.
     await tx.insert(activeAgentRuns).values({
@@ -882,14 +924,25 @@ function createMaintenanceModelReads(
       catalog: admitted.catalog,
       modelProvider,
       timing,
+      routePricing: await get(
+        runRoutePricing({
+          catalog: admitted.catalog,
+          modelProvider,
+          serviceTier: undefined,
+          resolution: get(usagePricingResolution$),
+        }),
+      ),
     });
   });
   // For a built-in model, the Stripe entitlement read for the allowance window
   // (no write; the refresh itself is applied in the commit transaction).
+  const preparedAllowanceRefresh$ = createUsageAllowanceRefreshObject(
+    job.orgId,
+  );
   const allowanceRefresh$ = computed(async (get) => {
     const { modelProvider } = await get(model$);
     return isBuiltInModelProviderType(modelProvider.type)
-      ? await prepareUsageAllowanceRefresh(get(db$), { orgId: job.orgId })
+      ? await get(preparedAllowanceRefresh$)
       : undefined;
   });
   return { source$, model$, usage$, allowanceRefresh$ };
@@ -971,7 +1024,7 @@ const launchMaintenanceRun$ = command(
       createMaintenanceRunReads(job);
     const db = set(writeDb$);
     const apiStartTime = now();
-    const admitted = await admitMaintenance(db, job, signal);
+    const admitted = await set(admitMaintenance$, job, signal);
     const timing = new ApiDispatchTimingCollector();
     const modelReads = createMaintenanceModelReads(job, admitted, timing);
     const [source, member, disabledPaidTools, preparedMounts] =
@@ -1455,13 +1508,22 @@ async function validateMaintenanceSubscription(
   ) {
     return { identity: null };
   }
-  const account = await validatePersonalSubscriptionAdmission({
-    db: tx,
-    orgId: record.orgId,
-    userId: record.userId,
-    type: provider.type,
-    sourceId: provider.id ?? undefined,
-  });
+  if (!provider.id) {
+    return null;
+  }
+  const [account] = await tx
+    .select()
+    .from(modelProviderAccounts)
+    .where(
+      and(
+        eq(modelProviderAccounts.id, provider.id),
+        eq(modelProviderAccounts.orgId, record.orgId),
+        eq(modelProviderAccounts.userId, record.userId),
+        isNull(modelProviderAccounts.disconnectedAt),
+        eq(modelProviderAccounts.type, provider.type),
+      ),
+    )
+    .limit(1);
   return account
     ? { identity: personalSubscriptionAccountIdentity(account) }
     : null;

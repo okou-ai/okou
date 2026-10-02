@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   connectorRuntimeTargetKey,
@@ -31,7 +36,7 @@ import {
 } from "./connector-runtime-preparation.service";
 import { loadCustomConnectorPermissionBundleDependencySlugs } from "./custom-connector-permission-bundle.service";
 import { loadCustomConnectorRuntimeData } from "./custom-connector.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 
 const L = logger("connector-runtime-sync");
@@ -278,10 +283,19 @@ async function loadCustomSnapshot(args: {
           );
         }
       }
-      const featureSwitchContext = await loadUserFeatureSwitchContext(
-        tx,
+      const featureSwitchContextRows0 = await tx
+        .select({
+          userId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
+        })
+        .from(userFeatureSwitches)
+        .where(
+          userFeatureSwitchRowCondition(args.scope.orgId, args.scope.userId),
+        );
+      const featureSwitchContext = featureSwitchContextFromRows(
         args.scope.orgId,
         args.scope.userId,
+        featureSwitchContextRows0,
       );
       const runtimeRows = await loadCustomConnectorRuntimeData(tx, {
         orgId: args.scope.orgId,

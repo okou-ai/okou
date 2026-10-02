@@ -44,23 +44,24 @@ import { saveRunSummary } from "../services/run-summary.service";
 import { resolveRunnerWssTarget$ } from "../services/runner-wss-target.service";
 import { queueArtifactCatalogFile } from "../services/artifact-catalog.service";
 import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
-import { steerRunNearTimeBudgetForTest } from "../services/cron-steer-run-time-budget.service";
+import { steerRunNearTimeBudgetForTest$ } from "../services/cron-steer-run-time-budget.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 import {
-  loadModelCatalog,
-  loadSystemDefaultRunModel,
+  modelCatalog$,
+  type ModelCatalog,
 } from "../services/model-catalog.service";
 
 /** Vendors of the model's enabled Built-in catalog candidates, in order. */
 async function builtInCandidateVendors(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   selectedModel: string,
 ): Promise<readonly string[]> {
   return getCatalogBuiltInModelRouteCandidates(
-    await loadModelCatalog(db),
+    await catalogSnapshot,
     selectedModel,
   ).map((candidate) => {
     return candidate.vendor;
@@ -102,26 +103,29 @@ async function runSummaryFixtureActionResponse(
 }
 
 async function seedBuiltInDefaultModelKey(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   fixtureId: string,
   signal: AbortSignal,
 ): Promise<string> {
   return await seedBuiltInModelKey(
+    catalogSnapshot,
     db,
     fixtureId,
-    await loadSystemDefaultRunModel(db),
+    await catalogSnapshot.systemDefaultModel,
     signal,
   );
 }
 
 async function seedBuiltInModelKey(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   fixtureId: string,
   selectedModel: string,
   signal: AbortSignal,
 ): Promise<string> {
   const vendor = getCatalogBuiltInModelRouteCandidates(
-    await loadModelCatalog(db),
+    catalogSnapshot,
     selectedModel,
   ).find((candidate) => {
     return candidate.providerType !== "deepseek";
@@ -140,12 +144,15 @@ async function seedBuiltInModelKey(
 }
 
 async function seedBuiltInModelCandidateKeys(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   fixtureId: string,
   selectedModel: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const vendors = new Set(await builtInCandidateVendors(db, selectedModel));
+  const vendors = new Set(
+    await builtInCandidateVendors(catalogSnapshot, db, selectedModel),
+  );
   await acquireBuiltInModelKeyFixture(
     db,
     fixtureId,
@@ -262,6 +269,7 @@ async function deleteBuiltInCandidateCooldown(
 }
 
 async function builtInModelActionResponse(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   body: BuiltInModelAction,
   signal: AbortSignal,
@@ -273,6 +281,7 @@ async function builtInModelActionResponse(
         body: {
           ok: true as const,
           selected_model: await seedBuiltInDefaultModelKey(
+            catalogSnapshot,
             db,
             body.fixture_id,
             signal,
@@ -286,6 +295,7 @@ async function builtInModelActionResponse(
         body: {
           ok: true as const,
           selected_model: await seedBuiltInModelKey(
+            catalogSnapshot,
             db,
             body.fixture_id,
             body.selected_model,
@@ -300,6 +310,7 @@ async function builtInModelActionResponse(
         body: {
           ok: true as const,
           selected_model: await seedBuiltInModelCandidateKeys(
+            catalogSnapshot,
             db,
             body.fixture_id,
             body.selected_model,
@@ -314,6 +325,7 @@ async function builtInModelActionResponse(
     }
     case "resolve-built-in-model-route": {
       const route = await resolveBuiltInModelRuntimeRoute(
+        catalogSnapshot,
         db,
         body.selected_model,
       );
@@ -629,7 +641,7 @@ function isTimingStateAction(
 
 async function timingStateActionResponse(
   db: Db,
-  body: TimingStateAction,
+  body: Exclude<TimingStateAction, { action: "steer-run-time-budget" }>,
   signal: AbortSignal,
 ) {
   switch (body.action) {
@@ -643,20 +655,6 @@ async function timingStateActionResponse(
         body: {
           ok: true as const,
           api_started_at: await readRunApiStart(db, body.run_id, signal),
-        },
-      };
-    }
-    case "steer-run-time-budget": {
-      await setRunTimeBudgetElapsed(db, body.run_id, body.elapsed_ms, signal);
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          run_time_budget: await steerRunNearTimeBudgetForTest(
-            db,
-            body.run_id,
-            signal,
-          ),
         },
       };
     }
@@ -1235,6 +1233,20 @@ const postRuntimeStateAction$ = command(
     if (isReadRunLaunchSnapshotAction(body)) {
       return await readRunLaunchSnapshotActionResponse(db, body, signal);
     }
+    if (body.action === "steer-run-time-budget") {
+      await setRunTimeBudgetElapsed(db, body.run_id, body.elapsed_ms, signal);
+      return {
+        status: 200 as const,
+        body: {
+          ok: true as const,
+          run_time_budget: await set(
+            steerRunNearTimeBudgetForTest$,
+            body.run_id,
+            signal,
+          ),
+        },
+      };
+    }
     if (isTimingStateAction(body)) {
       return await timingStateActionResponse(db, body, signal);
     }
@@ -1248,7 +1260,12 @@ const postRuntimeStateAction$ = command(
       return await compatibilityFixtureActionResponse(db, body, signal);
     }
     if (isBuiltInModelAction(body)) {
-      return await builtInModelActionResponse(db, body, signal);
+      return await builtInModelActionResponse(
+        await get(modelCatalog$),
+        db,
+        body,
+        signal,
+      );
     }
     const specializedFixture = await set(
       specializedRuntimeFixtureAction$,

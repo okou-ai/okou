@@ -46,13 +46,19 @@ export function getStartedRewardAvailabilityQuery(
  * is written and the statement reports zero rows. Reward key and slot
  * uniqueness remain enforced by their unique indexes.
  */
-export function getStartedMemberRewardSql(
-  claim: GetStartedClaimRow,
-  rewardKey: string,
-  rewardSlot: number | null,
-  evidenceText: string | undefined,
-  at: Date,
-) {
+export function getStartedMemberRewardSql(args: {
+  readonly claim: GetStartedClaimRow;
+  readonly rewardKey: string;
+  readonly rewardSlot: number | null;
+  readonly evidenceText?: string;
+  readonly at: Date;
+  readonly acceptance?: {
+    readonly invitationId: string | null;
+    readonly inviteeUserId: string;
+    readonly completedAt: Date;
+  };
+}) {
+  const { claim, rewardKey, rewardSlot, evidenceText, at, acceptance } = args;
   if (!claim.beneficiaryUserId || claim.rewardTarget !== "user") {
     throw new Error(
       "Organization rewards must commit with the Slack installation",
@@ -64,12 +70,15 @@ export function getStartedMemberRewardSql(
   if (evidenceText !== undefined) {
     evidence = memberRewardEvidenceSql(evidenceText, at);
   }
+  const accepted = acceptance
+    ? sql`, invitation_id = ${acceptance.invitationId}, invitee_user_id = ${acceptance.inviteeUserId},
+        completed_at = ${sql.param(acceptance.completedAt, getStartedClaims.completedAt)}`
+    : sql`, completed_at = COALESCE(completed_at, ${sql.param(at, getStartedClaims.completedAt)})`;
   return sql`WITH claimed AS (
     UPDATE ${getStartedClaims} SET status = 'granted', reward_key = ${rewardKey}, reward_slot = ${rewardSlot},
     member_credit_grant_id = ${grantId}::uuid, org_credit_record_id = NULL,
     granted_at = ${sql.param(at, getStartedClaims.grantedAt)}, expires_at = ${sql.param(expiresAt, getStartedClaims.expiresAt)},
-    completed_at = COALESCE(completed_at, ${sql.param(at, getStartedClaims.completedAt)}),
-    updated_at = ${sql.param(at, getStartedClaims.updatedAt)}, reason = NULL, lease_id = NULL, lease_expires_at = NULL ${evidence}
+    updated_at = ${sql.param(at, getStartedClaims.updatedAt)}, reason = NULL, lease_id = NULL, lease_expires_at = NULL ${evidence} ${accepted}
     WHERE ${unresolvedClaimWhere(claim)}
     RETURNING ${getStartedClaims.id}
   ) INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)

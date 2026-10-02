@@ -20,7 +20,7 @@ import { logger } from "../../lib/log";
 import { env, optionalEnv } from "../../lib/env";
 import { safeJsonParse, tapError } from "../utils";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
   notifySlackConnect$,
@@ -515,10 +515,11 @@ const handleInstallCallback$ = command(
     const writeDb = set(writeDb$);
     const featureSwitchContext =
       args.state.orgId && args.state.userId
-        ? await loadUserFeatureSwitchContext(
-            writeDb,
+        ? await set(
+            loadUserFeatureSwitchContext$,
             args.state.orgId,
             args.state.userId,
+            signal,
           )
         : {};
     const encryptedBotToken = await encryptPersistentSecretValue(
