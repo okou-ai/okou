@@ -3485,18 +3485,27 @@ export function createThreadClaimRunObjects(
         }
       : null;
   });
-  const queuedModelInputsInternalInput$ = state<QueuedModelInput | null>(null);
   const queuedModelInputsInternalPolicyFacts$ =
     state<EnsuredOrgModelPolicyFacts | null>(null);
-  const queuedModelInputsInput$ = computed((get) => {
-    const input = get(queuedModelInputsInternalInput$);
-    if (!input) {
-      throw new Error("Queued model preparation requires a selected input");
-    }
-    return input;
-  });
+  // The prompt head's model input, derived from its prepared arguments.
+  const queuedModelInputsInput$ = computed(
+    async (get): Promise<QueuedModelInput> => {
+      const [args, features] = await Promise.all([
+        get(promptArgsArgs$),
+        get(promptFeaturesFeatures$),
+      ]);
+      return {
+        orgId: args.agent.orgId,
+        userId: args.userId,
+        threadId: args.threadId,
+        eventId: args.queuedMessage.id,
+        featureSwitchContext: features,
+        providerModelSupport: "trust-enqueued",
+      };
+    },
+  );
   const queuedModelInputsSelection$ = computed(async (get) => {
-    const input = get(queuedModelInputsInput$);
+    const input = await get(queuedModelInputsInput$);
     const head = await get(pickedEvent$);
     if (head?.id !== input.eventId) {
       throw new Error("Queued model selection must belong to the picked head");
@@ -3504,7 +3513,7 @@ export function createThreadClaimRunObjects(
     return head.canonicalModelSelection;
   });
   const orgMetadata$ = computed(async (get) => {
-    const { orgId } = get(queuedModelInputsInput$);
+    const { orgId } = await get(queuedModelInputsInput$);
     const [org] = await get(db$)
       .select({
         credits: orgMetadata.credits,
@@ -3517,7 +3526,7 @@ export function createThreadClaimRunObjects(
   });
   const queuedModelInputsCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = get(queuedModelInputsInput$);
+      const { orgId } = await get(queuedModelInputsInput$);
       const [capabilities] = await get(db$)
         .select({
           planKey: orgPlanEntitlements.planKey,
@@ -3562,7 +3571,9 @@ export function createThreadClaimRunObjects(
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$).orgId));
+      .where(
+        eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId),
+      );
   });
   const policyFacts$ = computed((get) => {
     const facts = get(queuedModelInputsInternalPolicyFacts$);
@@ -3589,7 +3600,6 @@ export function createThreadClaimRunObjects(
     );
   });
   const queuedModelSources = {
-    internalInput$: queuedModelInputsInternalInput$,
     internalPolicyFacts$: queuedModelInputsInternalPolicyFacts$,
     input$: queuedModelInputsInput$,
     selection$: queuedModelInputsSelection$,
@@ -3605,7 +3615,7 @@ export function createThreadClaimRunObjects(
   } = queuedModelSources;
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
-      const { orgId, userId } = get(queuedMemberModelRoutesInput$);
+      const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
       const [policy, org] = await Promise.all([
         get(queuedMemberModelRoutesPolicy$),
         get(orgMetadata$),
@@ -3639,7 +3649,7 @@ export function createThreadClaimRunObjects(
   const memberRoutes$ = computed(async (get) => {
     const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$);
     return memberModelRouteContextFromAccounts(
-      get(queuedMemberModelRoutesInput$).userId,
+      (await get(queuedMemberModelRoutesInput$)).userId,
       snapshot?.accounts.map((account) => {
         return { ...account, providerId: account.modelProviderId };
       }) ?? [],
@@ -3672,7 +3682,7 @@ export function createThreadClaimRunObjects(
       .where(
         and(
           eq(modelProviders.id, policy.modelProviderId),
-          eq(modelProviders.orgId, get(queuedModelRoutingInput$).orgId),
+          eq(modelProviders.orgId, (await get(queuedModelRoutingInput$)).orgId),
           eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
         ),
       )
@@ -3700,7 +3710,7 @@ export function createThreadClaimRunObjects(
           eq(modelProviderSurfaces.id, policy.modelProviderSurfaceId),
           eq(
             modelProviderConnections.orgId,
-            get(queuedModelRoutingInput$).orgId,
+            (await get(queuedModelRoutingInput$)).orgId,
           ),
         ),
       )
@@ -3758,7 +3768,7 @@ export function createThreadClaimRunObjects(
   const { modelPin$: queuedModelRuntimeModelPin$ } = routing;
   const queuedModelRuntimeFeatureSwitchContext$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const input = get(queuedModelRuntimeInput$);
+      const input = await get(queuedModelRuntimeInput$);
       if (input.featureSwitchContext) {
         return input.featureSwitchContext;
       }
@@ -3868,7 +3878,10 @@ export function createThreadClaimRunObjects(
       .from(creditExpiresRecord)
       .where(
         and(
-          eq(creditExpiresRecord.orgId, get(queuedModelCreditsInput$).orgId),
+          eq(
+            creditExpiresRecord.orgId,
+            (await get(queuedModelCreditsInput$)).orgId,
+          ),
           lte(creditExpiresRecord.expiresAt, nowDate()),
           gt(creditExpiresRecord.remaining, 0),
         ),
@@ -3876,7 +3889,7 @@ export function createThreadClaimRunObjects(
     return row?.total ?? 0;
   });
   const usagePackCredits$ = computed(async (get) => {
-    const input = get(queuedModelCreditsInput$);
+    const input = await get(queuedModelCreditsInput$);
     const [row] = await get(db$)
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -3910,7 +3923,7 @@ export function createThreadClaimRunObjects(
   const credits = { creditBalance$: creditBalance$ };
   const { input$: queuedModelAllowanceInput$ } = queuedModelSources;
   const allowanceSnapshot$ = computed(async (get) => {
-    const { orgId } = get(queuedModelAllowanceInput$);
+    const { orgId } = await get(queuedModelAllowanceInput$);
     const at = nowDate();
     const rows = await get(db$)
       .select({
@@ -4026,7 +4039,7 @@ export function createThreadClaimRunObjects(
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
-      providerModelSupport: get(queuedProviderAdmissionInput$)
+      providerModelSupport: (await get(queuedProviderAdmissionInput$))
         .providerModelSupport,
       customSurface: () => {
         return get(queuedProviderAdmissionCustomSurface$);
@@ -4075,8 +4088,8 @@ export function createThreadClaimRunObjects(
     },
   );
   const ensureModelPolicy$ = orgModelPolicyInitializationInitializeModelPolicy$;
-  const allowanceInput$ = computed((get) => {
-    return { orgId: get(queuedModelCommandsInput$).orgId };
+  const allowanceInput$ = computed(async (get) => {
+    return { orgId: (await get(queuedModelCommandsInput$)).orgId };
   });
   const resolveUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
@@ -4118,7 +4131,8 @@ export function createThreadClaimRunObjects(
   const queuedModelCommandsRefreshUsageAllowance$ = resolveUsageAllowance$;
   const queuedModelCommandsInitializeModelPolicy$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const input = get(queuedModelCommandsInput$);
+      const input = await get(queuedModelCommandsInput$);
+      signal.throwIfAborted();
       const facts =
         input.userId === "__no_preference__"
           ? await get(initialFacts$)
@@ -4131,13 +4145,8 @@ export function createThreadClaimRunObjects(
     initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
   };
-  const {
-    internalInput$,
-    internalPolicyFacts$,
-    selection$,
-    capabilities$,
-    initialPolicies$,
-  } = queuedModelSources;
+  const { internalPolicyFacts$, selection$, capabilities$, initialPolicies$ } =
+    queuedModelSources;
   const { modelPin$ } = routing;
   const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
   const {
@@ -4147,9 +4156,8 @@ export function createThreadClaimRunObjects(
   const { providerAdmission$ } = admission;
   const { initializeModelPolicy$, refreshUsageAllowance$ } = commands;
   const queuedModelResolveQueuedModel$ = command(
-    async ({ get, set }, input: QueuedModelInput, signal: AbortSignal) => {
+    async ({ get, set }, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(internalInput$, input);
       set(internalPolicyFacts$, null);
       const [selection] = await Promise.all([
         get(selection$),
@@ -5662,23 +5670,7 @@ export function createThreadClaimRunObjects(
       { get, set },
       signal: AbortSignal,
     ): Promise<QueuedMessageModelRouteResolution> => {
-      const [args, features] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptFeaturesFeatures$),
-      ]);
-      signal.throwIfAborted();
-      const model = await set(
-        resolveQueuedModel$,
-        {
-          orgId: args.agent.orgId,
-          userId: args.userId,
-          threadId: args.threadId,
-          eventId: args.queuedMessage.id,
-          featureSwitchContext: features,
-          providerModelSupport: "trust-enqueued",
-        },
-        signal,
-      );
+      const model = await set(resolveQueuedModel$, signal);
       signal.throwIfAborted();
       if ("status" in model) {
         return { error: model.body.error };
@@ -6495,18 +6487,25 @@ export function createThreadClaimRunObjects(
     automationLaunchMaterialsComputerUseHostGrant$;
   const workflowAutomationLaunchReadGraphRunInput$ =
     automationLaunchMaterialsRunInput$;
-  const queuedModelInputsInternalInput$2 = state<QueuedModelInput | null>(null);
   const queuedModelInputsInternalPolicyFacts$2 =
     state<EnsuredOrgModelPolicyFacts | null>(null);
-  const queuedModelInputsInput$2 = computed((get) => {
-    const input = get(queuedModelInputsInternalInput$2);
-    if (!input) {
-      throw new Error("Queued model preparation requires a selected input");
-    }
-    return input;
-  });
+  // The automation head's model input, derived from its execution input.
+  const queuedModelInputsInput$2 = computed(
+    async (get): Promise<QueuedModelInput> => {
+      const args = await get(automationExecutionInput$);
+      if (!args) {
+        throw new Error("Automation model resolution requires its automation");
+      }
+      return {
+        orgId: args.due.automation.orgId,
+        userId: args.due.automation.ownerUserId,
+        threadId: args.due.chatThreadId,
+        eventId: args.queueEventId,
+      };
+    },
+  );
   const queuedModelInputsSelection$2 = computed(async (get) => {
-    const input = get(queuedModelInputsInput$2);
+    const input = await get(queuedModelInputsInput$2);
     const head = await get(pickedEvent$);
     if (head?.id !== input.eventId) {
       throw new Error("Queued model selection must belong to the picked head");
@@ -6514,7 +6513,7 @@ export function createThreadClaimRunObjects(
     return head.canonicalModelSelection;
   });
   const queuedModelInputsOrgMetadata$ = computed(async (get) => {
-    const { orgId } = get(queuedModelInputsInput$2);
+    const { orgId } = await get(queuedModelInputsInput$2);
     const [org] = await get(db$)
       .select({
         credits: orgMetadata.credits,
@@ -6527,7 +6526,7 @@ export function createThreadClaimRunObjects(
   });
   const queuedModelInputsCapabilities$2 = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = get(queuedModelInputsInput$2);
+      const { orgId } = await get(queuedModelInputsInput$2);
       const [capabilities] = await get(db$)
         .select({
           planKey: orgPlanEntitlements.planKey,
@@ -6572,7 +6571,9 @@ export function createThreadClaimRunObjects(
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$2).orgId));
+      .where(
+        eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$2)).orgId),
+      );
   });
   const queuedModelInputsPolicyFacts$ = computed((get) => {
     const facts = get(queuedModelInputsInternalPolicyFacts$2);
@@ -6599,7 +6600,6 @@ export function createThreadClaimRunObjects(
     );
   });
   const queuedModelSources2 = {
-    internalInput$: queuedModelInputsInternalInput$2,
     internalPolicyFacts$: queuedModelInputsInternalPolicyFacts$2,
     input$: queuedModelInputsInput$2,
     selection$: queuedModelInputsSelection$2,
@@ -6615,7 +6615,7 @@ export function createThreadClaimRunObjects(
   } = queuedModelSources2;
   const queuedMemberModelRoutesMemberAccountSnapshot$2 = computed(
     async (get) => {
-      const { orgId, userId } = get(queuedMemberModelRoutesInput$2);
+      const { orgId, userId } = await get(queuedMemberModelRoutesInput$2);
       const [policy, org] = await Promise.all([
         get(queuedMemberModelRoutesPolicy$2),
         get(queuedModelInputsOrgMetadata$),
@@ -6649,7 +6649,7 @@ export function createThreadClaimRunObjects(
   const queuedMemberModelRoutesMemberRoutes$ = computed(async (get) => {
     const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$2);
     return memberModelRouteContextFromAccounts(
-      get(queuedMemberModelRoutesInput$2).userId,
+      (await get(queuedMemberModelRoutesInput$2)).userId,
       snapshot?.accounts.map((account) => {
         return { ...account, providerId: account.modelProviderId };
       }) ?? [],
@@ -6682,7 +6682,10 @@ export function createThreadClaimRunObjects(
       .where(
         and(
           eq(modelProviders.id, policy.modelProviderId),
-          eq(modelProviders.orgId, get(queuedModelRoutingInput$2).orgId),
+          eq(
+            modelProviders.orgId,
+            (await get(queuedModelRoutingInput$2)).orgId,
+          ),
           eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
         ),
       )
@@ -6710,7 +6713,7 @@ export function createThreadClaimRunObjects(
           eq(modelProviderSurfaces.id, policy.modelProviderSurfaceId),
           eq(
             modelProviderConnections.orgId,
-            get(queuedModelRoutingInput$2).orgId,
+            (await get(queuedModelRoutingInput$2)).orgId,
           ),
         ),
       )
@@ -6768,7 +6771,7 @@ export function createThreadClaimRunObjects(
   const { modelPin$: queuedModelRuntimeModelPin$2 } = queuedModelRouting;
   const queuedModelRuntimeFeatureSwitchContext$2 = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const input = get(queuedModelRuntimeInput$2);
+      const input = await get(queuedModelRuntimeInput$2);
       if (input.featureSwitchContext) {
         return input.featureSwitchContext;
       }
@@ -6878,7 +6881,10 @@ export function createThreadClaimRunObjects(
       .from(creditExpiresRecord)
       .where(
         and(
-          eq(creditExpiresRecord.orgId, get(queuedModelCreditsInput$2).orgId),
+          eq(
+            creditExpiresRecord.orgId,
+            (await get(queuedModelCreditsInput$2)).orgId,
+          ),
           lte(creditExpiresRecord.expiresAt, nowDate()),
           gt(creditExpiresRecord.remaining, 0),
         ),
@@ -6886,7 +6892,7 @@ export function createThreadClaimRunObjects(
     return row?.total ?? 0;
   });
   const queuedModelCreditsUsagePackCredits$ = computed(async (get) => {
-    const input = get(queuedModelCreditsInput$2);
+    const input = await get(queuedModelCreditsInput$2);
     const [row] = await get(db$)
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -6922,7 +6928,7 @@ export function createThreadClaimRunObjects(
   };
   const { input$: queuedModelAllowanceInput$2 } = queuedModelSources2;
   const queuedModelAllowanceAllowanceSnapshot$ = computed(async (get) => {
-    const { orgId } = get(queuedModelAllowanceInput$2);
+    const { orgId } = await get(queuedModelAllowanceInput$2);
     const at = nowDate();
     const rows = await get(db$)
       .select({
@@ -7039,7 +7045,7 @@ export function createThreadClaimRunObjects(
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
-      providerModelSupport: get(queuedProviderAdmissionInput$2)
+      providerModelSupport: (await get(queuedProviderAdmissionInput$2))
         .providerModelSupport,
       customSurface: () => {
         return get(queuedProviderAdmissionCustomSurface$2);
@@ -7089,8 +7095,8 @@ export function createThreadClaimRunObjects(
   );
   const queuedModelCommandsEnsureModelPolicy$ =
     orgModelPolicyInitializationInitializeModelPolicy$2;
-  const queuedModelCommandsAllowanceInput$ = computed((get) => {
-    return { orgId: get(queuedModelCommandsInput$2).orgId };
+  const queuedModelCommandsAllowanceInput$ = computed(async (get) => {
+    return { orgId: (await get(queuedModelCommandsInput$2)).orgId };
   });
   const capturedResolveUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
@@ -7133,7 +7139,8 @@ export function createThreadClaimRunObjects(
     capturedResolveUsageAllowance$;
   const queuedModelCommandsInitializeModelPolicy$2 = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const input = get(queuedModelCommandsInput$2);
+      const input = await get(queuedModelCommandsInput$2);
+      signal.throwIfAborted();
       const facts =
         input.userId === "__no_preference__"
           ? await get(queuedModelCommandsInitialFacts$)
@@ -7147,7 +7154,6 @@ export function createThreadClaimRunObjects(
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$2,
   };
   const {
-    internalInput$: queuedModelInternalInput$,
     internalPolicyFacts$: queuedModelInternalPolicyFacts$,
     selection$: queuedModelSelection$,
     capabilities$: queuedModelCapabilities$,
@@ -7167,9 +7173,8 @@ export function createThreadClaimRunObjects(
     refreshUsageAllowance$: queuedModelRefreshUsageAllowance$,
   } = queuedModelCommands;
   const queuedModelResolveQueuedModel$2 = command(
-    async ({ get, set }, input: QueuedModelInput, signal: AbortSignal) => {
+    async ({ get, set }, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(queuedModelInternalInput$, input);
       set(queuedModelInternalPolicyFacts$, null);
       const [selection] = await Promise.all([
         get(queuedModelSelection$),
@@ -7262,12 +7267,6 @@ export function createThreadClaimRunObjects(
         async () => {
           const context = await set(
             automationLaunchEffectsResolveQueuedModel$,
-            {
-              orgId: args.due.automation.orgId,
-              userId: args.due.automation.ownerUserId,
-              threadId: args.due.chatThreadId,
-              eventId: args.queueEventId,
-            },
             signal,
           );
           signal.throwIfAborted();
