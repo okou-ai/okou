@@ -43,10 +43,8 @@ import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contract
 import { safeSync } from "../utils";
 import { env } from "../../lib/env";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import type {
-  RunModelProviderArgs,
-  ResolvedModelProviderEnvironment,
-} from "./agent-run-contracts";
+import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
+import type { ModelCatalog } from "./model-catalog.service";
 
 /**
  * Resolve non-secret model metadata for the sandbox Pi runtime. Credentials
@@ -585,22 +583,27 @@ function assertCurrentPiCliArtifact(): void {
   }
 }
 
+/** The plain run facts Pi model preparation reads. */
+export interface PiModelPreparationInput {
+  readonly catalog: ModelCatalog;
+  readonly piExecution: boolean;
+  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly reasoningEffort?: ReasoningEffort | null;
+}
+
 export async function materializePreparedPiProvider(
-  createArgs: RunModelProviderArgs,
+  input: PiModelPreparationInput,
   provider: ResolvedModelProviderEnvironment | null,
 ): Promise<ResolvedModelProviderEnvironment | null> {
-  if (!createArgs.piExecution) {
+  if (!input.piExecution) {
     return provider;
   }
-  const catalogModel = piCatalogModel(
-    createArgs.catalog,
-    provider?.selectedModel,
-  );
+  const catalogModel = piCatalogModel(input.catalog, provider?.selectedModel);
   const config = resolvePiSandboxModelConfig(
     provider,
     catalogModel,
-    createArgs.codexServiceTier,
-    createArgs.agentRunMetadata?.reasoningEffort,
+    input.codexServiceTier,
+    input.reasoningEffort,
   );
   if (!config || !provider) {
     throw new Error(
@@ -673,20 +676,17 @@ export async function materializePreparedPiProvider(
 }
 
 export function resolvePreparedPiModelConfig(args: {
-  readonly createArgs: Pick<
-    RunModelProviderArgs,
-    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
-  >;
+  readonly input: PiModelPreparationInput;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
 }): PiModelConfig | undefined {
-  if (!args.createArgs.piExecution) {
+  if (!args.input.piExecution) {
     return undefined;
   }
   const config = resolvePiSandboxModelConfig(
     args.modelProvider,
-    piCatalogModel(args.createArgs.catalog, args.modelProvider?.selectedModel),
-    args.createArgs.codexServiceTier,
-    args.createArgs.agentRunMetadata?.reasoningEffort,
+    piCatalogModel(args.input.catalog, args.modelProvider?.selectedModel),
+    args.input.codexServiceTier,
+    args.input.reasoningEffort,
   );
   if (!config) {
     throw new Error(

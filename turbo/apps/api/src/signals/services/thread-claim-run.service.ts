@@ -45,6 +45,7 @@ import {
   resolvePreparedPiModelConfig,
   nativeCredentialEnvironment,
   shouldUsePiExecution,
+  type PiModelPreparationInput,
 } from "./pi-sandbox-config";
 import {
   createExecutionStorageObjects,
@@ -8382,7 +8383,10 @@ export function createThreadClaimRunObjects(
       return badRequestMessage("Ultrafast is unavailable for this model route");
     }
     const materialized = await settle(
-      materializePreparedPiProvider(context.input.args, provider),
+      materializePreparedPiProvider(
+        piModelPreparationInput(context.input.args),
+        provider,
+      ),
     );
     return materialized.ok
       ? materialized.value
@@ -9473,7 +9477,7 @@ export function createThreadClaimRunObjects(
       ? modelProviderFramework(modelProvider)
       : requestedFramework;
     const piSandbox = resolvePreparedPiModelConfig({
-      createArgs: args,
+      input: piModelPreparationInput(args),
       modelProvider,
     });
     return officialWorkflowRunCandidates(
@@ -9785,11 +9789,11 @@ export function createThreadClaimRunObjects(
         ? modelProviderFramework(modelProvider)
         : requestedFramework;
       const piSandbox = resolvePreparedPiModelConfig({
-        createArgs: {
+        input: {
           catalog: await get(claimCatalog$),
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
-          agentRunMetadata: { reasoningEffort: input.command.reasoningEffort },
+          reasoningEffort: input.command.reasoningEffort,
         },
         modelProvider,
       });
@@ -10400,7 +10404,7 @@ export function createThreadClaimRunObjects(
     const { body } = bodyContext;
     const { modelProvider, framework } = runtimeContext;
     const piSandbox = resolvePreparedPiModelConfig({
-      createArgs: args,
+      input: piModelPreparationInput(args),
       modelProvider,
     });
     const resolved = resolveCompatibleDirectResumeSession({
@@ -16214,6 +16218,21 @@ function selectedRunPiExecution(command: ThreadRunIdentity): boolean {
     throw new Error("Selected model execution eligibility is unavailable");
   }
   return command.piExecution;
+}
+
+/** The plain facts of a Thread run that Pi model preparation reads. */
+function piModelPreparationInput(
+  args: Pick<
+    RunModelProviderArgs,
+    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
+  >,
+): PiModelPreparationInput {
+  return {
+    catalog: args.catalog,
+    piExecution: args.piExecution,
+    codexServiceTier: args.codexServiceTier,
+    reasoningEffort: args.agentRunMetadata?.reasoningEffort,
+  };
 }
 
 function selectedRunModelProviderArgs(

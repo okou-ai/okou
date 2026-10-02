@@ -370,22 +370,15 @@ async function prepareMaintenanceModel(
             signal,
           );
   signal.throwIfAborted();
-  const piArgs = {
-    catalog,
-    userId: job.userId,
-    orgId: job.orgId,
-    piExecution: true,
-    codexServiceTier: undefined,
-    agentRunMetadata: undefined,
-  } as const;
+  const piInput = { catalog, piExecution: true };
   const modelProvider = resolvedProvider
-    ? await materializePreparedPiProvider(piArgs, resolvedProvider)
+    ? await materializePreparedPiProvider(piInput, resolvedProvider)
     : null;
   if (!modelProvider) {
     throw new PiMaintenanceDispositionError("credential_unavailable");
   }
   const piSandbox = resolvePreparedPiModelConfig({
-    createArgs: piArgs,
+    input: piInput,
     modelProvider,
   });
   if (!piSandbox) {
