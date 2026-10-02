@@ -12,11 +12,11 @@ import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
-import { seedChatEventAnnotationProjectionFixture } from "../../../test-fixtures/chat-events";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { findPendingInputEventByText } from "./helpers/chat-event-test-reader";
+import { createPublicAnnotationInputs } from "./helpers/chat-annotation-ingress";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installTeamsForTest,
@@ -68,70 +68,71 @@ describe("chat event annotations", () => {
       await flushWaitUntilForTest();
     }
   });
-  async function annotationProjection() {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    await runs.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Annotation projection agent",
-    });
-    const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
-      title: "Annotation projections",
-    });
-
-    const { claimedPendingId, rejectedPendingId } =
-      await seedChatEventAnnotationProjectionFixture(thread.id);
-
-    const events = (await chat.listThreadEvents(actor, thread.id)).events;
-    return { events, claimedPendingId, rejectedPendingId };
-  }
-
   it("projects precise source links for chat events", async () => {
-    const { events } = await annotationProjection();
-    expect(sourcePartForText(events, "slack linked")).toStrictEqual({
+    const inputs = await createPublicAnnotationInputs(context, (cleanup) => {
+      publicCleanups.push(cleanup);
+    });
+    expect(
+      sourcePartForText(inputs.slackEvents, "@Slack User slack linked"),
+    ).toStrictEqual({
       type: "source",
       kind: "slack",
       href: "https://vm0.slack.com/archives/C123/p1753257600000100",
     });
-    expect(sourcePartForText(events, "feishu linked")).toStrictEqual({
+    expect(
+      sourcePartForText(inputs.feishuEvents, "feishu linked"),
+    ).toStrictEqual({
       type: "source",
       kind: "feishu",
       href: "https://applink.feishu.cn/client/chat/open?openChatId=oc_123",
     });
-    expect(sourcePartForText(events, "teams channel linked")).toStrictEqual({
+    expect(
+      sourcePartForText(
+        inputs.teamsChannel.events,
+        "@Nova teams channel linked",
+      ),
+    ).toStrictEqual({
       type: "source",
       kind: "teams",
-      href: "https://teams.microsoft.com/l/message/19%3Achannel%40thread.tacv2/activity-1?tenantId=tenant-1",
+      href: `https://teams.microsoft.com/l/message/19%3Achannel%40thread.tacv2/activity-1?tenantId=${inputs.teamsChannel.tenantId}`,
     });
-    expect(sourcePartForText(events, "teams personal unlinked")).toStrictEqual({
+    expect(
+      sourcePartForText(inputs.teamsPersonal.events, "teams personal unlinked"),
+    ).toStrictEqual({
       type: "source",
       kind: "teams",
     });
     expect(
-      sourcePartForText(events, "telegram supergroup linked"),
+      sourcePartForText(
+        inputs.telegramSupergroup,
+        "telegram supergroup linked",
+      ),
     ).toStrictEqual({
       type: "source",
       kind: "telegram",
       href: "https://t.me/c/1234567890/42",
     });
-    expect(sourcePartForText(events, "telegram dm unlinked")).toStrictEqual({
-      type: "source",
-      kind: "telegram",
-    });
-    expect(sourcePartForText(events, "telegram group unlinked")).toStrictEqual({
+    expect(
+      sourcePartForText(inputs.telegramPrivate, "telegram dm unlinked"),
+    ).toStrictEqual({
       type: "source",
       kind: "telegram",
     });
     expect(
-      sourcePartForText(events, "github issue comment linked"),
+      sourcePartForText(inputs.telegramGroup, "telegram group unlinked"),
+    ).toStrictEqual({
+      type: "source",
+      kind: "telegram",
+    });
+    expect(
+      sourcePartForText(inputs.githubIssue, "github issue comment linked"),
     ).toStrictEqual({
       type: "source",
       kind: "github",
       href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-123456",
     });
     expect(
-      sourcePartForText(events, "github pull request linked"),
+      sourcePartForText(inputs.githubPull, "github pull request linked"),
     ).toStrictEqual({
       type: "source",
       kind: "github",

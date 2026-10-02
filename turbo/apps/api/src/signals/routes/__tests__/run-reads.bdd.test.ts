@@ -1364,13 +1364,13 @@ describe("RUN-01: run admission boundaries", () => {
         return outcome.kind !== "rejected";
       }),
     ).toBeTruthy();
-    const pending = await reads.requestListAgentRuns(
+    const pending = await reads.requestListLogs(
       actor,
-      { status: "pending" },
+      { status: "pending", limit: 50 },
       [200],
     );
     expect(
-      pending.body.runs
+      pending.body.data
         .map((run) => {
           return run.id;
         })

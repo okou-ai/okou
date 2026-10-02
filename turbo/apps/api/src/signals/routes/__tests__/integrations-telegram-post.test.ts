@@ -1137,11 +1137,19 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       assistantText?: string,
     ) {
       await sendDm(text, messageId, replyTo);
-      const run = (await runsApi.listAgentRuns(actor, { limit: 20 })).runs.find(
-        (item) => {
-          return item.prompt?.includes(text);
-        },
+      const response = await runReadsApi.requestListLogs(
+        actor,
+        { limit: 20 },
+        [200],
       );
+      expect(response.body.pagination).toMatchObject({ hasMore: false });
+      const run = response.body.data
+        .filter((item) => {
+          return item.status === "pending" || item.status === "running";
+        })
+        .find((item) => {
+          return item.prompt?.includes(text);
+        });
       if (!run) {
         throw new Error("Expected a Telegram DM run");
       }

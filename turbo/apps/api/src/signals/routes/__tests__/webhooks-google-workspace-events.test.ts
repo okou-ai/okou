@@ -25,6 +25,7 @@ import { createDeferredPromise } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
@@ -43,6 +44,7 @@ const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
 const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 const workflows = createWorkflowsBddApi(context);
 
 const PUSH_AUDIENCE =
@@ -100,6 +102,20 @@ interface GoogleMeetFixture {
   readonly workflowId: string;
   readonly connectorId: string;
   readonly provider: GoogleMeetProviderRecorder;
+}
+
+async function listActiveRuns(actor: OrgActor, agentName: string) {
+  const response = await runReadsApi.requestListLogs(
+    actor,
+    { name: agentName, limit: 20 },
+    [200],
+  );
+  expect(response.body.pagination).toMatchObject({ hasMore: false });
+  return {
+    runs: response.body.data.filter((run) => {
+      return run.status === "pending" || run.status === "running";
+    }),
+  };
 }
 
 function authHeaders(actor: OrgActor) {
@@ -748,12 +764,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
     await flushWaitUntilForTest();
     const primaryRunIds = new Set(
-      (
-        await runs.listAgentRuns(fixture.actor, {
-          agent: fixture.agentId,
-          limit: 20,
-        })
-      ).runs.map((run) => {
+      (await listActiveRuns(fixture.actor, fixture.agentId)).runs.map((run) => {
         return run.id;
       }),
     );
@@ -765,10 +776,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
     await flushWaitUntilForTest();
     const secondaryRunId = (
-      await runs.listAgentRuns(fixture.actor, {
-        agent: fixture.agentId,
-        limit: 20,
-      })
+      await listActiveRuns(fixture.actor, fixture.agentId)
     ).runs.find((run) => {
       return !primaryRunIds.has(run.id);
     })?.id;

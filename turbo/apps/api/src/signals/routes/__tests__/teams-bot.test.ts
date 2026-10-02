@@ -25,9 +25,11 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { integrationsTeamsDownloadFileRoutes } from "../integrations-teams-download-file";
 import { teamsBotRoutes } from "../teams-bot";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
@@ -54,6 +56,7 @@ const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const computerUseApi = createComputerUseBddApi(context);
 const runsApi = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 const userConfigApi = createUserConfigBddApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
 const trackTeamsFixture = createFixtureTracker<TeamsConnectFixture>(
@@ -743,11 +746,22 @@ async function readTeamsBotResponseAndFlush(
   return body;
 }
 
+async function listActiveRuns(actor: ApiTestUser, limit: 10 | 20) {
+  const response = await runReadsApi.requestListLogs(actor, { limit }, [200]);
+  // Keep the complete owner population before applying the active-status filter.
+  expect(response.body.pagination).toMatchObject({ hasMore: false });
+  return {
+    runs: response.body.data.filter((run) => {
+      return run.status === "pending" || run.status === "running";
+    }),
+  };
+}
+
 async function runIdForPrompt(
   actor: ReturnType<typeof authOrgApi.user>,
   prompt: string,
 ): Promise<string> {
-  const list = await runsApi.listAgentRuns(actor, { limit: 20 });
+  const list = await listActiveRuns(actor, 20);
   const run = list.runs.find((item) => {
     return item.prompt === prompt;
   });
@@ -1707,7 +1721,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const body = await readTeamsBotResponseAndFlush(response);
     expect(body).not.toHaveProperty("dispatch");
     const canonicalFilePrompt = "[Web file] spec.png (image/png)";
-    const list = await runsApi.listAgentRuns(actor, { limit: 20 });
+    const list = await listActiveRuns(actor, 20);
     const run = list.runs.find((item) => {
       return (
         item.prompt.includes("please inspect this") &&
@@ -1949,7 +1963,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(response.status).toBe(200);
     await readTeamsBotResponseAndFlush(response);
 
-    const list = await runsApi.listAgentRuns(actor, { limit: 20 });
+    const list = await listActiveRuns(actor, 20);
     const run = list.runs.find((item) => {
       return item.prompt.includes("inspect this personal attachment");
     });
@@ -2249,7 +2263,15 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(switchedRunBody).not.toHaveProperty("dispatch");
     const switchedRunId = await runIdForPrompt(actor, "run after switch");
     await expect(
-      runsApi.listAgentRuns(actor, { limit: 10 }),
+      listActiveRuns(actor, 10).then(async ({ runs }) => {
+        return {
+          runs: await Promise.all(
+            runs.map(async (run) => {
+              return await runsApi.readRun(actor, run.id);
+            }),
+          ),
+        };
+      }),
     ).resolves.toMatchObject({
       runs: expect.arrayContaining([
         expect.objectContaining({
@@ -2843,11 +2865,11 @@ describe("POST /api/webhooks/teams/bot", () => {
       await readTeamsBotResponseAndFlush(response);
     }
 
-    const matchingRuns = (
-      await runsApi.listAgentRuns(actor, { limit: 20 })
-    ).runs.filter((run) => {
-      return run.prompt === "run this Teams task once";
-    });
+    const matchingRuns = (await listActiveRuns(actor, 20)).runs.filter(
+      (run) => {
+        return run.prompt === "run this Teams task once";
+      },
+    );
     expect(matchingRuns).toHaveLength(1);
     expect(outboundRequests).toHaveLength(1);
     expect(outboundRequests[0]).toMatchObject({
