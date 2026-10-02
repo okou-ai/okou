@@ -17,7 +17,6 @@ import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { now, nowDate } from "../../lib/time";
-import { safeSqlStateCode } from "../../lib/pg-errors";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -399,29 +398,22 @@ export async function storeInboundAgentPhoneMessage(
         return { inserted: false, dispatch: false };
       }
 
-      // Keep new code usable against an old schema during migration replay.
-      const receiptResult = await settle(
-        tx.transaction(async (receiptTx) => {
-          const [receipt] = await receiptTx
-            .insert(agentphoneGroupMessageReceipts)
-            .values({
-              agentphoneMessageId: params.event.messageId,
-              webhookId: params.event.webhookId,
-            })
-            .onConflictDoNothing()
-            .returning({
-              agentphoneMessageId:
-                agentphoneGroupMessageReceipts.agentphoneMessageId,
-            });
-          return receipt !== undefined;
-        }),
-      );
-      if (receiptResult.ok) {
-        if (!receiptResult.value) {
-          return { inserted: false, dispatch: false };
-        }
-      } else if (safeSqlStateCode(receiptResult.error) !== "42P01") {
-        throw receiptResult.error;
+      const receiptInserted = await tx.transaction(async (receiptTx) => {
+        const [receipt] = await receiptTx
+          .insert(agentphoneGroupMessageReceipts)
+          .values({
+            agentphoneMessageId: params.event.messageId,
+            webhookId: params.event.webhookId,
+          })
+          .onConflictDoNothing()
+          .returning({
+            agentphoneMessageId:
+              agentphoneGroupMessageReceipts.agentphoneMessageId,
+          });
+        return receipt !== undefined;
+      });
+      if (!receiptInserted) {
+        return { inserted: false, dispatch: false };
       }
 
       const receivedAt = params.event.receivedAt;
