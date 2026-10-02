@@ -24,7 +24,6 @@ import {
   setBuiltInCandidateCooldownFixture,
 } from "./helpers/runtime-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
-import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 
 const context = testContext();
 const bdd = createBddApi(context);
