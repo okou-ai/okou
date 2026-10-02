@@ -482,33 +482,6 @@ export function orgModelPolicyFactsFromSnapshot(args: {
   };
 }
 
-/**
- * A caller that already read the organization's plan or the catalog in this
- * request supplies them; otherwise they are read in parallel with the
- * policies. The system default is projected, so reading policies never writes.
- */
-export async function loadOrgModelPolicyFacts(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  orgId: string,
-  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
-  suppliedCatalog?: ModelCatalog,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const [orgPlanCapabilities, stored, catalog] = await Promise.all([
-    suppliedPlanCapabilities === undefined
-      ? loadOrgPlanCapabilities(db, orgId)
-      : suppliedPlanCapabilities,
-    loadRows(db, orgId),
-    suppliedCatalog ?? catalogSnapshot,
-  ]);
-  return orgModelPolicyFactsFromSnapshot({
-    catalog,
-    orgId,
-    orgPlanCapabilities,
-    stored,
-  });
-}
-
 async function listOrgProviderRoutes(
   db: Db,
   orgId: string,

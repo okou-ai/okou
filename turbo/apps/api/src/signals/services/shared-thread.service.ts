@@ -12,7 +12,10 @@ import type { SharedThreadMessageAttachments } from "@okouai/db/jsonb-contracts/
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { command, state } from "ccstate";
 
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import {
@@ -388,6 +391,7 @@ const insertSharedThreadIdentity$ = command(
         .select(
           database
             .select({
+              id: sql`${randomUUID()}::uuid`.mapWith(artifacts.id).as("id"),
               orgId: sql`${args.orgId}`.mapWith(artifacts.orgId).as("org_id"),
               authorUserId:
                 sql`${sharedThreadArtifactAuthorUserId(args.userId)}`
@@ -398,10 +402,16 @@ const insertSharedThreadIdentity$ = command(
               logicalKey: sql`${sharedThreadArtifactLogicalKey(id)}`
                 .mapWith(artifacts.logicalKey)
                 .as("logical_key"),
+              projectionFileId: sql`NULL::uuid`
+                .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
+                .as("projection_file_id"),
               projectionCreatedAt: sql`${createdAt}::timestamp`
                 .mapWith(artifacts.projectionCreatedAt)
                 .as("projection_created_at"),
               title: sql`${initialTitle}`.mapWith(artifacts.title).as("title"),
+              thumbnail: sql`NULL::jsonb`
+                .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
+                .as("thumbnail"),
               createdAt: sql`${createdAt}::timestamp`
                 .mapWith(artifacts.createdAt)
                 .as("created_at"),
