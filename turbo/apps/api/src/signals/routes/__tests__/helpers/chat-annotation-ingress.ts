@@ -445,6 +445,79 @@ export async function createPublicAnnotationInputs(
       teamsChannelId: "19:channel@thread.tacv2",
       teamsActivityId: "activity-1",
     });
+    const graphChannel = `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(fixture.teamsTeamAadGroupId)}/channels/${encodeURIComponent(fixture.teamsChannelId)}/messages`;
+    const graphUser = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fixture.teamsAadObjectId)}`;
+    const graphInstallationId = `annotation-installation-${fixture.fixtureId}`;
+    const graphChatId = `19:annotation-${fixture.fixtureId}@thread.v2`;
+    server.use(
+      http.post(
+        `https://login.microsoftonline.com/${encodeURIComponent(fixture.teamsTenantId)}/oauth2/v2.0/token`,
+        () => {
+          return HttpResponse.json({
+            access_token: "annotation-graph-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          });
+        },
+      ),
+      http.get(graphChannel, () => {
+        return HttpResponse.json({ value: [] });
+      }),
+      http.get(
+        `${graphChannel}/${encodeURIComponent(fixture.teamsThreadId)}`,
+        () => {
+          return HttpResponse.json({
+            id: fixture.teamsThreadId,
+            replyToId: null,
+            createdDateTime: new Date(now()).toISOString(),
+            messageType: "message",
+            from: {
+              user: {
+                id: fixture.teamsAadObjectId,
+                displayName: "Ada Lovelace",
+                userPrincipalName: fixture.teamsUserPrincipalName,
+              },
+            },
+            body: { contentType: "html", content: "<p>Annotation thread</p>" },
+          });
+        },
+      ),
+      http.get(
+        `${graphChannel}/${encodeURIComponent(fixture.teamsThreadId)}/replies`,
+        () => {
+          return HttpResponse.json({ value: [] });
+        },
+      ),
+      http.get(graphUser, () => {
+        return HttpResponse.json({
+          id: fixture.teamsAadObjectId,
+          displayName: "Ada Lovelace",
+          userPrincipalName: fixture.teamsUserPrincipalName,
+        });
+      }),
+      http.get(`${graphUser}/teamwork/installedApps`, () => {
+        return HttpResponse.json({
+          value: [
+            {
+              id: graphInstallationId,
+              teamsApp: { externalId: fixture.teamsAppId },
+            },
+          ],
+        });
+      }),
+      http.get(
+        `${graphUser}/teamwork/installedApps/${graphInstallationId}/chat`,
+        () => {
+          return HttpResponse.json({ id: graphChatId, chatType: "oneOnOne" });
+        },
+      ),
+      http.get(
+        `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(graphChatId)}/messages`,
+        () => {
+          return HttpResponse.json({ value: [] });
+        },
+      ),
+    );
     const personalFields = {
       recipient: undefined,
       entities: [],
@@ -525,9 +598,8 @@ export async function createPublicAnnotationInputs(
   const webhookSecret = "annotation-telegram-secret";
   mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", botToken);
   mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", webhookSecret);
-  // Token, numeric bot ID and webhook secret remain configured; only the
-  // optional username is absent, so real private-chat inputs have no href.
-  mockOptionalEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", undefined);
+  // The public account-link endpoint requires the configured bot username.
+  mockOptionalEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "annotation_bot");
   let replyId = 700;
   server.use(
     http.post(`https://api.telegram.org/bot${botToken}/sendChatAction`, () => {
@@ -597,6 +669,9 @@ export async function createPublicAnnotationInputs(
       [204],
     );
   });
+  // Ingress still has the token, numeric bot ID and webhook secret. Only the
+  // optional username is now absent, preserving the private-chat no-href case.
+  mockOptionalEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", undefined);
   async function telegramInput(
     type: "supergroup" | "private" | "group",
     chatId: number,
