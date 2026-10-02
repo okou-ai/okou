@@ -1171,6 +1171,56 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     });
   });
 
+  it("reports daily request exhaustion through quota and rejects further segments", async () => {
+    mockNow(new Date("2026-10-02T12:00:00Z"));
+    const actor = await voiceActor();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    await seedOrgMetadata({
+      orgId: actor.orgId,
+      tier: "free",
+      credits: 10_000,
+    });
+    server.use(
+      http.post(VERTEX_VOICE_URL, () => {
+        return vertexVoiceResponse(
+          JSON.stringify({ transcript: "New speech.", language: "en" }),
+        );
+      }),
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+      voiceIoQuotaContract,
+    );
+    const initial = await accept(quota.get({ headers }), [200]);
+    expect(initial.body).toMatchObject({ allowed: true, count: 0 });
+
+    for (let index = 0; index < 10; index += 1) {
+      await accept(
+        client().segment({
+          headers,
+          body: segmentForm([audioFile(index + 1)], "", false, 1),
+        }),
+        [200],
+      );
+    }
+    const exhausted = await accept(quota.get({ headers }), [200]);
+    expect(exhausted.body).toStrictEqual({
+      allowed: false,
+      count: 10,
+      limit: 10,
+    });
+    const rejected = await accept(
+      client().segment({
+        headers,
+        body: segmentForm([audioFile(11)], "", false, 1),
+      }),
+      [429],
+    );
+    expect(rejected.body.error.code).toBe("DAILY_RATE_LIMIT_EXCEEDED");
+  });
+
   it("meters unique recording time without charging the boundary overlap twice", async () => {
     const actor = await voiceActor();
     if (!actor.orgId) {
@@ -1242,6 +1292,14 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       count: 600,
       limit: 600,
     });
+    const rejected = await accept(
+      client().segment({
+        headers,
+        body: segmentForm([audioFile(3)], "", false, 1),
+      }),
+      [429],
+    );
+    expect(rejected.body.error.code).toBe("DAILY_DURATION_LIMIT_EXCEEDED");
   });
 
   it("uses the saved prefix as context and combines only the final segment with whole-recording polish", async () => {
