@@ -72,7 +72,7 @@ export const financeResponseSchema = z.object({
   provider: z.literal("apidojo"),
   billingCategory: z.literal("request"),
   billingQuantity: z.literal(1),
-  creditsCharged: z.number().int().nonnegative(),
+  creditsCharged: z.number().int().nonnegative().nullable(),
   result: z.unknown(),
 });
 

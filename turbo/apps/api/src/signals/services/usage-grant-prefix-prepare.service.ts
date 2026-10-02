@@ -9,7 +9,6 @@ import {
   grantPrefixSelection,
   type PreparedUsageGrant,
   type PreparedUsageGrantPrefix,
-  type UsageGrantFrontier,
 } from "./usage-grant-prefix";
 
 /** This read-only preparation pages outside any financial transaction. */
@@ -25,7 +24,6 @@ export const prepareUsageGrantPrefix$ = command(
     const db = set(writeDb$);
     const at = nowDate();
     const grants: PreparedUsageGrant[] = [];
-    const frontiers: UsageGrantFrontier[] = [];
     const users = [...args.grossByUser].sort(([left], [right]) => {
       return left.localeCompare(right);
     });
@@ -34,7 +32,6 @@ export const prepareUsageGrantPrefix$ = command(
         continue;
       }
       let remaining = gross;
-      let last: PreparedUsageGrant | undefined;
       for (const grantType of ["purchased", "bonus"] as const) {
         let cursor: PreparedUsageGrant | undefined;
         while (remaining > 0) {
@@ -59,7 +56,6 @@ export const prepareUsageGrantPrefix$ = command(
           signal.throwIfAborted();
           const prefix = grantPrefixForAmount(page, remaining);
           grants.push(...prefix.grants);
-          last = prefix.grants.at(-1) ?? last;
           remaining = prefix.remaining;
           cursor = page.at(-1);
           if (page.length < 128) {
@@ -67,8 +63,7 @@ export const prepareUsageGrantPrefix$ = command(
           }
         }
       }
-      frontiers.push({ userId, last: remaining <= 0 ? (last ?? null) : null });
     }
-    return { grants, frontiers };
+    return { grants };
   },
 );

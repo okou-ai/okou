@@ -888,6 +888,36 @@ describe("okou social command", () => {
       expect(errorOutput()).toBe("");
     });
 
+    it("returns all pages while keeping an unknown cumulative charge unknown", async () => {
+      let page = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          page += 1;
+          return HttpResponse.json({
+            ...socialResponse(
+              "instagram_comments",
+              page === 1
+                ? {
+                    state: "more",
+                    itemsReturned: 1,
+                    nextInput: { cursor: "next" },
+                  }
+                : { state: "complete", itemsReturned: 1 },
+              { comments: [{ id: String(page), text: "delivered" }] },
+            ),
+            creditsCharged: page === 1 ? null : 3,
+          });
+        }),
+      );
+      await socialCommand.parseAsync([...commentsArgs, "--json"]);
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        billing: { creditsCharged: null },
+        collection: { itemsReturned: 2 },
+      });
+      expect(mockExit).not.toHaveBeenCalled();
+    });
+
     it.each(["json", "csv"])(
       "exports accepted results and accounting after a later page fails (%s)",
       async (format) => {

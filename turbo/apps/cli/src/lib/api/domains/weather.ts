@@ -13,7 +13,7 @@ export interface WeatherResponse {
   readonly operation?: string;
   readonly provider?: string;
   readonly attribution?: string;
-  readonly creditsCharged?: number;
+  readonly creditsCharged?: number | null;
   readonly billingCategory?: string;
   readonly billingQuantity?: number;
   readonly result?: unknown;

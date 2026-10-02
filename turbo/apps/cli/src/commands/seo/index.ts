@@ -115,7 +115,11 @@ function renderResponse(response: SeoResponse, json?: boolean): void {
   console.log(
     chalk.dim(`Provider cost: $${response.providerCostUsd.toFixed(6)}`),
   );
-  console.log(chalk.dim(`Credits charged: ${response.creditsCharged}`));
+  console.log(
+    chalk.dim(
+      `Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
+    ),
+  );
 }
 
 function addAnalysisOptions(command: Command): Command {

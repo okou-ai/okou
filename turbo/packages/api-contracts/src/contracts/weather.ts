@@ -60,7 +60,7 @@ export const airQualityCurrentRequestSchema = z.object({
 });
 
 const weatherResponseBaseSchema = z.object({
-  creditsCharged: z.number(),
+  creditsCharged: z.number().nullable(),
   billingCategory: z.string(),
   billingQuantity: z.number(),
   result: z.unknown(),

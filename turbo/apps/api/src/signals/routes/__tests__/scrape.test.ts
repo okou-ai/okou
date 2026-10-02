@@ -1043,7 +1043,7 @@ describe("okou scrape route", () => {
     expect(beforeCredits - afterCredits).toBe(8);
   });
 
-  it("does not return successful content when usage processing records a billing error", async () => {
+  it("returns successful content when usage processing records a billing error", async () => {
     const actor = createBddApi(context).user();
     allowExampleDotCom();
     configureProvider();
@@ -1077,9 +1077,10 @@ describe("okou scrape route", () => {
     );
     const afterCredits = await credits(actor);
 
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: "Internal server error",
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      creditsCharged: null,
+      result: { markdown: "# Example page" },
     });
     expect(afterCredits).toBe(beforeCredits);
   });

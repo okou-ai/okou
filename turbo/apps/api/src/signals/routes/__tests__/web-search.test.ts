@@ -11,6 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/web-search";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
+import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -30,6 +31,7 @@ import type { RouteEntry } from "../../route-entry";
 import { createDeferredPromise } from "../../utils";
 import { billingStatusRoutes } from "../billing-status";
 import { webSearchRoutes } from "../web-search";
+import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import {
   createBddApi,
   expectApiError,
@@ -211,6 +213,73 @@ function providerResponse() {
 }
 
 describe("okou web-search route", () => {
+  it("settles concurrent searches without rejecting changes to member credits", async () => {
+    mockEnv("ENV", "development");
+    const actor = createBddApi(context).user();
+    if (!actor.orgId) {
+      throw new Error("Search actor needs an organization");
+    }
+    const orgId = actor.orgId;
+    configureProvider();
+    const pricing = await setupConfiguredWebSearchPricing();
+    await fundActor(actor);
+    const settlement = () => {
+      return setupApp({ context, routes: testUsageSettlementRoutes })(
+        testUsageSettlementContract,
+      );
+    };
+    await accept(
+      settlement().createGrant({
+        body: {
+          org_id: orgId,
+          user_id: actor.userId,
+          grant_type: "purchased",
+          idempotency_key: randomUUID(),
+          amount: 5,
+          expires_at: "2099-01-01T00:00:00.000Z",
+        },
+      }),
+      [200],
+    );
+    onTestFinished(async () => {
+      await accept(settlement().cleanup({ body: { org_id: orgId } }), [200]);
+    });
+    server.use(
+      http.post(PERPLEXITY_SEARCH_URL, () => {
+        return HttpResponse.json(providerResponse());
+      }),
+    );
+    const headers = authenticate(actor);
+    const search = client(pricing.resolution)(webSearchContract);
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, () => {
+        return accept(
+          search.search({ headers, body: defaultRequest() }),
+          [200],
+        );
+      }),
+    );
+    expect(
+      responses.map((response) => {
+        return response.body.creditsCharged;
+      }),
+    ).toStrictEqual([5, 5, 5, 5, 5, 5]);
+    const state = await accept(
+      settlement().state({ body: { org_id: orgId } }),
+      [200],
+    );
+    expect(state.body.grants).toHaveLength(1);
+    const remaining = state.body.grants[0]?.remaining_amount;
+    expect(remaining).toBeDefined();
+    if (remaining === undefined) {
+      throw new Error("Expected member credit grant");
+    }
+    expect(remaining).toBeLessThanOrEqual(0);
+    // Whichever requests prepared the grant split before it was exhausted,
+    // accepted overdraft and shared-wallet debits must conserve the same charge.
+    expect(state.body.org_credits + remaining).toBe(975);
+  });
+
   it.each([
     ["transport", [new ClerkTransportTestError()]],
     [
@@ -1314,7 +1383,7 @@ describe("okou web-search route", () => {
     expect(beforeCredits - afterCredits).toBe(10);
   });
 
-  it("does not return success when usage processing fails", async () => {
+  it("returns provider results when usage processing fails", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
@@ -1332,9 +1401,10 @@ describe("okou web-search route", () => {
     });
     const afterCredits = await credits(actor);
 
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: "Internal server error",
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      creditsCharged: null,
+      results: [expect.objectContaining({ url: "https://example.com/update" })],
     });
     expect(afterCredits).toBe(beforeCredits);
   });

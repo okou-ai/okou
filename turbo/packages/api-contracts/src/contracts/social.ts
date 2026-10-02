@@ -388,7 +388,7 @@ type SocialKitResponseFor<Tool extends ManagedSocialKitTool> =
         readonly tool: Tool["name"];
         readonly billingCategory: typeof MANAGED_SOCIALKIT_BILLING_CATEGORY;
         readonly billingQuantity: number;
-        readonly creditsCharged: number;
+        readonly creditsCharged: number | null;
         readonly collection: z.infer<typeof socialKitCollectionSchema>;
         readonly result: z.infer<Tool["resultSchema"]>;
       }
@@ -404,7 +404,7 @@ function responseVariant<Tool extends ManagedSocialKitTool>(tool: Tool) {
     tool: z.literal(tool.name),
     billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
     billingQuantity: z.number().int().positive(),
-    creditsCharged: z.number().int().nonnegative(),
+    creditsCharged: z.number().int().nonnegative().nullable(),
     collection: socialKitCollectionSchema,
     result: tool.resultSchema,
   });

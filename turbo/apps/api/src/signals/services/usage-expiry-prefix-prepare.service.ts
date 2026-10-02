@@ -48,6 +48,6 @@ export const prepareUsageExpiryPrefix$ = command(
         break;
       }
     }
-    return { lots, frontier: remaining <= 0 ? (lots.at(-1) ?? null) : null };
+    return { lots };
   },
 );

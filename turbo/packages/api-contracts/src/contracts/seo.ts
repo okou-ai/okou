@@ -112,7 +112,7 @@ export const seoOperationSchema = z.enum([
 
 const seoResponseBaseSchema = z.object({
   operation: seoOperationSchema,
-  creditsCharged: z.number().int().nonnegative(),
+  creditsCharged: z.number().int().nonnegative().nullable(),
   result: z.unknown(),
 });
 

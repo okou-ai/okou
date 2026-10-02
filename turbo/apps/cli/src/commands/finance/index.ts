@@ -72,7 +72,11 @@ function renderResponse(response: FinanceResponse, json?: boolean): void {
   console.log(chalk.green(`✓ Finance ${response.operation} completed`));
   console.log(JSON.stringify(response.result, null, 2));
   console.log(chalk.dim(`Provider: ${response.provider}`));
-  console.log(chalk.dim(`Credits charged: ${response.creditsCharged}`));
+  console.log(
+    chalk.dim(
+      `Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
+    ),
+  );
 }
 
 const searchCommand = new Command()

@@ -92,7 +92,7 @@ export const webSearchResponseSchema = z.object({
   provider: z.literal("perplexity"),
   billingCategory: z.literal("request"),
   billingQuantity: z.literal(1),
-  creditsCharged: z.number().int().nonnegative(),
+  creditsCharged: z.number().int().nonnegative().nullable(),
   results: z.array(webSearchResultSchema).max(WEB_SEARCH_MAX_LIMIT),
 });
 
