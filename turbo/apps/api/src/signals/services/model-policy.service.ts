@@ -1,8 +1,3 @@
-import {
-  featureSwitchContextFromRows,
-  userFeatureSwitchRowCondition,
-} from "./feature-switch-scope";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { createHash } from "node:crypto";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 import {
