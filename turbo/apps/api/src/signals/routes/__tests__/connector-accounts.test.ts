@@ -28,6 +28,7 @@ import {
   captureApiTestConnectorCatalogCleanup,
 } from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { joinAll } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
@@ -819,23 +820,25 @@ describe("connector account lifecycle routes", () => {
   it("keeps one builtin default through concurrent default changes and deletion", async () => {
     await seedFixture();
     const target = { kind: "builtin" as const, connectorSlug: "openai" };
-    const [first, second, third] = await Promise.all(
-      ["Work", "Personal", "Side"].map(async (displayName) => {
-        const connected = await accept(
-          connectorClient().connect({
-            headers: authHeaders(),
-            params: { connectorSlug: "openai" },
-            body: {
-              authMethod: "api-token",
-              account: { intent: "add", displayName },
-              values: { apiKey: `sk-${displayName}` },
-            },
-          }),
-          [200],
-        );
-        return connected.body.id;
-      }),
-    );
+    const accountIds: string[] = [];
+    // Establish the oldest promotion candidate separately from the account
+    // selected by the competing default change.
+    for (const displayName of ["Work", "Personal", "Side"]) {
+      const connected = await accept(
+        connectorClient().connect({
+          headers: authHeaders(),
+          params: { connectorSlug: "openai" },
+          body: {
+            authMethod: "api-token",
+            account: { intent: "add", displayName },
+            values: { apiKey: `sk-${displayName}` },
+          },
+        }),
+        [200],
+      );
+      accountIds.push(connected.body.id);
+    }
+    const [first, second, third] = accountIds;
     if (!first || !second || !third) {
       throw new Error("Expected three connected builtin accounts");
     }
@@ -853,7 +856,7 @@ describe("connector account lifecycle routes", () => {
     };
     await expect(listDefaults()).resolves.toHaveLength(1);
 
-    await Promise.all(
+    await joinAll(
       [first, second, third].map(async (connectionId) => {
         await accept(
           accountClient().setDefault({
@@ -875,14 +878,14 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
-    const [, deleted] = await Promise.all([
+    const [changed, deleted] = await joinAll([
       accept(
         accountClient().setDefault({
           headers: authHeaders(),
-          params: { connectionId: first },
+          params: { connectionId: third },
           body: { target },
         }),
-        [200],
+        [200, 400],
       ),
       accept(
         accountClient().delete({
@@ -890,10 +893,56 @@ describe("connector account lifecycle routes", () => {
           params: { connectionId: second },
           body: { target },
         }),
-        [200],
+        [200, 400],
       ),
     ]);
-    expect(deleted.body.deletedConnectionId).toBe(second);
+    expect([changed.status, deleted.status]).toContain(200);
+    if (changed.status === 400) {
+      expect(changed.body.error.message).toBe(
+        "Another default change won; please save again",
+      );
+    }
+    await expect(listDefaults()).resolves.toHaveLength(1);
+    if (deleted.status === 400) {
+      expect(deleted.body.error.message).toBe(
+        "Another default change won; please delete again",
+      );
+      const preserved = await accept(
+        accountClient().connection({
+          headers: authHeaders(),
+          params: { connectionId: second },
+          query: target,
+        }),
+        [200],
+      );
+      expect(preserved.body.connectionStatus).toBe("connected");
+      // A later explicit user action recovers the rolled-back deletion.
+      const recovered = await accept(
+        accountClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: second },
+          body: { target },
+        }),
+        [200],
+      );
+      expect(recovered.body.deletedConnectionId).toBe(second);
+    } else {
+      expect(deleted.body.deletedConnectionId).toBe(second);
+    }
+    const remaining = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...target, limit: 100 },
+      }),
+      [200],
+    );
+    expect(
+      new Set(
+        remaining.body.connections.map((account) => {
+          return account.id;
+        }),
+      ),
+    ).toStrictEqual(new Set([first, third]));
     const remainingDefaults = await listDefaults();
     expect(remainingDefaults).toHaveLength(1);
     expect([first, third]).toContain(remainingDefaults[0]?.id);
@@ -1305,8 +1354,8 @@ describe("connector account lifecycle routes", () => {
       kind: "custom" as const,
       customConnectorId: definition.body.id,
     };
-    const [first, second] = await Promise.all(
-      ["Work", "Personal"].map(async (displayName) => {
+    const [first, second, third] = await joinAll(
+      ["Work", "Personal", "Side"].map(async (displayName) => {
         const connected = await accept(
           customConnectorValuesClient().set({
             headers: authHeaders(),
@@ -1324,8 +1373,8 @@ describe("connector account lifecycle routes", () => {
         return connected.body.connectedAccountId;
       }),
     );
-    if (!first || !second) {
-      throw new Error("Expected two connected custom accounts");
+    if (!first || !second || !third) {
+      throw new Error("Expected three connected custom accounts");
     }
     const created = await accept(
       accountClient().connections({
@@ -1334,15 +1383,15 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
-    expect(created.body.connections).toHaveLength(2);
+    expect(created.body.connections).toHaveLength(3);
     expect(
       created.body.connections.filter((account) => {
         return account.isDefault;
       }),
     ).toHaveLength(1);
 
-    await Promise.all(
-      [first, second].map(async (connectionId) => {
+    await joinAll(
+      [first, second, third].map(async (connectionId) => {
         await accept(
           accountClient().setDefault({
             headers: authHeaders(),
@@ -1373,14 +1422,14 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
-    const [, deleted] = await Promise.all([
+    const [changed, deleted] = await joinAll([
       accept(
         accountClient().setDefault({
           headers: authHeaders(),
-          params: { connectionId: first },
+          params: { connectionId: third },
           body: { target },
         }),
-        [200],
+        [200, 400],
       ),
       accept(
         accountClient().delete({
@@ -1388,11 +1437,46 @@ describe("connector account lifecycle routes", () => {
           params: { connectionId: second },
           body: { target },
         }),
-        [200],
+        [200, 400],
       ),
     ]);
-    expect(deleted.body.deletedConnectionId).toBe(second);
-    expect([null, first]).toContain(deleted.body.promotedDefaultConnectionId);
+    expect([changed.status, deleted.status]).toContain(200);
+    if (changed.status === 400) {
+      expect(changed.body.error.message).toBe(
+        "Another default change won; please save again",
+      );
+    }
+    const afterRace = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...target, limit: 100 },
+      }),
+      [200],
+    );
+    expect(
+      afterRace.body.connections.filter((account) => {
+        return account.isDefault;
+      }),
+    ).toHaveLength(1);
+    if (deleted.status === 400) {
+      expect(deleted.body.error.message).toBe(
+        "Another default change won; please delete again",
+      );
+      expect(afterRace.body.connections).toContainEqual(
+        expect.objectContaining({ id: second, connectionStatus: "connected" }),
+      );
+      const recovered = await accept(
+        accountClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: second },
+          body: { target },
+        }),
+        [200],
+      );
+      expect(recovered.body.deletedConnectionId).toBe(second);
+    } else {
+      expect(deleted.body.deletedConnectionId).toBe(second);
+    }
     const remaining = await accept(
       accountClient().connections({
         headers: authHeaders(),
@@ -1400,9 +1484,18 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
-    expect(remaining.body.connections).toMatchObject([
-      { id: first, isDefault: true },
-    ]);
+    expect(
+      new Set(
+        remaining.body.connections.map((account) => {
+          return account.id;
+        }),
+      ),
+    ).toStrictEqual(new Set([first, third]));
+    expect(
+      remaining.body.connections.filter((account) => {
+        return account.isDefault;
+      }),
+    ).toHaveLength(1);
   });
 
   it.each([

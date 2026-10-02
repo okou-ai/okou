@@ -1004,10 +1004,15 @@ async function changeDefaultConnectorAccount(
   return updated.updatedAt;
 }
 
-function isDefaultIndexViolation(error: unknown): boolean {
+/** Known default-account races roll back; other database failures propagate. */
+export function isConnectorAccountDefaultConflict(error: unknown): boolean {
   return (
     isUniqueViolation(error, "idx_connectors_org_user_slug_default") ||
-    isUniqueViolation(error, "idx_connectors_org_user_custom_connector_default")
+    isUniqueViolation(
+      error,
+      "idx_connectors_org_user_custom_connector_default",
+    ) ||
+    safeSqlStateCode(error) === "40P01"
   );
 }
 
@@ -1021,10 +1026,7 @@ async function settleDefaultChange(
   if (settled.error instanceof DefaultConnectorAccountMissing) {
     return null;
   }
-  if (
-    isDefaultIndexViolation(settled.error) ||
-    safeSqlStateCode(settled.error) === "40P01"
-  ) {
+  if (isConnectorAccountDefaultConflict(settled.error)) {
     return "conflict";
   }
   throw settled.error;
