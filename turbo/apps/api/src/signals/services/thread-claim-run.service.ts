@@ -10490,7 +10490,7 @@ export function createThreadClaimRunObjects(
       return undefined;
     },
   );
-  const capturedResolveUsageAllowance$2 = command(
+  const resolveAdmissionUsageAllowance$ = command(
     async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
       const startedAt = performance.now();
       const { input } = reads;
@@ -10525,7 +10525,6 @@ export function createThreadClaimRunObjects(
       return availability;
     },
   );
-  const runAdmissionResolveAvailability$ = capturedResolveUsageAllowance$2;
   const runAdmissionCheckAdmission$ = command(
     async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
       const { input } = reads;
@@ -10569,7 +10568,7 @@ export function createThreadClaimRunObjects(
         return null;
       }
       const allowance = await set(
-        runAdmissionResolveAvailability$,
+        resolveAdmissionUsageAllowance$,
         reads,
         signal,
       );
