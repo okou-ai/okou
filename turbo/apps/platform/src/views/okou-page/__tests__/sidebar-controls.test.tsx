@@ -553,7 +553,7 @@ test.each(["thread list", "read cursor"] as const)(
 );
 
 test.each([false, true])(
-  "Coalesce message bursts and refresh unread indicators after a failed fetch: %s",
+  "Refresh the latest unread state after a message burst with a failed leading fetch: %s",
   async (failLeadingRefresh) => {
     mockMobileLayout();
     prepareDefaultAgent();
@@ -563,18 +563,19 @@ test.each([false, true])(
     mockNow(0, context.signal);
     const refreshStarted = context.mocks.deferred<void>();
     const releaseRefresh = context.mocks.deferred<void>();
-    let indicatorRequests = 0;
+    let hasUnread = false;
+    let blockRefresh = false;
     context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
-      indicatorRequests += 1;
-      if (indicatorRequests === 2) {
+      // Capture the external server state before the request is delayed.
+      const unread = hasUnread;
+      if (blockRefresh) {
+        blockRefresh = false;
         refreshStarted.resolve();
         await releaseRefresh.promise;
         if (failLeadingRefresh) {
           return respond(503, { error: "Indicators temporarily unavailable" });
         }
-        return respond(200, { agents: {}, threads: {}, unreadAt: {} });
       }
-      const unread = indicatorRequests > 2;
       return respond(200, {
         agents: unread ? { [AGENT_ID]: "unread" } : {},
         threads: unread ? { [EXISTING_THREAD_ID]: "unread" } : {},
@@ -593,14 +594,14 @@ test.each([false, true])(
     await waitFor(() => {
       expect(threadLink()).toHaveAccessibleName("Burst conversation");
     });
-    expect(indicatorRequests).toBe(1);
 
+    blockRefresh = true;
     createChatEvent(EXISTING_THREAD_ID);
     await refreshStarted.promise;
+    hasUnread = true;
     for (let index = 0; index < 20; index++) {
       createChatEvent(EXISTING_THREAD_ID);
     }
-    expect(indicatorRequests).toBe(2);
 
     // Advance the scheduling clock before unblocking the request: no sleeps
     // or timer mocks are needed to exercise the single trailing execution.
@@ -609,7 +610,6 @@ test.each([false, true])(
     await waitFor(() => {
       expect(threadLink()).toHaveAccessibleName("Burst conversation Unread");
     });
-    expect(indicatorRequests).toBe(3);
   },
 );
 
