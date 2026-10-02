@@ -2537,6 +2537,46 @@ mod tests {
         (output, captured.entries())
     }
 
+    async fn assert_completion_retry_delay<F>(
+        mut completion: std::pin::Pin<&mut F>,
+        captured: &CapturedEvents,
+        server: &mut RawHttpTestServer,
+        attempt: usize,
+    ) where
+        F: std::future::Future<Output = ()>,
+    {
+        // Observe the failed response and register the retry timer before checking its delay.
+        std::future::poll_fn(|cx| {
+            assert!(
+                completion.as_mut().poll(cx).is_pending(),
+                "completion returned before retry {attempt}"
+            );
+            if captured.entries().iter().any(|event| {
+                event.fields.get("attempt") == Some(&attempt.to_string())
+                    && event
+                        .fields
+                        .get("message")
+                        .is_some_and(|message| message == "completion report failed, retrying")
+            }) {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        })
+        .await;
+
+        let before_retry = tokio::time::Instant::now() + Duration::from_millis(1999);
+        let early_request = tokio::select! {
+            () = completion.as_mut() => panic!("completion returned before retry {attempt}"),
+            request = server.next_request_before(before_retry, "completion before retry delay") => request,
+        };
+        assert!(
+            matches!(&early_request, Err(error) if error.starts_with("timed out waiting for")),
+            "retry {attempt} was sent before two seconds: {early_request:?}"
+        );
+        tokio::time::advance(Duration::from_millis(1)).await;
+    }
+
     fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
         events
             .iter()
@@ -6681,30 +6721,35 @@ mod tests {
                     CancellationToken::new(),
                     Arc::new(PollWakeups::new(false)),
                 );
-                let complete_task = tokio::spawn(async move {
-                    provider
-                        .complete(
-                            complete_request(run_id),
-                            CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
-                        )
-                        .await;
-                });
+                let captured = CapturedEvents::default();
+                let subscriber = tracing_subscriber::registry().with(captured.clone());
+                let completion = provider
+                    .complete(
+                        complete_request(run_id),
+                        CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
+                    )
+                    .with_subscriber(subscriber);
+                tokio::pin!(completion);
 
                 for attempt in 1..=success_attempt {
-                    let request = server.next_request("transient completion request").await;
+                    let request = tokio::select! {
+                        () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                        request = server.next_request("transient completion request") => request,
+                    };
                     assert_complete_authorization(&request, "sandbox-token");
                     assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
                     if attempt < success_attempt {
-                        tokio::task::yield_now().await;
-                        assert!(
-                            server.try_next_request().is_err(),
-                            "status {status} should wait before retry {attempt}"
-                        );
-                        tokio::time::advance(Duration::from_secs(2)).await;
+                        assert_completion_retry_delay(
+                            completion.as_mut(),
+                            &captured,
+                            &mut server,
+                            attempt,
+                        )
+                        .await;
                     }
                 }
 
-                complete_task.await.unwrap();
+                completion.await;
                 server.assert_finished().await;
             }
         }
@@ -6731,30 +6776,35 @@ mod tests {
                 CancellationToken::new(),
                 Arc::new(PollWakeups::new(false)),
             );
-            let complete_task = tokio::spawn(async move {
-                provider
-                    .complete(
-                        complete_request(run_id),
-                        CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
-                    )
-                    .await;
-            });
+            let captured = CapturedEvents::default();
+            let subscriber = tracing_subscriber::registry().with(captured.clone());
+            let completion = provider
+                .complete(
+                    complete_request(run_id),
+                    CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
+                )
+                .with_subscriber(subscriber);
+            tokio::pin!(completion);
 
             for attempt in 1..=3 {
-                let request = server.next_request("completion transport request").await;
+                let request = tokio::select! {
+                    () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                    request = server.next_request("completion transport request") => request,
+                };
                 assert_complete_authorization(&request, "sandbox-token");
                 assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
                 if attempt < 3 {
-                    tokio::task::yield_now().await;
-                    assert!(
-                        server.try_next_request().is_err(),
-                        "transport failure should wait before retry {attempt}"
-                    );
-                    tokio::time::advance(Duration::from_secs(2)).await;
+                    assert_completion_retry_delay(
+                        completion.as_mut(),
+                        &captured,
+                        &mut server,
+                        attempt,
+                    )
+                    .await;
                 }
             }
 
-            complete_task.await.unwrap();
+            completion.await;
             server.assert_finished().await;
         }
     }
