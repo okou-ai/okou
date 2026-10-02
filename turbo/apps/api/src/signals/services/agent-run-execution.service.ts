@@ -1,5 +1,8 @@
 import { entitlementQuery } from "./usage-allowance-settlement-plan";
-import { parseRawRows } from "../../lib/db-raw-rows";
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
 import {
   pendingRunAllowancePlan,
@@ -236,7 +239,6 @@ import type {
 import {
   type CapturedPersonalSubscriptionAccount,
   isPersonalSubscriptionProviderType,
-  validatePersonalSubscriptionAdmission,
   personalSubscriptionAccountAccessCondition,
   type PersonalSubscriptionProviderType,
   type MemberModelAccountSnapshot,
@@ -263,13 +265,9 @@ import {
   type RunWorkflowSourceRow,
   workflowsForRunFromRows,
 } from "./workflow-data.service";
-import {
-  type QueueFirstRunAssociation,
-  type QueueFirstRunClaimResult,
-  type QueueFirstRunSessionSnapshotState,
-  type QueueFirstRunAdmission,
-  resolveQueueFirstRunAdmission,
-  claimQueueFirstRunAssociation,
+import type {
+  QueueFirstRunAssociation,
+  QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -338,7 +336,12 @@ import {
 } from "./org-plan-entitlement-read.service";
 import type { Tx } from "../../lib/db-types";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
+import {
+  pendingLaunchAdmissionStart,
+  advancePendingLaunchAdmission,
+  pendingAdmissionRecordSchema as admissionRow,
+  type PendingAdmissionProgress,
+} from "./pending-launch-admission-plan";
 import {
   isFreePlanForCreditAdmission,
   checkRunAdmission$,
@@ -10874,33 +10877,44 @@ function pendingAtomicLaunchPlan(
   if (context.updatedThread) {
     ctes.push(context.updatedThread);
   }
-  return {
-    ctes,
-    selection: {
+  return new QueryBuilder()
+    .with(...ctes)
+    .select({
       billingAttributionId:
-        sql`(SELECT ${attribution.runId} FROM ${attribution})`.mapWith(
-          nullableDriverValueDecoder(billingRunAttribution.runId),
-        ),
-      runId: returnedCteColumn(context.insertedRun, "id").mapWith(agentRuns.id),
-      createdAt: returnedCteColumn(context.insertedRun, "created_at").mapWith(
-        agentRuns.createdAt,
+        sql`(SELECT ${attribution.runId} FROM ${attribution})`
+          .mapWith(nullableDriverValueDecoder(billingRunAttribution.runId))
+          .as("billingAttributionId"),
+      runId: returnedCteColumn(context.insertedRun, "id")
+        .mapWith(agentRuns.id)
+        .as("runId"),
+      createdAt: returnedCteColumn(context.insertedRun, "created_at")
+        .mapWith(agentRuns.createdAt)
+        .as("createdAt"),
+      runnerJobCreatedAt: returnedCteColumn(insertedQueue, "created_at")
+        .mapWith(runnerJobQueue.createdAt)
+        .as("runnerJobCreatedAt"),
+      boundThreadId: nullableReturnedCteId(context.updatedThread)
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("boundThreadId"),
+    })
+    .from(context.insertedRun)
+    .innerJoin(
+      insertedQueue,
+      eq(
+        returnedCteColumn(insertedQueue, "run_id"),
+        returnedCteColumn(context.insertedRun, "id"),
       ),
-      runnerJobCreatedAt: returnedCteColumn(
-        insertedQueue,
-        "created_at",
-      ).mapWith(runnerJobQueue.createdAt),
-      boundThreadId: nullableReturnedCteId(context.updatedThread).mapWith(
-        nullableDriverValueDecoder(pgTextDecoder),
-      ),
-    },
-    insertedRun: context.insertedRun,
-    insertedQueue,
-    queueRunJoin: eq(
-      returnedCteColumn(insertedQueue, "run_id"),
-      returnedCteColumn(context.insertedRun, "id"),
-    ),
-  };
+    )
+    .getSQL();
 }
+
+const pendingLaunchRowSchema = z.object({
+  runId: z.string(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema,
+  runnerJobCreatedAt: pgTimestampWithoutTimezoneToDateSchema,
+  boundThreadId: z.string().nullable(),
+  billingAttributionId: z.string().nullable(),
+});
 
 function pendingAtomicLaunchResult(
   args: AtomicLaunchRowsPlanArgs,
@@ -10941,60 +10955,6 @@ function pendingAtomicLaunchResult(
     }),
   };
   return { persisted };
-}
-
-async function resolveQueueFirstAdmissionForLaunch(args: {
-  readonly tx: DbTransaction;
-  readonly createArgs: PendingRunArguments;
-  readonly sessionSnapshotState: QueueFirstRunSessionSnapshotState;
-  readonly timing: ApiDispatchTimingCollector;
-}): Promise<QueueFirstRunAdmission | undefined> {
-  const association = args.createArgs.queueFirstAssociation;
-  if (!association) {
-    return undefined;
-  }
-  if (association.threadId !== args.createArgs.chatThreadId) {
-    throw new Error("Queue-first association must match the run chat thread");
-  }
-  return await resolveQueueFirstRunAdmission(args.tx, {
-    association,
-    sessionSnapshotState: args.sessionSnapshotState,
-    timing: args.timing,
-  });
-}
-
-async function claimQueueFirstAssociationForLaunch(args: {
-  readonly tx: DbTransaction;
-  readonly admission: QueueFirstRunAdmission | undefined;
-  readonly createArgs: PendingRunArguments;
-  readonly identity: LaunchRunIdentity;
-  readonly timing: ApiDispatchTimingCollector;
-}): Promise<QueueFirstRunClaimResult | undefined> {
-  const association = args.createArgs.queueFirstAssociation;
-  if (!association) {
-    return undefined;
-  }
-  if (!args.admission) {
-    throw new Error("Queue-first claim requires resolved thread admission");
-  }
-  if (!args.createArgs.agentRunModelPin) {
-    throw new Error("Queue-first claim requires a run model pin");
-  }
-  return await claimQueueFirstRunAssociation(args.tx, {
-    ...association,
-    admission: args.admission,
-    runId: args.identity.runId,
-    selectedModel: args.createArgs.agentRunModelPin.selectedModel,
-    ...(args.createArgs.codexServiceTier
-      ? {
-          serviceTier:
-            args.createArgs.codexServiceTier === "fast"
-              ? ("priority" as const)
-              : ("ultrafast" as const),
-        }
-      : {}),
-    timing: args.timing,
-  });
 }
 
 function threadSessionBindingAction(args: {
@@ -11076,140 +11036,15 @@ async function persistThreadSessionBinding(
   };
 }
 
-async function validateThreadSessionSnapshot(
-  tx: DbTransaction,
-  args: {
-    readonly createArgs: PendingRunArguments;
-    readonly identity: LaunchRunIdentity;
-    readonly timing: ApiDispatchTimingCollector;
-  },
-): Promise<ValidatedThreadSessionSnapshot | undefined> {
-  const resolution = args.createArgs.threadSessionResolution;
-  const chatThreadId = args.createArgs.chatThreadId;
-  if (!chatThreadId) {
-    return undefined;
-  }
-
-  const [thread] = await args.timing.measure(
-    "api_dispatch_validate_thread_session_snapshot_thread",
-    "nested",
-    async () => {
-      return await tx
-        .select({
-          agentSessionId: chatThreads.agentSessionId,
-          agentSessionRunId: chatThreads.agentSessionRunId,
-        })
-        .from(chatThreads)
-        .where(eq(chatThreads.id, chatThreadId))
-        .limit(1);
-    },
-  );
-  if (!thread) {
-    throw new Error("Chat thread not found while validating session snapshot");
-  }
-  // No thread row lock: the binding update compares this run id, and the
-  // final active-run insert is the per-thread lock.
-  if (!resolution) {
-    return undefined;
-  }
-  if (
-    thread.agentSessionId !== resolution.expected.agentSessionId ||
-    thread.agentSessionRunId !== resolution.expected.agentSessionRunId
-  ) {
-    throw new Error("Chat thread session changed during run preparation");
-  }
-
-  const expectedSessionId = resolution.expected.sessionId;
-  if (expectedSessionId === null) {
-    return Object.freeze({
-      kind: "validated-thread-session-snapshot",
-      chatThreadId,
-      agentSessionId: thread.agentSessionId,
-      agentSessionRunId: thread.agentSessionRunId,
-    });
-  }
-  const [session] = await args.timing.measure(
-    "api_dispatch_validate_thread_session_snapshot_session",
-    "nested",
-    async () => {
-      return await tx
-        .select({ conversationId: agentSessions.conversationId })
-        .from(agentSessions)
-        .where(eq(agentSessions.id, expectedSessionId))
-        .for("update")
-        .limit(1);
-    },
-  );
-  if (
-    !session ||
-    session.conversationId !== resolution.expected.conversationId
-  ) {
-    throw new Error("Chat thread session changed during run preparation");
-  }
-  return Object.freeze({
-    kind: "validated-thread-session-snapshot",
-    chatThreadId,
-    agentSessionId: thread.agentSessionId,
-    agentSessionRunId: thread.agentSessionRunId,
-  });
-}
-
 interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
   readonly kind: "admitted";
   readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
 }
 
-type PreparedLaunchAdmission =
-  | AdmittedPreparedLaunch
-  | QueueFirstRunClaimLost
-  | CreateRunErrorResult;
-
-async function validateCapturedSubscriptionAccount(
-  tx: Tx,
-  args: PreparedCommitPreparedLaunchArgs,
-): Promise<
-  CreateRunErrorResult | { readonly identity: string | null } | undefined
-> {
-  const provider = args.context.modelProvider;
-  if (
-    provider &&
-    isPersonalSubscriptionProviderType(provider.type) &&
-    provider.credentialOwner === "member"
-  ) {
-    const type = provider.type;
-    return await args.admissionTiming.measureLeaf("subscription", async () => {
-      const account = await args.timing.measure(
-        "api_dispatch_subscription_validate_admission",
-        "nested",
-        async () => {
-          return await validatePersonalSubscriptionAdmission({
-            db: tx,
-            orgId: args.createArgs.orgId,
-            userId: args.createArgs.userId,
-            type,
-            sourceId: provider.id ?? undefined,
-          });
-        },
-        { subscription_provider_type: type },
-      );
-      if (!account) {
-        return {
-          ...conflict(
-            "The selected subscription account was disconnected. Reconnect it before starting another run.",
-          ),
-          admissionFailure: "subscription_account_disconnected" as const,
-        };
-      }
-      return { identity: personalSubscriptionAccountIdentity(account) };
-    });
-  }
-  return undefined;
-}
-
 async function commitPreparedLaunchAdmission(
   tx: DbTransaction,
   args: PreparedCommitPreparedLaunchArgs,
-): Promise<PreparedLaunchAdmission> {
+): Promise<PendingAdmissionProgress> {
   const validateOfficialAdmission = () => {
     return args.timing.measure(
       "api_dispatch_validate_official_workflow_admission",
@@ -11236,72 +11071,7 @@ async function commitPreparedLaunchAdmission(
   if (officialAdmissionFailure) {
     return conflict(officialAdmissionFailure.message);
   }
-  const validateThreadSession = () => {
-    return validateThreadSessionSnapshot(tx, {
-      createArgs: args.createArgs,
-      identity: args.identity,
-      timing: args.timing,
-    });
-  };
-  const threadSessionValidation = args.createArgs.chatThreadId
-    ? await args.admissionTiming.measureLeaf(
-        "thread_session",
-        validateThreadSession,
-      )
-    : await validateThreadSession();
-  let capturedIdentity: string | null = null;
-  const failure = await validateCapturedSubscriptionAccount(tx, args);
-  if (failure && "identity" in failure) {
-    capturedIdentity = failure.identity;
-  } else if (failure) {
-    return failure;
-  }
-  return await commitValidatedPreparedLaunch(
-    tx,
-    args,
-    threadSessionValidation,
-    capturedIdentity,
-  );
-}
-
-async function commitValidatedPreparedLaunch(
-  tx: DbTransaction,
-  args: PreparedCommitPreparedLaunchArgs,
-  threadSessionValidation: Awaited<
-    ReturnType<typeof validateThreadSessionSnapshot>
-  >,
-  validatedAccountIdentity: string | null,
-): Promise<PreparedLaunchAdmission> {
-  const validatedThreadSession = threadSessionValidation;
-
-  const queueFirstClaim = args.createArgs.queueFirstAssociation
-    ? await args.admissionTiming.measureLeaf("queue_first", async () => {
-        const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
-          tx,
-          createArgs: args.createArgs,
-          sessionSnapshotState: validatedThreadSession
-            ? "current"
-            : "unvalidated",
-          timing: args.timing,
-        });
-        return await claimQueueFirstAssociationForLaunch({
-          tx,
-          admission: queueFirstAdmission,
-          createArgs: args.createArgs,
-          identity: args.identity,
-          timing: args.timing,
-        });
-      })
-    : undefined;
-  if (queueFirstClaim?.kind === "lost") {
-    return { kind: "queue-first-claim-lost" };
-  }
-  return {
-    kind: "admitted",
-    queueFirstClaim,
-    validatedThreadSession,
-    validatedAccountIdentity,
-  };
+  return pendingLaunchAdmissionStart(args);
 }
 
 /** The thread's session binding changed after the launch read its snapshot. */
@@ -11328,20 +11098,22 @@ function pendingLaunchRowsPlan(
   };
 }
 
-function preparedNativeSessionResetSql(
+function preparedNativeSessionResetStatements(
   commit: PreparedCommitPreparedLaunchArgs,
 ) {
   return commit.createArgs.threadSessionResolution?.resetNativeSession
-    ? pendingLaunchUpdateSql(
-        agentSessions,
-        {
-          agentId: commit.context.resolved.agentId,
-          conversationId: null,
-          storageMounts: [...commit.launch.sessionStorageMounts],
-        },
-        eq(agentSessions.id, commit.identity.sessionId),
-      )
-    : undefined;
+    ? [
+        pendingLaunchUpdateSql(
+          agentSessions,
+          {
+            agentId: commit.context.resolved.agentId,
+            conversationId: null,
+            storageMounts: [...commit.launch.sessionStorageMounts],
+          },
+          eq(agentSessions.id, commit.identity.sessionId),
+        ),
+      ]
+    : [];
 }
 
 function pendingLaunchActiveRunValues(
@@ -11397,6 +11169,7 @@ function pendingLaunchAllowanceInput(
     runId: run.id,
     runCreatedAt: run.createdAt,
     refresh: args.allowanceRefresh,
+    action: "api_dispatch_activate_usage_allowance_windows" as const,
   };
 }
 
@@ -11449,7 +11222,13 @@ export const commitPreparedPendingLaunch$ = command(
           });
         }
         admissionTiming.admissionStarted();
-        const admission = await commitPreparedLaunchAdmission(tx, args);
+        let admission = await commitPreparedLaunchAdmission(tx, args);
+        while ("kind" in admission && admission.kind === "statement") {
+          const step = admission;
+          const rows = parseRawRows(admissionRow, await tx.execute(step.sql));
+          signal.throwIfAborted();
+          admission = advancePendingLaunchAdmission(args, step, rows);
+        }
         if (!("kind" in admission) || admission.kind !== "admitted") {
           admissionTiming.callbackFinished();
           return admission;
@@ -11468,9 +11247,8 @@ export const commitPreparedPendingLaunch$ = command(
                   forUpdate: true,
                 })
               : null;
-            const nativeSessionReset = preparedNativeSessionResetSql(args);
-            if (nativeSessionReset) {
-              await tx.execute(nativeSessionReset);
+            for (const reset of preparedNativeSessionResetStatements(args)) {
+              await tx.execute(reset);
             }
             const prepared = pendingLaunchRowsPlan(
               args,
@@ -11483,11 +11261,10 @@ export const commitPreparedPendingLaunch$ = command(
               async () => {
                 const { rows, context } = prepared;
                 const plan = pendingAtomicLaunchPlan(rows, context);
-                const [row] = await tx
-                  .with(...plan.ctes)
-                  .select(plan.selection)
-                  .from(plan.insertedRun)
-                  .innerJoin(plan.insertedQueue, plan.queueRunJoin);
+                const [row] = parseRawRows(
+                  pendingLaunchRowSchema,
+                  await tx.execute(plan),
+                );
                 return pendingAtomicLaunchResult(rows, context, row).persisted;
               },
             );
@@ -11542,11 +11319,7 @@ export const commitPreparedPendingLaunch$ = command(
             signal.throwIfAborted();
             requireRunAllowanceWindowPair(issued);
           }
-          timing.recordElapsed(
-            "api_dispatch_activate_usage_allowance_windows",
-            "nested",
-            startedAt,
-          );
+          timing.recordElapsed(activation.action, "nested", startedAt);
         }
         // Keep this unique insertion last: do not acquire another row after it.
         await tx.execute(pendingActiveRunInsertSql(args, persisted.run));

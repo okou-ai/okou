@@ -1170,28 +1170,6 @@ async function credentialValues(
   return values;
 }
 
-/** Run admission reads the captured account once, without locks. A concurrent
- * disconnect that commits afterwards fails the run through the explicit
- * subscription-unavailable path. */
-export async function validatePersonalSubscriptionAdmission(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly type: PersonalSubscriptionProviderType;
-  readonly sourceId: string | undefined;
-}): Promise<AccountRow | null> {
-  if (!args.sourceId) {
-    return null;
-  }
-  const account = await personalModelProviderAccountById({
-    db: args.db,
-    id: args.sourceId,
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  return account?.type === args.type ? account : null;
-}
-
 /** Organization subscriptions remain singleton `model_providers` + `secrets`
  * credentials. */
 async function readOrgSubscriptionCredentialBundle(
