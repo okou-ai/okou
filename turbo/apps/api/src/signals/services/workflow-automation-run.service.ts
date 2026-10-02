@@ -463,11 +463,8 @@ const commitWorkflowInput$ = command(
     const eventId = await set(writeDb$)
       .transaction(async (tx) => {
         signal.throwIfAborted();
-        marks.push({ step: "context", startedAt: now() });
-        await tx
-          .insert(chatAutomationContext)
-          .values(plan.context)
-          .onConflictDoNothing();
+        // Event sequence precedes the context FK's thread KEY SHARE, matching
+        // the pick/session writer's lock order (main #37567).
         marks.push({ step: "event", startedAt: now() });
         const inserted = (
           await tx.execute(
@@ -480,6 +477,14 @@ const commitWorkflowInput$ = command(
           }
           return null;
         }
+        // Context failure rolls back the sequence and event with this owner;
+        // an idempotent loser never writes a new context.
+        marks.push({ step: "context", startedAt: now() });
+        await tx
+          .insert(chatAutomationContext)
+          .values(plan.context)
+          .onConflictDoNothing();
+        signal.throwIfAborted();
         const eventId = plan.row.id;
         if (args.scheduleClaim) {
           marks.push({ step: "schedule", startedAt: now() });

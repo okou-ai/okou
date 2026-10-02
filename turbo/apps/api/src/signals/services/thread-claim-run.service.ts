@@ -15,10 +15,7 @@ import {
   usagePricingResolution$,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
-import {
-  createConnectorSourceSnapshots,
-  type ConnectorSourceSnapshot,
-} from "./execution-connector-sources.service";
+import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
 import { createModelSourceSnapshot } from "./execution-model-source.service";
 import {
   createOrgModelBootstrap,
@@ -196,9 +193,7 @@ import type { PendingRunActivation } from "./agent-run-activation.types";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
   nullableDriverValueDecoder,
-  zodDriverValueDecoder,
   pgBooleanDecoder,
-  pgInt8ToBigIntDecoder,
   pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
@@ -242,7 +237,7 @@ import {
 } from "../external/sandbox-op-log";
 import type { SlackUserInfo } from "../external/slack-message-client";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { onRejection, safeSync, settle, tapError } from "../utils";
+import { safeSync, settle, tapError } from "../utils";
 import {
   buildAgentExecutionConfig,
   type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
@@ -277,10 +272,8 @@ import {
   unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
 import {
-  builtinConnectorCredentialSecretReadCondition,
   type BuiltinConnectorCredentialAccess,
   resolveBuiltinConnectorCredentialAccess,
-  type BuiltinConnectorCredentialReadGroup,
 } from "./builtin-connector-credential-access.service";
 import {
   canonicalChatEventContent,
@@ -320,39 +313,11 @@ import {
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
 import {
-  decodeAcceptedConnectorCatalogPayload,
-  externalCatalogJoin,
-  ExternalConnectorCatalogUnavailableError,
-  identityLogFields,
-  readCachedConnectorCatalogSnapshot,
-} from "./connector-catalog-external-reader.service";
-import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
-import {
-  createAgentCatalogIdentity,
-  createAgentCatalogProjectionRows,
-  type ConnectorCatalogRuntimeProjectionRowsRead,
-  validateConnectorCatalogRuntimeProjectionRows,
-} from "./connector-catalog-runtime-projection.service";
-import {
-  clearRuntimeSelectionInFlight,
   getConnectorRuntimeConnector,
-  materializeProjectedRuntimeSelection,
-  observeRuntimeSelection,
-  projectionIdentityKey,
-  rememberProjectedConnectors,
-  requestedProjectionConnectorSlugs,
-  type RuntimeSelectionBuildResult,
-  runtimeSelectionCache,
-  runtimeSelectionFromAcceptedSnapshot,
-  runtimeSelectionProjectionKey,
-  takeCachedProjectedConnectors,
-  uniqueSortedConnectorSlugs,
   type ConnectorRuntimeSelection,
   type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
-import { connectorCatalogSource } from "./connector-catalog-source";
 import {
   type CustomConnectorRuntimeContext,
   loadEffectiveCustomConnectorPermissionBundle,
@@ -512,8 +477,6 @@ import {
   getModelProviderFirewall,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { connectorCatalogArtifactFailureCode } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import {
   permissionGrantsToFirewallPolicies,
   type FirewallPermissionGrant,
@@ -567,12 +530,6 @@ import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
-import { connectors } from "@okouai/db/schema/connector";
-import {
-  connectorCatalogActiveSnapshot,
-  connectorCatalogCompatibilityEvaluation,
-  connectorCatalogRuntimeProjections,
-} from "@okouai/db/schema/connector-catalog";
 import { conversations } from "@okouai/db/schema/conversation";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
@@ -592,8 +549,6 @@ import {
   officialWorkflowCatalogState,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
@@ -601,7 +556,6 @@ import {
   orgUsageAllowanceWindows,
 } from "@okouai/db/schema/org-usage-allowance";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
-import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
@@ -613,13 +567,11 @@ import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-u
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { variables } from "@okouai/db/schema/variable";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import {
   and,
   asc,
-  count,
   desc,
   eq,
   exists,
@@ -711,7 +663,6 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { ingestToAxiom, getDatasetName } from "../external/axiom";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   type ConnectorRuntimeBindingEntry,
   connectorAuthMethodRuntimeMetadata,
@@ -2503,13 +2454,6 @@ function truncateIncomplete(value: string): string {
 type ActivePreviousRunPolicy = "block" | "allow";
 
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
-
-const storedConnectorSecretNamesDecoder = zodDriverValueDecoder(
-  z.array(z.string()),
-);
-const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
-  z.record(z.string(), z.string()),
-);
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   return {
@@ -5665,6 +5609,12 @@ export function createThreadClaimRunObjects(
     });
   });
   const promptExecutionResourcesConnectorSourceId$ = computed(async (get) => {
+    const head = await get(head$);
+    // Web/agent prompts never carry an integration account source. Do not wait
+    // for prompt material just to discover this already-known absence.
+    if (head?.contextType === "web" || head?.contextType === "agent_run") {
+      return undefined;
+    }
     return (await get(availableMaterial$))?.connectorSourceId;
   });
   const promptExecutionResourcesStorageBody$ = computed(async (get) => {
@@ -6902,463 +6852,19 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const catalogInput$ = computed(async (get) => {
-    const { timing } = await get(selectedIdentityInputIdentityInput$);
-    const db = get(db$);
-    return { db, timing };
-  });
-  const requestedSlugs$ = computed(async (get) => {
-    const bootstrap = await get(preCreateBootstrapMetadata$);
-    return {
-      requestedConnectorSlugs: bootstrap.allowedConnectorSlugs,
-      metadataConnectorSlugs: bootstrap.connectorCatalogMetadataSlugs,
-    };
-  });
-  const catalogReadInput$ = computed(async (get) => {
-    const { db, timing } = await get(catalogInput$);
-    return { db, timing: new ConnectorCatalogLoadTiming(timing, undefined) };
-  });
-  const connectorCatalogIdentity$ = computed(async (get) => {
-    const input = await get(catalogReadInput$);
-    if (input === undefined) {
-      return undefined;
-    }
-    const captured = await input.timing.measure(
-      "api_dispatch_connector_catalog_query_projection_identity",
-      async () => {
-        return await get(createAgentCatalogIdentity());
-      },
-    );
-    return captured;
-  });
-  const runtimeCatalogInputRequestedSlugs$ = computed(async (get) => {
-    const { requestedConnectorSlugs, metadataConnectorSlugs = [] } =
-      await get(requestedSlugs$);
-    return {
-      requestedConnectorCount: requestedConnectorSlugs.length,
-      metadataConnectorCount: metadataConnectorSlugs.length,
-      runtimeConnectorSlugs: uniqueSortedConnectorSlugs(
-        requestedConnectorSlugs,
-      ),
-      metadataConnectorSlugs: uniqueSortedConnectorSlugs(
-        metadataConnectorSlugs,
-      ),
-    };
-  });
-  const runtimeCatalogProjectionRowsProjectionRows$ = computed(async (get) => {
-    const [captured, requested, { timing }] = await Promise.all([
-      get(connectorCatalogIdentity$),
-      get(runtimeCatalogInputRequestedSlugs$),
-      get(catalogReadInput$),
-    ]);
-    if (captured === undefined) {
-      throw new Error("Connector catalog identity input is unavailable");
-    }
-    const identity = captured.projection;
-    if (identity.kind === "fallback") {
-      return {
-        kind: "fallback" as const,
-        captured,
-        requested,
-        reason: identity.reason,
-      };
-    }
-    const projection = identity.projection;
-    const selectedSlugs = requestedProjectionConnectorSlugs(requested);
-    const { cached, uncachedSlugs } = takeCachedProjectedConnectors(
-      projection.identity,
-      selectedSlugs,
-    );
-    let prefetchedRowsUsed = false;
-    const rows: ConnectorCatalogRuntimeProjectionRowsRead =
-      uncachedSlugs.length === 0
-        ? { kind: "ready", connectors: [], missingConnectorSlugs: [] }
-        : await timing.measure(
-            "api_dispatch_connector_catalog_query_projection_rows",
-            async () => {
-              const selectedRows = await timing.measure(
-                "api_dispatch_connector_catalog_fetch_projection_rows",
-                async () => {
-                  const selectionStartedAt = now();
-                  const { hit } = await get(claimBootstrapIdentity$);
-                  const prefetched = hit
-                    ? (await get(claimBootstrap$)).catalog
-                    : undefined;
-                  const catalogHit =
-                    prefetched !== undefined &&
-                    prefetched.projection.kind === "ready" &&
-                    projectionIdentityKey(prefetched.projection.identity) ===
-                      projectionIdentityKey(projection.identity) &&
-                    prefetched.projection.connectorSlugs.join("\0") ===
-                      selectedSlugs.join("\0");
-                  prefetchedRowsUsed = catalogHit;
-                  (await get(catalogInput$)).timing.recordElapsed(
-                    "api_dispatch_connector_catalog_prefetch_selection",
-                    "nested",
-                    selectionStartedAt,
-                    now(),
-                    { bootstrap_catalog_prefetch: catalogHit ? "hit" : "miss" },
-                  );
-                  return catalogHit
-                    ? prefetched.projection.rows.filter((row) => {
-                        return uncachedSlugs.includes(row.connectorSlug);
-                      })
-                    : await get(
-                        createAgentCatalogProjectionRows(
-                          projection.identity.projectionSetId,
-                          uncachedSlugs,
-                        ),
-                      );
-                },
-              );
-              return timing.measureProjectionRowValidation(
-                (validationTiming) => {
-                  return validateConnectorCatalogRuntimeProjectionRows({
-                    rows: selectedRows,
-                    connectorSlugs: uncachedSlugs,
-                    timing: validationTiming,
-                  });
-                },
-              );
-            },
-          );
-    return {
-      kind: "projection" as const,
-      captured,
-      requested,
-      projection,
-      cached,
-      rows,
-      prefetchedRowsUsed,
-      cacheOutcome:
-        uncachedSlugs.length === 0 ? ("hit" as const) : ("miss" as const),
-    };
-  });
-  const projectionCount$ = computed(async (get) => {
-    const rows = await get(runtimeCatalogProjectionRowsProjectionRows$);
-    if (
-      rows.kind === "fallback" ||
-      rows.rows.kind === "fallback" ||
-      rows.rows.missingConnectorSlugs.length === 0
-    ) {
-      return undefined;
-    }
-    const { db, timing } = await get(catalogReadInput$);
-    return await timing.measure(
-      "api_dispatch_connector_catalog_count_projection_rows",
-      async () => {
-        const [row] = await db
-          .select({ value: count() })
-          .from(connectorCatalogRuntimeProjections)
-          .where(
-            eq(
-              connectorCatalogRuntimeProjections.projectionSetId,
-              rows.projection.identity.projectionSetId,
-            ),
-          );
-        if (row === undefined) {
-          throw new Error(
-            "Connector runtime projection count query returned no row",
-          );
-        }
-        return row.value;
-      },
-    );
-  });
-  const freshIdentityInput$ = computed(async (get) => {
-    const rows = await get(runtimeCatalogProjectionRowsProjectionRows$);
-    return rows.kind === "projection" &&
-      rows.rows.kind === "ready" &&
-      (rows.rows.missingConnectorSlugs.length > 0 || rows.prefetchedRowsUsed)
-      ? await get(catalogReadInput$)
-      : undefined;
-  });
-  const capturedConnectorCatalogIdentity$ = computed(async (get) => {
-    const input = await get(freshIdentityInput$);
-    if (input === undefined) {
-      return undefined;
-    }
-    const captured = await input.timing.measure(
-      "api_dispatch_connector_catalog_query_projection_identity",
-      async () => {
-        return await get(createAgentCatalogIdentity());
-      },
-    );
-    return captured;
-  });
-  const runtimeCatalogProjectionResultProjectionResult$ = computed(
-    async (get) => {
-      const [read, actualConnectorCount, latest] = await Promise.all([
-        get(runtimeCatalogProjectionRowsProjectionRows$),
-        get(projectionCount$),
-        get(capturedConnectorCatalogIdentity$),
-      ]);
-      if (read.kind === "fallback") {
-        return read;
-      }
-      if (read.rows.kind === "fallback") {
-        return {
-          kind: "fallback" as const,
-          captured: read.captured,
-          requested: read.requested,
-          reason: read.rows.reason,
-        };
-      }
-      if (
-        read.rows.missingConnectorSlugs.length > 0 ||
-        read.prefetchedRowsUsed
-      ) {
-        if (
-          latest?.projection.kind !== "ready" ||
-          projectionIdentityKey(latest.projection.projection.identity) !==
-            projectionIdentityKey(read.projection.identity)
-        ) {
-          throw new Error("Connector catalog changed during runtime selection");
-        }
-        if (
-          read.rows.missingConnectorSlugs.length > 0 &&
-          actualConnectorCount !== read.projection.identity.connectorCount
-        ) {
-          return {
-            kind: "fallback" as const,
-            captured: read.captured,
-            requested: read.requested,
-            reason: "incomplete" as const,
-          };
-        }
-      }
-      return { ...read, rows: read.rows };
-    },
-  );
-  const completeSnapshotInput$ = computed(async (get) => {
-    const result = await get(runtimeCatalogProjectionResultProjectionResult$);
-    if (result.kind !== "fallback") {
-      return undefined;
-    }
-    if (result.captured.identity === undefined) {
-      throw new ExternalConnectorCatalogUnavailableError(
-        "missing_current_identity",
-      );
-    }
-    return {
-      ...(await get(catalogReadInput$)),
-      identity: result.captured.identity,
-    };
-  });
-  const snapshotPayload$ = computed(async (get) => {
-    const args = await get(completeSnapshotInput$);
-    if (args === undefined) {
-      return undefined;
-    }
-    const row = await args.timing.measure(
-      "api_dispatch_connector_catalog_query_payload",
-      async () => {
-        const [row] = await args.db
-          .select({
-            catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-            catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
-            catalogValidationBackendVersion:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-            catalogValidationBuildCommitSha:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-            executableCapabilityDigest:
-              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-            filteredAuthMethods:
-              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-          })
-          .from(connectorCatalogActiveSnapshot)
-          .leftJoin(
-            connectorCatalogCompatibilityEvaluation,
-            externalCatalogJoin(args.identity.capabilityDigest),
-          )
-          .where(
-            and(
-              eq(
-                connectorCatalogActiveSnapshot.sourceId,
-                args.identity.sourceId,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.schemaVersion,
-                args.identity.schemaVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogVersion,
-                args.identity.catalogVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogDigest,
-                args.identity.catalogDigest,
-              ),
-            ),
-          )
-          .limit(1);
-        return row;
-      },
-    );
-    if (row === undefined) {
-      throw new ExternalConnectorCatalogUnavailableError(
-        "captured_identity_unavailable",
-      );
-    }
-    const result = safeSync(() => {
-      return decodeAcceptedConnectorCatalogPayload({
-        identity: args.identity,
-        capability: connectorCatalogExecutableCapabilityState(),
-        timing: args.timing,
-        row,
-      });
-    });
-    if ("ok" in result) {
-      return result.ok;
-    }
-    const failureCode = connectorCatalogArtifactFailureCode(result.error);
-    if (failureCode === undefined) {
-      throw result.error;
-    }
-    log.error("Rejected persisted connector catalog snapshot", {
-      ...identityLogFields(args.identity),
-      failureCode,
-    });
-    throw new ExternalConnectorCatalogUnavailableError(
-      `invalid_artifact:${failureCode}`,
-    );
-  });
-  const capturedConnectorCatalogSnapshotCompleteSnapshot$ = computed(
-    async (get) => {
-      const input = await get(completeSnapshotInput$);
-      if (input === undefined) {
-        return undefined;
-      }
-      const capability = connectorCatalogExecutableCapabilityState();
-      if (
-        input.identity.sourceId !== connectorCatalogSource().sourceId ||
-        input.identity.schemaVersion !==
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION ||
-        input.identity.capabilityDigest !== capability.digest
-      ) {
-        throw new ExternalConnectorCatalogUnavailableError(
-          "runtime_identity_mismatch",
-        );
-      }
-      const snapshot = await readCachedConnectorCatalogSnapshot({
-        identity: input.identity,
-        timing: input.timing,
-        load: async () => {
-          return await get(snapshotPayload$);
-        },
-      });
-      if (snapshot === undefined) {
-        throw new ExternalConnectorCatalogUnavailableError(
-          "captured_identity_unavailable",
-        );
-      }
-      return snapshot;
-    },
-  );
-  const runtimeCatalogSelectionResultSelectionResult$ = computed(
-    async (get): Promise<RuntimeSelectionBuildResult> => {
-      const [result, { timing }] = await Promise.all([
-        get(runtimeCatalogProjectionResultProjectionResult$),
-        get(catalogReadInput$),
-      ]);
-      if (result.kind === "fallback") {
-        const acceptedSnapshot = await get(
-          capturedConnectorCatalogSnapshotCompleteSnapshot$,
-        );
-        if (acceptedSnapshot === undefined) {
-          throw new Error("Connector catalog fallback snapshot is unavailable");
-        }
-        return {
-          cacheOutcome: "not_applicable",
-          load: {
-            selection: runtimeSelectionFromAcceptedSnapshot({
-              acceptedSnapshot,
-              timing,
-              ...result.requested,
-            }),
-            source: "full_fallback",
-            fallbackReason: result.reason,
-          },
-        };
-      }
-      rememberProjectedConnectors(
-        result.projection.identity,
-        result.rows.connectors,
-      );
-      return {
-        cacheOutcome: result.cacheOutcome,
-        load: {
-          selection: materializeProjectedRuntimeSelection({
-            timing,
-            projection: result.projection,
-            connectors: [...result.cached, ...result.rows.connectors],
-            ...result.requested,
-          }),
-          source: "projection",
-        },
-      };
-    },
-  );
-  const runtimeCatalogSelectionConnectorCatalog$ = computed(async (get) => {
-    const { timing } = await get(catalogReadInput$);
-    return await timing.measureComplete(async () => {
-      const [requested, captured] = await Promise.all([
-        get(runtimeCatalogInputRequestedSlugs$),
-        get(connectorCatalogIdentity$),
-      ]);
-      timing.recordRequestedConnectorCounts(requested);
-      if (captured === undefined) {
-        throw new Error("Connector catalog identity input is unavailable");
-      }
-      const identity = captured.projection;
-      if (identity.kind === "fallback") {
-        const result = await get(runtimeCatalogSelectionResultSelectionResult$);
-        timing.recordProjectionResult({
-          source: result.load.source,
-          cacheOutcome: result.cacheOutcome,
-          fallbackReason: result.load.fallbackReason,
-        });
-        return result.load.selection;
-      }
-      const key = runtimeSelectionProjectionKey({
-        identity: identity.projection.identity,
-        ...requested,
-      });
-      timing.recordProjectionCacheObservation(
-        observeRuntimeSelection(identity.projection.identity, key),
-      );
-      const cache = runtimeSelectionCache();
-      if (cache.inFlight?.key === key) {
-        const result = await cache.inFlight.promise;
-        timing.recordMaterializedConnectorCount(0);
-        timing.recordProjectionResult({
-          source: result.load.source,
-          cacheOutcome: "in_flight",
-          fallbackReason: result.load.fallbackReason,
-        });
-        return result.load.selection;
-      }
-      const promise = get(runtimeCatalogSelectionResultSelectionResult$);
-      cache.inFlight = { key, promise };
-      const result = await onRejection(promise, () => {
-        clearRuntimeSelectionInFlight(cache, key, promise);
-      });
-      clearRuntimeSelectionInFlight(cache, key, promise);
-      timing.recordProjectionResult({
-        source: result.load.source,
-        cacheOutcome: result.cacheOutcome,
-        fallbackReason: result.load.fallbackReason,
-      });
-      return result.load.selection;
-    });
-  });
-  const selectedCatalog$ = runtimeCatalogSelectionConnectorCatalog$;
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const bootstrap = await get(preCreateBootstrapMetadata$);
-      return isEmptyRunConnectorScope(bootstrap)
-        ? { kind: "empty" }
-        : { kind: "scoped", selection: await get(selectedCatalog$) };
+      const [bootstrap, metadata] = await Promise.all([
+        get(claimBootstrap$),
+        get(preCreateBootstrapMetadata$),
+      ]);
+      if (isEmptyRunConnectorScope(metadata)) {
+        return { kind: "empty" };
+      }
+      if (!bootstrap.catalog) {
+        throw new Error("Scoped connector catalog is missing from bootstrap");
+      }
+      return { kind: "scoped", selection: bootstrap.catalog };
     },
   );
   const preCreatePermissionPoliciesPermissionPolicies$ = computed(
@@ -7959,7 +7465,6 @@ export function createThreadClaimRunObjects(
           orgId: command.owner.orgId,
           userId: command.owner.userId,
           chatThreadId: command.chatThreadId,
-          connectorSourceId: (await get(connectorSourceId$)) ?? undefined,
           includeOkouTokenSecret: true,
         },
       };
@@ -8014,10 +7519,7 @@ export function createThreadClaimRunObjects(
   const runThreadSelectionRow$ = computed(
     async (get): Promise<readonly ConnectorAccountSelection[]> => {
       const { db, args } = await get(connectorInput$);
-      const [thread, scope] = await Promise.all([
-        get(runOwnedConnectorThread$),
-        get(preCreateConnectorScope$),
-      ]);
+      const thread = await get(runOwnedConnectorThread$);
       if (!thread || args.chatThreadId === undefined) {
         return [];
       }
@@ -8035,6 +7537,7 @@ export function createThreadClaimRunObjects(
           asc(chatThreadConnectorSelections.connectorSlug),
           asc(chatThreadConnectorSelections.customConnectorId),
         );
+      const scope = await get(preCreateConnectorScope$);
       return rows
         .map((row) => {
           return {
@@ -8048,69 +7551,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const runConnectorAccountRows$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
-    const scope = await get(preCreateConnectorScope$);
-    const selections = await get(runThreadSelectionRow$);
-    const sourceIds = [
-      ...selections.map((selection) => {
-        return selection.connectionId;
-      }),
-      ...(args.connectorSourceId ? [args.connectorSourceId] : []),
-    ];
-    if (isEmptyRunConnectorScope(scope)) {
-      return [];
-    }
-    return await db
-      .select({
-        connectorId: connectors.id,
-        connectorSlug: connectors.connectorSlug,
-        customConnectorId: connectors.customConnectorId,
-        isDefault: connectors.isDefault,
-        customDefinitionId: orgCustomConnectors.id,
-        providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-      })
-      .from(connectors)
-      .leftJoin(
-        orgCustomConnectors,
-        and(
-          eq(orgCustomConnectors.id, connectors.customConnectorId),
-          eq(orgCustomConnectors.orgId, connectors.orgId),
-        ),
-      )
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          or(
-            sourceIds.length ? inArray(connectors.id, sourceIds) : undefined,
-            and(
-              eq(connectors.isDefault, true),
-              or(
-                scope.allowedConnectorSlugs.length
-                  ? inArray(connectors.connectorSlug, [
-                      ...scope.allowedConnectorSlugs,
-                    ])
-                  : undefined,
-                scope.allowedCustomConnectorIds.length
-                  ? inArray(connectors.customConnectorId, [
-                      ...scope.allowedCustomConnectorIds,
-                    ])
-                  : undefined,
-              ),
-            ),
-          ),
-        ),
-      );
+    return (await get(claimBootstrap$)).connectorAccounts;
   });
   const runThreadConnectorSelectionThreadSelections$ = computed(
     async (
@@ -8122,12 +7563,14 @@ export function createThreadClaimRunObjects(
       if (args.chatThreadId === undefined) {
         return undefined;
       }
-      const [thread, selections, accountRows, scope] = await Promise.all([
-        get(runOwnedConnectorThread$),
-        get(runThreadSelectionRow$),
-        get(runConnectorAccountRows$),
-        get(preCreateConnectorScope$),
-      ]);
+      const [thread, selections, accountRows, scope, connectorSourceId] =
+        await Promise.all([
+          get(runOwnedConnectorThread$),
+          get(runThreadSelectionRow$),
+          get(runConnectorAccountRows$),
+          get(preCreateConnectorScope$),
+          get(connectorSourceId$),
+        ]);
       if (!thread) {
         return badRequestMessage("Chat thread is no longer available");
       }
@@ -8149,8 +7592,8 @@ export function createThreadClaimRunObjects(
               )))
         );
       });
-      const sourceRow = args.connectorSourceId
-        ? byId.get(args.connectorSourceId)
+      const sourceRow = connectorSourceId
+        ? byId.get(connectorSourceId)
         : undefined;
       const sourceTarget = sourceRow
         ? runConnectorTargetFromRow(sourceRow)
@@ -8262,155 +7705,32 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const runStoredConnectorSelectionView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
-    const candidates = await get(accountCandidates$);
-    const connectorIds = (
-      await get(preCreateConnectorScope$)
-    ).allowedConnectorSlugs.flatMap((connectorSlug) => {
-      return (
-        candidates.get(
-          connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-        ) ?? []
-      );
-    });
-    if (connectorIds.length === 0) {
-      return null;
-    }
-    return db.$with("stored_connector_candidates").as(
-      db
-        .select({
-          connectorId: connectors.id,
-          connectorSlug: sql`${connectors.connectorSlug}`
-            .mapWith(pgTextDecoder)
-            .as("connector_slug"),
-          authMethod: connectors.authMethod,
-          automaticAuthType: connectors.automaticAuthType,
-          connectorStateRevision:
-            sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`
-              .mapWith(pgInt8ToBigIntDecoder)
-              .as("connector_state_revision"),
-          needsReconnect: connectors.needsReconnect,
-          orgId: connectors.orgId,
-          storageVersion: connectors.storageVersion,
-          tokenExpiresAt: connectors.tokenExpiresAt,
-          userId: connectors.userId,
-        })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            isNotNull(connectors.connectorSlug),
-            inArray(connectors.id, connectorIds),
-          ),
-        ),
-    );
-  });
   const runStoredConnectorRow$ = computed(
     async (
       get,
     ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const { db, args, timing } = await get(connectorInput$);
-      const selectedConnectors = await get(runStoredConnectorSelectionView$);
-      if (!selectedConnectors) {
-        return [];
-      }
-      const secretGroups = db
-        .select({
-          connectorId: secretsTable.connectorId,
-          secretNames: sql`jsonb_agg(${secretsTable.name})`
-            .mapWith(storedConnectorSecretNamesDecoder)
-            .as("secret_names"),
-        })
-        .from(secretsTable)
-        .innerJoin(
-          selectedConnectors,
-          and(
-            eq(selectedConnectors.connectorId, secretsTable.connectorId),
-            eq(secretsTable.orgId, args.orgId),
-            eq(secretsTable.userId, args.userId),
-          ),
-        )
-        .where(eq(secretsTable.type, "connector"))
-        .groupBy(secretsTable.connectorId)
-        .as("stored_connector_secret_groups");
-      const variableGroups = db
-        .select({
-          connectorId: variables.connectorId,
-          variableValues:
-            sql`jsonb_object_agg(${variables.name}, ${variables.value})`
-              .mapWith(storedConnectorVariableValuesDecoder)
-              .as("variable_values"),
-        })
-        .from(variables)
-        .innerJoin(
-          selectedConnectors,
-          and(
-            eq(selectedConnectors.connectorId, variables.connectorId),
-            eq(variables.orgId, args.orgId),
-            eq(variables.userId, args.userId),
-          ),
-        )
-        .where(eq(variables.type, "connector"))
-        .groupBy(variables.connectorId)
-        .as("stored_connector_variable_groups");
-      const startedAt = now();
-      const dimensions = storedConnectorTimingDimensions({
-        scopeSource: (await get(preCreateConnectorScope$)).source,
-      });
-      const rows = await onRejection(
-        db
-          .with(selectedConnectors)
-          .select({
-            connectorId: selectedConnectors.connectorId,
-            connectorSlug: selectedConnectors.connectorSlug,
-            authMethod: selectedConnectors.authMethod,
-            automaticAuthType: selectedConnectors.automaticAuthType,
-            connectorStateRevision: selectedConnectors.connectorStateRevision,
-            needsReconnect: selectedConnectors.needsReconnect,
-            orgId: selectedConnectors.orgId,
-            storageVersion: selectedConnectors.storageVersion,
-            tokenExpiresAt: selectedConnectors.tokenExpiresAt,
-            userId: selectedConnectors.userId,
-            secretNames: secretGroups.secretNames,
-            variableValues: variableGroups.variableValues,
-          })
-          .from(selectedConnectors)
-          .leftJoin(
-            secretGroups,
-            eq(secretGroups.connectorId, selectedConnectors.connectorId),
-          )
-          .leftJoin(
-            variableGroups,
-            eq(variableGroups.connectorId, selectedConnectors.connectorId),
-          ),
-        () => {
-          timing.recordElapsed(
-            "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-            "nested",
-            startedAt,
-            now(),
-            dimensions,
-          );
-        },
+      const bootstrap = await get(claimBootstrap$);
+      const byId = new Map(
+        bootstrap.connectorSources.flatMap((result) => {
+          return result.kind === "available"
+            ? [[result.snapshot.source.sourceId, result.snapshot] as const]
+            : [];
+        }),
       );
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-        "nested",
-        startedAt,
-        now(),
-        {
-          ...dimensions,
-          stored_connector_candidate_count_bucket: countBucket(rows.length),
-        },
-      );
-      return rows.map((row) => {
-        return {
-          ...row,
-          secretNames: row.secretNames ?? [],
-          variableValues: row.variableValues ?? {},
-        };
+      return bootstrap.connectorAccounts.flatMap((row) => {
+        const source = byId.get(row.connectorId);
+        return row.connectorSlug !== null && source
+          ? [
+              {
+                ...row,
+                connectorSlug: row.connectorSlug,
+                secretNames: source.credentials.map((credential) => {
+                  return credential.name;
+                }),
+                variableValues: source.variables,
+              },
+            ]
+          : [];
       });
     },
   );
@@ -8461,20 +7781,16 @@ export function createThreadClaimRunObjects(
     if (!selected || isRouteError(selected)) {
       return [];
     }
-    const { args } = await get(connectorInput$);
-    return await get(
-      createConnectorSourceSnapshots({
-        orgId: args.orgId,
-        userId: args.userId,
-        sources: selected.rows.map((row) => {
-          return {
-            kind: "builtin",
-            connectorSlug: row.connectorSlug,
-            sourceId: row.connectorId,
-          };
-        }),
+    const ids = new Set(
+      selected.rows.map((row) => {
+        return row.connectorId;
       }),
     );
+    return (await get(claimBootstrap$)).connectorSources.filter((result) => {
+      const source =
+        result.kind === "available" ? result.snapshot.source : result.source;
+      return source.kind === "builtin" && ids.has(source.sourceId);
+    });
   });
   const runStoredConnectorSnapshot$ = computed(
     async (
@@ -8524,7 +7840,6 @@ export function createThreadClaimRunObjects(
     },
   );
   const runCustomConnectorSources$ = computed(async (get) => {
-    const { args } = await get(connectorInput$);
     const [candidates, scope] = await Promise.all([
       get(accountCandidates$),
       get(preCreateConnectorScope$),
@@ -8542,13 +7857,16 @@ export function createThreadClaimRunObjects(
         });
       },
     );
-    return await get(
-      createConnectorSourceSnapshots({
-        orgId: args.orgId,
-        userId: args.userId,
-        sources,
+    const ids = new Set(
+      sources.map((source) => {
+        return source.sourceId;
       }),
     );
+    return (await get(claimBootstrap$)).connectorSources.filter((result) => {
+      const source =
+        result.kind === "available" ? result.snapshot.source : result.source;
+      return source.kind === "custom" && ids.has(source.sourceId);
+    });
   });
   const runCustomConnectorStoredRows$ = computed(
     async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
@@ -8875,21 +8193,17 @@ export function createThreadClaimRunObjects(
       if (isRouteError(plan) || plan.names.size === 0) {
         return [];
       }
-      const { db } = plan.input;
-      const groups = storedConnectorCredentialReadGroups({
-        bindingSets: plan.bindingSets,
-        kind: "secret",
-        names: plan.names,
-      });
-      // Keep the existing catalog-owned-name and captured source-revision fence.
-      // This reads authority/names only; credential values come from the source snapshot.
-      const authorized = await db
-        .select({ sourceId: secretsTable.connectorId, name: secretsTable.name })
-        .from(secretsTable)
-        .where(builtinConnectorCredentialSecretReadCondition({ groups }));
+      // Account identity, revision and values were captured in one statement.
+      // Only catalog-owned names from the selected binding sets may escape it.
       const keys = new Set(
-        authorized.map((row) => {
-          return JSON.stringify([row.sourceId, row.name]);
+        plan.bindingSets.flatMap((bindingSet) => {
+          return storedConnectorCredentialNames({
+            runtimeBindings: bindingSet.runtimeBindings,
+            kind: "secret",
+            names: plan.names,
+          }).map((name) => {
+            return JSON.stringify([bindingSet.access.connectorId, name]);
+          });
         }),
       );
       return sources.flatMap((result) => {
@@ -8920,13 +8234,21 @@ export function createThreadClaimRunObjects(
     if (isRouteError(plan)) {
       return {};
     }
-    return await decryptStoredConnectorSecretRows(
-      rows,
-      {
-        featureSwitchContext: plan.input.featureSwitchContext,
-        timingDimensions: plan.timingDimensions,
-      },
-      plan.input.timing,
+    const decrypted = (await get(claimBootstrap$))
+      .decryptedConnectorCredentials;
+    return Object.fromEntries(
+      rows.map((row) => {
+        const result = decrypted.get(row.id);
+        if (!result) {
+          throw new Error(
+            "Selected connector credential is missing from bootstrap",
+          );
+        }
+        if (!result.ok) {
+          throw result.error;
+        }
+        return [row.name, result.value];
+      }),
     );
   });
   const connectorContext$ = computed(
@@ -11053,6 +10375,10 @@ export function createThreadClaimRunObjects(
           set(prepareLaunchResources$, head, signal),
           get(preparedAllowanceRefresh$),
           get(storageMounts$),
+          // Connector reads start independently of prompt/model material. A
+          // prefetch miss joins the same loader once for this selected identity.
+          get(claimBootstrap$),
+          get(runThreadSelectionRow$),
         ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
@@ -14290,8 +13616,6 @@ const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
 
 const CONNECTOR_VAR_REF_PREFIX = "$vars.";
 
-const EAGER_STORED_CONNECTOR_SECRET_DECRYPT_CONCURRENCY = 4;
-
 interface ThreadConnectorSelectionIds {
   /** Candidates are ordered from run-scoped source to persisted preference. */
   readonly connectorIdCandidatesBySlug: ReadonlyMap<
@@ -14439,6 +13763,7 @@ interface StoredConnectorSecretRow {
 }
 
 interface StoredConnectorEncryptedSecretRow extends StoredConnectorSecretRow {
+  readonly id: string;
   readonly encryptedValue: string;
 }
 
@@ -14591,121 +13916,6 @@ function storedConnectorRequirementsByConnector(
         },
       ] as const;
     }),
-  );
-}
-
-function storedConnectorCredentialReadGroups(args: {
-  readonly bindingSets: readonly ConnectorEnvBindingSet[];
-  readonly kind: "secret" | "variable";
-  readonly names?: ReadonlySet<string>;
-}): readonly BuiltinConnectorCredentialReadGroup[] {
-  return args.bindingSets.flatMap((bindingSet) => {
-    const names = storedConnectorCredentialNames({
-      runtimeBindings: bindingSet.runtimeBindings,
-      kind: args.kind,
-      ...(args.names === undefined ? {} : { names: args.names }),
-    });
-    return names.length === 0
-      ? []
-      : [
-          {
-            access: bindingSet.access,
-            connectorStateRevision: bindingSet.connectorStateRevision,
-            names,
-          },
-        ];
-  });
-}
-
-async function mapWithBoundedConcurrency<TInput, TOutput>(
-  values: readonly TInput[],
-  concurrency: number,
-  mapper: (value: TInput, index: number) => Promise<TOutput>,
-): Promise<TOutput[]> {
-  if (values.length === 0) {
-    return [];
-  }
-
-  const indexedValues = values.map((value, index) => {
-    return { index, value };
-  });
-  const results: ({ readonly value: TOutput } | undefined)[] = Array.from({
-    length: values.length,
-  });
-  const workerCount = Math.min(Math.max(1, concurrency), indexedValues.length);
-  let nextIndex = 0;
-  let stopped = false;
-
-  async function worker(): Promise<void> {
-    while (!stopped) {
-      const item = indexedValues[nextIndex];
-      nextIndex += 1;
-      if (!item) {
-        return;
-      }
-
-      const value = await onRejection(mapper(item.value, item.index), () => {
-        stopped = true;
-      });
-      results[item.index] = { value };
-    }
-  }
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      await worker();
-    }),
-  );
-
-  return indexedValues.map((item) => {
-    const result = results[item.index];
-    if (!result) {
-      throw new Error("Missing bounded concurrency result");
-    }
-    return result.value;
-  });
-}
-
-async function decryptStoredConnectorSecretRows(
-  rows: readonly StoredConnectorEncryptedSecretRow[],
-  args: {
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly timingDimensions: ApiDispatchTimingDimensions;
-  },
-  timing?: ApiDispatchTimingCollector,
-): Promise<Record<string, string>> {
-  if (rows.length === 0) {
-    return {};
-  }
-
-  return await measureApiDispatchTiming(
-    timing,
-    "api_dispatch_prepare_context_decrypt_stored_connector_secrets",
-    "nested",
-    async () => {
-      const decryptedRows = await mapWithBoundedConcurrency(
-        rows,
-        EAGER_STORED_CONNECTOR_SECRET_DECRYPT_CONCURRENCY,
-        async (row) => {
-          return {
-            name: row.name,
-            value: await decryptStoredSecretValue(
-              row.encryptedValue,
-              args.featureSwitchContext,
-            ),
-          };
-        },
-      );
-      return Object.fromEntries(
-        decryptedRows.map((row) => {
-          return [row.name, row.value];
-        }),
-      );
-    },
-    {
-      ...args.timingDimensions,
-      stored_connector_secret_count_bucket: countBucket(rows.length),
-    },
   );
 }
 

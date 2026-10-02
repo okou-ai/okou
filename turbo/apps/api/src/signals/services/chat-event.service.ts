@@ -933,7 +933,8 @@ export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   };
 }
 
-/** Entries execute this before appending the input, on their own connection. */
+/** Pure context plan. The enqueue owner executes it after reserving the event
+ * sequence, in the same transaction, to preserve thread lock ordering. */
 export function chatEventContextInsertSql(
   values: AppendChatEvent & { readonly id: string },
 ): SQL | null {

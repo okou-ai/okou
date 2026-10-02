@@ -216,7 +216,7 @@ describe("chat agent bootstrap prefetch", () => {
     },
   );
 
-  it("uses the current catalog when its projection set changes during prefetch", async () => {
+  it("uses one captured catalog generation when its projection set changes during prefetch", async () => {
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `bootstrap-catalog-${randomUUID()}`,
@@ -227,7 +227,7 @@ describe("chat agent bootstrap prefetch", () => {
     });
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await connectors.connectManualGrant(
+    const connection = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
@@ -240,10 +240,11 @@ describe("chat agent bootstrap prefetch", () => {
     const sent = await withDatabaseTransactionBarrierFixture(
       {
         select: (queryArgs) => {
+          const text = barrierQueryText(queryArgs);
           return (
-            barrierQueryText(queryArgs).includes(
-              'from "connector_catalog_runtime_projections"',
-            ) && barrierQueryBinds(queryArgs, "openai")
+            text.includes('from "connector_catalog_active_snapshot"') &&
+            text.includes('"connector_catalog_runtime_projection_sets"') &&
+            text.includes('"catalog_gzip"')
           );
         },
         stopAt: (_queryArgs, selecting) => {
@@ -255,7 +256,7 @@ describe("chat agent bootstrap prefetch", () => {
             actor,
             {
               agentId,
-              prompt: "use the current connector catalog",
+              prompt: "use the captured connector catalog",
               clientEventId,
             },
             [201],
@@ -291,13 +292,110 @@ describe("chat agent bootstrap prefetch", () => {
       return message.revokesEventId === clientEventId;
     })?.runId;
     if (!runId) {
-      throw new Error("Expected a run prepared from the current catalog");
+      throw new Error("Expected a run prepared from the captured catalog");
     }
     const claimed = await claimChatRun(runnerGroup, runId);
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toBeUndefined();
+    ).toMatchObject({ sourceId: connection.id });
     await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+    const next = await sendChatRun(actor, {
+      agentId,
+      prompt: "use the replacement catalog",
+      threadId: sent.body.threadId,
+    });
+    const nextClaim = await claimChatRun(runnerGroup, next.runId);
+    expect(
+      nextClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toBeUndefined();
+    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
+  });
+
+  it("keeps the captured default account for one pick and observes the next default on the next pick", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    const first = await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: `first-${randomUUID()}` },
+      agentId,
+    );
+    const second = await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: `second-${randomUUID()}` },
+      agentId,
+    );
+    await connectors.setDefaultBuiltinConnectorAccount(
+      actor,
+      "openai",
+      first.id,
+    );
+    const clientEventId = randomUUID();
+    const sent = await withDatabaseTransactionBarrierFixture(
+      {
+        select: (queryArgs) => {
+          return (
+            barrierQueryText(queryArgs).includes('"bootstrap_variables"') &&
+            barrierQueryBinds(queryArgs, actor.userId) &&
+            barrierQueryBinds(queryArgs, orgId)
+          );
+        },
+        stopAt: (_queryArgs, selecting) => {
+          return selecting;
+        },
+        pauseAfter: true,
+        work: async (barrier) => {
+          const sending = chat.requestSendEvent(
+            actor,
+            { agentId, prompt: "use the captured default", clientEventId },
+            [201],
+          );
+          await barrier.entered;
+          const response = await sending;
+          if (response.status !== 201) {
+            throw new Error("Expected enqueue to accept the input");
+          }
+          await connectors.setDefaultBuiltinConnectorAccount(
+            actor,
+            "openai",
+            second.id,
+          );
+          barrier.release();
+          await flushWaitUntilForTest();
+          return response;
+        },
+      },
+      context.signal,
+    );
+    const runId = userMessages(
+      (await chat.listThreadEvents(actor, sent.body.threadId)).events,
+    ).find((message) => {
+      return message.revokesEventId === clientEventId;
+    })?.runId;
+    if (!runId) {
+      throw new Error("Expected a run prepared from the captured account");
+    }
+    const claimed = await claimChatRun(runnerGroup, runId);
+    expect(
+      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toMatchObject({ sourceId: first.id });
+    await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+    const next = await sendChatRun(actor, {
+      agentId,
+      threadId: sent.body.threadId,
+      prompt: "use the next default",
+    });
+    const nextClaim = await claimChatRun(runnerGroup, next.runId);
+    expect(
+      nextClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toMatchObject({ sourceId: second.id });
+    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
   });
 
   it("rejects the input when a matching prefetch fails instead of rereading", async () => {

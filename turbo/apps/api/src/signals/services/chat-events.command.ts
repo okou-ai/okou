@@ -1282,10 +1282,6 @@ const appendNormalSendInput$ = command(
           }),
         );
       }
-      const contextInsert = chatEventContextInsertSql(event);
-      if (contextInsert) {
-        await tx.execute(contextInsert);
-      }
       const insert = args.body.revokesEventId
         ? chatEventReplacementInsertSql(
             requireChatEventReplacementTarget(
@@ -1308,6 +1304,10 @@ const appendNormalSendInput$ = command(
           throw new NewThreadSendCollision("input");
         }
         return null;
+      }
+      const contextInsert = chatEventContextInsertSql(event);
+      if (contextInsert) {
+        await tx.execute(contextInsert);
       }
       if (existingPlan) {
         await tx

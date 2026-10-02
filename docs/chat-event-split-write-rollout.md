@@ -37,11 +37,15 @@ rows, preserving the pre-release Web writer's thread-before-sequence order.
 
 After activation:
 
-- Event payload preparation and context persistence occur before the append.
-  The per-message context row is the single authoritative source of required
-  destination, identity and automation input. A failed context write rejects
-  the input exactly as a failed event insert does on the pre-release path: it
-  leaves no partial event, Slack/Feishu ingress keeps its existing retry
+- Event payload preparation occurs before the append. Enqueue producers
+  persist the input and its context in the same transaction. Automation enqueue
+  appends the event before inserting its context: the event sequence is acquired
+  before the context foreign key locks the thread, matching the pick's sequence
+  reservation followed by its unique session-binding update. Neither row is
+  visible until commit. The per-message context row is the single authoritative
+  source of required destination, identity and automation input. A failed
+  context write rolls back the input and its sequence reservation, leaving no
+  partial event. Slack/Feishu ingress keeps its existing retry
   classification, and channels that acknowledge before processing (Telegram,
   Teams, AgentPhone) accept a later duplicate delivery. Launch never
   reconstructs a destination from thread routes. Only optional ingress
