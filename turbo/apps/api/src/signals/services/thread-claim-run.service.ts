@@ -3059,6 +3059,207 @@ export interface ThreadClaimRunObjects {
   readonly startRun$: Command<Promise<string | null>, [signal: AbortSignal]>;
 }
 
+/** The admission input with the instant its reads are taken. */
+type CapturedRunAdmissionInput = RunAdmissionInput & { readonly at: Date };
+
+/** Plan, credit and usage-pack reads for one admission check. */
+function createRunAdmissionCreditReads(input: CapturedRunAdmissionInput) {
+  const capturedRunAdmissionReadInput$ = computed(() => {
+    return Promise.resolve(input);
+  });
+  const capturedRunAdmissionCapabilities$ = computed(
+    async (get): Promise<OrgPlanCapabilities | null> => {
+      const { orgId } = await get(capturedRunAdmissionReadInput$);
+      return await loadOrgPlanCapabilities(get(db$), orgId);
+    },
+  );
+  const runAdmissionCreditBalance$ = computed(async (get) => {
+    const { orgId, at } = await get(capturedRunAdmissionReadInput$);
+
+    const db = get(db$);
+    const expired = db.$with("expired").as(
+      db
+        .select({
+          total: sum(creditExpiresRecord.remaining)
+            .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
+            .as("total"),
+        })
+        .from(creditExpiresRecord)
+        .where(
+          and(
+            eq(creditExpiresRecord.orgId, orgId),
+            lte(creditExpiresRecord.expiresAt, at),
+            gt(creditExpiresRecord.remaining, 0),
+          ),
+        ),
+    );
+    const [row] = await db
+      .with(expired)
+      .select({
+        credits: sql`${orgMetadata.credits}`.mapWith(
+          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
+        ),
+        unsettledExpired: expired.total,
+      })
+      .from(expired)
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgId));
+    return row?.credits === null || row === undefined
+      ? null
+      : row.credits - (row.unsettledExpired ?? 0);
+  });
+  const runAdmissionUsagePack$ = computed(async (get) => {
+    const { orgId, userId, at } = await get(capturedRunAdmissionReadInput$);
+
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        total: sum(usagePackCreditGrants.remainingAmount).mapWith(
+          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
+        ),
+      })
+      .from(usagePackCreditGrants)
+      .where(
+        and(
+          eq(usagePackCreditGrants.orgId, orgId),
+          eq(usagePackCreditGrants.userId, userId),
+          gt(usagePackCreditGrants.remainingAmount, 0),
+          gt(usagePackCreditGrants.expiresAt, at),
+        ),
+      );
+    return row?.total ?? 0;
+  });
+  const runAdmissionAvailability$ = computed(
+    async (get): Promise<OrgCreditAvailability | null> => {
+      const [capabilities, spendableCredits, usagePackCredits] =
+        await Promise.all([
+          get(capturedRunAdmissionCapabilities$),
+          get(runAdmissionCreditBalance$),
+          get(runAdmissionUsagePack$),
+        ]);
+      return capabilities && spendableCredits !== null
+        ? {
+            status: capabilities.status,
+            supportByok: capabilities.supportByok,
+            restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
+            spendableCredits,
+            usagePackCredits,
+          }
+        : null;
+    },
+  );
+  return { capturedRunAdmissionCapabilities$, runAdmissionAvailability$ };
+}
+
+/** Allowance window and personal-subscription reads for one admission check. */
+function createRunAdmissionAllowanceReads(input: CapturedRunAdmissionInput) {
+  const capturedRunAdmissionReadInput$ = computed(() => {
+    return Promise.resolve(input);
+  });
+  const usageAllowanceSnapshot$ = computed(
+    async (get): Promise<UsageAllowanceAvailabilitySnapshot> => {
+      const input = await get(capturedRunAdmissionReadInput$);
+      const db = get(db$);
+      const { orgId } = input;
+      const at = nowDate();
+      const rows = await db
+        .select({
+          entitlement: {
+            status: orgUsageAllowanceEntitlements.status,
+            expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+            shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
+            weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
+          },
+          window: {
+            kind: orgUsageAllowanceWindows.kind,
+            unitLimit: orgUsageAllowanceWindows.unitLimit,
+            consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+          },
+        })
+        .from(orgUsageAllowanceEntitlements)
+        .leftJoin(
+          orgUsageAllowanceWindows,
+          and(
+            eq(
+              orgUsageAllowanceWindows.entitlementId,
+              orgUsageAllowanceEntitlements.id,
+            ),
+            eq(orgUsageAllowanceWindows.orgId, orgId),
+            inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
+            gte(
+              orgUsageAllowanceWindows.startsAt,
+              orgUsageAllowanceEntitlements.effectiveAt,
+            ),
+            lte(orgUsageAllowanceWindows.startsAt, at),
+            gt(orgUsageAllowanceWindows.expiresAt, at),
+            or(
+              isNull(orgUsageAllowanceEntitlements.expiresAt),
+              gt(orgUsageAllowanceEntitlements.expiresAt, at),
+            ),
+          ),
+        )
+        .where(
+          and(
+            eq(orgUsageAllowanceEntitlements.orgId, orgId),
+            inArray(orgUsageAllowanceEntitlements.status, [
+              ...ACTIVE_ALLOWANCE_STATUSES,
+            ]),
+            lte(orgUsageAllowanceEntitlements.effectiveAt, at),
+            or(
+              isNull(orgUsageAllowanceEntitlements.expiresAt),
+              gt(orgUsageAllowanceEntitlements.expiresAt, at),
+              isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+            ),
+          ),
+        )
+        .orderBy(desc(orgUsageAllowanceWindows.startsAt));
+      const entitlement = rows[0]?.entitlement;
+      if (!entitlement) {
+        return null;
+      }
+      if (
+        entitlement.expiresAt &&
+        entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
+      ) {
+        return "allowance_refresh_required";
+      }
+      const shortWindow = rows.find((row) => {
+        return row.window?.kind === "short";
+      })?.window;
+      const weeklyWindow = rows.find((row) => {
+        return row.window?.kind === "weekly";
+      })?.window;
+      const shortRemainingUnits = shortWindow
+        ? remainingUnits(shortWindow)
+        : entitlement.shortWindowUnits;
+      const weeklyRemainingUnits = weeklyWindow
+        ? remainingUnits(weeklyWindow)
+        : entitlement.weeklyWindowUnits;
+      return {
+        shortRemainingUnits,
+        weeklyRemainingUnits,
+        remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
+      };
+    },
+  );
+  const runAdmissionPersonalSubscription$ = computed(async (get) => {
+    const input = await get(capturedRunAdmissionReadInput$);
+    return await isPersonalSubscriptionRoute({
+      db: get(db$),
+      catalog: input.catalog,
+      orgId: input.orgId,
+      userId: input.userId,
+      model: input.selectedModel,
+      providerType: input.modelProviderType,
+    });
+  });
+  return { usageAllowanceSnapshot$, runAdmissionPersonalSubscription$ };
+}
+
+type RunAdmissionReads = ReturnType<typeof createRunAdmissionCreditReads> &
+  ReturnType<typeof createRunAdmissionAllowanceReads> & {
+    readonly input: CapturedRunAdmissionInput;
+  };
+
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
   prefetchedBootstrap?: PrefetchedAgentBootstrap,
@@ -3218,10 +3419,10 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return row ? { ...picked, ...row } : null;
   });
-  const internalRunIds$ = state<{
-    readonly runId: string;
-    readonly newSessionId: string;
-  } | null>(null);
+  // Generated once per claim graph; read after authorization admits the head.
+  const runIds$ = computed(() => {
+    return { runId: randomUUID(), newSessionId: randomUUID() };
+  });
   const input$ = computed(async (get) => {
     const head = await get(pickedEvent$);
     if (!head) {
@@ -5873,19 +6074,11 @@ export function createThreadClaimRunObjects(
       ? {}
       : additionalVolumesForRun(templates.presentationTemplateVolumes);
   });
-  const internalHead$ = state<ChatQueueHeadContext | null>(null);
   const internalTargetRevision$ = state(0);
-  const queuedAutomationInputsHead$ = computed((get) => {
-    const head = get(internalHead$);
-    if (!head) {
-      throw new Error("Queued automation context requires a selected input");
-    }
-    return head;
-  });
   const event$ = computed(
     async (get): Promise<QueuedAutomationEvent | null> => {
-      const head = get(queuedAutomationInputsHead$);
-      if (head.contextId === null) {
+      const head = await get(head$);
+      if (!head || head.contextId === null) {
         return null;
       }
       const [context] = await get(db$)
@@ -5943,7 +6136,6 @@ export function createThreadClaimRunObjects(
     return row ?? null;
   });
   const queuedAutomationRunSources = {
-    internalHead$: internalHead$,
     internalTargetRevision$: internalTargetRevision$,
     event$: event$,
     target$: target$,
@@ -7271,7 +7463,6 @@ export function createThreadClaimRunObjects(
   const queuedAutomationAssemblerInternalEarlyAssembly$ =
     state<ChatQueueRunAssembly | null>(null);
   const {
-    internalHead$: initializeQueuedAutomationInternalHead$,
     event$: initializeQueuedAutomationEvent$,
     target$: initializeQueuedAutomationTarget$,
   } = queuedAutomationRunSources;
@@ -7292,7 +7483,6 @@ export function createThreadClaimRunObjects(
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<false> => {
-      set(initializeQueuedAutomationInternalHead$, head);
       set(
         internalTiming$,
         workflowAutomationTiming(runTiming, head.apiStartTime),
@@ -7320,7 +7510,6 @@ export function createThreadClaimRunObjects(
       head: ChatQueueHeadContext,
       signal: AbortSignal,
     ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(initializeQueuedAutomationInternalHead$, head);
       set(queuedAutomationAssemblerInternalEarlyAssembly$, null);
       const unreadable = (message: string): ChatQueueRunAssembly => {
         return {
@@ -11078,190 +11267,11 @@ export function createThreadClaimRunObjects(
       return undefined;
     },
   );
-  const runAdmissionCheckInternalInput$ = state<RunAdmissionInput | null>(null);
-  const runAdmissionCheckInput$ = computed((get) => {
-    const input = get(runAdmissionCheckInternalInput$);
-    if (!input) {
-      throw new Error("Run admission input is not installed");
-    }
-    return input;
-  });
-  const capturedRunAdmissionReadInput$ = computed(async (get) => {
-    return { ...(await get(runAdmissionCheckInput$)), at: nowDate() };
-  });
-  const capturedRunAdmissionCapabilities$ = computed(
-    async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = await get(capturedRunAdmissionReadInput$);
-      return await loadOrgPlanCapabilities(get(db$), orgId);
-    },
-  );
-  const runAdmissionCreditBalance$ = computed(async (get) => {
-    const { orgId, at } = await get(capturedRunAdmissionReadInput$);
-
-    const db = get(db$);
-    const expired = db.$with("expired").as(
-      db
-        .select({
-          total: sum(creditExpiresRecord.remaining)
-            .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
-            .as("total"),
-        })
-        .from(creditExpiresRecord)
-        .where(
-          and(
-            eq(creditExpiresRecord.orgId, orgId),
-            lte(creditExpiresRecord.expiresAt, at),
-            gt(creditExpiresRecord.remaining, 0),
-          ),
-        ),
-    );
-    const [row] = await db
-      .with(expired)
-      .select({
-        credits: sql`${orgMetadata.credits}`.mapWith(
-          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-        ),
-        unsettledExpired: expired.total,
-      })
-      .from(expired)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgId));
-    return row?.credits === null || row === undefined
-      ? null
-      : row.credits - (row.unsettledExpired ?? 0);
-  });
-  const runAdmissionUsagePack$ = computed(async (get) => {
-    const { orgId, userId, at } = await get(capturedRunAdmissionReadInput$);
-
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        total: sum(usagePackCreditGrants.remainingAmount).mapWith(
-          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-        ),
-      })
-      .from(usagePackCreditGrants)
-      .where(
-        and(
-          eq(usagePackCreditGrants.orgId, orgId),
-          eq(usagePackCreditGrants.userId, userId),
-          gt(usagePackCreditGrants.remainingAmount, 0),
-          gt(usagePackCreditGrants.expiresAt, at),
-        ),
-      );
-    return row?.total ?? 0;
-  });
-  const runAdmissionAvailability$ = computed(
-    async (get): Promise<OrgCreditAvailability | null> => {
-      const [capabilities, spendableCredits, usagePackCredits] =
-        await Promise.all([
-          get(capturedRunAdmissionCapabilities$),
-          get(runAdmissionCreditBalance$),
-          get(runAdmissionUsagePack$),
-        ]);
-      return capabilities && spendableCredits !== null
-        ? {
-            status: capabilities.status,
-            supportByok: capabilities.supportByok,
-            restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-            spendableCredits,
-            usagePackCredits,
-          }
-        : null;
-    },
-  );
-  const usageAllowanceSnapshot$ = computed(
-    async (get): Promise<UsageAllowanceAvailabilitySnapshot> => {
-      const input = await get(capturedRunAdmissionReadInput$);
-      const db = get(db$);
-      const { orgId } = input;
-      const at = nowDate();
-      const rows = await db
-        .select({
-          entitlement: {
-            status: orgUsageAllowanceEntitlements.status,
-            expiresAt: orgUsageAllowanceEntitlements.expiresAt,
-            shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
-            weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
-          },
-          window: {
-            kind: orgUsageAllowanceWindows.kind,
-            unitLimit: orgUsageAllowanceWindows.unitLimit,
-            consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-          },
-        })
-        .from(orgUsageAllowanceEntitlements)
-        .leftJoin(
-          orgUsageAllowanceWindows,
-          and(
-            eq(
-              orgUsageAllowanceWindows.entitlementId,
-              orgUsageAllowanceEntitlements.id,
-            ),
-            eq(orgUsageAllowanceWindows.orgId, orgId),
-            inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-            gte(
-              orgUsageAllowanceWindows.startsAt,
-              orgUsageAllowanceEntitlements.effectiveAt,
-            ),
-            lte(orgUsageAllowanceWindows.startsAt, at),
-            gt(orgUsageAllowanceWindows.expiresAt, at),
-            or(
-              isNull(orgUsageAllowanceEntitlements.expiresAt),
-              gt(orgUsageAllowanceEntitlements.expiresAt, at),
-            ),
-          ),
-        )
-        .where(
-          and(
-            eq(orgUsageAllowanceEntitlements.orgId, orgId),
-            inArray(orgUsageAllowanceEntitlements.status, [
-              ...ACTIVE_ALLOWANCE_STATUSES,
-            ]),
-            lte(orgUsageAllowanceEntitlements.effectiveAt, at),
-            or(
-              isNull(orgUsageAllowanceEntitlements.expiresAt),
-              gt(orgUsageAllowanceEntitlements.expiresAt, at),
-              isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-            ),
-          ),
-        )
-        .orderBy(desc(orgUsageAllowanceWindows.startsAt));
-      const entitlement = rows[0]?.entitlement;
-      if (!entitlement) {
-        return null;
-      }
-      if (
-        entitlement.expiresAt &&
-        entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
-      ) {
-        return "allowance_refresh_required";
-      }
-      const shortWindow = rows.find((row) => {
-        return row.window?.kind === "short";
-      })?.window;
-      const weeklyWindow = rows.find((row) => {
-        return row.window?.kind === "weekly";
-      })?.window;
-      const shortRemainingUnits = shortWindow
-        ? remainingUnits(shortWindow)
-        : entitlement.shortWindowUnits;
-      const weeklyRemainingUnits = weeklyWindow
-        ? remainingUnits(weeklyWindow)
-        : entitlement.weeklyWindowUnits;
-      return {
-        shortRemainingUnits,
-        weeklyRemainingUnits,
-        remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
-      };
-    },
-  );
   const capturedResolveUsageAllowance$2 = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
       const startedAt = performance.now();
-      const [input, snapshot] = await Promise.all([
-        get(capturedRunAdmissionReadInput$),
-        get(usageAllowanceSnapshot$),
-      ]);
+      const { input } = reads;
+      const snapshot = await get(reads.usageAllowanceSnapshot$);
       signal.throwIfAborted();
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
@@ -11293,26 +11303,15 @@ export function createThreadClaimRunObjects(
     },
   );
   const runAdmissionResolveAvailability$ = capturedResolveUsageAllowance$2;
-  const runAdmissionPersonalSubscription$ = computed(async (get) => {
-    const input = await get(capturedRunAdmissionReadInput$);
-    return await isPersonalSubscriptionRoute({
-      db: get(db$),
-      catalog: input.catalog,
-      orgId: input.orgId,
-      userId: input.userId,
-      model: input.selectedModel,
-      providerType: input.modelProviderType,
-    });
-  });
   const runAdmissionCheckAdmission$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const [input, personalSubscription] = await Promise.all([
-        get(capturedRunAdmissionReadInput$),
-        get(runAdmissionPersonalSubscription$),
-      ]);
+    async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
+      const { input } = reads;
+      const personalSubscription = await get(
+        reads.runAdmissionPersonalSubscription$,
+      );
       signal.throwIfAborted();
       if (!input.enforceBuiltInCredits) {
-        const capabilities = await get(capturedRunAdmissionCapabilities$);
+        const capabilities = await get(reads.capturedRunAdmissionCapabilities$);
         signal.throwIfAborted();
         return (
           checkOrgPlanRunAdmission({
@@ -11322,7 +11321,7 @@ export function createThreadClaimRunObjects(
           }) ?? null
         );
       }
-      const availability = await get(runAdmissionAvailability$);
+      const availability = await get(reads.runAdmissionAvailability$);
       signal.throwIfAborted();
       const routeFailure = checkCatalogRunRoute(input.catalog, input);
       if (routeFailure) {
@@ -11346,7 +11345,11 @@ export function createThreadClaimRunObjects(
       ) {
         return null;
       }
-      const allowance = await set(runAdmissionResolveAvailability$, signal);
+      const allowance = await set(
+        runAdmissionResolveAvailability$,
+        reads,
+        signal,
+      );
       signal.throwIfAborted();
       return allowance && allowance.remainingUnits > 0
         ? null
@@ -11356,8 +11359,16 @@ export function createThreadClaimRunObjects(
   const runAdmissionCheckCheckAdmission$ = command(
     async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(runAdmissionCheckInternalInput$, input);
-      return await set(runAdmissionCheckAdmission$, signal);
+      const captured = { ...input, at: nowDate() };
+      return await set(
+        runAdmissionCheckAdmission$,
+        {
+          input: captured,
+          ...createRunAdmissionCreditReads(captured),
+          ...createRunAdmissionAllowanceReads(captured),
+        },
+        signal,
+      );
     },
   );
 
@@ -11706,10 +11717,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const runIdentity$ = computed(async (get) => {
-    const ids = get(internalRunIds$);
-    if (!ids) {
-      throw new Error("Claim has no run identity");
-    }
+    const ids = get(runIds$);
     if (!(await get(selectionInput$))) {
       return null;
     }
@@ -11874,10 +11882,7 @@ export function createThreadClaimRunObjects(
   );
   const prepareCallbacks$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const identity = get(internalRunIds$);
-      if (!identity) {
-        throw new Error("Claim has no run identity");
-      }
+      const identity = get(runIds$);
       const [callbacks, { command }] = await Promise.all([
         get(callbackInputs$),
         get(selectedIdentityInputIdentityInput$),
@@ -12158,7 +12163,6 @@ export function createThreadClaimRunObjects(
         await set(rejectChatQueueHead$, { head, rejection }, signal);
         return null;
       }
-      set(internalRunIds$, { runId: randomUUID(), newSessionId: randomUUID() });
       return head;
     },
   );
