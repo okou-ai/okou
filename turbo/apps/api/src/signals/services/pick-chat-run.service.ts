@@ -1,4 +1,4 @@
-import { computed, command, state } from "ccstate";
+import { computed, command, state, type Computed } from "ccstate";
 import {
   count,
   eq,
@@ -137,23 +137,27 @@ function createPickObjects() {
   const graphCache$ = computed(() => {
     return new WeakMap<
       LeasedThreadClaim,
-      ReturnType<typeof createCapturedClaimObjects>
+      Computed<Promise<ReturnType<typeof createCapturedClaimObjects>>>
     >();
   });
-  const capturedClaims$ = computed(async (get) => {
+  const capturedClaims$ = computed((get) => {
     const graphCache = get(graphCache$);
     const graphs = new Map<
       string,
-      ReturnType<typeof createCapturedClaimObjects>
+      Computed<Promise<ReturnType<typeof createCapturedClaimObjects>>>
     >();
     for (const claim of get(claimReceipts$)) {
       let graph = graphCache.get(claim);
       if (!graph) {
-        const models =
-          claim.prefetchedModels?.orgId === claim.orgId
-            ? await claim.prefetchedModels.org
-            : await get(createOrgModelBootstrap(claim.orgId));
-        graph = createCapturedClaimObjects(claim, models);
+        // Install the private receipt node synchronously, before its model
+        // promise can yield. Concurrent receipt-list evaluations share it.
+        graph = computed(async (read) => {
+          const models =
+            claim.prefetchedModels?.orgId === claim.orgId
+              ? await claim.prefetchedModels.org
+              : await read(createOrgModelBootstrap(claim.orgId));
+          return createCapturedClaimObjects(claim, models);
+        });
         graphCache.set(claim, graph);
       }
       graphs.set(claim.claimId, graph);
@@ -372,10 +376,12 @@ function createPickObjects() {
       signal: AbortSignal,
     ): Promise<PickResult> => {
       signal.throwIfAborted();
-      const claimed = (await get(capturedClaims$)).get(claim.claimId);
-      if (!claimed) {
+      const captured = get(capturedClaims$).get(claim.claimId);
+      if (!captured) {
         throw new Error("Successful queue claim has no captured run graph");
       }
+      const claimed = await get(captured);
+      signal.throwIfAborted();
       const [hasCapacity, hasInput] = await Promise.all([
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
