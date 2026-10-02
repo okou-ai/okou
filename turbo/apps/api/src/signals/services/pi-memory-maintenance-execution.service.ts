@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -56,7 +56,7 @@ import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service"
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import { createExecutionMemberMetadata } from "./execution-member-metadata.service";
-import { createAgentDisabledPaidTools } from "./agent-bootstrap-resources";
+import { readDisabledPaidTools } from "./paid-tools.service";
 import {
   createModelSourceSnapshot,
   type ModelSourceIdentity,
@@ -939,7 +939,9 @@ function createMaintenanceRunReads(job: ClaimedPiMemoryPhase2Job) {
     memoryMounts,
     storage: createExecutionStorageObjects(memoryMounts),
     member$: createExecutionMemberMetadata(owner),
-    disabledPaidTools$: createAgentDisabledPaidTools(job.userId, job.orgId),
+    disabledPaidTools$: computed(async (get): Promise<readonly string[]> => {
+      return await readDisabledPaidTools(get(db$), job.orgId, job.userId);
+    }),
   };
 }
 
