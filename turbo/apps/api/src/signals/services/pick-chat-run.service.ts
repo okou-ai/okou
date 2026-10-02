@@ -29,6 +29,7 @@ import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import type { Tx } from "../../lib/db-types";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { isFreePlanForCreditAdmission } from "./run-admission.service";
 import { now, nowDate } from "../../lib/time";
 import { conflict } from "../../lib/error";
@@ -60,7 +61,8 @@ import {
   validateThreadSessionSnapshot,
   validateCapturedSubscriptionAccount,
   buildAtomicLaunchCteContext,
-  persistPendingAtomicLaunch,
+  pendingAtomicLaunchPlan,
+  pendingAtomicLaunchResult,
   persistThreadSessionBinding,
   committedAtomicLaunchResponse,
   flushQueueFirstClaimLostTiming,
@@ -329,7 +331,6 @@ async function persistClaimedRun(
           .where(eq(agentSessions.id, identity.sessionId));
       }
       const rows = {
-        tx,
         commit: preparedCommit,
         payload: persistence.payload,
         validatedThreadSession: admission.validatedThreadSession,
@@ -339,8 +340,25 @@ async function persistClaimedRun(
       const rowsPersisted = await timing.measure(
         "api_dispatch_persist_atomic_launch",
         "nested",
-        () => {
-          return persistPendingAtomicLaunch(rows, ctes);
+        async () => {
+          const plan = pendingAtomicLaunchPlan(rows, ctes);
+          const [row] = await tx
+            .with(...plan.ctes)
+            .select(plan.selection)
+            .from(plan.insertedRun)
+            .innerJoin(plan.insertedQueue, plan.queueRunJoin);
+          const result = pendingAtomicLaunchResult(rows, ctes, row);
+          const [attribution] = await tx
+            .insert(billingRunAttribution)
+            .values(result.capture.values)
+            .onConflictDoUpdate(result.capture.conflict)
+            .returning({ id: billingRunAttribution.runId });
+          if (!attribution) {
+            throw new Error(
+              "New Run billing attribution conflicts with history",
+            );
+          }
+          return result.persisted;
         },
       );
       for (const statement of claimProducerBindingStatements(
@@ -1055,7 +1073,6 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       }
       const database = set(writeDb$);
       const commit: CommitPreparedLaunchArgs = {
-        db: database,
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
         context: input.context,
