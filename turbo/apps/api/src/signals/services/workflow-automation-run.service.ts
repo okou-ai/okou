@@ -447,6 +447,16 @@ interface PreparedWorkflowInputCommit {
   readonly timing: ApiDispatchTimingCollector;
 }
 
+function requireWorkflowInputInserted(
+  inserted: number | null,
+  conflict: PreparedWorkflowInputCommit["plan"]["conflict"],
+): boolean {
+  if (inserted === 0 && conflict === "none") {
+    throw new Error("Workflow queue event insert returned no row");
+  }
+  return inserted !== 0;
+}
+
 const commitWorkflowInput$ = command(
   async (
     { set },
@@ -471,10 +481,7 @@ const commitWorkflowInput$ = command(
             appendCanonicalChatEventsSql([plan.row], plan.conflict),
           )
         ).rowCount;
-        if (inserted === 0) {
-          if (plan.conflict === "none") {
-            throw new Error("Workflow queue event insert returned no row");
-          }
+        if (!requireWorkflowInputInserted(inserted, plan.conflict)) {
           return null;
         }
         // Context failure rolls back the sequence and event with this owner;
