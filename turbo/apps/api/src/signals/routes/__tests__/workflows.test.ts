@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -8,7 +9,11 @@ import {
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
 
-import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   testSystemStoragePresignedUrlCacheStateContract,
@@ -298,6 +303,17 @@ function installVolumeS3Fixture() {
         throw missingS3Object(key);
       }
       return { ContentLength: body.length };
+    }
+    if (command instanceof GetObjectCommand) {
+      const key = command.input.Key;
+      if (!key) {
+        throw new Error("Expected an S3 object key");
+      }
+      const body = objects.get(key);
+      if (!body) {
+        throw missingS3Object(key);
+      }
+      return { Body: Readable.from([body]), ContentLength: body.length };
     }
     return {};
   });
@@ -2726,20 +2742,29 @@ describe("workflows", () => {
       files: duplicateFiles,
     });
 
-    const initialState = await readWorkflowStorageState(
-      actor,
-      workflow.body.id,
-    );
-    if (!initialState?.head_version_id) {
-      throw new Error("Expected the duplicate-path workflow volume version");
-    }
-    const archiveKey = `${initialState.s3_prefix}/${initialState.head_version_id}/archive.tar.gz`;
+    const archiveWrites = s3.writes.filter(({ key }) => {
+      return key.endsWith("/archive.tar.gz");
+    });
+    expect(archiveWrites).toHaveLength(1);
+    const archiveKey = archiveWrites[0]!.key;
     const initialArchive = s3.objects.get(archiveKey);
     if (!initialArchive) {
       throw new Error("Expected the duplicate-path workflow archive");
     }
+    const initial = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(initial.body.instruction).toBe("# duplicate path volume");
+    expect(initial.body.fileContents).toStrictEqual([
+      { path: "duplicate.txt", content: "second duplicate" },
+    ]);
 
     s3.clearWrites();
+    context.mocks.s3.send.mockClear();
     process.umask(0o077);
     await updateWorkflow(actor, workflow.body.id, {
       files: [...duplicateFiles].reverse(),
@@ -2748,10 +2773,27 @@ describe("workflows", () => {
 
     expect(s3.writes).toHaveLength(0);
     expect(s3.objects.get(archiveKey)).toStrictEqual(initialArchive);
+    context.mocks.s3.send.mockClear();
+    const updated = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(updated.body.instruction).toBe(initial.body.instruction);
+    expect(updated.body.fileContents).toStrictEqual(initial.body.fileContents);
     expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(initialState.head_version_id);
+      context.mocks.s3.send.mock.calls
+        .map(([command]) => {
+          return command instanceof GetObjectCommand
+            ? command.input.Key
+            : undefined;
+        })
+        .filter((key) => {
+          return key?.endsWith("/archive.tar.gz");
+        }),
+    ).toStrictEqual([archiveKey]);
   });
 
   it("reads and updates workflow content, audit metadata, and deletion through API responses", async () => {
