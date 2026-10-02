@@ -857,16 +857,22 @@ describe("okou workflow automation scheduler", () => {
       const expectedOwner = queuedLaunch
         ? { ...later, identity: "later-owner-account" }
         : { ...owner, identity: "automation-owner" };
-      await expect(
-        runsApi.readRun(member, message.runId),
-      ).resolves.toMatchObject({
+      const pendingRun = await runsApi.readRun(member, message.runId);
+      expect(pendingRun).toMatchObject({
         status: "pending",
         source: {
           providerType: "codex-oauth-token",
           credentialScope: "member",
-          account: { status: "connected", id: expectedOwner.accountId },
         },
       });
+      // An immediate run retains the replaced account's credentials, but the
+      // public source hides that now-disconnected account. A queued run binds
+      // the still-connected replacement when its slot is released.
+      expect(pendingRun.source?.account).toStrictEqual(
+        queuedLaunch
+          ? { status: "connected", id: expectedOwner.accountId }
+          : { status: "unavailable" },
+      );
       await runsApi.heartbeatRunner(scenario.runnerGroup);
       const claim = await runsApi.claimRunnerJob(message.runId);
       expect(claim.cliAgentType).toBe("codex");
