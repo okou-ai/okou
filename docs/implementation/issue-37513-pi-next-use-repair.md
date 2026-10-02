@@ -58,7 +58,11 @@ with empty RETURNING clauses, outside this scope. No execution writer is edited.
 
 ## Verification boundary
 
-Affected Prettier, ESLint, normal API-cwd Oxlint and diff checks only. No local
-Vitest/dev server, full types, whole-API type-aware check or Knip is run; parent
-owns heavy verification and behavioral CI. This handoff does not claim the four
-CI failures resolved until CI confirms the changed scenarios.
+Affected Prettier, ESLint, normal API-cwd Oxlint and diff checks pass. No local
+Vitest/dev server, full types or whole-API type-aware check is run. One initial
+commit hook automatically ran Knip and found the now-unreferenced
+`commitPreparedVolumeServerSide`; that dead adapter was removed. Final local
+hook type/Knip jobs are explicitly delegated to the concurrent parent, while
+format/style/file-size/commitlint hooks pass. Parent owns heavy verification and
+behavioral CI. This handoff does not claim the four CI failures resolved until
+CI confirms the changed scenarios.
