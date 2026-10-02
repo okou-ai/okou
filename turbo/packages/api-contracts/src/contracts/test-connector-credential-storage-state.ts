@@ -214,6 +214,12 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       storage_version: z.number().int().positive().optional(),
     }),
     z.object({
+      action: z.literal("seed-builtin-thread-selection"),
+      chat_thread_id: z.uuid(),
+      connector_id: z.uuid(),
+      connector_slug: z.string(),
+    }),
+    z.object({
       action: z.literal("seed-custom-thread-selection"),
       chat_thread_id: z.uuid(),
       connector_id: z.uuid(),

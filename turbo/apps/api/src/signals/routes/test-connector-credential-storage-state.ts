@@ -790,6 +790,20 @@ async function setConnectorAccountState(
       };
 }
 
+async function seedBuiltinThreadSelection(
+  db: Db,
+  body: ConnectorCredentialStorageAction<"seed-builtin-thread-selection">,
+  signal: AbortSignal,
+) {
+  await db.insert(chatThreadConnectorSelections).values({
+    chatThreadId: body.chat_thread_id,
+    connectorId: body.connector_id,
+    connectorSlug: body.connector_slug,
+  });
+  signal.throwIfAborted();
+  return actionOk();
+}
+
 async function seedCustomThreadSelection(
   db: Db,
   body: ConnectorCredentialStorageAction<"seed-custom-thread-selection">,
@@ -929,6 +943,9 @@ async function mutateConnectorAccountCompatibilityState(
     }
     case "set-builtin-oauth-scope-facts": {
       return await setBuiltinOAuthScopeFacts(db, body, signal);
+    }
+    case "seed-builtin-thread-selection": {
+      return await seedBuiltinThreadSelection(db, body, signal);
     }
     case "seed-custom-thread-selection": {
       return await seedCustomThreadSelection(db, body, signal);

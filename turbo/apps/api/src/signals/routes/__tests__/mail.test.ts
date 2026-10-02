@@ -20,8 +20,11 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import {
+  readConnectorCredentialStorageState,
+  seedBuiltinThreadConnectorSelection,
   seedConnectorStorageRow,
   setBuiltinOAuthScopeFacts,
+  setConnectorDefaultState,
   setConnectorCredentialStorageState,
   setConnectorSecretOwner,
 } from "./helpers/connector-credential-storage-state";
@@ -683,6 +686,59 @@ describe("POST /api/mail/drafts/link", () => {
       detailAvailable: true,
       from: "sender@example.com",
     });
+  });
+
+  // Connector credential storage exception: no public flow leaves Gmail
+  // accounts without a default, so this unchanged case keeps the documented
+  // test-state boundary.
+  async function prepareGmailDraftWithoutDefaultAccount() {
+    const fixture = await seedGmailMailCardFixture();
+    mockGmailDraftApi();
+    const linked = await linkDraft(fixture);
+    const storage = await readConnectorCredentialStorageState(context, {
+      orgId: fixture.actor.orgId ?? "",
+      userId: fixture.actor.userId,
+      connectorSlug: "gmail",
+    });
+    const connectorId = storage.connector?.id;
+    if (!connectorId) {
+      throw new Error("Expected a stored Gmail connector account");
+    }
+    await seedBuiltinThreadConnectorSelection(context, {
+      chatThreadId: fixture.thread.id,
+      connectorId,
+      connectorSlug: "gmail",
+    });
+    await setConnectorDefaultState(context, {
+      orgId: fixture.actor.orgId ?? "",
+      userId: fixture.actor.userId,
+      connectorId,
+      isDefault: false,
+    });
+
+    return { fixture, linked, connectorId };
+  }
+
+  it("requires a default Gmail account when linking a draft in a new thread", async () => {
+    const { fixture } = await prepareGmailDraftWithoutDefaultAccount();
+    const newThread = await chat.createThread(fixture.actor, {
+      agentId: fixture.agent.agentId,
+      title: "Default Gmail projection",
+    });
+    const newDraft = await accept(
+      client().linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: newThread.id,
+          agentId: fixture.agent.agentId,
+          gmailDraftId: GMAIL_DRAFT_ID,
+        },
+      }),
+      [409],
+    );
+    expect(newDraft.body.error.message).toBe(
+      "Connect and authorize Gmail for this agent first",
+    );
   });
 
   it("clears the exact thread selection when its pinned Gmail account is deleted", async () => {
