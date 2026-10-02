@@ -9390,7 +9390,11 @@ export function createThreadClaimRunObjects(
     return preparation;
   });
   const decryptedSecrets$ = computed(async (get) => {
-    return (await get(internalPreparedConnectorSecrets$)) ?? {};
+    const preparation = get(internalPreparedConnectorSecrets$);
+    if (!preparation) {
+      throw new Error("Connector secrets have not been prepared");
+    }
+    return await preparation;
   });
   const connectorContext$ = computed(
     async (get): Promise<PreparedConnectorContext | CreateRunErrorResult> => {
