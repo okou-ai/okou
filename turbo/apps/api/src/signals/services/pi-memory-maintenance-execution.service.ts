@@ -782,18 +782,26 @@ async function failMaintenanceLaunch(
 }
 
 /** Atomic run + Runner job + job binding; the active-run row is last. */
+interface MaintenanceCommitInput {
+  readonly job: ClaimedPiMemoryPhase2Job;
+  readonly credential: PiMaintenanceCredential;
+  readonly selectionDigest: string;
+  readonly record: MaintenanceRunRecord;
+  readonly launch: MaintenanceLaunch;
+  readonly allowanceRefresh: PreparedUsageAllowanceRefresh | undefined;
+  readonly timing: ApiDispatchTimingCollector;
+}
+
+interface CommittedMaintenanceRun {
+  readonly runnerJobCreatedAt: Date;
+  readonly transactionReturnedAt: number;
+  readonly admissionTiming: AdmissionAttemptTiming;
+}
+
 async function commitMaintenanceRun(
   db: Db,
-  args: {
-    readonly job: ClaimedPiMemoryPhase2Job;
-    readonly credential: PiMaintenanceCredential;
-    readonly selectionDigest: string;
-    readonly record: MaintenanceRunRecord;
-    readonly launch: MaintenanceLaunch;
-    readonly allowanceRefresh: PreparedUsageAllowanceRefresh | undefined;
-    readonly timing: ApiDispatchTimingCollector;
-  },
-): Promise<PendingRunActivation> {
+  args: MaintenanceCommitInput,
+): Promise<CommittedMaintenanceRun> {
   const { job, record } = args;
   const enforceBuiltInCredits = isBuiltInModelProviderType(
     record.modelProvider.type,
@@ -859,12 +867,25 @@ async function commitMaintenanceRun(
     return rows;
   });
   // Commit is creation success; nothing after this point rejects the claim.
-  const transactionReturnedAt = now();
-  await admissionTiming.finish("pending");
+  return {
+    runnerJobCreatedAt: persisted.runnerJobCreatedAt,
+    transactionReturnedAt: now(),
+    admissionTiming,
+  };
+}
+
+/** Post-commit dispatch bookkeeping for the committed run. */
+async function finishCommittedMaintenanceRun(
+  args: MaintenanceCommitInput,
+  committed: CommittedMaintenanceRun,
+): Promise<PendingRunActivation> {
+  const { record } = args;
+  const { transactionReturnedAt } = committed;
+  await committed.admissionTiming.finish("pending");
   const phaseTiming = new ApiDispatchPhaseCollector(record.apiStartTime);
   phaseTiming.checkpoint(
     "api_dispatch_phase_queue_insert",
-    persisted.runnerJobCreatedAt.getTime(),
+    committed.runnerJobCreatedAt.getTime(),
   );
   phaseTiming.checkpoint("api_dispatch_phase_commit", transactionReturnedAt);
   phaseTiming.appendTo(args.timing);
@@ -887,7 +908,7 @@ async function commitMaintenanceRun(
     runnerNotification: maintenanceRunnerNotification(
       record,
       args.launch,
-      persisted.runnerJobCreatedAt,
+      committed.runnerJobCreatedAt,
     ),
     timing: {
       activationOrigin: "direct",
@@ -1012,7 +1033,7 @@ const launchMaintenanceRun$ = command(
       );
     }
     const [launch, allowanceRefresh] = prepared.value;
-    const activation = await commitMaintenanceRun(db, {
+    const commitInput = {
       job,
       credential: admitted.credential,
       selectionDigest,
@@ -1020,17 +1041,37 @@ const launchMaintenanceRun$ = command(
       launch,
       allowanceRefresh,
       timing,
-    });
+    };
+    const committed = await commitMaintenanceRun(db, commitInput);
     signal.throwIfAborted();
-    await set(
-      activatePendingRun$,
-      {
-        notification: activation.runnerNotification,
-        timing: activation.timing,
-        activationScheduledAt: now(),
-      },
+    // The run is committed. An abort still propagates, but any other failure
+    // from here is logged and the committed run is reported: a committed
+    // execution is never reported as a no-run.
+    const activated = await settle(
+      (async () => {
+        const activation = await finishCommittedMaintenanceRun(
+          commitInput,
+          committed,
+        );
+        signal.throwIfAborted();
+        await set(
+          activatePendingRun$,
+          {
+            notification: activation.runnerNotification,
+            timing: activation.timing,
+            activationScheduledAt: now(),
+          },
+          signal,
+        );
+      })(),
       signal,
     );
+    if (!activated.ok) {
+      log.error("Pi maintenance run activation failed after commit", {
+        runId: record.runId,
+        error: activated.error,
+      });
+    }
     // The approved log-only presigned URL cache write, after commit.
     if (preparedMounts.ok) {
       const cache = await settle(

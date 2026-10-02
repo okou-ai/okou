@@ -2188,6 +2188,41 @@ test("writes the memory archive URL cache only after committing the run", async 
   expect(BigInt(xids.cacheXid)).toBeGreaterThan(BigInt(xids.commitXid));
 });
 
+test("reports a run committed before an abort on the next pass, never as stale", async () => {
+  const job = await createPhase2WorkerFixture("abort-after-commit");
+  await insertPhase2Candidates(job.scope, [{ piSessionId: randomUUID() }]);
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, testContext().signal]);
+  // The Runner notification is published only after the run commits.
+  testContext().mocks.ably.publish.mockImplementation((event: unknown) => {
+    if (event === "job") {
+      controller.abort();
+    }
+    return Promise.resolve();
+  });
+
+  await expect(job.work(undefined, signal)).rejects.toMatchObject({
+    name: "AbortError",
+  });
+
+  const bound = await readPhase2Job(job.scope);
+  expect(bound).toMatchObject({ status: "leased", lastErrorClass: null });
+  const runId = bound?.maintenanceRunId;
+  if (!runId) {
+    throw new Error("Expected the committed run to stay bound");
+  }
+  await expect(
+    db()
+      .select({ status: agentRuns.status })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId)),
+  ).resolves.toStrictEqual([{ status: "pending" }]);
+  await expect(job.work()).resolves.toStrictEqual({
+    outcome: "dispatched",
+    runId,
+  });
+});
+
 test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
   const job = await createPhase2WorkerFixture("quota-max3");
   const native = await createPhase2Provider(
