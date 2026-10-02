@@ -3504,8 +3504,6 @@ export function createThreadClaimRunObjects(
         }
       : null;
   });
-  const queuedModelInputsInternalPolicyFacts$ =
-    state<EnsuredOrgModelPolicyFacts | null>(null);
   // The head's model input: an automation's from its execution input, a
   // prompt's from its prepared arguments and feature-switch context.
   const queuedModelInputsInput$ = computed(
@@ -3609,13 +3607,12 @@ export function createThreadClaimRunObjects(
         eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId),
       );
   });
-  const policyFacts$ = computed((get) => {
-    const facts = get(queuedModelInputsInternalPolicyFacts$);
-    if (!facts) {
-      throw new Error("Queued model policy must be prepared before routing");
-    }
-    return facts;
-  });
+  // Policies are projected from the claim's catalog snapshot.
+  const policyFacts$ = computed(
+    async (get): Promise<EnsuredOrgModelPolicyFacts> => {
+      return await get(initialFacts$);
+    },
+  );
   const policy$ = computed(async (get) => {
     const [selection, facts] = await Promise.all([
       get(queuedModelInputsSelection$),
@@ -3634,7 +3631,6 @@ export function createThreadClaimRunObjects(
     );
   });
   const queuedModelSources = {
-    internalPolicyFacts$: queuedModelInputsInternalPolicyFacts$,
     input$: queuedModelInputsInput$,
     selection$: queuedModelInputsSelection$,
     orgMetadata$: orgMetadata$,
@@ -4070,6 +4066,8 @@ export function createThreadClaimRunObjects(
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
+    // Policy facts are prepared for every routed pin before admission.
+    const policyFacts = await get(queuedProviderAdmissionPolicyFacts$);
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
@@ -4082,7 +4080,7 @@ export function createThreadClaimRunObjects(
         return get(personalSubscription$);
       },
       capabilities: () => {
-        return get(queuedProviderAdmissionPolicyFacts$).orgPlanCapabilities;
+        return policyFacts.orgPlanCapabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$);
@@ -4096,7 +4094,6 @@ export function createThreadClaimRunObjects(
     input$: queuedModelCommandsInput$,
     capabilities$: queuedModelCommandsCapabilities$,
     initialPolicies$: queuedModelCommandsInitialPolicies$,
-    internalPolicyFacts$: queuedModelCommandsInternalPolicyFacts$,
   } = queuedModelSources;
   const initialFacts$ = computed(async (get) => {
     const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
@@ -4114,14 +4111,6 @@ export function createThreadClaimRunObjects(
       stored,
     });
   });
-  const orgModelPolicyInitializationInitializeModelPolicy$ = command(
-    async ({ get }, signal: AbortSignal) => {
-      const facts = await get(initialFacts$);
-      signal.throwIfAborted();
-      return facts;
-    },
-  );
-  const ensureModelPolicy$ = orgModelPolicyInitializationInitializeModelPolicy$;
   const allowanceInput$ = computed(async (get) => {
     return { orgId: (await get(queuedModelCommandsInput$)).orgId };
   });
@@ -4163,24 +4152,10 @@ export function createThreadClaimRunObjects(
     },
   );
   const queuedModelCommandsRefreshUsageAllowance$ = resolveUsageAllowance$;
-  const queuedModelCommandsInitializeModelPolicy$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const input = await get(queuedModelCommandsInput$);
-      signal.throwIfAborted();
-      const facts =
-        input.userId === "__no_preference__"
-          ? await get(initialFacts$)
-          : await set(ensureModelPolicy$, signal);
-      signal.throwIfAborted();
-      set(queuedModelCommandsInternalPolicyFacts$, facts);
-    },
-  );
   const commands = {
-    initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
   };
-  const { internalPolicyFacts$, selection$, capabilities$, initialPolicies$ } =
-    queuedModelSources;
+  const { selection$, capabilities$, initialPolicies$ } = queuedModelSources;
   const { modelPin$ } = routing;
   const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
   const {
@@ -4188,11 +4163,10 @@ export function createThreadClaimRunObjects(
     builtInRuntimeRoute$,
   } = runtime;
   const { providerAdmission$ } = admission;
-  const { initializeModelPolicy$, refreshUsageAllowance$ } = commands;
+  const { refreshUsageAllowance$ } = commands;
   const queuedModelResolveQueuedModel$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(internalPolicyFacts$, null);
       const [selection] = await Promise.all([
         get(selection$),
         get(capabilities$),
@@ -4215,7 +4189,6 @@ export function createThreadClaimRunObjects(
       ) {
         return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
       }
-      await set(initializeModelPolicy$, signal);
       const pin = await get(modelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {
