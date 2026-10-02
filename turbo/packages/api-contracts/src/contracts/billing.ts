@@ -89,7 +89,6 @@ const billingStatusResponseSchema = z.object({
   autoRechargeAllowed: z.boolean(),
   supportByok: z.boolean(),
   restrictedBuiltInModels: z.boolean(),
-  videoGenerationAllowed: z.boolean(),
   workflowWebhookAutomationAllowed: z.boolean(),
   credits: z.number(),
   onboardingPaymentPending: z.boolean(),

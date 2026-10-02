@@ -1664,8 +1664,15 @@
     {
       "idx": 1315,
       "version": "7",
-      "when": 1790951589381,
-      "tag": "1315_retire_legacy_free_tier",
+      "when": 1790951120044,
+      "tag": "1315_drop_retired_video_entitlement",
+      "breakpoints": true
+    },
+    {
+      "idx": 1316,
+      "version": "7",
+      "when": 1790954198092,
+      "tag": "1316_retire_legacy_free_tier",
       "breakpoints": true
     }
   ]

@@ -8,7 +8,6 @@ interface OrgTierLimits {
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
   readonly audioDailyRateLimit: number;
@@ -29,7 +28,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     autoRechargeAllowed: false,
     supportByok: true,
     restrictedBuiltInModels: true,
-    videoGenerationAllowed: false,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: 10,
     audioDailyRateLimit: 10,
@@ -43,7 +41,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     autoRechargeAllowed: true,
     supportByok: true,
     restrictedBuiltInModels: false,
-    videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: null,
     audioDailyRateLimit: 300,
@@ -57,7 +54,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     autoRechargeAllowed: true,
     supportByok: true,
     restrictedBuiltInModels: false,
-    videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: true,
     audioLifetimeLimit: null,
     audioDailyRateLimit: 500,
@@ -71,7 +67,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     autoRechargeAllowed: true,
     supportByok: true,
     restrictedBuiltInModels: false,
-    videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: true,
     audioLifetimeLimit: null,
     audioDailyRateLimit: 500,

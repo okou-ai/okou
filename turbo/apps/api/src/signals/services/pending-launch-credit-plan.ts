@@ -20,7 +20,6 @@ const capabilitiesSchema = z.object({
   autoRechargeAllowed: z.boolean(),
   supportByok: z.boolean(),
   restrictedBuiltInModels: z.boolean().nullable(),
-  videoGenerationAllowed: z.boolean(),
   workflowWebhookAutomationAllowed: z.boolean(),
   audioLifetimeLimit: z.number().nullable(),
   audioDailyRateLimit: z.number(),
@@ -40,7 +39,7 @@ export function pendingCreditPlanSql(orgId: string) {
     'canBuyConcurrency', ${orgPlanEntitlements.canBuyConcurrency}, 'canBuyCredits', ${orgPlanEntitlements.canBuyCredits},
     'showUsagePack', ${orgPlanEntitlements.showUsagePack}, 'autoRechargeAllowed', ${orgPlanEntitlements.autoRechargeAllowed},
     'supportByok', ${orgPlanEntitlements.supportByok}, 'restrictedBuiltInModels', ${orgPlanEntitlements.restrictedBuiltInModels},
-    'videoGenerationAllowed', ${orgPlanEntitlements.videoGenerationAllowed}, 'workflowWebhookAutomationAllowed', ${orgPlanEntitlements.workflowWebhookTriggerAllowed},
+    'workflowWebhookAutomationAllowed', ${orgPlanEntitlements.workflowWebhookTriggerAllowed},
     'audioLifetimeLimit', ${orgPlanEntitlements.audioLifetimeLimit}, 'audioDailyRateLimit', ${orgPlanEntitlements.audioDailyRateLimit},
     'audioDailyDurationSeconds', ${orgPlanEntitlements.audioDailyDurationSeconds})`
     .mapWith(zodDriverValueDecoder(capabilitiesSchema))

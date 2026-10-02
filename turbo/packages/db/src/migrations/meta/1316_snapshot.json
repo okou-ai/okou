@@ -1,6 +1,6 @@
 {
-  "id": "acf52351-2511-4197-813a-8ff4660e26c2",
-  "prevId": "1f001ecf-6eb4-4b29-a20f-bb605758897e",
+  "id": "611fe64f-f2fc-494f-b4ff-c80ec0952692",
+  "prevId": "acf52351-2511-4197-813a-8ff4660e26c2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -23310,6 +23310,14 @@
           "name": "chk_org_metadata_model_mode",
           "value": "\"org_metadata\".\"model_mode\" IN ('auto', 'custom')"
         },
+        "chk_org_metadata_tier_not_free": {
+          "name": "chk_org_metadata_tier_not_free",
+          "value": "\"org_metadata\".\"tier\" <> 'free'"
+        },
+        "chk_org_metadata_pending_target_not_free": {
+          "name": "chk_org_metadata_pending_target_not_free",
+          "value": "\"org_metadata\".\"pending_subscription_target_tier\" IS NULL OR \"org_metadata\".\"pending_subscription_target_tier\" <> 'free'"
+        },
         "chk_org_metadata_tier_not_pro_suspend": {
           "name": "chk_org_metadata_tier_not_pro_suspend",
           "value": "\"org_metadata\".\"tier\" <> 'pro-suspend'"
@@ -23765,6 +23773,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "chk_org_plan_entitlements_plan_key_not_free": {
+          "name": "chk_org_plan_entitlements_plan_key_not_free",
+          "value": "\"org_plan_entitlements\".\"plan_key\" <> 'free'"
+        },
         "chk_org_plan_entitlements_plan_key_not_pro_suspend": {
           "name": "chk_org_plan_entitlements_plan_key_not_pro_suspend",
           "value": "\"org_plan_entitlements\".\"plan_key\" <> 'pro-suspend'"

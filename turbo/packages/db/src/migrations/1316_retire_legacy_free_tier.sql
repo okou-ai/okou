@@ -61,7 +61,6 @@ SET
   "auto_recharge_allowed" = false,
   "support_byok" = true,
   "restricted_built_in_models" = true,
-  "video_generation_allowed" = false,
   "workflow_webhook_trigger_allowed" = false,
   "audio_lifetime_limit" = 10,
   "audio_daily_rate_limit" = 10,

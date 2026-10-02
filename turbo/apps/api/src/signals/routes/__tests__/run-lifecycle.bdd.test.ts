@@ -15445,7 +15445,6 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
       autoRechargeAllowed: false,
       supportByok: true,
       restrictedBuiltInModels: true,
-      videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: false,
       stripeSubscriptionId: granted.subscriptionId,
       stripePriceId: "price_bdd_pro",

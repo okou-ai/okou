@@ -10,7 +10,7 @@ await client.connect();
 const schema = `legacy_free_retirement_${randomUUID().replaceAll("-", "")}`;
 const migration = await readFile(
   new URL(
-    "../src/migrations/1315_retire_legacy_free_tier.sql",
+    "../src/migrations/1316_retire_legacy_free_tier.sql",
     import.meta.url,
   ),
   "utf8",
@@ -57,7 +57,6 @@ try {
       auto_recharge_allowed boolean NOT NULL DEFAULT false,
       support_byok boolean NOT NULL DEFAULT false,
       restricted_built_in_models boolean NOT NULL DEFAULT false,
-      video_generation_allowed boolean NOT NULL DEFAULT true,
       workflow_webhook_trigger_allowed boolean NOT NULL DEFAULT false,
       audio_lifetime_limit integer DEFAULT 10,
       audio_daily_rate_limit integer NOT NULL DEFAULT 10,
@@ -174,7 +173,6 @@ try {
             auto_recharge_allowed: false,
             support_byok: true,
             restricted_built_in_models: true,
-            video_generation_allowed: false,
             workflow_webhook_trigger_allowed: false,
             audio_lifetime_limit: 10,
             audio_daily_rate_limit: 10,
