@@ -1,59 +1,68 @@
-# Chat model prefetch
+# Chat run context signals
 
-The model group shares request-scoped facts between direct-send validation,
-organization capacity and Thread run preparation. It is independent of the
-connector prefetch changes.
+`createAgentRunContextSignals(userId, orgId, agentId)` owns one identity-scoped
+set of read-only async computeds. The interface contains exactly three plain IDs
+and computeds; no commands, state or writes. The cross-graph exception is recorded
+in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 
-## Captured facts
+## Independently consumable groups
 
-- Organization plan capabilities reuse the authenticated request's read.
-- Organization credits and model mode are captured together.
-- The model catalog (model rows and routes) reuses the send's catalog.
-- Organization model policies are captured once.
-- Connected member model accounts, their configured model and encrypted
-  account secrets are captured in one joined query. Route selection, account
-  capture, framework fallback and the selected member source reuse those rows.
-- Subscription routing derives from the captured catalog instead of joining
-  model routes to the catalog again.
+- `agent$`: Agent configuration and its organization-default identity.
+- `plan$`: organization plan capabilities; capacity consumes only this group.
+- `modelFacts$`: the catalog, routes, organization policies, model mode and credits.
+  It shares `plan$` rather than rereading the entitlement.
+- `memberModels$`: connected member model accounts, configured models and encrypted
+  account secrets. Routing and source selection share these rows.
+- `memberMetadata$`, `permissionGrants$`, `workflows$`, `featureSwitches$`,
+  `disabledPaidTools$`, `environment$`, `connectorSelection$`,
+  `customConnectorDefinitions$` and `catalog$`: the existing Agent-bootstrap
+  read definitions, individually consumable instead of one aggregate promise.
 
-Organization and member promises travel separately from the Agent bootstrap:
-model consumers never wait for the complete connector/workflow package.
-The send awaits model facts before enqueue, so these queries do not compete
-with its enqueue transaction. Read failures propagate without rereading.
+S1 creates the interface once. Authorization reads `agent$`; model validation
+reads `modelFacts$` and `memberModels$`. It does not await unrelated groups.
+After enqueue commits, `preloadAgentRunContext$` triggers all groups without
+awaiting them and owns their settled promises with `waitUntil`. Rejections stay
+cached in the original computeds; consumers fail fast without a second loader.
+No preloading competes with the enqueue transaction. There is no `bootstrap$`
+aggregate and no transported `PrefetchedAgentBootstrap`/`PrefetchedModelBootstrap`.
 
-## Identity and missing prefetch
+## Claim identity and graph boundaries
 
-Organization facts are reusable only for the same organization. Member facts
-also require the same user and Agent as the picked head. A different head gets
-one local member loader; organization facts remain shared across one pick.
-A pick without a request prefetch starts the organization loader with its
-capacity check. The member loader starts when the execution identity is known.
-No process-level cache or snapshot age policy is introduced.
+The lease UPDATE joins `chat_threads` and returns `userId` and `agentId` with its
+existing claim fields in one statement. At the start of pick, matching IDs reuse
+the supplied interface. Missing or mismatched IDs construct the same factory.
+An organization match reuses `plan$` and `modelFacts$`; an organization-and-user
+match also reuses `memberModels$`, independent of Agent identity. Only the whole
+read-only interface crosses into Thread; pick's individual graph nodes do not.
+The request Store memoizes the computeds. Later-request queue drains build their
+own interface, and no process cache or age policy is introduced.
 
-## Credit admission
+Integration reconciliation may change the default Agent after the lease; that
+execution gets a new Agent-scoped interface and retains matching org/member data.
+The ordinary web path does not wait for the queue head to begin identity reads.
 
-Ethan explicitly approved using the prefetched credit balance on October 2, 2026. Both preparation admission checks use that balance, not a new organization
-balance query. Expired-credit and usage-pack calculations retain their existing
-reads. The snapshot can be stale if another run spends credits or a payment
-arrives before admission; that window is intentional.
+## Credit and plan semantics
 
-The persisted free-plan credit-admission bit also derives from the captured
-plan. Model-account transaction validation, thread/session and queue fences,
-and official-workflow admission remain intact. This change does not add a
-replacement lock or retry.
+Ethan approved using the captured credits balance on October 2, 2026. Both
+preparation admission checks use that snapshot. Expired-credit and usage-pack
+calculations retain their existing reads. Another run's spending or a payment
+between capture and admission does not replace the balance snapshot.
+The captured plan also determines the free-plan admission bit. Thread does not
+restore plan `FOR UPDATE`; the Pi maintenance entrypoint is unchanged and is
+separate work. Account transaction validation, official workflow admission,
+thread/session, lease and queue fences remain intact.
 
-## Scope and verification
+## Scope and acceptance boundary
 
-This is the model group only (plan, metadata, model catalog/routes, policies and
-member accounts). Agent reads that join organization metadata, connector facts,
-official workflows, storage, allowances and thread/message reads are separate
-groups; this PR does not claim the entire endpoint meets the no-duplicate-query
-terminal state.
+This change only restructures existing Agent/model prefetch sources. It does not
+add Connector account/credential prefetch (#37563), official-workflow/storage or
+allowance groups. Existing Connector current-catalog cutover revalidation remains
+owned by #37563; its reading boundary still waits only for `catalog$`, not the
+entire context. Additional Connector snapshot deduplication must land in that PR.
 
-The route regression pauses the external S3 attachment response after model
-capture, changes the organization policy through its production API, and verifies
-the created and claimable run still uses the captured provider. Test setup and
-assertions use production APIs; no new database pause point or synthetic billing
-seed is introduced. Existing web/CLI, model selection, account
-and queue tests remain CI coverage. Production savings (previously estimated
-at 50–90 ms) require post-deployment traces and are not measured by this PR.
+Regression coverage uses real send/Run/Runner APIs for a matching context, queued
+input drained in a later request without a context, model policy changes while
+an external attachment response is pending, and fail-fast matching preload
+failure. Existing catalog-cutover behavior is preserved. Deployed parent/PR
+trace comparison reports statement/table counts separately from runner output,
+and does not claim production latency improvements from a small sample.

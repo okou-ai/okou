@@ -224,28 +224,3 @@ export interface BootstrapAgent {
   readonly modelProviderId: string | null;
   readonly selectedModel: string | null;
 }
-
-/** Internal Agent facts remain independently readable before authorization. */
-export function createBootstrapAgent(agentId: string) {
-  return computed(async (get): Promise<BootstrapAgent | null> => {
-    const [agent] = await get(db$)
-      .select({
-        id: agents.id,
-        name: agents.name,
-        orgId: agents.orgId,
-        defaultAgentId: orgMetadata.defaultAgentId,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        displayName: agents.displayName,
-        description: agents.description,
-        sound: agents.sound,
-        modelProviderId: agents.modelProviderId,
-        selectedModel: agents.selectedModel,
-      })
-      .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-      .where(eq(agents.id, agentId))
-      .limit(1);
-    return agent ?? null;
-  });
-}

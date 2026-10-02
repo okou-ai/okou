@@ -1,9 +1,21 @@
-import { computed, type Computed } from "ccstate";
-import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command, computed, type Computed } from "ccstate";
+import { waitUntil } from "../context/wait-until";
+import { settle } from "../utils";
 import {
-  createBootstrapAgent,
-  type BootstrapAgent,
-} from "./agent-data.service";
+  createModelFacts,
+  createMemberModelBootstrap,
+  type OrgModelBootstrap,
+  type MemberModelBootstrap,
+  type RunOrgMetadata,
+} from "./model-bootstrap.service";
+import {
+  loadOrgPlanCapabilities,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
+import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { BootstrapAgent } from "./agent-data.service";
+import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import {
   createAgentCatalogIdentity,
@@ -63,25 +75,29 @@ export interface BootstrapEnvironment {
   readonly variables: readonly BootstrapVariable[];
 }
 
-export interface AgentBootstrap {
-  readonly memberMetadata: ExecutionMemberMetadata;
-  readonly connectorSelection: AgentConnectorSelection;
-  readonly permissionGrants: readonly ConnectorPermissionGrant[];
-  readonly workflows: readonly SelectedAgentWorkflow[];
-  readonly featureSwitchContext: BootstrapFeatureSwitchContext;
-  readonly agent: BootstrapAgent | null;
-  readonly disabledPaidToolIds: readonly string[];
-  readonly environment: BootstrapEnvironment;
-  readonly customConnectorDefinitions: readonly CustomConnectorExecutionDefinition[];
-  readonly catalog: AgentBootstrapCatalog;
-}
-
-/** The original speculative Promise is transported without a settled fallback. */
-export interface PrefetchedAgentBootstrap {
+/** The only cross-graph read-only signal interface; no state or commands. */
+export interface AgentRunContextSignals {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
-  readonly bootstrap: Promise<AgentBootstrap>;
+  readonly agent$: Computed<Promise<BootstrapAgent | null>>;
+  readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
+  readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
+  readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
+  readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
+  readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
+  readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
+  readonly permissionGrants$: Computed<
+    Promise<readonly ConnectorPermissionGrant[]>
+  >;
+  readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
+  readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
+  readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
+  readonly environment$: Computed<Promise<BootstrapEnvironment>>;
+  readonly customConnectorDefinitions$: Computed<
+    Promise<readonly CustomConnectorExecutionDefinition[]>
+  >;
+  readonly catalog$: Computed<Promise<AgentBootstrapCatalog>>;
 }
 
 function catalogMetadataSlugs(selection: AgentConnectorSelection) {
@@ -116,13 +132,43 @@ function normalizedCatalog(
 }
 
 /** Compose the authoritative read definitions once per execution identity. */
-export function createAgentBootstrap(
+export function createAgentRunContextSignals(
   userId: string,
   orgId: string,
   agentId: string,
-): Computed<Promise<AgentBootstrap>> {
+): AgentRunContextSignals {
   const scope = { userId, orgId, agentId };
-  const agent$ = createBootstrapAgent(agentId);
+  const orgMetadata$ = createRunOrgMetadata(orgId);
+  const plan$ = computed((get) => {
+    return loadOrgPlanCapabilities(get(db$), orgId);
+  });
+  const modelFacts$ = computed(async (get) => {
+    const [plan, org] = await Promise.all([get(plan$), get(orgMetadata$)]);
+    return await get(createModelFacts(orgId, plan, org));
+  });
+  const memberModels$ = createMemberModelBootstrap(orgId, userId);
+  const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
+    const [[row], org] = await Promise.all([
+      get(db$)
+        .select({
+          id: agents.id,
+          name: agents.name,
+          orgId: agents.orgId,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          displayName: agents.displayName,
+          description: agents.description,
+          sound: agents.sound,
+          modelProviderId: agents.modelProviderId,
+          selectedModel: agents.selectedModel,
+        })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1),
+      get(orgMetadata$),
+    ]);
+    return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
+  });
   const memberMetadata$ = createExecutionMemberMetadata(scope);
   const connectorSelection$ = createAgentConnectorSelection(scope);
   const permissionGrants$ = createConnectorPermissionGrants(scope);
@@ -192,44 +238,52 @@ export function createAgentBootstrap(
         : [];
     return normalizedCatalog(captured, connectorSlugs, rows);
   });
-  return computed(async (get): Promise<AgentBootstrap> => {
-    const [
-      agent,
-      memberMetadata,
-      connectorSelection,
-      permissionGrants,
-      workflows,
-      featureSwitchContext,
-      disabledPaidTools,
-      environment,
-      customConnectorDefinitions,
-      catalog,
-    ] = await Promise.all([
-      get(agent$),
-      get(memberMetadata$),
-      get(connectorSelection$),
-      get(permissionGrants$),
-      get(workflows$),
-      get(featureSwitchContext$),
-      get(disabledPaidTools$),
-      get(environment$),
-      get(customConnectorDefinitions$),
-      get(catalog$),
-    ]);
-    return {
-      agent,
-      memberMetadata,
-      connectorSelection,
-      permissionGrants,
-      workflows,
-      featureSwitchContext,
-      disabledPaidToolIds: disabledPaidTools,
-      environment,
-      customConnectorDefinitions,
-      catalog,
-    };
-  });
+  return {
+    userId,
+    orgId,
+    agentId,
+    agent$,
+    orgMetadata$,
+    plan$,
+    modelFacts$,
+    memberModels$,
+    memberMetadata$,
+    connectorSelection$,
+    permissionGrants$,
+    workflows$,
+    featureSwitches$: featureSwitchContext$,
+    disabledPaidTools$,
+    environment$,
+    customConnectorDefinitions$,
+    catalog$,
+  };
 }
+
+/** Start reads without awaiting them; preserve each cached rejection for consumers. */
+export const preloadAgentRunContext$ = command(
+  ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
+    signal.throwIfAborted();
+    const nodes: readonly Computed<Promise<unknown>>[] = [
+      signals.agent$,
+      signals.orgMetadata$,
+      signals.plan$,
+      signals.modelFacts$,
+      signals.memberModels$,
+      signals.memberMetadata$,
+      signals.connectorSelection$,
+      signals.permissionGrants$,
+      signals.workflows$,
+      signals.featureSwitches$,
+      signals.disabledPaidTools$,
+      signals.environment$,
+      signals.customConnectorDefinitions$,
+      signals.catalog$,
+    ];
+    for (const node of nodes) {
+      waitUntil(settle(get(node)));
+    }
+  },
+);
 
 function createAgentDisabledPaidTools(userId: string, orgId: string) {
   return computed(async (get): Promise<readonly string[]> => {
@@ -350,5 +404,20 @@ function createAgentEnvironment(userId: string, orgId: string) {
         ),
       );
     return { variables: rows };
+  });
+}
+
+function createRunOrgMetadata(orgId: string) {
+  return computed(async (get) => {
+    const [row] = await get(db$)
+      .select({
+        credits: orgMetadata.credits,
+        modelMode: orgMetadata.modelMode,
+        defaultAgentId: orgMetadata.defaultAgentId,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    return row ?? null;
   });
 }

@@ -21,12 +21,9 @@ import {
 } from "./execution-connector-sources.service";
 import { createModelSourceSnapshot } from "./execution-model-source.service";
 import {
-  createOrgModelBootstrap,
-  createMemberModelBootstrap,
-  type PrefetchedModelBootstrap,
-  type OrgModelBootstrap,
-  type MemberModelBootstrap,
-} from "./model-bootstrap.service";
+  createAgentRunContextSignals,
+  type AgentRunContextSignals,
+} from "./agent-run-context.signals";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import {
   prepareGatewayModelEnvironment,
@@ -81,7 +78,6 @@ import {
   prepareCallbacks$ as prepareExecutionCallbacks$,
   type ExecutionCallback,
 } from "./execution-callbacks.service";
-import { createBootstrapAgent } from "./agent-data.service";
 import {
   agentConnectorScopeFromRows,
   type AgentConnectorScopeSnapshot,
@@ -222,11 +218,7 @@ import {
   type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
   type AgentExecutionDefinition,
 } from "./agent-execution-config";
-import {
-  createAgentBootstrap,
-  type AgentBootstrap,
-  type PrefetchedAgentBootstrap,
-} from "./agent-bootstrap.service";
+
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import {
   type AgentPhoneDeliveryTarget,
@@ -3089,21 +3081,21 @@ type CapturedRunAdmissionInput = RunAdmissionInput & { readonly at: Date };
 /** Plan, credit and usage-pack reads for one admission check. */
 function createRunAdmissionCreditReads(
   input: CapturedRunAdmissionInput,
-  orgModels$: Computed<Promise<OrgModelBootstrap>>,
+  context: AgentRunContextSignals,
 ) {
   const capturedRunAdmissionReadInput$ = computed(() => {
     return Promise.resolve(input);
   });
   const capturedRunAdmissionCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      return (await get(orgModels$)).capabilities;
+      return await get(context.plan$);
     },
   );
   const runAdmissionCreditBalance$ = computed(async (get) => {
     const { orgId, at } = await get(capturedRunAdmissionReadInput$);
 
     const [models, [expired]] = await Promise.all([
-      get(orgModels$),
+      get(context.modelFacts$),
       get(db$)
         .select({
           total: sum(creditExpiresRecord.remaining).mapWith(
@@ -3169,7 +3161,7 @@ function createRunAdmissionCreditReads(
 /** Allowance window and personal-subscription reads for one admission check. */
 function createRunAdmissionAllowanceReads(
   input: CapturedRunAdmissionInput,
-  memberModels$: Computed<Promise<MemberModelBootstrap>>,
+  context: AgentRunContextSignals,
 ) {
   const capturedRunAdmissionReadInput$ = computed(() => {
     return Promise.resolve(input);
@@ -3264,7 +3256,7 @@ function createRunAdmissionAllowanceReads(
     const input = await get(capturedRunAdmissionReadInput$);
     return isMemberSubscriptionRoute({
       catalog: input.catalog,
-      member: (await get(memberModels$)).member,
+      member: (await get(context.memberModels$)).member,
       model: input.selectedModel,
       providerType: input.modelProviderType,
     });
@@ -3279,9 +3271,8 @@ type RunAdmissionReads = ReturnType<typeof createRunAdmissionCreditReads> &
 
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
-  prefetchedBootstrap?: PrefetchedAgentBootstrap,
-  prefetchedModels?: PrefetchedModelBootstrap,
-  suppliedOrgModels$?: Computed<Promise<OrgModelBootstrap>>,
+  context: AgentRunContextSignals,
+  prefetchOutcome: "hit" | "not_provided" | "identity_mismatch",
 ): ThreadClaimRunObjects {
   // Re-resolve the queued pin against one current catalog snapshot per claim.
   // Stripe entitlement refresh for an allowance window runs outside the
@@ -3289,32 +3280,11 @@ export function createThreadClaimRunObjects(
   const preparedAllowanceRefresh$ = computed(async (get) => {
     return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
   });
-  const orgModels$ = computed((get) => {
-    if (suppliedOrgModels$) {
-      return get(suppliedOrgModels$);
-    }
-    return prefetchedModels?.orgId === claim.orgId
-      ? prefetchedModels.org
-      : get(createOrgModelBootstrap(claim.orgId));
-  });
+  const orgModels$ = context.modelFacts$;
   const claimCatalog$ = computed(async (get) => {
     return (await get(orgModels$)).catalog;
   });
-  const localMemberModels$ = computed(async (get) => {
-    const input = await get(queuedModelInputsInput$);
-    return createMemberModelBootstrap(input.orgId, input.userId);
-  });
-  const memberModels$ = computed(async (get) => {
-    const input = await get(queuedModelInputsInput$);
-    if (
-      prefetchedModels?.orgId === input.orgId &&
-      prefetchedModels.userId === input.userId &&
-      prefetchedModels.agentId === (await get(head$))?.agentId
-    ) {
-      return await prefetchedModels.member;
-    }
-    return await get(await get(localMemberModels$));
-  });
+  const memberModels$ = context.memberModels$;
   const pickStartedAt$ = computed(() => {
     return now();
   });
@@ -3553,7 +3523,7 @@ export function createThreadClaimRunObjects(
   });
   const queuedModelInputsCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      return (await get(orgModels$)).capabilities;
+      return await get(context.plan$);
     },
   );
   const queuedModelInputsInitialPolicies$ = computed(async (get) => {
@@ -3728,26 +3698,7 @@ export function createThreadClaimRunObjects(
       if (input.featureSwitchContext) {
         return input.featureSwitchContext;
       }
-      const rows = await get(db$)
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(
-          and(
-            eq(userFeatureSwitches.orgId, input.orgId),
-            inArray(userFeatureSwitches.userId, [
-              input.userId,
-              ORG_SENTINEL_USER_ID,
-            ]),
-          ),
-        );
-      return {
-        orgId: input.orgId,
-        userId: input.userId,
-        overrides: userFeatureSwitchOverridesFromRows(rows, input.userId),
-      };
+      return await get(context.featureSwitches$);
     },
   );
   const keyIdsByVendor$ = computed(async (get) => {
@@ -4362,29 +4313,8 @@ export function createThreadClaimRunObjects(
     },
   );
   const promptFeaturesFeatures$ = computed(
-    async (get): Promise<FeatureSwitchContext> => {
-      const { head } = await get(promptInputInput$);
-      const db = get(db$);
-      const rows = await db
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(
-          and(
-            eq(userFeatureSwitches.orgId, head.orgId),
-            inArray(userFeatureSwitches.userId, [
-              head.userId,
-              ORG_SENTINEL_USER_ID,
-            ]),
-          ),
-        );
-      return {
-        orgId: head.orgId,
-        userId: head.userId,
-        overrides: userFeatureSwitchOverridesFromRows(rows, head.userId),
-      };
+    (get): Promise<FeatureSwitchContext> => {
+      return get(context.featureSwitches$);
     },
   );
   const promptProjectionProjection$ = computed(async (get) => {
@@ -6946,7 +6876,7 @@ export function createThreadClaimRunObjects(
             return observation.agent;
           }
           // Authorization must not join the complete speculative package.
-          return await get(await get(localAgentDefinition$));
+          return await get((await get(executionContext$)).agent$);
         },
         {
           authorized_request_agent_source:
@@ -6955,95 +6885,83 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const claimBootstrapIdentity$ = computed(async (get) => {
-    const [{ command }, agentId, head] = await Promise.all([
+  const executionContext$ = computed(async (get) => {
+    const [{ command }, agentId] = await Promise.all([
       get(selectedIdentityInputIdentityInput$),
       get(preCreateAgentIdAgentId$),
-      get(head$),
     ]);
-    if (!agentId || !head) {
-      throw new Error("Bootstrap requires a selected execution identity");
-    }
-    const identity = {
-      userId: command.owner.userId,
-      orgId: command.owner.orgId,
-      chatThreadId: head.chatThreadId,
-      agentId,
-    };
-    const hit =
-      prefetchedBootstrap !== undefined &&
-      prefetchedBootstrap.userId === identity.userId &&
-      prefetchedBootstrap.orgId === identity.orgId &&
-      prefetchedBootstrap.agentId === identity.agentId &&
-      head.userId === identity.userId &&
-      head.orgId === identity.orgId &&
-      head.agentId === identity.agentId;
-    return { identity, hit, prefetched: hit ? prefetchedBootstrap : undefined };
-  });
-  const localAgentDefinition$ = computed(async (get) => {
-    const agentId = await get(preCreateAgentIdAgentId$);
     if (!agentId) {
-      throw new Error("Authorization requires an Agent identity");
+      throw new Error("Execution context requires an Agent identity");
     }
-    return createBootstrapAgent(agentId);
-  });
-  const localBootstrap$ = computed(async (get) => {
-    const { identity } = await get(claimBootstrapIdentity$);
-    return createAgentBootstrap(
-      identity.userId,
-      identity.orgId,
-      identity.agentId,
+    if (
+      context.orgId === command.owner.orgId &&
+      context.userId === command.owner.userId &&
+      context.agentId === agentId
+    ) {
+      return context;
+    }
+    // Integration reconciliation can select the organization's new default Agent.
+    const fresh = createAgentRunContextSignals(
+      command.owner.userId,
+      command.owner.orgId,
+      agentId,
     );
+    return {
+      ...fresh,
+      ...(context.orgId === command.owner.orgId
+        ? {
+            plan$: context.plan$,
+            modelFacts$: context.modelFacts$,
+            orgMetadata$: context.orgMetadata$,
+          }
+        : {}),
+      ...(context.orgId === command.owner.orgId &&
+      context.userId === command.owner.userId
+        ? { memberModels$: context.memberModels$ }
+        : {}),
+    };
   });
-  const claimBootstrap$ = computed(async (get) => {
-    const [{ timing }, { hit, prefetched }] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(claimBootstrapIdentity$),
-    ]);
-    let snapshot: AgentBootstrap | undefined;
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-      async () => {
-        // A matching speculative read is authoritative for this pick: its
-        // rejection propagates, without a second query or a retry.
-        const bootstrap = prefetched
-          ? await prefetched.bootstrap
-          : await get(await get(localBootstrap$));
-        snapshot = bootstrap;
-        return bootstrap;
+  const claimBootstrapIdentity$ = computed(async (get) => {
+    const selected = await get(executionContext$);
+    return {
+      identity: {
+        userId: selected.userId,
+        orgId: selected.orgId,
+        agentId: selected.agentId,
+        chatThreadId: claim.chatThreadId,
       },
-      () => {
-        return {
-          ...(snapshot
-            ? {
-                agent_run_bootstrap_workflow_winner_count_bucket: countBucket(
-                  snapshot.workflows.length,
-                ),
-                agent_run_bootstrap_permission_grant_count_bucket: countBucket(
-                  snapshot.permissionGrants.length,
-                ),
-              }
-            : {}),
-          bootstrap_prefetch: hit ? "hit" : "miss",
-          ...(hit
-            ? {}
-            : {
-                bootstrap_prefetch_miss_reason:
-                  prefetchedBootstrap === undefined
-                    ? "not_provided"
-                    : "identity_mismatch",
-              }),
-        };
-      },
-    );
+      hit: prefetchOutcome === "hit" && selected === context,
+    };
   });
   const preCreateBootstrapMetadata$ = computed(async (get) => {
-    const [bootstrap, observed] = await Promise.all([
-      get(claimBootstrap$),
-      get(featureSwitchContext$),
+    const selected = await get(executionContext$);
+    const [
+      { timing },
+      selection,
+      memberMetadata,
+      permissionGrants,
+      workflows,
+      featureSwitchContext,
+    ] = await Promise.all([
+      get(selectedIdentityInputIdentityInput$),
+      get(selected.connectorSelection$),
+      get(selected.memberMetadata$),
+      get(selected.permissionGrants$),
+      get(selected.workflows$),
+      get(selected.featureSwitches$),
     ]);
-    const selection = bootstrap.connectorSelection;
+    timing.recordDuration(
+      "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
+      "nested",
+      0,
+      now(),
+      {
+        bootstrap_prefetch: prefetchOutcome === "hit" ? "hit" : "miss",
+        ...(prefetchOutcome === "hit"
+          ? {}
+          : { bootstrap_prefetch_miss_reason: prefetchOutcome }),
+      },
+    );
     const connectorScope = agentConnectorScopeFromRows({
       connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
         return {
@@ -7052,17 +6970,7 @@ export function createThreadClaimRunObjects(
       }),
       customConnectorRows: selection.customConnectors,
     });
-    const context = bootstrap.featureSwitchContext;
-    if (
-      observed &&
-      (observed.orgId !== context.orgId || observed.userId !== context.userId)
-    ) {
-      throw new Error("Preloaded feature-switch context scope mismatch");
-    }
-    const featureSwitchContext = observed
-      ? { ...observed, email: observed.email ?? context.email }
-      : context;
-    const expirations = bootstrap.permissionGrants.flatMap((grant) => {
+    const expirations = permissionGrants.flatMap((grant) => {
       return grant.expiresAt === null ? [] : [grant.expiresAt.getTime()];
     });
     const metadataSlugs = new Set(
@@ -7078,13 +6986,13 @@ export function createThreadClaimRunObjects(
     return {
       ...connectorScope,
       userInfo: {
-        name: bootstrap.memberMetadata.profile?.name ?? null,
-        email: bootstrap.memberMetadata.profile?.email ?? null,
-        timezone: bootstrap.memberMetadata.preferences?.timezone ?? null,
+        name: memberMetadata.profile?.name ?? null,
+        email: memberMetadata.profile?.email ?? null,
+        timezone: memberMetadata.preferences?.timezone ?? null,
       },
       featureSwitchContext,
-      workflows: bootstrap.workflows,
-      permissionGrants: bootstrap.permissionGrants.map(
+      workflows,
+      permissionGrants: permissionGrants.map(
         ({ connectorSlug, permission, action }) => {
           return {
             connectorSlug,
@@ -7220,6 +7128,9 @@ export function createThreadClaimRunObjects(
     return { db, timing: new ConnectorCatalogLoadTiming(timing, undefined) };
   });
   const connectorCatalogIdentity$ = computed(async (get) => {
+    // Preserve the existing catalog cutover boundary until the connector group
+    // replaces current-catalog revalidation with its own authoritative snapshot.
+    await get((await get(executionContext$)).catalog$);
     const input = await get(catalogReadInput$);
     if (input === undefined) {
       return undefined;
@@ -7283,7 +7194,7 @@ export function createThreadClaimRunObjects(
                   const selectionStartedAt = now();
                   const { hit } = await get(claimBootstrapIdentity$);
                   const prefetched = hit
-                    ? (await get(claimBootstrap$)).catalog
+                    ? await get((await get(executionContext$)).catalog$)
                     : undefined;
                   const catalogHit =
                     prefetched !== undefined &&
@@ -7801,39 +7712,30 @@ export function createThreadClaimRunObjects(
   const preCreateExecutionPermissionPolicies$ =
     preCreatePermissionPoliciesPermissionPolicies$;
   const preCreateExecutionWorkflows$ = computed(async (get) => {
-    return (await get(claimBootstrap$)).workflows;
+    return await get((await get(executionContext$)).workflows$);
   });
   const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
-    const [{ identity }, bootstrap] = await Promise.all([
-      get(claimBootstrapIdentity$),
-      get(claimBootstrap$),
-    ]);
+    const selected = await get(executionContext$);
     return {
-      orgId: identity.orgId,
-      userId: identity.userId,
-      toolIds: bootstrap.disabledPaidToolIds,
+      orgId: selected.orgId,
+      userId: selected.userId,
+      toolIds: await get(selected.disabledPaidTools$),
     };
   });
   const runMemberSnapshot$ = computed(async (get) => {
-    const [{ identity }, bootstrap] = await Promise.all([
-      get(claimBootstrapIdentity$),
-      get(claimBootstrap$),
-    ]);
+    const selected = await get(executionContext$);
     return {
-      orgId: identity.orgId,
-      userId: identity.userId,
-      member: bootstrap.memberMetadata.preferences ?? undefined,
+      orgId: selected.orgId,
+      userId: selected.userId,
+      member: (await get(selected.memberMetadata$)).preferences ?? undefined,
     };
   });
   const runEnvironmentSnapshot$ = computed(async (get) => {
-    const [{ identity }, bootstrap] = await Promise.all([
-      get(claimBootstrapIdentity$),
-      get(claimBootstrap$),
-    ]);
+    const selected = await get(executionContext$);
     return {
-      orgId: identity.orgId,
-      userId: identity.userId,
-      variables: bootstrap.environment.variables,
+      orgId: selected.orgId,
+      userId: selected.userId,
+      variables: (await get(selected.environment$)).variables,
     };
   });
   const resources = {
@@ -8287,7 +8189,9 @@ export function createThreadClaimRunObjects(
       "api_dispatch_prepare_context_load_custom_connector_rows",
       "nested",
       async () => {
-        return (await get(claimBootstrap$)).customConnectorDefinitions;
+        return await get(
+          (await get(executionContext$)).customConnectorDefinitions$,
+        );
       },
     );
   });
@@ -10413,8 +10317,8 @@ export function createThreadClaimRunObjects(
         runAdmissionCheckAdmission$,
         {
           input: captured,
-          ...createRunAdmissionCreditReads(captured, orgModels$),
-          ...createRunAdmissionAllowanceReads(captured, memberModels$),
+          ...createRunAdmissionCreditReads(captured, context),
+          ...createRunAdmissionAllowanceReads(captured, context),
         },
         signal,
       );
@@ -10423,7 +10327,7 @@ export function createThreadClaimRunObjects(
 
   const checkAdmission$ = runAdmissionCheckCheckAdmission$;
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
-    const capabilities = (await get(orgModels$)).capabilities;
+    const capabilities = await get(context.plan$);
     const appUrl = env("APP_URL");
     return [
       "Insufficient credits. This workspace has no spendable credits right now.",
@@ -11380,7 +11284,8 @@ export function createThreadClaimRunObjects(
         throw new Error("Prepared claim is missing launch resources");
       }
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
-      const planCapabilities = (await get(orgModels$)).capabilities;
+      const planCapabilities = await get(context.plan$);
+      signal.throwIfAborted();
       const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
         "nested",

@@ -65,6 +65,15 @@ A signal factory such as `createThreadClaimRunObjects(claim)` receives a plain v
 that is already decided. Nodes read it through the closure. Each claim builds a
 fresh graph, so a value scoped to one claim needs no reset.
 
+**Narrow exception — `AgentRunContextSignals`:** the identity-grouped read-only
+interface returned by `createAgentRunContextSignals(userId, orgId, agentId)` may
+cross the enqueue, pick and Thread graph boundaries. It contains only the three
+plain identity strings and async computed nodes. It must contain no command or
+state and must perform no writes. Consumers read only the groups they need;
+computed dependencies share the same identity-scoped sources. This exception
+does not permit passing individual internal nodes (such as pick's `orgModels$`),
+database handles, accessors or unrelated graph interfaces across boundaries.
+
 Build the owning graph before commands execute. Do not call `command()` inside
 another command callback, including indirectly through a factory. Private nodes
 share dependencies through the owning graph's lexical scope, not node-valued

@@ -15,14 +15,15 @@ import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
-  createOrgModelBootstrap,
-  type PrefetchedModelBootstrap,
-} from "./model-bootstrap.service";
+  createAgentRunContextSignals,
+  preloadAgentRunContext$,
+  type AgentRunContextSignals,
+} from "./agent-run-context.signals";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
-import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   activeConcurrencySubscriptionPredicate,
   totalConcurrencyLimit,
@@ -45,6 +46,8 @@ interface OrgPickCursor {
  */
 interface LeasedThreadClaim extends ThreadClaim {
   readonly queuedAt: Date;
+  readonly userId: string;
+  readonly agentId: string;
 }
 
 /** Fixed chat thread lease; it is never renewed. */
@@ -66,28 +69,58 @@ export interface PickObjects {
 export function createPickObjects(
   orgId: string,
   fixedThreadId?: string,
-  prefetchedBootstrap?: PrefetchedAgentBootstrap,
-  prefetchedModels?: PrefetchedModelBootstrap,
+  suppliedContext?: AgentRunContextSignals,
 ): PickObjects {
-  const orgModels$ = computed((get) => {
-    return prefetchedModels?.orgId === orgId
-      ? prefetchedModels.org
-      : get(createOrgModelBootstrap(orgId));
-  });
   const internalReloadPick$ = state(0);
   const internalSelectedClaim$ = state<LeasedThreadClaim | null>(null);
+  const selectedContext$ = computed((get) => {
+    const claim = get(internalSelectedClaim$);
+    if (!claim) {
+      return null;
+    }
+    if (
+      suppliedContext?.orgId === claim.orgId &&
+      suppliedContext.userId === claim.userId &&
+      suppliedContext.agentId === claim.agentId
+    ) {
+      return suppliedContext;
+    }
+    const fresh = createAgentRunContextSignals(
+      claim.userId,
+      claim.orgId,
+      claim.agentId,
+    );
+    return {
+      ...fresh,
+      ...(suppliedContext?.orgId === claim.orgId
+        ? {
+            plan$: suppliedContext.plan$,
+            modelFacts$: suppliedContext.modelFacts$,
+            orgMetadata$: suppliedContext.orgMetadata$,
+          }
+        : {}),
+      ...(suppliedContext?.orgId === claim.orgId &&
+      suppliedContext.userId === claim.userId
+        ? { memberModels$: suppliedContext.memberModels$ }
+        : {}),
+    };
+  });
   const selectedClaimRunObjects$ = computed((get) => {
     const claim = get(internalSelectedClaim$);
-    return claim
+    const context = get(selectedContext$);
+    return claim && context
       ? createThreadClaimRunObjects(
           {
             orgId: claim.orgId,
             chatThreadId: claim.chatThreadId,
             claimId: claim.claimId,
           },
-          prefetchedBootstrap,
-          prefetchedModels,
-          orgModels$,
+          context,
+          suppliedContext === undefined
+            ? "not_provided"
+            : context === suppliedContext
+              ? "hit"
+              : "identity_mismatch",
         )
       : null;
   });
@@ -109,17 +142,19 @@ export function createPickObjects(
     get(internalReloadPick$);
     const database = get(db$);
     const at = nowDate();
+    const context = get(selectedContext$);
+    if (!context) {
+      throw new Error("Capacity requires a selected claim context");
+    }
     const [models, subscriptions] = await Promise.all([
-      get(orgModels$),
+      get(context.plan$),
       database
         .select({ slots: orgConcurrencySubscriptions.slots })
         .from(orgConcurrencySubscriptions)
         .where(activeConcurrencySubscriptionPredicate(orgId, at)),
     ]);
     const limit = totalConcurrencyLimit({
-      baseLimit: cappedBaseConcurrencyLimit(
-        models.capabilities?.baseConcurrencyLimit ?? 0,
-      ),
+      baseLimit: cappedBaseConcurrencyLimit(models?.baseConcurrencyLimit ?? 0),
       paidSlots: subscriptions.reduce((total, row) => {
         return total + row.slots;
       }, 0),
@@ -216,8 +251,10 @@ export function createPickObjects(
         claimId,
         claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
       })
+      .from(chatThreads)
       .where(
         and(
+          eq(chatThreads.id, queuedChatThreads.chatThreadId),
           eq(queuedChatThreads.orgId, orgId),
           eq(queuedChatThreads.chatThreadId, threadId),
           or(
@@ -235,14 +272,21 @@ export function createPickObjects(
       .returning({
         chatThreadId: queuedChatThreads.chatThreadId,
         queuedAt: queuedChatThreads.queuedAt,
+        userId: chatThreads.userId,
+        agentId: chatThreads.agentId,
       });
     signal.throwIfAborted();
+    if (row?.agentId === null) {
+      throw new Error("A queued thread claim requires an Agent identity");
+    }
     const claim = row
       ? {
           orgId,
           chatThreadId: row.chatThreadId,
           claimId,
           queuedAt: row.queuedAt,
+          userId: row.userId,
+          agentId: row.agentId,
         }
       : null;
     return claim;
@@ -350,6 +394,11 @@ export function createPickObjects(
         return { kind: "none" };
       }
       set(internalSelectedClaim$, claim);
+      const context = get(selectedContext$);
+      if (!context) {
+        throw new Error("Selected claim context is missing");
+      }
+      set(preloadAgentRunContext$, context, signal);
       const claimed = get(selectedClaimRunObjects$);
       if (!claimed) {
         throw new Error("Selected thread claim is missing");

@@ -31,10 +31,56 @@ const {
   sendChatRun,
   claimChatRun,
   cancelChatRun,
+  waitForThreadMessages,
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
 
 describe("chat agent bootstrap prefetch", () => {
+  it("loads the same read-only context when a later request drains queued input", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "context anchor",
+    });
+    const queuedId = randomUUID();
+    const queued = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        clientEventId: queuedId,
+        prompt: "context without the enqueue request",
+      },
+      [201],
+    );
+    expect(queued.body).toMatchObject({ runId: null });
+    // Cancellation is a separate API request: its pick cannot receive the send's signals.
+    await cancelChatRun(actor, first.runId);
+    const messages = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === queuedId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const promoted = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === queuedId;
+    });
+    if (!promoted?.runId) {
+      throw new Error("Expected a run from the local context factory");
+    }
+    expect((await api.readRun(actor, promoted.runId)).source).toMatchObject({
+      model: "claude-fable-5-1",
+      providerType: "anthropic-api-key",
+    });
+    const claimed = await claimChatRun(runnerGroup, promoted.runId);
+    await cancelChatRun(actor, promoted.runId, claimed.sandboxHeaders);
+  });
   it("keeps the captured model policy when it changes during attachment resolution", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const fileId = randomUUID();
