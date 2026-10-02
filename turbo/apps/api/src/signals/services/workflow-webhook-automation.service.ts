@@ -33,7 +33,6 @@ import type {
   RunWorkflowAutomationResult,
 } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { persistWorkflowSourceReceipt } from "./workflow-input-queue.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 export const WORKFLOW_WEBHOOK_BODY_LIMIT_BYTES = 1_000_000;
@@ -615,28 +614,10 @@ const startWorkflowWebhookRun$ = command(
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
         timing: args.timing.collectorForRunStart(),
-        persistSourceTransition: async (tx) => {
-          await persistWorkflowSourceReceipt(
-            tx,
-            {
-              receipt: {
-                kind: "webhook",
-                delivery: args.delivery,
-                receivedAt: args.currentTime,
-              },
-              automationId: {
-                automation: args.row.automation,
-                agentId: args.row.agentId,
-                chatThreadId: args.row.chatThreadId,
-              }.automation.id,
-              chatThreadId: {
-                automation: args.row.automation,
-                agentId: args.row.agentId,
-                chatThreadId: args.row.chatThreadId,
-              }.chatThreadId,
-            },
-            signal,
-          );
+        sourcePlan: {
+          kind: "webhook",
+          delivery: args.delivery,
+          receivedAt: args.currentTime,
         },
       },
       signal,

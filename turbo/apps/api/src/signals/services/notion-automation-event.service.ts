@@ -63,10 +63,7 @@ import type {
   RunWorkflowAutomationResult,
 } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import {
-  NotionAutomationSourceChangedError,
-  persistNotionWorkflowSource,
-} from "./workflow-notion-queue.service";
+import { NotionAutomationSourceChangedError } from "./workflow-notion-queue.service";
 
 import {
   notionConfigConnectorId,
@@ -2657,33 +2654,18 @@ const startNotionWorkflowRun$ = command(
           apiStartTime: now(),
           triggerSource: "automation-event",
           triggerBrief: args.triggerBrief,
-          persistSourceTransition: async (tx) => {
-            await persistNotionWorkflowSource(
-              tx,
-              {
-                source: {
-                  automationId: args.row.automation.id,
-                  orgId: args.row.automation.orgId,
-                  userId: args.row.automation.ownerUserId,
-                  pending: args.pending,
-                  pageTitle: notionTitleFromProperties(args.page.properties),
-                  pageUrl: args.page.url ?? null,
-                  parentTitle: args.parent.title,
-                  parentUrl: args.parent.url,
-                },
-                automationId: {
-                  automation: args.row.automation,
-                  agentId: args.row.agentId,
-                  chatThreadId: args.chatThreadId,
-                }.automation.id,
-                chatThreadId: {
-                  automation: args.row.automation,
-                  agentId: args.row.agentId,
-                  chatThreadId: args.chatThreadId,
-                }.chatThreadId,
-              },
-              signal,
-            );
+          sourcePlan: {
+            kind: "notion",
+            source: {
+              automationId: args.row.automation.id,
+              orgId: args.row.automation.orgId,
+              userId: args.row.automation.ownerUserId,
+              pending: args.pending,
+              pageTitle: notionTitleFromProperties(args.page.properties),
+              pageUrl: args.page.url ?? null,
+              parentTitle: args.parent.title,
+              parentUrl: args.parent.url,
+            },
           },
         },
         signal,

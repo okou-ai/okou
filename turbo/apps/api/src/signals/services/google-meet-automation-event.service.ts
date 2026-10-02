@@ -40,10 +40,7 @@ import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-a
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import {
-  GoogleMeetAutomationSourceChangedError,
-  persistGoogleMeetWorkflowSource,
-} from "./workflow-google-meet-queue.service";
+import { GoogleMeetAutomationSourceChangedError } from "./workflow-google-meet-queue.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_MEET_TOKEN";
@@ -2048,31 +2045,16 @@ const dispatchGoogleMeetTranscriptEventForAutomation$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief,
-          persistSourceTransition: async (tx) => {
-            await persistGoogleMeetWorkflowSource(
-              tx,
-              {
-                source: {
-                  automationId: args.automation.automation.id,
-                  orgId: args.automation.automation.orgId,
-                  userId: args.automation.automation.ownerUserId,
-                  connectorSourceId: args.state.connectorId,
-                  subscriptionStateId: args.state.id,
-                  subscriptionName: args.state.subscriptionName,
-                },
-                automationId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.automation.id,
-                chatThreadId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.chatThreadId,
-              },
-              signal,
-            );
+          sourcePlan: {
+            kind: "google-meet",
+            source: {
+              automationId: args.automation.automation.id,
+              orgId: args.automation.automation.orgId,
+              userId: args.automation.automation.ownerUserId,
+              connectorSourceId: args.state.connectorId,
+              subscriptionStateId: args.state.id,
+              subscriptionName: args.state.subscriptionName,
+            },
           },
           timing: runTiming.collectorForRunStart(),
         },

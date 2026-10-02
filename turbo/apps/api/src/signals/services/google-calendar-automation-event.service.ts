@@ -33,10 +33,7 @@ import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-c
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import {
-  GoogleCalendarSourceTransitionChangedError,
-  persistGoogleCalendarWorkflowSource,
-} from "./workflow-google-calendar-queue.service";
+import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-calendar-queue.service";
 
 import {
   GOOGLE_CALENDAR_EVENT_TYPES,
@@ -2734,32 +2731,17 @@ const startGoogleCalendarAutomationRun$ = command(
           connectorSourceId: args.state.connectorId,
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
-          persistSourceTransition: async (tx) => {
-            await persistGoogleCalendarWorkflowSource(
-              tx,
-              {
-                source: {
-                  automationId: args.automation.automation.id,
-                  orgId: args.automation.automation.orgId,
-                  userId: args.automation.automation.ownerUserId,
-                  connectorId: args.state.connectorId,
-                  watchStateId: args.state.id,
-                  channelId: args.state.channelId,
-                  calendarId: args.state.calendarId,
-                },
-                automationId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.automation.id,
-                chatThreadId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.chatThreadId,
-              },
-              signal,
-            );
+          sourcePlan: {
+            kind: "google-calendar",
+            source: {
+              automationId: args.automation.automation.id,
+              orgId: args.automation.automation.orgId,
+              userId: args.automation.automation.ownerUserId,
+              connectorId: args.state.connectorId,
+              watchStateId: args.state.id,
+              channelId: args.state.channelId,
+              calendarId: args.state.calendarId,
+            },
           },
           timing: args.timing.collectorForRunStart(),
         },
