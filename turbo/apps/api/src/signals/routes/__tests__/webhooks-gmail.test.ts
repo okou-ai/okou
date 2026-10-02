@@ -352,7 +352,10 @@ function configureGmailLabelAppliedMocks(
             headers: [
               { name: "From", value: "Support Team <support@example.com>" },
               { name: "To", value: gmailEmail },
-              { name: "Subject", value: "Support request" },
+              {
+                name: "Subject",
+                value: `Support request ${String(params.messageId)}`,
+              },
             ],
           },
         });
@@ -1851,10 +1854,17 @@ describe("POST /api/webhooks/gmail", () => {
       [{ id: "Label_support_old", name: "Support" }],
       [{ id: "Label_support_new", name: "Support" }],
     ]);
-    configureGmailLabelAppliedMocks("Label_support_new", gmailEmail, [
+    const messageIds = [
       "msg-labeled-first",
       "msg-labeled-second",
-    ]);
+      "msg-labeled-third",
+      "msg-labeled-fourth",
+    ];
+    configureGmailLabelAppliedMocks(
+      "Label_support_new",
+      gmailEmail,
+      messageIds,
+    );
 
     const { actor, workflowId } = await setupFixture();
     await connectGmail(actor, gmailEmail);
@@ -1898,27 +1908,30 @@ describe("POST /api/webhooks/gmail", () => {
     expect(first.body).toStrictEqual({
       success: true,
       watchStates: 1,
-      dispatched: 2,
+      dispatched: messageIds.length,
       duplicates: 0,
     });
     await flushWaitUntilForTest();
-    const [activeRunId] = await workflowRunIds(actor, chatThreadId);
-    if (!activeRunId) {
-      throw new Error(
-        "Expected the first recreated-label event to start a run",
-      );
+    // Later enqueues can overlap the first input's background pick. Accept
+    // the whole batch, then launch one queued input after each preceding run.
+    for (let index = 0; index < messageIds.length - 1; index += 1) {
+      const runIds = await workflowRunIds(actor, chatThreadId);
+      expect(runIds).toHaveLength(index + 1);
+      const activeRunId = runIds[index];
+      if (!activeRunId) {
+        throw new Error("Expected the next recreated-label event to start");
+      }
+      await completeRunThroughSandbox(runnerGroup, activeRunId);
     }
-    await completeRunThroughSandbox(runnerGroup, activeRunId);
-    await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(2);
+    await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(
+      messageIds.length,
+    );
     const inputs = await workflowAutomationDisplayTexts(actor, chatThreadId);
-    expect(
-      inputs.filter((text) => {
-        return (
-          text ===
-          'Gmail label "Support" was added to an email from Support Team <support@example.com> with subject "Support request".'
-        );
+    expect(inputs).toStrictEqual(
+      messageIds.map((messageId) => {
+        return `Gmail label "Support" was added to an email from Support Team <support@example.com> with subject "Support request ${messageId}".`;
       }),
-    ).toHaveLength(2);
+    );
     await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
       {
         eventConfig: {

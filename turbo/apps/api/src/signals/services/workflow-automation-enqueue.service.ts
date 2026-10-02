@@ -144,7 +144,7 @@ interface WorkflowAutomationQueueEventArgs {
 export async function workflowAutomationQueueEventWriter(
   db: Db,
   args: WorkflowAutomationQueueEventArgs,
-): Promise<(tx: Db | Tx) => Promise<string | null>> {
+): Promise<(tx: Tx) => Promise<string | null>> {
   const { automation } = args;
   const [workflow] = await measureWorkflowAdmissionStep(
     args.timing,
@@ -176,7 +176,7 @@ export async function workflowAutomationQueueEventWriter(
     : automationUserMessage;
   return async (tx) => {
     // The entry owns its context row; it commits with the event that points
-    // at it, under the same id.
+    // at it, under the same id, in the enqueue transaction.
     const values = {
       id: args.queueEventId ?? randomUUID(),
       chatThreadId: args.chatThreadId,
@@ -202,13 +202,9 @@ export async function workflowAutomationQueueEventWriter(
       connectorSourceId: args.connectorSourceId,
       triggerBrief: args.triggerBrief ?? null,
     };
-    await measureWorkflowAdmissionStep(
-      args.timing,
-      "api_dispatch_workflow_enqueue_event_context_insert",
-      async () => {
-        await insertChatEventContext(tx, values);
-      },
-    );
+    // Reserve the event sequence before the context FK takes KEY SHARE on
+    // the thread. A concurrent pick owns that sequence before updating the
+    // unique session binding, which needs the incompatible thread UPDATE lock.
     const inserted = await measureWorkflowAdmissionStep(
       args.timing,
       "api_dispatch_workflow_enqueue_event_insert",
@@ -220,10 +216,22 @@ export async function workflowAutomationQueueEventWriter(
         );
       },
     );
-    if (!inserted && args.queueEventId === undefined) {
-      throw new Error("Workflow queue event insert returned no row");
+    if (!inserted) {
+      if (args.queueEventId === undefined) {
+        throw new Error("Workflow queue event insert returned no row");
+      }
+      return null;
     }
-    return inserted?.id ?? null;
+    // A failed context write rolls back the event and sequence reservation;
+    // neither becomes visible before the enclosing enqueue transaction commits.
+    await measureWorkflowAdmissionStep(
+      args.timing,
+      "api_dispatch_workflow_enqueue_event_context_insert",
+      async () => {
+        await insertChatEventContext(tx, values);
+      },
+    );
+    return inserted.id;
   };
 }
 

@@ -954,9 +954,9 @@ export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
 }
 
 /**
- * Write an input's context row. Entries own their context: each writes it
- * before appending the event that points at it, with the event id it then
- * appends, so a failure rejects the input. Appending never writes context.
+ * Write an input's context row. Entries own their context and persist it with
+ * the event that points at it in the enqueue transaction, so a failure rejects
+ * the input. Appending never writes context.
  */
 export async function insertChatEventContext(
   db: ChatEventWriteTransaction,
@@ -981,7 +981,7 @@ function recordChatEventAppendTiming(timing: {
   }
 }
 
-/** The caller independently prepares/persists context before this atomic append. */
+/** The caller owns context preparation and persistence around this atomic append. */
 async function appendPreparedChatEvent(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
