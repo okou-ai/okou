@@ -1,7 +1,4 @@
-import {
-  GoogleFormsSourceTransitionChangedError,
-  persistGoogleFormsWorkflowSource,
-} from "./workflow-google-forms-queue.service";
+import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 
 import {
   googleFormsResponseSubmittedEventConfigSchema,
@@ -1945,36 +1942,21 @@ const startGoogleFormsWorkflowRun$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief: googleFormsTriggerBrief(args),
-          persistSourceTransition: async (tx) => {
-            await persistGoogleFormsWorkflowSource(
-              tx,
-              {
-                source: {
-                  orgId: args.state.orgId,
-                  userId: args.state.userId,
-                  connectorId: args.state.connectorId,
-                  automationId: args.automation.automation.id,
-                  watchStateId: args.state.id,
-                  formId: args.state.formId,
-                  watchId: args.decoded.watchId,
-                  pubsubMessageId: args.decoded.messageId,
-                  responseId: args.response.responseId,
-                  lastSubmittedTime: args.response.lastSubmittedTime,
-                  cursor: args.cursor,
-                },
-                automationId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.automation.id,
-                chatThreadId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.chatThreadId,
-              },
-              signal,
-            );
+          sourcePlan: {
+            kind: "google-forms",
+            source: {
+              orgId: args.state.orgId,
+              userId: args.state.userId,
+              connectorId: args.state.connectorId,
+              automationId: args.automation.automation.id,
+              watchStateId: args.state.id,
+              formId: args.state.formId,
+              watchId: args.decoded.watchId,
+              pubsubMessageId: args.decoded.messageId,
+              responseId: args.response.responseId,
+              lastSubmittedTime: args.response.lastSubmittedTime,
+              cursor: args.cursor,
+            },
           },
           timing: args.timing.collectorForRunStart(),
         },

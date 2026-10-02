@@ -2,8 +2,6 @@ import {
   stripeInvoiceBillingReasonSchema,
   stripeInvoicePaidEventConfigSchema,
 } from "@okouai/api-contracts/contracts/workflows";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -11,25 +9,19 @@ import {
   stripeWorkflowAutomationHealth,
   stripeWorkflowDeliveries,
 } from "@okouai/db/schema/stripe-automation-event";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { variables } from "@okouai/db/schema/variable";
 import {
   workflowAutomations,
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
-import { nowDate } from "../../lib/time";
+import { and, eq, or, sql } from "drizzle-orm";
 import {
-  builtinConnectorCredentialVariableReadCondition,
   resolveBuiltinConnectorCredentialAccess,
+  builtinConnectorCredentialVariableReadCondition,
 } from "./builtin-connector-credential-access.service";
 import type { ConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
-import {
-  ORG_SENTINEL_USER_ID,
-  userFeatureSwitchOverridesFromRows,
-} from "./feature-switch-scope";
+import { variables } from "@okouai/db/schema/variable";
+import type { WorkflowSourceAdmissionPlan } from "./workflow-input-queue.service";
 import { visibleWorkflowCondition } from "./workflow-data.service";
 
 export type StripeQueueSource = Pick<
@@ -85,7 +77,7 @@ function stripeSourceConfigMatches(
   );
 }
 
-function stripeSourceCredentialAccess(
+export function stripeSourceCredentialAccess(
   source: StripeQueueSource,
   automation: typeof workflowAutomations.$inferSelect | undefined,
   connector: typeof connectors.$inferSelect | undefined,
@@ -153,7 +145,6 @@ function stripeSourceAccessSql(
 /** The existing delivery revision is the receipt for this single queue publication. */
 function stripeDeliveryReceiptSql(
   source: StripeQueueSource,
-  chatThreadId: string,
   currentTime: Date,
 ) {
   const timestamp = sql`${currentTime.toISOString()}::timestamp`;
@@ -173,85 +164,61 @@ function stripeDeliveryReceiptSql(
   SELECT id FROM delivered`;
 }
 
-/** One invoice trigger validates its current owner/source and commits queue + receipt. */
-export async function persistStripeWorkflowSource(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly source: StripeQueueSource;
-    readonly snapshot: ConnectorRuntimeSnapshot;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const { source } = args;
-  const snapshot = args.snapshot;
-  const [connector] = await tx
-    .select()
-    .from(connectors)
-    .where(eq(connectors.id, source.connectorId))
-    .limit(1);
-  const [automation] = await tx
-    .select()
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, source.automationId))
-    .limit(1);
-  const access = stripeSourceCredentialAccess(
-    source,
-    automation,
-    connector,
-    snapshot,
-  );
-  const overrides = await tx
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(
-      and(
-        eq(userFeatureSwitches.orgId, source.orgId),
-        inArray(userFeatureSwitches.userId, [
-          source.userId,
-          ORG_SENTINEL_USER_ID,
-        ]),
-      ),
-    );
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations, {
-      orgId: source.orgId,
-      userId: source.userId,
-      overrides: userFeatureSwitchOverridesFromRows(overrides, source.userId),
-    })
-  ) {
-    throw new StripeDeliveryTargetChangedError("feature_disabled");
-  }
-  const [livemode] = await tx
-    .select({ value: variables.value })
-    .from(variables)
-    .where(
-      builtinConnectorCredentialVariableReadCondition({
-        groups: [{ access, names: ["STRIPE_LIVEMODE"] }],
-      }),
-    )
-    .limit(1);
-  if (livemode?.value !== "true") {
-    throw new StripeDeliveryTargetChangedError("connector_unavailable");
-  }
-  if (
-    (await tx.execute(stripeSourceAccessSql(source, args.chatThreadId)))
-      .rowCount === 0
-  ) {
-    throw new StripeDeliveryTargetChangedError("automation_access_revoked");
-  }
-  if (
-    (
-      await tx.execute(
-        stripeDeliveryReceiptSql(source, args.chatThreadId, nowDate()),
-      )
-    ).rowCount === 0
-  ) {
-    throw new StripeDeliveryClaimChangedError();
-  }
-  signal.throwIfAborted();
+/** Current SQL authority must still match the independently prepared facts. */
+export function stripeQueueAdmissionPlan(args: {
+  readonly source: StripeQueueSource;
+  readonly chatThreadId: string;
+  readonly automation: typeof workflowAutomations.$inferSelect;
+  readonly connector: typeof connectors.$inferSelect;
+  readonly access: ReturnType<typeof stripeSourceCredentialAccess>;
+  readonly currentTime: Date;
+}): WorkflowSourceAdmissionPlan {
+  const { source, automation, connector } = args;
+  return {
+    steps: [
+      {
+        statement: sql`SELECT 1 FROM ${workflowAutomations} JOIN ${connectors}
+        ON ${connectors.id} = ${source.connectorId}::uuid
+        WHERE ${and(
+          eq(workflowAutomations.id, source.automationId),
+          eq(workflowAutomations.orgId, source.orgId),
+          eq(workflowAutomations.ownerUserId, source.userId),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, "stripe-invoice-paid"),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.eventConnectorId, source.connectorId),
+          sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${JSON.stringify(automation.eventConfig)}::jsonb`,
+          eq(connectors.orgId, source.orgId),
+          eq(connectors.userId, source.userId),
+          eq(connectors.connectorSlug, "stripe"),
+          eq(connectors.authMethod, "oauth"),
+          eq(connectors.externalId, source.stripeAccountId),
+          eq(connectors.needsReconnect, false),
+          sql`${connectors.automaticAuthType} IS NOT DISTINCT FROM ${connector.automaticAuthType}`,
+          eq(connectors.storageVersion, connector.storageVersion),
+        )} LIMIT 1`,
+        failure: {
+          kind: "stripe-target",
+          reason: "automation_no_longer_matches",
+        },
+      },
+      {
+        statement: sql`SELECT 1 FROM ${variables} WHERE ${and(
+          builtinConnectorCredentialVariableReadCondition({
+            groups: [{ access: args.access, names: ["STRIPE_LIVEMODE"] }],
+          }),
+          eq(variables.value, "true"),
+        )} LIMIT 1`,
+        failure: { kind: "stripe-target", reason: "connector_unavailable" },
+      },
+      {
+        statement: stripeSourceAccessSql(source, args.chatThreadId),
+        failure: { kind: "stripe-target", reason: "automation_access_revoked" },
+      },
+      {
+        statement: stripeDeliveryReceiptSql(source, args.currentTime),
+        failure: { kind: "stripe-claim" },
+      },
+    ],
+  };
 }

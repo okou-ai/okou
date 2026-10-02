@@ -47,10 +47,7 @@ import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-c
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import {
-  GmailAutomationSourceChangedError,
-  persistGmailWorkflowSource,
-} from "./workflow-gmail-queue.service";
+import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
 
 import {
   loadBuiltinConnectorCredentialConnection$,
@@ -2371,32 +2368,17 @@ const startGmailWorkflowRun$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief: runInput.triggerBrief,
-          persistSourceTransition: async (tx) => {
-            await persistGmailWorkflowSource(
-              tx,
-              {
-                source: {
-                  automationId: args.automation.automation.id,
-                  orgId: args.automation.automation.orgId,
-                  userId: args.automation.automation.ownerUserId,
-                  connectorId: args.connectorSourceId,
-                  watchStateId: args.watchStateId,
-                  emailAddress: args.decoded.emailAddress,
-                  eventConfig: args.automation.automation.eventConfig,
-                },
-                automationId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.automation.id,
-                chatThreadId: {
-                  automation: args.automation.automation,
-                  agentId: args.automation.agentId,
-                  chatThreadId: args.automation.chatThreadId,
-                }.chatThreadId,
-              },
-              signal,
-            );
+          sourcePlan: {
+            kind: "gmail",
+            source: {
+              automationId: args.automation.automation.id,
+              orgId: args.automation.automation.orgId,
+              userId: args.automation.automation.ownerUserId,
+              connectorId: args.connectorSourceId,
+              watchStateId: args.watchStateId,
+              emailAddress: args.decoded.emailAddress,
+              eventConfig: args.automation.automation.eventConfig,
+            },
           },
           timing: args.timing.collectorForRunStart(),
         },

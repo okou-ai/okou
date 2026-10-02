@@ -32,10 +32,7 @@ import { waitUntil } from "../context/wait-until";
 import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import {
-  ChatRunFinishedAutomationAlreadyAdmittedError,
-  persistWorkflowSourceReceipt,
-} from "./workflow-input-queue.service";
+import { ChatRunFinishedAutomationAlreadyAdmittedError } from "./workflow-input-queue.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const CHAT_RUN_FINISHED_EVENT_TYPE = "chat-run-finished";
@@ -218,28 +215,10 @@ const admitChatRunFinishedAutomation$ = command(
             `${automation.id}:${event.runId}`,
             CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
           ),
-          persistSourceTransition: async (tx) => {
-            await persistWorkflowSourceReceipt(
-              tx,
-              {
-                receipt: {
-                  kind: "chat-run-finished",
-                  sourceCallbackId: event.sourceCallbackId,
-                  runId: event.runId,
-                },
-                automationId: {
-                  automation,
-                  agentId,
-                  chatThreadId,
-                }.automation.id,
-                chatThreadId: {
-                  automation,
-                  agentId,
-                  chatThreadId,
-                }.chatThreadId,
-              },
-              signal,
-            );
+          sourcePlan: {
+            kind: "chat-run-finished",
+            sourceCallbackId: event.sourceCallbackId,
+            runId: event.runId,
           },
           apiStartTime: now(),
           agentRunSource: {

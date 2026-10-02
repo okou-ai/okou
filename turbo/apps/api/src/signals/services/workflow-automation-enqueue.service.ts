@@ -1,18 +1,13 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, isNull, ne, notExists, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import type { PreparedChatEventRow } from "./chat-event-append.service";
 import { randomUUID } from "node:crypto";
-import type { Tx } from "../../lib/db-types";
-import type { Db } from "../external/db";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { listPendingChatInputs } from "./chat-event-queue.service";
-import {
-  insertChatEvent,
-  insertChatEventContext,
-  revokeChatEvent,
-} from "./chat-event.service";
+import { prepareChatEvent } from "./chat-event.service";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   createUserMessageDocument,
@@ -24,7 +19,30 @@ import type {
   WorkflowAutomationEventPayload,
   WorkflowAutomationEventType,
 } from "./workflow-automation-context.service";
-import { measureWorkflowAdmissionStep } from "./workflow-queue-admission-timing.service";
+import type { WorkflowQueueReceipt } from "./workflow-input-queue.service";
+import type { GmailQueueSource } from "./workflow-gmail-queue.service";
+import type { GoogleCalendarQueueSource } from "./workflow-google-calendar-queue.service";
+import type { GoogleFormsQueueSource } from "./workflow-google-forms-queue.service";
+import type { GoogleMeetQueueSource } from "./workflow-google-meet-queue.service";
+import type { NotionQueueSource } from "./workflow-notion-queue.service";
+import type { StripeQueueSource } from "./workflow-stripe-queue.service";
+import type { ConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+
+export type WorkflowQueueSourcePlan =
+  | WorkflowQueueReceipt
+  | { readonly kind: "gmail"; readonly source: GmailQueueSource }
+  | {
+      readonly kind: "google-calendar";
+      readonly source: GoogleCalendarQueueSource;
+    }
+  | { readonly kind: "google-forms"; readonly source: GoogleFormsQueueSource }
+  | { readonly kind: "google-meet"; readonly source: GoogleMeetQueueSource }
+  | { readonly kind: "notion"; readonly source: NotionQueueSource }
+  | {
+      readonly kind: "stripe";
+      readonly source: StripeQueueSource;
+      readonly snapshot: ConnectorRuntimeSnapshot;
+    };
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
 
@@ -64,9 +82,9 @@ export interface RunWorkflowAutomationNowArgs {
   readonly replacePendingScheduleTick?: boolean;
   /**
    * Source transition committed in the same transaction as the queue event.
-   * This callback is never serialized into the durable queue payload.
+   * Plain source facts are never serialized into the durable queue payload.
    */
-  readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
+  readonly sourcePlan?: WorkflowQueueSourcePlan;
   /**
    * Consumes the due schedule occurrence in the same transaction as the queue
    * event. Only journaled legacy Morning Brief ticks pass one.
@@ -104,12 +122,6 @@ export function scheduleTriggerContext(args: {
   };
 }
 
-export type WorkflowQueueAdmissionTransaction = Tx;
-
-export type PersistWorkflowQueueSourceTransition = (
-  tx: WorkflowQueueAdmissionTransaction,
-) => Promise<void>;
-
 export interface WorkflowScheduleClaimPlan {
   readonly claimId: string;
   readonly automationId: string;
@@ -139,33 +151,19 @@ interface WorkflowAutomationQueueEventArgs {
   readonly connectorSourceId?: string;
   readonly chatThreadId: string;
   readonly triggerBrief: string | undefined;
-  readonly timing?: ApiDispatchTimingCollector;
+  readonly displayName: string | null;
 }
 
-export async function workflowAutomationQueueEventWriter(
-  db: Db,
+/** Prepare the immutable event and context before entering the SQL-only owner. */
+export function workflowAutomationQueueEventPlan(
   args: WorkflowAutomationQueueEventArgs,
-): Promise<(tx: Db | Tx) => Promise<string | null>> {
+) {
   const { automation } = args;
-  const [workflow] = await measureWorkflowAdmissionStep(
-    args.timing,
-    "api_dispatch_workflow_enqueue_display_name",
-    async () => {
-      return await db
-        .select({ displayName: workflows.displayName })
-        .from(workflows)
-        .where(eq(workflows.id, automation.workflowId))
-        .limit(1);
-    },
-  );
-  if (!workflow) {
-    throw new Error(`Workflow not found: ${automation.workflowId}`);
-  }
   const automationUserMessage = createUserMessageDocument({
     text: args.displayPrompt,
     nonContentPart: {
       type: "automation",
-      workflowName: workflow.displayName?.trim() || args.workflowName,
+      workflowName: args.displayName?.trim() || args.workflowName,
       workflowId: automation.workflowId,
       ...(args.triggerBrief === undefined
         ? {}
@@ -175,129 +173,85 @@ export async function workflowAutomationQueueEventWriter(
   const userMessage = args.agentRunSource
     ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
     : automationUserMessage;
-  return async (tx) => {
-    // The entry owns its context row; it commits with the event that points
-    // at it, under the same id.
-    const values = {
-      id: args.queueEventId ?? randomUUID(),
+  const values = {
+    id: args.queueEventId ?? randomUUID(),
+    chatThreadId: args.chatThreadId,
+    eventType: "input.automation" as const,
+    modelSelection: args.modelSelection,
+    content: null,
+    userMessage,
+    runId: null,
+    automationId: automation.id,
+    workflowName: args.workflowName,
+    workflowAutomationEventType: args.workflowAutomationEventType,
+    workflowAutomationEventPayload: args.workflowAutomationEventPayload,
+    connectorSourceId: args.connectorSourceId,
+    triggerBrief: args.triggerBrief ?? null,
+  };
+  const event = prepareChatEvent(values);
+  return {
+    row: event.row,
+    context: {
+      id: event.row.id,
       chatThreadId: args.chatThreadId,
-      eventType: "input.automation" as const,
-      modelSelection: args.modelSelection,
-      content: null,
-      userMessage,
-      runId: null,
       automationId: automation.id,
       workflowName: args.workflowName,
-      workflowAutomationEventType: args.workflowAutomationEventType,
-      workflowAutomationEventPayload: args.workflowAutomationEventPayload,
-      connectorSourceId: args.connectorSourceId,
+      eventType: args.workflowAutomationEventType ?? null,
+      eventPayload: args.workflowAutomationEventPayload ?? null,
+      connectorSourceId: args.connectorSourceId ?? null,
       triggerBrief: args.triggerBrief ?? null,
-    };
-    await measureWorkflowAdmissionStep(
-      args.timing,
-      "api_dispatch_workflow_enqueue_event_context_insert",
-      async () => {
-        await insertChatEventContext(tx, values);
-      },
-    );
-    const inserted = await measureWorkflowAdmissionStep(
-      args.timing,
-      "api_dispatch_workflow_enqueue_event_insert",
-      async () => {
-        return await insertChatEvent(
-          tx,
-          values,
-          args.queueEventId === undefined ? "none" : "id",
-        );
-      },
-    );
-    if (!inserted && args.queueEventId === undefined) {
-      throw new Error("Workflow queue event insert returned no row");
-    }
-    return inserted?.id ?? null;
+      createdAt: event.row.createdAt,
+    },
+    conflict:
+      args.queueEventId === undefined ? ("none" as const) : ("id" as const),
   };
 }
 
-async function pendingAutomationEventIds(
-  db: Pick<Db, "select">,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly scheduleTicksOnly?: boolean;
-  },
-): Promise<readonly string[]> {
-  const pending = await listPendingChatInputs(db, {
-    chatThreadId: args.chatThreadId,
-    eventTypes: ["input.automation"],
-  });
-  if (pending.length === 0) {
-    return [];
-  }
-  const contexts = await db
-    .select({ eventId: chatEvents.id, contextId: chatEvents.contextId })
-    .from(chatEvents)
-    .where(
-      and(
-        inArray(
-          chatEvents.id,
-          pending.map(({ id }) => {
-            return id;
-          }),
-        ),
-        eq(chatEvents.contextType, "automation"),
-      ),
-    );
-  const contextIds = contexts.flatMap(({ contextId }) => {
-    return contextId === null ? [] : [contextId];
-  });
-  if (contextIds.length === 0) {
-    return [];
-  }
-  const owned = await db
-    .select({
-      id: chatAutomationContext.id,
-      eventType: chatAutomationContext.eventType,
-    })
-    .from(chatAutomationContext)
-    .where(
-      and(
-        inArray(chatAutomationContext.id, contextIds),
-        eq(chatAutomationContext.automationId, args.automationId),
-      ),
-    );
-  const ownedIds = new Set(
-    owned.flatMap(({ id, eventType }) => {
-      return args.scheduleTicksOnly === true && eventType === "manual"
-        ? []
-        : [id];
-    }),
+export function pendingWorkflowScheduleTickCondition(args: {
+  readonly chatThreadId: string;
+  readonly automationId: string;
+  readonly eventId: string;
+}) {
+  const revoker = alias(chatEvents, "workflow_tick_revoker");
+  return and(
+    eq(chatEvents.chatThreadId, args.chatThreadId),
+    eq(chatEvents.eventType, "input.automation"),
+    isNull(chatEvents.runId),
+    eq(chatEvents.contextType, "automation"),
+    eq(chatAutomationContext.automationId, args.automationId),
+    or(
+      isNull(chatAutomationContext.eventType),
+      ne(chatAutomationContext.eventType, "manual"),
+    ),
+    ne(chatEvents.id, args.eventId),
+    notExists(
+      sql`SELECT 1 FROM ${chatEvents} AS workflow_tick_revoker WHERE ${eq(revoker.revokesEventId, chatEvents.id)}`,
+    ),
   );
-  return contexts.flatMap(({ eventId, contextId }) => {
-    return contextId !== null && ownedIds.has(contextId) ? [eventId] : [];
-  });
 }
 
-export async function revokePendingScheduleTicks(
-  db: Db | Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly excludeEventId?: string;
-  },
-): Promise<void> {
-  const pending = await pendingAutomationEventIds(db, {
-    chatThreadId: args.chatThreadId,
-    automationId: args.automationId,
-    scheduleTicksOnly: true,
-  });
-  for (const eventId of pending) {
-    if (eventId === args.excludeEventId) {
-      continue;
-    }
-    await revokeChatEvent(db, eventId, {
+/** Every target is an unconsumed input. Preserve its immutable context edge. */
+export function workflowScheduleRevocationRows(args: {
+  readonly chatThreadId: string;
+  readonly targets: readonly Pick<
+    typeof chatEvents.$inferSelect,
+    "id" | "createdAt" | "contextType" | "contextId"
+  >[];
+  readonly currentTime: Date;
+}): readonly PreparedChatEventRow[] {
+  return args.targets.map((target) => {
+    return {
+      id: randomUUID(),
       chatThreadId: args.chatThreadId,
       eventType: "control.revoke",
       runId: null,
-    });
-  }
+      payload: null,
+      createdAt: new Date(
+        Math.max(args.currentTime.getTime(), target.createdAt.getTime() + 1),
+      ),
+      revokesEventId: target.id,
+      contextType: target.contextType,
+      contextId: target.contextId,
+    };
+  });
 }
