@@ -1,7 +1,7 @@
 import { command } from "ccstate";
-import { writeDb$, type Db } from "../external/db";
-import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
-import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { touchChatThreadLastMessageAtIndependently$ } from "./chat-event-shared.service";
+import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { settleIncludingAbort } from "../utils";
 
 interface NativeChatThreadTouch {
   readonly chatThreadId: string;
@@ -13,32 +13,32 @@ interface NativeChatThreadTouch {
   };
 }
 
-/** A weakly consistent side effect, independent of the committed input. */
-export async function touchNativeChatThread(
-  database: Db,
-  args: NativeChatThreadTouch,
-): Promise<void> {
-  await attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
-    return touchChatThreadLastMessageAtIndependently(
-      database,
-      args.chatThreadId,
-      {
-        touchedAt: args.createdAt,
-        eventId: args.eventId,
-        authorizedScope: args.authorizedScope,
-      },
-    );
-  });
-}
-
-/** The ingress owns this sidebar touch after its pick and before publication. */
+/** The ingress owns this independent sidebar touch after its committed input. */
 export const touchNativeChatThread$ = command(
   async (
     { set },
     args: NativeChatThreadTouch,
     signal: AbortSignal,
   ): Promise<void> => {
-    await touchNativeChatThread(set(writeDb$), args);
+    const startedAt = performance.now();
+    const result = await settleIncludingAbort(
+      set(
+        touchChatThreadLastMessageAtIndependently$,
+        args.chatThreadId,
+        {
+          touchedAt: args.createdAt,
+          eventId: args.eventId,
+          authorizedScope: args.authorizedScope,
+        },
+        signal,
+      ),
+    );
     signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "thread_touch",
+      args.chatThreadId,
+      startedAt,
+      result,
+    );
   },
 );

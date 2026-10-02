@@ -19,11 +19,11 @@ import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
-import { settle } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadRunAutonomyBudget } from "./autonomy-budget.service";
-import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
-import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { touchChatThreadLastMessageAtIndependently$ } from "./chat-event-shared.service";
+import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatEventInsertSql } from "./chat-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import {
@@ -45,43 +45,59 @@ const CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE =
 const AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE =
   "e020ef30-b3ec-4465-83e0-f040094ef14b";
 
-async function appendAutonomyBudgetError(args: {
-  readonly db: Db;
-  readonly chatThreadId: string;
-  readonly sourceRunId: string;
-}): Promise<boolean> {
-  const errorEvent =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await args.db.execute(
-        chatEventInsertSql(
-          {
-            id: uuidv5(
-              `${args.chatThreadId}:${args.sourceRunId}`,
-              AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
-            ),
-            chatThreadId: args.chatThreadId,
-            eventType: "output.error",
-            content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-            runId: null,
-            error: "AUTONOMY_BUDGET_EXHAUSTED",
-          },
-          "id",
+const appendAutonomyBudgetError$ = command(
+  async (
+    { set },
+    args: {
+      readonly chatThreadId: string;
+      readonly sourceRunId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const errorEvent =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await set(writeDb$).execute(
+          chatEventInsertSql(
+            {
+              id: uuidv5(
+                `${args.chatThreadId}:${args.sourceRunId}`,
+                AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
+              ),
+              chatThreadId: args.chatThreadId,
+              eventType: "output.error",
+              content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+              runId: null,
+              error: "AUTONOMY_BUDGET_EXHAUSTED",
+            },
+            "id",
+          ),
         ),
+      )[0] ?? null;
+    signal.throwIfAborted();
+    if (!errorEvent) {
+      return false;
+    }
+    const startedAt = performance.now();
+    const result = await settleIncludingAbort(
+      set(
+        touchChatThreadLastMessageAtIndependently$,
+        args.chatThreadId,
+        { touchedAt: errorEvent.createdAt, eventId: errorEvent.id },
+        signal,
       ),
-    )[0] ?? null;
-  if (!errorEvent) {
-    return false;
-  }
-  await attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
-    return touchChatThreadLastMessageAtIndependently(
-      args.db,
-      args.chatThreadId,
-      { touchedAt: errorEvent.createdAt, eventId: errorEvent.id },
     );
-  });
-  return true;
-}
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "thread_touch",
+      args.chatThreadId,
+      startedAt,
+      result,
+    );
+    return true;
+  },
+);
 
 /**
  * Anchored case-insensitive `*`-wildcard match. Every character except `*`
@@ -368,11 +384,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
           continue;
         }
         exhaustedThreadIds.add(chatThreadId);
-        const inserted = await appendAutonomyBudgetError({
-          db,
-          chatThreadId,
-          sourceRunId: event.runId,
-        });
+        const inserted = await set(
+          appendAutonomyBudgetError$,
+          {
+            chatThreadId,
+            sourceRunId: event.runId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         if (inserted) {
           await publishChatThreadMessageCreatedSafely({

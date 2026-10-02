@@ -1493,7 +1493,7 @@ export async function isVisibleChatEventFixture(
   const [event] = await database
     .select({ id: chatEvents.id })
     .from(chatEvents)
-    .where(and(eq(chatEvents.id, eventId), visibleChatEventCondition(database)))
+    .where(and(eq(chatEvents.id, eventId), visibleChatEventCondition()))
     .limit(1);
   return event !== undefined;
 }
