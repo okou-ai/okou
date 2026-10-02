@@ -28,7 +28,6 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { seedRun$ } from "./helpers/usage-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -1270,23 +1269,33 @@ describe("POST /api/chat-threads", () => {
 
   it("uses the workspace default for a new thread instead of the caller run model", async () => {
     const fixture = await seedAgent();
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId: fixture.agentId,
-        triggerSource: "web",
-        selectedModel: OTHER_WORKSPACE_MODEL,
-      },
-      context.signal,
+    const runnerGroup = api.configureRunnerGroup();
+    api.acceptStorageDownloads();
+    await api.grantProEntitlement(fixture.actor);
+    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+    const source = await accept(
+      threadsClient().create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          agentId: fixture.agentId,
+          title: "Caller using another model",
+          model: OTHER_WORKSPACE_MODEL,
+        },
+      }),
+      [201],
     );
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
-      runId,
+    const { runId } = await api.createThreadRun(fixture.actor, {
+      agentId: fixture.agentId,
+      threadId: source.body.id,
+      prompt: "Create a separate thread using the workspace default",
     });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(runId);
+    expect(claim.piModelConfig).toMatchObject({ model: OTHER_WORKSPACE_MODEL });
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the caller Run claim to provide OKOU_TOKEN");
+    }
 
     const response = await accept(
       threadsClient().create({
@@ -1306,10 +1315,13 @@ describe("POST /api/chat-threads", () => {
     );
     expect(metadataResponse.body.selectedModel).toBe(WORKSPACE_DEFAULT_MODEL);
     expect(metadataResponse.body.serviceTier).toBeNull();
+    await api.requestCancelRun(fixture.actor, runId, [200]);
   });
 
   it("uses the member model and priority default and allows an explicit standard override", async () => {
     const fixture = await seedAgent();
+    const runnerGroup = api.configureRunnerGroup();
+    api.acceptStorageDownloads();
     await api.grantProEntitlement(fixture.actor);
     const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
     const priorityProvider = await api.createOrgModelProvider(fixture.actor, {
@@ -1358,24 +1370,21 @@ describe("POST /api/chat-threads", () => {
     );
     expect(source.body.serviceTier).toBe("priority");
 
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId: fixture.agentId,
-        triggerSource: "web",
-        chatThreadId: source.body.id,
-        selectedModel: PRIORITY_MODEL,
-      },
-      context.signal,
-    );
-    const inheritedToken = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
-      runId,
+    const { runId } = await api.createThreadRun(fixture.actor, {
+      agentId: fixture.agentId,
+      threadId: source.body.id,
+      prompt: "Create a separate thread with the member's priority default",
     });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(runId);
+    expect(claim.piModelConfig).toMatchObject({
+      model: PRIORITY_MODEL,
+      serviceTier: "priority",
+    });
+    const inheritedToken = claim.platformEnvironment.OKOU_TOKEN;
+    if (!inheritedToken) {
+      throw new Error("Expected the caller Run claim to provide OKOU_TOKEN");
+    }
 
     const inherited = await accept(
       threadsClient().create({
@@ -1412,6 +1421,7 @@ describe("POST /api/chat-threads", () => {
       selectedModel: PRIORITY_MODEL,
       serviceTier: null,
     });
+    await api.requestCancelRun(fixture.actor, runId, [200]);
   });
 
   it("uses the workspace default when the request omits a model", async () => {

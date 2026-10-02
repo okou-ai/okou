@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
 
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import {
+  billingStatusContract,
+  billingUsagePackCheckoutContract,
+  billingUsagePackCreditsContract,
+} from "@okouai/api-contracts/contracts/billing";
 import type StripeSDK from "stripe";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -24,6 +28,8 @@ import {
 } from "../test-usage-pack-subscription-state";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
 import { billingStatusRoutes } from "../billing-status";
+import { billingCheckoutRoutes } from "../billing-checkout";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 
 const context = testContext();
 const routeMocks = createRouteMocks(context);
@@ -364,6 +370,139 @@ async function seedUsagePackLifecycle(
   };
 }
 
+async function checkoutUsagePackLifecycle(
+  userId: string,
+  usagePackUsd: UsagePackUsd,
+  tier: "pro" | "team" = "pro",
+): Promise<UsagePackLifecycleFixture> {
+  const orgId = `org_usage_pack_${randomUUID()}`;
+  const customerId = `cus_${randomUUID()}`;
+  const subscriptionId = `sub_${randomUUID()}`;
+  const checkoutSessionId = `cs_${randomUUID()}`;
+  routeMocks.clerk.session(userId, orgId, "org:admin");
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+    id: orgId,
+    name: "Usage pack lifecycle organization",
+    slug: `usage-pack-${orgId.slice(-8)}`,
+    createdBy: userId,
+    createdAt: now(),
+  });
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [
+        {
+          role: "org:admin",
+          publicUserData: { userId },
+          createdAt: now(),
+        },
+      ],
+    },
+  );
+  context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+    { data: [] },
+  );
+  context.mocks.stripe.customers.create.mockResolvedValueOnce({
+    id: customerId,
+  });
+  context.mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
+    id: checkoutSessionId,
+    url: `https://checkout.stripe.test/${checkoutSessionId}`,
+  });
+  context.mocks.stripe.prices.retrieve.mockImplementation((priceId) => {
+    if (typeof priceId !== "string") {
+      throw new Error("Expected a Stripe Price ID");
+    }
+    const configuration = usagePackForPriceId(priceId);
+    return Promise.resolve({
+      id: priceId,
+      active: true,
+      currency: "usd",
+      type: "recurring",
+      recurring: { interval: "month", interval_count: 1 },
+      unit_amount: configuration.usagePackUsd * 100,
+      tax_behavior: "exclusive",
+      product: {
+        id: `prod_${configuration.usagePackUsd}`,
+        name: `$${configuration.usagePackUsd} usage pack`,
+        metadata: { bonusCredits: String(configuration.bonusCredits) },
+        tax_code: "txcd_10000000",
+      },
+    });
+  });
+  mockOptionalEnv("STRIPE_SECRET_KEY", "sk_usage_pack_lifecycle");
+  const appOrigin = new URL(env("APP_URL")).origin;
+  const response = await accept(
+    setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackCheckoutContract,
+    ).create({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        tier,
+        memberUsagePacks: [{ memberId: userId, usagePackUsd }],
+        successUrl: `${appOrigin}/billing?billing=success`,
+        cancelUrl: `${appOrigin}/billing?billing=canceled`,
+      },
+    }),
+    [200],
+  );
+  expect(response.body).toStrictEqual({
+    url: `https://checkout.stripe.test/${checkoutSessionId}`,
+  });
+  const input =
+    context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0];
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("metadata" in input) ||
+    typeof input.metadata !== "object" ||
+    input.metadata === null ||
+    !("usagePackSubscriptionId" in input.metadata) ||
+    typeof input.metadata.usagePackSubscriptionId !== "string"
+  ) {
+    throw new Error("Checkout did not identify its usage pack subscription");
+  }
+  const fixture: UsagePackLifecycleFixture = {
+    orgId,
+    tier,
+    customerId,
+    subscriptionId,
+    checkoutSessionId,
+    usagePackSubscriptionId: input.metadata.usagePackSubscriptionId,
+    userId,
+    invitationId: null,
+  };
+  onTestFinished(async () => {
+    await usagePackStateAction({
+      action: "cleanup",
+      orgId,
+      usagePackSubscriptionId: fixture.usagePackSubscriptionId,
+      deleteGrants: true,
+      deleteOrgMetadata: true,
+    });
+  });
+  const metadata = usagePackMetadata(fixture);
+  expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      customer: customerId,
+      metadata,
+      subscription_data: { metadata },
+      line_items: [
+        {
+          price: tier === "team" ? TEST_PRICE_PLAN_TEAM : TEST_PRICE_PLAN_PRO,
+          quantity: 1,
+        },
+        { price: priceIdForUsagePack(usagePackUsd), quantity: 1 },
+      ],
+    }),
+    {
+      idempotencyKey: `usage-pack-checkout:${fixture.usagePackSubscriptionId}`,
+    },
+  );
+  // Existing subscriptions may keep their paid Price after it leaves the catalog.
+  mockUsagePackPriceCatalog();
+  return fixture;
+}
+
 function mockUsagePackPriceCatalog(
   bonusCredits: (priceId: string) => string = (priceId) => {
     return String(usagePackForPriceId(priceId).bonusCredits);
@@ -549,9 +688,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("floors prorated purchased and bonus grants independently", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 50 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(userId, 50);
     const quantities = new Map([[TEST_PRICE_PACK_50, 1]]);
     const paidPeriod = period(0);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
@@ -571,20 +708,42 @@ describe("usage pack subscription Stripe lifecycle", () => {
       200,
     );
 
-    await expect(grantRows(fixture)).resolves.toStrictEqual([
-      {
-        userId,
-        grantType: "bonus",
-        originalAmount: 866,
-        expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
-      },
-      {
-        userId,
-        grantType: "purchased",
-        originalAmount: 16_670,
-        expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
-      },
-    ]);
+    const credits = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(credits.body).toStrictEqual({
+      purchasedCredits: 16_670,
+      bonusCredits: 866,
+      totalCredits: 17_536,
+      hasUsagePack: true,
+      creditGrants: expect.arrayContaining([
+        expect.objectContaining({
+          grantType: "bonus",
+          amount: 866,
+          remaining: 866,
+          expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+        }),
+        expect.objectContaining({
+          grantType: "purchased",
+          amount: 16_670,
+          remaining: 16_670,
+          expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+        }),
+      ]),
+      memberCredits: [
+        {
+          memberId: userId,
+          purchasedCredits: 16_670,
+          bonusCredits: 866,
+          totalCredits: 17_536,
+          creditGrants: credits.body.creditGrants,
+        },
+      ],
+    });
+    expect(credits.body.creditGrants).toHaveLength(2);
   });
 
   it("grants fully discounted renewal credits without a refundable amount", async () => {
@@ -646,11 +805,27 @@ describe("usage pack subscription Stripe lifecycle", () => {
   it.each(["pro", "team"] as const)(
     "shows usage packs after purchasing the new %s plan",
     async (tier) => {
-      const fixture = await seedUsagePackLifecycle(
-        [{ usagePackUsd: 20, userId: `user_${randomUUID()}` }],
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
         tier,
       );
-      await fulfillFirstUsagePackInvoice(fixture);
+      const paidPeriod = period(0);
+      const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        stripeSubscription(fixture, paidPeriod, quantities),
+      );
+      await postStripeEvent(
+        stripeEvent(
+          "invoice.paid",
+          paidInvoice(fixture, {
+            invoiceId: `in_${randomUUID()}`,
+            paidPeriod,
+            quantities,
+          }),
+        ),
+        200,
+      );
       await expect(readBillingStatus(fixture)).resolves.toMatchObject({
         tier,
         showUsagePack: true,
@@ -1931,9 +2106,10 @@ describe("usage pack subscription Stripe lifecycle", () => {
     });
 
     it("upgrades a paid Plan created earlier without refunding it", async () => {
-      const fixture = await seedUsagePackLifecycle([
-        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-      ]);
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
+      );
       const pro = legacyPlanPurchase(fixture, "pro");
       // Bought after the Pro subscription was already paid: a real upgrade.
       const team = legacyPlanPurchase(fixture, "team", period(0).start + 60);
@@ -1941,8 +2117,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
       await deliver(pro, team, team);
 
-      const state = await readUsagePackState(fixture);
-      expect(state.org?.tier).toBe("team");
+      expect((await readBillingStatus(fixture)).tier).toBe("team");
       expect(context.mocks.stripe.creditNotes.create).not.toHaveBeenCalled();
     });
   });

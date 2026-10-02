@@ -32,7 +32,6 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -114,7 +113,7 @@ describe("Lark integration", () => {
     );
   });
 
-  async function fixture() {
+  async function createOnboardedActor() {
     const userId = `user_${randomUUID()}`;
     const actor = {
       userId,
@@ -127,15 +126,15 @@ describe("Lark integration", () => {
       [FeatureSwitchKey.FeishuIntegration]: true,
     });
     authOrgApi.acceptAgentStorageWrites();
-    await runsApi.grantProEntitlement(actor);
-    const agent = await authOrgApi.createAgent(actor, {
+    const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "Bot agent",
-      visibility: "public",
     });
-    await setOrgDefaultAgentFixture({
-      orgId: actor.orgId,
-      agentId: agent.agentId,
-    });
+    const agent = await authOrgApi.updateAgentMetadata(
+      actor,
+      bootstrap.body.agentId,
+      { visibility: "public" },
+    );
+    await runsApi.grantProEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
       feishuConnectContract,
@@ -195,7 +194,7 @@ describe("Lark integration", () => {
   }
 
   it("keeps Lark installations separate from the legacy Feishu default", async () => {
-    const { client, larkClient, install } = await fixture();
+    const { client, larkClient, install } = await createOnboardedActor();
     const feishu = await install("feishu");
     const lark = await install("lark");
     const legacy = await accept(client.getStatus({ headers }), [200]);
@@ -233,7 +232,7 @@ describe("Lark integration", () => {
   });
 
   it("shares Lark rollout with other members of the installation organization", async () => {
-    const { actor, larkClient, install } = await fixture();
+    const { actor, larkClient, install } = await createOnboardedActor();
     const installation = await install("lark");
     mocks.clerk.session(`user_${randomUUID()}`, actor.orgId, "org:member");
     const status = await accept(larkClient.getStatus({ headers }), [200]);
@@ -242,7 +241,7 @@ describe("Lark integration", () => {
   });
 
   it("rejects an App ID already registered on the other platform", async () => {
-    const { larkClient, install } = await fixture();
+    const { larkClient, install } = await createOnboardedActor();
     const existing = await install("feishu");
     const conflict = await accept(
       larkClient.checkAppId({
@@ -255,7 +254,7 @@ describe("Lark integration", () => {
   });
 
   it("uses Lark for OAuth, user identity, and the bot deep link", async () => {
-    const { larkClient, install } = await fixture();
+    const { larkClient, install } = await createOnboardedActor();
     const installation = await install("lark");
     if (!installation.connectUrl) {
       throw new Error("Expected OAuth URL");
@@ -293,7 +292,7 @@ describe("Lark integration", () => {
   });
 
   it("verifies Lark callbacks and rejects them after the owner disables Lark", async () => {
-    const { actor, client, larkClient, install } = await fixture();
+    const { actor, client, larkClient, install } = await createOnboardedActor();
     const installation = await install("lark");
     const app = createAppWithRoutes({
       signal: context.signal,
@@ -325,7 +324,7 @@ describe("Lark integration", () => {
   });
 
   it("sends through Lark only and blocks sends when the switch is disabled", async () => {
-    const { actor, install, token } = await fixture();
+    const { actor, install, token } = await createOnboardedActor();
     const installation = await install("lark");
     const client = setupApp({
       context,
@@ -388,17 +387,9 @@ describe("Lark integration", () => {
     ).toHaveLength(1);
   });
   describe("with an installed Lark app", () => {
-    async function prepareScenario() {
-      const { install } = await fixture();
-      const installation = await install("lark");
-      return { installation };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
     it("answers an incoming Lark message with a Lark account-connect card", async () => {
-      const { installation } = preparedScenario;
+      const { install } = await createOnboardedActor();
+      const installation = await install("lark");
       const sent = createDeferredPromise<unknown>(context.signal);
       server.use(
         http.post(

@@ -10024,7 +10024,7 @@ describe("usage pack allocation management", () => {
     });
     const orgFixture = createOrgFixture();
     const addedUserId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId: orgFixture.userId, usagePackUsd: 20 }],
       "pro",
       orgFixture,
@@ -10137,35 +10137,37 @@ describe("usage pack allocation management", () => {
     );
 
     await postManagedUsagePackEvent("invoice.paid", paidInvoice);
-    const state = await readUsagePackState(
-      fixture.orgId,
-      fixture.usagePackSubscriptionId,
-    );
-    expect(state.allocations).toStrictEqual(
+    const updatedManagement = await readManagedUsagePacks(fixture);
+    expect(updatedManagement.allocations).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          userId: orgFixture.userId,
+          memberId: orgFixture.userId,
           usagePackUsd: 20,
-          status: "active",
         }),
         expect.objectContaining({
-          userId: addedUserId,
+          memberId: addedUserId,
           usagePackUsd: 50,
-          status: "active",
         }),
       ]),
     );
-    expect(state.grants).toStrictEqual(
+    const credits = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    const addedMemberCredits = credits.body.memberCredits?.find((member) => {
+      return member.memberId === addedUserId;
+    });
+    expect(addedMemberCredits?.creditGrants).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          userId: addedUserId,
           grantType: "purchased",
-          originalAmount: 25_000,
+          amount: 25_000,
         }),
         expect.objectContaining({
-          userId: addedUserId,
           grantType: "bonus",
-          originalAmount: 1300,
+          amount: 1300,
         }),
       ]),
     );
@@ -14567,7 +14569,9 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 50 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 50 },
+    ]);
     const quantities = new Map([[TEST_PRICE_USAGE_PACK_50, 1]]);
     const currentSubscription = managedUsagePackSubscription(
       fixture,
@@ -14601,11 +14605,19 @@ describe("usage pack allocation management", () => {
       }),
       [500],
     );
-    const applying = await readUsagePackState(
-      fixture.orgId,
-      fixture.usagePackSubscriptionId,
-    );
-    expect(applying.changes[0]?.status).toBe("applying");
+    const applying = await readManagedUsagePacks(fixture);
+    expect(applying.allocations).toStrictEqual([
+      expect.objectContaining({
+        memberId: userId,
+        usagePackUsd: 50,
+        pendingChange: expect.objectContaining({
+          id: preview.body.changeId,
+          kind: "downgrade",
+          status: "applying",
+          targetUsagePackUsd: 20,
+        }),
+      }),
+    ]);
 
     mockNow(new Date(initialNow.getTime() + 10 * 60 * 1000));
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
@@ -14615,11 +14627,19 @@ describe("usage pack allocation management", () => {
     );
     await reconcileBillingOrganization(fixture.orgId);
 
-    const scheduled = await readUsagePackState(
-      fixture.orgId,
-      fixture.usagePackSubscriptionId,
-    );
-    expect(scheduled.changes[0]?.status).toBe("scheduled");
+    const scheduled = await readManagedUsagePacks(fixture);
+    expect(scheduled.allocations).toStrictEqual([
+      expect.objectContaining({
+        memberId: userId,
+        usagePackUsd: 50,
+        pendingChange: expect.objectContaining({
+          id: preview.body.changeId,
+          kind: "downgrade",
+          status: "scheduled",
+          targetUsagePackUsd: 20,
+        }),
+      }),
+    ]);
     expect(
       context.mocks.stripe.subscriptionSchedules.update,
     ).toHaveBeenCalledTimes(2);
@@ -16100,7 +16120,11 @@ describe("usage pack allocation management", () => {
     }) => {
       let prepared: Awaited<ReturnType<typeof setupInvitationPreviewContext>>;
       beforeEach(async () => {
-        prepared = await setupInvitationPreviewContext("priced-invite");
+        prepared = await setupInvitationPreviewContext(
+          "priced-invite",
+          createOrgFixture(),
+          purchaseManagedUsagePack,
+        );
         mockInvitationChargePreview({
           lines: [{ lineAmountCents, subtotalCents, exclusiveTaxCents }],
           periodEnd: prepared.fixture.billingPeriod.end,
@@ -16131,18 +16155,20 @@ describe("usage pack allocation management", () => {
           ).toISOString(),
           expiresAt: expect.any(String),
         });
-        const state = await readUsagePackState(
-          fixture.orgId,
-          fixture.usagePackSubscriptionId,
-        );
-        expect(state.invitationPurchases).toContainEqual(
-          expect.objectContaining({
-            id: response.body.purchaseId,
-            expectedAmountCents,
-            purchasedCredits: 10_000,
-            bonusCredits: 200,
+        context.mocks.stripe.invoices.createPreview.mockClear();
+        const reopened = await accept(
+          setupApp({ context, routes: orgInviteRoutes })(
+            orgInviteContract,
+          ).previewPurchase({
+            headers: { authorization: "Bearer clerk-session" },
+            body: { email, role: "member", usagePackUsd: 20 },
           }),
+          [200],
         );
+        expect(reopened.body).toStrictEqual(response.body);
+        expect(
+          context.mocks.stripe.invoices.createPreview,
+        ).not.toHaveBeenCalled();
       });
     },
   );
@@ -17048,7 +17074,7 @@ describe("usage pack allocation management", () => {
   });
 
   it("stops Clerk 5xx retries when an invitation purchase is cancelled", async () => {
-    await beginInvitationPurchase();
+    await beginInvitationPurchase(createOrgFixture(), purchaseManagedUsagePack);
     const controller = new AbortController();
     const retryStarted = createDeferredPromise<void>(context.signal);
     let retrySignal: AbortSignal | undefined;
@@ -17503,7 +17529,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("activates one paid invitation exactly once after Clerk creates the membership", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     const invitationId = `inv_membership_${randomUUID()}`;
     const acceptedUserId = `user_membership_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);
