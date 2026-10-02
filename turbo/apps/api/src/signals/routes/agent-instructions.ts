@@ -1,3 +1,21 @@
+import { parseRawRows } from "../../lib/db-raw-rows";
+import {
+  piStableContextGenerationReceiptSchema,
+  publicationScopeCondition,
+  publicationScopePendingSql,
+  publicationReadinessSql,
+  beginPiStableContextPublicationSql,
+  piStableContextPublicationFromReceipt,
+  completePiStableContextPublicationSql,
+  PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
+  type PiStableContextPublicationFence,
+} from "../services/pi-stable-context-generation.service";
+import {
+  piStableContextPublications,
+  piStableContextGenerations,
+} from "@okouai/db/schema/pi-stable-context";
+import { randomUUID } from "node:crypto";
+
 import { command, computed } from "ccstate";
 import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
 import {
@@ -18,13 +36,7 @@ import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
 import { agentResponse } from "../services/agent-data.service";
-import {
-  beginPiStableContextPublication,
-  completePiStableContextPublication,
-  lockPiStableContextPublication,
-  PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
-  type PiStableContextPublicationFence,
-} from "../services/pi-stable-context-generation.service";
+
 import {
   commitPreparedAgentInstructionsStorageInTransaction,
   prepareAgentInstructionsStorage$,
@@ -176,7 +188,39 @@ const prepareAndPublishAgentInstructions$ = command(
       ) {
         return { kind: "conflict" as const };
       }
-      if (!(await lockPiStableContextPublication(tx, reservation.fence))) {
+      await tx.execute(
+        publicationScopePendingSql(reservation.fence.scope, nowDate()),
+      );
+      signal.throwIfAborted();
+      const [piMutation0Publication] = await tx
+        .select({ token: piStableContextPublications.token })
+        .from(piStableContextPublications)
+        .innerJoin(
+          piStableContextGenerations,
+          and(
+            eq(
+              piStableContextGenerations.orgId,
+              piStableContextPublications.orgId,
+            ),
+            eq(
+              piStableContextGenerations.agentId,
+              piStableContextPublications.agentId,
+            ),
+            eq(
+              piStableContextGenerations.subject,
+              piStableContextPublications.subject,
+            ),
+          ),
+        )
+        .where(publicationScopeCondition(reservation.fence))
+        .limit(1);
+      signal.throwIfAborted();
+      await tx.execute(
+        publicationReadinessSql(reservation.fence.scope, nowDate()),
+      );
+      signal.throwIfAborted();
+
+      if (!(piMutation0Publication !== undefined)) {
         signal.throwIfAborted();
         return { kind: "conflict" as const };
       }
@@ -275,10 +319,25 @@ const reserveAgentInstructionPublication$ = command(
       }
       // Reserve BEFORE IO: a slow older preparation must never supersede a
       // request that started preparing later and already published its HEAD.
-      const fence = await beginPiStableContextPublication(
-        tx,
-        { orgId: args.orgId, agentId: current.id },
-        PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
+      const piMutation1Scope = { orgId: args.orgId, agentId: current.id };
+      const piMutation1Key =
+        PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY;
+      const piMutation1Token = randomUUID();
+      const fence = piStableContextPublicationFromReceipt(
+        parseRawRows(
+          piStableContextGenerationReceiptSchema,
+          await tx.execute(
+            beginPiStableContextPublicationSql(
+              piMutation1Scope,
+              piMutation1Key,
+              piMutation1Token,
+              nowDate(),
+            ),
+          ),
+        ),
+        piMutation1Scope,
+        piMutation1Key,
+        piMutation1Token,
       );
       reservedFence = fence;
       signal.throwIfAborted();
@@ -309,7 +368,9 @@ async function settleInstructionPublication(
 ): Promise<void> {
   // Deliberately outlive request cancellation; await exact-token settlement.
   await db.transaction(async (tx) => {
-    await completePiStableContextPublication(tx, fence);
+    await tx.execute(publicationScopePendingSql(fence.scope, nowDate()));
+    await tx.execute(completePiStableContextPublicationSql(fence));
+    await tx.execute(publicationReadinessSql(fence.scope, nowDate()));
   });
 }
 

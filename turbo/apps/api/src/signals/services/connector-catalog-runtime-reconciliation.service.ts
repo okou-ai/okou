@@ -1,3 +1,8 @@
+import { nowDate } from "../../lib/time";
+import {
+  invalidatePiStableContextsForCatalogSourceSql,
+  invalidateAllPiStableContextsSql,
+} from "./pi-stable-context-generation.service";
 import { command } from "ccstate";
 
 import { writeDb$ } from "../external/db";
@@ -6,10 +11,6 @@ import {
   connectorCatalogSource,
   connectorCatalogSourceIsTestScoped,
 } from "./connector-catalog-source";
-import {
-  invalidateAllPiStableContexts,
-  invalidatePiStableContextsForCatalogSource,
-} from "./pi-stable-context-generation.service";
 
 /** Atomically publish a repaired runtime projection and its stable-context demand. */
 export const reconcileConnectorCatalogRuntimeProjection$ = command(
@@ -20,12 +21,14 @@ export const reconcileConnectorCatalogRuntimeProjection$ = command(
         await reconcileConnectorCatalogRuntimeProjectionInTransaction(tx);
       if (changed) {
         if (connectorCatalogSourceIsTestScoped()) {
-          await invalidatePiStableContextsForCatalogSource(
-            tx,
-            connectorCatalogSource().sourceId,
+          await tx.execute(
+            invalidatePiStableContextsForCatalogSourceSql(
+              connectorCatalogSource().sourceId,
+              nowDate(),
+            ),
           );
         } else {
-          await invalidateAllPiStableContexts(tx);
+          await tx.execute(invalidateAllPiStableContextsSql(nowDate()));
         }
       }
     });

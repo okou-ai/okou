@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -18,7 +23,7 @@ import { createSlackClient } from "../external/slack-message-client";
 import { now, nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 import { slackChatCallbackPayloadSchema } from "./slack-chat-callback-payload";
 
@@ -211,15 +216,26 @@ async function deliverClaimedSlackChatCallback(
     return "skipped_revoked";
   }
 
-  const [mentionerCount, featureContext] = await Promise.all([
+  const [mentionerCount, featureSwitchContextRows0] = await Promise.all([
     countCanonicalSlackMentioners({
       db: args.db,
       workspaceId: binding.workspaceId,
       channelId: payload.channelId,
       threadTs: payload.routeThreadTs ?? payload.threadTs,
     }),
-    loadUserFeatureSwitchContext(args.db, run.orgId, run.userId),
+    args.db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(run.orgId, run.userId)),
   ]);
+  const featureContext = featureSwitchContextFromRows(
+    run.orgId,
+    run.userId,
+    featureSwitchContextRows0,
+  );
   signal.throwIfAborted();
   const [botToken, presentation] = await Promise.all([
     decryptPersistentSecretValue(binding.encryptedBotToken, featureContext),
@@ -377,7 +393,7 @@ export async function deliverSlackChatAdmissionFailure(
     return;
   }
 
-  const [mentionerCount, featureContext, orgRows, agentRows] =
+  const [mentionerCount, featureSwitchContextRows1, orgRows, agentRows] =
     await Promise.all([
       countCanonicalSlackMentioners({
         db: args.db,
@@ -385,7 +401,13 @@ export async function deliverSlackChatAdmissionFailure(
         channelId: args.channelId,
         threadTs: args.routeThreadTs ?? args.threadTs,
       }),
-      loadUserFeatureSwitchContext(args.db, args.orgId, args.userId),
+      args.db
+        .select({
+          userId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
+        })
+        .from(userFeatureSwitches)
+        .where(userFeatureSwitchRowCondition(args.orgId, args.userId)),
       args.db
         .select({ defaultAgentId: orgMetadata.defaultAgentId })
         .from(orgMetadata)
@@ -397,6 +419,11 @@ export async function deliverSlackChatAdmissionFailure(
         .where(eq(agents.id, args.agentId))
         .limit(1),
     ]);
+  const featureContext = featureSwitchContextFromRows(
+    args.orgId,
+    args.userId,
+    featureSwitchContextRows1,
+  );
   signal.throwIfAborted();
   const org = orgRows[0];
   const agent = agentRows[0];

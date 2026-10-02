@@ -6,7 +6,7 @@ import {
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { invalidateFeatureSwitchPiStableContexts$ } from "./pi-stable-context-generation.service";
 import {
@@ -35,30 +35,6 @@ export function userFeatureSwitchOverrides(
       );
     return userFeatureSwitchOverridesFromRows(rows, userId);
   });
-}
-
-export async function loadUserFeatureSwitchContext(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  userId: string,
-): Promise<FeatureSwitchContext> {
-  const rows = await db
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(
-      and(
-        eq(userFeatureSwitches.orgId, orgId),
-        inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
-      ),
-    );
-  return {
-    orgId,
-    userId,
-    overrides: userFeatureSwitchOverridesFromRows(rows, userId),
-  };
 }
 
 export const loadUserFeatureSwitchContext$ = command(

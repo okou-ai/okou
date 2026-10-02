@@ -1,3 +1,4 @@
+import { invalidatePiStableContextsForOrgSql } from "./pi-stable-context-generation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
@@ -87,7 +88,7 @@ import { loadCustomConnectorPermissionBundle } from "./custom-connector-permissi
 import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
-import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
+
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
@@ -1800,7 +1801,9 @@ const persistCustomConnectorCreate$ = command(
         oauthConfig = insertedOAuthConfig;
       }
       requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
-      await invalidatePiStableContextsForOrg(tx, args.orgId);
+      await tx.execute(
+        invalidatePiStableContextsForOrgSql(args.orgId, nowDate()),
+      );
       return { row, oauthConfig };
     });
   },
@@ -2165,7 +2168,9 @@ const persistCustomConnectorUpdate$ = command(
         );
       const storedOAuthConfig = oauthConfig ?? null;
       requireCustomConnectorOAuthConfig(updated.authMode, storedOAuthConfig);
-      await invalidatePiStableContextsForOrg(tx, args.orgId);
+      await tx.execute(
+        invalidatePiStableContextsForOrgSql(args.orgId, nowDate()),
+      );
       return { row: updated, oauthConfig: storedOAuthConfig };
     });
   },
@@ -2463,7 +2468,9 @@ export const deleteCustomConnector$ = command(
             eq(orgCustomConnectors.orgId, args.orgId),
           ),
         );
-      await invalidatePiStableContextsForOrg(tx, args.orgId);
+      await tx.execute(
+        invalidatePiStableContextsForOrgSql(args.orgId, nowDate()),
+      );
       return true;
     });
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;

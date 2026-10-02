@@ -1,6 +1,11 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { createHash } from "node:crypto";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import {
   builtInModelKeyIdsByVendor$,
   resolveBuiltInModelRuntimeRouteWithKeys,
@@ -487,27 +492,6 @@ export function orgModelPolicyFactsFromSnapshot(args: {
  * request supplies them; otherwise they are read in parallel with the
  * policies. The system default is projected, so reading policies never writes.
  */
-export async function loadOrgModelPolicyFacts(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  orgId: string,
-  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
-  suppliedCatalog?: ModelCatalog,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const [orgPlanCapabilities, stored, catalog] = await Promise.all([
-    suppliedPlanCapabilities === undefined
-      ? loadOrgPlanCapabilities(db, orgId)
-      : suppliedPlanCapabilities,
-    loadRows(db, orgId),
-    suppliedCatalog ?? catalogSnapshot,
-  ]);
-  return orgModelPolicyFactsFromSnapshot({
-    catalog,
-    orgId,
-    orgPlanCapabilities,
-    stored,
-  });
-}
 
 async function listOrgProviderRoutes(
   db: Db,
@@ -1031,6 +1015,85 @@ export interface OrgModelPolicyListing {
   readonly systemDefaultModel: string;
 }
 
+function modelPolicyListingResponse(args: {
+  readonly modelMode: OrgModelPoliciesResponse["modelMode"];
+  readonly policies: readonly OrgModelPolicy[];
+  readonly memberPolicies: readonly OrgModelPolicy[];
+  readonly persistedRows: readonly OrgModelPolicyRow[];
+  readonly catalog: ModelCatalog;
+  readonly rows: ReturnType<typeof projectPolicyRows>;
+}): OrgModelPoliciesResponse {
+  const { modelMode, policies, memberPolicies, persistedRows, catalog, rows } =
+    args;
+  return {
+    modelMode,
+    policies: [...policies, ...memberPolicies],
+    revision: policyRevision(persistedRows),
+    // Permanent since the personal subscription priority rollout completed.
+    // Removing the field needs its own client-compatibility window.
+    writePreconditionRequired: true,
+    modelsAvailableToAdd:
+      modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
+  };
+}
+function memberPolicyProjection(args: {
+  readonly policy: OrgModelPolicy;
+  readonly administrative: OrgModelPolicy;
+  readonly effective: ResolvedModelFirstPolicyRoute | null;
+  readonly catalog: ModelCatalog;
+  readonly capabilities: OrgPlanCapabilities | null;
+  readonly member: MemberModelRouteContext;
+  readonly runtimeRoute: Awaited<
+    ReturnType<typeof resolveBuiltInModelRuntimeRouteWithKeys>
+  >;
+}): OrgModelPolicy {
+  const {
+    policy,
+    administrative,
+    effective,
+    catalog,
+    capabilities,
+    member,
+    runtimeRoute,
+  } = args;
+  const providerType =
+    effective?.modelProviderType ?? policy.defaultProviderType;
+  const credentialScope =
+    effective?.modelProviderCredentialScope ?? policy.credentialScope;
+  const planDenied = checkOrgPlanRunAdmission({
+    catalog,
+    capabilities,
+    modelProviderType: providerType,
+    selectedModel: policy.model,
+    personalSubscription: isMemberSubscriptionRoute({
+      catalog,
+      member,
+      model: policy.model,
+      providerType,
+      credentialScope,
+    }),
+  });
+  const availability = memberRouteAvailability({
+    planDenied: !!planDenied,
+    effective,
+    orgRouteAvailable:
+      policy.routeStatus === "valid" &&
+      (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
+  });
+  return {
+    ...administrative,
+    memberEffective: {
+      providerType,
+      runtimeProviderType: isBuiltInModelProviderType(providerType)
+        ? (runtimeRoute?.providerType ?? null)
+        : providerType,
+      credentialScope,
+      availability,
+      accountSelection:
+        credentialScope === "member" ? "capture_required" : "not_applicable",
+    },
+  } satisfies OrgModelPolicy;
+}
 async function listOrgModelPolicies(
   catalogSnapshot: ModelCatalog,
   db: Db,
@@ -1044,10 +1107,17 @@ async function listOrgModelPolicies(
   ]);
   const rows = projectPolicyRows(catalog, orgId, persistedRows);
   const member = await loadMemberModelRouteContext(db, orgId, userId);
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
+  const switchRows = await db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(orgId, userId));
+  const featureSwitchContext = featureSwitchContextFromRows(
     orgId,
     userId,
+    switchRows,
   );
   const capabilities = await loadOrgPlanCapabilities(db, orgId);
   const providers = await listOrgProviderRoutes(db, orgId);
@@ -1092,45 +1162,15 @@ async function listOrgModelPolicies(
             ? capabilities
             : { restrictedBuiltInModels: false, supportByok: true },
       });
-      const providerType =
-        effective?.modelProviderType ?? policy.defaultProviderType;
-      const credentialScope =
-        effective?.modelProviderCredentialScope ?? policy.credentialScope;
-      const planDenied = checkOrgPlanRunAdmission({
+      return memberPolicyProjection({
+        policy,
+        administrative,
+        effective,
         catalog,
         capabilities,
-        modelProviderType: providerType,
-        selectedModel: policy.model,
-        personalSubscription: isMemberSubscriptionRoute({
-          catalog,
-          member,
-          model: policy.model,
-          providerType,
-          credentialScope,
-        }),
+        member,
+        runtimeRoute,
       });
-      const availability = memberRouteAvailability({
-        planDenied: !!planDenied,
-        effective,
-        orgRouteAvailable:
-          policy.routeStatus === "valid" &&
-          (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
-      });
-      return {
-        ...administrative,
-        memberEffective: {
-          providerType,
-          runtimeProviderType: isBuiltInModelProviderType(providerType)
-            ? (runtimeRoute?.providerType ?? null)
-            : providerType,
-          credentialScope,
-          availability,
-          accountSelection:
-            credentialScope === "member"
-              ? "capture_required"
-              : "not_applicable",
-        },
-      } satisfies OrgModelPolicy;
     }),
   );
   const modelMode = await loadOrgModelMode(db, orgId);
@@ -1145,16 +1185,14 @@ async function listOrgModelPolicies(
         )
       : [];
 
-  const response: OrgModelPoliciesResponse = {
+  const response = modelPolicyListingResponse({
     modelMode,
-    policies: [...policies, ...memberPolicies],
-    revision: policyRevision(persistedRows),
-    // Permanent since the personal subscription priority rollout completed.
-    // Removing the field needs its own client-compatibility window.
-    writePreconditionRequired: true,
-    modelsAvailableToAdd:
-      modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
-  };
+    policies,
+    memberPolicies,
+    persistedRows,
+    catalog,
+    rows,
+  });
   return { response, systemDefaultModel: catalog.systemDefaultModel };
 }
 

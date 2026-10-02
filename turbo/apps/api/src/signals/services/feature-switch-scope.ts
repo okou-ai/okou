@@ -1,5 +1,11 @@
-import { filterFeatureSwitchOverrides } from "@okouai/core/feature-switch";
+import {
+  filterFeatureSwitchOverrides,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { and, eq, inArray } from "drizzle-orm";
 
 export const ORG_SENTINEL_USER_ID = "__org__";
 
@@ -31,6 +37,25 @@ export function splitFeatureSwitchesByScope(
   }
 
   return { userSwitches, orgSwitches };
+}
+
+export function userFeatureSwitchRowCondition(orgId: string, userId: string) {
+  return and(
+    eq(userFeatureSwitches.orgId, orgId),
+    inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
+  );
+}
+
+export function featureSwitchContextFromRows(
+  orgId: string,
+  userId: string,
+  rows: readonly UserFeatureSwitchOverrideRow[],
+): FeatureSwitchContext & { readonly overrides: Record<string, boolean> } {
+  return {
+    orgId,
+    userId,
+    overrides: userFeatureSwitchOverridesFromRows(rows, userId),
+  };
 }
 
 export interface UserFeatureSwitchOverrideRow {

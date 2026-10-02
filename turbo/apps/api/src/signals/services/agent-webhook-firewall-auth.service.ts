@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
@@ -131,7 +136,7 @@ import {
   customConnectorSecretKey,
   loadCustomConnectorRuntimeData,
 } from "./custom-connector.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import {
   loadRunCreditAdmissionState,
   resolveOrgCreditAvailability,
@@ -4547,10 +4552,17 @@ async function decryptFirewallAuthSecrets(
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string> | null;
 }> {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
+  const featureSwitchContextRows0 = await db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(orgId, auth.userId));
+  const featureSwitchContext = featureSwitchContextFromRows(
     orgId,
     auth.userId,
+    featureSwitchContextRows0,
   );
   const secrets = await tapError(
     decryptPersistentSecretsMap(encryptedSecrets, featureSwitchContext),
@@ -5400,10 +5412,17 @@ async function prepareCurrentCustomConnectorFirewallAuth(args: {
     return { ok: false, response: connectorNotConfigured() };
   }
 
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    args.db,
+  const featureSwitchContextRows1 = await args.db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(args.auth.orgId, args.auth.userId));
+  const featureSwitchContext = featureSwitchContextFromRows(
     args.auth.orgId,
     args.auth.userId,
+    featureSwitchContextRows1,
   );
   const currentSecrets: Record<string, string> = {};
   for (const alias of args.referenced.secrets) {

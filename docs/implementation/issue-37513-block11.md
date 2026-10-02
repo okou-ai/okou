@@ -1,198 +1,112 @@
-# Issue 37513 — block11 partial implementation handoff
+# Issue 37513 — feature context and Pi SQL ownership increment
 
-Base: `5b333105e96a80790948ed169ae915a10c89ffbe`.
+Base: `9900095aaafb9386daeedfea5d51dcfcac9734b5` on the parent branch.
+Worker: `refactor/37513-worker-block11-terminal-20261002`.
 
-**This slice is partial. Neither named service file is terminal-complete.**
-The feature-switch write/invalidation chain is migrated; the legacy context
-adapter and the general Pi publication/storage-demand interfaces remain.
-No PR, review, merge, release, workflow or production action is part of this slice.
+## Implemented interfaces
 
-## Implemented business behavior
+- Deleted `loadUserFeatureSwitchContext(db, orgId, userId)` and every call.
+  Existing executors perform the same typed selection, with the pure
+  `userFeatureSwitchRowCondition` and `featureSwitchContextFromRows` builders.
+  Identity, tenant filtering, registered-key filtering, organization sentinel
+  precedence and the existing SQL snapshot are unchanged. The read command and
+  computed factories remain the public context interface for node consumers.
+- `pi-stable-context-generation.service.ts` no longer accepts connections,
+  transactions, getters, setters or computed/command nodes. Its existing feature
+  invalidation command owns `writeDb$`; the other exports construct SQL,
+  predicates, validated receipts and plain Storage-demand values, without I/O.
+- Callers execute these statements on their own existing executor. The old
+  generation/Head lock helpers, implicit transaction forwarding and in-module
+  recapture/locking chain are deleted. No new lock, column, retry, timeout,
+  signal parameter slot or fallback protocol is added.
+- A reservation is a gated CTE: advance the scope to pending, upsert the exact
+  publication key/token/generation from that result, and invalidate the scope's
+  disposable heads in one statement. Bigint receipts are decoded at the SQL
+  owner with `parseRawRows` and the reviewed safe-integer schema; pure receipt
+  builders receive decoded values, never an executor.
+- Exact-key publication admission, deletion and readiness remain in the same
+  source transaction as the HEAD write. A real pending-scope write precedes the
+  current token read/delete, in the same generation-before-publication order as
+  reservation. A fresh exact-token predicate decides supersession. Independent
+  keys are accounted for by a fresh readiness query after deletion. The source
+  writer must not execute these stages as separately committing operations.
+- Storage-demand SQL now reads one compact snapshot with at most 16 eligible
+  immutable inputs, builds rebound values purely, and conditionally writes each
+  captured Head at its exact generation. Larger scopes are cleared without
+  loading every large JSON input. Storage retirement uses its dependency
+  predicate directly. A CAS miss preserves the concurrent winner; canonical
+  next-use preparation validates/rebuilds from current authoritative sources.
 
-- `updateUserFeatureSwitches$` owns a single multi-row `INSERT ON CONFLICT`.
-  The conflict branch filters the stored JSONB to registered keys and merges
-  `excluded.switches` in PostgreSQL. It never replaces unrelated concurrent
-  keys with a pre-read snapshot. Personal and organization rows share the
-  existing `(org_id, user_id)` unique key; no schema change is needed.
-- `deleteUserFeatureSwitches$` owns the caller-row delete, organization-key
-  subtraction and conditional empty-row cleanup. Subtraction and empty-row
-  deletion inspect the live database value, not a pre-read value. Organization
-  overrides still affect every member; peer personal overrides are untouched.
-- Neither feature-switch writer has an explicit transaction or passes a DB
-  handle to another function. Invalidation commits independently, as approved
-  for low-frequency configuration. Cancellation or failure after a source
-  commit does not roll that source commit back. Existing canonical source
-  validation remains the recovery path; no retry or fallback is introduced.
-- New `invalidateFeatureSwitchPiStableContexts$` accepts only
-  `{ orgId, userId? }` and a final `AbortSignal`. It gets `writeDb$` itself,
-  advances matching generations with arithmetic, reads stale head identities
-  once, and clears them in batches of at most 256. Existing head generation
-  conditions prevent clearing a concurrently rebuilt head. The stale-source
-  predicate also excludes heads already rebuilt at the current generation.
-- This feature-only chain does not enter the legacy invalidation helpers,
-  `recapturePiStableContextInput`, row locks, transaction callbacks or external
-  services. It leaves heads `missing`; the next canonical demand captures
-  current sources and schedules a build. It deliberately does **not** preserve
-  the former eager warming of up to 16 captured variants. The canonical-use
-  rebuild remains; its behavioral integration verification is still required.
-- `userFeatureSwitchOverrides` reads inside its computed; the context factory
-  constructs its override node before the context computed runs.
-  `loadUserFeatureSwitchContext$` reads `db$` itself and returns definite
-  overrides. Direct route/command consumers in this slice use the computed
-  or read command instead of supplying their connection.
-- Pure scope splitting/row projection stays ordinary TypeScript.
-  `ORG_SCOPED_FEATURE_SWITCH_KEYS` is exported for SQL key subtraction; the
-  now-unused `withoutOrgScopedFeatureSwitches` helper is removed.
+## Changed source chains
 
-No OAuth, tenant, ownership, permission, billing, money, idempotency or lease
-contract is intentionally changed. No new lock, timeout, state atom, retry,
-production test hook or coordination column was added.
+Context callers: Pi memory Stage 1 schedule/candidate/credential/worker, Phase 2
+credential, GitHub OAuth, connector runtime sync, webhook firewall auth, internal
+Slack callback, Stripe workflow feature gating, Feishu configuration and model
+policy listing. The supplied catalog snapshot ownership in model-policy is
+preserved; its response/member projection is pure.
 
-## Public feature-switch exports
+Pi callers: Workflow create/update/delete/visibility, Agent updates/instructions,
+Official workflow installation/catalog publication, custom/Feishu connectors,
+connector selections and grants, connector catalog synchronization/reconciliation,
+Storage commit and skill synchronization. Small changes in those owners replace
+handle calls with SQL/typed selections; their unrelated business logic is not
+rewritten. Existing source tests/fixtures have their removed interface calls
+adapted to execute SQL locally rather than pass a transaction into the service.
 
-| Export                                            | Shape / status                                                           |
-| ------------------------------------------------- | ------------------------------------------------------------------------ |
-| `userFeatureSwitchOverrides(orgId, userId)`       | Plain identity factory returning a computed                              |
-| `userFeatureSwitchContext(orgId, userId)`         | Closed plain-identity context graph                                      |
-| `loadUserFeatureSwitchContext$`                   | Read command; final optional caller signal retained for existing callers |
-| `updateUserFeatureSwitches$`                      | Writing command; final required signal                                   |
-| `deleteUserFeatureSwitches$`                      | Writing command; final required signal                                   |
-| `loadUserFeatureSwitchContext(db, orgId, userId)` | **Remaining legacy DB-handle adapter; not terminal**                     |
+Three obsolete exports used only by eager projection transformation were removed:
+`piStableContextWorkflowInvalidationOptions`, `loadedMemberModelRouteContext` and
+`loadOrgModelPolicyFacts`. No currently referenced model catalog API is removed.
 
-The new Pi public export is `invalidateFeatureSwitchPiStableContexts$`.
-All prior general Pi exports remain unchanged; the new export must not be
-mistaken for a full-file interface migration.
+## Transactions and recovery
 
-## Exact remaining generation-service DB parameters
+- No transaction lives in the generation service. Reservation is one statement,
+  not a transaction moved into another helper.
+- Existing final publication transactions remain source-owned: exact-token
+  admission/consumption, Storage HEAD/version/index publication and readiness
+  must commit together. This is the core invariant, not mere multi-table
+  convenience. The statement order prevents a newer same-key reservation from
+  committing between admission and the old HEAD write. There is no external
+  fetch/KMS/S3 in the added SQL stages.
+- Generic source invalidation no longer eagerly recaptures 16 variants. It
+  advances authoritative generations and leaves projections missing; canonical
+  next-use demand recaptures current sources. This intentionally removes
+  transaction-bound catalog/permission recapture. It does not delete source
+  data, immutable artifacts or active Run context. Existing canonical repair and
+  bounded artifact/resource cleanup remain responsible for projection recovery.
+- Storage changes retain bounded exact-input rebinding and worker demand. Only
+  disposable projection CAS losers may need canonical repair. Source HEAD data
+  and same-token publication failure remain authoritative.
 
-Each function below still has its first parameter `db: Db` in
-`pi-stable-context-generation.service.ts` (22 parameters in total).
+## Important residual boundary — not full PR terminal acceptance
 
-- `invalidateKnownHeads`
-- `advanceGeneration`
-- `invalidatePiStableContext`
-- `lockHeadSet`
-- `readCapturedHeadDemands`
-- `resetLockedHeadSet`
-- `invalidateHeadSet`
-- `advanceGenerationSet`
-- `invalidatePiStableContextsForUser`
-- `invalidatePiStableContextsForOrg`
-- `invalidateAllPiStableContexts`
-- `invalidatePiStableContextsForCatalogSource`
-- `beginPiStableContextPublication`
-- `retirePiStableContextStorageDemands`
-- `enqueuePiStableContextStorageDemands`
-- `refreshPiStableContextStorageDemands`
-- `updatePublicationReadiness`
-- `retirePiStableContextPublication`
-- `completePiStableContextPublication`
-- `lockPiStableContextGenerationScopes`
-- `lockPiStableContextPublicationKey`
-- `lockPiStableContextPublication`
+Both scoped service interfaces have zero DB/transaction/node parameters, and the
+old helper calls are gone. This is not evidence that all surrounding legacy
+writers have reached the target. In particular, existing caller families still
+have ordinary functions with DB/Tx parameters for their unrelated SQL:
 
-Remaining internal handle chains:
+- instruction Storage registration/commit helpers (`commitPreparedVolumeServerSide`
+  and `commitPreparedAgentInstructionsStorageInTransaction`);
+- Storage HEAD/version commit helpers under `storage-write.service.ts`;
+- Workflow metadata/deletion helpers, connector grant/replacement writers,
+  permission-grant writers and catalog activation helpers.
 
-1. General invalidation/publication -> `advanceGeneration` or
-   `advanceGenerationSet` -> `invalidateKnownHeads` / `invalidateHeadSet` ->
-   `lockHeadSet`, `readCapturedHeadDemands`, `resetLockedHeadSet` ->
-   `recapturePiStableContextInput` in the separate recapture service.
-2. Storage demand enqueue/refresh -> captured generation/head reads and writes;
-   instruction/storage publication still passes its owning transaction into
-   these exported helpers.
-3. Complete/retire publication -> `updatePublicationReadiness`, with keyed
-   generation/token fencing and multiple pending publication keys.
-4. Catalog-source invalidation -> `lockPiStableContextGenerationScopes` ->
-   `advanceGenerationSet` -> legacy head invalidation.
+Their new Pi statements stay on the original source executor and preserve its
+atomic publication boundary. Moving those entire owner chains into commands is
+still a follow-up; do not call the whole issue terminal-complete merely because
+the two scoped interfaces no longer forward handles.
 
-Direct production caller families still needing migration:
+The generic eager-warming optimization changed. Existing internal generation
+cases that assert immediate recaptured/pending Head rows have not been behaviorally
+validated against the new lazy recovery contract; parent CI and public-boundary
+recovery verification are required. Those private row assertions were not added
+or expanded as new coverage. Retained public instruction/Workflow/Storage and
+feature-switch API coverage must remain green, especially same-token conflict,
+authorization, independent publication keys and source freshness after repair.
 
-- Routes: `workflows.ts`, `agents.ts`, `agent-instructions.ts`.
-- Services: `official-workflow-installation`, `workflow-update`,
-  `workflow-delete`, `feishu-custom-connector`, `custom-connector`,
-  `storage-write`, `user-connectors`, `chat-thread-connector-selection`,
-  `agent-instructions-storage`, `user-permission-grants`,
-  `connector-catalog-sync`, `cron-sync-skills`,
-  `connector-catalog-runtime-reconciliation` (all `.service.ts`).
-- Existing internal tests and `src/test-fixtures/pi-stable-context.ts` also
-  consume the legacy surface. Those internal assertions were not expanded.
+## Verification
 
-## Remaining transaction and atomic invariant
-
-- `feature-switches.service.ts`: **zero** explicit transactions.
-- New feature-only invalidation command: **zero** explicit transactions.
-- `pi-stable-context-generation.service.ts`: one existing explicit
-  `db.transaction` in `beginPiStableContextPublication`. It advances a scope to
-  pending, invalidates existing heads and writes the exact keyed publication
-  token/generation as one reservation. It still passes `tx` to
-  `advanceGeneration`, so it is **not** an approved terminal owning command.
-  General callers also pass their existing source-write transactions into the
-  other helpers. These invariants need caller-level restructuring, not merely
-  wrapping the helpers in separately committing commands.
-
-## Remaining feature-context legacy callers
-
-The adapter retains `db: Pick<ReadonlyDb, "select">`. The following 19 call
-sites remain under `src/signals/services/`; these services' unrelated DB and
-transaction lifecycles were not silently rewritten:
-
-| File                                                                | Call-site lines in this slice |
-| ------------------------------------------------------------------- | ----------------------------- |
-| `pi-memory-stage1-schedule.service.ts`                              | 118, 377, 469, 610            |
-| `pi-memory-phase2-credential.service.ts`                            | 375, 485, 531                 |
-| `github-oauth.service.ts`                                           | 840                           |
-| `mcp-chat-discovery.service.ts`                                     | 481                           |
-| `connector-runtime-sync.service.ts`                                 | 281                           |
-| `pi-memory-stage1-credential.service.ts`                            | 603                           |
-| `pi-memory-stage1-worker.service.ts`                                | 787                           |
-| `pi-memory-stage1-candidate.service.ts`                             | 359                           |
-| `stripe-invoice-paid-workflow-automation-feature-switch.service.ts` | 19                            |
-| `agent-webhook-firewall-auth.service.ts`                            | 4550, 5403                    |
-| `internal-slack-chat-run-callback.service.ts`                       | 221, 388                      |
-| `feishu-config.ts`                                                  | 164                           |
-
-## Continuation: context ownership increments
-
-The continuation removes the adapter from Social Data gating, model-policy
-listing, Runner VNC authority and Canonical Slack status. Model-policy sources
-are loaded independently in parallel; the member policy projection is pure.
-Runner VNC check/resolve are commands with no DB or Clerk client arguments,
-and the authority command still rechecks feature configuration after decrypting
-credentials before returning the handoff.
-
-Canonical Slack status exposes only target/read, refresh and clear commands.
-All six prior DB-handle functions in that module are removed. Its single
-repeatable-read transaction retains the actual invariant: ingress-to-queue and
-queue-to-run commit atomically, so status must not combine opposite sides of a
-commit into an idle state that never existed. All snapshot SQL is inline in
-that owning command's callback. Physical-thread matching remains pure. Status
-cleanup uses plain payload facts and preserves the original preparation error
-when cleanup fails or aborts; the existing detached owner remains unchanged.
-
-Discord's feature gate now also uses a business-input read command. DM binding
-selection loads the low-frequency rollout decision before its existing
-installation/connection ownership transaction; those ownership checks remain.
-The model-picker's former read-only transaction is replaced by an owned gate
-read and a current connection-identity read. The computed gate constructs its
-context node before execution.
-
-This continuation does not migrate the 22 general Pi generation parameters.
-In particular, moving the instruction publication check into an independent
-read command would be incorrect: a newer same-key reservation could commit
-between that check and the old Storage HEAD write. The final source writer must
-check and fence in its own publication statement/short transaction. No such
-unsafe split was pushed.
-
-## Verification boundary
-
-Added public feature-switch API cases cover concurrent unrelated personal keys,
-unknown-key filtering plus same-key replacement, and deletion isolation across
-organization members. They use public endpoints for setup and assertions, no
-DB rows, service mocks, delays, retries or test hooks.
-
-Local static checks cover affected Prettier, ESLint, Oxlint (including affected
-production type-aware lint), API dependency/gateway/core/routes and test type
-checks, and workspace Knip. Behavioral tests and deployed Pi rebuild acceptance
-are left to parent PR CI; no local Vitest or dev server was run. The work is
-mergeable as an implementation increment, **not** evidence that issue 37513 or
-either named service file reached its terminal shape.
+Affected Prettier, ESLint, API-cwd Oxlint/type-aware lint, Knip and API
+core/test type checks were run. Full type checks use `TSC_CHECKERS=1` for this
+increment. No local Vitest, dev server, PR creation/review/merge, workflow,
+release or production operation is authorized or performed. Behavioral CI and
+end-user acceptance remain unverified; the final handoff records actual checks.

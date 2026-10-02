@@ -361,18 +361,6 @@ async function memberContextForPolicy(
 }
 
 /** The member's loaded logical subscriptions (none for sentinel contexts). */
-export async function loadedMemberModelRouteContext(
-  member: ModelRouteMemberContext,
-): Promise<MemberModelRouteContext> {
-  if (!("personalMetadata" in member)) {
-    return member;
-  }
-  if (member.personalMetadata.kind === "not-applicable") {
-    return { memberScoped: false, subscriptions: [] };
-  }
-  const loaded = await member.personalMetadata.load();
-  return { memberScoped: true, subscriptions: loaded.subscriptions };
-}
 
 /**
  * The one free-plan exemption besides free Built-in models, for Auto and

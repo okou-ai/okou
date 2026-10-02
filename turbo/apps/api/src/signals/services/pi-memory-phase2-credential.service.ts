@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -23,7 +28,7 @@ import {
   catalogHasProviderRoute,
   type ModelCatalog,
 } from "./model-catalog.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import {
   piMemoryPhase2Model,
@@ -377,10 +382,17 @@ async function prepareSubscription(
     reject("credential_unavailable");
   }
   const sourceId = source.id;
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
+  const featureSwitchContextRows0 = await db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(source.orgId, source.userId));
+  const featureSwitchContext = featureSwitchContextFromRows(
     source.orgId,
     source.userId,
+    featureSwitchContextRows0,
   );
   signal.throwIfAborted();
   // Refresh/read the canonical token/account bundle without any retained run
@@ -488,10 +500,17 @@ export async function resolvePiMemoryPhase2Credential(
     | Awaited<ReturnType<typeof resolveBuiltInModelRuntimeRoute>>
     | undefined;
   if (pin.modelProvider === "built-in") {
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContextRows1 = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(claim.orgId, claim.userId));
+    const featureSwitchContext = featureSwitchContextFromRows(
       claim.orgId,
       claim.userId,
+      featureSwitchContextRows1,
     );
     signal.throwIfAborted();
     route = await resolveBuiltInModelRuntimeRoute(
@@ -536,10 +555,17 @@ export async function resolvePiMemoryPhase2Credential(
         reject("credential_unavailable");
       }
       await subscription?.validate(tx);
-      const context = await loadUserFeatureSwitchContext(
-        tx,
+      const featureSwitchContextRows2 = await tx
+        .select({
+          userId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
+        })
+        .from(userFeatureSwitches)
+        .where(userFeatureSwitchRowCondition(claim.orgId, claim.userId));
+      const context = featureSwitchContextFromRows(
         claim.orgId,
         claim.userId,
+        featureSwitchContextRows2,
       );
       signal.throwIfAborted();
       if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
