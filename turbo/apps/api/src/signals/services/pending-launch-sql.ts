@@ -23,13 +23,18 @@ export function pendingLaunchInsertSql<T extends PgTable>(
         }),
       );
     }),
-    returning: returning.map((key) => {
-      const column = columns[key];
-      if (!column) {
-        throw new Error(`Unknown pending launch returning column: ${key}`);
-      }
-      return { path: [key], field: column };
-    }),
+    returning:
+      returning.length === 0
+        ? undefined
+        : returning.map((key) => {
+            const column = columns[key];
+            if (!column) {
+              throw new Error(
+                `Unknown pending launch returning column: ${key}`,
+              );
+            }
+            return { path: [key], field: column };
+          }),
   });
 }
 
@@ -59,12 +64,17 @@ export function pendingLaunchUpdateSql<T extends PgTable>(
     ),
     where,
     joins: [],
-    returning: returning.map((key) => {
-      const column = columns[key];
-      if (!column) {
-        throw new Error(`Unknown pending launch returning column: ${key}`);
-      }
-      return { path: [key], field: column };
-    }),
+    returning:
+      returning.length === 0
+        ? undefined
+        : returning.map((key) => {
+            const column = columns[key];
+            if (!column) {
+              throw new Error(
+                `Unknown pending launch returning column: ${key}`,
+              );
+            }
+            return { path: [key], field: column };
+          }),
   });
 }
