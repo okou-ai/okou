@@ -142,8 +142,7 @@ function resolvePromptInput(options: ImageOptions): string | undefined {
 const DEFAULT_IMAGE_MODEL_ALIAS =
   IMAGE_MODEL_CONFIGS[DEFAULT_IMAGE_MODEL].alias;
 const IMAGE_MODEL_DETAIL = `Image model if direct image generation is used: the user's Settings › Built-in tools image model (default ${DEFAULT_IMAGE_MODEL_ALIAS})`;
-const DEFAULT_SIZE_DESCRIPTION =
-  "1024x1024, or auto with --image-url or seedream5-lite";
+const DEFAULT_SIZE_DESCRIPTION = "1024x1024, or auto with --image-url";
 
 function requestedSizeDetail(size: string | undefined): string {
   return `Requested size: ${size ?? `model default (${DEFAULT_SIZE_DESCRIPTION})`}`;
@@ -310,7 +309,7 @@ Output:
 Notes:
   - Authenticates via OKOU_TOKEN (requires file:write capability)
   - Charges org credits after successful image generation
-  - Uses OpenAI, fal.ai, and BytePlus for built-in image model execution
+  - Uses OpenAI and fal.ai for built-in image model execution
   - The image model is not a command option. Built-in generation uses the
     image model selected in Settings › Built-in tools, or
     ${DEFAULT_IMAGE_MODEL_ALIAS} when none is selected. The result reports the
@@ -332,10 +331,6 @@ Models:
     bills the first processed megapixel separately from additional input and
     output megapixels. Ideogram 4 maps low/medium/high quality to
     Turbo/Balanced/Quality output-megapixel pricing.
-  - BytePlus: seedream5-pro and seedream5-lite.
-    BytePlus generations bill the documented provider cost plus 25%, rounded
-    up to whole credits after the request's output and reference costs are
-    combined.
 
 Options:
   Support for size, quality, background, format, and provider controls
@@ -353,8 +348,6 @@ Options:
     edges divisible by 16, long:short ratio <= 3:1, and total pixels
     between 655,360 and 8,294,400. gpt-image-1 uses auto, 1024x1024,
     1536x1024, or 1024x1536.
-    seedream5-pro accepts 1K, 1.5K, 2K, auto, or supported custom sizes;
-    seedream5-lite accepts 2K, 3K, 4K, auto, or supported custom sizes.
     qwen-image-3 and flux-2-pro accept at most 4,194,304 total pixels.
   - Quality: low, medium, high, or auto. Low is fastest for drafts.
     GPT Image 2.5 also accepts xhigh and max for more detailed output.
@@ -362,15 +355,15 @@ Options:
     Flux, Qwen, and Seedream do not support transparent backgrounds.
     GPT Image 2.5 supports transparent backgrounds with png or webp.
   - Format: png, jpeg, or webp for GPT Image, Nano Banana 2, and qwen-image-3
-    models; png or jpeg for other fal and BytePlus models.
+    models; png or jpeg for other fal models.
   - fal-only controls: --seed and --safety-tolerance for supported fal models;
     --enhance-prompt for flux-pro-1.1. --compression and --moderation low are
     not supported on the fal-backed image path. Ideogram prompt expansion is
     disabled because Okou supplies the final prompt and expansion costs extra.
   - Image-to-image: pass --image-url to use the model's edit/reference path.
     GPT Image 2.5 accepts up to 16 source images and an optional mask.
-    Nano Banana 2 models and Seedream 5 Lite accept up to 14 source images;
-    Seedream 5 Pro accepts up to 10; flux-2-pro accepts up to 9;
+    Nano Banana 2 models accept up to 14 source images;
+    flux-2-pro accepts up to 9;
     qwen-image-3 accepts up to 3. Flux Redux accepts --image-prompt-strength
     to override the provider default; GPT edit models accept --input-fidelity
     and supported models accept --mask-image-url.

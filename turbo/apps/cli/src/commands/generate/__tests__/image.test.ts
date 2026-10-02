@@ -640,7 +640,7 @@ describe("okou generate image command", () => {
       "Image model if direct image generation is used: the user's Settings › Built-in tools image model (default gpt-image-2.5-flare)",
     );
     expect(stdout).toContain(
-      "Requested size: model default (1024x1024, or auto with --image-url or seedream5-lite)",
+      "Requested size: model default (1024x1024, or auto with --image-url)",
     );
     expect(stdout).toContain("Source image URLs: none");
     expect(stdout).toContain("## Image Authoring Rules");
@@ -1013,29 +1013,25 @@ describe("okou generate image command", () => {
       "The image model is not a command option. Built-in generation uses the image model selected in Settings › Built-in tools, or gpt-image-2.5-flare when none is selected.",
     );
     expect(normalizedHelpOutput).toContain(
-      "(default: 1024x1024, or auto with --image-url or seedream5-lite)",
+      "(default: 1024x1024, or auto with --image-url)",
     );
     expect(normalizedHelpOutput).toContain(
       "depends on the image model selected in Settings",
     );
     expect(helpOutput).toContain("flux-pro-1.1");
     expect(helpOutput).toContain("nano-banana-2");
-    expect(helpOutput).toContain("seedream5-pro");
-    expect(helpOutput).toContain("seedream5-lite");
     expect(helpOutput).toContain("3840x2160");
     expect(helpOutput).toContain("edges divisible by 16");
     expect(helpOutput).toContain("--compression <0-100>");
     expect(helpOutput).toContain("Moderation strictness: auto or low");
     expect(helpOutput).toContain(
-      "Uses OpenAI, fal.ai, and BytePlus for built-in image model execution",
+      "Uses OpenAI and fal.ai for built-in image model execution",
     );
     expect(helpOutput).toContain("--seed");
     expect(helpOutput).toContain("--safety-tolerance");
     expect(helpOutput).toContain("--image-url");
     expect(helpOutput).toContain("--image-prompt-strength");
-    expect(helpOutput).toContain(
-      "Nano Banana 2 models and Seedream 5 Lite accept up to 14",
-    );
+    expect(helpOutput).toContain("Nano Banana 2 models accept up to 14");
     expect(helpOutput).toContain("qwen-image-3");
     expect(helpOutput).toContain("nano-banana-2-lite");
     expect(helpOutput).toContain("flux-2-pro");

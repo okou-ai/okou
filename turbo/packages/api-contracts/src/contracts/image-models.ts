@@ -14,8 +14,6 @@ export const IMAGE_MODEL_IDS = [
   "alibaba/qwen-image-3/text-to-image",
   "ideogram/v4",
   "fal-ai/bytedance/seedream/v4/text-to-image",
-  "dola-seedream-5-0-pro-260628",
-  "seedream-5-0-lite-260128",
   "fal-ai/nano-banana-2",
   "google/nano-banana-2-lite",
 ] as const;

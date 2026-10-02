@@ -32,8 +32,6 @@ const SCHEMA = {
   GCP_LLM_PROJECT_ID: z.string().optional(),
   GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: z.string().optional(),
   GCP_LLM_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
-  BYTEPLUS_API_KEY: z.string().min(1).optional(),
-  BYTEPLUS_STT_API_KEY: z.string().min(1).optional(),
   OKOU_WEATHER_GOOGLE_WEATHER_TOKEN: z.string().min(1).optional(),
   OKOU_SCRAPE_FIRECRAWL_TOKEN: z.string().min(1).optional(),
   OKOU_WEB_SEARCH_PERPLEXITY_TOKEN: z.string().min(1).optional(),

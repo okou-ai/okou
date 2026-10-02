@@ -229,7 +229,6 @@ import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
-import { voiceIoSttRoutes } from "./routes/voice-io-stt";
 import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
 import { webDownloadRoutes } from "./routes/web-download";
 import { webFileUrlRoutes } from "./routes/web-file-url";
@@ -381,7 +380,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...voiceIoQuotaRoutes,
   ...voiceIoPolishRoutes,
   ...agentSetupPromptRoutes,
-  ...voiceIoSttRoutes,
   ...voiceIoTranscribeRoutes,
   ...webDownloadRoutes,
   ...webFileUrlRoutes,

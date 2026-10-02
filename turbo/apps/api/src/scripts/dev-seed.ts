@@ -720,16 +720,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup("image", "fal-ai/bytedance/seedream/v4/text-to-image", [
     ["output_image", usd(0.03), 1],
   ]),
-  // BytePlus Seedream 5 pricing, retrieved 2026-08-18 from:
-  // https://docs.byteplus.com/en/docs/ModelArk/1544106
-  // The service records the request's actual provider cost in micro-USD;
-  // 1250 credits per USD applies the requested 25% markup once to the total.
-  ...usageGroup("image", "dola-seedream-5-0-pro-260628", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-  ...usageGroup("image", "seedream-5-0-lite-260128", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
   ...usageGroup("image", "fal-ai/nano-banana-2", [
     ["output_image", usd(0.08), 1],
   ]),

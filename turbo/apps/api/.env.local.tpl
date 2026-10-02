@@ -124,11 +124,6 @@ OPENAI_WEBHOOK_SECRET=op://Development/openai/OPENAI_WEBHOOK_SECRET
 # Optional: fal media generation
 FAL_KEY=op://Development/fal/FAL_KEY
 
-# Optional: BytePlus ModelArk image generation
-BYTEPLUS_API_KEY=op://Development/byteplus/BYTEPLUS_API_KEY
-
-# Optional: BytePlus voice input STT
-BYTEPLUS_STT_API_KEY=op://Development/byteplus/BYTEPLUS_STT_API_KEY
 
 # Optional: Airtable OAuth Connector
 AIRTABLE_OAUTH_CLIENT_ID=op://Development/airtable/AIRTABLE_OAUTH_CLIENT_ID

@@ -37,7 +37,6 @@ import {
 } from "@okouai/api-contracts/contracts/usage-record";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { voiceIoSttContract } from "@okouai/api-contracts/contracts/voice-io-stt";
 
 import { mockEnv } from "../../../../lib/env";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -70,7 +69,6 @@ import { usageMembersRoutes } from "../../usage-members";
 import { usageRecordRoutes } from "../../usage-record";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { voiceIoQuotaRoutes } from "../../voice-io-quota";
-import { voiceIoSttRoutes } from "../../voice-io-stt";
 
 type ClerkOrgRole = "org:admin" | "org:member";
 
@@ -548,20 +546,6 @@ export function createBillingMediaApi(context: TestContext) {
         voiceIoQuotaContract,
       );
       return await accept(client.get({ headers: authenticate(actor) }), [200]);
-    },
-
-    async requestVoiceStt(
-      actor: ApiTestUser | null,
-      formData: FormData,
-      statuses: readonly (200 | 400 | 401 | 402 | 403 | 429 | 500)[],
-    ) {
-      const client = setupApp({ context, routes: voiceIoSttRoutes })(
-        voiceIoSttContract,
-      );
-      return await accept(
-        client.post({ headers: authenticate(actor), body: formData }),
-        statuses,
-      );
     },
 
     /**

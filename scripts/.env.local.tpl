@@ -31,6 +31,3 @@ R2_USER_ARTIFACTS_BUCKET_NAME=user-artifact-dev
 R2_USER_ARTIFACTS_ACCESS_KEY_ID=op://Development/cloudflare/R2_USER_ARTIFACTS_ACCESS_KEY_ID
 R2_USER_ARTIFACTS_SECRET_ACCESS_KEY=op://Development/cloudflare/R2_USER_ARTIFACTS_SECRET_ACCESS_KEY
 PUBLIC_ARTIFACTS_BASE_URL=https://cdn.vm7.io
-
-# BytePlus ModelArk API key for local built-in image generation
-BYTEPLUS_API_KEY=op://Development/byteplus/BYTEPLUS_API_KEY

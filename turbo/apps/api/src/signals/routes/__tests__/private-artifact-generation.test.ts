@@ -92,13 +92,17 @@ async function createFixture(privateArtifacts: boolean) {
         unitPrice: 24,
         unitSize: 1,
       },
-      {
-        kind: "image",
-        provider: "seedream-5-0-lite-260128",
-        category: "provider_cost_usd_micros",
-        unitPrice: 1250,
-        unitSize: 1_000_000,
-      },
+      ...["tokens.input.text", "tokens.input.image", "tokens.output.image"].map(
+        (category) => {
+          return {
+            kind: "image",
+            provider: "gpt-image-2.5-flare",
+            category,
+            unitPrice: 1000,
+            unitSize: 1_000_000,
+          };
+        },
+      ),
     ],
   });
   onTestFinished(async () => {
@@ -479,26 +483,24 @@ describe("managed artifact privacy", () => {
     expect(retried.url).toContain("/artifacts/");
   });
 
-  it("keeps BytePlus image completion private when the provider finishes after rollback", async () => {
+  it("keeps direct image completion private when the provider finishes after rollback", async () => {
     const fixture = await createFixture(true);
     server.use(
-      http.post(
-        "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations",
-        async () => {
-          await billing.updateFeatureSwitches(fixture.actor, {
-            [FeatureSwitchKey.PrivateArtifacts]: false,
-          });
-          return HttpResponse.json({
-            model: "seedream-5-0-lite-260128",
-            data: [
-              { url: sourceUrl, size: "2048x2048", output_format: "jpeg" },
-            ],
-          });
-        },
-      ),
+      http.post("https://api.openai.com/v1/images/generations", async () => {
+        await billing.updateFeatureSwitches(fixture.actor, {
+          [FeatureSwitchKey.PrivateArtifacts]: false,
+        });
+        return HttpResponse.json({
+          data: [{ b64_json: Buffer.from("private-image").toString("base64") }],
+          usage: {
+            input_tokens_details: { text_tokens: 200, image_tokens: 0 },
+            output_tokens: 2500,
+          },
+        });
+      }),
     );
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-    await useImageModel(fixture, "seedream-5-0-lite-260128");
+    await useImageModel(fixture, "gpt-image-2.5-flare");
     const queued = await accept(
       fixture.api(imageIoGenerateContract).post({
         headers,
@@ -521,7 +523,7 @@ describe("managed artifact privacy", () => {
     expect(result.embedUrl).toBeUndefined();
     expect(
       [...objects.values()].find((object) => {
-        return object.ContentType === "image/jpeg";
+        return object.ContentType === "image/png";
       })?.Bucket,
     ).toBe(privateBucket);
   });

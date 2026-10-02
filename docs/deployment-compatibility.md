@@ -1,5 +1,29 @@
 # Deployment Compatibility
 
+## File transcription and Seedream 5 retirement
+
+- Remove `okou video transcribe` and `/api/voice-io/stt`; old CLIs receive
+  `404` for that intentionally retired operation. Camera and frame extraction
+  remain available. Microphone input still uses the Gemini segment endpoint,
+  with unchanged authentication, quota policy, and response shape.
+- Remove Seedream 5 Pro and Lite from the shared image catalog, aliases, CLI
+  guidance, direct-provider execution, pricing seeds, and deployment secrets.
+  Seedream 4 continues through fal.ai. Existing member preferences and run
+  snapshots that name an unavailable model use the existing catalog
+  normalization and default model (`gpt-image-2.5-flare`). No database migration
+  or rewrite of usage history is required.
+- Old App with new API: a cached picker can still show a retired model; saving
+  it fails validation until reload. Reads normalize retired settings to unset.
+  New App with old API: the smaller picker never submits a retired selection;
+  an old API can continue serving an already-stored selection until it drains.
+  No Web floor change is included.
+- Direct image jobs accepted by the old API finish in that deployment's own
+  finite request lifetime. Completed artifacts, invoices, pricing records, and
+  historical usage remain readable; this does not delete provider-side data.
+  Rollback to an older API restores its older catalog and requires its original
+  deployment configuration. Production release and provider-secret deletion
+  are separate operations, not performed by this source change.
+
 ## Owner-selected RSA-AES VNC (default off; #37500)
 
 Migration `1313_rsa_aes_vnc` adds an independent nullable RSA wire-key pin and
@@ -337,14 +361,9 @@ Web client floor.
 - Older CLIs inside a run detect the sandbox token and omit `model` unless
   explicitly given `--model`; the
   server chooses the model in either case.
-  Without `OKOU_DEFAULT_IMAGE_MODEL` their size default falls back to their
-  built-in model (`1024x1024`, or `auto` with `--image-url`) instead of `auto`
-  for Seedream 5 Lite. For a member whose setting is Seedream 5 Lite, an image
-  text-to-image command with neither `--size` nor an explicit Seedream Lite
-  `--model` fails size validation with `400`. Editing with
-  `--image-url` still defaults to `auto`; the agent can retry text-to-image with
-  `--size auto` or an explicit supported size. Other
-  models are unaffected. Their snapshot and event schemas treat
+  Without `OKOU_DEFAULT_IMAGE_MODEL` their size default falls back to
+  `1024x1024`, or `auto` with `--image-url`. The formerly incompatible model
+  has since been retired as documented above. Their snapshot and event schemas treat
   `selectedImageModel` as optional, so chat thread reads are unaffected.
 
 Release prerequisite: release #37268 published CLI 9.373.0 but skipped
@@ -354,10 +373,9 @@ and
 The preceding verified production rootfs
 [installed CLI 9.371.0](https://github.com/okou-ai/okou/actions/runs/36426838612/job/108946499812).
 A rootfs-installed CLI does not expire with an individual run, so a two-hour
-drain does not establish its retirement. Before production release, verify that
-serving rootfs images use CLI 9.373.0 or later, or obtain explicit owner
-acceptance of continued Seedream 5 Lite default-size failures on older installed
-CLIs. This cleanup does not change CLI launch paths or the installed-CLI floor.
+drain does not establish its retirement. The default-size failure that required
+CLI 9.373.0 has since been superseded by the model retirement documented above.
+This cleanup does not change CLI launch paths or the installed-CLI floor.
 
 Old and new versions during deploy:
 
@@ -773,7 +791,7 @@ types; that floor update is a separate follow-up and is not part of this change.
 Follow-up to the retirement below, tracked in #37249.
 
 - The API no longer completes video or avatar jobs accepted by a
-  pre-retirement API. The BytePlus, MiniMax, and JoggAI webhook routes are
+  pre-retirement API. The retired video-provider webhook routes are
   removed (callbacks now receive `404`). A fal success callback for a video job
   is logged and acknowledged without completing the job; a fal failure
   callback still fails it. Status reads of

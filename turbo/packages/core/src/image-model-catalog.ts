@@ -57,14 +57,6 @@ export const IMAGE_MODEL_CONFIGS = {
     alias: "seedream4",
     label: "Seedream 4",
   },
-  "dola-seedream-5-0-pro-260628": {
-    alias: "seedream5-pro",
-    label: "Seedream 5 Pro",
-  },
-  "seedream-5-0-lite-260128": {
-    alias: "seedream5-lite",
-    label: "Seedream 5 Lite",
-  },
   "fal-ai/nano-banana-2": {
     alias: "nano-banana-2",
     label: "Nano Banana 2",
@@ -80,8 +72,8 @@ export type ImageModel = ImageModelId;
 /**
  * Catalog models offered by the user-facing picker, in display order. The
  * picker presents the current entry for each family rather than every catalog
- * entry: Seedream 4, both Flux 1.1 variants, and Seedream 5 Lite are all
- * deliberately absent. Stored member settings that name them remain supported.
+ * entry: Seedream 4 and both Flux 1.1 variants are deliberately absent.
+ * Stored member settings that name them remain supported.
  * Nano Banana 2 Lite is the exception: it is offered beside Nano Banana 2
  * because it is the cheaper way to reach the same family.
  */
@@ -94,7 +86,6 @@ export const PUBLIC_IMAGE_MODELS = [
   "google/nano-banana-2-lite",
   "fal-ai/flux-2-pro",
   "ideogram/v4",
-  "dola-seedream-5-0-pro-260628",
   "alibaba/qwen-image-3/text-to-image",
 ] as const satisfies readonly ImageModel[];
 
@@ -109,8 +100,6 @@ export const IMAGE_MODEL_ALIASES = {
   "qwen-image-3": "alibaba/qwen-image-3/text-to-image",
   "ideogram-4": "ideogram/v4",
   seedream4: "fal-ai/bytedance/seedream/v4/text-to-image",
-  "seedream5-pro": "dola-seedream-5-0-pro-260628",
-  "seedream5-lite": "seedream-5-0-lite-260128",
   "nano-banana-2": "fal-ai/nano-banana-2",
   "nano-banana2": "fal-ai/nano-banana-2",
   "nano-banana-2-lite": "google/nano-banana-2-lite",

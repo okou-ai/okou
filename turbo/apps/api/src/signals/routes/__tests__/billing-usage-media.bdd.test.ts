@@ -14,7 +14,6 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
@@ -24,7 +23,6 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
@@ -42,8 +40,6 @@ const RESTRICTED_PORTAL_CONFIGURATION = {
   login_page: { enabled: false },
   metadata: { purpose: "payment_method_management" },
 } as const;
-const BYTEPLUS_ASR_FLASH_URL =
-  "https://byteplus-proxy.vm0.ai/api/v3/auc/bigmodel/recognize/flash";
 type ApiUuid = `${string}-${string}-${string}-${string}-${string}`;
 
 function apiUuid(value: string): ApiUuid {
@@ -76,17 +72,6 @@ function checkoutUrls() {
     successUrl: `${appUrl}/settings/billing/success`,
     cancelUrl: `${appUrl}/settings/billing/cancel`,
   };
-}
-
-function pcmFormData(): FormData {
-  const formData = new FormData();
-  formData.append(
-    "file",
-    new File([new Uint8Array([0, 0])], "audio.wav", {
-      type: "audio/wav",
-    }),
-  );
-  return formData;
 }
 
 describe("BILL-01: billing status and Stripe-backed actions through public API", () => {
@@ -669,10 +654,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     const quota = await api.readVoiceQuota(admin);
     expect(quota.body).toStrictEqual({ allowed: false, count: 0, limit: 0 });
 
-    const stt = await api.requestVoiceStt(admin, pcmFormData(), [402]);
-    expectApiError(stt.body);
-    expect(stt.body.error.code).toBe("AUDIO_INPUT_QUOTA_EXCEEDED");
-
     // The validations below describe gpt-image-1, selected as the member's
     // image model.
     await api.selectImageModel(admin, "gpt-image-1");
@@ -965,338 +946,5 @@ describe("BILL-02: maps and banking visible boundaries", () => {
     expect(bankingWithSession.body.error.message).toBe(
       "This endpoint does not accept the provided credential type",
     );
-  });
-});
-
-const WEBM_EBML_HEADER: readonly number[] = [0x1a, 0x45, 0xdf, 0xa3];
-const WEBM_SEGMENT_ID: readonly number[] = [0x18, 0x53, 0x80, 0x67];
-const WEBM_INFO_ID: readonly number[] = [0x15, 0x49, 0xa9, 0x66];
-const WEBM_DURATION_ID: readonly number[] = [0x44, 0x89];
-const WEBM_TIMECODE_SCALE_ID: readonly number[] = [0x2a, 0xd7, 0xb1];
-// TimecodeScale element declaring 1,000,000 ns (one millisecond) per unit.
-const WEBM_TIMECODE_SCALE_MS: readonly number[] = [
-  ...WEBM_TIMECODE_SCALE_ID,
-  0x83,
-  0x0f,
-  0x42,
-  0x40,
-];
-
-function bytesOf(
-  ...parts: readonly (readonly number[] | Uint8Array)[]
-): Uint8Array<ArrayBuffer> {
-  const total = parts.reduce((sum, part) => {
-    return sum + part.length;
-  }, 0);
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    bytes.set(part, offset);
-    offset += part.length;
-  }
-  return bytes;
-}
-
-function asciiBytes(text: string): readonly number[] {
-  return [...text].map((char) => {
-    return char.charCodeAt(0);
-  });
-}
-
-function u16le(value: number): readonly number[] {
-  return [value & 0xff, (value >>> 8) & 0xff];
-}
-
-function u32le(value: number): readonly number[] {
-  return [
-    value & 0xff,
-    (value >>> 8) & 0xff,
-    (value >>> 16) & 0xff,
-    (value >>> 24) & 0xff,
-  ];
-}
-
-function riffWavHeader(): readonly number[] {
-  return [...asciiBytes("RIFF"), ...u32le(0), ...asciiBytes("WAVE")];
-}
-
-function wavChunkHeader(id: string, declaredSize: number): readonly number[] {
-  return [...asciiBytes(id), ...u32le(declaredSize)];
-}
-
-function wavFmtBody(
-  channels: number,
-  sampleRate: number,
-  bitsPerSample: number,
-): readonly number[] {
-  const blockAlign = channels * (bitsPerSample / 8);
-  return [
-    ...u16le(1),
-    ...u16le(channels),
-    ...u32le(sampleRate),
-    ...u32le(sampleRate * blockAlign),
-    ...u16le(blockAlign),
-    ...u16le(bitsPerSample),
-  ];
-}
-
-function float64be(value: number): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(8);
-  new DataView(bytes.buffer).setFloat64(0, value, false);
-  return bytes;
-}
-
-function float32be(value: number): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(4);
-  new DataView(bytes.buffer).setFloat32(0, value, false);
-  return bytes;
-}
-
-// Minimal WebM head: EBML header with an empty body, a Segment, and one Info
-// element whose body the caller provides. The declared Info size may lie to
-// model truncated streams.
-function webmWithInfoBody(
-  infoBody: readonly number[],
-  declaredSize = infoBody.length,
-): Uint8Array<ArrayBuffer> {
-  return bytesOf(
-    WEBM_EBML_HEADER,
-    [0x80],
-    WEBM_SEGMENT_ID,
-    [0xff],
-    WEBM_INFO_ID,
-    [0x80 | declaredSize],
-    infoBody,
-  );
-}
-
-function sttFormData(
-  bytes: Uint8Array<ArrayBuffer>,
-  filename: string,
-  type: string,
-): FormData {
-  const formData = new FormData();
-  formData.append("file", new File([bytes], filename, { type }));
-  return formData;
-}
-
-describe("FILE-02: audio transcription and speech billing", () => {
-  it("estimates WAV and WebM durations from byte variants through STT", async () => {
-    const { api, admin } = testActors();
-    if (!admin.orgId) {
-      throw new Error("Expected STT duration test user to have an org");
-    }
-    const runsApi = createRunsApi(context);
-    await runsApi.grantProEntitlement(admin);
-
-    mockEnv("BYTEPLUS_STT_API_KEY", "test-byteplus-stt-key");
-    server.use(
-      http.post(BYTEPLUS_ASR_FLASH_URL, () => {
-        return HttpResponse.json(
-          { result: { text: "bdd duration probe" } },
-          { headers: { "x-api-status-code": "20000000" } },
-        );
-      }),
-      http.post("https://api.openai.com/v1/audio/transcriptions", () => {
-        return HttpResponse.json({ text: "bdd duration probe" });
-      }),
-    );
-
-    const expectTranscribed = async (
-      bytes: Uint8Array<ArrayBuffer>,
-      filename: string,
-      type: string,
-    ): Promise<void> => {
-      const accepted = await api.requestVoiceStt(
-        admin,
-        sttFormData(bytes, filename, type),
-        [200],
-      );
-      expect(accepted.body).toStrictEqual({ text: "bdd duration probe" });
-    };
-    const expectDurationRejected = async (
-      bytes: Uint8Array<ArrayBuffer>,
-      filename: string,
-      type: string,
-      durationSeconds: number,
-    ): Promise<void> => {
-      const rejected = await api.requestVoiceStt(
-        admin,
-        sttFormData(bytes, filename, type),
-        [400],
-      );
-      expectApiError(rejected.body);
-      expect(rejected.body.error.code).toBe("AUDIO_DURATION_TOO_LONG");
-      expect(rejected.body.error.message).toBe(
-        `Audio duration (${durationSeconds}s) exceeds maximum (300s)`,
-      );
-    };
-
-    // WAV bodies that defeat duration parsing transcribe with no duration
-    // gate: too short for a header, not RIFF/WAVE, a header-only data chunk
-    // with zero audio bytes, and a truncated fmt chunk whose standard-offset
-    // fallback reads an unusable all-zero format.
-    await expectTranscribed(new Uint8Array(20), "tiny.wav", "audio/wav");
-    await expectTranscribed(new Uint8Array(44), "not-riff.wav", "audio/wav");
-    await expectTranscribed(
-      bytesOf(
-        riffWavHeader(),
-        wavChunkHeader("fmt ", 16),
-        wavFmtBody(1, 16_000, 16),
-        wavChunkHeader("data", 0),
-      ),
-      "header-only.wav",
-      "audio/wav",
-    );
-    await expectTranscribed(
-      bytesOf(
-        riffWavHeader(),
-        wavChunkHeader("JUNK", 16),
-        new Uint8Array(16),
-        wavChunkHeader("fmt ", 16),
-      ),
-      "truncated-fmt.wav",
-      "audio/wav",
-    );
-
-    // A trailing LIST chunk is not audio: only the declared data size counts,
-    // so 30,000 bytes at 100 bytes/second stays exactly at the 300s limit.
-    await expectTranscribed(
-      bytesOf(
-        riffWavHeader(),
-        wavChunkHeader("fmt ", 16),
-        wavFmtBody(1, 100, 8),
-        wavChunkHeader("data", 30_000),
-        new Uint8Array(30_000),
-        wavChunkHeader("LIST", 1000),
-        new Uint8Array(1000),
-      ),
-      "trailing-list.wav",
-      "audio/wav",
-    );
-
-    // A streamed WAV with an oversized placeholder data size falls back to
-    // the bytes that actually follow the data header: 30,100 bytes is 301s.
-    await expectDurationRejected(
-      bytesOf(
-        riffWavHeader(),
-        wavChunkHeader("fmt ", 16),
-        wavFmtBody(1, 100, 8),
-        wavChunkHeader("data", 0xff_ff_ff_ff),
-        new Uint8Array(30_100),
-      ),
-      "streamed.wav",
-      "audio/wav",
-      301,
-    );
-
-    // Compressed audio reads the real container duration since #17143;
-    // unparseable mp3 bytes carry no duration and pass the gate.
-    await expectTranscribed(new Uint8Array(301_000), "long.mp3", "audio/mpeg");
-
-    // WebM with a TimecodeScale of one millisecond and a float64 Duration of
-    // 301,000ms exceeds the request limit. The Duration size is a two-byte
-    // vint to exercise multi-byte vint decoding.
-    await expectDurationRejected(
-      webmWithInfoBody([
-        ...WEBM_TIMECODE_SCALE_MS,
-        ...WEBM_DURATION_ID,
-        0x40,
-        0x08,
-        ...float64be(301_000),
-      ]),
-      "long.webm",
-      "audio/webm",
-      301,
-    );
-
-    // A float32 Duration with the default timecode scale parses as 2s.
-    await expectTranscribed(
-      webmWithInfoBody([...WEBM_DURATION_ID, 0x84, ...float32be(2000)]),
-      "short.webm",
-      "audio/webm",
-    );
-
-    // Malformed WebM heads all fall through to a null duration and still
-    // transcribe: each variant trips a different EBML/vint parser guard.
-    const unparseableWebm: readonly (readonly [
-      string,
-      Uint8Array<ArrayBuffer>,
-    ])[] = [
-      ["shorter-than-ebml-header", Uint8Array.from([0x1a, 0x45])],
-      ["not-ebml", new Uint8Array(16)],
-      [
-        "invalid-ebml-size-vint",
-        bytesOf(WEBM_EBML_HEADER, [0x00], new Uint8Array(7)),
-      ],
-      [
-        "ebml-body-consumes-buffer",
-        bytesOf(WEBM_EBML_HEADER, [0x87], new Uint8Array(7)),
-      ],
-      [
-        "segment-id-not-four-bytes",
-        bytesOf(WEBM_EBML_HEADER, [0x80], [0x80], new Uint8Array(6)),
-      ],
-      [
-        "missing-segment-size",
-        bytesOf(WEBM_EBML_HEADER, [0x83], new Uint8Array(3), WEBM_SEGMENT_ID),
-      ],
-      [
-        "invalid-element-id-in-segment",
-        bytesOf(
-          WEBM_EBML_HEADER,
-          [0x80],
-          WEBM_SEGMENT_ID,
-          [0xff],
-          [0x00, 0x00],
-        ),
-      ],
-      [
-        "invalid-element-size-in-segment",
-        bytesOf(
-          WEBM_EBML_HEADER,
-          [0x80],
-          WEBM_SEGMENT_ID,
-          [0xff],
-          [0x80, 0x00],
-        ),
-      ],
-      [
-        "no-info-element",
-        bytesOf(
-          WEBM_EBML_HEADER,
-          [0x80],
-          WEBM_SEGMENT_ID,
-          [0xff],
-          [0xec, 0x82, 0x00, 0x00],
-        ),
-      ],
-      ["info-without-duration", webmWithInfoBody(WEBM_TIMECODE_SCALE_MS)],
-      ["invalid-element-id-in-info", webmWithInfoBody([0x00, 0x00])],
-      ["invalid-element-size-in-info", webmWithInfoBody([0x80, 0x00])],
-      [
-        "unsupported-duration-size",
-        webmWithInfoBody([...WEBM_DURATION_ID, 0x82, 0x00, 0x00]),
-      ],
-      [
-        "negative-duration",
-        webmWithInfoBody([...WEBM_DURATION_ID, 0x88, ...float64be(-1)]),
-      ],
-      [
-        "truncated-duration",
-        webmWithInfoBody([...WEBM_DURATION_ID, 0x88, 0x00, 0x00], 13),
-      ],
-      [
-        "zero-size-timecode-scale",
-        webmWithInfoBody([...WEBM_TIMECODE_SCALE_ID, 0x80]),
-      ],
-      [
-        "truncated-timecode-scale",
-        webmWithInfoBody([...WEBM_TIMECODE_SCALE_ID, 0x83, 0x0f], 6),
-      ],
-    ];
-    for (const [name, bytes] of unparseableWebm) {
-      await expectTranscribed(bytes, `${name}.webm`, "audio/webm");
-    }
   });
 });

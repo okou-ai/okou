@@ -25,10 +25,6 @@ on:
         required: false
       AXIOM_TOKEN_TELEMETRY:
         required: false
-      BYTEPLUS_API_KEY:
-        required: false
-      BYTEPLUS_STT_API_KEY:
-        required: false
       CF_ACCESS_CLIENT_ID:
         required: false
       CF_ACCESS_CLIENT_SECRET:
@@ -971,8 +967,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
           FAL_KEY: ${{ secrets.FAL_KEY }}
-          BYTEPLUS_API_KEY: ${{ secrets.BYTEPLUS_API_KEY }}
-          BYTEPLUS_STT_API_KEY: ${{ secrets.BYTEPLUS_STT_API_KEY }}
         run: pnpm vitest run --project=api --shard=${{ matrix.shard }}/8 --coverage.enabled --coverage.reporter=json
       - name: Upload coverage to Codecov
         if: success() || failure()

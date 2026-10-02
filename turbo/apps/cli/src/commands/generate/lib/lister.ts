@@ -48,7 +48,7 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   image: {
     label: "Built-in image generation",
     command: "okou generate image --provider built-in -h",
-    description: `Models: Uses ${IMAGE_MODEL_SETTING_SUMMARY}. Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite`,
+    description: `Models: Uses ${IMAGE_MODEL_SETTING_SUMMARY}. Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite`,
   },
   presentation: {
     label: "Built-in presentation generation",

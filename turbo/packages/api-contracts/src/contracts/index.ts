@@ -1814,13 +1814,6 @@ export {
   type AudioInputQuotaResponse,
 } from "./voice-io-quota";
 export {
-  voiceIoSttContract,
-  voiceIoSttResponseSchema,
-  voiceIoSttQuotaErrorSchema,
-  type VoiceIoSttContract,
-  type VoiceIoSttResponse,
-} from "./voice-io-stt";
-export {
   uploadsContract,
   type UploadsContract,
   type UploadPrepareResponse,

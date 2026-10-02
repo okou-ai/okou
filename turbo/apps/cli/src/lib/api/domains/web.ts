@@ -601,15 +601,6 @@ function statusForBuiltInGenerationError(code: string): number {
   if (code === "GENERATION_PROVIDER_UNAVAILABLE") {
     return 503;
   }
-  if (
-    code.startsWith("BYTEPLUS_INVALID_PARAMETER") ||
-    code.startsWith("BYTEPLUS_INPUT_")
-  ) {
-    return 400;
-  }
-  if (code.startsWith("BYTEPLUS_")) {
-    return 502;
-  }
   if (code.startsWith("NO_") || code.endsWith("_FAILED")) {
     return 502;
   }
@@ -899,66 +890,4 @@ export async function generateWebImage(
     token,
     fallback: "Failed to generate image",
   });
-}
-
-export interface TranscribeAudioSegment {
-  readonly start: number;
-  readonly end: number;
-  readonly text: string;
-}
-
-interface TranscribeAudioResult {
-  readonly text: string;
-  readonly segments?: readonly TranscribeAudioSegment[];
-}
-
-export async function transcribeAudio(
-  audioPath: string,
-  options: { readonly verbose?: boolean } = {},
-): Promise<TranscribeAudioResult> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
-
-  const url = new URL("/api/voice-io/stt", baseUrl);
-  if (options.verbose) {
-    url.searchParams.set("verbose", "true");
-  }
-
-  const audioData = readFileSync(audioPath);
-  const filename = basename(audioPath);
-  const ext = extname(filename).toLowerCase();
-  const mimeMap: Record<string, string> = {
-    ".mp3": "audio/mpeg",
-    ".mp4": "audio/mp4",
-    ".m4a": "audio/m4a",
-    ".wav": "audio/wav",
-    ".webm": "audio/webm",
-  };
-  const mimeType = mimeMap[ext] ?? "audio/mpeg";
-
-  const formData = new FormData();
-  formData.append("file", new Blob([audioData], { type: mimeType }), filename);
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Transcription failed",
-    );
-    throw new ApiRequestError(message, code, response.status);
-  }
-
-  return (await response.json()) as TranscribeAudioResult;
 }

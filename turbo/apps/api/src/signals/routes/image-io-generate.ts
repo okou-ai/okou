@@ -28,7 +28,6 @@ import { db$, type ReadonlyDb } from "../external/db";
 import { createBuiltInGenerationRealtimeSubscription } from "../external/realtime";
 import {
   checkImageCredits$,
-  generateBytePlusImage,
   generateOpenAiImage,
   getMissingImagePricing,
   imagePricing$,
@@ -271,11 +270,10 @@ const executeDirectImageProviderJob$ = command(
   async ({ set }, args: ImageJobArgs, signal: AbortSignal): Promise<void> => {
     await set(markBuiltInGenerationRunning$, args.generationId, signal);
     signal.throwIfAborted();
-    const isOpenAi = args.options.provider === "openai";
-    const apiKey = env(isOpenAi ? "OPENAI_API_KEY" : "BYTEPLUS_API_KEY");
+    const apiKey = env("OPENAI_API_KEY");
     if (!apiKey) {
       const unavailable = serviceUnavailable(
-        `${isOpenAi ? "OpenAI" : "BytePlus"} image generation is not configured`,
+        "OpenAI image generation is not configured",
         "NOT_CONFIGURED",
       );
       await set(
@@ -296,12 +294,7 @@ const executeDirectImageProviderJob$ = command(
     const generation =
       "status" in references
         ? references
-        : await (isOpenAi ? generateOpenAiImage : generateBytePlusImage)(
-            args.options,
-            references,
-            apiKey,
-            signal,
-          );
+        : await generateOpenAiImage(args.options, references, apiKey, signal);
     signal.throwIfAborted();
     if (isErrorResponse(generation)) {
       await set(
@@ -374,10 +367,7 @@ const runDirectImageProviderJob$ = command(
         generationId: args.generationId,
         error: {
           message: "Image generation failed",
-          code:
-            args.options.provider === "openai"
-              ? "OPENAI_IMAGE_REQUEST_FAILED"
-              : "BYTEPLUS_IMAGE_REQUEST_FAILED",
+          code: "OPENAI_IMAGE_REQUEST_FAILED",
         },
       },
       signal,
@@ -499,12 +489,6 @@ const postImageInner$ = command(
     if (options.provider === "fal" && !env("FAL_KEY")) {
       return serviceUnavailable(
         "Fal image generation is not configured",
-        "NOT_CONFIGURED",
-      );
-    }
-    if (options.provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
-      return serviceUnavailable(
-        "BytePlus image generation is not configured",
         "NOT_CONFIGURED",
       );
     }
