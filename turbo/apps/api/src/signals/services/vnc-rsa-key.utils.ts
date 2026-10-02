@@ -1,4 +1,4 @@
-import { createHash, createPublicKey } from "node:crypto";
+import { createHash, createPublicKey, type KeyObject } from "node:crypto";
 import { VNC_RSA_PUBLIC_KEY_MAX_BYTES } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 
 /** Converts supplied public material only. Parsing never establishes server identity. */
@@ -41,6 +41,13 @@ export function inspectVncRsaPublicKey(publicKeyPem: string): {
   if (bits !== 2048 && bits !== 3072 && bits !== 4096) {
     throw new Error("Invalid RSA public key");
   }
+  return {
+    serverKeySha256: rsaWireKeySha256(key, bits),
+    modulusBits: bits,
+  };
+}
+
+function rsaWireKeySha256(key: KeyObject, bits: 2048 | 3072 | 4096): string {
   const jwk = key.export({ format: "jwk" });
   if (jwk.n === undefined || jwk.e === undefined) {
     throw new Error("Invalid RSA public key");
@@ -60,8 +67,5 @@ export function inspectVncRsaPublicKey(publicKeyPem: string): {
   wire.writeUInt32BE(bits, 0);
   modulus.copy(wire, 4);
   exponent.copy(wire, wire.length - exponent.length);
-  return {
-    serverKeySha256: createHash("sha256").update(wire).digest("hex"),
-    modulusBits: bits,
-  };
+  return createHash("sha256").update(wire).digest("hex");
 }

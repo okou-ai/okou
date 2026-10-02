@@ -188,24 +188,34 @@ export async function checkRunnerVnc(
   };
 }
 
+function storedRsaServerKeyPin(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+): string {
+  if (
+    !hasValidAppleRoute(row, transport) ||
+    row.trustMode !== "none" ||
+    row.caBundle !== null ||
+    row.x509ServerName !== null ||
+    row.rsaServerKeySha256 === null ||
+    !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
+  ) {
+    throw new Error(
+      "VNC connection has an invalid stored RSA trust configuration",
+    );
+  }
+  return row.rsaServerKeySha256;
+}
+
 function storedRunnerSecurity(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
 ) {
   if (isVncRsaAesSecurityType(row.securityType)) {
-    if (
-      !hasValidAppleRoute(row, transport) ||
-      row.trustMode !== "none" ||
-      row.caBundle !== null ||
-      row.x509ServerName !== null ||
-      row.rsaServerKeySha256 === null ||
-      !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
-    ) {
-      throw new Error(
-        "VNC connection has an invalid stored RSA trust configuration",
-      );
-    }
-    return { type: row.securityType, serverKeySha256: row.rsaServerKeySha256 };
+    return {
+      type: row.securityType,
+      serverKeySha256: storedRsaServerKeyPin(row, transport),
+    };
   }
   if (row.rsaServerKeySha256 !== null) {
     throw new Error("VNC connection has unexpected stored RSA trust");
@@ -380,12 +390,25 @@ async function decryptRunnerAuthentication(
   return parseStoredPasswordAuthentication(row, decrypted.value);
 }
 
+function validateRsaAesHandoffPair(
+  security: ReturnType<typeof storedRunnerSecurity>,
+  authentication: Awaited<ReturnType<typeof decryptRunnerAuthentication>>,
+): void {
+  const rsaAuthentication =
+    authentication.method === "rsa_aes_password" ||
+    authentication.method === "rsa_aes_username_password";
+  if (isVncRsaAesSecurityType(security.type) !== rsaAuthentication) {
+    throw new Error("VNC handoff has an invalid stored RSA-AES profile");
+  }
+}
+
 function resolvedRunnerResponse(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
   security: ReturnType<typeof storedRunnerSecurity>,
   authentication: Awaited<ReturnType<typeof decryptRunnerAuthentication>>,
 ): RunnerVncResolveResponse {
+  validateRsaAesHandoffPair(security, authentication);
   const resolved = {
     host: row.host,
     port: row.port,
@@ -394,12 +417,6 @@ function resolvedRunnerResponse(
     authentication,
   };
   if (isVncRsaAesSecurityType(security.type)) {
-    if (
-      authentication.method !== "rsa_aes_password" &&
-      authentication.method !== "rsa_aes_username_password"
-    ) {
-      throw new Error("VNC RSA-AES handoff has an invalid stored profile");
-    }
     return {
       outcome: "resolved_rsa_aes",
       ...resolved,
@@ -407,12 +424,6 @@ function resolvedRunnerResponse(
       authentication,
       transport,
     };
-  }
-  if (
-    authentication.method === "rsa_aes_password" ||
-    authentication.method === "rsa_aes_username_password"
-  ) {
-    throw new Error("VNC handoff has an invalid stored RSA-AES profile");
   }
   if (row.securityType === "apple_vnc_password") {
     if (

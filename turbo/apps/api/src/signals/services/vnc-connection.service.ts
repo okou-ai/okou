@@ -79,17 +79,21 @@ function ownedConnection(owner: VncOwner, connectionId: string) {
   return and(ownedConnections(owner), eq(vncConnections.id, connectionId));
 }
 
+function validateStoredRsaTrust(row: Metadata): void {
+  if (
+    row.trustMode !== "none" ||
+    row.caBundle !== null ||
+    row.x509ServerName !== null ||
+    row.rsaServerKeySha256 === null ||
+    !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
+  ) {
+    throw new Error("VNC connection has an invalid RSA trust configuration");
+  }
+}
+
 function validateStoredTrust(row: Metadata): void {
   if (isVncRsaAesSecurityType(row.securityType)) {
-    if (
-      row.trustMode !== "none" ||
-      row.caBundle !== null ||
-      row.x509ServerName !== null ||
-      row.rsaServerKeySha256 === null ||
-      !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
-    ) {
-      throw new Error("VNC connection has an invalid RSA trust configuration");
-    }
+    validateStoredRsaTrust(row);
     return;
   }
   if (row.rsaServerKeySha256 !== null) {

@@ -1905,11 +1905,13 @@ test.each(
       within(dialog).queryByLabelText("Server certificate trust"),
     ).toBeNull();
     await fill(within(dialog).getByLabelText("Display name"), "RSA desktop");
+    expect(queryAction("radio", "Direct from Runner", dialog) === null).toBe(
+      ne,
+    );
+    expect(
+      within(dialog).queryByText(/SSH protects only its hop/u) !== null,
+    ).toBe(ne);
     if (ne) {
-      expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
-      expect(
-        within(dialog).getByText(/SSH protects only its hop/u),
-      ).toBeInTheDocument();
       await choose(
         dialog,
         "SSH host",
@@ -1927,10 +1929,9 @@ test.each(
     );
     await choose(dialog, "Credential", "Create new credential");
     await fill(within(dialog).getByLabelText("Credential name"), "RSA login");
+    expect(within(dialog).queryByLabelText("Username") !== null).toBe(user);
     if (user) {
       await fill(within(dialog).getByLabelText("Username"), "用户名");
-    } else {
-      expect(within(dialog).queryByLabelText("Username")).toBeNull();
     }
     const password = within(dialog).getByLabelText("Password");
     expect(password).toHaveAttribute("maxlength", "255");

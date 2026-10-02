@@ -1,4 +1,9 @@
-import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  generateKeyPairSync,
+  randomUUID,
+} from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { VNC_RSA_AES_SECURITY_TYPES } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
@@ -241,12 +246,86 @@ describe("RSA-AES owner and private Runner boundaries", () => {
     expect(kms.generateDataKeyCalls).toBe(before);
   });
 
+  it.each([3072, 4096] as const)(
+    "preserves the independently computed fixed-width pin for %s-bit public keys",
+    async (modulusBits) => {
+      const f = await api.fixture();
+      api.authenticate(f);
+      // Public-only deterministic material avoids unrelated private-key generation.
+      const modulus = Buffer.alloc(modulusBits / 8, 0xa5);
+      const publicKey = createPublicKey({
+        key: { kty: "RSA", n: modulus.toString("base64url"), e: "AQAB" },
+        format: "jwk",
+      });
+      const prefix = Buffer.alloc(4);
+      prefix.writeUInt32BE(modulusBits);
+      const exponent = Buffer.alloc(modulus.length);
+      exponent.set([1, 0, 1], exponent.length - 3);
+      const expected = createHash("sha256")
+        .update(Buffer.concat([prefix, modulus, exponent]))
+        .digest("hex");
+      for (const type of ["spki", "pkcs1"] as const) {
+        const inspected = await accept(
+          api.connections().inspectRsaKey({
+            headers,
+            body: {
+              publicKeyPem: publicKey
+                .export({ type, format: "pem" })
+                .toString(),
+            },
+          }),
+          [200],
+        );
+        expect(inspected.body).toStrictEqual({
+          serverKeySha256: expected,
+          modulusBits,
+        });
+        expect(inspected.headers.get("cache-control")).toBe("no-store");
+      }
+    },
+  );
+
+  it("rejects unsupported RSA sizes and exponents and non-RSA public keys without parser diagnostics", async () => {
+    const f = await api.fixture();
+    api.authenticate(f);
+    const unsupportedRsa = [
+      { bytes: 128, exponent: "AQAB" },
+      { bytes: 256, exponent: "Aw" },
+    ].map(({ bytes, exponent }) => {
+      return createPublicKey({
+        key: {
+          kty: "RSA",
+          n: Buffer.alloc(bytes, 0xa5).toString("base64url"),
+          e: exponent,
+        },
+        format: "jwk",
+      });
+    });
+    const ec = generateKeyPairSync("ec", {
+      namedCurve: "prime256v1",
+    }).publicKey;
+    const pss = generateKeyPairSync("rsa-pss", {
+      modulusLength: 2048,
+    }).publicKey;
+    for (const publicKey of [...unsupportedRsa, ec, pss]) {
+      const response = await raw("/api/vnc/rsa-key-pin", {
+        publicKeyPem: publicKey
+          .export({ type: "spki", format: "pem" })
+          .toString(),
+      });
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        error: { code: "VNC_INVALID_INPUT" },
+      });
+    }
+  });
+
   it("converts public PEM to a fixed-width wire hash, not a PEM/SPKI hash, and rejects private or extra material", async () => {
     const f = await api.fixture();
     api.authenticate(f);
     const pair = generateKeyPairSync("rsa", {
       modulusLength: 2048,
-      publicExponent: 65537,
+      publicExponent: 65_537,
     });
     const publicKeyPem = pair.publicKey
       .export({ type: "spki", format: "pem" })

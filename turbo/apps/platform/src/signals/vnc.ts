@@ -606,6 +606,23 @@ export const mountVncCertificateSecret$ = onRef(
   }),
 );
 
+function initialVncSecurityFields(
+  connection: VncConnectionResponse | null,
+): Pick<Editor, "trust" | "tlsServerName" | "caBundle" | "rsaServerKeySha256"> {
+  const security = connection?.security;
+  return {
+    trust: security && "trust" in security ? security.trust.mode : "system",
+    tlsServerName:
+      security && "serverName" in security ? (security.serverName ?? "") : "",
+    caBundle:
+      security && "trust" in security && security.trust.mode === "custom_ca"
+        ? security.trust.caBundle
+        : "",
+    rsaServerKeySha256:
+      security && "serverKeySha256" in security ? security.serverKeySha256 : "",
+  };
+}
+
 function initialVncEditor(
   kind: VncDialogState["kind"],
   connection: VncConnectionResponse | null,
@@ -621,29 +638,12 @@ function initialVncEditor(
           ? ""
           : "new",
     profile,
-    trust:
-      connection && "trust" in connection.security
-        ? connection.security.trust.mode
-        : "system",
+    ...initialVncSecurityFields(connection),
     transport:
       sshConnectionId || requiresSshLoopback(profile) ? "ssh" : "direct",
     sshConnectionId: sshConnectionId ?? "",
     loopbackHost: connection?.host === "::1" ? "::1" : "127.0.0.1",
     destinationHost: connection?.host ?? "",
-    tlsServerName:
-      connection && "serverName" in connection.security
-        ? (connection.security.serverName ?? "")
-        : "",
-    caBundle:
-      connection &&
-      "trust" in connection.security &&
-      connection.security.trust.mode === "custom_ca"
-        ? connection.security.trust.caBundle
-        : "",
-    rsaServerKeySha256:
-      connection && "serverKeySha256" in connection.security
-        ? connection.security.serverKeySha256
-        : "",
     rsaImportedModulusBits: null,
     replace: false,
   };

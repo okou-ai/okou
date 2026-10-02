@@ -322,28 +322,31 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
   };
 }
 
+const securityByAuthentication = {
+  none: "x509_none",
+  client_certificate: "x509_none",
+  client_certificate_vnc_password: "x509_vnc",
+  vnc_password: "x509_vnc",
+  username_password: "x509_plain",
+  qemu_scram_sha256: "qemu_x509_sasl",
+  apple_dh_username_password: "apple_dh",
+  apple_srp_username_password: "apple_srp",
+  apple_rsa_srp_username_password: "apple_rsa_srp",
+} as const;
+
 export function isVncProfileCompatible(
   authMethod: VncAuthentication["method"] | "none",
   securityType: VncSecurity["type"],
 ): boolean {
+  if (
+    authMethod === "rsa_aes_password" ||
+    authMethod === "rsa_aes_username_password"
+  ) {
+    return isVncRsaAesSecurityType(securityType);
+  }
   return (
-    ((authMethod === "rsa_aes_password" ||
-      authMethod === "rsa_aes_username_password") &&
-      isVncRsaAesSecurityType(securityType)) ||
-    (authMethod === "none" && securityType === "x509_none") ||
-    (authMethod === "client_certificate" && securityType === "x509_none") ||
-    (authMethod === "client_certificate_vnc_password" &&
-      securityType === "x509_vnc") ||
-    (authMethod === "vnc_password" && securityType === "x509_vnc") ||
-    (authMethod === "vnc_password" && securityType === "apple_vnc_password") ||
-    (authMethod === "username_password" && securityType === "x509_plain") ||
-    (authMethod === "qemu_scram_sha256" && securityType === "qemu_x509_sasl") ||
-    (authMethod === "apple_dh_username_password" &&
-      securityType === "apple_dh") ||
-    (authMethod === "apple_srp_username_password" &&
-      securityType === "apple_srp") ||
-    (authMethod === "apple_rsa_srp_username_password" &&
-      securityType === "apple_rsa_srp")
+    securityByAuthentication[authMethod] === securityType ||
+    (authMethod === "vnc_password" && securityType === "apple_vnc_password")
   );
 }
 

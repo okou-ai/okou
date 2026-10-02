@@ -31,21 +31,25 @@ export function rsaAesProfile(
   method: "rsa_aes_password" | "rsa_aes_username_password",
 ): RsaAesProfile {
   switch (type) {
-    case "rsa_aes_ra2":
+    case "rsa_aes_ra2": {
       return method === "rsa_aes_password"
         ? type
         : "rsa_aes_ra2_username_password";
-    case "rsa_aes_ra2_256":
+    }
+    case "rsa_aes_ra2_256": {
       return method === "rsa_aes_password"
         ? type
         : "rsa_aes_ra2_256_username_password";
-    case "rsa_aes_ra2ne":
+    }
+    case "rsa_aes_ra2ne": {
       return method === "rsa_aes_password"
         ? type
         : "rsa_aes_ra2ne_username_password";
-    case "rsa_aes_ra2ne_256":
+    }
+    case "rsa_aes_ra2ne_256": {
       return method === "rsa_aes_password"
         ? type
         : "rsa_aes_ra2ne_256_username_password";
+    }
   }
 }
