@@ -24,6 +24,7 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
+import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   activeConcurrencySubscriptionPredicate,
@@ -47,6 +48,7 @@ interface LeasedThreadClaim extends ThreadClaim {
   readonly userId: string;
   readonly agentId: string;
   readonly context?: AgentRunContextSignals;
+  readonly requestFacts?: ChatThreadRequestFacts;
 }
 
 /** Fixed chat thread lease; it is never renewed. */
@@ -114,6 +116,7 @@ function createCapturedClaimObjects(
       : context === claim.context
         ? "hit"
         : "identity_mismatch",
+    claim.requestFacts,
   );
   const orgHasCapacity$ = createOrgHasCapacity(claim.orgId, plan);
   // This separate, predeclared graph is first evaluated after an org-full
@@ -132,6 +135,7 @@ interface PickInput {
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
   readonly context?: AgentRunContextSignals;
+  readonly requestFacts?: ChatThreadRequestFacts;
 }
 
 export interface PickIteration {
@@ -298,6 +302,12 @@ function createPickObjects() {
             userId: row.userId,
             agentId: row.agentId,
             ...(context === undefined ? {} : { context }),
+            ...(input.requestFacts?.orgId === orgId &&
+            input.requestFacts.thread.id === row.chatThreadId &&
+            input.requestFacts.thread.userId === row.userId &&
+            input.requestFacts.thread.agentId === row.agentId
+              ? { requestFacts: input.requestFacts }
+              : {}),
           })
         : null;
       if (claim) {

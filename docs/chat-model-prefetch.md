@@ -80,6 +80,55 @@ failure. #37563's captured-generation behavior and next-pick account-default vis
 trace comparison reports statement/table counts separately from runner output,
 and does not claim production latency improvements from a small sample.
 
+## Thread/message request facts
+
+Thread-dependent values are ordinary `ChatThreadRequestFacts`, separate from
+`AgentRunContextSignals`. An existing send extends its authorized S1 row with
+the two session-binding IDs; a new send supplies the fields it actually inserts.
+Only an inserted, committed input carries these facts. Pick compares org, thread,
+user and Agent with the lease UPDATE receipt before passing them to Thread.
+A missing or mismatched snapshot uses the same single Thread-row computed;
+there is no alternate reader after a matching snapshot or read fails.
+
+Thread uses that row for host lookup, session binding and Connector ownership.
+A null host/session ID does not issue a host/session query. Session material is
+read once from the captured session ID, without joining `chat_threads`; its
+nullable result retains the former LEFT JOIN semantics. Connector selections
+still start independently and read once for the captured thread.
+
+The first eligible input and its immutable material are selected in one ordered
+query, with a single anti-revocation check. When its ID is the committed S1 input,
+Thread uses the known payload/model/workflow IDs and network-capture decision.
+Older heads and later-request drains use the same selected row and read the
+older input's capture row, never the newest send's values.
+
+Two kinds of transaction protection remain distinct:
+
+- The session/conversation lock remains. The thread binding write now compares
+  user/Agent ownership and both `agent_session_id` and `agent_session_run_id`
+  with the captured values; this replaces the transaction's separate
+  thread-session SELECT. Memory scheduling omits the ownership JOIN because
+  the transaction cannot commit unless this binding CAS succeeds. The existing
+  memory ownership check remains for reassignment producers or a resolved
+  Agent different from the captured thread Agent; those paths do not share the
+  normal snapshot's ownership authority.
+- The live queue-head SELECT remains an explicit FIFO fence. Current main
+  compares the actual first eligible ID with the prepared association before
+  writing the unique revoke edge. That edge prevents double consumption of one
+  input, but does not by itself detect a different earlier visible input.
+  Therefore this second queue read is not classified as a removable hint.
+
+Claim UPDATE/FROM, queue/revoke writes, session/conversation locks, subscription
+and activation fences remain writes/fences, not repeated bootstrap reads. The
+current atomic-launch CTE already returns the newly inserted Run, so the older
+PMS Run readback from the historical SQL map no longer exists.
+
+Regression coverage observes real send/Run/Runner APIs for the current input,
+a newer send claiming an older input while the previous lease is suspended,
+and a separate request draining without S1 facts. The overlapping case waits
+on the public post-commit notification and message GET, not a global background
+flush that would deadlock the suspended reader.
+
 ## Adding an identity-scoped data group
 
 1. Add a `readonly <group>$: Computed<Promise<GroupSnapshot>>` field to
