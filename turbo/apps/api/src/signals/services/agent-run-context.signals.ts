@@ -168,16 +168,50 @@ export function createAgentRunContextSignals(
   orgId: string,
   agentId: string,
 ): AgentRunContextSignals {
+  return createIdentityContext(userId, orgId, agentId);
+}
+
+/** Reuse by each group's authority key before wiring dependent computeds. */
+export function matchAgentRunContextSignals(
+  supplied: AgentRunContextSignals | undefined,
+  userId: string,
+  orgId: string,
+  agentId: string,
+): AgentRunContextSignals {
+  if (
+    supplied?.orgId === orgId &&
+    supplied.userId === userId &&
+    supplied.agentId === agentId
+  ) {
+    return supplied;
+  }
+  return createIdentityContext(userId, orgId, agentId, supplied);
+}
+
+function createIdentityContext(
+  userId: string,
+  orgId: string,
+  agentId: string,
+  supplied?: AgentRunContextSignals,
+): AgentRunContextSignals {
   const scope = { userId, orgId, agentId };
-  const orgMetadata$ = createRunOrgMetadata(orgId);
-  const plan$ = computed((get) => {
-    return loadOrgPlanCapabilities(get(db$), orgId);
-  });
-  const modelFacts$ = computed(async (get) => {
-    const [plan, org] = await Promise.all([get(plan$), get(orgMetadata$)]);
-    return await get(createModelFacts(orgId, plan, org));
-  });
-  const memberModels$ = createMemberModelBootstrap(orgId, userId);
+  const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
+  const orgMetadata$ = sharedOrg?.orgMetadata$ ?? createRunOrgMetadata(orgId);
+  const plan$ =
+    sharedOrg?.plan$ ??
+    computed((get) => {
+      return loadOrgPlanCapabilities(get(db$), orgId);
+    });
+  const modelFacts$ =
+    sharedOrg?.modelFacts$ ??
+    computed(async (get) => {
+      const [plan, org] = await Promise.all([get(plan$), get(orgMetadata$)]);
+      return await get(createModelFacts(orgId, plan, org));
+    });
+  const memberModels$ =
+    sharedOrg?.userId === userId
+      ? sharedOrg.memberModels$
+      : createMemberModelBootstrap(orgId, userId);
   const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
     const [[row], org] = await Promise.all([
       get(db$)

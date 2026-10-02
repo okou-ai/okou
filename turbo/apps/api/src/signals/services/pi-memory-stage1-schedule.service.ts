@@ -11,7 +11,10 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -89,6 +92,7 @@ function sourceArgs(run: Run) {
 export async function requestPiMemoryStage1DayForAdmittedRun(
   tx: Tx,
   runId: string,
+  featureSwitchContext: FeatureSwitchContext,
 ): Promise<void> {
   const [run] = await tx
     .select(sourceRunColumns)
@@ -98,7 +102,7 @@ export async function requestPiMemoryStage1DayForAdmittedRun(
   if (!run) {
     throw new Error(`Admitted run ${runId} is missing from its transaction`);
   }
-  await requestPiMemoryStage1Day(tx, run);
+  await requestPiMemoryStage1Day(tx, run, featureSwitchContext);
 }
 
 // Called only inside the successful pending admission transaction.
@@ -106,7 +110,15 @@ export async function requestPiMemoryStage1DayForAdmittedRun(
 export async function requestPiMemoryStage1Day(
   tx: Tx,
   run: Run,
+  capturedFeatures?: FeatureSwitchContext,
 ): Promise<void> {
+  if (
+    capturedFeatures &&
+    (capturedFeatures.orgId !== run.orgId ||
+      capturedFeatures.userId !== run.userId)
+  ) {
+    throw new Error("Pi memory scheduling feature context identity mismatch");
+  }
   const args = sourceArgs(run);
   const reason = getPiMemoryStage1AdmissionPrerequisiteSkipReason({
     ...args,
@@ -115,7 +127,9 @@ export async function requestPiMemoryStage1Day(
   if (reason || !run.chatThreadId || run.status !== "pending") {
     return;
   }
-  const context = await loadUserFeatureSwitchContext(tx, run.orgId, run.userId);
+  const context =
+    capturedFeatures ??
+    (await loadUserFeatureSwitchContext(tx, run.orgId, run.userId));
   if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
     log.debug("Pi memory Stage 1 startup", {
       userId: run.userId,

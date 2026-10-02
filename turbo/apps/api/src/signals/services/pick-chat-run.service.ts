@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
-  createAgentRunContextSignals,
+  matchAgentRunContextSignals,
   preloadAgentRunContext$,
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
@@ -78,32 +78,12 @@ export function createPickObjects(
     if (!claim) {
       return null;
     }
-    if (
-      suppliedContext?.orgId === claim.orgId &&
-      suppliedContext.userId === claim.userId &&
-      suppliedContext.agentId === claim.agentId
-    ) {
-      return suppliedContext;
-    }
-    const fresh = createAgentRunContextSignals(
+    return matchAgentRunContextSignals(
+      suppliedContext,
       claim.userId,
       claim.orgId,
       claim.agentId,
     );
-    return {
-      ...fresh,
-      ...(suppliedContext?.orgId === claim.orgId
-        ? {
-            plan$: suppliedContext.plan$,
-            modelFacts$: suppliedContext.modelFacts$,
-            orgMetadata$: suppliedContext.orgMetadata$,
-          }
-        : {}),
-      ...(suppliedContext?.orgId === claim.orgId &&
-      suppliedContext.userId === claim.userId
-        ? { memberModels$: suppliedContext.memberModels$ }
-        : {}),
-    };
   });
   const selectedClaimRunObjects$ = computed((get) => {
     const claim = get(internalSelectedClaim$);

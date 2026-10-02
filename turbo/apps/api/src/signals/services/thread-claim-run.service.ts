@@ -18,7 +18,7 @@ import {
 import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
 import { createModelSourceSnapshot } from "./execution-model-source.service";
 import {
-  createAgentRunContextSignals,
+  matchAgentRunContextSignals,
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
@@ -1909,6 +1909,7 @@ interface ThreadRunContext {
   readonly kind: "prepared";
   readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly planCapabilities: OrgPlanCapabilities | null;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly input: {
     readonly enforceBuiltInCredits: boolean;
     readonly context: PendingRunContext;
@@ -2887,7 +2888,11 @@ async function persistClaimedRun(
         },
       );
       await persistClaimProducerBinding(tx, context, rowsPersisted.run.id);
-      await requestPiMemoryStage1DayForAdmittedRun(tx, rowsPersisted.run.id);
+      await requestPiMemoryStage1DayForAdmittedRun(
+        tx,
+        rowsPersisted.run.id,
+        context.featureSwitchContext,
+      );
       const threadSessionBinding =
         input.args.chatThreadId && !admission.validatedThreadSession
           ? await persistThreadSessionBinding(tx, {
@@ -6843,35 +6848,17 @@ export function createThreadClaimRunObjects(
     if (!agentId) {
       throw new Error("Execution context requires an Agent identity");
     }
-    if (
-      context.orgId === command.owner.orgId &&
-      context.userId === command.owner.userId &&
-      context.agentId === agentId
-    ) {
-      return context;
-    }
-    // Integration reconciliation can select the organization's new default Agent.
-    const fresh = createAgentRunContextSignals(
+    // Reconciled integrations may select a different default Agent. Preserve only
+    // groups whose authority key still matches, including their dependencies.
+    return matchAgentRunContextSignals(
+      context,
       command.owner.userId,
       command.owner.orgId,
       agentId,
     );
-    return {
-      ...fresh,
-      ...(context.orgId === command.owner.orgId
-        ? {
-            plan$: context.plan$,
-            modelFacts$: context.modelFacts$,
-            orgMetadata$: context.orgMetadata$,
-          }
-        : {}),
-      ...(context.orgId === command.owner.orgId &&
-      context.userId === command.owner.userId
-        ? { memberModels$: context.memberModels$ }
-        : {}),
-    };
   });
   const preCreateBootstrapMetadata$ = computed(async (get) => {
+    const startedAt = now();
     const selected = await get(executionContext$);
     const [
       { timing },
@@ -6888,10 +6875,10 @@ export function createThreadClaimRunObjects(
       get(selected.workflows$),
       get(selected.featureSwitches$),
     ]);
-    timing.recordDuration(
+    timing.recordElapsed(
       "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
       "nested",
-      0,
+      startedAt,
       now(),
       {
         bootstrap_prefetch: prefetchOutcome === "hit" ? "hit" : "miss",
@@ -10503,6 +10490,14 @@ export function createThreadClaimRunObjects(
       return { kind: "passed" };
     },
   );
+  const claimAdmissionFacts$ = computed(async (get) => {
+    const selected = await get(executionContext$);
+    const [planCapabilities, featureSwitchContext] = await Promise.all([
+      get(selected.plan$),
+      get(selected.featureSwitches$),
+    ]);
+    return { planCapabilities, featureSwitchContext };
+  });
   const prepareRunContext$ = command(
     async (
       { get, set },
@@ -10600,7 +10595,7 @@ export function createThreadClaimRunObjects(
         throw new Error("Prepared claim is missing launch resources");
       }
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
-      const planCapabilities = await get(context.plan$);
+      const admissionFacts = await get(claimAdmissionFacts$);
       signal.throwIfAborted();
       const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
@@ -10611,7 +10606,7 @@ export function createThreadClaimRunObjects(
               {
                 kind: "prepared",
                 allowanceRefresh,
-                planCapabilities,
+                ...admissionFacts,
                 input: claimCommitInput(input),
                 identity,
                 callbackRows,
