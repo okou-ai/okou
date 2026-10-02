@@ -1,4 +1,9 @@
 import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import {
   usagePricingResolution$,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
@@ -64,7 +69,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -784,10 +789,17 @@ async function partitionWorkByPiMemorySwitch(
   const disabled: ClaimedPiMemoryStage1Work[] = [];
   for (const work of claimed) {
     // Each candidate's own owner decides, never the cron caller.
-    const context = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContextRows0 = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(work.orgId, work.userId));
+    const context = featureSwitchContextFromRows(
       work.orgId,
       work.userId,
+      featureSwitchContextRows0,
     );
     signal.throwIfAborted();
     (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)

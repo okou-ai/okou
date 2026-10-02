@@ -1,3 +1,11 @@
+import { parseRawRows } from "../lib/db-raw-rows";
+import {
+  piStableContextGenerationReceiptSchema,
+  invalidatePiStableContextSql,
+  piStableContextGenerationFromReceipt,
+} from "../signals/services/pi-stable-context-generation.service";
+import { nowDate } from "../lib/time";
+
 import { randomUUID } from "node:crypto";
 import type {
   PiStableContextBuildInput,
@@ -16,7 +24,6 @@ import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../signals/external/db";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
-import { invalidatePiStableContext } from "../signals/services/pi-stable-context-generation.service";
 
 const store = createStore();
 
@@ -104,6 +111,43 @@ function registerStableContextStorageDemandCleanup(
   });
 }
 
+async function fixtureOwnerGenerations(args: {
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly userId: string;
+}) {
+  const db = store.set(writeDb$);
+  const agentGeneration = piStableContextGenerationFromReceipt(
+    parseRawRows(
+      piStableContextGenerationReceiptSchema,
+      await db.execute(
+        invalidatePiStableContextSql(
+          {
+            orgId: args.orgId,
+            agentId: args.agentId,
+          },
+          nowDate(),
+        ),
+      ),
+    ),
+  );
+  const userGeneration = piStableContextGenerationFromReceipt(
+    parseRawRows(
+      piStableContextGenerationReceiptSchema,
+      await db.execute(
+        invalidatePiStableContextSql(
+          {
+            orgId: args.orgId,
+            agentId: args.agentId,
+            userId: args.userId,
+          },
+          nowDate(),
+        ),
+      ),
+    ),
+  );
+  return { agentGeneration, userGeneration };
+}
 export async function seedPiStableContextStorageDemandFixture(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -120,15 +164,8 @@ export async function seedPiStableContextStorageDemandFixture(args: {
     .insert(orgMembersCache)
     .values({ orgId: args.orgId, userId: args.userId, role: "member" })
     .onConflictDoNothing();
-  const agentGeneration = await invalidatePiStableContext(db, {
-    orgId: args.orgId,
-    agentId: args.agentId,
-  });
-  const userGeneration = await invalidatePiStableContext(db, {
-    orgId: args.orgId,
-    agentId: args.agentId,
-    userId: args.userId,
-  });
+  const { agentGeneration, userGeneration } =
+    await fixtureOwnerGenerations(args);
   const [storage] = await db
     .select({ id: storages.id })
     .from(storages)

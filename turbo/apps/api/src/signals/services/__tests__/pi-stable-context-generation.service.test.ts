@@ -1,3 +1,24 @@
+import { parseRawRows } from "../../../lib/db-raw-rows";
+import {
+  piStableContextGenerationReceiptSchema,
+  invalidatePiStableContextSql,
+  beginPiStableContextPublicationSql,
+  piStableContextPublicationFromReceipt,
+  publicationScopeCondition,
+  publicationScopePendingSql,
+  publicationReadinessSql,
+  completePiStableContextPublicationSql,
+  invalidatePiStableContextsForUserSql,
+  invalidatePiStableContextsForCatalogSourceSql,
+  retirePiStableContextPublicationSql,
+  piStableContextDemandInputSql,
+  piStableContextStorageDemandValues,
+  headScopeCondition,
+  storageDependentHeadCondition,
+  PI_STABLE_CONTEXT_AGENT_SUBJECT,
+} from "../pi-stable-context-generation.service";
+import { nowDate } from "../../../lib/time";
+
 import { randomUUID } from "node:crypto";
 
 import {
@@ -17,7 +38,7 @@ import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
@@ -27,19 +48,7 @@ import type { Tx } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
 import { piResourceIndexHash } from "../../../lib/pi-resource-index";
 import { createDeferredPromise } from "../../utils";
-import {
-  beginPiStableContextPublication,
-  completePiStableContextPublication,
-  enqueuePiStableContextStorageDemands,
-  invalidatePiStableContext,
-  invalidatePiStableContextsForCatalogSource,
-  invalidatePiStableContextsForUser,
-  lockPiStableContextPublication,
-  piStableContextWorkflowInvalidationOptions,
-  refreshPiStableContextStorageDemands,
-  PI_STABLE_CONTEXT_AGENT_SUBJECT,
-  retirePiStableContextPublication,
-} from "../pi-stable-context-generation.service";
+
 import { deleteClerkAgentLifecycleData$ } from "../clerk-agent-lifecycle.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
 import {
@@ -146,13 +155,22 @@ describe("Pi stable context generation fences", () => {
       storageMounts: [],
       persistedStorageMounts: [],
     };
-    await invalidatePiStableContext(db, { orgId, agentId });
-    await invalidatePiStableContext(db, { orgId, agentId, userId });
-    await invalidatePiStableContext(db, {
-      orgId,
-      agentId,
-      userId: otherUserId,
-    });
+    await db.execute(
+      invalidatePiStableContextSql({ orgId, agentId }, nowDate()),
+    );
+    await db.execute(
+      invalidatePiStableContextSql({ orgId, agentId, userId }, nowDate()),
+    );
+    await db.execute(
+      invalidatePiStableContextSql(
+        {
+          orgId,
+          agentId,
+          userId: otherUserId,
+        },
+        nowDate(),
+      ),
+    );
     const [head] = await db
       .insert(piStableContextHeads)
       .values({
@@ -218,10 +236,15 @@ describe("Pi stable context generation fences", () => {
     const fixture = await seed();
     await expect(
       db.transaction(async (tx) => {
-        await invalidatePiStableContext(tx, {
-          orgId: fixture.orgId,
-          agentId: fixture.agentId,
-        });
+        await tx.execute(
+          invalidatePiStableContextSql(
+            {
+              orgId: fixture.orgId,
+              agentId: fixture.agentId,
+            },
+            nowDate(),
+          ),
+        );
         throw new Error("rollback fixture");
       }),
     ).rejects.toThrow("rollback fixture");
@@ -244,35 +267,117 @@ describe("Pi stable context generation fences", () => {
       );
     expect(afterRollback).toStrictEqual({ generation: 1, state: "ready" });
 
-    const first = await beginPiStableContextPublication(
-      db,
-      {
-        orgId: fixture.orgId,
-        agentId: fixture.agentId,
-      },
-      "workflow:first",
+    const piMutation4Scope = {
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+    };
+    const piMutation4Key = "workflow:first";
+    const piMutation4Token = randomUUID();
+    const first = piStableContextPublicationFromReceipt(
+      parseRawRows(
+        piStableContextGenerationReceiptSchema,
+        await db.execute(
+          beginPiStableContextPublicationSql(
+            piMutation4Scope,
+            piMutation4Key,
+            piMutation4Token,
+            nowDate(),
+          ),
+        ),
+      ),
+      piMutation4Scope,
+      piMutation4Key,
+      piMutation4Token,
     );
-    const second = await beginPiStableContextPublication(
-      db,
-      {
-        orgId: fixture.orgId,
-        agentId: fixture.agentId,
-      },
-      "workflow:first",
+    const piMutation5Scope = {
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+    };
+    const piMutation5Key = "workflow:first";
+    const piMutation5Token = randomUUID();
+    const second = piStableContextPublicationFromReceipt(
+      parseRawRows(
+        piStableContextGenerationReceiptSchema,
+        await db.execute(
+          beginPiStableContextPublicationSql(
+            piMutation5Scope,
+            piMutation5Key,
+            piMutation5Token,
+            nowDate(),
+          ),
+        ),
+      ),
+      piMutation5Scope,
+      piMutation5Key,
+      piMutation5Token,
     );
     expect(second.generation).toBe(first.generation + 1);
-    await expect(
-      lockPiStableContextPublication(db, first),
-    ).resolves.toBeFalsy();
-    await expect(
-      completePiStableContextPublication(db, first),
-    ).resolves.toBeFalsy();
-    await expect(
-      lockPiStableContextPublication(db, second),
-    ).resolves.toBeTruthy();
-    await expect(
-      completePiStableContextPublication(db, second),
-    ).resolves.toBeTruthy();
+    await db.execute(publicationScopePendingSql(first.scope, nowDate()));
+    const [piMutation6Publication] = await db
+      .select({ token: piStableContextPublications.token })
+      .from(piStableContextPublications)
+      .innerJoin(
+        piStableContextGenerations,
+        and(
+          eq(
+            piStableContextGenerations.orgId,
+            piStableContextPublications.orgId,
+          ),
+          eq(
+            piStableContextGenerations.agentId,
+            piStableContextPublications.agentId,
+          ),
+          eq(
+            piStableContextGenerations.subject,
+            piStableContextPublications.subject,
+          ),
+        ),
+      )
+      .where(publicationScopeCondition(first))
+      .limit(1);
+    await db.execute(publicationReadinessSql(first.scope, nowDate()));
+
+    await expect(piMutation6Publication !== undefined).toBeFalsy();
+    await db.execute(publicationScopePendingSql(first.scope, nowDate()));
+    const piMutation7Completed = await db.execute(
+      completePiStableContextPublicationSql(first),
+    );
+    await db.execute(publicationReadinessSql(first.scope, nowDate()));
+
+    await expect(piMutation7Completed.rowCount === 1).toBeFalsy();
+    await db.execute(publicationScopePendingSql(second.scope, nowDate()));
+    const [piMutation8Publication] = await db
+      .select({ token: piStableContextPublications.token })
+      .from(piStableContextPublications)
+      .innerJoin(
+        piStableContextGenerations,
+        and(
+          eq(
+            piStableContextGenerations.orgId,
+            piStableContextPublications.orgId,
+          ),
+          eq(
+            piStableContextGenerations.agentId,
+            piStableContextPublications.agentId,
+          ),
+          eq(
+            piStableContextGenerations.subject,
+            piStableContextPublications.subject,
+          ),
+        ),
+      )
+      .where(publicationScopeCondition(second))
+      .limit(1);
+    await db.execute(publicationReadinessSql(second.scope, nowDate()));
+
+    await expect(piMutation8Publication !== undefined).toBeTruthy();
+    await db.execute(publicationScopePendingSql(second.scope, nowDate()));
+    const piMutation9Completed = await db.execute(
+      completePiStableContextPublicationSql(second),
+    );
+    await db.execute(publicationReadinessSql(second.scope, nowDate()));
+
+    await expect(piMutation9Completed.rowCount === 1).toBeTruthy();
 
     const [head] = await db
       .select({
@@ -290,10 +395,15 @@ describe("Pi stable context generation fences", () => {
       artifactDigest: null,
     });
 
-    await invalidatePiStableContextsForUser(db, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-    });
+    await db.execute(
+      invalidatePiStableContextsForUserSql(
+        {
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+        },
+        nowDate(),
+      ),
+    );
     const rows = await db
       .select({
         subject: piStableContextGenerations.subject,
@@ -380,7 +490,12 @@ describe("Pi stable context generation fences", () => {
       throw new Error("Expected second catalog source ready head");
     }
 
-    await invalidatePiStableContextsForCatalogSource(db, "fixture-source-a");
+    await db.execute(
+      invalidatePiStableContextsForCatalogSourceSql(
+        "fixture-source-a",
+        nowDate(),
+      ),
+    );
 
     await expect(
       db
@@ -432,24 +547,79 @@ describe("Pi stable context generation fences", () => {
   it("keeps independent workflow publications pending until both complete", async () => {
     const fixture = await seed();
     const scope = { orgId: fixture.orgId, agentId: fixture.agentId };
-    const first = await beginPiStableContextPublication(
-      db,
-      scope,
-      "workflow:first",
+    const piMutation12Scope = scope;
+    const piMutation12Key = "workflow:first";
+    const piMutation12Token = randomUUID();
+    const first = piStableContextPublicationFromReceipt(
+      parseRawRows(
+        piStableContextGenerationReceiptSchema,
+        await db.execute(
+          beginPiStableContextPublicationSql(
+            piMutation12Scope,
+            piMutation12Key,
+            piMutation12Token,
+            nowDate(),
+          ),
+        ),
+      ),
+      piMutation12Scope,
+      piMutation12Key,
+      piMutation12Token,
     );
-    const second = await beginPiStableContextPublication(
-      db,
-      scope,
-      "workflow:second",
+    const piMutation13Scope = scope;
+    const piMutation13Key = "workflow:second";
+    const piMutation13Token = randomUUID();
+    const second = piStableContextPublicationFromReceipt(
+      parseRawRows(
+        piStableContextGenerationReceiptSchema,
+        await db.execute(
+          beginPiStableContextPublicationSql(
+            piMutation13Scope,
+            piMutation13Key,
+            piMutation13Token,
+            nowDate(),
+          ),
+        ),
+      ),
+      piMutation13Scope,
+      piMutation13Key,
+      piMutation13Token,
     );
 
     await db.transaction(async (tx) => {
-      await expect(
-        lockPiStableContextPublication(tx, first),
-      ).resolves.toBeTruthy();
-      await expect(
-        completePiStableContextPublication(tx, first),
-      ).resolves.toBeTruthy();
+      await tx.execute(publicationScopePendingSql(first.scope, nowDate()));
+      const [piMutation14Publication] = await tx
+        .select({ token: piStableContextPublications.token })
+        .from(piStableContextPublications)
+        .innerJoin(
+          piStableContextGenerations,
+          and(
+            eq(
+              piStableContextGenerations.orgId,
+              piStableContextPublications.orgId,
+            ),
+            eq(
+              piStableContextGenerations.agentId,
+              piStableContextPublications.agentId,
+            ),
+            eq(
+              piStableContextGenerations.subject,
+              piStableContextPublications.subject,
+            ),
+          ),
+        )
+        .where(publicationScopeCondition(first))
+        .limit(1);
+      await tx.execute(publicationReadinessSql(first.scope, nowDate()));
+
+      await expect(piMutation14Publication !== undefined).toBeTruthy();
+      await tx.execute(publicationScopePendingSql(first.scope, nowDate()));
+      const piMutation15Completed = await tx.execute(
+        completePiStableContextPublicationSql(first),
+      );
+      await tx.execute(publicationReadinessSql(first.scope, nowDate()));
+
+      await expect(piMutation15Completed.rowCount === 1).toBeTruthy();
     });
     await expect(
       db
@@ -468,12 +638,39 @@ describe("Pi stable context generation fences", () => {
     ).resolves.toStrictEqual([{ state: "pending" }]);
 
     await db.transaction(async (tx) => {
-      await expect(
-        lockPiStableContextPublication(tx, second),
-      ).resolves.toBeTruthy();
-      await expect(
-        completePiStableContextPublication(tx, second),
-      ).resolves.toBeTruthy();
+      await tx.execute(publicationScopePendingSql(second.scope, nowDate()));
+      const [piMutation16Publication] = await tx
+        .select({ token: piStableContextPublications.token })
+        .from(piStableContextPublications)
+        .innerJoin(
+          piStableContextGenerations,
+          and(
+            eq(
+              piStableContextGenerations.orgId,
+              piStableContextPublications.orgId,
+            ),
+            eq(
+              piStableContextGenerations.agentId,
+              piStableContextPublications.agentId,
+            ),
+            eq(
+              piStableContextGenerations.subject,
+              piStableContextPublications.subject,
+            ),
+          ),
+        )
+        .where(publicationScopeCondition(second))
+        .limit(1);
+      await tx.execute(publicationReadinessSql(second.scope, nowDate()));
+
+      await expect(piMutation16Publication !== undefined).toBeTruthy();
+      await tx.execute(publicationScopePendingSql(second.scope, nowDate()));
+      const piMutation17Completed = await tx.execute(
+        completePiStableContextPublicationSql(second),
+      );
+      await tx.execute(publicationReadinessSql(second.scope, nowDate()));
+
+      await expect(piMutation17Completed.rowCount === 1).toBeTruthy();
     });
     await expect(
       db
@@ -495,10 +692,24 @@ describe("Pi stable context generation fences", () => {
   it("retires an abandoned publication when its source is deleted", async () => {
     const fixture = await seed();
     const scope = { orgId: fixture.orgId, agentId: fixture.agentId };
-    await beginPiStableContextPublication(db, scope, "workflow:deleted");
-    await expect(
-      retirePiStableContextPublication(db, scope, "workflow:deleted"),
-    ).resolves.toBeTruthy();
+    const piMutation18Scope = scope;
+    const piMutation18Key = "workflow:deleted";
+    const piMutation18Token = randomUUID();
+    await db.execute(
+      beginPiStableContextPublicationSql(
+        piMutation18Scope,
+        piMutation18Key,
+        piMutation18Token,
+        nowDate(),
+      ),
+    );
+    await db.execute(publicationScopePendingSql(scope, nowDate()));
+    const piMutation19Completed = await db.execute(
+      retirePiStableContextPublicationSql(scope, "workflow:deleted"),
+    );
+    await db.execute(publicationReadinessSql(scope, nowDate()));
+
+    await expect(piMutation19Completed.rowCount === 1).toBeTruthy();
     await expect(
       db
         .select({ state: piStableContextGenerations.publicationState })
@@ -651,14 +862,11 @@ describe("Pi stable context generation fences", () => {
         return updatedPrompt;
       },
     } as const;
-    await invalidatePiStableContext(
-      db,
-      { orgId: fixture.orgId, agentId: fixture.agentId },
-      {
-        transformInput(input) {
-          return { ...input, prompt: updatedPrompt };
-        },
-      },
+    await db.execute(
+      invalidatePiStableContextSql(
+        { orgId: fixture.orgId, agentId: fixture.agentId },
+        nowDate(),
+      ),
     );
     await expect(
       executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
@@ -815,21 +1023,15 @@ describe("Pi stable context generation fences", () => {
             .update(storages)
             .set({ headVersionId: v2 })
             .where(eq(storages.id, storageId));
-          await invalidatePiStableContext(
-            tx,
-            {
-              orgId: fixture.orgId,
-              userId: fixture.userId,
-              agentId: fixture.agentId,
-            },
-            piStableContextWorkflowInvalidationOptions({
-              kind: "upsert",
-              workflow: {
-                workflowId,
-                name: workflowName,
-                officialDefinitionName: null,
+          await tx.execute(
+            invalidatePiStableContextSql(
+              {
+                orgId: fixture.orgId,
+                userId: fixture.userId,
+                agentId: fixture.agentId,
               },
-            }),
+              nowDate(),
+            ),
           );
         });
       },
@@ -1049,24 +1251,81 @@ describe("Pi stable context generation fences", () => {
       checkedAt: new Date("2026-09-17T00:00:00.000Z"),
       beforeSourceGenerationInitialization: async () => {
         await db.transaction(async (tx) => {
-          const fence = await beginPiStableContextPublication(
-            tx,
-            { orgId: fixture.orgId, agentId: fixture.agentId },
-            "agent-instructions",
+          const piMutation22Scope = {
+            orgId: fixture.orgId,
+            agentId: fixture.agentId,
+          };
+          const piMutation22Key = "agent-instructions";
+          const piMutation22Token = randomUUID();
+          const fence = piStableContextPublicationFromReceipt(
+            parseRawRows(
+              piStableContextGenerationReceiptSchema,
+              await tx.execute(
+                beginPiStableContextPublicationSql(
+                  piMutation22Scope,
+                  piMutation22Key,
+                  piMutation22Token,
+                  nowDate(),
+                ),
+              ),
+            ),
+            piMutation22Scope,
+            piMutation22Key,
+            piMutation22Token,
           );
           await tx
             .update(storages)
             .set({ headVersionId: v2 })
             .where(eq(storages.id, storageId));
-          await refreshPiStableContextStorageDemands(tx, fence, {
+          const piMutation23Resource = {
             storageId,
             versionId: v2,
             archiveSize: 0,
             fileCount: 0,
-          });
-          await expect(
-            completePiStableContextPublication(tx, fence),
-          ).resolves.toBeTruthy();
+          };
+          const piMutation23Heads = await tx
+            .select({
+              id: piStableContextHeads.id,
+              generation: piStableContextHeads.generation,
+              input: piStableContextDemandInputSql().mapWith(
+                piStableContextHeads.input,
+              ),
+            })
+            .from(piStableContextHeads)
+            .where(
+              and(
+                headScopeCondition(fence.scope),
+                isNotNull(piStableContextHeads.input),
+                isNotNull(piStableContextHeads.inputDigest),
+              ),
+            )
+            .orderBy(asc(piStableContextHeads.id))
+            .limit(16);
+          const piMutation23At = nowDate();
+          for (const head of piMutation23Heads) {
+            await tx
+              .update(piStableContextHeads)
+              .set(
+                piStableContextStorageDemandValues(
+                  head,
+                  piMutation23Resource,
+                  piMutation23At,
+                ),
+              )
+              .where(
+                and(
+                  eq(piStableContextHeads.id, head.id),
+                  eq(piStableContextHeads.generation, head.generation),
+                ),
+              );
+          }
+          await tx.execute(publicationScopePendingSql(fence.scope, nowDate()));
+          const piMutation24Completed = await tx.execute(
+            completePiStableContextPublicationSql(fence),
+          );
+          await tx.execute(publicationReadinessSql(fence.scope, nowDate()));
+
+          await expect(piMutation24Completed.rowCount === 1).toBeTruthy();
         });
       },
     } as const;
@@ -1217,18 +1476,76 @@ describe("Pi stable context generation fences", () => {
         AbortSignal.timeout(5000),
       ),
     );
-    await enqueuePiStableContextStorageDemands(db, {
+    const piMutation25Resource = {
       storageId: firstStorageId,
       versionId: firstV2,
       archiveSize: 2,
       fileCount: 1,
-    });
-    await enqueuePiStableContextStorageDemands(db, {
+    };
+    const piMutation25Heads = await db
+      .select({
+        id: piStableContextHeads.id,
+        generation: piStableContextHeads.generation,
+        input: piStableContextDemandInputSql().mapWith(
+          piStableContextHeads.input,
+        ),
+      })
+      .from(piStableContextHeads)
+      .where(storageDependentHeadCondition([piMutation25Resource.storageId]))
+      .orderBy(asc(piStableContextHeads.id));
+    const piMutation25At = nowDate();
+    for (const head of piMutation25Heads) {
+      await db
+        .update(piStableContextHeads)
+        .set(
+          piStableContextStorageDemandValues(
+            head,
+            piMutation25Resource,
+            piMutation25At,
+          ),
+        )
+        .where(
+          and(
+            eq(piStableContextHeads.id, head.id),
+            eq(piStableContextHeads.generation, head.generation),
+          ),
+        );
+    }
+    const piMutation26Resource = {
       storageId: secondStorageId,
       versionId: secondV2,
       archiveSize: 2,
       fileCount: 1,
-    });
+    };
+    const piMutation26Heads = await db
+      .select({
+        id: piStableContextHeads.id,
+        generation: piStableContextHeads.generation,
+        input: piStableContextDemandInputSql().mapWith(
+          piStableContextHeads.input,
+        ),
+      })
+      .from(piStableContextHeads)
+      .where(storageDependentHeadCondition([piMutation26Resource.storageId]))
+      .orderBy(asc(piStableContextHeads.id));
+    const piMutation26At = nowDate();
+    for (const head of piMutation26Heads) {
+      await db
+        .update(piStableContextHeads)
+        .set(
+          piStableContextStorageDemandValues(
+            head,
+            piMutation26Resource,
+            piMutation26At,
+          ),
+        )
+        .where(
+          and(
+            eq(piStableContextHeads.id, head.id),
+            eq(piStableContextHeads.generation, head.generation),
+          ),
+        );
+    }
     const [pending] = await db
       .select({ input: piStableContextHeads.input })
       .from(piStableContextHeads)
@@ -1513,10 +1830,15 @@ describe("Pi stable context generation fences", () => {
       executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
     ).resolves.toMatchObject({ claimed: 1, ready: 1 });
 
-    await invalidatePiStableContext(db, {
-      orgId: fixture.orgId,
-      agentId: fixture.agentId,
-    });
+    await db.execute(
+      invalidatePiStableContextSql(
+        {
+          orgId: fixture.orgId,
+          agentId: fixture.agentId,
+        },
+        nowDate(),
+      ),
+    );
     await db
       .update(piStableContextHeads)
       .set({
@@ -1591,11 +1913,16 @@ describe("Pi stable context generation fences", () => {
     await createStore().get(
       preparePiStableContext(args, AbortSignal.timeout(5000)),
     );
-    await invalidatePiStableContext(db, {
-      orgId: fixture.orgId,
-      agentId: fixture.agentId,
-      userId: fixture.userId,
-    });
+    await db.execute(
+      invalidatePiStableContextSql(
+        {
+          orgId: fixture.orgId,
+          agentId: fixture.agentId,
+          userId: fixture.userId,
+        },
+        nowDate(),
+      ),
+    );
 
     const barrierSignal = AbortSignal.timeout(5000);
     const buildEntered = createDeferredPromise<void>(barrierSignal);
@@ -1754,10 +2081,15 @@ describe("Pi stable context generation fences", () => {
     expect(artifactCount).toHaveLength(1);
     expect(indexCount).toHaveLength(0);
 
-    await invalidatePiStableContext(db, {
-      orgId: fixture.orgId,
-      agentId: fixture.agentId,
-    });
+    await db.execute(
+      invalidatePiStableContextSql(
+        {
+          orgId: fixture.orgId,
+          agentId: fixture.agentId,
+        },
+        nowDate(),
+      ),
+    );
     await expect(
       db.delete(storages).where(eq(storages.id, storageId)),
     ).resolves.toBeDefined();

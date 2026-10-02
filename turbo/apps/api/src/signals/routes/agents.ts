@@ -1,3 +1,4 @@
+import { invalidatePiStableContextSql } from "../services/pi-stable-context-generation.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -37,11 +38,7 @@ import {
   visibleJoinedAgentCondition,
 } from "../services/agent-data.service";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
-import { buildAgentIdentityPrompt } from "../services/agent-identity-prompt.service";
-import {
-  invalidatePiStableContext,
-  type PiStableContextInvalidationOptions,
-} from "../services/pi-stable-context-generation.service";
+
 import {
   deleteAgentInstructionsStorage$,
   writeAgentInstructionsStorage$,
@@ -254,31 +251,6 @@ function validateAgentVisibilityUpdate(
     },
     signal,
   );
-}
-
-function agentIdentityInvalidationOptions(agent: {
-  readonly agentId: string;
-  readonly defaultAgentId: string | null;
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly sound: string | null;
-}): PiStableContextInvalidationOptions {
-  const agentIdentity =
-    buildAgentIdentityPrompt({
-      id: agent.agentId,
-      defaultAgentId: agent.defaultAgentId,
-      displayName: agent.displayName,
-      description: agent.description,
-      sound: agent.sound,
-    }) ?? "";
-  return {
-    transformInput(input) {
-      return {
-        ...input,
-        prompt: { ...input.prompt, agentIdentity },
-      };
-    },
-  };
 }
 
 async function readAgentForResponse(
@@ -583,10 +555,11 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (!agent) {
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
-    await invalidatePiStableContext(
-      tx,
-      { orgId: auth.orgId, agentId: params.id },
-      agentIdentityInvalidationOptions(agent),
+    await tx.execute(
+      invalidatePiStableContextSql(
+        { orgId: auth.orgId, agentId: params.id },
+        nowDate(),
+      ),
     );
     return { agent };
   });
@@ -682,10 +655,11 @@ const updateAgentMetadataInner$ = command(
       if (!agent) {
         throw new Error(`Canonical Agent missing after update: ${params.id}`);
       }
-      await invalidatePiStableContext(
-        tx,
-        { orgId: auth.orgId, agentId: params.id },
-        agentIdentityInvalidationOptions(agent),
+      await tx.execute(
+        invalidatePiStableContextSql(
+          { orgId: auth.orgId, agentId: params.id },
+          nowDate(),
+        ),
       );
       return { agent };
     });

@@ -1,3 +1,5 @@
+import { nowDate } from "../../lib/time";
+import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
@@ -27,8 +29,6 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
-
-import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 interface OwnedChatThread {
   readonly agentId: string;
@@ -527,11 +527,16 @@ export const updateChatThreadConnectorSelection$ = command(
             { ...args, target: selection.target },
             signal,
           );
-          await invalidatePiStableContext(tx, {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: thread.agentId,
-          });
+          await tx.execute(
+            invalidatePiStableContextSql(
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                agentId: thread.agentId,
+              },
+              nowDate(),
+            ),
+          );
           return {
             kind: "updated",
             selection: updated,
@@ -601,11 +606,16 @@ export async function clearChatThreadConnectorSelection(
       .returning({ connectorId: chatThreadConnectorSelections.connectorId });
     await reprojectWorkflowAutomationsForOwner(tx, args, signal);
     if (deleted.length > 0) {
-      await invalidatePiStableContext(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: thread.agentId,
-      });
+      await tx.execute(
+        invalidatePiStableContextSql(
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            agentId: thread.agentId,
+          },
+          nowDate(),
+        ),
+      );
     }
     return { kind: "cleared" };
   });

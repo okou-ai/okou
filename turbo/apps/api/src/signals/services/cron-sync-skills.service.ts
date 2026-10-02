@@ -1,3 +1,11 @@
+import { piStableContextHeads } from "@okouai/db/schema/pi-stable-context";
+import {
+  piStableContextCapturedHeadCondition,
+  piStableContextDemandInputSql,
+  piStableContextStorageDemandValues,
+  storageDependentHeadCondition,
+  retirePiStableContextStorageDemandsSql,
+} from "./pi-stable-context-generation.service";
 import { createHash } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -38,10 +46,7 @@ import {
   putS3Object,
 } from "../external/s3";
 import { createDeferredPromise, safeSync, tapError } from "../utils";
-import {
-  enqueuePiStableContextStorageDemands,
-  retirePiStableContextStorageDemands,
-} from "./pi-stable-context-generation.service";
+
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 
@@ -122,6 +127,15 @@ function parseHeadRef(pktLineText: string, branch: string): string {
   }
 
   throw new Error(`refs/heads/${branch} not found in git refs`);
+}
+
+function skillDemandResource(
+  storageId: string,
+  versionId: string,
+  archiveSize: number,
+  fileCount: number,
+) {
+  return { storageId, versionId, archiveSize, fileCount };
 }
 
 async function fetchHeadCommitSha(signal: AbortSignal): Promise<string> {
@@ -677,12 +691,38 @@ function syncSingleSkill(
         },
         signal,
       );
-      await enqueuePiStableContextStorageDemands(tx, {
+      const piMutation0Resource = skillDemandResource(
         storageId,
-        versionId: context.versionHash,
+        context.versionHash,
         archiveSize,
-        fileCount: context.files.length,
-      });
+        context.files.length,
+      );
+      const piMutation0Heads = await tx
+        .select({
+          id: piStableContextHeads.id,
+          generation: piStableContextHeads.generation,
+          input: piStableContextDemandInputSql().mapWith(
+            piStableContextHeads.input,
+          ),
+        })
+        .from(piStableContextHeads)
+        .where(storageDependentHeadCondition([piMutation0Resource.storageId]))
+        .orderBy(asc(piStableContextHeads.id));
+      signal.throwIfAborted();
+      const piMutation0At = nowDate();
+      for (const head of piMutation0Heads) {
+        await tx
+          .update(piStableContextHeads)
+          .set(
+            piStableContextStorageDemandValues(
+              head,
+              piMutation0Resource,
+              piMutation0At,
+            ),
+          )
+          .where(piStableContextCapturedHeadCondition(head));
+        signal.throwIfAborted();
+      }
     });
 
     log.debug("Synced skill", {
@@ -740,11 +780,13 @@ function removeOrphanedSkills(
               .for("update")
           : [];
       signal.throwIfAborted();
-      await retirePiStableContextStorageDemands(
-        tx,
-        lockedStorages.map((storage) => {
-          return storage.id;
-        }),
+      await tx.execute(
+        retirePiStableContextStorageDemandsSql(
+          lockedStorages.map((storage) => {
+            return storage.id;
+          }),
+          nowDate(),
+        ),
       );
       await tx.delete(skills).where(inArray(skills.id, orphanIds));
       if (lockedStorages.length > 0) {

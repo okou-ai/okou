@@ -1,3 +1,4 @@
+import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import { command } from "ccstate";
 import type { StoredConnectorPermissionBaseline } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -12,7 +13,7 @@ import {
   type NetworkPolicies,
   type NetworkPolicy,
 } from "@okouai/connectors/firewall-types";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
+
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import {
   connectorCatalogActiveSnapshot,
@@ -38,10 +39,9 @@ import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import {
-  expandConnectorServerFirewallPolicies,
-  type ConnectorServerFirewallCatalog,
-  type ConnectorServerFirewallMetadataCatalog,
+import type {
+  ConnectorServerFirewallCatalog,
+  ConnectorServerFirewallMetadataCatalog,
 } from "./connector-server-firewall-catalog.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
 import { connectorCatalogExecutableCapabilityDigest } from "./connector-catalog-compatibility.service";
@@ -51,8 +51,6 @@ import {
   currentConnectorCatalogValidatorIdentity,
 } from "./connector-catalog-validator-authority";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
-import { piStableContextVariantDigest } from "./pi-stable-context-digest.service";
-import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 const userPermissionGrantSelection = Object.freeze({
   id: userPermissionGrants.id,
@@ -799,70 +797,14 @@ async function invalidatePermissionStableContext(
   tx: Tx,
   args: ApplyUserPermissionGrantsArgs,
   agentId: string,
-  checkedAt: Date,
-  serverFirewalls: ConnectorServerFirewallCatalog,
+  _checkedAt: Date,
+  _serverFirewalls: ConnectorServerFirewallCatalog,
 ): Promise<void> {
-  const grants = await tx
-    .select({
-      connectorSlug: userPermissionGrants.connectorSlug,
-      permission: userPermissionGrants.permission,
-      action: userPermissionGrants.action,
-      expiresAt: userPermissionGrants.expiresAt,
-    })
-    .from(userPermissionGrants)
-    .where(
-      and(
-        eq(userPermissionGrants.orgId, args.orgId),
-        eq(userPermissionGrants.userId, args.userId),
-        eq(userPermissionGrants.agentId, agentId),
-        activeUserPermissionGrantCondition(checkedAt),
-      ),
-    )
-    .orderBy(
-      asc(userPermissionGrants.connectorSlug),
-      asc(userPermissionGrants.permission),
-    );
-  const connectorRows = await tx
-    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-    .from(userBuiltinConnectors)
-    .where(
-      and(
-        eq(userBuiltinConnectors.orgId, args.orgId),
-        eq(userBuiltinConnectors.userId, args.userId),
-        eq(userBuiltinConnectors.agentId, agentId),
-      ),
-    )
-    .orderBy(asc(userBuiltinConnectors.connectorSlug));
-  const stored = permissionGrantsToFirewallPolicies(grants);
-  const policies = await expandConnectorServerFirewallPolicies({
-    catalog: serverFirewalls,
-    stored,
-    connectorSlugs: connectorRows.map((row) => {
-      return row.connectorSlug;
-    }),
-  });
-  const validityHorizon = grants.reduce<string | null>((earliest, grant) => {
-    if (!grant.expiresAt) {
-      return earliest;
-    }
-    const expiresAt = grant.expiresAt.toISOString();
-    return earliest === null || expiresAt < earliest ? expiresAt : earliest;
-  }, null);
-  await invalidatePiStableContext(
-    tx,
-    { orgId: args.orgId, userId: args.userId, agentId },
-    {
-      transformInput(input) {
-        return {
-          ...input,
-          source: {
-            ...input.source,
-            permissionDigest: piStableContextVariantDigest(policies),
-            validityHorizon,
-          },
-        };
-      },
-    },
+  await tx.execute(
+    invalidatePiStableContextSql(
+      { orgId: args.orgId, userId: args.userId, agentId },
+      nowDate(),
+    ),
   );
 }
 

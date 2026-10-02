@@ -1,3 +1,4 @@
+import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import {
   workflowAutomationCreateRequestSchema,
   type WorkflowAutomationCreateRequest,
@@ -43,7 +44,6 @@ import {
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
 import { calculateNextRun } from "./time-automation";
-import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 const STALE_INSTALLATION_AGE_MS = 5 * 60 * 1000;
 
@@ -960,11 +960,16 @@ async function completeInstallation(
       });
     signal.throwIfAborted();
     if (installed) {
-      await invalidatePiStableContext(tx, {
-        orgId: args.installation.orgId,
-        userId: installed.ownerUserId,
-        agentId: installed.agentId,
-      });
+      await tx.execute(
+        invalidatePiStableContextSql(
+          {
+            orgId: args.installation.orgId,
+            userId: installed.ownerUserId,
+            agentId: installed.agentId,
+          },
+          nowDate(),
+        ),
+      );
     }
     return installed ? ("installed" as const) : ("lost" as const);
   });

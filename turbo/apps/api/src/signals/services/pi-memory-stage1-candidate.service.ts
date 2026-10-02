@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { advancePiMemoryStage1Watermark } from "./pi-memory-stage1-watermark.service";
 import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
 
@@ -19,7 +24,7 @@ import { storages } from "@okouai/db/schema/storage";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import { advancePiMemoryPhase2InputRevision } from "./pi-memory-phase2-job.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
@@ -356,10 +361,17 @@ async function getPiMemoryStage1AdmissionSkipReason(
   if (!(await ownsProductChatThread(tx, args))) {
     return "not_owned_chat_thread";
   }
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    tx,
+  const featureSwitchContextRows0 = await tx
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(args.orgId, args.userId));
+  const featureSwitchContext = featureSwitchContextFromRows(
     args.orgId,
     args.userId,
+    featureSwitchContextRows0,
   );
   return isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)
     ? null
