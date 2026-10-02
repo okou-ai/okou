@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.29](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.28...runner-lifecycle-v0.1.29) (2026-10-02)
+
 ## [0.1.28](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.27...runner-lifecycle-v0.1.28) (2026-10-01)
 
 ## [0.1.27](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.26...runner-lifecycle-v0.1.27) (2026-10-01)

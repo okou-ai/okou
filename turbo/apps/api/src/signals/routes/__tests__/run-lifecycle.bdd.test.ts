@@ -5704,7 +5704,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     expect(drained.body.concurrency.active).toBe(0);
   });
 
-  it("does not decrypt stored connector auth secrets during create-run", async () => {
+  it("keeps prefetched connector credentials behind placeholders in the Runner claim", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
@@ -5724,17 +5724,33 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["x", "gitlab", "figma"]);
 
-    const kms = useSecretKmsProbe();
-
     const run = await api.createThreadRun(actor, {
       agentId,
-      prompt: "use lazy connector auth credentials",
+      prompt: "use prefetched connector auth credentials",
     });
-    expect(kms.decryptCalls).toBe(0);
+    const claim = await api.claimRunnerJob(run.runId);
+    expect(claim.environment).toMatchObject({
+      X_TOKEN: connectorPlaceholder("x", "X_TOKEN"),
+      GITLAB_TOKEN: connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
+      FIGMA_TOKEN: connectorPlaceholder("figma", "FIGMA_TOKEN"),
+    });
+    expect(claim.environment).not.toHaveProperty("X_REFRESH_TOKEN");
+    expect(claim.secretConnectorMap).not.toHaveProperty("X_REFRESH_TOKEN");
+    expect(claim.encryptedSecrets).toBeTruthy();
+    const serializedClaim = JSON.stringify(claim);
+    for (const credential of [
+      "x-bdd-lazy-access",
+      "x-bdd-lazy-refresh",
+      "glpat-bdd-parallel",
+      "figd_bdd-parallel",
+    ]) {
+      expect(serializedClaim).not.toContain(credential);
+    }
 
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
+    await finishCancelledRun(run.runId, claim.sandboxToken);
   });
 
   it("uses the builtin Figma firewall for personal access tokens", async () => {

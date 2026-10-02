@@ -1,6 +1,6 @@
 [package]
 name = "runner-executor"
-version = "0.4.7"
+version = "0.4.8"
 edition.workspace = true
 description = "Claimed-run sandbox execution, session history, results, and telemetry"
 
@@ -26,7 +26,6 @@ chrono = { workspace = true, features = ["now", "serde"] }
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
 hex = { workspace = true, features = ["std"] }
-hyper.workspace = true
 libc = { workspace = true, features = ["std"] }
 nix = { workspace = true, features = ["fs", "inotify", "process", "signal", "user"] }
 reqwest = { workspace = true, features = ["json", "rustls"] }

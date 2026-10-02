@@ -21,7 +21,10 @@ use super::{
     terminal,
 };
 use crate::{
-    test_fixtures::http::{HttpClientConfig, http_client},
+    test_fixtures::{
+        http::{HttpClientConfig, http_client},
+        vnc::supported_profiles,
+    },
     vnc::VncRuntime,
 };
 
@@ -291,24 +294,7 @@ async fn run_case(password: bool, security: Security) {
                         "runnerId":harness.identity.runner_id(),
                         "heartbeatGeneration":27
                     },
-                    "supportedProfiles":[
-                        {"authMethod":"none","securityType":"x509_none","transportType":"direct"},
-                        {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
-                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
-                        {"authMethod":"qemu_scram_sha256","securityType":"qemu_x509_sasl","transportType":"direct"},
-                        {"authMethod":"client_certificate","securityType":"x509_none","transportType":"direct"},
-                        {"authMethod":"client_certificate_vnc_password","securityType":"x509_vnc","transportType":"direct"},
-                        {"authMethod":"none","securityType":"x509_none","transportType":"ssh"},
-                        {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
-                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
-                        {"authMethod":"qemu_scram_sha256","securityType":"qemu_x509_sasl","transportType":"ssh"},
-                        {"authMethod":"client_certificate","securityType":"x509_none","transportType":"ssh"},
-                        {"authMethod":"client_certificate_vnc_password","securityType":"x509_vnc","transportType":"ssh"},
-                        {"authMethod":"vnc_password","securityType":"apple_vnc_password","transportType":"ssh"},
-                        {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"},
-                        {"authMethod":"apple_srp_username_password","securityType":"apple_srp","transportType":"ssh"},
-                        {"authMethod":"apple_rsa_srp_username_password","securityType":"apple_rsa_srp","transportType":"ssh"}
-                    ]
+                    "supportedProfiles":supported_profiles(true)
                 }));
             then.status(200).json_body(json!({
                 "outcome":"resolved_transport",

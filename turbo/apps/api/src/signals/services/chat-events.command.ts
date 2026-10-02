@@ -30,7 +30,7 @@ import {
 } from "@okouai/db/schema/chat-event";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { command, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
@@ -185,7 +185,6 @@ interface NormalSendArgs {
    * caller inside an auth route whose `orgId` is that organization, so the
    * send and its model selection share one read.
    */
-  readonly orgPlanCapabilities$?: Computed<Promise<OrgPlanCapabilities | null>>;
 }
 
 type NormalSendFailure =

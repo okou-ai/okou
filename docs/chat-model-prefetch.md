@@ -13,10 +13,15 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   It shares `plan$` rather than rereading the entitlement.
 - `memberModels$`: connected member model accounts, configured models and encrypted
   account secrets. Routing and source selection share these rows.
+- `orgMetadata$`: one organization row shared by Agent default identity and model facts.
+- `connectors$`: #37563's joined account/variable/credential statement, source
+  snapshots and safely settled credential decryption. `environment$` shares the
+  same statement; there is no second variable or selected-secret query.
 - `memberMetadata$`, `permissionGrants$`, `workflows$`, `featureSwitches$`,
   `disabledPaidTools$`, `environment$`, `connectorSelection$`,
-  `customConnectorDefinitions$` and `catalog$`: the existing Agent-bootstrap
-  read definitions, individually consumable instead of one aggregate promise.
+  `customConnectorDefinitions$` and `catalog$`: individually consumable groups.
+  The Connector selection statement returns grants and custom definitions once;
+  catalog consumers share one captured generation without S3 revalidation.
 
 S1 creates the interface once. Authorization reads `agent$`; model validation
 reads `modelFacts$` and `memberModels$`. It does not await unrelated groups.
@@ -54,15 +59,60 @@ thread/session, lease and queue fences remain intact.
 
 ## Scope and acceptance boundary
 
-This change only restructures existing Agent/model prefetch sources. It does not
-add Connector account/credential prefetch (#37563), official-workflow/storage or
-allowance groups. Existing Connector current-catalog cutover revalidation remains
-owned by #37563; its reading boundary still waits only for `catalog$`, not the
-entire context. Additional Connector snapshot deduplication must land in that PR.
+This change restructures the existing Agent/model sources and the Connector
+sources merged in #37563. It adds no new official-workflow/storage or allowance
+groups. #37563's removed current-catalog revalidation remains removed: a pick
+uses one captured generation, including when the live catalog changes during
+preload. Thread connector selections still read in S3 but start independently
+of prompt/model material. Per-account credential failures remain settled until
+the selected account consumes them; an unused malformed credential does not
+fail another account's run.
 
 Regression coverage uses real send/Run/Runner APIs for a matching context, queued
 input drained in a later request without a context, model policy changes while
 an external attachment response is pending, and fail-fast matching preload
-failure. Existing catalog-cutover behavior is preserved. Deployed parent/PR
+failure. #37563's captured-generation behavior and next-pick account-default visibility are preserved. Deployed parent/PR
 trace comparison reports statement/table counts separately from runner output,
 and does not claim production latency improvements from a small sample.
+
+## Adding an identity-scoped data group
+
+1. Add a `readonly <group>$: Computed<Promise<GroupSnapshot>>` field to
+   `AgentRunContextSignals` and construct its read-only computed in
+   `agent-run-context.signals.ts`. Query through `db$`; derive shared values by
+   `get` from the group's canonical context nodes, never a second table read.
+   Factory inputs remain the three plain IDs. No command/state, writes, OAuth
+   refresh, retry or unbounded cache belongs in this interface.
+2. Declare the exact identity key. Org-only groups may be reused on an org
+   match (`plan$`, `modelFacts$`, `orgMetadata$`). Org+user groups may be reused
+   when those two IDs match (`memberModels$`), regardless of Agent. Agent grants,
+   workflow choices, permission scope and Agent-dependent Connector material
+   require the full `(orgId, userId, agentId)` match. Add the appropriate reuse
+   fields to pick's context reconciliation; never accept a broader key than the
+   query/data authority allows. Reused groups must retain their dependent source
+   identities too, not just a computed that secretly rereads a replaced source.
+3. Include the new field in `preloadAgentRunContext$`'s node list. That command
+   triggers and settles each promise under `waitUntil` after enqueue commit.
+   Preserve the computed's original rejection so a selected group fails fast;
+   do not substitute a successful default or invoke another loader.
+4. S1 may await the group only if authorization, validation or enqueue itself
+   needs it. Use `get(context.<group>$)` directly. Do not wait for unrelated
+   groups, and do not start remaining reads alongside enqueue writes.
+5. Pass the whole interface through queue-drain/pick/Thread. S3 reads only the
+   group it consumes with `get(context.<group>$)`; do not pass individual nodes
+   or rebuild a local S3 loader. Missing-context and mismatched-identity picks
+   construct this same factory after the single claim UPDATE returns identity.
+6. Cover a matching send, a later-request drain without context (or a real
+   identity mismatch), and a selected group failing during preload. Drive the
+   real APIs and observe HTTP/Run/Runner outcomes. Synchronize external
+   dependencies where needed; add no production test hooks or internal retry.
+7. Compare parent and candidate traces on a fixed deployed SHA and equivalent
+   fixture/model/account shape. Count SQL statements from POST through launch
+   commit; separately count each table/key, including joins and CTEs. Check
+   both normal and missing-context paths. Total SQL must not increase; each
+   adopted table/key is read once, apart from explicitly documented transaction
+   fences. Check SQL start times against S3 start, not merely request return.
+   Report account-specific/nullable cases and any uncaptured group honestly.
+
+Future official-workflow/storage and allowance work follows this recipe. Adding
+those groups does not authorize changing plan-lock or Pi maintenance behavior.

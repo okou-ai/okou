@@ -53,6 +53,12 @@ export const vncTypeBindings = [
           vnc_password: ["Classic VNC password authentication."],
           username_password: ["Plain username/password authentication."],
           qemu_scram_sha256: ["QEMU-specific SCRAM-SHA-256 authentication."],
+          rsa_aes_password: [
+            "RSA-AES password-only subtype with 255-byte fields.",
+          ],
+          rsa_aes_username_password: [
+            "RSA-AES username/password subtype with 255-byte fields.",
+          ],
           apple_dh_username_password: [
             "Apple DH username/password authentication with 63-byte fields.",
           ],
@@ -78,6 +84,14 @@ export const vncTypeBindings = [
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
           qemu_x509_sasl: ["QEMU X509SASL subtype 263 with verified TLS."],
+          rsa_aes_ra2: ["Pinned RSA-AES type 5; full-session AES-128 EAX."],
+          rsa_aes_ra2_256: [
+            "Pinned RSA-AES type 129; full-session AES-256 EAX.",
+          ],
+          rsa_aes_ra2ne: ["Pinned RSA-AES type 6; verified SSH-loopback only."],
+          rsa_aes_ra2ne_256: [
+            "Pinned RSA-AES type 130; verified SSH-loopback only.",
+          ],
           apple_vnc_password: [
             "Apple bare type 2, requiring SSH to Mac loopback.",
           ],
@@ -152,6 +166,9 @@ export const vncTypeBindings = [
           resolved_apple_srp: [
             "Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.",
           ],
+          resolved_rsa_aes: [
+            "Exact RSA-AES mode, independent wire pin and bounded credential.",
+          ],
           resolved_apple_rsa_srp: [
             "Apple RSA/SRP credential and verified SSH-to-Mac-loopback transport only.",
           ],
@@ -188,6 +205,12 @@ export const vncTypeBindings = [
         },
         variants: {
           none: ["No inner client authentication or secret."],
+          rsa_aes_password: [
+            "RSA-AES password-only subtype; native validates 255 UTF-8 bytes.",
+          ],
+          rsa_aes_username_password: [
+            "RSA-AES username/password subtype; native validates 255 UTF-8 bytes per field.",
+          ],
           vnc_password: ["Classic VNC password challenge response."],
           username_password: [
             "Username/password authentication inside verified TLS.",
@@ -217,8 +240,21 @@ export const vncTypeBindings = [
         rustDoc: [
           "Saved security policy, independent of future engine capabilities.",
         ],
-        fields: { trust: ["Required verified TLS trust policy."] },
+        fields: {
+          trust: ["Required verified TLS trust policy."],
+          serverKeySha256: [
+            "Independent full RSA wire-key SHA256, never CA trust.",
+          ],
+        },
         variants: {
+          rsa_aes_ra2: ["Pinned type 5; full-session AES-128 EAX."],
+          rsa_aes_ra2_256: ["Pinned type 129; full-session AES-256 EAX."],
+          rsa_aes_ra2ne: [
+            "Pinned type 6; authentication-only over verified SSH-loopback.",
+          ],
+          rsa_aes_ra2ne_256: [
+            "Pinned type 130; authentication-only over verified SSH-loopback.",
+          ],
           x509_none: ["Verified TLS without inner RFB client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],

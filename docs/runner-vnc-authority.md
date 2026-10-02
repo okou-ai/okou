@@ -15,6 +15,29 @@ access. Migration `1288_drop_retired_agent_grant_tables` removes their physical
 tables after the last old API readers have drained; that migration is not a
 production receipt until deployed.
 
+## RSA-AES private handoff (#37500)
+
+`resolved_rsa_aes` contains the exact saved mode, independent full wire-key
+SHA256 and bounded password-only or username/password credential, with no X509
+serverName. Sensitive generated DTOs retain the shared bounded wire-field shape;
+the owner contract and API after KMS enforce 255 bytes/no NUL, and the native
+engine revalidates before any socket. No private payload implements Debug or
+reaches the guest; the native consumer transfers zeroizing credential ownership.
+
+The Runner advertises twelve RSA-AES tuples: two methods × two full-encryption
+modes × direct/SSH, plus two methods × two authentication-only modes × SSH only.
+Together with the existing sixteen profiles, the bounded request cap is 32 for
+28 usable tuples. Unsupported exact tuples are refused before KMS, never expanded
+into an authentication/security cross-product. Generation/current authority checks
+remain before native use and operations. Malformed pin, cross-method/security and
+unsupported SSH/ne routes fail before DNS/connect. Pin mismatch is a redacted
+`authentication_failed`; no supplied key, password or parser cause is returned.
+
+The delivered engine retains its crypto-job capacity, handshake deadline and
+owned full-session EAX or explicit ne raw transition. ne is admitted only through
+selected host-key-verified saved SSH to literal server loopback, not a public or
+hostname-alias destination. The separate live product PNG gate remains required.
+
 ## Inventory and retired grants
 
 The former owner GET/PUT `/api/agents/:agentId/vnc-access` routes and first-host

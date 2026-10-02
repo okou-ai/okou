@@ -1,6 +1,6 @@
 [package]
 name = "runner-lifecycle"
-version = "0.1.28"
+version = "0.1.29"
 edition.workspace = true
 description = "Runner active-run, idle sandbox, prefetch, status, and workspace image lifecycle"
 

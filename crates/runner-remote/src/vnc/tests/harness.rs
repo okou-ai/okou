@@ -32,14 +32,7 @@ pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 const TOKEN: &str = "vm0_official_vnc-test";
 
 fn supported_profiles() -> Value {
-    json!([
-        {"authMethod":"none","securityType":"x509_none","transportType":"direct"},
-        {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
-        {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
-        {"authMethod":"qemu_scram_sha256","securityType":"qemu_x509_sasl","transportType":"direct"},
-        {"authMethod":"client_certificate","securityType":"x509_none","transportType":"direct"},
-        {"authMethod":"client_certificate_vnc_password","securityType":"x509_vnc","transportType":"direct"},
-    ])
+    crate::test_fixtures::vnc::supported_profiles(false)
 }
 
 pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {

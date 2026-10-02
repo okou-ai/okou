@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.991.0](https://github.com/okou-ai/okou/compare/app-v0.990.7...app-v0.991.0) (2026-10-02)
+
+
+### Features
+
+* add owner-selected rsa-aes vnc profiles ([#37548](https://github.com/okou-ai/okou/issues/37548)) ([6716f9a](https://github.com/okou-ai/okou/commit/6716f9afed2943ab4c18f0c8aa435a20f2e7f47b))
+
+
+### Bug Fixes
+
+* **app:** align pro upgrade concurrency copy with plan limits ([#37565](https://github.com/okou-ai/okou/issues/37565)) ([5082528](https://github.com/okou-ai/okou/commit/50825281399fd2936139bfe7fceb5b544757b96d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.535.0
+    * @okouai/core bumped to 8.726.1
+
 ## [0.990.7](https://github.com/okou-ai/okou/compare/app-v0.990.6...app-v0.990.7) (2026-10-02)
 
 

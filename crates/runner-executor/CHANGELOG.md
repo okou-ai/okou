@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.7...runner-executor-v0.4.8) (2026-10-02)
+
+
+### Bug Fixes
+
+* **runner-storage:** retry transient archive download failures ([#37557](https://github.com/okou-ai/okou/issues/37557)) ([353e71f](https://github.com/okou-ai/okou/commit/353e71fd9f0c29bbc7718382d49f40f62484e05b))
+
 ## [0.4.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.6...runner-executor-v0.4.7) (2026-10-02)
 
 ## [0.4.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.5...runner-executor-v0.4.6) (2026-10-01)

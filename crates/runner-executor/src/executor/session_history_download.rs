@@ -37,13 +37,12 @@
 //! outcome, so successful recovery does not erase an earlier transport failure.
 
 use std::collections::HashMap;
-use std::error::Error as _;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use api_contracts::generated::constants::runners::RESUME_SESSION_HISTORY_MAX_BYTES;
-use reqwest::header::{CONTENT_ENCODING, RETRY_AFTER, TRANSFER_ENCODING};
+use reqwest::header::{CONTENT_ENCODING, TRANSFER_ENCODING};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -61,7 +60,12 @@ use crate::telemetry::{
     SessionHistoryTelemetryMetadata, SessionHistoryTransferEncodingState,
 };
 use runner_provider::http::HttpClient;
-use runner_storage::OBJECT_DOWNLOAD_TIMEOUT;
+use runner_storage::{
+    OBJECT_DOWNLOAD_BUDGET as SESSION_HISTORY_DOWNLOAD_BUDGET,
+    OBJECT_DOWNLOAD_MAX_ATTEMPTS as SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
+    OBJECT_DOWNLOAD_RETRY_DELAY as SESSION_HISTORY_DOWNLOAD_RETRY_DELAY, OBJECT_DOWNLOAD_TIMEOUT,
+    object_download_http_retry_after, object_download_transient_transport_kind,
+};
 use runner_types::types::{
     ResumeSession, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind,
@@ -69,12 +73,6 @@ use runner_types::types::{
 
 const SESSION_HISTORY_PROBE_TTL: Duration = Duration::from_secs(60 * 60);
 const SESSION_HISTORY_PROBE_CAPACITY: usize = 4096;
-
-// These limits apply only to read-only history blob downloads, not signed-URL
-// renewal, archive transfers, restore writes, or replaying the agent.
-const SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS: usize = 3;
-const SESSION_HISTORY_DOWNLOAD_RETRY_DELAY: Duration = Duration::from_millis(200);
-const SESSION_HISTORY_DOWNLOAD_BUDGET: Duration = Duration::from_secs(90);
 
 pub struct SessionHistoryMaterializer {
     state: SessionHistoryMaterializerState,
@@ -903,9 +901,7 @@ async fn download_body(
         result = tokio::time::timeout_at(
             deadline,
             download_body_with_retries(http, url, expected_size, timings, deadline),
-        ) => result.unwrap_or_else(|_| Err(RunnerError::Internal(
-            "session history download exceeded its retry budget (cause=timeout)".into(),
-        ))),
+        ) => result.unwrap_or_else(|_| Err(session_history_download_budget_error())),
     }
 }
 
@@ -918,7 +914,16 @@ async fn download_body_with_retries(
 ) -> RunnerResult<Vec<u8>> {
     let mut attempt = 1usize;
     loop {
-        match download_body_once(http, url, expected_size, timings).await {
+        // Timeout polls its inner future before the expired timer, so a late
+        // backoff wakeup and a ready response both need explicit budget checks.
+        if tokio::time::Instant::now() >= deadline {
+            return Err(session_history_download_budget_error());
+        }
+        let result = download_body_once(http, url, expected_size, timings).await;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(session_history_download_budget_error());
+        }
+        match result {
             Ok(body) => return Ok(body),
             Err(error) => {
                 let Some(retry_after) = error.retry_after else {
@@ -949,6 +954,12 @@ async fn download_body_with_retries(
     }
 }
 
+fn session_history_download_budget_error() -> RunnerError {
+    RunnerError::Internal(
+        "session history download exceeded its retry budget (cause=timeout)".into(),
+    )
+}
+
 fn session_history_download_cancelled_error() -> RunnerError {
     RunnerError::Cancelled
 }
@@ -972,12 +983,7 @@ async fn download_body_once(
     if let Err(error) = response.error_for_status_ref() {
         timings.record_request_status(request_started.elapsed(), false);
         let mut failure = SessionHistoryDownloadBodyError::from_reqwest("GET status", url, error);
-        if matches!(response.status().as_u16(), 429 | 500 | 502 | 503 | 504) {
-            failure.retry_after = match response.headers().get(RETRY_AFTER) {
-                Some(value) => value.to_str().ok().and_then(session_history_retry_after),
-                None => Some(Duration::ZERO),
-            };
-        }
+        failure.retry_after = object_download_http_retry_after(&response);
         return Err(failure);
     }
     timings.record_request_status(request_started.elapsed(), true);
@@ -1090,7 +1096,7 @@ impl SessionHistoryDownloadBodyError {
     }
 
     fn from_reqwest(phase: &str, url: &str, error: reqwest::Error) -> Self {
-        let retry_kind = session_history_transient_transport_kind(&error);
+        let retry_kind = object_download_transient_transport_kind(&error);
         let failure_kind = match error.status() {
             Some(status) if status.as_u16() == 429 => "http_429",
             Some(status) if status.is_server_error() => "http_5xx",
@@ -1111,53 +1117,6 @@ impl SessionHistoryDownloadBodyError {
     fn into_runner_error(self) -> RunnerError {
         RunnerError::Internal(self.message)
     }
-}
-
-fn session_history_transient_transport_kind(error: &reqwest::Error) -> Option<&'static str> {
-    if error.is_timeout() {
-        return Some("timeout");
-    }
-    if error.is_connect() {
-        return Some("connect");
-    }
-    // chunk() wraps body interruptions as decode errors. Inspect typed sources
-    // rather than treating every decode failure or dependency message as transient.
-    let mut source = error.source();
-    while let Some(error) = source {
-        if let Some(error) = error.downcast_ref::<std::io::Error>()
-            && matches!(
-                error.kind(),
-                std::io::ErrorKind::ConnectionReset
-                    | std::io::ErrorKind::ConnectionAborted
-                    | std::io::ErrorKind::BrokenPipe
-                    | std::io::ErrorKind::UnexpectedEof
-            )
-        {
-            return Some("body_interrupted");
-        }
-        if let Some(error) = error.downcast_ref::<hyper::Error>()
-            && (error.is_incomplete_message() || error.is_closed())
-        {
-            return Some("body_interrupted");
-        }
-        source = error.source();
-    }
-    None
-}
-
-fn session_history_retry_after(value: &str) -> Option<Duration> {
-    let value = value.trim();
-    if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return value.parse::<u64>().ok().map(Duration::from_secs);
-    }
-    // An unsupported/malformed hint is terminal rather than retrying sooner
-    // than the provider permits. HTTP dates in the past permit normal backoff.
-    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
-    Some(
-        date.signed_duration_since(chrono::Utc::now())
-            .to_std()
-            .unwrap_or(Duration::ZERO),
-    )
 }
 
 impl fmt::Display for SessionHistoryDownloadBodyError {
@@ -1614,7 +1573,7 @@ mod tests {
         status: &'static str,
         body: Vec<u8>,
         content_length: Option<u64>,
-        retry_after: Option<&'static str>,
+        retry_after: Vec<&'static str>,
         stall: bool,
     }
 
@@ -1628,13 +1587,13 @@ mod tests {
                 status,
                 body: body.into(),
                 content_length,
-                retry_after: None,
+                retry_after: Vec::new(),
                 stall: false,
             }
         }
 
         fn with_retry_after(mut self, value: &'static str) -> Self {
-            self.retry_after = Some(value);
+            self.retry_after.push(value);
             self
         }
 
@@ -1779,10 +1738,11 @@ mod tests {
                 .content_length
                 .map(|content_length| format!("Content-Length: {content_length}\r\n"))
                 .unwrap_or_default();
-            let retry_after_header = response
+            let retry_after_header: String = response
                 .retry_after
+                .iter()
                 .map(|value| format!("Retry-After: {value}\r\n"))
-                .unwrap_or_default();
+                .collect();
             let response_head = format!(
                 "HTTP/1.1 {}\r\n{content_length_header}{retry_after_header}Connection: close\r\n\r\n",
                 response.status

@@ -18,6 +18,16 @@ import {
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { VNC_ERROR_CODES } from "@okouai/api-contracts/contracts/vnc-errors";
+import {
+  isVncRsaAesSecurityType,
+  isVncRsaAesAuthenticationOnly,
+} from "@okouai/api-contracts/contracts/vnc-rsa-aes";
+import {
+  RSA_AES_PROFILES,
+  isRsaAesProfile,
+  rsaAesProfile,
+  type RsaAesProfile,
+} from "./vnc-rsa-aes.ts";
 import { accept } from "../lib/accept.ts";
 import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
@@ -143,10 +153,14 @@ const dialog$ = state<VncDialogState | null>(null);
 export type VncProfile =
   | VncSecurity["type"]
   | "client_certificate_none"
-  | "client_certificate_vnc";
+  | "client_certificate_vnc"
+  | RsaAesProfile;
 export type VncAuthMethod = VncCredentialResponse["authMethod"] | "none";
 
 export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
+  if (isRsaAesProfile(profile)) {
+    return RSA_AES_PROFILES[profile].method;
+  }
   switch (profile) {
     case "x509_none": {
       return "none";
@@ -185,6 +199,12 @@ function vncProfileForAuthMethod(
   method: VncCredentialResponse["authMethod"],
 ): VncProfile {
   switch (method) {
+    case "rsa_aes_password": {
+      return "rsa_aes_ra2";
+    }
+    case "rsa_aes_username_password": {
+      return "rsa_aes_ra2_username_password";
+    }
     case "client_certificate": {
       return "client_certificate_none";
     }
@@ -241,27 +261,49 @@ export function vncSshConnectionId(connection: VncConnectionResponse) {
     : null;
 }
 
+export function vncProfileForConnection(
+  connection: VncConnectionResponse,
+): VncProfile {
+  if (isVncRsaAesSecurityType(connection.security.type)) {
+    if (
+      !("rsaAesAuthentication" in connection) ||
+      !connection.rsaAesAuthentication
+    ) {
+      throw new Error(
+        "VNC RSA-AES connection is missing its authentication method",
+      );
+    }
+    return rsaAesProfile(
+      connection.security.type,
+      connection.rsaAesAuthentication,
+    );
+  }
+  if (
+    "clientCertificateAuthentication" in connection &&
+    connection.clientCertificateAuthentication
+  ) {
+    return connection.clientCertificateAuthentication === "client_certificate"
+      ? "client_certificate_none"
+      : "client_certificate_vnc";
+  }
+  return connection.security.type;
+}
+
 function initialVncProfile(
   connection: VncConnectionResponse | null,
   credential: VncCredentialResponse | null,
 ): VncProfile {
-  if (connection) {
-    if (
-      "clientCertificateAuthentication" in connection &&
-      connection.clientCertificateAuthentication
-    ) {
-      return connection.clientCertificateAuthentication === "client_certificate"
-        ? "client_certificate_none"
-        : "client_certificate_vnc";
-    }
-    return connection.security.type;
-  }
-  return credential
-    ? vncProfileForAuthMethod(credential.authMethod)
-    : "x509_vnc";
+  return connection
+    ? vncProfileForConnection(connection)
+    : credential
+      ? vncProfileForAuthMethod(credential.authMethod)
+      : "x509_vnc";
 }
 
-function isAppleVncProfile(profile: VncProfile): boolean {
+function requiresSshLoopback(profile: VncProfile): boolean {
+  if (isRsaAesProfile(profile)) {
+    return isVncRsaAesAuthenticationOnly(RSA_AES_PROFILES[profile].type);
+  }
   return (
     profile === "apple_vnc_password" ||
     profile === "apple_dh" ||
@@ -280,12 +322,15 @@ const editor$ = state({
   destinationHost: "",
   tlsServerName: "",
   caBundle: "",
+  rsaServerKeySha256: "",
+  rsaImportedModulusBits: null as number | null,
   replace: false,
 });
 const uncertain$ = state(false);
 const saveMessage$ = state<string | null>(null);
 const conflict$ = state(false);
 const resetSave$ = resetSignal();
+const resetRsaImport$ = resetSignal();
 const editorLocked$ = computed((get) => {
   return get(uncertain$) || get(conflict$);
 });
@@ -328,8 +373,10 @@ export const chooseVncProfile$ = command(
         profile === "apple_vnc_password" ||
         profile === "apple_dh" ||
         profile === "apple_srp" ||
-        profile === "apple_rsa_srp")
+        profile === "apple_rsa_srp" ||
+        isRsaAesProfile(profile))
     ) {
+      set(resetRsaImport$);
       set(editor$, (current): Editor => {
         return current.profile === profile
           ? current
@@ -337,7 +384,9 @@ export const chooseVncProfile$ = command(
               ...current,
               profile,
               selection: "",
-              transport: isAppleVncProfile(profile) ? "ssh" : current.transport,
+              transport: requiresSshLoopback(profile)
+                ? "ssh"
+                : current.transport,
             };
       });
     }
@@ -374,6 +423,78 @@ export const editVncCaBundle$ = command(({ get, set }, bundle: string) => {
     });
   }
 });
+export const editVncRsaPin$ = command(({ get, set }, pin: string) => {
+  if (!get(editorLocked$)) {
+    set(resetRsaImport$);
+    set(editor$, (current) => {
+      return {
+        ...current,
+        rsaServerKeySha256: pin,
+        rsaImportedModulusBits: null,
+      };
+    });
+  }
+});
+export const importVncRsaKey$ = command(
+  async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+    const signal = set(resetRsaImport$, parentSignal);
+    const dialog = await get(vncDialog$);
+    signal.throwIfAborted();
+    if (
+      !dialog ||
+      get(editorLocked$) ||
+      !isRsaAesProfile(get(editor$).profile)
+    ) {
+      return;
+    }
+    const pin = get(editor$).rsaServerKeySha256;
+    const profile = get(editor$).profile;
+    const publicKeyPem = textField(form, "serverPublicKeyPem");
+    const clients = await get(vncClients$);
+    signal.throwIfAborted();
+    if (clients.identity !== dialog.identity) {
+      return;
+    }
+    const result = await accept(
+      clients.connections.inspectRsaKey({
+        body: { publicKeyPem },
+        fetchOptions: { signal },
+      }),
+      [200, 400, 404],
+      signal,
+      { showErrorToast: false },
+    );
+    signal.throwIfAborted();
+    if (
+      get(dialog$) !== dialog ||
+      get(editorLocked$) ||
+      (await get(vncIdentity$)) !== dialog.identity ||
+      get(editor$).rsaServerKeySha256 !== pin ||
+      get(editor$).profile !== profile
+    ) {
+      return;
+    }
+    signal.throwIfAborted();
+    if (
+      result.status !== 200 ||
+      textField(form, "serverPublicKeyPem") !== publicKeyPem
+    ) {
+      // The displayed public-key draft must still be the material inspected.
+      // Do not associate a late old fingerprint with a newly edited PEM.
+      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      return;
+    }
+    set(editor$, (current) => {
+      return {
+        ...current,
+        rsaServerKeySha256: result.body.serverKeySha256,
+        rsaImportedModulusBits: result.body.modulusBits,
+      };
+    });
+    set(saveMessage$, null);
+  },
+);
+
 export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {
   if (!get(editorLocked$) && (trust === "system" || trust === "custom_ca")) {
     set(editor$, (current): Editor => {
@@ -386,7 +507,7 @@ export const chooseVncTransport$ = command(
     if (
       !get(editorLocked$) &&
       (transport === "direct" || transport === "ssh") &&
-      (transport !== "direct" || !isAppleVncProfile(get(editor$).profile))
+      (transport !== "direct" || !requiresSshLoopback(get(editor$).profile))
     ) {
       set(editor$, (current): Editor => {
         return { ...current, transport };
@@ -416,6 +537,7 @@ export const replaceVncAuthentication$ = command(
 
 export const closeVncDialog$ = command(({ set }) => {
   set(resetSave$);
+  set(resetRsaImport$);
   set(dialog$, null);
   set(uncertain$, false);
   set(saveMessage$, null);
@@ -430,6 +552,8 @@ export const closeVncDialog$ = command(({ set }) => {
     destinationHost: "",
     tlsServerName: "",
     caBundle: "",
+    rsaServerKeySha256: "",
+    rsaImportedModulusBits: null,
     replace: false,
   });
 });
@@ -442,6 +566,7 @@ export const mountVncForm$ = onRef(
       () => {
         if (get(dialog$) === mountedDialog) {
           set(resetSave$);
+          set(resetRsaImport$);
           // StrictMode replays callback refs within the same owner lifetime.
           // Only an actual authority change discards the stored draft here.
           if (
@@ -481,6 +606,23 @@ export const mountVncCertificateSecret$ = onRef(
   }),
 );
 
+function initialVncSecurityFields(
+  connection: VncConnectionResponse | null,
+): Pick<Editor, "trust" | "tlsServerName" | "caBundle" | "rsaServerKeySha256"> {
+  const security = connection?.security;
+  return {
+    trust: security && "trust" in security ? security.trust.mode : "system",
+    tlsServerName:
+      security && "serverName" in security ? (security.serverName ?? "") : "",
+    caBundle:
+      security && "trust" in security && security.trust.mode === "custom_ca"
+        ? security.trust.caBundle
+        : "",
+    rsaServerKeySha256:
+      security && "serverKeySha256" in security ? security.serverKeySha256 : "",
+  };
+}
+
 function initialVncEditor(
   kind: VncDialogState["kind"],
   connection: VncConnectionResponse | null,
@@ -496,24 +638,13 @@ function initialVncEditor(
           ? ""
           : "new",
     profile,
-    trust:
-      connection && "trust" in connection.security
-        ? connection.security.trust.mode
-        : "system",
-    transport: sshConnectionId || isAppleVncProfile(profile) ? "ssh" : "direct",
+    ...initialVncSecurityFields(connection),
+    transport:
+      sshConnectionId || requiresSshLoopback(profile) ? "ssh" : "direct",
     sshConnectionId: sshConnectionId ?? "",
     loopbackHost: connection?.host === "::1" ? "::1" : "127.0.0.1",
     destinationHost: connection?.host ?? "",
-    tlsServerName:
-      connection && "serverName" in connection.security
-        ? (connection.security.serverName ?? "")
-        : "",
-    caBundle:
-      connection &&
-      "trust" in connection.security &&
-      connection.security.trust.mode === "custom_ca"
-        ? connection.security.trust.caBundle
-        : "",
+    rsaImportedModulusBits: null,
     replace: false,
   };
 }
@@ -586,6 +717,20 @@ function textField(form: HTMLFormElement, name: string): string {
 
 function credentialFields(form: HTMLFormElement, profile: VncProfile) {
   const name = textField(form, "credentialName");
+  if (isRsaAesProfile(profile)) {
+    const method = RSA_AES_PROFILES[profile].method;
+    return {
+      name,
+      authentication:
+        method === "rsa_aes_password"
+          ? { method, password: textField(form, "password") }
+          : {
+              method,
+              username: textField(form, "username"),
+              password: textField(form, "password"),
+            },
+    };
+  }
   switch (profile) {
     case "x509_none": {
       throw new Error("Certificate-free X509None has no credential to create");
@@ -696,16 +841,19 @@ interface Editor {
   readonly destinationHost: string;
   readonly tlsServerName: string;
   readonly caBundle: string;
+  readonly rsaServerKeySha256: string;
+  readonly rsaImportedModulusBits: number | null;
   readonly replace: boolean;
 }
 
 function connectionFields(form: HTMLFormElement, editor: Editor) {
-  const serverName = isAppleVncProfile(editor.profile)
-    ? ""
-    : editor.tlsServerName.trim();
+  const serverName =
+    requiresSshLoopback(editor.profile) || isRsaAesProfile(editor.profile)
+      ? ""
+      : editor.tlsServerName.trim();
   return {
     displayName: textField(form, "displayName"),
-    host: isAppleVncProfile(editor.profile)
+    host: requiresSshLoopback(editor.profile)
       ? editor.loopbackHost
       : editor.destinationHost,
     port: Number(textField(form, "port")),
@@ -719,24 +867,29 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
         : editor.selection === "new"
           ? { create: credentialFields(form, editor.profile) }
           : { id: editor.selection },
-    security: isAppleVncProfile(editor.profile)
-      ? { type: editor.profile }
-      : {
-          type:
-            editor.profile === "client_certificate_none"
-              ? ("x509_none" as const)
-              : editor.profile === "client_certificate_vnc"
-                ? ("x509_vnc" as const)
-                : editor.profile,
-          ...(serverName ? { serverName } : {}),
-          trust:
-            editor.trust === "system"
-              ? { mode: "system" as const }
-              : {
-                  mode: "custom_ca" as const,
-                  caBundle: editor.caBundle,
-                },
-        },
+    security: isRsaAesProfile(editor.profile)
+      ? {
+          type: RSA_AES_PROFILES[editor.profile].type,
+          serverKeySha256: editor.rsaServerKeySha256,
+        }
+      : requiresSshLoopback(editor.profile)
+        ? { type: editor.profile }
+        : {
+            type:
+              editor.profile === "client_certificate_none"
+                ? ("x509_none" as const)
+                : editor.profile === "client_certificate_vnc"
+                  ? ("x509_vnc" as const)
+                  : editor.profile,
+            ...(serverName ? { serverName } : {}),
+            trust:
+              editor.trust === "system"
+                ? { mode: "system" as const }
+                : {
+                    mode: "custom_ca" as const,
+                    caBundle: editor.caBundle,
+                  },
+          },
   };
 }
 

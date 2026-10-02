@@ -181,6 +181,33 @@ async fn materializer_does_not_ignore_retry_after_or_exceed_its_budget() {
 }
 
 #[tokio::test]
+async fn materializer_rejects_duplicate_retry_after_without_another_get() {
+    for values in [["0", "120"], ["0", "invalid"], ["0", "0"], ["invalid", "0"]] {
+        let body = b"{\"type\":\"init\"}\n";
+        let hash = hex::encode(Sha256::digest(body));
+        let server = MultiShotSessionHistoryServer::respond_many(vec![
+            MultiShotSessionHistoryResponse::status("429 Too Many Requests")
+                .with_retry_after(values[0])
+                .with_retry_after(values[1]),
+            MultiShotSessionHistoryResponse::ok(body, Some(body.len() as u64)),
+        ])
+        .await;
+        let session = ref_session(server.url(), hash, body.len() as u64, body.len() as u64);
+        match start_materializer(&session)
+            .finish(&CancellationToken::new())
+            .await
+        {
+            SessionHistoryMaterialization::Failed { error, timings, .. } => {
+                assert!(error.to_string().contains("429"));
+                assert_no_phase(timings.hash_verification());
+            }
+            _ => panic!("duplicate Retry-After must not permit an early retry"),
+        }
+        server.stop_and_assert_requests(1).await;
+    }
+}
+
+#[tokio::test]
 async fn materializer_recovers_after_download_timeout() {
     let body = b"{\"type\":\"init\"}\n";
     let hash = hex::encode(Sha256::digest(body));
@@ -275,6 +302,35 @@ async fn cancelling_materializer_stops_provider_backoff_without_another_get() {
             ..
         }
     ));
+    server.stop_and_assert_requests(1).await;
+}
+
+#[tokio::test]
+async fn materializer_does_not_start_an_attempt_after_backoff_expires_the_budget() {
+    let body = b"{\"type\":\"init\"}\n";
+    let hash = hex::encode(Sha256::digest(body));
+    let server = MultiShotSessionHistoryServer::respond_many(vec![
+        MultiShotSessionHistoryResponse::new("429 Too Many Requests", Vec::new(), Some(1))
+            .with_retry_after("60")
+            .stalled(),
+        MultiShotSessionHistoryResponse::ok(body, Some(body.len() as u64)),
+    ])
+    .await;
+    let session = ref_session(server.url(), hash, body.len() as u64, body.len() as u64);
+    let materializer = start_materializer(&session);
+    let download =
+        tokio::spawn(async move { materializer.finish(&CancellationToken::new()).await });
+    server.wait_for_client_close().await;
+    tokio::time::pause();
+    tokio::time::advance(SESSION_HISTORY_DOWNLOAD_BUDGET + Duration::from_secs(1)).await;
+    tokio::time::resume();
+    match finish_download(download).await {
+        SessionHistoryMaterialization::Failed { error, timings, .. } => {
+            assert!(error.to_string().contains("retry budget"));
+            assert_no_phase(timings.hash_verification());
+        }
+        _ => panic!("an expired backoff budget must fail before another download"),
+    }
     server.stop_and_assert_requests(1).await;
 }
 

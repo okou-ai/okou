@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "api-contracts"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -983,7 +983,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.19"
+version = "0.22.20"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1021,7 +1021,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.11.51"
+version = "0.11.52"
 dependencies = [
  "chrono",
  "clap",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.103.2"
+version = "0.103.3"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.22.22"
+version = "0.22.23"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.21.46"
+version = "0.21.47"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -1843,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.22.2"
+version = "0.22.3"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.37"
+version = "0.12.38"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -1894,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.24.33"
+version = "0.24.34"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.117"
+version = "0.3.118"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1925,7 +1925,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.1.106"
+version = "0.1.107"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -1947,7 +1947,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.200"
+version = "0.1.201"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -3565,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.219.10"
+version = "0.219.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3632,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3647,7 +3647,6 @@ dependencies = [
  "guest-storage-apply",
  "hex",
  "httpmock",
- "hyper",
  "libc",
  "nix",
  "reqwest",
@@ -3680,7 +3679,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3702,7 +3701,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3733,7 +3732,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3764,7 +3763,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3799,7 +3798,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3874,7 +3873,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3889,6 +3888,7 @@ dependencies = [
  "hex",
  "http-body",
  "httpmock",
+ "hyper",
  "libc",
  "nix",
  "rcgen",
@@ -3914,7 +3914,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.17"
+version = "0.2.18"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3945,7 +3945,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "api-contracts",
  "idna",
@@ -4218,7 +4218,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.44.2"
+version = "0.44.3"
 dependencies = [
  "async-trait",
  "clap",
@@ -4253,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.11.35"
+version = "0.11.36"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4501,7 +4501,7 @@ dependencies = [
 
 [[package]]
 name = "session-history-selector"
-version = "0.3.131"
+version = "0.3.132"
 dependencies = [
  "guest-contracts",
  "proptest",

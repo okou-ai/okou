@@ -72,6 +72,7 @@ function response(
   if (
     row.authMethod === "username_password" ||
     row.authMethod === "qemu_scram_sha256" ||
+    row.authMethod === "rsa_aes_username_password" ||
     row.authMethod === "apple_dh_username_password" ||
     row.authMethod === "apple_srp_username_password" ||
     row.authMethod === "apple_rsa_srp_username_password"
@@ -173,6 +174,7 @@ async function encryptAuthentication(
     username:
       authentication.method === "username_password" ||
       authentication.method === "qemu_scram_sha256" ||
+      authentication.method === "rsa_aes_username_password" ||
       authentication.method === "apple_dh_username_password" ||
       authentication.method === "apple_srp_username_password" ||
       authentication.method === "apple_rsa_srp_username_password"

@@ -7,7 +7,8 @@ use base64::Engine;
 use rfb_client::{
     AppleDhCredentials, AppleRsaSrpCredentials, AppleSrpCredentials,
     ClientCertificateAuthentication, ClientIdentity, PlainCredentials, QemuScramCredentials,
-    TrustRoots, VncPassword, X509Authentication,
+    RsaAesCredentials, RsaAesSecurity, RsaServerKeyPin, TrustRoots, VncPassword,
+    X509Authentication,
 };
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Serialize, de::DeserializeOwned};
@@ -97,12 +98,114 @@ pub(super) enum Authentication {
     AppleDh(AppleDhCredentials),
     AppleSrp(AppleSrpCredentials),
     AppleRsaSrp(AppleRsaSrpCredentials),
+    RsaAes {
+        security: RsaAesSecurity,
+        pin: RsaServerKeyPin,
+        credentials: RsaAesCredentials,
+    },
 }
 
 #[derive(Clone, Copy)]
 pub(super) enum Transport {
     Direct,
     Ssh { connection: Uuid, generation: i64 },
+}
+
+fn rsa_aes_credential(
+    host: String,
+    port: u64,
+    generation: i64,
+    transport: ResolveResponseResolvedTransportTransport,
+    authentication: ResolveResponseResolvedTransportAuthentication,
+    security: ResolveResponseResolvedTransportSecurity,
+    supports_ssh: bool,
+) -> Result<Credential, Failure> {
+    let port = valid_port_and_generation(port, generation)?;
+    super::network::validate_host(&host)?;
+    let transport = parse_transport(transport, supports_ssh)?;
+    let (security, encoded_pin) = match security {
+        ResolveResponseResolvedTransportSecurity::RsaAesRa2 { server_key_sha256 } => {
+            (RsaAesSecurity::Ra2, server_key_sha256)
+        }
+        ResolveResponseResolvedTransportSecurity::RsaAesRa2256 { server_key_sha256 } => {
+            (RsaAesSecurity::Ra2_256, server_key_sha256)
+        }
+        ResolveResponseResolvedTransportSecurity::RsaAesRa2ne { server_key_sha256 } => {
+            (RsaAesSecurity::Ra2ne, server_key_sha256)
+        }
+        ResolveResponseResolvedTransportSecurity::RsaAesRa2ne256 { server_key_sha256 } => {
+            (RsaAesSecurity::Ra2ne256, server_key_sha256)
+        }
+        _ => return Err(Failure::Authority),
+    };
+    if matches!(security, RsaAesSecurity::Ra2ne | RsaAesSecurity::Ra2ne256)
+        && (!matches!(transport, Transport::Ssh { .. })
+            || !matches!(host.as_str(), "127.0.0.1" | "::1"))
+    {
+        return Err(Failure::Authority);
+    }
+    if encoded_pin.len() != 64
+        || !encoded_pin
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(Failure::Authority);
+    }
+    let mut pin = [0u8; 32];
+    hex::decode_to_slice(encoded_pin, &mut pin).map_err(|_| Failure::Authority)?;
+    let credentials = match authentication {
+        ResolveResponseResolvedTransportAuthentication::RsaAesPassword { password } => {
+            RsaAesCredentials::password_zeroizing(password.into_zeroizing())
+        }
+        ResolveResponseResolvedTransportAuthentication::RsaAesUsernamePassword {
+            username,
+            password,
+        } => RsaAesCredentials::username_password_zeroizing(username, password.into_zeroizing()),
+        _ => return Err(Failure::Authority),
+    }
+    .map_err(|_| Failure::InvalidCredential)?;
+    Ok(Credential {
+        host,
+        port,
+        generation,
+        transport,
+        authentication: Authentication::RsaAes {
+            security,
+            pin: RsaServerKeyPin::new(pin),
+            credentials,
+        },
+    })
+}
+
+fn rsa_aes_profiles(supports_ssh: bool) -> Vec<ResolveRequestSupportedProfile> {
+    use ResolveRequestSupportedProfileAuthMethod as Auth;
+    use ResolveRequestSupportedProfileSecurityType as Security;
+    use ResolveRequestSupportedProfileTransportType as Route;
+    let mut profiles = Vec::with_capacity(12);
+    for security in [
+        Security::RsaAesRa2,
+        Security::RsaAesRa2256,
+        Security::RsaAesRa2ne,
+        Security::RsaAesRa2ne256,
+    ] {
+        for auth in [Auth::RsaAesPassword, Auth::RsaAesUsernamePassword] {
+            if matches!(security, Security::RsaAesRa2 | Security::RsaAesRa2256) {
+                profiles.push(ResolveRequestSupportedProfile {
+                    auth_method: auth,
+                    security_type: security,
+                    transport_type: Route::Direct,
+                });
+            }
+            if supports_ssh {
+                profiles.push(ResolveRequestSupportedProfile {
+                    auth_method: auth,
+                    security_type: security,
+                    transport_type: Route::Ssh,
+                });
+            }
+        }
+    }
+    profiles
 }
 
 fn valid_port_and_generation(port: u64, generation: i64) -> Result<u16, Failure> {
@@ -808,6 +911,7 @@ impl Authority {
                 },
             ]);
         }
+        supported_profiles.extend(rsa_aes_profiles(supports_ssh));
         let request = ResolveRequest {
             connection_id: connection.to_string(),
             runner_identity: ResolveRequestRunnerIdentity {
@@ -828,6 +932,24 @@ impl Authority {
             match response {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
                 ResolveResponse::UnsupportedProfile => return Err(Failure::UnsupportedProfile),
+                ResolveResponse::ResolvedRsaAes {
+                    host,
+                    port,
+                    generation,
+                    transport,
+                    authentication,
+                    security,
+                } => {
+                    return rsa_aes_credential(
+                        host,
+                        port,
+                        generation,
+                        transport,
+                        authentication,
+                        security,
+                        supports_ssh,
+                    );
+                }
                 ResolveResponse::ResolvedAppleVncPassword {
                     host,
                     port,
@@ -1108,6 +1230,72 @@ fn custom_roots(bundle: Zeroizing<String>) -> Result<TrustRoots, Failure> {
         remaining = rest.trim_ascii();
     }
     TrustRoots::custom(certificates).map_err(|_| Failure::InvalidCredential)
+}
+
+#[cfg(test)]
+mod rsa_aes_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn exact_rsa_capabilities_and_generated_handoff_preserve_modes_and_255_byte_fields() {
+        assert_eq!(rsa_aes_profiles(false).len(), 4);
+        let profiles = rsa_aes_profiles(true);
+        assert_eq!(profiles.len(), 12);
+        for profile in profiles {
+            let mode = match profile.security_type {
+                ResolveRequestSupportedProfileSecurityType::RsaAesRa2 => "rsa_aes_ra2",
+                ResolveRequestSupportedProfileSecurityType::RsaAesRa2256 => "rsa_aes_ra2_256",
+                ResolveRequestSupportedProfileSecurityType::RsaAesRa2ne => "rsa_aes_ra2ne",
+                ResolveRequestSupportedProfileSecurityType::RsaAesRa2ne256 => "rsa_aes_ra2ne_256",
+                _ => panic!("unexpected RSA capability"),
+            };
+            let authentication = match profile.auth_method {
+                ResolveRequestSupportedProfileAuthMethod::RsaAesPassword => {
+                    json!({"method":"rsa_aes_password","password":"界".repeat(85)})
+                }
+                ResolveRequestSupportedProfileAuthMethod::RsaAesUsernamePassword => {
+                    json!({"method":"rsa_aes_username_password","username":"界".repeat(85),"password":"界".repeat(85)})
+                }
+                _ => panic!("unexpected RSA credential"),
+            };
+            let transport = match profile.transport_type {
+                ResolveRequestSupportedProfileTransportType::Direct => {
+                    assert!(!mode.contains("ra2ne"));
+                    json!({"type":"direct"})
+                }
+                ResolveRequestSupportedProfileTransportType::Ssh => {
+                    json!({"type":"ssh","connectionId":"10000000-0000-4000-8000-000000000001","generation":1})
+                }
+            };
+            let response: ResolveResponse = serde_json::from_value(json!({"outcome":"resolved_rsa_aes","host":"127.0.0.1","port":5900,"generation":1,"transport":transport,"authentication":authentication,"security":{"type":mode,"serverKeySha256":"ab".repeat(32)}})).unwrap();
+            let ResolveResponse::ResolvedRsaAes {
+                host,
+                port,
+                generation,
+                transport,
+                authentication,
+                security,
+            } = response
+            else {
+                panic!("wrong private handoff");
+            };
+            let credential = rsa_aes_credential(
+                host,
+                port,
+                generation,
+                transport,
+                authentication,
+                security,
+                true,
+            )
+            .unwrap_or_else(|_| panic!("valid exact handoff rejected"));
+            assert!(matches!(
+                credential.authentication,
+                Authentication::RsaAes { .. }
+            ));
+        }
+    }
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ import {
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { VNC_RSA_AES_SECURITY_TYPES } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   act,
@@ -1847,4 +1848,194 @@ test("Changing owner while token acquisition is pending cancels the save and cle
   });
   expect(secret).toHaveValue("");
   expect(requests).toStrictEqual([]);
+});
+
+test.each(
+  VNC_RSA_AES_SECURITY_TYPES.flatMap((type) => {
+    return ["rsa_aes_password", "rsa_aes_username_password"].map((method) => {
+      return { type, method } as const;
+    });
+  }),
+)(
+  "RSA-AES $type/$method saves an independent pin and exact route",
+  async ({ type, method }) => {
+    mockSettings({
+      connections: [],
+      credentials: [],
+      sshConnections: [sshHost],
+    });
+    const ne = type.includes("ra2ne");
+    const mode =
+      type === "rsa_aes_ra2"
+        ? "RA2 · AES-128"
+        : type === "rsa_aes_ra2_256"
+          ? "RA2_256 · AES-256"
+          : type === "rsa_aes_ra2ne"
+            ? "RA2ne · authentication only"
+            : "RA2ne_256 · authentication only";
+    const user = method === "rsa_aes_username_password";
+    const requests: unknown[] = [];
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, {
+        ...host,
+        rsaAesAuthentication: user
+          ? "rsa_aes_username_password"
+          : "rsa_aes_password",
+        security: { type, serverKeySha256: "ab".repeat(32) },
+        ...(ne
+          ? {
+              transport: { type: "ssh", connectionId: sshHost.id },
+              host: "127.0.0.1",
+            }
+          : {}),
+      });
+    });
+    await openAddHostPage();
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await choose(
+      dialog,
+      "Security profile",
+      `${mode} · ${user ? "username/password" : "password"}`,
+    );
+    expect(
+      within(dialog).queryByLabelText("TLS certificate identity"),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByLabelText("Server certificate trust"),
+    ).toBeNull();
+    await fill(within(dialog).getByLabelText("Display name"), "RSA desktop");
+    expect(queryAction("radio", "Direct from Runner", dialog) === null).toBe(
+      ne,
+    );
+    expect(
+      within(dialog).queryByText(/SSH protects only its hop/u) !== null,
+    ).toBe(ne);
+    if (ne) {
+      await choose(
+        dialog,
+        "SSH host",
+        "Desktop gateway · gateway.example.com:22",
+      );
+    } else {
+      await fill(
+        within(dialog).getByLabelText("RFB destination host"),
+        "rsa.example.com",
+      );
+    }
+    await fill(
+      within(dialog).getByLabelText("Server RSA wire-key SHA256"),
+      "ab".repeat(32),
+    );
+    await choose(dialog, "Credential", "Create new credential");
+    await fill(within(dialog).getByLabelText("Credential name"), "RSA login");
+    expect(within(dialog).queryByLabelText("Username") !== null).toBe(user);
+    if (user) {
+      await fill(within(dialog).getByLabelText("Username"), "用户名");
+    }
+    const password = within(dialog).getByLabelText("Password");
+    expect(password).toHaveAttribute("maxlength", "255");
+    await fill(password, "界".repeat(85));
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      {
+        id: expect.any(String),
+        displayName: "RSA desktop",
+        host: ne ? "127.0.0.1" : "rsa.example.com",
+        port: 5900,
+        transport: ne
+          ? { type: "ssh", connectionId: sshHost.id }
+          : { type: "direct" },
+        security: { type, serverKeySha256: "ab".repeat(32) },
+        credential: {
+          create: {
+            name: "RSA login",
+            authentication: user
+              ? { method, username: "用户名", password: "界".repeat(85) }
+              : { method, password: "界".repeat(85) },
+          },
+        },
+      },
+    ]);
+    expect(password).toHaveValue("");
+  },
+);
+
+test("Trusted RSA public-key import only fills the pin and does not save or establish provenance", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.inspectRsaKey,
+    ({ body, respond }) => {
+      requests.push(body);
+      return respond(200, {
+        serverKeySha256: "cd".repeat(32),
+        modulusBits: 2048,
+      });
+    },
+  );
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(dialog, "Security profile", "RA2 · AES-128 · password");
+  await fill(
+    within(dialog).getByLabelText(
+      "Independently trusted RSA public PEM (optional)",
+    ),
+    "synthetic-trusted-public-pem",
+  );
+  click(getAction("button", "Import trusted public key", dialog));
+  await waitFor(() => {
+    return expect(
+      within(dialog).getByLabelText("Server RSA wire-key SHA256"),
+    ).toHaveValue("cd".repeat(32));
+  });
+  expect(
+    within(dialog).getByText("Imported public-key size: 2048 bits"),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(/Conversion does not establish identity or save/u),
+  ).toBeInTheDocument();
+  expect(requests).toStrictEqual([
+    { publicKeyPem: "synthetic-trusted-public-pem" },
+  ]);
+  expect(dialog).toBeInTheDocument();
+});
+
+test("A late RSA import cannot associate its old pin with a newer public-key draft", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.inspectRsaKey,
+    async ({ respond }) => {
+      started.resolve();
+      await release.promise;
+      return respond(200, {
+        serverKeySha256: "cd".repeat(32),
+        modulusBits: 2048,
+      });
+    },
+  );
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(dialog, "Security profile", "RA2 · AES-128 · password");
+  const pin = within(dialog).getByLabelText("Server RSA wire-key SHA256");
+  const pem = within(dialog).getByLabelText(
+    "Independently trusted RSA public PEM (optional)",
+  );
+  await fill(pin, "ab".repeat(32));
+  await fill(pem, "old-public-pem");
+  click(getAction("button", "Import trusted public key", dialog));
+  await started.promise;
+  await fill(pem, "new-public-pem");
+  release.resolve();
+  await within(dialog).findByRole("alert");
+  expect(pin).toHaveValue("ab".repeat(32));
+  expect(pem).toHaveValue("new-public-pem");
+  expect(
+    within(dialog).queryByText("Imported public-key size: 2048 bits"),
+  ).toBeNull();
 });
