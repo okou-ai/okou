@@ -752,7 +752,7 @@ function bootstrapVariableSnapshot(
         'userId', ${rows.userId}, 'connectorId', ${rows.connectorId}
       ))`
           .mapWith(nullableDriverValueDecoder(bootstrapVariablesDecoder))
-          .as("variable_values"),
+          .as("user_variable_values"),
       })
       .from(rows)
       .where(isNull(rows.connectorId)),
@@ -771,7 +771,7 @@ function bootstrapConnectorVariableSnapshot(
           .mapWith(
             nullableDriverValueDecoder(bootstrapConnectorVariablesDecoder),
           )
-          .as("variable_values"),
+          .as("connector_variable_values"),
       })
       .from(rows)
       .where(isNotNull(rows.connectorId))
