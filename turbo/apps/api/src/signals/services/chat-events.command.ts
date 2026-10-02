@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { resolveRunSelectionModel } from "./model-selection.service";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
@@ -48,17 +50,20 @@ import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
 import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
 import { touchSentChatThreadSort } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
-  insertChatEvent,
-  insertChatEventContext,
-  replaceChatEvent,
-  revokeChatEvent,
   type NewChatEvent,
+  chatEventContextInsertSql,
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
+  chatEventInsertSql,
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
@@ -904,8 +909,11 @@ const resolveSendThread$ = command(
 /** Prepare the send's changed thread selections and their projection events. */
 function existingSendThreadUpdatePlan(
   args: NormalSendArgs,
-  thread: ExistingSendThread,
+  thread: SendThread,
 ) {
+  if (thread.kind === "new") {
+    return null;
+  }
   const { runSettings, computerAccess, current } = thread;
   const selectedModel = runSettings.selectedModel;
   const codexServiceTier = runSettings.codexServiceTier;
@@ -1210,6 +1218,18 @@ function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
   });
 }
 
+const createdSendThreadSelection = Object.freeze({
+  id: chatThreads.id,
+  userId: chatThreads.userId,
+  title: chatThreads.title,
+  selectedModel: chatThreads.selectedModel,
+  modelSettings: chatThreads.modelSettings,
+  codexServiceTier: chatThreads.codexServiceTier,
+  computerUseHostId: chatThreads.computerUseHostId,
+  cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+  createdAt: chatThreads.createdAt,
+});
+
 const appendNormalSendInput$ = command(
   async (
     { set },
@@ -1222,10 +1242,7 @@ const appendNormalSendInput$ = command(
     signal: AbortSignal,
   ) => {
     const { thread, event } = input;
-    const existingPlan =
-      thread.kind === "existing"
-        ? existingSendThreadUpdatePlan(args, thread)
-        : null;
+    const existingPlan = existingSendThreadUpdatePlan(args, thread);
     const preferencePlan = userModelPreferencePlan(args, thread.runSettings);
     const inserted = await set(writeDb$).transaction(async (tx) => {
       if (thread.kind === "new") {
@@ -1235,17 +1252,7 @@ const appendNormalSendInput$ = command(
           .insert(chatThreads)
           .values(createdPlan.values)
           .onConflictDoNothing()
-          .returning({
-            id: chatThreads.id,
-            userId: chatThreads.userId,
-            title: chatThreads.title,
-            selectedModel: chatThreads.selectedModel,
-            modelSettings: chatThreads.modelSettings,
-            codexServiceTier: chatThreads.codexServiceTier,
-            computerUseHostId: chatThreads.computerUseHostId,
-            cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-            createdAt: chatThreads.createdAt,
-          });
+          .returning(createdSendThreadSelection);
         if (!createdRow) {
           throw new NewThreadSendCollision("thread");
         }
@@ -1260,10 +1267,27 @@ const appendNormalSendInput$ = command(
           }),
         );
       }
-      await insertChatEventContext(tx, event);
-      const inserted = args.body.revokesEventId
-        ? await replaceChatEvent(tx, args.body.revokesEventId, event)
-        : await insertChatEvent(tx, event, "id");
+      const contextInsert = chatEventContextInsertSql(event);
+      if (contextInsert) {
+        await tx.execute(contextInsert);
+      }
+      const insert = args.body.revokesEventId
+        ? chatEventReplacementInsertSql(
+            requireChatEventReplacementTarget(
+              await executeRawRows(
+                tx,
+                chatEventReplacementTargetSql(args.body.revokesEventId),
+                chatEventReplacementTargetSchema,
+              ),
+            ),
+            event,
+          )
+        : chatEventInsertSql(event, "id");
+      const [inserted] = await executeRawRows(
+        tx,
+        insert,
+        chatEventCommandResultSchema,
+      );
       if (!inserted) {
         if (thread.kind === "new") {
           throw new NewThreadSendCollision("input");
@@ -1711,6 +1735,24 @@ export const sendNormalEvent$ = command(
     );
   },
 );
+function recallChatEventValues(params: {
+  readonly threadId: string;
+  readonly clientEventId: string | undefined;
+}): Extract<NewChatEvent, { readonly eventType: "control.revoke" }> {
+  return {
+    ...(params.clientEventId ? { id: params.clientEventId } : {}),
+    chatThreadId: params.threadId,
+    eventType: "control.revoke",
+    runId: null,
+    content: null,
+  };
+}
+
+const recallRejected = Object.freeze({
+  ok: false,
+  message: "Only queued user messages can be recalled",
+} satisfies Extract<AppendEventResult, { readonly ok: false }>);
+
 const appendRecallChatEvent$ = command(
   async (
     { set },
@@ -1752,13 +1794,17 @@ const appendRecallChatEvent$ = command(
       ) {
         return { ok: true, createdAt: existingRevoker.createdAt };
       }
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
+      return recallRejected;
     }
     const [target] = await db
       .select({
+        id: chatEvents.id,
+        chatThreadId: chatEvents.chatThreadId,
+        createdAt: chatEvents.createdAt,
+        eventType: chatEvents.eventType,
+        contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        modelSelection: canonicalChatInputModelSelection(),
         error: canonicalChatEventError(),
         revokesEventId: chatEvents.revokesEventId,
       })
@@ -1801,17 +1847,13 @@ const appendRecallChatEvent$ = command(
         // request can still find nothing during rollout.
         return { ok: true, createdAt: nowDate() };
       }
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
+      return recallRejected;
     }
-    const inserted = await revokeChatEvent(db, params.revokesEventId, {
-      ...(params.clientEventId ? { id: params.clientEventId } : {}),
-      chatThreadId: params.threadId,
-      eventType: "control.revoke",
-      runId: null,
-    });
+    const [inserted] = await executeRawRows(
+      db,
+      chatEventReplacementInsertSql(target, recallChatEventValues(params)),
+      chatEventCommandResultSchema,
+    );
     signal.throwIfAborted();
     if (inserted) {
       return { ok: true, createdAt: inserted.createdAt };
@@ -1832,10 +1874,7 @@ const appendRecallChatEvent$ = command(
     signal.throwIfAborted();
     if (!resolved) {
       // A concurrent claim or rejection won the revoke edge.
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
+      return recallRejected;
     }
     return { ok: true, createdAt: resolved.createdAt };
   },
@@ -1950,17 +1989,23 @@ const appendInterruptUserMessage$ = command(
         message: "Only active chat runs can be interrupted",
       };
     }
-    const inserted = await insertChatEvent(
-      db,
-      {
-        ...(params.clientEventId ? { id: params.clientEventId } : {}),
-        chatThreadId: params.threadId,
-        eventType: "control.interrupt",
-        content: null,
-        interruptsRunId: params.interruptsRunId,
-      },
-      "any",
-    );
+    const inserted =
+      (
+        await executeRawRows(
+          db,
+          chatEventInsertSql(
+            {
+              ...(params.clientEventId ? { id: params.clientEventId } : {}),
+              chatThreadId: params.threadId,
+              eventType: "control.interrupt",
+              content: null,
+              interruptsRunId: params.interruptsRunId,
+            },
+            "any",
+          ),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null;
     signal.throwIfAborted();
     if (inserted) {
       return { ok: true, createdAt: inserted.createdAt };

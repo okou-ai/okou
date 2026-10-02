@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
 import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
@@ -51,8 +53,8 @@ import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import {
-  insertChatEvent,
   type DiscordChatEventContext,
+  chatEventInsertSql,
 } from "./chat-event.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
@@ -961,19 +963,25 @@ async function recordTerminalIngressFailure(
       .limit(1);
     signal.throwIfAborted();
     if (route?.destinationChannelId) {
-      const inserted = await insertChatEvent(
-        tx,
-        {
-          id: ingressId,
-          chatThreadId: route.chatThreadId,
-          eventType: "output.error",
-          runId: null,
-          content,
-          error: content,
-          createdAt: currentTime,
-        },
-        "id",
-      );
+      const inserted =
+        (
+          await executeRawRows(
+            tx,
+            chatEventInsertSql(
+              {
+                id: ingressId,
+                chatThreadId: route.chatThreadId,
+                eventType: "output.error",
+                runId: null,
+                content,
+                error: content,
+                createdAt: currentTime,
+              },
+              "id",
+            ),
+            chatEventCommandResultSchema,
+          )
+        )[0] ?? null;
       signal.throwIfAborted();
       if (inserted) {
         await touchChatThreadLastMessageAt(

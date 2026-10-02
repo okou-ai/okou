@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   chatRunFinishedEventConfigSchema,
   type ChatRunFinishedEventConfig,
@@ -22,7 +24,7 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadRunAutonomyBudget } from "./autonomy-budget.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
-import { insertChatEvent } from "./chat-event.service";
+import { chatEventInsertSql } from "./chat-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import {
   notifyRunningChatRunOfPendingInput$,
@@ -48,21 +50,27 @@ async function appendAutonomyBudgetError(args: {
   readonly chatThreadId: string;
   readonly sourceRunId: string;
 }): Promise<boolean> {
-  const errorEvent = await insertChatEvent(
-    args.db,
-    {
-      id: uuidv5(
-        `${args.chatThreadId}:${args.sourceRunId}`,
-        AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
-      ),
-      chatThreadId: args.chatThreadId,
-      eventType: "output.error",
-      content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-      runId: null,
-      error: "AUTONOMY_BUDGET_EXHAUSTED",
-    },
-    "id",
-  );
+  const errorEvent =
+    (
+      await executeRawRows(
+        args.db,
+        chatEventInsertSql(
+          {
+            id: uuidv5(
+              `${args.chatThreadId}:${args.sourceRunId}`,
+              AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
+            ),
+            chatThreadId: args.chatThreadId,
+            eventType: "output.error",
+            content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+            runId: null,
+            error: "AUTONOMY_BUDGET_EXHAUSTED",
+          },
+          "id",
+        ),
+        chatEventCommandResultSchema,
+      )
+    )[0] ?? null;
   if (!errorEvent) {
     return false;
   }

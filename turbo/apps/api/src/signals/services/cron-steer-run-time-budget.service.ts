@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -8,7 +10,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
 import { notifyRunningChatRunOfPendingInput$ } from "./chat-thread-queue-drain.service";
-import { insertChatEvent } from "./chat-event.service";
+import { chatEventInsertSql } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 
 const RUN_TIME_BUDGET_LIMIT_MS = 120 * 60 * 1000;
@@ -109,25 +111,31 @@ const persistRunTimeBudgetInput$ = command(
         return false;
       }
 
-      const inserted = await insertChatEvent(
-        tx,
-        {
-          id: runTimeBudgetEventIdForRun(args.candidate.runId),
-          chatThreadId: run.chatThreadId,
-          eventType: "input.budget",
-          runId: null,
-          userMessage: createUserMessageDocument({
-            text: RUN_TIME_BUDGET_MESSAGE,
-          }),
-          agentRunContext: {
-            sourceRunId: args.candidate.runId,
-            sourceChatThreadId: run.chatThreadId,
-            sourceAgentId: run.agentId,
-          },
-          createdAt: args.createdAt,
-        },
-        "id",
-      );
+      const inserted =
+        (
+          await executeRawRows(
+            tx,
+            chatEventInsertSql(
+              {
+                id: runTimeBudgetEventIdForRun(args.candidate.runId),
+                chatThreadId: run.chatThreadId,
+                eventType: "input.budget",
+                runId: null,
+                userMessage: createUserMessageDocument({
+                  text: RUN_TIME_BUDGET_MESSAGE,
+                }),
+                agentRunContext: {
+                  sourceRunId: args.candidate.runId,
+                  sourceChatThreadId: run.chatThreadId,
+                  sourceAgentId: run.agentId,
+                },
+                createdAt: args.createdAt,
+              },
+              "id",
+            ),
+            chatEventCommandResultSchema,
+          )
+        )[0] ?? null;
       return inserted !== null;
     });
     signal.throwIfAborted();

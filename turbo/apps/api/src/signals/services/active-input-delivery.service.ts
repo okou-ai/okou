@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import {
   runStatusSchema,
@@ -20,7 +22,7 @@ import {
 } from "./active-input-prompt.service";
 import { logTemplateUsage } from "../../lib/template-usage-log";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
-import { replaceLoadedChatEvent } from "./chat-event.service";
+import { chatEventReplacementInsertSql } from "./chat-event.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
 
 /*
@@ -169,13 +171,19 @@ async function consumeActiveInputSource(
       runId: scope.runId,
       userMessage: source.userMessage,
     };
-    const replacement = await replaceLoadedChatEvent(
-      db,
-      replacementTarget(source),
-      source.eventType === "input.budget"
-        ? { ...steeredInput, eventType: "input.budget" }
-        : { ...steeredInput, eventType: "input.prompt" },
-    );
+    const replacement =
+      (
+        await executeRawRows(
+          db,
+          chatEventReplacementInsertSql(
+            replacementTarget(source),
+            source.eventType === "input.budget"
+              ? { ...steeredInput, eventType: "input.budget" }
+              : { ...steeredInput, eventType: "input.prompt" },
+          ),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null;
     if (replacement) {
       return { outcome: "appended", source };
     }
@@ -405,10 +413,17 @@ async function revokePendingRunTimeBudgetInput(
   if (!source) {
     return false;
   }
-  const revoked = await replaceLoadedChatEvent(db, replacementTarget(source), {
-    chatThreadId: args.chatThreadId,
-    eventType: "control.revoke",
-    runId: args.runId,
-  });
+  const revoked =
+    (
+      await executeRawRows(
+        db,
+        chatEventReplacementInsertSql(replacementTarget(source), {
+          chatThreadId: args.chatThreadId,
+          eventType: "control.revoke",
+          runId: args.runId,
+        }),
+        chatEventCommandResultSchema,
+      )
+    )[0] ?? null;
   return revoked !== null;
 }
