@@ -1,3 +1,11 @@
+import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
+import { entitlementQuery } from "./usage-allowance-settlement-plan";
+import {
+  planRunAllowanceActivation,
+  runAllowanceWindowInsertSql,
+  runAllowanceWindowsQuery,
+  unchangedRunAllowanceEntitlement,
+} from "./usage-allowance-run-plan";
 import { state, computed, command, type State, type Computed } from "ccstate";
 import { settle, onRejection, tapError, safeSync } from "../utils";
 import {
@@ -324,13 +332,16 @@ import {
   AdmissionAttemptTiming,
   type AdmissionAttemptOutcome,
 } from "./api-dispatch-admission-timing.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import {
+  loadOrgPlanCapabilities,
+  loadOrgPlanCapabilities$,
+} from "./org-plan-entitlement-read.service";
 import type { Tx } from "../../lib/db-types";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
   isFreePlanForCreditAdmission,
-  createRunAdmissionObjects,
+  checkRunAdmission$,
   type RunAdmissionInput,
 } from "./run-admission.service";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
@@ -346,7 +357,6 @@ import {
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import {
-  activateUsageAllowanceWindowsForRun,
   type PreparedUsageAllowanceRefresh,
   prepareUsageAllowanceRefresh$,
 } from "./usage-allowance.service";
@@ -8343,34 +8353,17 @@ async function buildPermissionManifest(
 }
 
 function createRunAdmissionCheckObjects() {
-  const internalInput$ = state<RunAdmissionInput | null>(null);
-  const input$ = computed((get) => {
-    const input = get(internalInput$);
-    if (!input) {
-      throw new Error("Run admission input is not installed");
-    }
-    return input;
-  });
-  const admission = createRunAdmissionObjects(input$);
-  const checkAdmission$ = command(
-    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      // The model/provider check and the final admission check deliberately
-      // take fresh snapshots. Never reuse an earlier phase's entitlement.
-      set(internalInput$, input);
-      return await set(admission.checkAdmission$, signal);
-    },
-  );
   const checkPlanStatus$ = command(
-    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      set(internalInput$, input);
-      const capabilities = await get(admission.capabilities$);
-      signal.throwIfAborted();
+    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
+      const capabilities = await set(
+        loadOrgPlanCapabilities$,
+        input.orgId,
+        signal,
+      );
       return capabilities?.status === "active" ? null : insufficientCredits();
     },
   );
-  return { checkAdmission$, checkPlanStatus$ };
+  return { checkAdmission$: checkRunAdmission$, checkPlanStatus$ };
 }
 
 export interface RunAgentObservation {
@@ -11458,20 +11451,72 @@ const persistPreparedLaunch$ = command(
           },
         );
         if (isBuiltInModelProviderType(args.context.modelProvider?.type)) {
-          await admissionTiming.measureLeaf("usage_allowance", () => {
-            return timing.measure(
-              "api_dispatch_activate_usage_allowance_windows",
-              "nested",
-              async () => {
-                await activateUsageAllowanceWindowsForRun(tx, {
-                  orgId: args.createArgs.orgId,
-                  runId: persisted.run.id,
-                  runCreatedAt: persisted.run.createdAt,
-                  refresh: args.allowanceRefresh,
-                });
-              },
+          const startedAt = now();
+          const activation = {
+            orgId: args.createArgs.orgId,
+            runId: persisted.run.id,
+            runCreatedAt: persisted.run.createdAt,
+            refresh: args.allowanceRefresh,
+          };
+          const [owned] = await tx
+            .select()
+            .from(entitlementQuery(activation.orgId));
+          signal.throwIfAborted();
+          const planned = planRunAllowanceActivation(
+            owned,
+            activation,
+            nowDate(),
+          );
+          let entitlement = planned.entitlement;
+          if (planned.update && owned) {
+            const [published] = await tx
+              .update(orgUsageAllowanceEntitlements)
+              .set(planned.update)
+              .where(unchangedRunAllowanceEntitlement(owned))
+              .returning({
+                snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+                  pgTextDecoder,
+                ),
+              });
+            signal.throwIfAborted();
+            if (!published) {
+              throw new Error(
+                "Run allowance changed during refresh publication",
+              );
+            }
+            if (entitlement) {
+              entitlement = { ...entitlement, snapshot: published.snapshot };
+            }
+          }
+          if (entitlement) {
+            await tx.execute(
+              runAllowanceWindowInsertSql(activation, entitlement),
             );
-          });
+            signal.throwIfAborted();
+            const windows = await tx
+              .select()
+              .from(
+                runAllowanceWindowsQuery(
+                  activation.orgId,
+                  activation.runCreatedAt,
+                  entitlement,
+                ),
+              );
+            signal.throwIfAborted();
+            if (
+              !windows.some((window) => window.kind === "short") ||
+              !windows.some((window) => window.kind === "weekly")
+            ) {
+              throw new Error(
+                "Run allowance changed during window publication",
+              );
+            }
+          }
+          timing.recordElapsed(
+            "api_dispatch_activate_usage_allowance_windows",
+            "nested",
+            startedAt,
+          );
         }
         // Keep this unique insertion last: do not acquire another row after it.
         await tx

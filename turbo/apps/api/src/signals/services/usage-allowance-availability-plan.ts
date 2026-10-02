@@ -18,7 +18,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-} from "./usage-allowance.service";
+} from "./usage-allowance-policy";
 import type { AllowanceEntitlement } from "./usage-allowance-settlement-plan";
 
 interface AllowanceAvailabilityRow {
@@ -39,7 +39,7 @@ export interface AllowanceAvailability {
   readonly shortRemainingUnits: number;
   readonly weeklyRemainingUnits: number;
 }
-function remainingUnits(
+export function allowanceWindowRemainingUnits(
   window: AllowanceAvailabilityRow["window"] | undefined,
 ) {
   return window?.unitLimit === null ||
@@ -133,9 +133,10 @@ export function allowanceAvailability(
     return row.window?.kind === "weekly";
   })?.window;
   const shortRemainingUnits =
-    remainingUnits(shortWindow) ?? entitlement.shortWindowUnits;
+    allowanceWindowRemainingUnits(shortWindow) ?? entitlement.shortWindowUnits;
   const weeklyRemainingUnits =
-    remainingUnits(weeklyWindow) ?? entitlement.weeklyWindowUnits;
+    allowanceWindowRemainingUnits(weeklyWindow) ??
+    entitlement.weeklyWindowUnits;
   return {
     shortRemainingUnits,
     weeklyRemainingUnits,

@@ -441,14 +441,16 @@ import {
 } from "./telegram-chat-callback-payload";
 import { buildTelegramPrompt } from "./telegram-prompt";
 import {
-  ACTIVE_ALLOWANCE_STATUSES,
-  activeAllowanceCutoff,
   createUsageAllowanceRefreshObject,
   remainingUnits,
   refreshUsageAllowanceAvailability$,
   type PreparedUsageAllowanceRefresh,
   type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
+import {
+  ACTIVE_ALLOWANCE_STATUSES,
+  activeAllowanceCutoff,
+} from "./usage-allowance-policy";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import {
   selectedUserTemplateIds,

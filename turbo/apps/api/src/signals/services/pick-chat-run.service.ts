@@ -23,7 +23,10 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
@@ -77,7 +80,14 @@ import {
   resolveQueueFirstRunAdmission,
   claimQueueFirstRunAssociation,
 } from "./chat-queued-event.service";
-import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
+import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
+import { entitlementQuery } from "./usage-allowance-settlement-plan";
+import {
+  planRunAllowanceActivation,
+  runAllowanceWindowInsertSql,
+  runAllowanceWindowsQuery,
+  unchangedRunAllowanceEntitlement,
+} from "./usage-allowance-run-plan";
 import {
   morningBriefScheduleClaimBound$,
   morningBriefScheduleClaimSupersededCondition,
@@ -380,22 +390,7 @@ async function persistClaimedRun(
       return { ...rowsPersisted, threadSessionBinding };
     },
   );
-  if (isBuiltInModelProviderType(input.context.modelProvider?.type)) {
-    await admissionTiming.measureLeaf("usage_allowance", async () => {
-      const startedAt = now();
-      await activateUsageAllowanceWindowsForRun(tx, {
-        orgId: input.args.orgId,
-        runId: persisted.run.id,
-        runCreatedAt: persisted.run.createdAt,
-        refresh: context.allowanceRefresh,
-      });
-      timing.recordElapsed(
-        "api_dispatch_activate_usage_allowance_windows",
-        "nested",
-        startedAt,
-      );
-    });
-  }
+
   return {
     ...persisted,
     runnerJobPayload: persistence.payload,
@@ -1154,6 +1149,80 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
                 admission,
                 timing.run,
               );
+              if (
+                isBuiltInModelProviderType(input.context.modelProvider?.type)
+              ) {
+                const startedAt = now();
+                const activation = {
+                  orgId: input.args.orgId,
+                  runId: pending.run.id,
+                  runCreatedAt: pending.run.createdAt,
+                  refresh: context.allowanceRefresh,
+                };
+                const [owned] = await tx
+                  .select()
+                  .from(entitlementQuery(activation.orgId));
+                signal.throwIfAborted();
+                const planned = planRunAllowanceActivation(
+                  owned,
+                  activation,
+                  nowDate(),
+                );
+                let entitlement = planned.entitlement;
+                if (planned.update && owned) {
+                  const [published] = await tx
+                    .update(orgUsageAllowanceEntitlements)
+                    .set(planned.update)
+                    .where(unchangedRunAllowanceEntitlement(owned))
+                    .returning({
+                      snapshot:
+                        sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+                          pgTextDecoder,
+                        ),
+                    });
+                  signal.throwIfAborted();
+                  if (!published) {
+                    throw new Error(
+                      "Run allowance changed during refresh publication",
+                    );
+                  }
+                  if (entitlement) {
+                    entitlement = {
+                      ...entitlement,
+                      snapshot: published.snapshot,
+                    };
+                  }
+                }
+                if (entitlement) {
+                  await tx.execute(
+                    runAllowanceWindowInsertSql(activation, entitlement),
+                  );
+                  signal.throwIfAborted();
+                  const windows = await tx
+                    .select()
+                    .from(
+                      runAllowanceWindowsQuery(
+                        activation.orgId,
+                        activation.runCreatedAt,
+                        entitlement,
+                      ),
+                    );
+                  signal.throwIfAborted();
+                  if (
+                    !windows.some((window) => window.kind === "short") ||
+                    !windows.some((window) => window.kind === "weekly")
+                  ) {
+                    throw new Error(
+                      "Run allowance changed during window publication",
+                    );
+                  }
+                }
+                timing.run.recordElapsed(
+                  "api_dispatch_activate_usage_allowance_windows",
+                  "nested",
+                  startedAt,
+                );
+              }
               // This unique insert is deliberately the final SQL statement.
               // A concurrent active run rolls the entire pending commit back.
               await tx.insert(activeAgentRuns).values({

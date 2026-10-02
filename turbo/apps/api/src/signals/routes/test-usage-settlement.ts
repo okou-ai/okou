@@ -13,7 +13,7 @@ import type { RouteEntry } from "../route-entry";
 import { checkBillableOperationCredits$ } from "../services/billable-operation-admission.service";
 import { createUsagePackCreditGrant } from "../services/usage-pack-credit.service";
 import { processOrgUsageEvents$ } from "../services/credit-usage.service";
-import { checkOrgCreditsForRunAdmission } from "../services/run-admission.service";
+import { checkOrgCreditsForRunAdmission$ } from "../services/run-admission.service";
 import { modelCatalog$ } from "../services/model-catalog.service";
 import {
   isTestEndpointAllowed,
@@ -226,12 +226,15 @@ const checkUsageSettlementAdmission$ = command(
     };
     const allowed =
       bodyResult.data.kind === "run"
-        ? (await checkOrgCreditsForRunAdmission({
-            db: set(writeDb$),
-            catalog: await get(modelCatalog$),
-            ...args,
-            modelProviderType: "built-in",
-          })) === undefined
+        ? (await set(
+            checkOrgCreditsForRunAdmission$,
+            {
+              catalog: await get(modelCatalog$),
+              ...args,
+              modelProviderType: "built-in",
+            },
+            signal,
+          )) === undefined
         : await set(checkBillableOperationCredits$, args, signal);
     signal.throwIfAborted();
     return { status: 200 as const, body: { allowed } };
