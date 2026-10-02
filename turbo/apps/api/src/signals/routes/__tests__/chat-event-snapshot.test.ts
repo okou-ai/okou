@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
@@ -79,6 +80,31 @@ function eventsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
     chatThreadEventsContract,
   );
+}
+
+async function readPublishedSnapshotObjectKey(
+  actor: ApiTestUser,
+  threadId: string,
+): Promise<string> {
+  const signingCount = context.mocks.s3.getSignedUrl.mock.calls.length;
+  await accept(
+    eventsClient().snapshot({
+      headers: authenticate(actor),
+      params: { threadId },
+    }),
+    [200],
+  );
+  const [signing, ...otherSignings] =
+    context.mocks.s3.getSignedUrl.mock.calls.slice(signingCount);
+  const command = signing?.[1];
+  if (
+    otherSignings.length !== 0 ||
+    !(command instanceof GetObjectCommand) ||
+    !command.input.Key
+  ) {
+    throw new Error("Expected one public Snapshot download signing request");
+  }
+  return command.input.Key;
 }
 
 async function runSnapshotCron(
@@ -329,14 +355,17 @@ describe("chat event snapshot read endpoints", () => {
 
     await projectChatEventSearch(firstThreadId);
     await runSnapshotCron([firstThreadId]);
-    const head = await readChatEventSnapshotHead(context, firstThreadId);
-    if (head.terminal_seq_id === null) {
-      throw new Error("Expected a terminal Chat Event Snapshot cursor");
-    }
+    const snapshot = await accept(
+      eventsClient().snapshot({
+        headers: authenticate(owner),
+        params: { threadId: firstThreadId },
+      }),
+      [200],
+    );
     const snapshotCursor = await accept(
       eventsClient().catchUp({
         headers: authenticate(owner),
-        body: [[firstThreadId, head.terminal_seq_id]],
+        body: [[firstThreadId, snapshot.body.lastSeqId]],
       }),
       [200],
     );
@@ -344,7 +373,7 @@ describe("chat event snapshot read endpoints", () => {
       events: { [firstThreadId]: [] },
       notFoundThreads: [],
     });
-    expect(head.terminal_seq_id).toBeGreaterThan(firstCursor.seqId);
+    expect(snapshot.body.lastSeqId).toBeGreaterThan(firstCursor.seqId);
     const snapshotCoveredCursor = await accept(
       eventsClient().catchUp({
         headers: authenticate(owner),
@@ -683,20 +712,20 @@ describe("chat event snapshot read endpoints", () => {
     await projectChatEventSearch(threadId);
     await runSnapshotCron([threadId]);
 
-    const head = await readChatEventSnapshotHead(context, threadId);
-    expect(readFakeChatEventObject(head.object_key)).toBeDefined();
+    const objectKey = await readPublishedSnapshotObjectKey(owner, threadId);
+    expect(readFakeChatEventObject(objectKey)).toBeDefined();
 
     const future = mockR2GcWindowForKey(
-      head.object_key,
+      objectKey,
       new Date(now() + 8 * 24 * 60 * 60 * 1000),
     );
     ageFakeChatEventObject(
-      head.object_key,
+      objectKey,
       new Date(future.getTime() - 8 * 24 * 60 * 60 * 1000),
     );
-    const protectedHead = await runSnapshotCron([threadId], [head.object_key]);
+    const protectedHead = await runSnapshotCron([threadId], [objectKey]);
     expect(protectedHead.r2ObjectsDeleted).toBe(0);
-    expect(readFakeChatEventObject(head.object_key)).toBeDefined();
+    expect(readFakeChatEventObject(objectKey)).toBeDefined();
 
     const orphanKey = `chat-events/${threadId.slice(0, 3)}-orphan.ndjson.gz`;
     writeFakeChatEventObject(orphanKey, Buffer.from("orphan"));
@@ -718,12 +747,12 @@ describe("chat event snapshot read endpoints", () => {
       prompt: `snapshot-replacement-${randomUUID()}`,
     });
     await projectChatEventSearch(threadId);
-    const replacement = await runSnapshotCron([threadId], [head.object_key]);
+    const replacement = await runSnapshotCron([threadId], [objectKey]);
     expect(replacement.r2ObjectsDeleted).toBe(1);
-    expect(readFakeChatEventObject(head.object_key)).toBeUndefined();
-    const newHead = await readChatEventSnapshotHead(context, threadId);
-    expect(newHead.object_key).not.toBe(head.object_key);
-    expect(readFakeChatEventObject(newHead.object_key)).toBeDefined();
+    expect(readFakeChatEventObject(objectKey)).toBeUndefined();
+    const newObjectKey = await readPublishedSnapshotObjectKey(owner, threadId);
+    expect(newObjectKey).not.toBe(objectKey);
+    expect(readFakeChatEventObject(newObjectKey)).toBeDefined();
   }, 120_000);
 
   it("limits object cleanup to the fixed per-pass quota", async () => {
