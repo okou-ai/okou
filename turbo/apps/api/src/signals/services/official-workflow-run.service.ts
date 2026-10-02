@@ -20,7 +20,7 @@ import { computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import type { ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import {
   acceptedCatalogFromRow,
   acceptedRevisionFromRow,
@@ -247,7 +247,6 @@ export function assembleRunObservation(
 }
 
 interface OfficialWorkflowRunReadInput {
-  readonly db: ReadonlyDb;
   readonly hasOfficialWorkflows: boolean;
 }
 
@@ -259,10 +258,11 @@ function createAcceptedRunCatalogObject(
   input$: OfficialWorkflowRunReadInputObject,
 ) {
   return computed(async (get) => {
-    const { db, hasOfficialWorkflows } = await get(input$);
+    const { hasOfficialWorkflows } = await get(input$);
     if (!hasOfficialWorkflows) {
       return null;
     }
+    const db = get(db$);
     const [row] = await db
       .select({
         releaseId: officialWorkflowCatalogState.acceptedReleaseId,
@@ -292,15 +292,14 @@ function createAcceptedRunCatalogObject(
 }
 
 function createAcceptedRunRevisionsObject(
-  input$: OfficialWorkflowRunReadInputObject,
   acceptedCandidates$: Computed<Promise<readonly AcceptedRunCandidate[]>>,
 ) {
   return computed(async (get) => {
-    const { db } = await get(input$);
     const candidates = await get(acceptedCandidates$);
     if (candidates.length === 0) {
       return [];
     }
+    const db = get(db$);
     const rows = await db
       .select({
         definitionName: officialWorkflowDefinitionRevisions.definitionName,
@@ -394,10 +393,7 @@ export function createOfficialWorkflowRunObjects({
     }
     return acceptedRunCandidates(catalog, candidates);
   });
-  const revisions$ = createAcceptedRunRevisionsObject(
-    input$,
-    acceptedCandidates$,
-  );
+  const revisions$ = createAcceptedRunRevisionsObject(acceptedCandidates$);
   const observation$ = computed(
     async (get): Promise<OfficialWorkflowRunObservation | undefined> => {
       const [catalog, candidates, revisions] = await Promise.all([

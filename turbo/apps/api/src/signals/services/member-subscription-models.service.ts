@@ -10,9 +10,8 @@ import {
   reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db } from "../external/db";
 import {
-  isMemberSubscriptionRoute,
   loadMemberModelRouteContext,
   type MemberModelRouteContext,
   type PreparedMemberModelRouteContext,
@@ -112,35 +111,6 @@ export async function loadMemberSubscriptionModels(
         updatedAt: row.updatedAt,
       },
     ];
-  });
-}
-
-/**
- * Admission read of `isMemberSubscriptionRoute` from current connection facts:
- * in Auto and Custom mode alike, only the member's own valid subscription on
- * the model's catalog subscription route is plan-exempt.
- */
-export async function isPersonalSubscriptionRoute(args: {
-  db: ReadonlyDb;
-  catalog: ModelCatalog;
-  orgId: string;
-  userId: string;
-  model: string | null | undefined;
-  providerType: string | null | undefined;
-}): Promise<boolean> {
-  if (
-    !args.model ||
-    (args.providerType !== "claude-code-oauth-token" &&
-      args.providerType !== "codex-oauth-token")
-  ) {
-    return false;
-  }
-  return isMemberSubscriptionRoute({
-    catalog: args.catalog,
-    member: await loadMemberModelRouteContext(args.db, args.orgId, args.userId),
-    model: args.model,
-    providerType: args.providerType,
-    credentialScope: "member",
   });
 }
 
