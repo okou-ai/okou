@@ -819,11 +819,49 @@ describe("MCP Web parity", () => {
 
   it("requires the send scope even when manually invoking the tool", async () => {
     const f = await conversationFixture();
-    const result = await callTool(f.auth.token(), "send_chat_message", {
-      agentId: f.agentId,
-      prompt: "No send grant",
+    const readOnlyToken = f.auth.token();
+    const catalog = await accept(
+      client().request({
+        extraHeaders: protocolHeaders(readOnlyToken, "tools/list"),
+        body: requestBody("tools/list"),
+      }),
+      [200],
+    );
+    const tools = z
+      .object({
+        result: z.object({ tools: z.array(z.object({ name: z.string() })) }),
+      })
+      .parse(rpc(catalog.body)).result.tools;
+    expect(
+      tools.map((tool) => {
+        return tool.name;
+      }),
+    ).not.toContain("send_chat_message");
+    // An ungranted tool is not registered. The SDK rejects manual invocation
+    // with a protocol error, not a business tool result with isError.
+    const denied = await accept(
+      client().request({
+        extraHeaders: protocolHeaders(
+          readOnlyToken,
+          "tools/call",
+          true,
+          "send_chat_message",
+        ),
+        body: requestBody("tools/call", true, {
+          name: "send_chat_message",
+          arguments: { agentId: f.agentId, prompt: "No send grant" },
+        }),
+      }),
+      [200],
+    );
+    const error = z
+      .object({ error: z.object({ code: z.number(), message: z.string() }) })
+      .parse(rpc(denied.body)).error;
+    expect(error).toStrictEqual({
+      code: -32_602,
+      message: "Tool send_chat_message not found",
     });
-    expect(result.isError).toBeTruthy();
+    expect(rpc(denied.body)).not.toHaveProperty("result");
     expect(
       mcpListChatThreadsOutputSchema.parse(
         (await callTool(f.token, "list_chat_threads")).structuredContent,
@@ -921,7 +959,7 @@ describe("MCP Web parity", () => {
         await callTool(peer, "cancel_run", { runId: run.runId }),
       ),
     ).toStrictEqual({
-      code: "NOT_FOUND",
+      code: "not_found",
       message: `No such run: '${run.runId}'`,
       retryable: false,
     });
