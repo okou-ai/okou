@@ -5703,6 +5703,27 @@
     }
   },
   "vnc": {
+    "rsaAes": {
+      "ra2Password": "RA2 · AES-128 · Passwort",
+      "ra2256Password": "RA2_256 · AES-256 · Passwort",
+      "ra2nePassword": "RA2ne · nur Authentifizierung · Passwort",
+      "ra2ne256Password": "RA2ne_256 · nur Authentifizierung · Passwort",
+      "ra2UsernamePassword": "RA2 · AES-128 · Benutzername/Passwort",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · Benutzername/Passwort",
+      "ra2neUsernamePassword": "RA2ne · nur Authentifizierung · Benutzername/Passwort",
+      "ra2ne256UsernamePassword": "RA2ne_256 · nur Authentifizierung · Benutzername/Passwort",
+      "passwordMethod": "RSA-AES-Passwort",
+      "usernamePasswordMethod": "RSA-AES-Benutzername/Passwort",
+      "fieldHelp": "Je Feld 1–255 UTF-8-Bytes, ohne NUL. Leerzeichen bleiben erhalten; kein klassisches VNC-Passwort mit acht Bytes.",
+      "fullHelp": "RA2 und RA2_256 verschlüsseln die gesamte RFB-Sitzung mit EAX. Den vollständigen RSA-Wire-Key-Pin unabhängig prüfen; CA-Vertrauen ersetzt ihn nicht.",
+      "neHelp": "Nur die Authentifizierung ist RSA-AES-verschlüsselt. Erfordert verifiziertes gespeichertes SSH zu einer literalen Server-Loopback-Adresse. SSH schützt nur seinen Hop; ein nachgeschalteter Proxy kann unverschlüsseltes RFB offenlegen.",
+      "pin": "SHA256 des RSA-Wire-Schlüssels des Servers",
+      "pinHelp": "Den unabhängig vertrauenswürdig ermittelten vollständigen 64-Hex-Pin importieren: SHA256 über U32-Big-Endian-Modulusbits und gleich breit gepolsterten Modulus/Exponenten. Kein PEM/SPKI-Hash oder Kurzfingerabdruck. Zum Rotieren ersetzen und ausdrücklich speichern; Sitzungen werden ungültig.",
+      "publicKey": "Unabhängig vertrauenswürdiger öffentlicher RSA-PEM-Schlüssel (optional)",
+      "importKey": "Vertrauenswürdigen öffentlichen Schlüssel importieren",
+      "importHelp": "PUBLIC KEY oder RSA PUBLIC KEY PEM über vertrauenswürdige Serververwaltung beziehen. Nie private Schlüssel/Zertifikate einfügen oder einen Live-Schlüssel automatisch akzeptieren. Konvertierung beweist keine Identität und speichert nicht: vollständigen Pin prüfen, dann ausdrücklich speichern.",
+      "modulusBits": "Importierte öffentliche Schlüssellänge: {{bits}} Bits"
+    },
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
     "close": "Schließen",

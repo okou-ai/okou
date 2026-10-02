@@ -5681,6 +5681,27 @@
     }
   },
   "vnc": {
+    "rsaAes": {
+      "ra2Password": "RA2 · AES-128 · 비밀번호",
+      "ra2256Password": "RA2_256 · AES-256 · 비밀번호",
+      "ra2nePassword": "RA2ne · 인증만 암호화 · 비밀번호",
+      "ra2ne256Password": "RA2ne_256 · 인증만 암호화 · 비밀번호",
+      "ra2UsernamePassword": "RA2 · AES-128 · 사용자 이름/비밀번호",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · 사용자 이름/비밀번호",
+      "ra2neUsernamePassword": "RA2ne · 인증만 암호화 · 사용자 이름/비밀번호",
+      "ra2ne256UsernamePassword": "RA2ne_256 · 인증만 암호화 · 사용자 이름/비밀번호",
+      "passwordMethod": "RSA-AES 비밀번호",
+      "usernamePasswordMethod": "RSA-AES 사용자 이름/비밀번호",
+      "fieldHelp": "각 필드는 NUL 없이 1–255 UTF-8 바이트여야 합니다. 공백은 유지되며 기존 8바이트 VNC 비밀번호가 아닙니다.",
+      "fullHelp": "RA2와 RA2_256은 전체 RFB 세션을 EAX로 암호화합니다. 서버의 전체 RSA 와이어 키 pin을 독립적으로 확인하세요. CA 신뢰로 대체할 수 없습니다.",
+      "neHelp": "RSA-AES는 인증만 암호화합니다. 검증된 저장 SSH와 서버의 리터럴 루프백이 필요합니다. SSH는 해당 구간만 보호하며 이후 프록시는 암호화되지 않은 RFB 트래픽을 노출할 수 있습니다.",
+      "pin": "서버 RSA 와이어 키 SHA256",
+      "pinHelp": "독립적인 신뢰 경로에서 얻은 전체 64자리 16진수 pin을 가져오세요. U32 빅엔디언 모듈러스 비트 수와 동일한 고정 폭 모듈러스/지수의 SHA256입니다. PEM/SPKI 해시나 짧은 지문이 아닙니다. 변경 후 명시적으로 저장하면 신뢰가 교체되고 세션이 무효화됩니다.",
+      "publicKey": "독립적으로 신뢰한 RSA 공개 PEM(선택)",
+      "importKey": "신뢰한 공개 키 가져오기",
+      "importHelp": "신뢰할 수 있는 서버 관리 경로에서 PUBLIC KEY 또는 RSA PUBLIC KEY PEM을 얻으세요. 개인 키/인증서를 붙여넣거나 실시간 연결의 키를 자동으로 신뢰하지 마세요. 변환은 신원을 입증하거나 저장하지 않습니다. 전체 pin을 확인한 뒤 명시적으로 저장하세요.",
+      "modulusBits": "가져온 공개 키 크기: {{bits}}비트"
+    },
     "add": "호스트 추가",
     "cancel": "취소",
     "close": "닫기",

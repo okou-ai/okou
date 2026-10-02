@@ -5776,6 +5776,27 @@
     }
   },
   "vnc": {
+    "rsaAes": {
+      "ra2Password": "RA2 · AES-128 · senha",
+      "ra2256Password": "RA2_256 · AES-256 · senha",
+      "ra2nePassword": "RA2ne · somente autenticação · senha",
+      "ra2ne256Password": "RA2ne_256 · somente autenticação · senha",
+      "ra2UsernamePassword": "RA2 · AES-128 · usuário/senha",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · usuário/senha",
+      "ra2neUsernamePassword": "RA2ne · somente autenticação · usuário/senha",
+      "ra2ne256UsernamePassword": "RA2ne_256 · somente autenticação · usuário/senha",
+      "passwordMethod": "Senha RSA-AES",
+      "usernamePasswordMethod": "Usuário/senha RSA-AES",
+      "fieldHelp": "Cada campo exige 1–255 bytes UTF-8, sem NUL. Os espaços são preservados; não é a senha VNC clássica de oito bytes.",
+      "fullHelp": "RA2 e RA2_256 criptografam toda a sessão RFB com EAX. Verifique independentemente o pin completo da chave RSA no formato do protocolo; confiança em CA não o substitui.",
+      "neHelp": "RSA-AES criptografa apenas a autenticação. Exige SSH salvo e verificado ao loopback literal do servidor. SSH protege somente seu salto; um proxy posterior pode expor tráfego RFB sem criptografia.",
+      "pin": "SHA256 da chave RSA de protocolo do servidor",
+      "pinHelp": "Importe o pin completo de 64 dígitos hexadecimais de fonte independente confiável: SHA256 dos bits do módulo em U32 big-endian mais módulo/expoente de mesma largura fixa. Não é hash PEM/SPKI nem impressão digital abreviada. Substitua e salve explicitamente para rotacionar a confiança e invalidar sessões.",
+      "publicKey": "PEM público RSA de fonte independente confiável (opcional)",
+      "importKey": "Importar chave pública confiável",
+      "importHelp": "Obtenha PUBLIC KEY ou RSA PUBLIC KEY PEM pela administração confiável do servidor. Nunca cole chave privada/certificado nem confie automaticamente em chave de conexão ao vivo. A conversão não prova identidade nem salva: verifique o pin completo e salve explicitamente.",
+      "modulusBits": "Tamanho da chave pública importada: {{bits}} bits"
+    },
     "add": "Adicionar host",
     "cancel": "Cancelar",
     "close": "Fechar",

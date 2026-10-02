@@ -39,6 +39,10 @@ fn supported_profiles() -> Value {
         {"authMethod":"qemu_scram_sha256","securityType":"qemu_x509_sasl","transportType":"direct"},
         {"authMethod":"client_certificate","securityType":"x509_none","transportType":"direct"},
         {"authMethod":"client_certificate_vnc_password","securityType":"x509_vnc","transportType":"direct"},
+        {"authMethod":"rsa_aes_password","securityType":"rsa_aes_ra2","transportType":"direct"},
+        {"authMethod":"rsa_aes_username_password","securityType":"rsa_aes_ra2","transportType":"direct"},
+        {"authMethod":"rsa_aes_password","securityType":"rsa_aes_ra2_256","transportType":"direct"},
+        {"authMethod":"rsa_aes_username_password","securityType":"rsa_aes_ra2_256","transportType":"direct"},
     ])
 }
 

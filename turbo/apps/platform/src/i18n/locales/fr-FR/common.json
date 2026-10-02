@@ -5776,6 +5776,27 @@
     }
   },
   "vnc": {
+    "rsaAes": {
+      "ra2Password": "RA2 · AES-128 · mot de passe",
+      "ra2256Password": "RA2_256 · AES-256 · mot de passe",
+      "ra2nePassword": "RA2ne · authentification seule · mot de passe",
+      "ra2ne256Password": "RA2ne_256 · authentification seule · mot de passe",
+      "ra2UsernamePassword": "RA2 · AES-128 · identifiant/mot de passe",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · identifiant/mot de passe",
+      "ra2neUsernamePassword": "RA2ne · authentification seule · identifiant/mot de passe",
+      "ra2ne256UsernamePassword": "RA2ne_256 · authentification seule · identifiant/mot de passe",
+      "passwordMethod": "Mot de passe RSA-AES",
+      "usernamePasswordMethod": "Identifiant/mot de passe RSA-AES",
+      "fieldHelp": "Chaque champ contient 1–255 octets UTF-8, sans NUL. Les espaces sont conservés ; ce n'est pas le mot de passe VNC classique de huit octets.",
+      "fullHelp": "RA2 et RA2_256 chiffrent toute la session RFB avec EAX. Vérifiez indépendamment le pin complet de la clé RSA au format filaire ; la confiance CA ne le remplace pas.",
+      "neHelp": "Seule l'authentification est chiffrée par RSA-AES. Nécessite un SSH enregistré et vérifié vers l'adresse de bouclage littérale du serveur. SSH ne protège que son saut ; un proxy ultérieur peut exposer le trafic RFB non chiffré.",
+      "pin": "SHA256 de la clé RSA filaire du serveur",
+      "pinHelp": "Importez le pin complet de 64 caractères hexadécimaux obtenu par une source indépendante fiable : SHA256 de la taille du module en U32 big-endian puis du module et de l'exposant de même largeur fixe. Pas un hash PEM/SPKI ni une empreinte courte. Remplacez-le puis enregistrez explicitement pour renouveler la confiance et invalider les sessions.",
+      "publicKey": "PEM public RSA obtenu indépendamment (facultatif)",
+      "importKey": "Importer la clé publique de confiance",
+      "importHelp": "Obtenez le PEM PUBLIC KEY ou RSA PUBLIC KEY via une administration serveur fiable. Ne collez jamais une clé privée/un certificat et n'acceptez pas automatiquement une clé en ligne. La conversion ne prouve pas l'identité et n'enregistre rien : vérifiez le pin complet puis enregistrez explicitement.",
+      "modulusBits": "Taille de la clé publique importée : {{bits}} bits"
+    },
     "add": "Ajouter un hôte",
     "cancel": "Annuler",
     "close": "Fermer",

@@ -10,10 +10,16 @@ import {
   vncCredentials$,
   vncAuthMethodForProfile,
   vncSshConnectionId,
+  vncProfileForConnection,
   type VncAuthMethod,
   type VncProfile,
 } from "../../signals/vnc.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
+import {
+  isRsaAesProfile,
+  rsaAesProfileLabelKey,
+} from "../../signals/vnc-rsa-aes.ts";
+import { isVncRsaAesAuthenticationOnly } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -40,6 +46,11 @@ function isX509Security(
 
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
+  if (isRsaAesProfile(profile)) {
+    return t(($) => {
+      return $.vnc.rsaAes[rsaAesProfileLabelKey(profile)];
+    });
+  }
   switch (profile) {
     case "client_certificate_none": {
       return t(($) => {
@@ -102,6 +113,13 @@ function VncAuthenticationLabel({
   readonly method: VncAuthMethod;
 }) {
   const { t } = useTranslation();
+  if (method === "rsa_aes_password" || method === "rsa_aes_username_password") {
+    return t(($) => {
+      return method === "rsa_aes_password"
+        ? $.vnc.rsaAes.passwordMethod
+        : $.vnc.rsaAes.usernamePasswordMethod;
+    });
+  }
   switch (method) {
     case "client_certificate": {
       return t(($) => {
@@ -177,12 +195,7 @@ function VncHostProfileDetails({
     "clientCertificateAuthentication" in connection
       ? connection.clientCertificateAuthentication
       : undefined;
-  const profile: VncProfile =
-    certificateMethod === "client_certificate"
-      ? "client_certificate_none"
-      : certificateMethod === "client_certificate_vnc_password"
-        ? "client_certificate_vnc"
-        : connection.security.type;
+  const profile = vncProfileForConnection(connection);
   return (
     <>
       {certificateMethod ? (
@@ -190,6 +203,23 @@ function VncHostProfileDetails({
       ) : connection.security.type === "x509_none" ? (
         <VncX509NoneWarning />
       ) : null}
+      {"serverKeySha256" in connection.security && (
+        <>
+          <p className="break-all font-mono text-xs">
+            {t(($) => {
+              return $.vnc.rsaAes.pin;
+            })}
+            : {connection.security.serverKeySha256}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return isVncRsaAesAuthenticationOnly(connection.security.type)
+                ? $.vnc.rsaAes.neHelp
+                : $.vnc.rsaAes.fullHelp;
+            })}
+          </p>
+        </>
+      )}
       <p className="text-sm text-muted-foreground">
         <VncProfileLabel profile={profile} />
         {" · "}

@@ -9,6 +9,8 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { vncErrorResponse } from "../../lib/vnc-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { safeSync } from "../utils";
+import { inspectVncRsaPublicKey } from "../services/vnc-rsa-key.utils";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
@@ -279,7 +281,28 @@ const deleteConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
     : mapFailure(result);
 });
 
+const inspectRsaKey$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const context = await set(vncAdmission$, signal);
+  if (!context) {
+    return unavailable;
+  }
+  const body = await get(bodyResultOf(vncConnectionsContract.inspectRsaKey));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return invalidInput;
+  }
+  // Do not reflect parser errors or supplied key material into observations.
+  const result = safeSync(() => {return inspectVncRsaPublicKey(body.data.publicKeyPem)});
+  return "ok" in result
+    ? { status: 200 as const, body: result.ok }
+    : invalidInput;
+});
+
 export const vncConnectionsRoutes: readonly RouteEntry[] = [
+  {
+    route: vncConnectionsContract.inspectRsaKey,
+    handler: authRoute(ownerAuth, inspectRsaKey$),
+  },
   {
     route: vncCredentialsContract.list,
     handler: authRoute(ownerAuth, listCredentials$),

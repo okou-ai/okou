@@ -5776,6 +5776,27 @@
     }
   },
   "vnc": {
+    "rsaAes": {
+      "ra2Password": "RA2 · AES-128 · contraseña",
+      "ra2256Password": "RA2_256 · AES-256 · contraseña",
+      "ra2nePassword": "RA2ne · solo autenticación · contraseña",
+      "ra2ne256Password": "RA2ne_256 · solo autenticación · contraseña",
+      "ra2UsernamePassword": "RA2 · AES-128 · usuario/contraseña",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · usuario/contraseña",
+      "ra2neUsernamePassword": "RA2ne · solo autenticación · usuario/contraseña",
+      "ra2ne256UsernamePassword": "RA2ne_256 · solo autenticación · usuario/contraseña",
+      "passwordMethod": "Contraseña RSA-AES",
+      "usernamePasswordMethod": "Usuario/contraseña RSA-AES",
+      "fieldHelp": "Cada campo requiere 1–255 bytes UTF-8, sin NUL. Se conservan los espacios; no es la contraseña VNC clásica de ocho bytes.",
+      "fullHelp": "RA2 y RA2_256 cifran toda la sesión RFB con EAX. Verifique por separado el pin completo de la clave RSA en formato de protocolo; la confianza CA no lo sustituye.",
+      "neHelp": "RSA-AES solo cifra la autenticación. Requiere SSH guardado y verificado al loopback literal del servidor. SSH solo protege su salto; un proxy posterior puede exponer tráfico RFB sin cifrar.",
+      "pin": "SHA256 de la clave RSA de protocolo del servidor",
+      "pinHelp": "Importe el pin completo de 64 dígitos hexadecimales de una fuente independiente fiable: SHA256 de los bits del módulo en U32 big-endian y módulo/exponente con igual ancho fijo. No es un hash PEM/SPKI ni una huella abreviada. Reemplácelo y guarde explícitamente para rotar la confianza e invalidar las sesiones.",
+      "publicKey": "PEM público RSA de fuente independiente fiable (opcional)",
+      "importKey": "Importar clave pública fiable",
+      "importHelp": "Obtenga PUBLIC KEY o RSA PUBLIC KEY PEM mediante administración fiable del servidor. No pegue claves privadas/certificados ni confíe automáticamente en una clave en línea. Convertir no prueba la identidad ni guarda: compruebe el pin completo y guarde explícitamente.",
+      "modulusBits": "Tamaño de la clave pública importada: {{bits}} bits"
+    },
     "add": "Añadir host",
     "cancel": "Cancelar",
     "close": "Cerrar",

@@ -15,6 +15,41 @@ SSH hop only; it cannot establish isolation of the downstream VNC listener.
 The owner must choose and manage the destination's exposure accordingly.
 The feature remains unavailable until a separate activation decision.
 
+## Owner-selected RSA-AES (#37500)
+
+Save one exact mode: `rsa_aes_ra2` (5, AES-128 EAX), `rsa_aes_ra2_256`
+(129, AES-256 EAX), `rsa_aes_ra2ne` (6) or `rsa_aes_ra2ne_256` (130).
+RA2 and RA2_256 protect the full RFB session and use the existing direct-public
+or saved SSH policy. The `ne` modes encrypt authentication **only** and require
+a verified saved SSH connection to literal `127.0.0.1` or `::1` on the selected
+server. SSH protects its own hop, not an onward proxy's unprotected destination.
+No mode, credential subtype or transport downgrade is attempted.
+
+The two credentials are `rsa_aes_password` (subtype 2) and
+`rsa_aes_username_password` (subtype 1); each field requires 1–255 exact UTF-8
+bytes, no NUL and well-formed Unicode. Spaces are preserved. These are not the
+eight-byte classic VNC password or Apple RSA/SRP profiles. Existing KMS custody
+and revision-based rotation are reused; credentials are never read back.
+
+RSA trust is a separate full 64-hex SHA256 of U32 big-endian modulus bits,
+then equally fixed-width modulus and exponent, as defined in
+[the engine contract](../crates/rfb-client/tests/RSA_AES.md). Obtain the server
+public key or this full pin through independently trusted server administration.
+The owner-only `POST /api/vnc/rsa-key-pin` and App importer convert one bounded
+public PEM (PUBLIC KEY or RSA PUBLIC KEY), accepting 2048/3072/4096 bits and
+exponent 65537. They reject private keys, certificates and extra material, do not
+probe a host, store a PEM or establish provenance, and never automatically save.
+Verify the displayed full pin, then explicitly Save. A PEM/SPKI hash, shortened
+TigerVNC fingerprint, CA bundle or live-server TOFU is not an alternative.
+
+Saved pin readback is owner-only. To rotate it, explicitly edit and Save with the
+current expectedGeneration; this invalidates old session generations independently
+of password revision. Agent inventory has method/mode metadata only, no pin,
+username or reusable secret. Feature off/current membership and exact Run/chat/SSH
+authority remain mandatory. A merged engine or controlled peer is not real product
+acceptance; record a separate exact-head Owner→Agent→Runner PNG and negative/cleanup
+evidence before declaring this slice accepted. No production activation is implied.
+
 ## Advisory Lock Cleanup Release 1
 
 VNC is not GA. Configuration and owner cleanup no longer acquire advisory

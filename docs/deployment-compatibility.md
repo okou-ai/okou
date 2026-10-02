@@ -1,5 +1,23 @@
 # Deployment Compatibility
 
+## Owner-selected RSA-AES VNC (default off; #37500)
+
+Migration `1313_rsa_aes_vnc` adds an independent nullable RSA wire-key pin and
+expands exact credential/profile checks; existing rows, ciphertext, revisions and
+generations are preserved. Apply this expansion before code that selects the new
+column. Required RSA pins cannot occupy CA/serverName fields; other profiles must
+retain a null RSA pin. ne requires saved SSH and literal loopback in storage as
+well as API/native admission.
+
+The owner's preactivation compatibility waiver applies to this disabled non-GA
+surface: no old/new VNC version overlap gate, legacy credential reader or protocol
+downgrade is added. This does not waive data preservation, exact pre-KMS capability,
+current owner/run/chat/member/SSH authority, trust or bounded resource checks. Old
+implementations cannot be assumed to support new RSA rows. Keep the expansion on
+rollback and keep VncAccess disabled; source/CI/engine interop do not prove a real
+product PNG or authorize production activation. Parent delivery and activation
+remain separate from this child PR.
+
 ## Long-context threshold in the Runner payload (2026-10-01)
 
 The long-context pricing threshold is catalog data:

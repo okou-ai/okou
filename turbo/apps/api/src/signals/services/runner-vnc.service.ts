@@ -8,7 +8,12 @@ import {
 import {
   vncLegacyAuthenticationSchema,
   vncQemuScramAuthenticationSchema,
+  vncRsaAesAuthenticationSchema,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
+import {
+  isVncRsaAesSecurityType,
+  isVncRsaAesAuthenticationOnly,
+} from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -64,6 +69,12 @@ function hasValidAppleRoute(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
 ) {
+  if (isVncRsaAesAuthenticationOnly(row.securityType)) {
+    return (
+      transport.type === "ssh" &&
+      (row.host === "127.0.0.1" || row.host === "::1")
+    );
+  }
   return (
     (row.securityType !== "apple_vnc_password" &&
       row.securityType !== "apple_dh" &&
@@ -181,6 +192,24 @@ function storedRunnerSecurity(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
 ) {
+  if (isVncRsaAesSecurityType(row.securityType)) {
+    if (
+      !hasValidAppleRoute(row, transport) ||
+      row.trustMode !== "none" ||
+      row.caBundle !== null ||
+      row.x509ServerName !== null ||
+      row.rsaServerKeySha256 === null ||
+      !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
+    ) {
+      throw new Error(
+        "VNC connection has an invalid stored RSA trust configuration",
+      );
+    }
+    return { type: row.securityType, serverKeySha256: row.rsaServerKeySha256 };
+  }
+  if (row.rsaServerKeySha256 !== null) {
+    throw new Error("VNC connection has unexpected stored RSA trust");
+  }
   if (
     !hasValidAppleRoute(row, transport) ||
     (row.securityType !== "apple_vnc_password" &&
@@ -217,6 +246,27 @@ function parseStoredPasswordAuthentication(
   row: CurrentVncAuthority,
   password: string,
 ) {
+  if (
+    row.authMethod === "rsa_aes_password" ||
+    row.authMethod === "rsa_aes_username_password"
+  ) {
+    const parsed = vncRsaAesAuthenticationSchema.safeParse({
+      method: row.authMethod,
+      password,
+      ...(row.authMethod === "rsa_aes_username_password"
+        ? { username: row.username }
+        : {}),
+    });
+    if (
+      !parsed.success ||
+      (row.authMethod === "rsa_aes_password" && row.username !== null)
+    ) {
+      throw new Error(
+        "VNC credential has an invalid stored authentication shape",
+      );
+    }
+    return parsed.data;
+  }
   if (row.authMethod === "qemu_scram_sha256") {
     // Validate stored plaintext again after KMS, without reflecting secrets or
     // schema diagnostics into the private endpoint's error observations.
@@ -343,6 +393,27 @@ function resolvedRunnerResponse(
     security,
     authentication,
   };
+  if (isVncRsaAesSecurityType(security.type)) {
+    if (
+      authentication.method !== "rsa_aes_password" &&
+      authentication.method !== "rsa_aes_username_password"
+    ) {
+      throw new Error("VNC RSA-AES handoff has an invalid stored profile");
+    }
+    return {
+      outcome: "resolved_rsa_aes",
+      ...resolved,
+      security,
+      authentication,
+      transport,
+    };
+  }
+  if (
+    authentication.method === "rsa_aes_password" ||
+    authentication.method === "rsa_aes_username_password"
+  ) {
+    throw new Error("VNC handoff has an invalid stored RSA-AES profile");
+  }
   if (row.securityType === "apple_vnc_password") {
     if (
       transport.type !== "ssh" ||
@@ -415,6 +486,8 @@ function resolvedRunnerResponse(
     outcome: "resolved_transport",
     ...resolved,
     serverName: row.x509ServerName ?? row.host,
+    security,
+    authentication,
     transport,
   };
 }

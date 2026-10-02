@@ -4,6 +4,7 @@ mod harness;
 mod list;
 mod list_lifecycle;
 pub(crate) mod peer;
+mod rsa_aes;
 
 use std::{io::Cursor, sync::Arc};
 
