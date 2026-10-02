@@ -38,24 +38,24 @@ import type { AgentRunModelPin } from "./agent-run-contracts";
 import {
   type PermissionManifest,
   type ResolvedModelProviderEnvironment,
-  runnerJobPayload,
-} from "./execution-launch-persistence.service";
+  nativeCredentialEnvironment,
+} from "./execution-model-source.service";
 import {
+  runnerJobPayload,
   assertNativeEnvironment,
   buildRunContextSnapshot,
   defaultRunnerGroup,
   capturedPiExecutionRoute,
   storedExecutionContextWithPiResources,
   withoutOkouNamespaceEntries,
-} from "./execution-runner-payload.service";
-import type { PreparedPiLaunchResources } from "./pi-launch-resources.service";
+  type PreparedPiLaunchResources,
+} from "./thread-claim-run.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
   isPersonalSubscriptionProviderType,
   validatePersonalSubscriptionAdmission,
 } from "./model-provider-account.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
-import { nativeCredentialEnvironment } from "./run-model-provider-environment.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 
 /**

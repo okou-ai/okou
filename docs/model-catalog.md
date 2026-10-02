@@ -82,7 +82,7 @@ through the pricing link of the route a run was assigned:
 
 1. **Run creation.** Run creation (the queue pick, or Pi maintenance) selects
    and captures the Built-in concrete route (`builtInModelRuntimeRoute`), then
-   `prepareModelUsageContext` (`run-model-provider-environment.service.ts`) reads that
+   `prepareModelUsageContext` (`execution-model-source.service.ts`) reads that
    route's `pricing_provider` from the same catalog snapshot
    (`catalogBuiltInRoute`) as `modelUsageProvider`, together with the billable
    firewalls and the long-context threshold

@@ -28,37 +28,31 @@ import { createAgentDisabledPaidTools } from "./agent-bootstrap-resources";
 import {
   createModelSourceSnapshot,
   type ModelSourceIdentity,
-} from "./execution-model-source.service";
-import {
   prepareGatewayModelEnvironment,
   prepareManagedModelEnvironment,
   prepareRegisteredModelEnvironment,
-} from "./execution-model-preparation.service";
-import { createExecutionStorageObjects } from "./execution-storage.service";
-import {
-  AUTO_MEMORY_ARTIFACT_NAME,
-  finalizePreparedStorage,
-  storedMountFromPrepared,
-  writebackStorageEntryMetadata,
-} from "./execution-storage-manifest.service";
-import { encryptExecutionSecrets$ } from "./execution-secrets.service";
-import {
-  modelProviderExecutionPermissionManifest,
-  sessionStorageMountsForPersistence,
-} from "./execution-runner-payload.service";
-import {
   frameworkForProviderSelection,
   loadRunRoutePricing,
   materializePreparedPiProvider,
   prepareModelUsageContext,
   resolvePreparedPiModelConfig,
-} from "./run-model-provider-environment.service";
-import { assemblePiLaunchResources } from "./pi-launch-resources.service";
-import type { ResolvedModelProviderEnvironment } from "./execution-launch-persistence.service";
+  type ResolvedModelProviderEnvironment,
+} from "./execution-model-source.service";
 import {
+  createExecutionStorageObjects,
+  AUTO_MEMORY_ARTIFACT_NAME,
+  finalizePreparedStorage,
+  storedMountFromPrepared,
+  writebackStorageEntryMetadata,
+} from "./execution-storage.service";
+import { encryptExecutionSecrets$ } from "./execution-secrets.service";
+import {
+  modelProviderExecutionPermissionManifest,
+  sessionStorageMountsForPersistence,
+  assemblePiLaunchResources,
   RESTRICTED_EXPLICIT_CONTENT_PROMPT,
   builtInImageModelPrompt,
-} from "./run-execution-context.service";
+} from "./thread-claim-run.service";
 import {
   MAINTENANCE_RUNNER_PROFILE,
   buildMaintenanceExecutionContext,

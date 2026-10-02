@@ -13,15 +13,46 @@ import {
 import {
   createModelSourceSnapshot,
   type ModelSourceSnapshot,
-} from "./execution-model-source.service";
-import {
   prepareGatewayModelEnvironment,
   prepareManagedModelEnvironment,
   prepareRegisteredModelEnvironment,
-} from "./execution-model-preparation.service";
+  loadRunRoutePricing,
+  frameworkForProviderSelection,
+  isModelProviderType,
+  materializePreparedPiProvider,
+  prepareModelUsageContext,
+  type ResolveModelProviderEnvironmentArgs,
+  resolvePreparedPiModelConfig,
+  nativeCredentialEnvironment,
+  type RunModelProviderArgs,
+  CreateRunErrorResult,
+  ResolvedModelProviderEnvironment,
+  PermissionManifest,
+  type AgentRunMetadata,
+  ApiErrorResponse,
+  QueueFirstRunClaimed,
+  CreateRunRouteResult,
+  BuiltinRuntimeTargetRegistration,
+} from "./execution-model-source.service";
 import {
   createExecutionStorageObjects,
   type ExecutionStorageRequest,
+  finalizePreparedStorage,
+  StorageManifestBuildStats,
+  storedMountFromPrepared,
+  AUTO_MEMORY_ARTIFACT_NAME,
+  PreparedAgentRunStorage,
+  StorageMountMetadata,
+  ContextArtifact,
+  ResolvedManifestArtifactInput,
+  StorageResolution,
+  StorageManifestEntryKind,
+  PreparedReadOnlyStorageEntry,
+  knownArchiveSize,
+  PreparedStorageEntries,
+  mergeStorageEntries,
+  writebackStorageEntryMetadata,
+  StorageManifestSource,
 } from "./execution-storage.service";
 import {
   type PiMemoryRecallSelection,
@@ -40,6 +71,11 @@ import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  type StorageMountEntry,
+  type StoredConnectorPermissionBaseline,
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  type PiInstalledCliRequirement,
+  type PiLaunchConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
@@ -130,60 +166,6 @@ import {
   routeQueuedMessagePiExecution,
 } from "./internal-chat-run-callback.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
-import {
-  assemblePiLaunchResources,
-  PreparedPiLaunchResources,
-  type PiLaunchConfigOverrides,
-} from "./pi-launch-resources.service";
-import {
-  loadRunRoutePricing,
-  frameworkForProviderSelection,
-  isModelProviderType,
-  materializePreparedPiProvider,
-  prepareModelUsageContext,
-  type ResolveModelProviderEnvironmentArgs,
-  resolvePreparedPiModelConfig,
-  nativeCredentialEnvironment,
-  type RunModelProviderArgs,
-} from "./run-model-provider-environment.service";
-import {
-  mergeRecords,
-  RunConnectorCatalogSelection,
-} from "./run-connector-context.service";
-import {
-  finalizePreparedStorage,
-  StorageManifestBuildStats,
-  storedMountFromPrepared,
-  AUTO_MEMORY_ARTIFACT_NAME,
-  PreparedAgentRunStorage,
-  StorageMountMetadata,
-  ContextArtifact,
-  ResolvedManifestArtifactInput,
-  StorageResolution,
-  StorageManifestEntryKind,
-  PreparedReadOnlyStorageEntry,
-  knownArchiveSize,
-  PreparedStorageEntries,
-  mergeStorageEntries,
-  writebackStorageEntryMetadata,
-} from "./execution-storage-manifest.service";
-import {
-  CreateRunErrorResult,
-  ResolvedModelProviderEnvironment,
-  StorageManifestSource,
-  CreateRunBody,
-  PermissionManifest,
-  firstAgent,
-  AgentRunCreateContextArtifact,
-  ArtifactMissingRootPolicy,
-  runnerGroup,
-  runnerJobPayload,
-  type AgentRunMetadata,
-  ApiErrorResponse,
-  RunnerJobPayload,
-  QueueFirstRunClaimed,
-  CreateRunRouteResult,
-} from "./execution-launch-persistence.service";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
@@ -238,6 +220,7 @@ import { onRejection, safeSync, settle, tapError } from "../utils";
 import {
   buildAgentExecutionConfig,
   type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
+  type AgentExecutionDefinition,
 } from "./agent-execution-config";
 import {
   createAgentBootstrap,
@@ -366,8 +349,17 @@ import {
   orderedCustomConnectorRuntimeRows,
   buildCustomConnectorRuntimeContext,
   customConnectorRuntimeSkill,
+  allAllowPolicyForPermissions,
+  resolveConnectorNetworkPolicy,
+  collectPermissionNames,
+  customConnectorRuntimeFirewall,
+  runtimeFirewall,
 } from "./connector-runtime-preparation.service";
-import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
+import {
+  expandConnectorServerFirewallPolicies,
+  type ConnectorServerFirewallExecutionMetadata,
+  type ConnectorServerFirewallPermissionIndex,
+} from "./connector-server-firewall-catalog.service";
 import {
   customConnectorAccountAuthMethodIsCompatible,
   type CustomConnectorRuntimeStorageRow,
@@ -506,6 +498,7 @@ import {
   type ModelProviderCredentialScope,
   type ModelProviderType,
   getModelImageInputSupport,
+  getModelProviderFirewall,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
@@ -528,6 +521,7 @@ import { generationTemplateIdentity } from "@okouai/core/generation-template-ide
 import {
   DEFAULT_IMAGE_MODEL,
   type ImageModel,
+  IMAGE_MODEL_CONFIGS,
 } from "@okouai/core/image-model-catalog";
 import {
   MEMORY_ARTIFACT_NAME,
@@ -670,7 +664,10 @@ import {
   type SessionExecutionIdentity,
   canReuseSession,
 } from "./session-compatibility";
-import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
+import {
+  type RunStatus,
+  unifiedRunRequestSchema,
+} from "@okouai/api-contracts/contracts/runs";
 import {
   type ConnectorSlug,
   connectorSlugSchema,
@@ -678,7 +675,13 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { RunContextAxiomSnapshot } from "./run-context-snapshot.service";
+import {
+  type RunContextAxiomSnapshot,
+  environmentRecordToEntries,
+  executionFirewallsToAxiomEntries,
+  networkPoliciesRecordToEntries,
+  featureFlagsRecordToEntries,
+} from "./run-context-snapshot.service";
 import {
   isPiLangfuseDebugRunEnvironment,
   resolvePiLangfuseDebugConfig,
@@ -708,6 +711,14 @@ import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {
   FirewallBaseUrlResolutionError,
   type FirewallPolicies,
+  type ExpandedFirewallConfig,
+  type ExecutionFirewalls,
+  type NetworkPolicies,
+  type ExecutionFirewallEntry,
+  type Firewall,
+  canonicalizeFirewallBaseUrlVarsForExecution,
+  type FirewallPolicy,
+  extractSecretNamesFromApis,
 } from "@okouai/connectors/firewall-types";
 import { generateOkouToken } from "../auth/tokens";
 import {
@@ -735,21 +746,16 @@ import { piStableContextVariantDigest } from "./pi-stable-context.service";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
+import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import {
-  BuiltStoredExecutionContext,
-  withoutOkouNamespaceEntries,
-  capturedPiExecutionRoute,
-  assertNativeEnvironment,
-  officialRunnerGroup,
-  storedExecutionContextWithPiResources,
-  buildRunContextSnapshot,
-  sessionStorageMountsForPersistence,
-  buildPermissionManifest,
-} from "./execution-runner-payload.service";
-import {
-  builtInImageModelPrompt,
-  RESTRICTED_EXPLICIT_CONTENT_PROMPT,
-} from "./run-execution-context.service";
+  type PiExecutionRoute,
+  normalizePiExecutionRoute,
+  PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
+} from "@okouai/pi-agent-runtime";
+import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
+import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
+import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 
 function isMigratedRegisteredSource(type: string | undefined): boolean {
   return (
@@ -12771,7 +12777,7 @@ export function createThreadClaimRunObjects(
   return { hasFirstPickableChatEvent$, startRun$ };
 }
 
-// --- Thread-private implementation (moved from execution-storage-manifest.service.ts) ---
+// --- Thread-private implementation: storage manifest ---
 
 interface AdditionalVolume {
   readonly name: string;
@@ -14688,7 +14694,7 @@ async function withStoragePrefixVersions(
     : [];
   return storageIndexWithPrefixVersions(index, versions);
 }
-// --- Thread-private implementation (moved from execution-launch-persistence.service.ts) ---
+// --- Thread-private implementation: launch persistence ---
 
 type DbTransaction = Tx;
 
@@ -15625,7 +15631,7 @@ function committedAtomicLaunchResponse(args: {
       }
     : { ...response, pendingActivation };
 }
-// --- Thread-private implementation (moved from run-connector-context.service.ts) ---
+// --- Thread-private implementation: connector context ---
 
 const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
 
@@ -16755,7 +16761,7 @@ function customConnectorCandidateRuntimeRows(args: {
     };
   });
 }
-// --- Thread-private implementation (moved from run-model-provider-environment.service.ts) ---
+// --- Thread-private implementation: model provider environment ---
 
 function modelProviderFramework(
   modelProvider: ResolvedModelProviderEnvironment,
@@ -17006,7 +17012,7 @@ function selectedRunModelProviderArgs(
       : {}),
   };
 }
-// --- Thread-private implementation (moved from execution-runner-payload.service.ts) ---
+// --- Thread-private implementation: Runner payload ---
 
 function withOkouTokenSecret(
   body: CreateRunBody,
@@ -17823,7 +17829,7 @@ function finalizedMaterializedLaunch(
     piResources: storage.piResources,
   });
 }
-// --- Thread-private implementation (moved from run-execution-body.service.ts) ---
+// --- Thread-private implementation: run body ---
 
 const L: ReturnType<typeof logger> = logger("AgentRunCreate");
 
@@ -18935,7 +18941,7 @@ function matchingAuthorizedRequestObservation(
   }
   return observation;
 }
-// --- Thread-private implementation (moved from run-execution-context.service.ts) ---
+// --- Thread-private implementation: execution context prompts ---
 
 /**
  * When set, system + workflow skill volumes are built and prepended in run
@@ -19674,7 +19680,7 @@ type PreparedOfficialWorkflow =
   | OfficialWorkflowRunObservation
   | CreateRunErrorResult
   | undefined;
-// --- Thread-private implementation (moved from pi-launch-resources.service.ts) ---
+// --- Thread-private implementation: Pi launch resources ---
 
 function noContentPiMemoryRecall(args: {
   readonly memoryStorageId: string;
@@ -19755,7 +19761,7 @@ function bindStableAppendSystemPrompt(
     })
     .join("\n\n");
 }
-// --- Thread-private implementation (moved from execution-launch-admission.service.ts) ---
+// --- Thread-private implementation: launch admission ---
 
 type AtomicLaunchCommitAttempt =
   | AtomicLaunchCommitResult
@@ -19946,4 +19952,908 @@ function flushQueueFirstClaimLostTiming(args: {
       ? { triggerSource: args.createArgs.body.triggerSource }
       : {}),
   });
+}
+
+// --- Private implementation: launch persistence ---
+
+type ArtifactMissingRootPolicy = NonNullable<
+  StorageMountEntry["missingRootPolicy"]
+>;
+
+type CreateRunBody = Omit<
+  z.infer<typeof unifiedRunRequestSchema>,
+  "triggerSource"
+> & {
+  readonly triggerSource: TriggerSource;
+};
+
+interface AgentRunCreateContextArtifact {
+  readonly name: string;
+  readonly version?: string;
+  readonly mountPath: string;
+  readonly missingRootPolicy?: ArtifactMissingRootPolicy;
+}
+
+interface RunnerJobPayload {
+  readonly runnerGroup: string;
+  readonly profile: string;
+  readonly cliAgentSessionId: string | null;
+  readonly reuseKey: string | null;
+  readonly historyGenerationRunId: string | undefined;
+  readonly executionContext: StoredExecutionContext;
+}
+
+export function runnerJobPayload(args: {
+  readonly runnerGroup: string;
+  readonly profile: string;
+  readonly cliAgentSessionId: string | null;
+  readonly reuseKey: string | null;
+  readonly executionContext: StoredExecutionContext;
+}): RunnerJobPayload {
+  return {
+    runnerGroup: args.runnerGroup,
+    profile: args.profile,
+    cliAgentSessionId: args.cliAgentSessionId,
+    reuseKey: args.reuseKey,
+    historyGenerationRunId: historyGenerationRunIdForStoredExecutionContext(
+      args.executionContext,
+    ),
+    executionContext: args.executionContext,
+  };
+}
+
+function firstAgent(
+  content: agentRunCreateAgentExecutionConfig,
+): AgentExecutionDefinition | undefined {
+  if (content.agent) {
+    return content.agent;
+  }
+  if (!content.agents) {
+    return undefined;
+  }
+  const firstKey = Object.keys(content.agents)[0];
+  return firstKey ? content.agents[firstKey] : undefined;
+}
+
+function runnerGroup(
+  content: agentRunCreateAgentExecutionConfig,
+): string | null {
+  return firstAgent(content)?.experimental_runner?.group ?? null;
+}
+// --- Private implementation: connector context ---
+
+type RunConnectorCatalogSelection =
+  | { readonly kind: "empty" }
+  | {
+      readonly kind: "scoped";
+      readonly selection: ConnectorRuntimeSelection;
+    };
+
+function mergeRecords<T>(
+  ...records: readonly (Record<string, T> | undefined)[]
+): Record<string, T> | undefined {
+  const merged: Record<string, T> = {};
+  for (const record of records) {
+    if (record) {
+      Object.assign(merged, record);
+    }
+  }
+  return compactRecord(merged);
+}
+// --- Private implementation: Runner payload ---
+
+const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
+  "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
+
+interface BuiltStoredExecutionContext {
+  readonly context: StoredExecutionContext;
+  readonly persistedStorageMounts: readonly PersistedStorageMount[];
+  readonly runContextStorage: PreparedAgentRunStorage["runContextStorage"];
+  readonly secretNames: readonly string[];
+  // Plain secret values used for run-context redaction; values, not names.
+  readonly secretValues: readonly string[];
+}
+
+function isOfficialRunnerGroup(group: string): boolean {
+  return group.split("/")[0] === "vm0";
+}
+
+function firewallSecretPlaceholdersFromFirewalls(
+  firewalls: readonly ExpandedFirewallConfig[] | undefined,
+): Record<string, string> | undefined {
+  if (!firewalls || firewalls.length === 0) {
+    return undefined;
+  }
+
+  const placeholders: Record<string, string> = {};
+  for (const firewall of firewalls) {
+    const secretNames = extractSecretNamesFromApis(firewall.apis);
+    for (const name of secretNames) {
+      placeholders[name] = DEFAULT_FIREWALL_SECRET_PLACEHOLDER;
+    }
+    for (const [name, value] of Object.entries(firewall.placeholders ?? {})) {
+      placeholders[name] = value;
+    }
+  }
+
+  return Object.keys(placeholders).length > 0 ? placeholders : undefined;
+}
+
+export function withoutOkouNamespaceEntries<T>(
+  values: Readonly<Record<string, T>> | null,
+): Record<string, T> | null {
+  if (!values) {
+    return null;
+  }
+  const untrusted: Record<string, T> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (!key.startsWith("OKOU_")) {
+      untrusted[key] = value;
+    }
+  }
+  return compactRecord(untrusted) ?? null;
+}
+
+async function loadRequiredFirewallPermissionIndex(args: {
+  readonly snapshot: ConnectorRuntimeSelection;
+  readonly connectorSlug: string;
+}): Promise<ConnectorServerFirewallPermissionIndex> {
+  const index = await args.snapshot.serverFirewalls.loadPermissionIndex(
+    args.connectorSlug,
+  );
+  if (!index) {
+    throw new Error(
+      `Missing connector server firewall permission metadata: ${args.connectorSlug}`,
+    );
+  }
+  return index;
+}
+
+function getRequiredFirewallExecutionMetadata(
+  snapshot: ConnectorRuntimeSelection,
+  connectorSlug: string,
+): ConnectorServerFirewallExecutionMetadata {
+  const metadata = snapshot.serverFirewalls.getExecutionMetadata(connectorSlug);
+  if (!metadata) {
+    throw new Error(
+      `Missing connector server firewall execution metadata: ${connectorSlug}`,
+    );
+  }
+  return metadata;
+}
+
+const BASE_URL_VAR_PATTERN = /\$\{\{\s*vars\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+
+const BASE_URL_VALIDATION_SECRET_TEMPLATE = [
+  "$",
+  "{{ secrets.__OKOU_FIREWALL_BASE_URL_VALIDATION }}",
+].join("");
+
+function builtinFirewallEntry(
+  firewall: ExpandedFirewallConfig,
+  vars: Record<string, string> | undefined,
+): ExecutionFirewallEntry {
+  const names = new Set<string>();
+  for (const api of firewall.apis) {
+    for (const match of api.base.matchAll(BASE_URL_VAR_PATTERN)) {
+      names.add(match[1]!);
+    }
+  }
+  if (names.size === 0) {
+    return { kind: "builtin", name: firewall.name };
+  }
+
+  const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
+    [runtimeFirewall(firewall)],
+    vars,
+  );
+  return { kind: "builtin", name: firewall.name, baseUrlVars };
+}
+
+function baseUrlValidationAuth(
+  credentialed: boolean,
+): Firewall["apis"][number]["auth"] {
+  return credentialed
+    ? {
+        headers: {
+          Authorization: `Bearer ${BASE_URL_VALIDATION_SECRET_TEMPLATE}`,
+        },
+      }
+    : {};
+}
+
+function builtinFirewallEntryForMetadata(
+  metadata: ConnectorServerFirewallExecutionMetadata,
+  vars: Record<string, string> | undefined,
+  sourceId: string,
+): ExecutionFirewallEntry {
+  if (metadata.baseUrlVarNames.length === 0) {
+    return {
+      kind: "builtin",
+      name: metadata.connectorSlug,
+      sourceId,
+    };
+  }
+
+  const validationFirewall: Firewall = {
+    name: metadata.connectorSlug,
+    apis: metadata.baseUrlTemplates.map((template) => {
+      return {
+        base: template.base,
+        ...(template.hostPolicy !== undefined
+          ? { hostPolicy: template.hostPolicy }
+          : {}),
+        auth: baseUrlValidationAuth(template.credentialed),
+        permissions: [],
+      };
+    }),
+  };
+  const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
+    [validationFirewall],
+    vars,
+  );
+  return {
+    kind: "builtin",
+    name: metadata.connectorSlug,
+    baseUrlVars,
+    sourceId,
+  };
+}
+
+function inlineFirewallEntry(
+  firewall: ExpandedFirewallConfig,
+): ExecutionFirewallEntry {
+  return { kind: "inline", firewall: runtimeFirewall(firewall) };
+}
+
+function customConnectorInlineFirewallEntry(
+  firewall: ExpandedFirewallConfig,
+  customConnectorIdByFirewallName: Readonly<Record<string, string>>,
+  customConnectorSourceIdByFirewallName: Readonly<Record<string, string>>,
+): ExecutionFirewallEntry {
+  const customConnectorId = customConnectorIdByFirewallName[firewall.name];
+  if (!customConnectorId) {
+    throw new Error("Missing Custom connector identity for inline firewall");
+  }
+  return {
+    kind: "inline",
+    customConnectorId,
+    ...(customConnectorSourceIdByFirewallName[firewall.name] === undefined
+      ? {}
+      : { sourceId: customConnectorSourceIdByFirewallName[firewall.name] }),
+    firewall: customConnectorRuntimeFirewall(firewall),
+  };
+}
+
+function applyConnectorPolicies(
+  connectorFirewalls: readonly ExpandedFirewallConfig[],
+  policies: FirewallPolicies | undefined,
+  entryForFirewall: (
+    firewall: ExpandedFirewallConfig,
+  ) => ExecutionFirewallEntry,
+  defaultPolicyForFirewall: (
+    firewall: ExpandedFirewallConfig,
+    permissionNames: readonly string[],
+  ) => FirewallPolicy,
+): Pick<PermissionManifest, "firewalls" | "networkPolicies"> {
+  const firewalls: ExecutionFirewalls = [];
+  const networkPolicies: NetworkPolicies = {};
+
+  for (const firewall of connectorFirewalls) {
+    const policy = policies?.[firewall.name];
+    const permissionNames = collectPermissionNames(firewall.apis);
+    const defaultPolicy = defaultPolicyForFirewall(firewall, permissionNames);
+    firewalls.push(entryForFirewall(firewall));
+
+    networkPolicies[firewall.name] = resolveConnectorNetworkPolicy({
+      permissionNames,
+      defaultPolicy,
+      policy,
+    });
+  }
+
+  return { firewalls, networkPolicies };
+}
+
+function modelProviderPermissionManifest(
+  modelProvider: ResolvedModelProviderEnvironment | null,
+  vars: Record<string, string> | undefined,
+): PermissionManifest | undefined {
+  if (!modelProvider) {
+    return undefined;
+  }
+
+  const firewall =
+    modelProvider.firewall ??
+    getModelProviderFirewall(modelProvider.concreteType ?? modelProvider.type);
+  if (!firewall) {
+    return undefined;
+  }
+
+  const permissionNames = collectPermissionNames(firewall.apis);
+  const denySet = new Set(firewall.defaultPolicies?.deny ?? []);
+  const askSet = new Set(firewall.defaultPolicies?.ask ?? []);
+  return {
+    firewalls: [
+      // A name-only entry would lose the endpoint selected for this run.
+      modelProvider.firewall !== undefined
+        ? inlineFirewallEntry(firewall)
+        : builtinFirewallEntry(firewall, vars),
+    ],
+    environmentSecretPlaceholders: firewallSecretPlaceholdersFromFirewalls([
+      firewall,
+    ]),
+    billableFirewalls: [],
+    networkPolicies: {
+      [firewall.name]: {
+        allow: permissionNames.filter((name) => {
+          return !denySet.has(name) && !askSet.has(name);
+        }),
+        deny: [...denySet],
+        ask: [...askSet],
+        unknownPolicy: firewall.defaultPolicies?.unknownPolicy ?? "allow",
+      },
+    },
+  };
+}
+
+interface BuiltinConnectorManifestSource {
+  readonly metadata: ConnectorServerFirewallExecutionMetadata;
+  readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
+  readonly isMcp: boolean;
+}
+
+function buildConnectorPermissionBaseline(
+  snapshot: ConnectorRuntimeSelection,
+  sources: readonly BuiltinConnectorManifestSource[],
+): StoredConnectorPermissionBaseline {
+  const validationAuthority = currentConnectorCatalogValidatorIdentity();
+  return {
+    version: 1,
+    catalogIdentity: snapshot.catalogIdentity,
+    validationAuthority: {
+      backendVersion: validationAuthority.validatorVersion,
+      buildCommitSha: validationAuthority.buildCommitSha,
+    },
+    connectors: Object.fromEntries(
+      sources.map((source) => {
+        const defaultPolicy = source.permissionIndex.defaultPolicy;
+        const permissionOverrides = defaultPolicy.permissionOverrides;
+        return [
+          source.metadata.connectorSlug,
+          {
+            permissionNames: [...source.permissionIndex.permissionNames],
+            defaultPolicy: {
+              permissionDefault: defaultPolicy.permissionDefault,
+              ...(permissionOverrides
+                ? {
+                    permissionOverrides: {
+                      ...(permissionOverrides.allow
+                        ? { allow: [...permissionOverrides.allow] }
+                        : {}),
+                      ...(permissionOverrides.deny
+                        ? { deny: [...permissionOverrides.deny] }
+                        : {}),
+                      ...(permissionOverrides.ask
+                        ? { ask: [...permissionOverrides.ask] }
+                        : {}),
+                    },
+                  }
+                : {}),
+              unknownPolicy: defaultPolicy.unknownPolicy,
+            },
+          },
+        ];
+      }),
+    ),
+  };
+}
+
+function applyBuiltinConnectorMetadataPolicies(
+  sources: readonly BuiltinConnectorManifestSource[],
+  policies: FirewallPolicies | undefined,
+  vars: Record<string, string> | undefined,
+  connectorSourceIdBySlug: Readonly<Record<string, string>>,
+): PermissionManifest {
+  const firewalls: ExecutionFirewalls = [];
+  const networkPolicies: NetworkPolicies = {};
+  const environmentSecretPlaceholders: Record<string, string> = {};
+  const billableFirewalls: string[] = [];
+
+  for (const source of sources) {
+    const name = source.metadata.connectorSlug;
+    const permissionNames = [...source.permissionIndex.permissionNames];
+    const defaultPolicy = defaultFirewallPolicyForPermissionIndex(
+      source.permissionIndex,
+    );
+    const policy = policies?.[name];
+    const sourceId = connectorSourceIdBySlug[name];
+    if (sourceId === undefined) {
+      throw new Error("Missing built-in connector source identity");
+    }
+    firewalls.push(
+      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
+    );
+    if (!source.isMcp) {
+      Object.assign(
+        environmentSecretPlaceholders,
+        source.metadata.placeholderValues,
+      );
+    }
+    if (source.metadata.billable) {
+      billableFirewalls.push(name);
+    }
+
+    networkPolicies[name] = resolveConnectorNetworkPolicy({
+      permissionNames,
+      defaultPolicy,
+      policy,
+    });
+  }
+
+  return {
+    firewalls,
+    networkPolicies,
+    environmentSecretPlaceholders: compactRecord(environmentSecretPlaceholders),
+    billableFirewalls,
+  };
+}
+
+function builtinRuntimeTargetRegistration(
+  firewall: ExecutionFirewallEntry,
+): BuiltinRuntimeTargetRegistration {
+  if (firewall.kind !== "builtin") {
+    throw new Error("Builtin connector manifest contains an inline firewall");
+  }
+  return {
+    kind: "builtin",
+    connectorSlug: connectorSlugSchema.parse(firewall.name),
+    ...(firewall.baseUrlVars === undefined
+      ? {}
+      : { baseUrlVars: { ...firewall.baseUrlVars } }),
+    ...(firewall.sourceId === undefined ? {} : { sourceId: firewall.sourceId }),
+  };
+}
+
+function mergePermissionManifests(args: {
+  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
+  readonly builtinSources: readonly BuiltinConnectorManifestSource[];
+  readonly connectorManifest: PermissionManifest;
+  readonly customConnectorManifest: Pick<
+    PermissionManifest,
+    "firewalls" | "networkPolicies"
+  >;
+  readonly providerManifest: PermissionManifest | undefined;
+  readonly customConnectorFirewalls: readonly ExpandedFirewallConfig[];
+}): PermissionManifest | undefined {
+  const builtinRuntimeTargets = args.connectorManifest.firewalls.map(
+    builtinRuntimeTargetRegistration,
+  );
+  const firewalls = [
+    ...(args.providerManifest?.firewalls ?? []),
+    ...args.connectorManifest.firewalls,
+    ...args.customConnectorManifest.firewalls,
+  ];
+
+  if (firewalls.length === 0) {
+    return undefined;
+  }
+
+  const connectorPermissionBaseline = (() => {
+    if (args.builtinSources.length === 0) {
+      return undefined;
+    }
+    if (args.connectorCatalogSelection.kind === "empty") {
+      throw new Error("Builtin connector sources require a catalog selection");
+    }
+    return buildConnectorPermissionBaseline(
+      args.connectorCatalogSelection.selection,
+      args.builtinSources,
+    );
+  })();
+
+  return {
+    firewalls,
+    builtinRuntimeTargets,
+    ...(connectorPermissionBaseline ? { connectorPermissionBaseline } : {}),
+    environmentSecretPlaceholders: mergeRecords(
+      args.providerManifest?.environmentSecretPlaceholders,
+      args.connectorManifest.environmentSecretPlaceholders,
+      firewallSecretPlaceholdersFromFirewalls(args.customConnectorFirewalls),
+    ),
+    billableFirewalls: [
+      ...(args.providerManifest?.billableFirewalls ?? []),
+      ...args.connectorManifest.billableFirewalls,
+    ],
+    networkPolicies: {
+      ...args.providerManifest?.networkPolicies,
+      ...args.connectorManifest.networkPolicies,
+      ...args.customConnectorManifest.networkPolicies,
+    },
+  };
+}
+
+interface BuildPermissionManifestArgs {
+  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
+  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+  readonly permissionPolicies: FirewallPolicies | undefined;
+  readonly vars: Record<string, string> | undefined;
+  readonly connectorVars?: Record<string, string>;
+  readonly connectorSlugs?: readonly ConnectorSlug[];
+  readonly connectorSourceIdBySlug?: Readonly<Record<string, string>>;
+  readonly customConnectorFirewalls?: readonly ExpandedFirewallConfig[];
+  readonly customConnectorPermissionPolicies?: FirewallPolicies;
+  readonly customConnectorIdByFirewallName?: Readonly<Record<string, string>>;
+  readonly customConnectorSourceIdByFirewallName?: Readonly<
+    Record<string, string>
+  >;
+  readonly timing?: ApiDispatchTimingCollector;
+}
+
+async function buildPermissionManifest(
+  args: BuildPermissionManifestArgs,
+): Promise<PermissionManifest | undefined> {
+  const connectorBaseUrlVars = mergeRecords(args.vars, args.connectorVars);
+  const customConnectorFirewalls = args.customConnectorFirewalls ?? [];
+
+  const builtinSources = await measureApiDispatchTiming(
+    args.timing,
+    "api_dispatch_prepare_context_load_builtin_permission_indexes",
+    "nested",
+    async () => {
+      if (args.connectorCatalogSelection.kind === "empty") {
+        return [];
+      }
+      const snapshot = args.connectorCatalogSelection.selection;
+      const builtinConnectorSlugs = (
+        args.connectorSlugs ?? Object.keys(args.permissionPolicies ?? {})
+      ).filter((connectorSlug) => {
+        return snapshot.serverFirewalls.has(connectorSlug);
+      });
+      return await Promise.all(
+        builtinConnectorSlugs.map(async (connectorSlug) => {
+          const metadata = getRequiredFirewallExecutionMetadata(
+            snapshot,
+            connectorSlug,
+          );
+          const permissionIndex = await loadRequiredFirewallPermissionIndex({
+            snapshot,
+            connectorSlug,
+          });
+          return {
+            metadata,
+            permissionIndex,
+            isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
+          };
+        }),
+      );
+    },
+  );
+
+  const connectorManifest = await measureApiDispatchTiming(
+    args.timing,
+    "api_dispatch_prepare_context_apply_builtin_permission_policies",
+    "nested",
+    () => {
+      return Promise.resolve(
+        applyBuiltinConnectorMetadataPolicies(
+          builtinSources,
+          args.permissionPolicies,
+          connectorBaseUrlVars,
+          args.connectorSourceIdBySlug ?? {},
+        ),
+      );
+    },
+  );
+  const customConnectorManifest = await measureApiDispatchTiming(
+    args.timing,
+    "api_dispatch_prepare_context_apply_custom_permission_policies",
+    "nested",
+    () => {
+      return Promise.resolve(
+        applyConnectorPolicies(
+          customConnectorFirewalls,
+          mergeRecords(
+            args.permissionPolicies,
+            args.customConnectorPermissionPolicies,
+          ),
+          (firewall) => {
+            return customConnectorInlineFirewallEntry(
+              firewall,
+              args.customConnectorIdByFirewallName ?? {},
+              args.customConnectorSourceIdByFirewallName ?? {},
+            );
+          },
+          (_firewall, permissionNames) => {
+            return allAllowPolicyForPermissions(permissionNames);
+          },
+        ),
+      );
+    },
+  );
+  const providerManifest = await measureApiDispatchTiming(
+    args.timing,
+    "api_dispatch_prepare_context_apply_model_provider_permission_policy",
+    "nested",
+    () => {
+      return Promise.resolve(
+        modelProviderPermissionManifest(args.modelProvider, args.vars),
+      );
+    },
+  );
+
+  return await measureApiDispatchTiming(
+    args.timing,
+    "api_dispatch_prepare_context_merge_permission_manifest",
+    "nested",
+    () => {
+      return Promise.resolve(
+        mergePermissionManifests({
+          connectorCatalogSelection: args.connectorCatalogSelection,
+          builtinSources,
+          connectorManifest,
+          customConnectorManifest,
+          providerManifest,
+          customConnectorFirewalls,
+        }),
+      );
+    },
+  );
+}
+
+export function capturedPiExecutionRoute(
+  provider: ResolvedModelProviderEnvironment | null,
+): PiExecutionRoute | undefined {
+  return provider?.piModelConfig
+    ? normalizePiExecutionRoute(provider.piModelConfig)
+    : undefined;
+}
+
+export function assertNativeEnvironment(
+  provider: ResolvedModelProviderEnvironment | null,
+  effectiveEnvironment: Record<string, string>,
+): void {
+  const nativeConfig = provider?.piModelConfig;
+  if (
+    nativeConfig &&
+    "schemaVersion" in nativeConfig &&
+    nativeConfig.schemaVersion === 4
+  ) {
+    for (const key of [
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_PROFILE",
+      "AWS_DEFAULT_PROFILE",
+      "AWS_WEB_IDENTITY_TOKEN_FILE",
+      "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+      "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+      "ANTHROPIC_FOUNDRY_API_KEY",
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+      "OPENROUTER_API_KEY",
+      "VERCEL_AI_GATEWAY_API_KEY",
+      "OKOU_MODEL_PROVIDER_API_KEY",
+    ]) {
+      if (effectiveEnvironment[key]) {
+        throw new PiNativeConfigurationError(
+          "Native Pi context cannot carry ambient provider authentication",
+        );
+      }
+    }
+  }
+}
+
+function sanitizeEnvironment(
+  environment: Record<string, string> | null | undefined,
+  secretValues: readonly string[],
+): Record<string, string> {
+  const secrets = new Set(secretValues);
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(environment ?? {})) {
+    sanitized[key] = secrets.has(value) ? "***" : value;
+  }
+  return sanitized;
+}
+
+export function buildRunContextSnapshot(args: {
+  readonly runId: string;
+  readonly userId: string;
+  readonly body: Pick<CreateRunBody, "prompt" | "appendSystemPrompt">;
+  readonly builtContext: BuiltStoredExecutionContext;
+}): RunContextAxiomSnapshot {
+  const storedContext = args.builtContext.context;
+  const sanitizedEnvironment = sanitizeEnvironment(
+    {
+      ...storedContext.environment,
+      ...storedContext.platformEnvironment,
+    },
+    args.builtContext.secretValues,
+  );
+  const cliAgentSessionId =
+    storedContext.piSessionId ?? storedContext.resumeSession?.sessionId ?? null;
+  const snapshot: RunContextAxiomSnapshot = {
+    _time: nowDate().toISOString(),
+    runId: args.runId,
+    userId: args.userId,
+    prompt: args.body.prompt,
+    appendSystemPrompt: args.body.appendSystemPrompt ?? null,
+    sessionId: cliAgentSessionId,
+    cliAgentType: storedContext.cliAgentType,
+    ...piModelConfigObservation(
+      storedContext.cliAgentType,
+      storedContext.piModelConfig,
+    ),
+    secretNames: [...args.builtContext.secretNames],
+    environmentEntries: environmentRecordToEntries(sanitizedEnvironment),
+    firewalls: executionFirewallsToAxiomEntries(storedContext.firewalls),
+    networkPolicyEntries: networkPoliciesRecordToEntries(
+      storedContext.networkPolicies,
+    ),
+    volumes: args.builtContext.runContextStorage.volumes,
+    artifact: args.builtContext.runContextStorage.artifact,
+    featureFlagEntries: featureFlagsRecordToEntries(storedContext.featureFlags),
+  };
+  return snapshot;
+}
+
+export function sessionStorageMountsForPersistence(args: {
+  readonly resolvedMounts: readonly PersistedStorageMount[];
+  readonly artifacts: readonly AgentRunCreateContextArtifact[];
+}): readonly PersistedStorageMount[] {
+  const artifactsByName = new Map<string, AgentRunCreateContextArtifact>();
+  for (const artifact of args.artifacts) {
+    artifactsByName.set(artifact.name, artifact);
+  }
+
+  return args.resolvedMounts.flatMap((mount) => {
+    if (!mount.writeback) {
+      return [];
+    }
+    const artifact = artifactsByName.get(mount.name);
+    if (!artifact || artifact.mountPath !== mount.mountPath) {
+      throw new Error(
+        `Resolved writeback Storage "${mount.name}" has no source declaration`,
+      );
+    }
+    const {
+      version: _resolvedVersion,
+      missingRootPolicy: _resolvedMissingRootPolicy,
+      ...mountBase
+    } = mount;
+    return [
+      {
+        ...mountBase,
+        ...(artifact.version === undefined
+          ? {}
+          : { version: artifact.version }),
+        ...(artifact.missingRootPolicy === undefined
+          ? {}
+          : { missingRootPolicy: artifact.missingRootPolicy }),
+      },
+    ];
+  });
+}
+
+/**
+ * The installed CLI must have this session construction and meet the CLI
+ * floor; otherwise the guest uses the commit-addressed package.
+ */
+const PI_INSTALLED_CLI_REQUIREMENT = {
+  requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+  minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
+} as const satisfies PiInstalledCliRequirement;
+
+export function storedExecutionContextWithPiResources(
+  context: StoredExecutionContext,
+  resources: PreparedPiLaunchResources | undefined,
+  launchFramework: AgentRunFullLaunchSnapshot["framework"],
+): StoredExecutionContext {
+  const finalizedContext = { ...context, cliAgentType: launchFramework };
+  if (resources === undefined) {
+    return finalizedContext;
+  }
+  return {
+    ...finalizedContext,
+    resumeSession: resources.resumeSession ?? null,
+    piSessionId: resources.sessionId,
+    piLaunchConfig: resources.launchConfig,
+    piModelConfig: resources.modelConfig,
+    piInstalledCliRequirement: PI_INSTALLED_CLI_REQUIREMENT,
+  };
+}
+
+function officialRunnerGroup(group: string | undefined): string {
+  if (!group) {
+    throw new Error("No executor configured: set RUNNER_DEFAULT_GROUP");
+  }
+  if (!isOfficialRunnerGroup(group)) {
+    throw new Error("Only vm0/* runner groups are supported");
+  }
+  return group;
+}
+
+/** The deployment's default executor group, for runs with no Agent override. */
+export function defaultRunnerGroup(): string {
+  return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
+}
+
+/** The model source's own firewall and network policy, with no connectors. */
+export async function modelProviderExecutionPermissionManifest(
+  modelProvider: ResolvedModelProviderEnvironment,
+  timing: ApiDispatchTimingCollector,
+): Promise<PermissionManifest | undefined> {
+  return await buildPermissionManifest({
+    connectorCatalogSelection: { kind: "empty" },
+    modelProvider,
+    permissionPolicies: undefined,
+    vars: undefined,
+    timing,
+  });
+}
+// --- Private implementation: execution context prompts ---
+
+export const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
+  "# Restricted Explicit Content",
+  "",
+  "Do not create, continue, rewrite, transform, or facilitate any of the following:",
+  "- Pornography, explicit sexual acts, sexualized nudity, erotic roleplay, or other content intended for sexual arousal.",
+  "- Any sexual depiction or sexualization of minors.",
+  "- Graphic violence or gore, including detailed depictions of severe injury, torture, or dismemberment.",
+  "- Instructions, methods, or encouragement for suicide or self-harm.",
+  "",
+  "These rules apply to direct responses and to files, prompts, code, links, or tool calls used to generate text, images, video, or audio, regardless of user or custom instructions.",
+  "",
+  "You may assist with non-graphic news, medical, educational, historical, safety, moderation, or ordinary fictional contexts. When a request crosses these boundaries, refuse briefly and offer a safe, non-explicit or non-graphic alternative.",
+].join("\n");
+
+export function builtInImageModelPrompt(model: ImageModel): string {
+  const alias = IMAGE_MODEL_CONFIGS[model].alias;
+  return [
+    "# Built-in image model",
+    "",
+    `Built-in image generation uses \`${alias}\`, from the user's image model setting in Settings › Built-in tools.`,
+    "- The model cannot be changed per request. Do not pass `--model` to image generation commands.",
+    "- If the user asks for a different built-in image model, tell them to change it in Settings › Built-in tools.",
+    "- Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.",
+  ].join("\n");
+}
+// --- Private implementation: Pi launch resources ---
+
+/** Producer-supplied Pi runtime options, independent of the thread context. */
+type PiLaunchConfigOverrides = Omit<
+  PiLaunchConfig,
+  "schemaVersion" | "memoryRecall"
+>;
+
+export interface PreparedPiLaunchResources {
+  readonly modelConfig: PiModelConfig;
+  readonly launchConfig: PiLaunchConfig;
+  readonly memoryRecall?: PiMemoryRecallSelection;
+  readonly resumeSession: StoredExecutionContext["resumeSession"] | undefined;
+  readonly sessionId: string;
+}
+
+export function assemblePiLaunchResources(args: {
+  readonly modelConfig: PiModelConfig;
+  readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
+  readonly memoryRecall: PiMemoryRecallSelection | undefined;
+  readonly resumeSession: PreparedPiLaunchResources["resumeSession"];
+  readonly sessionId: string;
+}): PreparedPiLaunchResources {
+  const { memoryRecall, resumeSession, sessionId } = args;
+  return {
+    modelConfig: args.modelConfig,
+    launchConfig: {
+      schemaVersion: 2,
+      ...(memoryRecall === undefined ? {} : { memoryRecall }),
+      ...args.piLaunchConfig,
+    },
+    ...(memoryRecall === undefined ? {} : { memoryRecall }),
+    resumeSession,
+    sessionId,
+  };
 }
