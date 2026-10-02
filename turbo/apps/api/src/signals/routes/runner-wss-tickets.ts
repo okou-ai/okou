@@ -7,12 +7,11 @@ import { authRoute } from "../auth/auth-route";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  consumeRunnerWssTicket,
-  issueRunnerWssTicket,
-  revokeRunnerWssTickets,
+  consumeRunnerWssTicket$,
+  issueRunnerWssTicket$,
+  revokeRunnerWssTickets$,
 } from "../services/runner-wss-ticket.service";
 
 const unavailable = notFound("WSS connection unavailable");
@@ -25,7 +24,7 @@ const ownerAuth = {
 const bootstrapInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = get(organizationAuthContext$);
   const params = get(pathParamsOf(runnerWssTicketsContract.bootstrap));
-  const result = await issueRunnerWssTicket(set(writeDb$), {
+  const result = await set(issueRunnerWssTicket$, {
     runId: params.runId,
     owner: { orgId: owner.orgId, userId: owner.userId },
   });
@@ -36,7 +35,7 @@ const bootstrapInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = get(organizationAuthContext$);
   const params = get(pathParamsOf(runnerWssTicketsContract.revoke));
-  const revoked = await revokeRunnerWssTickets(set(writeDb$), {
+  const revoked = await set(revokeRunnerWssTickets$, {
     runId: params.runId,
     owner: { orgId: owner.orgId, userId: owner.userId },
   });
@@ -82,7 +81,7 @@ const consume$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const result = await consumeRunnerWssTicket(set(writeDb$), body.data);
+  const result = await set(consumeRunnerWssTicket$, body.data);
   signal.throwIfAborted();
   return result ? { status: 200 as const, body: result } : unavailable;
 });
