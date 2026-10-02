@@ -2,15 +2,24 @@
  * Pi memory maintenance's private Runner payload, run rows and pending
  * persistence. Pi assembles them from its own facts only — the claimed job,
  * the pinned model source, the exact memory mount and the maintenance
- * launch — and reuses the Runner protocol types plus the owner-neutral
- * primitives for model permissions, Pi launch resources and job payloads.
+ * launch — and reuses only the Runner protocol types and the approved
+ * resource interfaces; its Runner payload helpers are its own.
  * Only pi-memory-maintenance-execution.service.ts imports this module.
  */
 import {
   DEFAULT_PROFILE,
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
+  type PiInstalledCliRequirement,
+  type PiLaunchConfig,
+  type PiModelConfig,
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
+import {
+  PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
+  normalizePiExecutionRoute,
+} from "@okouai/pi-agent-runtime";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   type FeatureSwitchContext,
@@ -26,7 +35,8 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { env } from "../../lib/env";
+import { env, optionalEnv } from "../../lib/env";
+import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import { isPiLangfuseDebugRunEnvironment } from "../../lib/pi-langfuse-debug";
@@ -40,16 +50,16 @@ import {
   type ResolvedModelProviderEnvironment,
   nativeCredentialEnvironment,
 } from "./execution-model-source.service";
+import type { PreparedAgentRunStorage } from "./execution-storage.service";
+import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
+import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {
-  runnerJobPayload,
-  assertNativeEnvironment,
-  buildRunContextSnapshot,
-  defaultRunnerGroup,
-  capturedPiExecutionRoute,
-  storedExecutionContextWithPiResources,
-  withoutOkouNamespaceEntries,
-  type PreparedPiLaunchResources,
-} from "./thread-claim-run.service";
+  type RunContextAxiomSnapshot,
+  environmentRecordToEntries,
+  executionFirewallsToAxiomEntries,
+  featureFlagsRecordToEntries,
+  networkPoliciesRecordToEntries,
+} from "./run-context-snapshot.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
   isPersonalSubscriptionProviderType,
@@ -64,7 +74,14 @@ import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
  * default executor group and the default profile.
  */
 export function maintenanceRunnerGroup(): string {
-  return defaultRunnerGroup();
+  const group = optionalEnv("RUNNER_DEFAULT_GROUP");
+  if (!group) {
+    throw new Error("No executor configured: set RUNNER_DEFAULT_GROUP");
+  }
+  if (group.split("/")[0] !== "vm0") {
+    throw new Error("Only vm0/* runner groups are supported");
+  }
+  return group;
 }
 
 export const MAINTENANCE_RUNNER_PROFILE = DEFAULT_PROFILE;
@@ -112,7 +129,69 @@ function maintenanceModelEnvironment(args: {
     vars: undefined,
     secrets: { ...args.secrets, ...args.placeholders },
   });
-  return withoutOkouNamespaceEntries(compact(result) ?? null);
+  // OKOU_* names belong to the platform; a model template cannot set them.
+  return (
+    compact(
+      Object.fromEntries(
+        Object.entries(result).filter(([key]) => {
+          return !key.startsWith("OKOU_");
+        }),
+      ),
+    ) ?? null
+  );
+}
+
+/** Credentials a native Pi configuration must never receive ambiently. */
+const AMBIENT_PROVIDER_AUTH_KEYS = [
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "AWS_PROFILE",
+  "AWS_DEFAULT_PROFILE",
+  "AWS_WEB_IDENTITY_TOKEN_FILE",
+  "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+  "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+  "ANTHROPIC_FOUNDRY_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "OPENROUTER_API_KEY",
+  "VERCEL_AI_GATEWAY_API_KEY",
+  "OKOU_MODEL_PROVIDER_API_KEY",
+] as const;
+
+function assertNoAmbientProviderAuth(
+  modelConfig: PiModelConfig,
+  effectiveEnvironment: Record<string, string>,
+): void {
+  if (!("schemaVersion" in modelConfig) || modelConfig.schemaVersion !== 4) {
+    return;
+  }
+  for (const key of AMBIENT_PROVIDER_AUTH_KEYS) {
+    if (effectiveEnvironment[key]) {
+      throw new PiNativeConfigurationError(
+        "Native Pi context cannot carry ambient provider authentication",
+      );
+    }
+  }
+}
+
+/**
+ * The installed CLI must have this session construction and meet the CLI
+ * floor; otherwise the guest uses the commit-addressed package.
+ */
+const MAINTENANCE_PI_CLI_REQUIREMENT = {
+  requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+  minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
+} as const satisfies PiInstalledCliRequirement;
+
+/** The Pi session and launch configuration of one maintenance run. */
+export interface MaintenancePiLaunch {
+  readonly modelConfig: PiModelConfig;
+  readonly maintenance: NonNullable<PiLaunchConfig["maintenance"]>;
+  readonly sessionId: string;
 }
 
 interface MaintenanceExecutionContextInput {
@@ -129,7 +208,7 @@ interface MaintenanceExecutionContextInput {
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly storageMounts: StoredExecutionContext["storageMounts"];
-  readonly piResources: PreparedPiLaunchResources;
+  readonly pi: MaintenancePiLaunch;
 }
 
 /** The Runner's stored execution context for one maintenance run. */
@@ -139,7 +218,9 @@ export function buildMaintenanceExecutionContext(
   const permissions = args.permissionManifest;
   const executionSecrets = maintenanceExecutionSecrets(args.modelProvider);
   const nativeEnvironment = nativeCredentialEnvironment(
-    capturedPiExecutionRoute(args.modelProvider),
+    args.modelProvider.piModelConfig
+      ? normalizePiExecutionRoute(args.modelProvider.piModelConfig)
+      : undefined,
   );
   const platformEnvironment = {
     [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(args.disabledPaidTools),
@@ -156,7 +237,12 @@ export function buildMaintenanceExecutionContext(
       ? { ...modelEnvironment, ...nativeEnvironment }
       : modelEnvironment;
   const effectiveEnvironment = { ...environment, ...platformEnvironment };
-  assertNativeEnvironment(args.modelProvider, effectiveEnvironment);
+  if (args.modelProvider.piModelConfig) {
+    assertNoAmbientProviderAuth(
+      args.modelProvider.piModelConfig,
+      effectiveEnvironment,
+    );
+  }
   const secretValues = Object.values(executionSecrets.secrets);
   const environmentKeyByValue = new Map<string, string>();
   for (const [key, value] of Object.entries(effectiveEnvironment)) {
@@ -190,13 +276,13 @@ export function buildMaintenanceExecutionContext(
       args.usage.modelUsageLongContextMinTotalInputTokens,
     codexRuntimeConfig: args.modelProvider.codexRuntimeConfig ?? null,
     storageMounts: args.storageMounts,
+    piSessionId: args.pi.sessionId,
+    piLaunchConfig: { schemaVersion: 2, maintenance: args.pi.maintenance },
+    piModelConfig: args.pi.modelConfig,
+    piInstalledCliRequirement: MAINTENANCE_PI_CLI_REQUIREMENT,
   };
   return {
-    context: storedExecutionContextWithPiResources(
-      context,
-      args.piResources,
-      "pi",
-    ),
+    context,
     secretNames: Object.keys(executionSecrets.secrets),
     secretValues,
   };
@@ -378,9 +464,7 @@ export interface MaintenanceLaunch {
   readonly secretValues: readonly string[];
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly sessionStorageMounts: readonly PersistedStorageMount[];
-  readonly runContextStorage: Parameters<
-    typeof buildRunContextSnapshot
-  >[0]["builtContext"]["runContextStorage"];
+  readonly runContextStorage: PreparedAgentRunStorage["runContextStorage"];
 }
 
 /** Session, run, callback, attribution, diagnostic registration and job. */
@@ -438,14 +522,61 @@ export async function insertPendingMaintenanceRun(
 }
 
 function maintenanceJobPayload(launch: MaintenanceLaunch) {
-  return runnerJobPayload({
+  return {
     runnerGroup: launch.runnerGroup,
     profile: MAINTENANCE_RUNNER_PROFILE,
     cliAgentSessionId: launch.context.piSessionId ?? null,
     // Maintenance runs never share a sandbox with a thread.
     reuseKey: null,
+    historyGenerationRunId: historyGenerationRunIdForStoredExecutionContext(
+      launch.context,
+    ),
     executionContext: launch.context,
-  });
+  };
+}
+
+/** Environment values that are model secrets are masked in telemetry. */
+function maskedEnvironment(
+  environment: Record<string, string>,
+  secretValues: readonly string[],
+): Record<string, string> {
+  const secrets = new Set(secretValues);
+  const masked: Record<string, string> = {};
+  for (const [key, value] of Object.entries(environment)) {
+    masked[key] = secrets.has(value) ? "***" : value;
+  }
+  return masked;
+}
+
+function maintenanceRunContextSnapshot(
+  record: MaintenanceRunRecord,
+  launch: MaintenanceLaunch,
+): RunContextAxiomSnapshot {
+  const { context } = launch;
+  return {
+    _time: nowDate().toISOString(),
+    runId: record.runId,
+    userId: record.userId,
+    prompt: record.prompt,
+    appendSystemPrompt: record.appendSystemPrompt,
+    sessionId: context.piSessionId ?? context.resumeSession?.sessionId ?? null,
+    cliAgentType: context.cliAgentType,
+    ...piModelConfigObservation(context.cliAgentType, context.piModelConfig),
+    secretNames: [...launch.secretNames],
+    environmentEntries: environmentRecordToEntries(
+      maskedEnvironment(
+        { ...context.environment, ...context.platformEnvironment },
+        launch.secretValues,
+      ),
+    ),
+    firewalls: executionFirewallsToAxiomEntries(context.firewalls),
+    networkPolicyEntries: networkPoliciesRecordToEntries(
+      context.networkPolicies,
+    ),
+    volumes: launch.runContextStorage.volumes,
+    artifact: launch.runContextStorage.artifact,
+    featureFlagEntries: featureFlagsRecordToEntries(context.featureFlags),
+  };
 }
 
 /** Best-effort run-context telemetry for the committed run. */
@@ -455,21 +586,7 @@ export function ingestMaintenanceRunContext(
 ): void {
   safeSync(() => {
     return ingestToAxiom(getDatasetName("run-context"), [
-      buildRunContextSnapshot({
-        runId: record.runId,
-        userId: record.userId,
-        body: {
-          prompt: record.prompt,
-          appendSystemPrompt: record.appendSystemPrompt,
-        },
-        builtContext: {
-          context: launch.context,
-          secretNames: [...launch.secretNames],
-          secretValues: [...launch.secretValues],
-          persistedStorageMounts: [...launch.runStorageMounts],
-          runContextStorage: launch.runContextStorage,
-        },
-      }),
+      maintenanceRunContextSnapshot(record, launch),
     ]);
   });
 }

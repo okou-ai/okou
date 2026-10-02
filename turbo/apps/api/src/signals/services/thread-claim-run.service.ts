@@ -19983,7 +19983,7 @@ interface RunnerJobPayload {
   readonly executionContext: StoredExecutionContext;
 }
 
-export function runnerJobPayload(args: {
+function runnerJobPayload(args: {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
@@ -20079,7 +20079,7 @@ function firewallSecretPlaceholdersFromFirewalls(
   return Object.keys(placeholders).length > 0 ? placeholders : undefined;
 }
 
-export function withoutOkouNamespaceEntries<T>(
+function withoutOkouNamespaceEntries<T>(
   values: Readonly<Record<string, T>> | null,
 ): Record<string, T> | null {
   if (!values) {
@@ -20601,7 +20601,7 @@ async function buildPermissionManifest(
   );
 }
 
-export function capturedPiExecutionRoute(
+function capturedPiExecutionRoute(
   provider: ResolvedModelProviderEnvironment | null,
 ): PiExecutionRoute | undefined {
   return provider?.piModelConfig
@@ -20609,7 +20609,7 @@ export function capturedPiExecutionRoute(
     : undefined;
 }
 
-export function assertNativeEnvironment(
+function assertNativeEnvironment(
   provider: ResolvedModelProviderEnvironment | null,
   effectiveEnvironment: Record<string, string>,
 ): void {
@@ -20658,7 +20658,7 @@ function sanitizeEnvironment(
   return sanitized;
 }
 
-export function buildRunContextSnapshot(args: {
+function buildRunContextSnapshot(args: {
   readonly runId: string;
   readonly userId: string;
   readonly body: Pick<CreateRunBody, "prompt" | "appendSystemPrompt">;
@@ -20699,7 +20699,7 @@ export function buildRunContextSnapshot(args: {
   return snapshot;
 }
 
-export function sessionStorageMountsForPersistence(args: {
+function sessionStorageMountsForPersistence(args: {
   readonly resolvedMounts: readonly PersistedStorageMount[];
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
 }): readonly PersistedStorageMount[] {
@@ -20747,7 +20747,7 @@ const PI_INSTALLED_CLI_REQUIREMENT = {
   requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
 } as const satisfies PiInstalledCliRequirement;
 
-export function storedExecutionContextWithPiResources(
+function storedExecutionContextWithPiResources(
   context: StoredExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
   launchFramework: AgentRunFullLaunchSnapshot["framework"],
@@ -20776,27 +20776,9 @@ function officialRunnerGroup(group: string | undefined): string {
   return group;
 }
 
-/** The deployment's default executor group, for runs with no Agent override. */
-export function defaultRunnerGroup(): string {
-  return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
-}
-
-/** The model source's own firewall and network policy, with no connectors. */
-export async function modelProviderExecutionPermissionManifest(
-  modelProvider: ResolvedModelProviderEnvironment,
-  timing: ApiDispatchTimingCollector,
-): Promise<PermissionManifest | undefined> {
-  return await buildPermissionManifest({
-    connectorCatalogSelection: { kind: "empty" },
-    modelProvider,
-    permissionPolicies: undefined,
-    vars: undefined,
-    timing,
-  });
-}
 // --- Private implementation: execution context prompts ---
 
-export const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
+const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
   "# Restricted Explicit Content",
   "",
   "Do not create, continue, rewrite, transform, or facilitate any of the following:",
@@ -20810,7 +20792,7 @@ export const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
   "You may assist with non-graphic news, medical, educational, historical, safety, moderation, or ordinary fictional contexts. When a request crosses these boundaries, refuse briefly and offer a safe, non-explicit or non-graphic alternative.",
 ].join("\n");
 
-export function builtInImageModelPrompt(model: ImageModel): string {
+function builtInImageModelPrompt(model: ImageModel): string {
   const alias = IMAGE_MODEL_CONFIGS[model].alias;
   return [
     "# Built-in image model",
@@ -20829,7 +20811,7 @@ type PiLaunchConfigOverrides = Omit<
   "schemaVersion" | "memoryRecall"
 >;
 
-export interface PreparedPiLaunchResources {
+interface PreparedPiLaunchResources {
   readonly modelConfig: PiModelConfig;
   readonly launchConfig: PiLaunchConfig;
   readonly memoryRecall?: PiMemoryRecallSelection;
@@ -20837,7 +20819,7 @@ export interface PreparedPiLaunchResources {
   readonly sessionId: string;
 }
 
-export function assemblePiLaunchResources(args: {
+function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
   readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
   readonly memoryRecall: PiMemoryRecallSelection | undefined;

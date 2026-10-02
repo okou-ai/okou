@@ -4,11 +4,22 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import {
+  getModelProviderFirewall,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  canonicalizeFirewallBaseUrlVarsForExecution,
+  extractSecretNamesFromApis,
+  type ExecutionFirewallEntry,
+} from "@okouai/connectors/firewall-types";
+import type { PersistedStorageMount } from "@okouai/db/types";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODEL_CONFIGS,
+  type ImageModel,
+} from "@okouai/core/image-model-catalog";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { now } from "../../lib/time";
@@ -19,7 +30,13 @@ import { settle } from "../utils";
 import {
   ApiDispatchTimingCollector,
   ApiDispatchPhaseCollector,
+  measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
+import {
+  collectPermissionNames,
+  compactRecord,
+  runtimeFirewall,
+} from "./connector-runtime-preparation.service";
 import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
@@ -36,6 +53,7 @@ import {
   materializePreparedPiProvider,
   prepareModelUsageContext,
   resolvePreparedPiModelConfig,
+  type PermissionManifest,
   type ResolvedModelProviderEnvironment,
 } from "./execution-model-source.service";
 import {
@@ -46,13 +64,6 @@ import {
   writebackStorageEntryMetadata,
 } from "./execution-storage.service";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
-import {
-  modelProviderExecutionPermissionManifest,
-  sessionStorageMountsForPersistence,
-  assemblePiLaunchResources,
-  RESTRICTED_EXPLICIT_CONTENT_PROMPT,
-  builtInImageModelPrompt,
-} from "./thread-claim-run.service";
 import {
   MAINTENANCE_RUNNER_PROFILE,
   buildMaintenanceExecutionContext,
@@ -92,6 +103,32 @@ import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 const log = logger("PiMemoryMaintenanceExecution");
 
 const MAINTENANCE_PROMPT = "Run first-party Pi memory maintenance.";
+
+const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
+  "# Restricted Explicit Content",
+  "",
+  "Do not create, continue, rewrite, transform, or facilitate any of the following:",
+  "- Pornography, explicit sexual acts, sexualized nudity, erotic roleplay, or other content intended for sexual arousal.",
+  "- Any sexual depiction or sexualization of minors.",
+  "- Graphic violence or gore, including detailed depictions of severe injury, torture, or dismemberment.",
+  "- Instructions, methods, or encouragement for suicide or self-harm.",
+  "",
+  "These rules apply to direct responses and to files, prompts, code, links, or tool calls used to generate text, images, video, or audio, regardless of user or custom instructions.",
+  "",
+  "You may assist with non-graphic news, medical, educational, historical, safety, moderation, or ordinary fictional contexts. When a request crosses these boundaries, refuse briefly and offer a safe, non-explicit or non-graphic alternative.",
+].join("\n");
+
+function builtInImageModelPrompt(model: ImageModel): string {
+  const alias = IMAGE_MODEL_CONFIGS[model].alias;
+  return [
+    "# Built-in image model",
+    "",
+    `Built-in image generation uses \`${alias}\`, from the user's image model setting in Settings › Built-in tools.`,
+    "- The model cannot be changed per request. Do not pass `--model` to image generation commands.",
+    "- If the user asks for a different built-in image model, tell them to change it in Settings › Built-in tools.",
+    "- Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.",
+  ].join("\n");
+}
 
 /** A claim that must be released with an explicit worker disposition. */
 class PiMaintenanceDispositionError extends Error {
@@ -351,6 +388,96 @@ async function prepareMaintenanceStorage(
   return { artifact, storage };
 }
 
+/** The run's writeback mount, recorded on the session at the declared base. */
+function maintenanceSessionStorageMounts(
+  runStorageMounts: readonly PersistedStorageMount[],
+  artifact: Awaited<ReturnType<typeof prepareMaintenanceStorage>>["artifact"],
+): readonly PersistedStorageMount[] {
+  return runStorageMounts.flatMap((mount) => {
+    if (!mount.writeback) {
+      return [];
+    }
+    if (
+      mount.name !== artifact.name ||
+      mount.mountPath !== artifact.mountPath
+    ) {
+      throw new Error(
+        `Resolved writeback Storage "${mount.name}" has no source declaration`,
+      );
+    }
+    const {
+      version: _resolvedVersion,
+      missingRootPolicy: _resolvedMissingRootPolicy,
+      ...mountBase
+    } = mount;
+    return [
+      {
+        ...mountBase,
+        version: artifact.version,
+        missingRootPolicy: artifact.missingRootPolicy,
+      },
+    ];
+  });
+}
+
+const FIREWALL_BASE_URL_VAR_PATTERN =
+  /\$\{\{\s*vars\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
+  "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
+
+/** The model source's own firewall and network policy; no connectors. */
+function maintenanceModelPermissionManifest(
+  modelProvider: ResolvedModelProviderEnvironment,
+): PermissionManifest | undefined {
+  const firewall =
+    modelProvider.firewall ??
+    getModelProviderFirewall(modelProvider.concreteType ?? modelProvider.type);
+  if (!firewall) {
+    return undefined;
+  }
+  const entry = ((): ExecutionFirewallEntry => {
+    // A name-only entry would lose the endpoint selected for this run.
+    if (modelProvider.firewall !== undefined) {
+      return { kind: "inline", firewall: runtimeFirewall(firewall) };
+    }
+    const usesBaseUrlVars = firewall.apis.some((api) => {
+      return [...api.base.matchAll(FIREWALL_BASE_URL_VAR_PATTERN)].length > 0;
+    });
+    if (!usesBaseUrlVars) {
+      return { kind: "builtin", name: firewall.name };
+    }
+    const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
+      [runtimeFirewall(firewall)],
+      undefined,
+    );
+    return { kind: "builtin", name: firewall.name, baseUrlVars };
+  })();
+  const placeholders: Record<string, string> = {};
+  for (const name of extractSecretNamesFromApis(firewall.apis)) {
+    placeholders[name] = DEFAULT_FIREWALL_SECRET_PLACEHOLDER;
+  }
+  Object.assign(placeholders, firewall.placeholders);
+  const permissionNames = collectPermissionNames(firewall.apis);
+  const denySet = new Set(firewall.defaultPolicies?.deny ?? []);
+  const askSet = new Set(firewall.defaultPolicies?.ask ?? []);
+  return {
+    firewalls: [entry],
+    builtinRuntimeTargets: [],
+    environmentSecretPlaceholders: compactRecord(placeholders),
+    billableFirewalls: [],
+    networkPolicies: {
+      [firewall.name]: {
+        allow: permissionNames.filter((name) => {
+          return !denySet.has(name) && !askSet.has(name);
+        }),
+        deny: [...denySet],
+        ask: [...askSet],
+        unknownPolicy: firewall.defaultPolicies?.unknownPolicy ?? "allow",
+      },
+    },
+  };
+}
+
 /** Model firewall/permission manifest and usage pricing for the run. */
 async function prepareMaintenanceUsage(args: {
   readonly db: ReadonlyDb;
@@ -360,9 +487,13 @@ async function prepareMaintenanceUsage(args: {
   readonly timing: ApiDispatchTimingCollector;
 }) {
   const { catalog, modelProvider } = args;
-  const permissionManifest = await modelProviderExecutionPermissionManifest(
-    modelProvider,
+  const permissionManifest = await measureApiDispatchTiming(
     args.timing,
+    "api_dispatch_prepare_context_apply_model_provider_permission_policy",
+    "nested",
+    () => {
+      return Promise.resolve(maintenanceModelPermissionManifest(modelProvider));
+    },
   );
   const usage = prepareModelUsageContext({
     catalog,
@@ -510,25 +641,21 @@ const prepareMaintenanceLaunch$ = command(
       userTimezone: args.userTimezone,
       featureSwitchContext: args.featureSwitchContext,
       storageMounts: [...storage.storageMounts],
-      piResources: assemblePiLaunchResources({
+      pi: {
         modelConfig: args.piSandbox,
-        piLaunchConfig: {
-          maintenance: maintenancePayload(args.job, args.selectionDigest),
-        },
-        memoryRecall: undefined,
-        resumeSession: undefined,
+        maintenance: maintenancePayload(args.job, args.selectionDigest),
         sessionId: record.runId,
-      }),
+      },
     });
     const runStorageMounts = [...storage.persistedStorageMounts];
     return {
       ...built,
       runnerGroup,
       runStorageMounts,
-      sessionStorageMounts: sessionStorageMountsForPersistence({
-        resolvedMounts: runStorageMounts,
-        artifacts: [artifact],
-      }),
+      sessionStorageMounts: maintenanceSessionStorageMounts(
+        runStorageMounts,
+        artifact,
+      ),
       runContextStorage: storage.runContextStorage,
     };
   },
