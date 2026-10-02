@@ -449,16 +449,24 @@ async fn fresh_delivery_failed_requests_stay_terminal_without_poisoning_later_ru
                 .starts_with(&format!("GET /{reason} HTTP/1.1\r\n"))
         );
         if reason == "status" {
-            request.respond("503 Service Unavailable", &[], false);
+            request.respond("403 Forbidden", &[], false);
         } else {
-            // Advertise the full body, then close early: transport truncation
-            // remains fatal even when the stored archive size is only a hint.
+            // Truncation is transient, but exhaustion still fails the owner
+            // without poisoning later downloads through the shared HTTP pool.
             request.respond_with_length(
                 "200 OK",
                 &pending.body[..pending.body.len() - 1],
                 pending.body.len(),
                 true,
             );
+            for _ in 1..OBJECT_DOWNLOAD_MAX_ATTEMPTS {
+                server.request().await.respond_with_length(
+                    "200 OK",
+                    &pending.body[..pending.body.len() - 1],
+                    pending.body.len(),
+                    true,
+                );
+            }
         }
         let sandbox = MockSandbox::new("failed-pooled-archive");
         assert!(

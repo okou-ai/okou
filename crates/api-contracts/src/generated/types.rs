@@ -1937,6 +1937,12 @@ pub mod runners {
             /// QEMU-specific SCRAM-SHA-256 authentication.
             #[serde(rename = "qemu_scram_sha256")]
             QemuScramSha256,
+            /// RSA-AES password-only subtype with 255-byte fields.
+            #[serde(rename = "rsa_aes_password")]
+            RsaAesPassword,
+            /// RSA-AES username/password subtype with 255-byte fields.
+            #[serde(rename = "rsa_aes_username_password")]
+            RsaAesUsernamePassword,
             /// Apple DH username/password authentication with 63-byte fields.
             #[serde(rename = "apple_dh_username_password")]
             AppleDhUsernamePassword,
@@ -1969,6 +1975,18 @@ pub mod runners {
             /// QEMU X509SASL subtype 263 with verified TLS.
             #[serde(rename = "qemu_x509_sasl")]
             QemuX509Sasl,
+            /// Pinned RSA-AES type 5; full-session AES-128 EAX.
+            #[serde(rename = "rsa_aes_ra2")]
+            RsaAesRa2,
+            /// Pinned RSA-AES type 129; full-session AES-256 EAX.
+            #[serde(rename = "rsa_aes_ra2_256")]
+            RsaAesRa2256,
+            /// Pinned RSA-AES type 6; verified SSH-loopback only.
+            #[serde(rename = "rsa_aes_ra2ne")]
+            RsaAesRa2ne,
+            /// Pinned RSA-AES type 130; verified SSH-loopback only.
+            #[serde(rename = "rsa_aes_ra2ne_256")]
+            RsaAesRa2ne256,
             /// Apple bare type 2, requiring SSH to Mac loopback.
             #[serde(rename = "apple_vnc_password")]
             AppleVncPassword,
@@ -2148,6 +2166,18 @@ pub mod runners {
                 /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
                 password: crate::SecretUtf8Text<1023>,
             },
+            /// RSA-AES password-only subtype; native validates 255 UTF-8 bytes.
+            RsaAesPassword {
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// RSA-AES username/password subtype; native validates 255 UTF-8 bytes per field.
+            RsaAesUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
             /// Bounded ASCII SCRAM-SHA-256 credential for QEMU X509SASL.
             QemuScramSha256 {
                 /// Bounded Plain username, preserving exact UTF-8 bytes.
@@ -2190,6 +2220,10 @@ pub mod runners {
                     AppleSrpUsernamePassword,
                     #[serde(rename = "apple_rsa_srp_username_password")]
                     AppleRsaSrpUsernamePassword,
+                    #[serde(rename = "rsa_aes_password")]
+                    RsaAesPassword,
+                    #[serde(rename = "rsa_aes_username_password")]
+                    RsaAesUsernamePassword,
                     #[serde(rename = "qemu_scram_sha256")]
                     QemuScramSha256,
                     #[serde(rename = "none")]
@@ -2281,6 +2315,8 @@ pub mod runners {
                             (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
                             (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
                             (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
+                            (Some(Kind::RsaAesPassword), Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesPassword { password }),
+                            (Some(Kind::RsaAesUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::RsaAesUsernamePassword { username, password }),
                             (Some(Kind::QemuScramSha256), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuScramSha256 { username, password }),
                             (Some(Kind::None), None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
                             (Some(Kind::ClientCertificate), None, None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificate { certificate_chain_der, private_key_pkcs8_der }),
@@ -2376,6 +2412,26 @@ pub mod runners {
 
         /// Saved security policy, independent of future engine capabilities.
         pub enum ResolveResponseResolvedTransportSecurity {
+            /// Pinned type 5; full-session AES-128 EAX.
+            RsaAesRa2 {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
+            /// Pinned type 129; full-session AES-256 EAX.
+            RsaAesRa2256 {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
+            /// Pinned type 6; authentication-only over verified SSH-loopback.
+            RsaAesRa2ne {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
+            /// Pinned type 130; authentication-only over verified SSH-loopback.
+            RsaAesRa2ne256 {
+                /// Independent full RSA wire-key SHA256, never CA trust.
+                server_key_sha256: String,
+            },
             /// VeNCrypt X509Vnc with verified TLS.
             X509Vnc {
                 /// Required verified TLS trust policy.
@@ -2411,6 +2467,14 @@ pub mod runners {
                 // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
                 #[derive(serde::Deserialize)]
                 enum Kind {
+                    #[serde(rename = "rsa_aes_ra2")]
+                    RsaAesRa2,
+                    #[serde(rename = "rsa_aes_ra2_256")]
+                    RsaAesRa2256,
+                    #[serde(rename = "rsa_aes_ra2ne")]
+                    RsaAesRa2ne,
+                    #[serde(rename = "rsa_aes_ra2ne_256")]
+                    RsaAesRa2ne256,
                     #[serde(rename = "x509_vnc")]
                     X509Vnc,
                     #[serde(rename = "x509_plain")]
@@ -2433,6 +2497,8 @@ pub mod runners {
                 enum Field {
                     #[serde(rename = "type")]
                     Outcome,
+                    #[serde(rename = "serverKeySha256")]
+                    ServerKeySha256,
                     #[serde(rename = "trust")]
                     Trust,
                 }
@@ -2450,6 +2516,7 @@ pub mod runners {
                         mut map: M,
                     ) -> Result<Self::Value, M::Error> {
                         let mut outcome = None::<Kind>;
+                        let mut server_key_sha256 = None::<String>;
                         let mut trust =
                             None::<ResolveResponseResolvedTransportSecurityX509VncTrust>;
                         while let Some(field) = map.next_key::<Field>()? {
@@ -2462,6 +2529,14 @@ pub mod runners {
                                     }
                                     outcome = Some(map.next_value()?);
                                 }
+                                Field::ServerKeySha256 => {
+                                    if server_key_sha256.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    server_key_sha256 = Some(map.next_value()?);
+                                }
                                 Field::Trust => {
                                     if trust.is_some() {
                                         return Err(serde::de::Error::custom(
@@ -2472,29 +2547,49 @@ pub mod runners {
                                 }
                             }
                         }
-                        match (outcome, trust) {
-                            (Some(Kind::X509Vnc), Some(trust)) => {
+                        match (outcome, server_key_sha256, trust) {
+                            (Some(Kind::RsaAesRa2), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2 {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::RsaAesRa2256), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2256 {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::RsaAesRa2ne), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::RsaAesRa2ne256), Some(server_key_sha256), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::RsaAesRa2ne256 {
+                                    server_key_sha256,
+                                })
+                            }
+                            (Some(Kind::X509Vnc), None, Some(trust)) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509Vnc { trust })
                             }
-                            (Some(Kind::X509Plain), Some(trust)) => {
+                            (Some(Kind::X509Plain), None, Some(trust)) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509Plain { trust })
                             }
-                            (Some(Kind::X509None), Some(trust)) => {
+                            (Some(Kind::X509None), None, Some(trust)) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509None { trust })
                             }
-                            (Some(Kind::QemuX509Sasl), Some(trust)) => Ok(
+                            (Some(Kind::QemuX509Sasl), None, Some(trust)) => Ok(
                                 ResolveResponseResolvedTransportSecurity::QemuX509Sasl { trust },
                             ),
-                            (Some(Kind::AppleVncPassword), None) => {
+                            (Some(Kind::AppleVncPassword), None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleVncPassword)
                             }
-                            (Some(Kind::AppleDh), None) => {
+                            (Some(Kind::AppleDh), None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleDh)
                             }
-                            (Some(Kind::AppleSrp), None) => {
+                            (Some(Kind::AppleSrp), None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleSrp)
                             }
-                            (Some(Kind::AppleRsaSrp), None) => {
+                            (Some(Kind::AppleRsaSrp), None, None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleRsaSrp)
                             }
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
@@ -2588,6 +2683,21 @@ pub mod runners {
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
             },
+            /// Exact RSA-AES mode, independent wire pin and bounded credential.
+            ResolvedRsaAes {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Exact saved method, with no credential for X509None.
+                authentication: ResolveResponseResolvedTransportAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedTransportSecurity,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponse {
@@ -2609,6 +2719,8 @@ pub mod runners {
                     ResolvedAppleSrp,
                     #[serde(rename = "resolved_apple_rsa_srp")]
                     ResolvedAppleRsaSrp,
+                    #[serde(rename = "resolved_rsa_aes")]
+                    ResolvedRsaAes,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2822,6 +2934,23 @@ pub mod runners {
                                 Some(authentication),
                                 Some(security),
                             ) => Ok(ResolveResponse::ResolvedAppleRsaSrp {
+                                host,
+                                port,
+                                generation,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedRsaAes),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                None,
+                                Some(transport),
+                                Some(authentication),
+                                Some(security),
+                            ) => Ok(ResolveResponse::ResolvedRsaAes {
                                 host,
                                 port,
                                 generation,

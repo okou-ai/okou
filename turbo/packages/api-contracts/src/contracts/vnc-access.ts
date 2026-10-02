@@ -4,6 +4,10 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { sshHostAvailabilitySchema } from "./ssh-access";
 import { vncConnectionMetadataSchema } from "./vnc-connections";
+import {
+  VNC_RSA_AES_SECURITY_TYPES,
+  vncRsaAesAuthenticationMethodSchema,
+} from "./vnc-rsa-aes";
 
 const c = initContract();
 const errors = {
@@ -24,6 +28,12 @@ const vncHostBaseSchema = vncConnectionMetadataSchema
   .extend({ availability: sshHostAvailabilitySchema });
 
 export const vncHostSchema = z.union([
+  vncHostBaseSchema
+    .extend({
+      authMethod: vncRsaAesAuthenticationMethodSchema,
+      securityType: z.enum(VNC_RSA_AES_SECURITY_TYPES),
+    })
+    .strict(),
   vncHostBaseSchema
     .extend({
       authMethod: z.literal("client_certificate"),

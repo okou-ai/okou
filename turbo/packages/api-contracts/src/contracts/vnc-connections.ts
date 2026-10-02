@@ -6,6 +6,12 @@ import {
   vncCredentialSelectionSchema,
 } from "./vnc-credentials";
 
+import {
+  vncRsaAesSecuritySchema,
+  vncRsaAesAuthenticationMethodSchema,
+  VNC_RSA_PUBLIC_KEY_MAX_BYTES,
+} from "./vnc-rsa-aes";
+
 export const VNC_HOST_MAX_LENGTH = 253;
 export const VNC_CA_BUNDLE_MAX_LENGTH = 65_536;
 export const VNC_CA_CERTIFICATES_MAX_COUNT = 8;
@@ -86,6 +92,7 @@ export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
   vncX509PlainSecurityVariantSchema,
 ]);
 const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
+  ...vncRsaAesSecuritySchema.options,
   vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
@@ -96,6 +103,7 @@ const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
   vncAppleRsaSrpSecurityVariantSchema,
 ]);
 export const vncSecuritySchema = z.discriminatedUnion("type", [
+  ...vncRsaAesSecuritySchema.options,
   vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
@@ -160,6 +168,7 @@ export const vncConnectionMetadataSchema = z
     port: portSchema,
     credentialId: z.uuid(),
     credentialName: z.string(),
+    rsaAesAuthentication: vncRsaAesAuthenticationMethodSchema.optional(),
     clientCertificateAuthentication: z
       .enum(["client_certificate", "client_certificate_vnc_password"])
       .optional(),
@@ -201,6 +210,31 @@ const errors = {
 };
 
 export const vncConnectionsContract = c.router({
+  inspectRsaKey: {
+    method: "POST",
+    path: "/api/vnc/rsa-key-pin",
+    headers: authHeadersSchema,
+    body: z
+      .object({
+        publicKeyPem: z.string().min(1).max(VNC_RSA_PUBLIC_KEY_MAX_BYTES),
+      })
+      .strict(),
+    responses: {
+      200: z
+        .object({
+          serverKeySha256: z.string().regex(/^[a-f0-9]{64}$/u),
+          modulusBits: z.union([
+            z.literal(2048),
+            z.literal(3072),
+            z.literal(4096),
+          ]),
+        })
+        .strict(),
+      ...errors,
+    },
+    summary:
+      "Convert an independently obtained RSA public key to its full RFB wire pin",
+  },
   list: {
     method: "GET",
     path: "/api/vnc/connections",

@@ -32,6 +32,7 @@ import {
   validVncClientAuthentication,
 } from "./vnc-credential.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
+import { isVncRsaAesSecurityType } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 
 const vncCredentialMetadata = Object.freeze({
   id: vncCredentials.id,
@@ -56,6 +57,7 @@ const metadata = Object.freeze({
   securityType: vncConnections.securityType,
   trustMode: vncConnections.trustMode,
   caBundle: vncConnections.caBundle,
+  rsaServerKeySha256: vncConnections.rsaServerKeySha256,
   generation: vncConnections.generation,
   createdAt: vncConnections.createdAt,
   updatedAt: vncConnections.updatedAt,
@@ -77,7 +79,26 @@ function ownedConnection(owner: VncOwner, connectionId: string) {
   return and(ownedConnections(owner), eq(vncConnections.id, connectionId));
 }
 
+function validateStoredRsaTrust(row: Metadata): void {
+  if (
+    row.trustMode !== "none" ||
+    row.caBundle !== null ||
+    row.x509ServerName !== null ||
+    row.rsaServerKeySha256 === null ||
+    !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
+  ) {
+    throw new Error("VNC connection has an invalid RSA trust configuration");
+  }
+}
+
 function validateStoredTrust(row: Metadata): void {
+  if (isVncRsaAesSecurityType(row.securityType)) {
+    validateStoredRsaTrust(row);
+    return;
+  }
+  if (row.rsaServerKeySha256 !== null) {
+    throw new Error("VNC connection has unexpected RSA trust");
+  }
   if (
     ((row.securityType === "apple_vnc_password" ||
       row.securityType === "apple_dh" ||
@@ -99,6 +120,12 @@ function validateStoredTrust(row: Metadata): void {
 }
 
 function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
+  if (isVncRsaAesSecurityType(row.securityType)) {
+    if (row.rsaServerKeySha256 === null) {
+      throw new Error("VNC connection is missing RSA trust");
+    }
+    return { type: row.securityType, serverKeySha256: row.rsaServerKeySha256 };
+  }
   const trust =
     row.trustMode === "custom_ca" && row.caBundle !== null
       ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
@@ -146,6 +173,10 @@ function response(
             connectionId: row.sshConnectionId,
           },
         }
+      : {}),
+    ...(row.authMethod === "rsa_aes_password" ||
+    row.authMethod === "rsa_aes_username_password"
+      ? { rsaAesAuthentication: row.authMethod }
       : {}),
     id: row.id,
     displayName: row.displayName,
@@ -499,7 +530,7 @@ const prepareUpdateVncConnection$ = command(
       return security;
     }
     const [initial] = await db
-      .select({ generation: vncConnections.generation })
+      .select(metadata)
       .from(vncConnections)
       .where(ownedConnection(args.owner, args.connectionId));
     signal.throwIfAborted();
@@ -508,6 +539,26 @@ const prepareUpdateVncConnection$ = command(
     }
     if (initial.generation !== args.body.expectedGeneration) {
       return vncFailure("generationConflict");
+    }
+    const prospective = resolveVncConnectionUpdate(
+      initial,
+      args,
+      host,
+      security,
+      undefined,
+    );
+    if (!prospective.ok) {
+      return prospective;
+    }
+    if (
+      args.body.credential &&
+      "create" in args.body.credential &&
+      !isVncProfileCompatible(
+        args.body.credential.create.authentication.method,
+        prospective.value.securityType,
+      )
+    ) {
+      return vncFailure("profileMismatch");
     }
     if (
       args.body.credential &&

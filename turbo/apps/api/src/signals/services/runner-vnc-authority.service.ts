@@ -42,6 +42,7 @@ export const currentRunnerVncAuthority$ = command(
         securityType: vncConnections.securityType,
         trustMode: vncConnections.trustMode,
         caBundle: vncConnections.caBundle,
+        rsaServerKeySha256: vncConnections.rsaServerKeySha256,
         authMethod: vncConnections.authMethod,
         credentialId: vncConnections.credentialId,
         joinedCredentialId: vncCredentials.id,

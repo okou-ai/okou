@@ -1,7 +1,8 @@
 # Host early archive phase diagnostics
 
-Runner records four timed operations for each admitted early archive request.
-They use the existing sandbox-operation telemetry and its run identity. The
+Runner records `headers` and `body` for each entered GET attempt, then
+`apply_wait` and `publication` once for a complete admitted archive. They use
+the existing sandbox-operation telemetry and its run identity. The
 duration is monotonic elapsed time in integer milliseconds; the event timestamp
 is captured at the phase's completion, even if the owner collects it later.
 
@@ -28,14 +29,24 @@ is awaited and can succeed after run cancellation. Repeated drain does not emit
 the same record again. An unexpected owner Drop, process crash or failed telemetry
 delivery can still leave missing records; there is no new background uploader.
 
-Four admitted archives and four phases bound the new records to 16 per prepared
-storage delivery. A retry that replaces its storage plan owns another delivery;
-report attempt counts rather than assuming a run-wide cap.
-The implementation adds a small shared record buffer, clock reads and short
-synchronous locks at phase boundaries. It adds no request, retry, per-chunk
-record, sleep or awaited telemetry upload to startup. This is a bounded overhead
-budget, not a claim of zero runtime cost. Admission, HTTP reuse, the 30-second
-request timeout, 8 MiB limit, cache flock and permits through staging are unchanged.
+Four admitted archives and at most three GET attempts bound these records to
+32 per prepared storage delivery: at most six headers/body records plus one
+apply-wait and one publication record per archive. A sandbox retry that replaces
+its storage plan owns another delivery; this is not a run-wide cap. Repeated
+headers/body records retain failed attempts rather than hiding them behind a
+successful recovery. Each headers record freezes its own connection observer.
+
+The existing `storage_cache_fresh_delivery_single_request` marker is retained
+once at logical-owner admission for compatibility; it is not an actual request
+count after retries. Count entered headers phases for explicit application-level
+GET attempts; HTTP-library protocol recovery is not separately measured. Parallel
+archives still cannot be paired by event order.
+
+The phase instrumentation adds only a small shared buffer, clock reads and
+short synchronous locks at phase boundaries; no per-chunk observation or awaited
+telemetry upload is added. Retry requests and sleeps are the bounded behavior
+described below. Admission, HTTP reuse, the 30-second per-request timeout,
+8 MiB limit, cache flock and permits through staging are unchanged.
 
 Records contain fixed action names and bounded reasons. When a declared
 response length differs from the known manifest size, the `headers` phase
@@ -47,6 +58,33 @@ Records include no archive URL, query, raw headers, object identity, mount path
 or content. Phase records from parallel archives cannot be paired by order. Do
 not add phase maxima or percentiles as one request's latency, or add overlapping
 early fetch time to storage-apply time.
+
+## Bounded Runner-owned download retries
+
+Archive downloads share the read-only failure policy with session-history blobs:
+at most three attempts including the first, 200/400 ms exponential backoff,
+and a 90-second overall deadline covering requests and backoff. The deadline is
+checked before each attempt and after its result: a delayed backoff wakeup cannot
+start an overdue GET or accept bytes after the budget expires. Each GET retains
+its 30-second request timeout. HTTP 429, 500, 502, 503 and 504, timeouts, connect
+errors and typed transport interruptions can retry. The next attempt always
+starts with an empty body buffer; incomplete bytes are never staged or published.
+
+The effective delay is the larger of backoff and a valid `Retry-After` delta or
+HTTP date. Invalid or repeated hints, hints beyond the remaining budget, permanent statuses
+(including 401/403/404/501), redirects, unsolicited partial responses and archive
+size-contract violations do not retry. Cancellation owns both backoff and GETs;
+the original cache writer and runner-wide permit remain held by the same owner
+until completion or cancellation cleanup. No signed-URL renewal, Guest fallback,
+Agent replay or retry of cache publication/staging is introduced. Post-spawn
+background cache fills and Guest-owned downloads are unchanged.
+
+Retry diagnostics contain fixed reasons, attempt limits, delay and optional
+numeric HTTP status. Terminal HTTP errors also retain the numeric status in the
+existing error text, without a telemetry schema change. No URL, query, raw header,
+response body or object identity is recorded. A retry policy is not proof that a
+historical unknown-status failure was transient or repaired; deployment and a
+bounded production follow-up remain separate gates.
 
 ## Host connection-attempt lifecycle
 

@@ -12,6 +12,10 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { VncAuthentication } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
+  isVncRsaAesSecurityType,
+  isVncRsaAesAuthenticationOnly,
+} from "@okouai/api-contracts/contracts/vnc-rsa-aes";
+import {
   VNC_ERROR_CODES,
   type VncErrorCode,
 } from "@okouai/api-contracts/contracts/vnc-errors";
@@ -59,6 +63,12 @@ const failures = {
     code: VNC_ERROR_CODES.INVALID_APPLE_RSA_SRP_ROUTE,
     message:
       "Apple RSA/SRP requires saved SSH to the Mac's loopback VNC service",
+  },
+  invalidRsaAesRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_INPUT,
+    message:
+      "RSA-AES authentication-only modes require saved SSH to literal server loopback",
   },
   invalidServerName: {
     kind: "bad_request",
@@ -259,7 +269,20 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
   readonly trustMode: "system" | "custom_ca" | "none";
   readonly caBundle: string | null;
   readonly x509ServerName: string | null;
+  readonly rsaServerKeySha256: string | null;
 }> {
+  if ("serverKeySha256" in security) {
+    return {
+      ok: true,
+      value: {
+        securityType: security.type,
+        trustMode: "none",
+        caBundle: null,
+        x509ServerName: null,
+        rsaServerKeySha256: security.serverKeySha256.toLowerCase(),
+      },
+    };
+  }
   if (
     security.type === "apple_vnc_password" ||
     security.type === "apple_dh" ||
@@ -273,6 +296,7 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
         trustMode: "none",
         caBundle: null,
         x509ServerName: null,
+        rsaServerKeySha256: null,
       },
     };
   }
@@ -293,29 +317,36 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
       securityType: security.type,
       ...trust.value,
       x509ServerName: serverName?.value ?? null,
+      rsaServerKeySha256: null,
     },
   };
 }
+
+const securityByAuthentication = {
+  none: "x509_none",
+  client_certificate: "x509_none",
+  client_certificate_vnc_password: "x509_vnc",
+  vnc_password: "x509_vnc",
+  username_password: "x509_plain",
+  qemu_scram_sha256: "qemu_x509_sasl",
+  apple_dh_username_password: "apple_dh",
+  apple_srp_username_password: "apple_srp",
+  apple_rsa_srp_username_password: "apple_rsa_srp",
+} as const;
 
 export function isVncProfileCompatible(
   authMethod: VncAuthentication["method"] | "none",
   securityType: VncSecurity["type"],
 ): boolean {
+  if (
+    authMethod === "rsa_aes_password" ||
+    authMethod === "rsa_aes_username_password"
+  ) {
+    return isVncRsaAesSecurityType(securityType);
+  }
   return (
-    (authMethod === "none" && securityType === "x509_none") ||
-    (authMethod === "client_certificate" && securityType === "x509_none") ||
-    (authMethod === "client_certificate_vnc_password" &&
-      securityType === "x509_vnc") ||
-    (authMethod === "vnc_password" && securityType === "x509_vnc") ||
-    (authMethod === "vnc_password" && securityType === "apple_vnc_password") ||
-    (authMethod === "username_password" && securityType === "x509_plain") ||
-    (authMethod === "qemu_scram_sha256" && securityType === "qemu_x509_sasl") ||
-    (authMethod === "apple_dh_username_password" &&
-      securityType === "apple_dh") ||
-    (authMethod === "apple_srp_username_password" &&
-      securityType === "apple_srp") ||
-    (authMethod === "apple_rsa_srp_username_password" &&
-      securityType === "apple_rsa_srp")
+    securityByAuthentication[authMethod] === securityType ||
+    (authMethod === "vnc_password" && securityType === "apple_vnc_password")
   );
 }
 
@@ -324,6 +355,12 @@ export function validateVncProfileRoute(
   host: string,
   transportType: "direct" | "ssh",
 ): VncResult<undefined> {
+  if (
+    isVncRsaAesAuthenticationOnly(securityType) &&
+    (transportType !== "ssh" || (host !== "127.0.0.1" && host !== "::1"))
+  ) {
+    return vncFailure("invalidRsaAesRoute");
+  }
   if (
     (securityType === "apple_vnc_password" ||
       securityType === "apple_dh" ||

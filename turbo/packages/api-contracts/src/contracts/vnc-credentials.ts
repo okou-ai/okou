@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { VNC_RSA_AES_FIELD_MAX_BYTES } from "./vnc-rsa-aes";
 
 export const VNC_DISPLAY_NAME_MAX_LENGTH = 128;
 export const VNC_PASSWORD_MAX_LENGTH = 8;
@@ -111,6 +112,30 @@ export const vncAppleRsaSrpAuthenticationSchema = z
   })
   .strict();
 
+const rsaAesFieldSchema = boundedUtf8String(
+  VNC_RSA_AES_FIELD_MAX_BYTES,
+  "RSA-AES field",
+)
+  .max(VNC_RSA_AES_FIELD_MAX_BYTES)
+  .refine((value) => {
+    return !/[\uD800-\uDFFF]/u.test(value);
+  }, "RSA-AES fields require well-formed Unicode");
+export const vncRsaAesAuthenticationSchema = z.discriminatedUnion("method", [
+  z
+    .object({
+      method: z.literal("rsa_aes_password"),
+      password: rsaAesFieldSchema,
+    })
+    .strict(),
+  z
+    .object({
+      method: z.literal("rsa_aes_username_password"),
+      username: rsaAesFieldSchema,
+      password: rsaAesFieldSchema,
+    })
+    .strict(),
+]);
+
 const clientIdentityInput = {
   certificateChain: z.string().min(1).max(VNC_CLIENT_CHAIN_PEM_MAX_LENGTH),
   privateKey: z.string().min(1).max(VNC_CLIENT_KEY_PEM_MAX_LENGTH),
@@ -127,6 +152,7 @@ export const vncLegacyAuthenticationSchema = z.discriminatedUnion("method", [
 export const vncAuthenticationSchema = z.discriminatedUnion("method", [
   ...vncLegacyAuthenticationSchema.options,
   vncQemuScramAuthenticationSchema,
+  ...vncRsaAesAuthenticationSchema.options,
   z
     .object({ method: z.literal("client_certificate"), ...clientIdentityInput })
     .strict(),
@@ -173,6 +199,19 @@ const vncCredentialResponseBase = {
 } as const;
 
 export const vncCredentialResponseSchema = z.discriminatedUnion("authMethod", [
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("rsa_aes_password"),
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("rsa_aes_username_password"),
+      username: rsaAesFieldSchema,
+    })
+    .strict(),
   z
     .object({
       ...vncCredentialResponseBase,

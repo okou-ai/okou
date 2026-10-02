@@ -8,6 +8,12 @@ import {
   vncUsernamePasswordAuthenticationSchema,
 } from "./vnc-credentials";
 
+import {
+  vncRsaAesSecuritySchema,
+  isVncRsaAesSecurityType,
+  isVncRsaAesAuthenticationOnly,
+} from "./vnc-rsa-aes";
+
 const c = initContract();
 
 const generationSchema = z.int().positive().max(2_147_483_647);
@@ -25,6 +31,7 @@ const transportSnapshotSchema = z.discriminatedUnion("type", [
 ]);
 
 export const runnerVncSecuritySchema = z.discriminatedUnion("type", [
+  ...vncRsaAesSecuritySchema.options,
   z.object({ type: z.literal("x509_vnc"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("x509_plain"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("x509_none"), trust: vncTrustSchema }).strict(),
@@ -44,6 +51,21 @@ const clientIdentityWire = {
 
 const runnerX509AuthenticationSchema = z.discriminatedUnion("method", [
   ...vncLegacyAuthenticationSchema.options,
+  // The sensitive generator shares username/password wire fields. Owner/API
+  // plaintext validation and the native engine enforce the exact 255-byte RSA bounds.
+  z
+    .object({
+      method: z.literal("rsa_aes_password"),
+      password: vncUsernamePasswordAuthenticationSchema.shape.password,
+    })
+    .strict(),
+  z
+    .object({
+      method: z.literal("rsa_aes_username_password"),
+      username: vncUsernamePasswordAuthenticationSchema.shape.username,
+      password: vncUsernamePasswordAuthenticationSchema.shape.password,
+    })
+    .strict(),
   // Generated private DTOs share a username/password field shape. The owner
   // contract and API post-KMS validation enforce stricter SCRAM ASCII bounds;
   // the Runner validates again before opening a socket.
@@ -86,6 +108,8 @@ const supportedProfileFieldsSchema = z
       "vnc_password",
       "username_password",
       "qemu_scram_sha256",
+      "rsa_aes_password",
+      "rsa_aes_username_password",
       "apple_dh_username_password",
       "apple_srp_username_password",
       "apple_rsa_srp_username_password",
@@ -97,6 +121,10 @@ const supportedProfileFieldsSchema = z
       "x509_vnc",
       "x509_plain",
       "qemu_x509_sasl",
+      "rsa_aes_ra2",
+      "rsa_aes_ra2_256",
+      "rsa_aes_ra2ne",
+      "rsa_aes_ra2ne_256",
       "apple_vnc_password",
       "apple_dh",
       "apple_srp",
@@ -113,6 +141,8 @@ const exactSecurityByAuth = {
   client_certificate_vnc_password: "x509_vnc",
   username_password: "x509_plain",
   qemu_scram_sha256: "qemu_x509_sasl",
+  rsa_aes_password: "rsa_aes_ra2",
+  rsa_aes_username_password: "rsa_aes_ra2",
   apple_dh_username_password: "apple_dh",
   apple_srp_username_password: "apple_srp",
   apple_rsa_srp_username_password: "apple_rsa_srp",
@@ -124,6 +154,14 @@ const exactSecurityByAuth = {
 function matchesSupportedVncProfile(
   profile: z.infer<typeof supportedProfileFieldsSchema>,
 ): boolean {
+  if (isVncRsaAesSecurityType(profile.securityType)) {
+    return (
+      (profile.authMethod === "rsa_aes_password" ||
+        profile.authMethod === "rsa_aes_username_password") &&
+      (!isVncRsaAesAuthenticationOnly(profile.securityType) ||
+        profile.transportType === "ssh")
+    );
+  }
   if (profile.securityType === "apple_vnc_password") {
     return (
       profile.authMethod === "vnc_password" && profile.transportType === "ssh"
@@ -142,7 +180,7 @@ const supportedProfileSchema = supportedProfileFieldsSchema.refine(
 );
 
 const resolveRequestSchema = commonRequestSchema.extend({
-  supportedProfiles: z.array(supportedProfileSchema).max(16),
+  supportedProfiles: z.array(supportedProfileSchema).max(32),
 });
 const unavailableSchema = z
   .object({ outcome: z.literal("unavailable") })
@@ -202,6 +240,17 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
   z
     .object({
       outcome: z.literal("resolved_apple_rsa_srp"),
+      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
+      port: z.int().min(1).max(65_535),
+      generation: generationSchema,
+      transport: transportSnapshotSchema,
+      authentication: runnerX509AuthenticationSchema,
+      security: runnerVncSecuritySchema,
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal("resolved_rsa_aes"),
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
