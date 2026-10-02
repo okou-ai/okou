@@ -89,7 +89,7 @@ import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.serv
 import type { ChatQueueHeadRejection } from "./chat-queue-run-assembly";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 
-interface OrgPickCursor {
+export interface OrgPickCursor {
   readonly queuedAt: Date;
   readonly chatThreadId: string;
   readonly visitedThreadIds: readonly string[];
@@ -163,11 +163,10 @@ function createClaimRunTiming(pickStartedAt: number): ClaimRunTiming {
   };
 }
 
-export function createPickObjects(orgId: string, fixedThreadId?: string) {
-  const internalReloadPick$ = state(0);
-  const internalOrgCursor$ = state<OrgPickCursor | null>(null);
+function createCapturedClaimObjects(claim: LeasedThreadClaim) {
+  const { orgId } = claim;
+  const preparation = createClaimRunObjects(claim);
   const orgActiveRunCount$ = computed(async (get) => {
-    get(internalReloadPick$);
     const database = get(db$);
     const [row] = await database
       .select({ count: count() })
@@ -180,7 +179,6 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
   });
 
   const orgCapacity$ = computed(async (get) => {
-    get(internalReloadPick$);
     const database = get(db$);
     const at = nowDate();
     const [[plan], subscriptions] = await Promise.all([
@@ -224,119 +222,169 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     return capacity === 0 || activeCount < capacity;
   });
 
-  const nextOrgThread$ = computed(async (get) => {
-    get(internalReloadPick$);
-    const after = get(internalOrgCursor$);
-    const database = get(db$);
-    const at = nowDate();
-    const [row] = await database
-      .select({
-        chatThreadId: queuedChatThreads.chatThreadId,
-        queuedAt: queuedChatThreads.queuedAt,
-      })
-      .from(queuedChatThreads)
-      .where(
-        and(
-          eq(queuedChatThreads.orgId, orgId),
-          or(
-            isNull(queuedChatThreads.claimExpiresAt),
-            lte(queuedChatThreads.claimExpiresAt, at),
-          ),
-          after === null
-            ? undefined
-            : or(
-                gt(queuedChatThreads.queuedAt, after.queuedAt),
-                and(
-                  eq(queuedChatThreads.queuedAt, after.queuedAt),
-                  gt(queuedChatThreads.chatThreadId, after.chatThreadId),
-                ),
-              ),
-          after === null
-            ? undefined
-            : notInArray(queuedChatThreads.chatThreadId, [
-                ...after.visitedThreadIds,
-              ]),
-          notExists(
-            database
-              .select({ runId: activeAgentRuns.runId })
-              .from(activeAgentRuns)
-              .where(
-                eq(
-                  activeAgentRuns.chatThreadId,
-                  queuedChatThreads.chatThreadId,
-                ),
-              ),
-          ),
-        ),
-      )
-      .orderBy(
-        asc(queuedChatThreads.queuedAt),
-        asc(queuedChatThreads.chatThreadId),
-      )
-      .limit(1);
-    return row ?? null;
+  return { ...preparation, orgHasCapacity$ };
+}
+
+interface PickInput {
+  readonly orgId: string;
+  readonly chatThreadId?: string;
+  readonly after?: OrgPickCursor | null;
+}
+
+export interface PickIteration {
+  readonly result: PickResult;
+  readonly cursor: OrgPickCursor | null;
+}
+
+function createPickObjects() {
+  // Only successful conditional writes enter this request Store. Graphs are
+  // indexed by their immutable receipt, never by a shared latest-input slot.
+  const claimReceipts$ = state<readonly LeasedThreadClaim[]>([]);
+  const graphCache$ = computed(() => {
+    return new WeakMap<
+      LeasedThreadClaim,
+      ReturnType<typeof createCapturedClaimObjects>
+    >();
+  });
+  const capturedClaims$ = computed((get) => {
+    const graphCache = get(graphCache$);
+    const graphs = new Map<
+      string,
+      ReturnType<typeof createCapturedClaimObjects>
+    >();
+    for (const claim of get(claimReceipts$)) {
+      let graph = graphCache.get(claim);
+      if (!graph) {
+        graph = createCapturedClaimObjects(claim);
+        graphCache.set(claim, graph);
+      }
+      graphs.set(claim.claimId, graph);
+    }
+    return graphs;
   });
 
-  const claim$ = command(async ({ get, set }, signal: AbortSignal) => {
-    let threadId = fixedThreadId;
-    if (threadId === undefined) {
-      const candidate = await get(nextOrgThread$);
+  const nextOrgThread$ = command(
+    async ({ get }, input: PickInput, signal: AbortSignal) => {
+      const { orgId } = input;
+      const after = input.after ?? null;
+      const database = get(db$);
+      const at = nowDate();
+      const [row] = await database
+        .select({
+          chatThreadId: queuedChatThreads.chatThreadId,
+          queuedAt: queuedChatThreads.queuedAt,
+        })
+        .from(queuedChatThreads)
+        .where(
+          and(
+            eq(queuedChatThreads.orgId, orgId),
+            or(
+              isNull(queuedChatThreads.claimExpiresAt),
+              lte(queuedChatThreads.claimExpiresAt, at),
+            ),
+            after === null
+              ? undefined
+              : or(
+                  gt(queuedChatThreads.queuedAt, after.queuedAt),
+                  and(
+                    eq(queuedChatThreads.queuedAt, after.queuedAt),
+                    gt(queuedChatThreads.chatThreadId, after.chatThreadId),
+                  ),
+                ),
+            after === null
+              ? undefined
+              : notInArray(queuedChatThreads.chatThreadId, [
+                  ...after.visitedThreadIds,
+                ]),
+            notExists(
+              database
+                .select({ runId: activeAgentRuns.runId })
+                .from(activeAgentRuns)
+                .where(
+                  eq(
+                    activeAgentRuns.chatThreadId,
+                    queuedChatThreads.chatThreadId,
+                  ),
+                ),
+            ),
+          ),
+        )
+        .orderBy(
+          asc(queuedChatThreads.queuedAt),
+          asc(queuedChatThreads.chatThreadId),
+        )
+        .limit(1);
       signal.throwIfAborted();
-      if (!candidate) {
-        return null;
-      }
-      set(internalOrgCursor$, (previous) => {
-        return {
+      return row ?? null;
+    },
+  );
+
+  const claim$ = command(
+    async ({ set }, input: PickInput, signal: AbortSignal) => {
+      const { orgId } = input;
+      let threadId = input.chatThreadId;
+      let cursor = input.after ?? null;
+      if (threadId === undefined) {
+        const candidate = await set(nextOrgThread$, input, signal);
+        if (!candidate) {
+          return { claim: null, cursor };
+        }
+        cursor = {
           ...candidate,
           visitedThreadIds: [
-            ...(previous?.visitedThreadIds ?? []),
+            ...(cursor?.visitedThreadIds ?? []),
             candidate.chatThreadId,
           ],
         };
-      });
-      threadId = candidate.chatThreadId;
-    }
-    const database = set(writeDb$);
-    const at = nowDate();
-    const claimId = randomUUID();
-    const [row] = await database
-      .update(queuedChatThreads)
-      .set({
-        claimId,
-        claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
-      })
-      .where(
-        and(
-          eq(queuedChatThreads.orgId, orgId),
-          eq(queuedChatThreads.chatThreadId, threadId),
-          or(
-            isNull(queuedChatThreads.claimExpiresAt),
-            lte(queuedChatThreads.claimExpiresAt, at),
-          ),
-          notExists(
-            database
-              .select({ runId: activeAgentRuns.runId })
-              .from(activeAgentRuns)
-              .where(eq(activeAgentRuns.chatThreadId, threadId)),
-          ),
-        ),
-      )
-      .returning({
-        chatThreadId: queuedChatThreads.chatThreadId,
-        queuedAt: queuedChatThreads.queuedAt,
-      });
-    signal.throwIfAborted();
-    const claim = row
-      ? {
-          orgId,
-          chatThreadId: row.chatThreadId,
+        threadId = candidate.chatThreadId;
+      }
+      const database = set(writeDb$);
+      const at = nowDate();
+      const claimId = randomUUID();
+      const [row] = await database
+        .update(queuedChatThreads)
+        .set({
           claimId,
-          queuedAt: row.queuedAt,
-          pickStartedAt: at.getTime(),
-        }
-      : null;
-    return claim;
-  });
+          claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
+        })
+        .where(
+          and(
+            eq(queuedChatThreads.orgId, orgId),
+            eq(queuedChatThreads.chatThreadId, threadId),
+            or(
+              isNull(queuedChatThreads.claimExpiresAt),
+              lte(queuedChatThreads.claimExpiresAt, at),
+            ),
+            notExists(
+              database
+                .select({ runId: activeAgentRuns.runId })
+                .from(activeAgentRuns)
+                .where(eq(activeAgentRuns.chatThreadId, threadId)),
+            ),
+          ),
+        )
+        .returning({
+          chatThreadId: queuedChatThreads.chatThreadId,
+          queuedAt: queuedChatThreads.queuedAt,
+        });
+      signal.throwIfAborted();
+      const claim = row
+        ? {
+            orgId,
+            chatThreadId: row.chatThreadId,
+            claimId,
+            queuedAt: row.queuedAt,
+            pickStartedAt: at.getTime(),
+          }
+        : null;
+      if (claim) {
+        set(claimReceipts$, (previous) => {
+          return [...previous, claim];
+        });
+      }
+      return { claim, cursor };
+    },
+  );
 
   /**
    * Release this claim's lease. Returns whether the lease was still ours; a
@@ -368,22 +416,19 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
    * New input may remain behind this claim, so discover it with one fresh
    * fixed-thread pick in the background, as the enqueue scheduler does after
    * a commit. The scheduler lives in chat-thread-queue-drain, which imports
-   * this module, so the pick is built here on the same request Store. This is
-   * new work, not a retry: `pick$` never loops.
+   * this module, so its stable pick command is invoked here on the same request
+   * Store. This is new work, not a retry: `pick$` never loops.
    */
   const scheduleThreadPick$ = command(
-    async (
-      { get, set },
-      claim: LeasedThreadClaim,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const { pick$: nextPick$ } = await get(
-        computed(() => {
-          return createPickObjects(claim.orgId, claim.chatThreadId);
-        }),
-      );
+    ({ set }, claim: LeasedThreadClaim, signal: AbortSignal): void => {
       signal.throwIfAborted();
-      waitUntil(set(nextPick$, signal));
+      waitUntil(
+        set(
+          pick$,
+          { orgId: claim.orgId, chatThreadId: claim.chatThreadId },
+          signal,
+        ),
+      );
     },
   );
 
@@ -453,40 +498,44 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       signal.throwIfAborted();
     },
   );
-  const directSendInsufficientCreditsMessage$ = computed(async (get) => {
-    get(internalReloadPick$);
-    const db = get(db$);
-    const [capabilities] = await db
-      .select({
-        canBuyCredits: orgPlanEntitlements.canBuyCredits,
-        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-      })
-      .from(orgPlanEntitlements)
-      .where(eq(orgPlanEntitlements.orgId, orgId))
-      .limit(1);
-    if (!capabilities) {
-      const [org] = await db
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
+  const directSendInsufficientCreditsMessage$ = command(
+    async ({ get }, orgId: string, signal: AbortSignal) => {
+      const db = get(db$);
+      const [capabilities] = await db
+        .select({
+          canBuyCredits: orgPlanEntitlements.canBuyCredits,
+          restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+        })
+        .from(orgPlanEntitlements)
+        .where(eq(orgPlanEntitlements.orgId, orgId))
         .limit(1);
-      if (org) {
-        throw new Error(`Missing org plan entitlement for ${orgId}`);
+      signal.throwIfAborted();
+      if (!capabilities) {
+        const [org] = await db
+          .select({ orgId: orgMetadata.orgId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (org) {
+          throw new Error(`Missing org plan entitlement for ${orgId}`);
+        }
+      } else if (capabilities.restrictedBuiltInModels === null) {
+        throw new Error(
+          `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
+        );
       }
-    } else if (capabilities.restrictedBuiltInModels === null) {
-      throw new Error(
-        `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
-      );
-    }
-    const appUrl = env("APP_URL");
-    return [
-      "Insufficient credits. This workspace has no spendable credits right now.",
-      "",
-      capabilities?.canBuyCredits === true
-        ? `Buy more credits or adjust auto-recharge: ${appUrl}/?settings=usage`
-        : `Upgrade to Pro to get more credits: ${appUrl}/?settings=billing&billingView=plans`,
-    ].join("\n");
-  });
+      signal.throwIfAborted();
+      const appUrl = env("APP_URL");
+      return [
+        "Insufficient credits. This workspace has no spendable credits right now.",
+        "",
+        capabilities?.canBuyCredits === true
+          ? `Buy more credits or adjust auto-recharge: ${appUrl}/?settings=usage`
+          : `Upgrade to Pro to get more credits: ${appUrl}/?settings=billing&billingView=plans`,
+      ].join("\n");
+    },
+  );
 
   /**
    * The one rejection of a picked queue head, for business rejections and
@@ -640,7 +689,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
   );
   const rejectChatQueueHead$ = command(
     async (
-      { get, set },
+      { set },
       args: {
         readonly head: RejectedQueueHead;
         readonly rejection: ChatQueueHeadRejection;
@@ -655,7 +704,11 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           ? error.message
           : error.code === "INSUFFICIENT_CREDITS" &&
               (head.contextType === "web" || head.contextType === "agent_run")
-            ? await get(directSendInsufficientCreditsMessage$)
+            ? await set(
+                directSendInsufficientCreditsMessage$,
+                head.orgId,
+                signal,
+              )
             : await set(
                 formatIntegrationRunError$,
                 {
@@ -949,30 +1002,21 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
    * rejected so it cannot stay queued. A pending commit fences and clears the
    * lease in its own transaction, so the launched path has no separate release.
    */
-  const pick$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<PickResult> => {
+  const pickClaim$ = command(
+    async (
+      { get, set },
+      claim: LeasedThreadClaim,
+      signal: AbortSignal,
+    ): Promise<PickResult> => {
       signal.throwIfAborted();
-      set(internalReloadPick$, (revision) => {
-        return revision + 1;
-      });
-      const claim = await set(claim$, signal);
-      signal.throwIfAborted();
-      if (!claim) {
-        return { kind: "none" };
+      const claimed = get(capturedClaims$).get(claim.claimId);
+      if (!claimed) {
+        throw new Error(
+          "Successful queue claim has no captured preparation graph",
+        );
       }
-      const claimed = await get(
-        computed(() => {
-          return createClaimRunObjects({
-            orgId: claim.orgId,
-            chatThreadId: claim.chatThreadId,
-            claimId: claim.claimId,
-            pickStartedAt: claim.pickStartedAt,
-          });
-        }),
-      );
-      signal.throwIfAborted();
       const [hasCapacity, event] = await Promise.all([
-        get(orgHasCapacity$),
+        get(claimed.orgHasCapacity$),
         get(claimed.pickedEvent$),
       ]);
       signal.throwIfAborted();
@@ -1044,5 +1088,22 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       return { kind: "launched", runId: pending.runId };
     },
   );
+  const pick$ = command(
+    async (
+      { set },
+      input: PickInput,
+      signal: AbortSignal,
+    ): Promise<PickIteration> => {
+      signal.throwIfAborted();
+      const { claim, cursor } = await set(claim$, input, signal);
+      return {
+        result: claim ? await set(pickClaim$, claim, signal) : { kind: "none" },
+        cursor,
+      };
+    },
+  );
   return { pick$ };
 }
+
+/** Stable entry; each successful claim owns a receipt-keyed preparation graph. */
+export const pickChatThread$ = createPickObjects().pick$;

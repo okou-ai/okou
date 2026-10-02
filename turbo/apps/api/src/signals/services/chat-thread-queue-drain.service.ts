@@ -5,7 +5,7 @@ import {
   chatEventRunlessInputPredicate,
 } from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import {
   and,
   count,
@@ -27,7 +27,11 @@ import {
   type ChatInputEnqueueCommit,
 } from "./chat-input-enqueue-observation";
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
-import { createPickObjects } from "./pick-chat-run.service";
+import {
+  pickChatThread$,
+  type OrgPickCursor,
+  type PickIteration,
+} from "./pick-chat-run.service";
 import { listQueuedChatThreadOrgIds$ } from "./queued-chat-thread.service";
 
 const L = logger("ChatThreadQueue");
@@ -185,7 +189,7 @@ export const enqueuedChatQueueWaitReason$ = command(
 /** Pick once. The entry owns background scheduling and all post-pick work. */
 export const pickEnqueuedChatThread$ = command(
   async (
-    { get, set },
+    { set },
     input: {
       readonly orgId: string;
       readonly chatThreadId: string;
@@ -199,13 +203,8 @@ export const pickEnqueuedChatThread$ = command(
         return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
-    const { pick$ } = await get(
-      computed(() => {
-        return createPickObjects(input.orgId, input.chatThreadId);
-      }),
-    );
-    signal.throwIfAborted();
-    return await set(pick$, signal);
+    const { result } = await set(pickChatThread$, input, signal);
+    return result;
   },
 );
 
@@ -223,7 +222,7 @@ const PICK_PAGE_SIZE = 100;
  */
 export const pickOrgQueuedChatThreads$ = command(
   async (
-    { get, set },
+    { set },
     input: { readonly orgId: string },
     signal: AbortSignal,
   ): Promise<number> => {
@@ -255,15 +254,15 @@ export const pickOrgQueuedChatThreads$ = command(
     if (!snapshot) {
       throw new Error("Queued chat thread count returned no row");
     }
-    const { pick$ } = await get(
-      computed(() => {
-        return createPickObjects(input.orgId);
-      }),
-    );
-    signal.throwIfAborted();
+    let cursor: OrgPickCursor | null = null;
     let launched = 0;
     for (let visited = 0; visited < snapshot.count; visited++) {
-      const picked = await set(pick$, signal);
+      const { result: picked, cursor: nextCursor }: PickIteration = await set(
+        pickChatThread$,
+        { orgId: input.orgId, after: cursor },
+        signal,
+      );
+      cursor = nextCursor;
       signal.throwIfAborted();
       if (picked.kind === "org-full") {
         return launched;
