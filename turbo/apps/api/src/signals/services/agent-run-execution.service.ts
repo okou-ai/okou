@@ -8359,19 +8359,16 @@ async function buildPermissionManifest(
   );
 }
 
-function createRunAdmissionCheckObjects() {
-  const checkPlanStatus$ = command(
-    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      const capabilities = await set(
-        loadOrgPlanCapabilities$,
-        input.orgId,
-        signal,
-      );
-      return capabilities?.status === "active" ? null : insufficientCredits();
-    },
-  );
-  return { checkAdmission$: checkRunAdmission$, checkPlanStatus$ };
-}
+const checkPlanStatus$ = command(
+  async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
+    const capabilities = await set(
+      loadOrgPlanCapabilities$,
+      input.orgId,
+      signal,
+    );
+    return capabilities?.status === "active" ? null : insufficientCredits();
+  },
+);
 
 export interface RunAgentObservation {
   readonly agentId: string;
@@ -8792,25 +8789,18 @@ async function prepareRunCallbackRows(args: {
   );
 }
 
-function createPrepareCallbacksCommand(
-  callbackInputs$?: SelectedAgentRunGraphSources["callbackInputs$"],
-) {
-  return command(
-    async (
-      { get },
-      args: Parameters<typeof prepareRunCallbackRows>[0],
-      signal: AbortSignal,
-    ): Promise<readonly AgentRunCallbackInsert[]> => {
-      const callbacks = callbackInputs$
-        ? await get(callbackInputs$)
-        : args.callbacks;
-      signal.throwIfAborted();
-      const rows = await prepareRunCallbackRows({ ...args, callbacks });
-      signal.throwIfAborted();
-      return rows;
-    },
-  );
-}
+const prepareCallbacks$ = command(
+  async (
+    _store,
+    args: Parameters<typeof prepareRunCallbackRows>[0],
+    signal: AbortSignal,
+  ): Promise<readonly AgentRunCallbackInsert[]> => {
+    signal.throwIfAborted();
+    const rows = await prepareRunCallbackRows(args);
+    signal.throwIfAborted();
+    return rows;
+  },
+);
 
 interface LaunchRunRowsArgs {
   readonly userId: string;
@@ -15560,135 +15550,119 @@ export function finalizedMaterializedLaunch(
   });
 }
 
-function createLaunchObjects(
-  callbackInputs$?: SelectedAgentRunGraphSources["callbackInputs$"],
-) {
-  const prepareCallbacks$ = createPrepareCallbacksCommand(callbackInputs$);
-  const createAtomicLaunchRun$ = command(
-    async (
-      { set },
-      input: AtomicLaunchRunInput,
-      suppliedStorage: AgentRunStorageMaterialization | undefined,
-      signal: AbortSignal,
-    ): Promise<QueueFirstAgentRunResult> => {
-      const identity = prepareLaunchRunIdentity({
-        resolved: input.context.resolved,
-      });
-      const storageInput = {
-        args: atomicLaunchPayloadInput({
-          createArgs: input.args,
-          context: input.context,
-          run: {
-            id: identity.runId,
-            sessionId: identity.sessionId,
-            shouldCreateSession: identity.shouldCreateSession,
-          },
-          timing: input.timing,
-        }),
-        storageManifestStats: new StorageManifestBuildStats(),
-      };
-      const contextInput = set(prepareStorageInput$, storageInput, signal);
-      const readInput = runnerStorageReadInput(storageInput);
-      // Storage, callbacks, KMS and allowance preparation remain independent.
-      const storage = set(
-        materializeRunnerStorage$,
-        contextInput,
-        readInput,
-        suppliedStorage,
-        signal,
-      );
-      const callbacks = set(
-        prepareCallbacks$,
-        {
-          runId: identity.runId,
-          callbacks: input.args.callbacks,
-          featureSwitchContext: input.context.featureSwitchContext,
-          timing: input.timing,
+const createAtomicLaunchRun$ = command(
+  async (
+    { set },
+    input: AtomicLaunchRunInput,
+    suppliedStorage: AgentRunStorageMaterialization | undefined,
+    signal: AbortSignal,
+  ): Promise<QueueFirstAgentRunResult> => {
+    const identity = prepareLaunchRunIdentity({
+      resolved: input.context.resolved,
+    });
+    const storageInput = {
+      args: atomicLaunchPayloadInput({
+        createArgs: input.args,
+        context: input.context,
+        run: {
+          id: identity.runId,
+          sessionId: identity.sessionId,
+          shouldCreateSession: identity.shouldCreateSession,
         },
-        signal,
-      );
-      const contextDraft = set(
-        prepareStoredContextDraft$,
-        contextInput,
-        signal,
-      );
-      const allowanceRefresh = isBuiltInModelProviderType(
-        input.context.modelProvider?.type,
-      )
-        ? set(
-            prepareUsageAllowanceRefresh$,
-            { orgId: input.args.orgId },
-            signal,
-          )
-        : Promise.resolve(undefined);
-      const joinedResources = Promise.all([
-        storage,
-        callbacks,
-        contextDraft,
-        allowanceRefresh,
-      ]);
-      const launchResult = await settle(
-        input.timing.measure(
-          "api_dispatch_build_runner_job_payload",
-          "top_level",
-          async () => {
-            const [
-              materializedStorage,
-              callbackRows,
-              draft,
-              preparedAllowanceRefresh,
-            ] = await joinedResources;
-            signal.throwIfAborted();
-            return {
-              callbackRows,
-              allowanceRefresh: preparedAllowanceRefresh,
-              launch: finalizedMaterializedLaunch(materializedStorage, draft),
-            };
-          },
-          {
-            pi_launch_resources:
-              input.context.piSandbox === undefined
-                ? "not_required"
-                : "required",
-          },
-        ),
-        signal,
-      );
-      if (!launchResult.ok) {
-        if (
-          launchResult.error instanceof OfficialWorkflowArtifactResolutionError
-        ) {
-          return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
-        }
-        if (input.args.queueFirstAssociation) {
-          throw launchResult.error;
-        }
-        // Legacy non-chat failed runs require their callback rows atomically.
-        // Reuse the already-started encryption; chat failures never wait here.
-        const callbackRows = await callbacks;
-        signal.throwIfAborted();
-        return await set(
-          commitFailedDirectLaunch$,
-          { input, identity, callbackRows, error: launchResult.error },
-          signal,
-        );
+        timing: input.timing,
+      }),
+      storageManifestStats: new StorageManifestBuildStats(),
+    };
+    const contextInput = set(prepareStorageInput$, storageInput, signal);
+    const readInput = runnerStorageReadInput(storageInput);
+    // Storage, callbacks, KMS and allowance preparation remain independent.
+    const storage = set(
+      materializeRunnerStorage$,
+      contextInput,
+      readInput,
+      suppliedStorage,
+      signal,
+    );
+    const callbacks = set(
+      prepareCallbacks$,
+      {
+        runId: identity.runId,
+        callbacks: input.args.callbacks,
+        featureSwitchContext: input.context.featureSwitchContext,
+        timing: input.timing,
+      },
+      signal,
+    );
+    const contextDraft = set(prepareStoredContextDraft$, contextInput, signal);
+    const allowanceRefresh = isBuiltInModelProviderType(
+      input.context.modelProvider?.type,
+    )
+      ? set(prepareUsageAllowanceRefresh$, { orgId: input.args.orgId }, signal)
+      : Promise.resolve(undefined);
+    const joinedResources = Promise.all([
+      storage,
+      callbacks,
+      contextDraft,
+      allowanceRefresh,
+    ]);
+    const launchResult = await settle(
+      input.timing.measure(
+        "api_dispatch_build_runner_job_payload",
+        "top_level",
+        async () => {
+          const [
+            materializedStorage,
+            callbackRows,
+            draft,
+            preparedAllowanceRefresh,
+          ] = await joinedResources;
+          signal.throwIfAborted();
+          return {
+            callbackRows,
+            allowanceRefresh: preparedAllowanceRefresh,
+            launch: finalizedMaterializedLaunch(materializedStorage, draft),
+          };
+        },
+        {
+          pi_launch_resources:
+            input.context.piSandbox === undefined ? "not_required" : "required",
+        },
+      ),
+      signal,
+    );
+    if (!launchResult.ok) {
+      if (
+        launchResult.error instanceof OfficialWorkflowArtifactResolutionError
+      ) {
+        return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
       }
-      const { callbackRows, launch } = launchResult.value;
-      const preparedInput = {
-        ...input,
-        allowanceRefresh: launchResult.value.allowanceRefresh,
-      };
+      if (input.args.queueFirstAssociation) {
+        throw launchResult.error;
+      }
+      // Legacy non-chat failed runs require their callback rows atomically.
+      // Reuse the already-started encryption; chat failures never wait here.
+      const callbackRows = await callbacks;
       signal.throwIfAborted();
-      input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
       return await set(
-        createRun$,
-        { input: preparedInput, identity, callbackRows, launch },
+        commitFailedDirectLaunch$,
+        { input, identity, callbackRows, error: launchResult.error },
         signal,
       );
-    },
-  );
-  return { createAtomicLaunchRun$ };
-}
+    }
+    const { callbackRows, launch } = launchResult.value;
+    const preparedInput = {
+      ...input,
+      allowanceRefresh: launchResult.value.allowanceRefresh,
+    };
+    signal.throwIfAborted();
+    input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
+    return await set(
+      createRun$,
+      { input: preparedInput, identity, callbackRows, launch },
+      signal,
+    );
+  },
+);
 
 interface PreparedAgentRun {
   readonly args: CreateAgentRunArgs;
@@ -15743,33 +15717,27 @@ export function finalizePreparedRunContext(
   };
 }
 
-function createCheckUnavailableProviderCreditsCommand() {
-  const { checkAdmission$ } = createRunAdmissionCheckObjects();
-  return command(
-    async ({ set }, args: CreateAgentRunArgs, signal: AbortSignal) => {
-      return await set(
-        checkAdmission$,
-        {
-          catalog: args.catalog,
-          orgId: args.orgId,
-          userId: args.userId,
-          modelProviderType: "built-in",
-          selectedModel: args.selectedModelOverride,
-          enforceBuiltInCredits: true,
-        },
-        signal,
-      );
-    },
-  );
-}
+const checkUnavailableProviderCredits$ = command(
+  async ({ set }, args: CreateAgentRunArgs, signal: AbortSignal) => {
+    return await set(
+      checkRunAdmission$,
+      {
+        catalog: args.catalog,
+        orgId: args.orgId,
+        userId: args.userId,
+        modelProviderType: "built-in",
+        selectedModel: args.selectedModelOverride,
+        enforceBuiltInCredits: true,
+      },
+      signal,
+    );
+  },
+);
 
 function createPrepareAgentRunCommand(
   internalContextInput$: State<PrepareRunContextInput | null>,
   runContext$: Computed<Promise<PreparedRunContext | CreateRunErrorResult>>,
 ) {
-  const { checkPlanStatus$ } = createRunAdmissionCheckObjects();
-  const checkUnavailableProviderCredits$ =
-    createCheckUnavailableProviderCreditsCommand();
   const prepareAgentRun$ = command(
     async (
       { get, set },
@@ -15873,102 +15841,92 @@ function createPrepareAgentRunCommand(
   return prepareAgentRun$;
 }
 
-function createCompleteAgentRunCommand(
-  createAtomicLaunchRun$: ReturnType<
-    typeof createLaunchObjects
-  >["createAtomicLaunchRun$"],
-) {
-  const { checkAdmission$ } = createRunAdmissionCheckObjects();
-  const completeAgentRun$ = command(
-    async (
-      { set },
-      input: CompleteAgentRunArgs,
-      signal: AbortSignal,
-    ): Promise<QueueFirstAgentRunResult> => {
-      assertThreadBoundRunHasQueueAssociation(input.prepared.args);
-      const db = set(writeDb$);
-      const { args, timing } = input.prepared;
-      const context = finalizePreparedRunContext(
+const completePreparedAgentRun$ = command(
+  async (
+    { set },
+    input: CompleteAgentRunArgs,
+    signal: AbortSignal,
+  ): Promise<QueueFirstAgentRunResult> => {
+    assertThreadBoundRunHasQueueAssociation(input.prepared.args);
+    const db = set(writeDb$);
+    const { args, timing } = input.prepared;
+    const context = finalizePreparedRunContext(
+      input.prepared,
+      input.finalAppendSystemPrompt,
+    );
+    signal.throwIfAborted();
+
+    const modelProviderType =
+      context.modelProvider?.type ?? args.modelProviderType;
+    const selectedModel =
+      context.modelProvider?.selectedModel ?? args.selectedModelOverride;
+    const enforceBuiltInCredits =
+      args.enforceBuiltInCredits === true &&
+      isBuiltInModelProviderType(context.modelProvider?.type);
+    const admissionGate = await timing.measure(
+      "api_dispatch_check_run_admission",
+      "top_level",
+      async () => {
+        const check = () => {
+          return set(
+            checkRunAdmission$,
+            {
+              catalog: args.catalog,
+              db,
+              orgId: args.orgId,
+              userId: args.userId,
+              modelProviderType,
+              selectedModel,
+              enforceBuiltInCredits,
+            },
+            signal,
+          );
+        };
+        return enforceBuiltInCredits
+          ? await timing.measure(
+              "api_dispatch_check_built_in_credits",
+              "nested",
+              check,
+            )
+          : await check();
+      },
+    );
+    signal.throwIfAborted();
+    if (admissionGate) {
+      return admissionGate;
+    }
+
+    let launchContext = context;
+    if (args.piExecution && args.piStableContext) {
+      // The eager body intentionally omitted the stable prefix, so bind the
+      // canonical prompt before launch.
+      launchContext = finalizePreparedRunContext(
         input.prepared,
-        input.finalAppendSystemPrompt,
+        bindStableAppendSystemPrompt(
+          args.piStableContext.buildPrompt(),
+          input.finalAppendSystemPrompt ??
+            args.piStableContext.dynamicAppendSystemPrompt,
+        ),
       );
-      signal.throwIfAborted();
+    }
 
-      const modelProviderType =
-        context.modelProvider?.type ?? args.modelProviderType;
-      const selectedModel =
-        context.modelProvider?.selectedModel ?? args.selectedModelOverride;
-      const enforceBuiltInCredits =
-        args.enforceBuiltInCredits === true &&
-        isBuiltInModelProviderType(context.modelProvider?.type);
-      const admissionGate = await timing.measure(
-        "api_dispatch_check_run_admission",
-        "top_level",
-        async () => {
-          const check = () => {
-            return set(
-              checkAdmission$,
-              {
-                catalog: args.catalog,
-                db,
-                orgId: args.orgId,
-                userId: args.userId,
-                modelProviderType,
-                selectedModel,
-                enforceBuiltInCredits,
-              },
-              signal,
-            );
-          };
-          return enforceBuiltInCredits
-            ? await timing.measure(
-                "api_dispatch_check_built_in_credits",
-                "nested",
-                check,
-              )
-            : await check();
-        },
-      );
-      signal.throwIfAborted();
-      if (admissionGate) {
-        return admissionGate;
-      }
-
-      let launchContext = context;
-      if (args.piExecution && args.piStableContext) {
-        // The eager body intentionally omitted the stable prefix, so bind the
-        // canonical prompt before launch.
-        launchContext = finalizePreparedRunContext(
-          input.prepared,
-          bindStableAppendSystemPrompt(
-            args.piStableContext.buildPrompt(),
-            input.finalAppendSystemPrompt ??
-              args.piStableContext.dynamicAppendSystemPrompt,
-          ),
-        );
-      }
-
-      return await set(
-        createAtomicLaunchRun$,
-        {
-          db,
-          args,
-          enforceBuiltInCredits,
-          context: launchContext,
-          timing,
-          phaseTiming: input.prepared.phaseTiming,
-        },
-        input.storageMaterialization,
-        signal,
-      );
-    },
-  );
-
-  return completeAgentRun$;
-}
+    return await set(
+      createAtomicLaunchRun$,
+      {
+        db,
+        args,
+        enforceBuiltInCredits,
+        context: launchContext,
+        timing,
+        phaseTiming: input.prepared.phaseTiming,
+      },
+      input.storageMaterialization,
+      signal,
+    );
+  },
+);
 
 export function createAgentRunExecutionObjects() {
-  const { createAtomicLaunchRun$ } = createLaunchObjects();
   const internalContextInput$ = state<PrepareRunContextInput | null>(null);
   const contextInput$ = computed((get) => {
     const input = get(internalContextInput$);
@@ -15982,9 +15940,7 @@ export function createAgentRunExecutionObjects() {
     internalContextInput$,
     runContext$,
   );
-  const completeAgentRun$ = createCompleteAgentRunCommand(
-    createAtomicLaunchRun$,
-  );
+  const completeAgentRun$ = completePreparedAgentRun$;
   return { runContext$, prepareAgentRun$, completeAgentRun$ };
 }
 
@@ -17095,7 +17051,6 @@ export interface SelectedAgentRunGraphSources {
   readonly threadSession$?: AsyncRead<ChatThreadSessionResolution | undefined>;
   readonly command$: AsyncRead<AnyCreateAgentRunCommandArgs | null>;
   readonly featureSwitchContext$?: AsyncRead<FeatureSwitchContext | undefined>;
-  readonly callbackInputs$?: AsyncRead<CreateAgentRunCommandArgs["callbacks"]>;
   readonly connectorSourceId$?: AsyncRead<string | null | undefined>;
   readonly memberAccountSnapshot$?: AsyncRead<
     MemberModelAccountSnapshot | null | undefined
@@ -18861,8 +18816,6 @@ function createPrepareReadySelectedRunCommand(
   sources?: SelectedAgentRunGraphSources,
   earlyStorage?: ReturnType<typeof createSelectedStorageObjects>,
 ) {
-  const checkUnavailableProviderCredits$ =
-    createCheckUnavailableProviderCreditsCommand();
   const { input$, runArgs$, shared } = graph;
   const { contextInput$, runContext$ } = context;
   return command(
@@ -19012,12 +18965,6 @@ export function createSelectedAgentRunObjects(
       return await set(prepareQueuedAgentRun$, signal);
     },
   );
-  const { createAtomicLaunchRun$ } = createLaunchObjects(
-    sources?.callbackInputs$,
-  );
-  const completePrepared$ = createCompleteAgentRunCommand(
-    createAtomicLaunchRun$,
-  );
   const completeAgentRun$ = command(
     async ({ get, set }, input: CompleteAgentRunArgs, signal: AbortSignal) => {
       const storageMaterialization = earlyStorage
@@ -19025,7 +18972,7 @@ export function createSelectedAgentRunObjects(
         : undefined;
       signal.throwIfAborted();
       return await set(
-        completePrepared$,
+        completePreparedAgentRun$,
         { ...input, storageMaterialization },
         signal,
       );

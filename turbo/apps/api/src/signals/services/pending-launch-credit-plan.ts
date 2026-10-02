@@ -77,6 +77,7 @@ export function pendingCreditPlanSql(orgId: string) {
         .mapWith(pgBooleanDecoder)
         .as("orgExists"),
     })
+    .from(sql`(VALUES (1)) AS pending_credit_probe(value)`)
     .getSQL();
 }
 
