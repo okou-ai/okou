@@ -6,9 +6,8 @@
  */
 import { resolveModelProviderCodexRuntimeConfig } from "./model-provider-codex-runtime";
 import { safeSync } from "../utils";
-import { badRequestMessage, providerUnavailable } from "../../lib/error";
+import { providerUnavailable } from "../../lib/error";
 import type { ReadonlyDb } from "../external/db";
-import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -17,7 +16,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { env } from "../../lib/env";
 import type { PiModelConfig } from "@okouai/api-contracts/contracts/runners";
-import { runCreateBodySchema } from "@okouai/api-contracts/contracts/run-routes";
 import {
   type ModelProviderType,
   type ModelProviderCredentialScope,
@@ -31,9 +29,6 @@ import {
   type ModelProviderEnvBindings,
   normalizeRunModelId,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { AgentExecutionConfig as agentRunCreateAgentExecutionConfig } from "./agent-execution-config";
-import { z } from "zod";
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contracts/pi-native";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
@@ -49,20 +44,9 @@ import {
   unpricedBuiltInRouteCategories,
 } from "./built-in-route-pricing";
 import type { UsagePricingResolution } from "../context/usage-pricing-resolution";
-import {
-  type CapturedPersonalSubscriptionAccount,
-  isPersonalSubscriptionProviderType,
-  type MemberModelAccountSnapshot,
-} from "./model-provider-account.service";
-import type {
-  AgentRunModelPin,
-  AgentRunPreCreateSource,
-  AgentRunRequestAgent,
-} from "./agent-run-contracts";
-import type { ChatThreadSessionRoute } from "./chat-session-continuity.service";
+import type { CapturedPersonalSubscriptionAccount } from "./model-provider-account.service";
 import type { QueueFirstRunAssociation } from "./chat-queued-event.service";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {
   type PiExecutionRoute,
@@ -77,26 +61,17 @@ import {
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   type AgentRunMetadata,
   CreateRunErrorResult,
   PermissionManifest,
   ResolvedModelProviderEnvironment,
-  firstAgent,
 } from "./execution-launch-persistence.service";
-import { AgentRunRecord } from "./execution-storage-manifest.service";
 
 interface ModelUsageContext {
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
-}
-
-export function modelProviderFramework(
-  modelProvider: ResolvedModelProviderEnvironment,
-): SupportedFramework {
-  return getFrameworkForType(modelProvider.concreteType ?? modelProvider.type);
 }
 
 export function frameworkForProviderSelection(
@@ -117,20 +92,6 @@ export function frameworkForProviderSelection(
   return concrete !== undefined && isModelProviderType(concrete)
     ? getFrameworkForType(concrete)
     : null;
-}
-
-export function frameworkApiKeyEnv(framework: SupportedFramework): string {
-  return framework === "codex" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
-}
-
-export function hasExplicitFrameworkApiKey(
-  content: agentRunCreateAgentExecutionConfig,
-  framework: SupportedFramework,
-): boolean {
-  return (
-    firstAgent(content)?.environment?.[frameworkApiKeyEnv(framework)] !==
-    undefined
-  );
 }
 
 export function isModelProviderType(type: string): type is ModelProviderType {
@@ -592,15 +553,6 @@ export function resolvePreparedPiModelConfig(args: {
   return config;
 }
 
-export function piConfigurationRouteError(
-  error: unknown,
-): ReturnType<typeof badRequestMessage> {
-  if (error instanceof PiNativeConfigurationError) {
-    return badRequestMessage(error.message);
-  }
-  throw error;
-}
-
 export function builtInModelProviderEnvironmentFromSnapshot(args: {
   readonly route: BuiltInModelRuntimeRoute;
   readonly selectedModel: string;
@@ -678,225 +630,4 @@ export interface RunModelProviderArgs {
   readonly codexServiceTier?: "fast" | "ultrafast";
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
-}
-
-export interface RunModelProviderReadInput {
-  readonly db: ReadonlyDb;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly args: RunModelProviderArgs;
-}
-
-/** Post-reservation materializer. This never inserts a Run or invokes the API
- * first turn. Publication owns a fresh admission. */
-
-// Selected-agent authorization, bootstrap and canonical session preparation.
-
-export type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
-
-/**
- * Request-scoped preparation facts from an entry point that already authorized
- * this exact user, organization, and Agent. These observations can remove
- * equivalent preflight reads, but they never authorize the later launch
- * transaction: compute admission still resolves the Agent and its ownership
- * again before it claims input or inserts a Run.
- *
- * When this object is present, nullable Agent metadata and feature overrides
- * are authoritative observations. The bootstrap materializer may enrich an
- * omitted email from the same request's user-info row. Absence of the object
- * means those facts were not loaded and every existing database fallback
- * remains.
- */
-export interface AuthorizedAgentRunRequestObservation {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agent: AgentRunRequestAgent;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-function optionalAgentSetting(value: string | null): string | undefined {
-  return value === null ? undefined : value;
-}
-
-interface AgentRunsCreateHttpRunCallback {
-  readonly url: string;
-  readonly secret: string;
-  readonly payload: unknown;
-}
-
-interface AgentRunsCreateInternalRunCallback {
-  readonly internalKind: InternalRunCallbackKind;
-  readonly payload: unknown;
-}
-
-type AgentRunsCreateRunCallback =
-  | AgentRunsCreateHttpRunCallback
-  | AgentRunsCreateInternalRunCallback;
-
-interface AgentRunsCreateAgentRunMetadata {
-  readonly workflowAutomationId?: string;
-  readonly triggerBrief?: string;
-  readonly autonomyBudget?: number;
-  readonly codexServiceTier?: CodexServiceTier;
-  readonly reasoningEffort?: ReasoningEffort | null;
-}
-
-/** The owner a claimed queue head runs as: its user in its organization. */
-export interface ThreadRunOwner {
-  readonly userId: string;
-  readonly orgId: string;
-}
-
-/** The run-request facts Thread sets for a claimed queue head. */
-export type ThreadRunBody = Pick<
-  AgentRunCreateBody,
-  | "modelProvider"
-  | "prompt"
-  | "realAgentInPreview"
-  | "captureNetworkBodies"
-  | "sessionId"
-> & {
-  /** The queue head's Agent; a Thread run always names it. */
-  readonly agentId: string;
-};
-
-/** Thread's run command for one claimed, queue-first input. */
-export interface ThreadRunCommand {
-  readonly owner: ThreadRunOwner;
-  readonly body: ThreadRunBody;
-  readonly apiStartTime: number;
-  readonly triggerSource?: TriggerSource;
-  readonly appendSystemPrompt?: string;
-  readonly userInfoExtras?: Pick<
-    UserInfo,
-    | "slackDisplayName"
-    | "slackUserId"
-    | "feishuDisplayName"
-    | "feishuOpenId"
-    | "teamsUserDisplayName"
-    | "teamsUserPrincipalName"
-    | "teamsUserId"
-    | "telegramDisplayName"
-    | "telegramUsername"
-    | "telegramUserId"
-    | "telegramLanguage"
-    | "agentphoneHandle"
-  >;
-  readonly callbacks?: readonly AgentRunsCreateRunCallback[];
-  readonly chatThreadId: string;
-  readonly connectorSourceId?: string;
-  readonly threadSessionRoute?: ChatThreadSessionRoute;
-  /** A producer may atomically move an integration thread to this run's agent. */
-  readonly expectedThreadAgentId?: string;
-  readonly computerUseHostId?: string;
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly codexServiceTier?: CodexServiceTier;
-  readonly reasoningEffort?: ReasoningEffort | null;
-  readonly agentRunMetadata?: AgentRunsCreateAgentRunMetadata;
-  readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
-  readonly agentRunModelPin?: AgentRunModelPin;
-  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
-  readonly piExecution: boolean;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
-  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
-}
-
-export interface UserInfo {
-  readonly name: string | null;
-  readonly email: string | null;
-  readonly timezone: string | null;
-  readonly slackDisplayName?: string;
-  readonly slackUserId?: string;
-  readonly feishuDisplayName?: string;
-  readonly feishuOpenId?: string;
-  readonly teamsUserDisplayName?: string;
-  readonly teamsUserPrincipalName?: string;
-  readonly teamsUserId?: string;
-  readonly telegramDisplayName?: string;
-  readonly telegramUsername?: string;
-  readonly telegramUserId?: string;
-  readonly telegramLanguage?: string;
-  readonly agentphoneHandle?: string;
-}
-
-/** The selection-time command: everything but the prompt-time facts. */
-export type ThreadRunSelection = Omit<
-  ThreadRunCommand,
-  "body" | "appendSystemPrompt" | "callbacks"
-> & {
-  readonly body: Omit<ThreadRunBody, "prompt">;
-};
-/** The identity read before Pi eligibility is decided. */
-export type ThreadRunIdentity = Omit<ThreadRunSelection, "piExecution"> & {
-  readonly piExecution?: boolean;
-};
-
-export function personalSubscriptionAccountCandidates(args: {
-  readonly command: ThreadRunIdentity;
-  readonly providerType: string;
-  readonly modelProviderId: string | null;
-  readonly snapshot?: MemberModelAccountSnapshot | null;
-}) {
-  const snapshot = args.snapshot;
-  if (
-    !snapshot ||
-    snapshot.orgId !== args.command.owner.orgId ||
-    snapshot.userId !== args.command.owner.userId ||
-    !isPersonalSubscriptionProviderType(args.providerType)
-  ) {
-    return undefined;
-  }
-  return snapshot.accounts.filter((account) => {
-    if (
-      account.disconnectedAt !== null ||
-      account.orgId !== snapshot.orgId ||
-      account.userId !== snapshot.userId
-    ) {
-      return false;
-    }
-    const activeType = account.type === args.providerType && account.isActive;
-    return args.modelProviderId === null
-      ? activeType
-      : account.id === args.modelProviderId ||
-          (account.modelProviderId === args.modelProviderId && activeType);
-  });
-}
-
-export function selectedRunPiExecution(command: ThreadRunIdentity): boolean {
-  if (command.piExecution === undefined) {
-    throw new Error("Selected model execution eligibility is unavailable");
-  }
-  return command.piExecution;
-}
-
-export function selectedRunModelProviderArgs(
-  command: ThreadRunIdentity,
-  agent: AgentRunRecord,
-  capturedPersonalSubscriptionAccount:
-    | CapturedPersonalSubscriptionAccount
-    | undefined,
-): Omit<RunModelProviderArgs, "catalog"> {
-  return {
-    orgId: command.owner.orgId,
-    userId: command.owner.userId,
-    modelProviderId:
-      command.modelProviderId ?? optionalAgentSetting(agent.modelProviderId),
-    modelProviderCredentialScope: command.modelProviderCredentialScope,
-    modelProviderType: command.body.modelProvider,
-    capturedPersonalSubscriptionAccount,
-    selectedModelOverride:
-      command.selectedModelOverride ??
-      optionalAgentSetting(agent.selectedModel),
-    builtInModelRuntimeRoute: command.builtInModelRuntimeRoute,
-    piExecution: selectedRunPiExecution(command),
-    codexServiceTier: command.codexServiceTier,
-    agentRunMetadata: { reasoningEffort: command.reasoningEffort },
-    ...("queueFirstAssociation" in command
-      ? { queueFirstAssociation: command.queueFirstAssociation }
-      : {}),
-  };
 }
