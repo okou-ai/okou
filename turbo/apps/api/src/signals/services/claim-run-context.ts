@@ -29,7 +29,7 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
 import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
-import { db$, rawSqlReadDb$, type ReadonlyDb, writeDb$ } from "../external/db";
+import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -136,7 +136,7 @@ import {
   type PreparedRunContext,
   type PreparedRuntimeContext,
   prepareModelUsageContext,
-  loadRunRoutePricing,
+  runRoutePricing,
   type PreparePiLaunchResourcesArgs,
   prepareRequestStorageResolution,
   type PrepareRunContextInput as TimedPrepareRunContextInput,
@@ -202,7 +202,7 @@ import {
   withoutLegacyAgentRunEnvironmentEntries,
   withPaidToolPlatformEnvironment,
 } from "./agent-run-execution.service";
-import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
+import { builtInRoutePricing } from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
   type AgentPhoneDeliveryTarget,
@@ -2255,21 +2255,22 @@ type RunErrorResponse = {
  * A Built-in pin that found no route because every executable candidate
  * lacks usage pricing is rejected as unbillable (not as a temporary outage).
  */
-async function unpricedBuiltInModelRejection(
-  db: ReadonlyDb,
-  args: Parameters<typeof loadBuiltInRoutePricing>[1],
-): Promise<RunErrorResponse | undefined> {
-  const message = unpricedBuiltInModelMessage(
-    args.catalog,
-    args.model,
-    await loadBuiltInRoutePricing(db, args),
-  );
-  return message
-    ? {
-        status: 503,
-        body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
-      }
-    : undefined;
+function unpricedBuiltInModelRejection(
+  args: Parameters<typeof builtInRoutePricing>[0],
+) {
+  return computed(async (get): Promise<RunErrorResponse | undefined> => {
+    const message = unpricedBuiltInModelMessage(
+      args.catalog,
+      args.model,
+      await get(builtInRoutePricing(args)),
+    );
+    return message
+      ? {
+          status: 503,
+          body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
+        }
+      : undefined;
+  });
 }
 
 interface InternalRunCallbackInput {
@@ -3107,12 +3108,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const catalog = await get(claimCatalog$);
     // A new run skips Built-in candidates whose billable categories for the
     // requested service tier lack usage_pricing, like any unavailable one.
-    const routePricing = await loadBuiltInRoutePricing(get(db$), {
-      catalog,
-      model: pin.selectedModel,
-      serviceTier: (await get(queuedModelRuntimeSelection$))?.codexServiceTier,
-      resolution: get(usagePricingResolution$),
-    });
+    const routePricing = await get(
+      builtInRoutePricing({
+        catalog,
+        model: pin.selectedModel,
+        serviceTier: (await get(queuedModelRuntimeSelection$))
+          ?.codexServiceTier,
+        resolution: get(usagePricingResolution$),
+      }),
+    );
     const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
       [
         get(queuedModelRuntimeFeatureSwitchContext$),
@@ -3463,12 +3467,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const allowance = get(promptAllowanceWriteResult$);
     const unpriced =
       builtInModelRuntimeRoute === null && pin.selectedModel
-        ? await unpricedBuiltInModelRejection(get(db$), {
-            catalog: await get(claimCatalog$),
-            model: pin.selectedModel,
-            serviceTier: selection.codexServiceTier,
-            resolution: get(usagePricingResolution$),
-          })
+        ? await get(
+            unpricedBuiltInModelRejection({
+              catalog: await get(claimCatalog$),
+              model: pin.selectedModel,
+              serviceTier: selection.codexServiceTier,
+              resolution: get(usagePricingResolution$),
+            }),
+          )
         : undefined;
     return {
       pin,
@@ -5990,12 +5996,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const catalog = await get(claimCatalog$);
     // A new run skips Built-in candidates whose billable categories for the
     // requested service tier lack usage_pricing, like any unavailable one.
-    const routePricing = await loadBuiltInRoutePricing(get(db$), {
-      catalog,
-      model: pin.selectedModel,
-      serviceTier: (await get(queuedModelRuntimeSelection$2))?.codexServiceTier,
-      resolution: get(usagePricingResolution$),
-    });
+    const routePricing = await get(
+      builtInRoutePricing({
+        catalog,
+        model: pin.selectedModel,
+        serviceTier: (await get(queuedModelRuntimeSelection$2))
+          ?.codexServiceTier,
+        resolution: get(usagePricingResolution$),
+      }),
+    );
     const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
       [
         get(queuedModelRuntimeFeatureSwitchContext$2),
@@ -6357,12 +6366,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const allowance = get(automationAllowanceWriteResult$);
     const unpriced =
       builtInModelRuntimeRoute === null && pin.selectedModel
-        ? await unpricedBuiltInModelRejection(get(db$), {
-            catalog: await get(claimCatalog$),
-            model: pin.selectedModel,
-            serviceTier: selection.codexServiceTier,
-            resolution: get(usagePricingResolution$),
-          })
+        ? await get(
+            unpricedBuiltInModelRejection({
+              catalog: await get(claimCatalog$),
+              model: pin.selectedModel,
+              serviceTier: selection.codexServiceTier,
+              resolution: get(usagePricingResolution$),
+            }),
+          )
         : undefined;
     return {
       pin,
@@ -11147,12 +11158,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         catalog,
         modelProvider,
         permissionManifest: connectors.permissionManifest,
-        routePricing: await loadRunRoutePricing(get(db$), {
-          catalog,
-          modelProvider,
-          serviceTier: (await get(contextInput$)).args.codexServiceTier,
-          resolution: get(usagePricingResolution$),
-        }),
+        routePricing: await get(
+          runRoutePricing({
+            catalog,
+            modelProvider,
+            serviceTier: (await get(contextInput$)).args.codexServiceTier,
+            resolution: get(usagePricingResolution$),
+          }),
+        ),
       });
       if (isRouteError(usage)) {
         return usage;

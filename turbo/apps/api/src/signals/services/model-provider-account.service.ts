@@ -958,28 +958,6 @@ export const disconnectPersonalModelProviderAccounts$ = command(
   },
 );
 
-export async function activePersonalModelProviderAccount(args: {
-  readonly db: ReadonlyDb;
-  readonly modelProviderId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<AccountRow | null> {
-  const [account] = await args.db
-    .select()
-    .from(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.modelProviderId, args.modelProviderId),
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-        eq(modelProviderAccounts.isActive, true),
-        isNull(modelProviderAccounts.disconnectedAt),
-      ),
-    )
-    .limit(1);
-  return account ?? null;
-}
-
 export async function personalModelProviderAccountById(args: {
   readonly db: ReadonlyDb;
   readonly runId?: string;
@@ -1212,57 +1190,6 @@ export async function validatePersonalSubscriptionAdmission(args: {
     userId: args.userId,
   });
   return account?.type === args.type ? account : null;
-}
-
-/** Environment preparation reads the connected account, its logical provider
- * selection and its ciphertext bundle in one statement. */
-export async function readPersonalSubscriptionAccount(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly type: PersonalSubscriptionProviderType;
-  readonly sourceId: string;
-}) {
-  const rows = await args.db
-    .select({
-      account: modelProviderAccounts,
-      selectedModel: modelProviders.selectedModel,
-      secret: {
-        name: modelProviderAccountSecrets.name,
-        encryptedValue: modelProviderAccountSecrets.encryptedValue,
-      },
-    })
-    .from(modelProviderAccounts)
-    .innerJoin(
-      modelProviders,
-      eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-    )
-    .leftJoin(
-      modelProviderAccountSecrets,
-      eq(
-        modelProviderAccountSecrets.modelProviderAccountId,
-        modelProviderAccounts.id,
-      ),
-    )
-    .where(
-      and(
-        eq(modelProviderAccounts.id, args.sourceId),
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-        eq(modelProviderAccounts.type, args.type),
-        isNull(modelProviderAccounts.disconnectedAt),
-      ),
-    );
-  const first = rows[0];
-  return first
-    ? {
-        account: first.account,
-        selectedModel: first.selectedModel,
-        secrets: rows.flatMap((row) => {
-          return row.secret ? [row.secret] : [];
-        }),
-      }
-    : null;
 }
 
 /** Organization subscriptions remain singleton `model_providers` + `secrets`

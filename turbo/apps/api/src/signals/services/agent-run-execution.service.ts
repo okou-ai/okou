@@ -104,6 +104,7 @@ import {
   sql,
   and,
   eq,
+  gt,
   like,
   isNull,
   type WithSubquery,
@@ -188,7 +189,9 @@ import {
 import {
   type BuiltInModelRuntimeRoute,
   isBuiltInModelRuntimeRoutePermitted,
-  resolveBuiltInModelRuntimeRouteFromCatalog,
+  builtInModelRuntimeRouteFromSnapshot,
+  builtInModelKeyIdsByVendor$,
+  getCatalogBuiltInModelRouteCandidates,
   unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
 import {
@@ -203,7 +206,7 @@ import {
 import {
   type BuiltInRoutePricing,
   builtInRoutePricingRejectionMessage,
-  loadBuiltInRoutePricing,
+  builtInRoutePricing,
   unpricedBuiltInRouteCategories,
 } from "./built-in-route-pricing";
 import {
@@ -227,9 +230,8 @@ import {
   type CapturedPersonalSubscriptionAccount,
   isPersonalSubscriptionProviderType,
   validatePersonalSubscriptionAdmission,
-  personalModelProviderAccountById,
-  readPersonalSubscriptionAccount,
-  activePersonalModelProviderAccount,
+  personalSubscriptionAccountAccessCondition,
+  type PersonalSubscriptionProviderType,
   type MemberModelAccountSnapshot,
 } from "./model-provider-account.service";
 import type {
@@ -394,6 +396,7 @@ import {
   GATEWAY_RUNTIME_SECRET_NAME,
 } from "./model-provider-gateway-runtime";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
+import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import {
   OPENROUTER_US_ORIGIN,
   getOpenRouterBaseUrl,
@@ -6074,8 +6077,7 @@ interface ModelProviderEnvironmentSecret {
   readonly encryptedValue: string | null;
 }
 
-async function loadModelProviderEnvironmentSecretRows(
-  db: ReadonlyDb,
+function loadModelProviderEnvironmentSecretRows(
   args: {
     readonly accountId?: string;
     readonly orgId: string;
@@ -6085,90 +6087,228 @@ async function loadModelProviderEnvironmentSecretRows(
     readonly secretRows?: readonly ModelProviderEnvironmentSecret[];
   },
   hasFirewallAuth: boolean,
-): Promise<readonly ModelProviderEnvironmentSecret[]> {
-  if (args.secretRows) {
-    return args.secretRows;
-  }
-  // Codex CLI needs only the workspace ID; keep every other firewall secret
-  // lazy so bearer and refresh tokens are not read during run preparation.
-  const readCodexRoutingAccountId =
-    args.type === "codex-oauth-token" && !args.piExecution;
-  if (args.accountId) {
-    return await db
-      .select({
-        name: modelProviderAccountSecrets.name,
-        encryptedValue: hasFirewallAuth
-          ? readCodexRoutingAccountId
-            ? sql`CASE WHEN ${modelProviderAccountSecrets.name} = 'CHATGPT_ACCOUNT_ID' THEN ${modelProviderAccountSecrets.encryptedValue} ELSE NULL END`.mapWith(
-                nullableDriverValueDecoder(pgTextDecoder),
-              )
-            : sql`NULL`.mapWith(pgNullDecoder)
-          : modelProviderAccountSecrets.encryptedValue,
-      })
-      .from(modelProviderAccountSecrets)
-      .where(
-        eq(modelProviderAccountSecrets.modelProviderAccountId, args.accountId),
-      );
-  }
-  return await db
-    .select({
-      name: secretsTable.name,
-      encryptedValue: hasFirewallAuth
-        ? readCodexRoutingAccountId
-          ? sql`CASE WHEN ${secretsTable.name} = 'CHATGPT_ACCOUNT_ID' THEN ${secretsTable.encryptedValue} ELSE NULL END`.mapWith(
-              nullableDriverValueDecoder(pgTextDecoder),
-            )
-          : sql`NULL`.mapWith(pgNullDecoder)
-        : secretsTable.encryptedValue,
-    })
-    .from(secretsTable)
-    .where(
-      and(
-        eq(secretsTable.orgId, args.orgId),
-        eq(secretsTable.userId, args.userId),
-        eq(secretsTable.type, "model-provider"),
-      ),
-    );
+) {
+  return computed(
+    async (get): Promise<readonly ModelProviderEnvironmentSecret[]> => {
+      const db = get(db$);
+      if (args.secretRows) {
+        return args.secretRows;
+      }
+      // Codex CLI needs only the workspace ID; keep every other firewall secret
+      // lazy so bearer and refresh tokens are not read during run preparation.
+      const readCodexRoutingAccountId =
+        args.type === "codex-oauth-token" && !args.piExecution;
+      if (args.accountId) {
+        return await db
+          .select({
+            name: modelProviderAccountSecrets.name,
+            encryptedValue: hasFirewallAuth
+              ? readCodexRoutingAccountId
+                ? sql`CASE WHEN ${modelProviderAccountSecrets.name} = 'CHATGPT_ACCOUNT_ID' THEN ${modelProviderAccountSecrets.encryptedValue} ELSE NULL END`.mapWith(
+                    nullableDriverValueDecoder(pgTextDecoder),
+                  )
+                : sql`NULL`.mapWith(pgNullDecoder)
+              : modelProviderAccountSecrets.encryptedValue,
+          })
+          .from(modelProviderAccountSecrets)
+          .where(
+            eq(
+              modelProviderAccountSecrets.modelProviderAccountId,
+              args.accountId,
+            ),
+          );
+      }
+      return await db
+        .select({
+          name: secretsTable.name,
+          encryptedValue: hasFirewallAuth
+            ? readCodexRoutingAccountId
+              ? sql`CASE WHEN ${secretsTable.name} = 'CHATGPT_ACCOUNT_ID' THEN ${secretsTable.encryptedValue} ELSE NULL END`.mapWith(
+                  nullableDriverValueDecoder(pgTextDecoder),
+                )
+              : sql`NULL`.mapWith(pgNullDecoder)
+            : secretsTable.encryptedValue,
+        })
+        .from(secretsTable)
+        .where(
+          and(
+            eq(secretsTable.orgId, args.orgId),
+            eq(secretsTable.userId, args.userId),
+            eq(secretsTable.type, "model-provider"),
+          ),
+        );
+    },
+  );
 }
 
-async function multiAuthModelProviderEnvironment(
-  db: ReadonlyDb,
-  args: {
-    readonly catalog: ModelCatalog;
-    readonly id: string | null;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly type: ModelProviderType;
-    readonly authMethod: string | null;
-    readonly selectedModel: string | null;
-    readonly configuredModel?: string | null;
-    readonly piExecution?: boolean;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly accountId?: string;
-    readonly secretRows?: readonly ModelProviderEnvironmentSecret[];
-  },
-): Promise<ResolvedModelProviderEnvironment | null> {
-  if (!args.authMethod) {
-    return null;
-  }
-  const secretConfig = getSecretsForAuthMethod(args.type, args.authMethod);
-  if (!secretConfig) {
-    return null;
-  }
-
-  const secretRows = await loadModelProviderEnvironmentSecretRows(
-    db,
-    args,
-    getModelProviderFirewall(args.type) !== undefined,
+function multiAuthModelProviderEnvironment(args: {
+  readonly catalog: ModelCatalog;
+  readonly id: string | null;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: ModelProviderType;
+  readonly authMethod: string | null;
+  readonly selectedModel: string | null;
+  readonly configuredModel?: string | null;
+  readonly piExecution?: boolean;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly accountId?: string;
+  readonly secretRows?: readonly ModelProviderEnvironmentSecret[];
+}) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      if (!args.authMethod) {
+        return null;
+      }
+      const secretConfig = getSecretsForAuthMethod(args.type, args.authMethod);
+      if (!secretConfig) {
+        return null;
+      }
+      const secretRows = await get(
+        loadModelProviderEnvironmentSecretRows(
+          args,
+          getModelProviderFirewall(args.type) !== undefined,
+        ),
+      );
+      return await multiAuthModelProviderEnvironmentFromSnapshot({
+        ...args,
+        secretRows,
+      });
+    },
   );
-  return await multiAuthModelProviderEnvironmentFromSnapshot({
-    ...args,
-    secretRows,
+}
+
+function connectedPersonalRunAccount(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: PersonalSubscriptionProviderType;
+  readonly sourceId: string;
+}) {
+  return computed(async (get) => {
+    const rows = await get(db$)
+      .select({
+        account: modelProviderAccounts,
+        selectedModel: modelProviders.selectedModel,
+        secret: {
+          name: modelProviderAccountSecrets.name,
+          encryptedValue: modelProviderAccountSecrets.encryptedValue,
+        },
+      })
+      .from(modelProviderAccounts)
+      .innerJoin(
+        modelProviders,
+        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+      )
+      .leftJoin(
+        modelProviderAccountSecrets,
+        eq(
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccounts.id,
+        ),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.sourceId),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          eq(modelProviderAccounts.type, args.type),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
+    const first = rows[0];
+    return first
+      ? {
+          account: first.account,
+          selectedModel: first.selectedModel,
+          secrets: rows.flatMap((row) => {
+            return row.secret ? [row.secret] : [];
+          }),
+        }
+      : null;
   });
 }
 
-async function builtInModelProviderEnvironment(
-  db: ReadonlyDb,
+function personalRunAccount(args: {
+  readonly id: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runId?: string;
+}) {
+  return computed(async (get) => {
+    const [account] = await get(db$)
+      .select()
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.id),
+          personalSubscriptionAccountAccessCondition(args.runId),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    return account ?? null;
+  });
+}
+
+function directBuiltInRuntimeRoute(args: {
+  readonly catalog: ModelCatalog;
+  readonly selectedModel: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly routePricing: BuiltInRoutePricing | undefined;
+}) {
+  return computed(async (get) => {
+    const keyIdsByVendor = await get(builtInModelKeyIdsByVendor$);
+    const candidates = getCatalogBuiltInModelRouteCandidates(
+      args.catalog,
+      args.selectedModel,
+      args.routePricing,
+    );
+    const alternativeRouting =
+      isFeatureEnabled(
+        FeatureSwitchKey.DeepSeekAlternativeRouting,
+        args.featureSwitchContext,
+      ) &&
+      candidates.some((candidate) => {
+        return candidate.providerType === "deepseek";
+      });
+    const eligible = candidates.filter((candidate) => {
+      return (
+        (!alternativeRouting || candidate.providerType !== "deepseek") &&
+        keyIdsByVendor.has(candidate.vendor)
+      );
+    });
+    if (eligible.length === 0) {
+      return null;
+    }
+    const cooldowns = await get(db$)
+      .select({
+        modelRuntimeProvider:
+          builtInModelCandidateCooldown.modelRuntimeProvider,
+        modelRuntimeModel: builtInModelCandidateCooldown.modelRuntimeModel,
+      })
+      .from(builtInModelCandidateCooldown)
+      .where(
+        and(
+          eq(builtInModelCandidateCooldown.selectedModel, args.selectedModel),
+          inArray(
+            builtInModelCandidateCooldown.modelRuntimeProvider,
+            eligible.map((candidate) => {
+              return candidate.providerType;
+            }),
+          ),
+          gt(builtInModelCandidateCooldown.unavailableUntil, nowDate()),
+        ),
+      );
+    return builtInModelRuntimeRouteFromSnapshot({
+      ...args,
+      keyIdsByVendor,
+      cooldowns,
+    });
+  });
+}
+
+function builtInModelProviderEnvironment(
   catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
@@ -6179,54 +6319,62 @@ async function builtInModelProviderEnvironment(
     readonly resolvedRoute: BuiltInModelRuntimeRoute | undefined;
     readonly newRunPricing: NewRunRoutePricingRequest | undefined;
   },
-): Promise<ResolvedModelProviderEnvironment | null> {
-  if (resolvedRoute && resolvedRoute.selectedModel !== selectedModel) {
-    return null;
-  }
-  // A route captured earlier must still be an enabled catalog candidate; a
-  // freshly resolved one already comes from the catalog.
-  if (
-    resolvedRoute &&
-    !isBuiltInModelRuntimeRoutePermitted(catalog, resolvedRoute)
-  ) {
-    return null;
-  }
-  const route =
-    resolvedRoute ??
-    (await resolveBuiltInModelRuntimeRouteFromCatalog(
-      db,
-      catalog,
-      selectedModel,
-      featureSwitchContext,
-      newRunPricing
-        ? await loadBuiltInRoutePricing(db, {
-            catalog,
-            model: selectedModel,
-            serviceTier: newRunPricing.serviceTier,
-            resolution: newRunPricing.resolution,
-          })
-        : undefined,
-    ));
-  if (!route) {
-    return null;
-  }
-  const [key] = await db
-    .select({
-      id: builtInModelKeys.id,
-      apiKey: builtInModelKeys.apiKey,
-    })
-    .from(builtInModelKeys)
-    .where(eq(builtInModelKeys.id, route.modelKeyId))
-    .limit(1);
-  if (!key?.apiKey) {
-    return null;
-  }
-  return builtInModelProviderEnvironmentFromSnapshot({
-    route,
-    selectedModel,
-    featureSwitchContext,
-    apiKey: key.apiKey,
-  });
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      const db = get(db$);
+      if (resolvedRoute && resolvedRoute.selectedModel !== selectedModel) {
+        return null;
+      }
+      // A route captured earlier must still be an enabled catalog candidate; a
+      // freshly resolved one already comes from the catalog.
+      if (
+        resolvedRoute &&
+        !isBuiltInModelRuntimeRoutePermitted(catalog, resolvedRoute)
+      ) {
+        return null;
+      }
+      const route =
+        resolvedRoute ??
+        (await get(
+          directBuiltInRuntimeRoute({
+            catalog: catalog,
+            selectedModel: selectedModel,
+            featureSwitchContext: featureSwitchContext,
+            routePricing: newRunPricing
+              ? await get(
+                  builtInRoutePricing({
+                    catalog,
+                    model: selectedModel,
+                    serviceTier: newRunPricing.serviceTier,
+                    resolution: newRunPricing.resolution,
+                  }),
+                )
+              : undefined,
+          }),
+        ));
+      if (!route) {
+        return null;
+      }
+      const [key] = await db
+        .select({
+          id: builtInModelKeys.id,
+          apiKey: builtInModelKeys.apiKey,
+        })
+        .from(builtInModelKeys)
+        .where(eq(builtInModelKeys.id, route.modelKeyId))
+        .limit(1);
+      if (!key?.apiKey) {
+        return null;
+      }
+      return builtInModelProviderEnvironmentFromSnapshot({
+        route,
+        selectedModel,
+        featureSwitchContext,
+        apiKey: key.apiKey,
+      });
+    },
+  );
 }
 
 /**
@@ -6256,45 +6404,48 @@ export interface ResolveModelProviderEnvironmentArgs {
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
-async function customGatewayModelProviderEnvironment(
-  db: ReadonlyDb,
+function customGatewayModelProviderEnvironment(
   args: ResolveModelProviderEnvironmentArgs,
-): Promise<ResolvedModelProviderEnvironment | null> {
-  if (!args.modelProviderId || !args.selectedModelOverride) {
-    return null;
-  }
-  const [row] = await db
-    .select({
-      id: modelProviderSurfaces.id,
-      protocol: modelProviderSurfaces.protocol,
-      apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
-      authHeaderName: modelProviderSurfaces.authHeaderName,
-      authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
-      modelMappings: modelProviderSurfaces.modelMappings,
-      displayName: modelProviderConnections.displayName,
-      encryptedValue: secretsTable.encryptedValue,
-    })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .innerJoin(
-      secretsTable,
-      eq(modelProviderConnections.secretId, secretsTable.id),
-    )
-    .where(
-      and(
-        eq(modelProviderSurfaces.id, args.modelProviderId),
-        eq(modelProviderConnections.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  if (!row) {
-    return null;
-  }
-
-  return await customGatewayProviderEnvironmentFromSnapshot(args, row);
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      const db = get(db$);
+      if (!args.modelProviderId || !args.selectedModelOverride) {
+        return null;
+      }
+      const [row] = await db
+        .select({
+          id: modelProviderSurfaces.id,
+          protocol: modelProviderSurfaces.protocol,
+          apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
+          authHeaderName: modelProviderSurfaces.authHeaderName,
+          authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
+          modelMappings: modelProviderSurfaces.modelMappings,
+          displayName: modelProviderConnections.displayName,
+          encryptedValue: secretsTable.encryptedValue,
+        })
+        .from(modelProviderSurfaces)
+        .innerJoin(
+          modelProviderConnections,
+          eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+        )
+        .innerJoin(
+          secretsTable,
+          eq(modelProviderConnections.secretId, secretsTable.id),
+        )
+        .where(
+          and(
+            eq(modelProviderSurfaces.id, args.modelProviderId),
+            eq(modelProviderConnections.orgId, args.orgId),
+          ),
+        )
+        .limit(1);
+      if (!row) {
+        return null;
+      }
+      return await customGatewayProviderEnvironmentFromSnapshot(args, row);
+    },
+  );
 }
 
 interface ModelProviderEnvironmentRow {
@@ -6339,141 +6490,155 @@ function isCandidateModelProviderRow(
   return isModelProviderType(row.type);
 }
 
-async function resolvePersonalModelProviderAccountEnvironment(
-  db: ReadonlyDb,
+function resolvePersonalModelProviderAccountEnvironment(
   args: ResolveModelProviderEnvironmentArgs,
   account: PersonalModelProviderAccountRow,
   selectedModel: string | null,
   secretRows?: readonly ModelProviderEnvironmentSecret[],
-): Promise<ResolvedModelProviderEnvironment | null> {
-  if (
-    !isPersonalSubscriptionProviderType(account.type) ||
-    getFrameworkForType(account.type) !== args.framework ||
-    (args.modelProviderType !== undefined &&
-      args.modelProviderType !== account.type)
-  ) {
-    return null;
-  }
-
-  if (hasAuthMethods(account.type)) {
-    return await multiAuthModelProviderEnvironment(db, {
-      catalog: args.catalog,
-      id: account.id,
-      orgId: account.orgId,
-      userId: account.userId,
-      type: account.type,
-      authMethod: account.authMethod,
-      selectedModel: args.selectedModelOverride ?? selectedModel,
-      piExecution: args.piExecution,
-      featureSwitchContext: args.featureSwitchContext,
-      accountId: account.id,
-      secretRows,
-    });
-  }
-
-  const config = MODEL_PROVIDER_TYPES[account.type];
-  if (!isSingleSecretModelProviderConfig(config)) {
-    return null;
-  }
-  const secret = secretRows
-    ? secretRows.find((row) => {
-        return row.name === config.secretName;
-      })
-    : (
-        await db
-          .select({
-            encryptedValue: modelProviderAccountSecrets.encryptedValue,
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      const db = get(db$);
+      if (
+        !isPersonalSubscriptionProviderType(account.type) ||
+        getFrameworkForType(account.type) !== args.framework ||
+        (args.modelProviderType !== undefined &&
+          args.modelProviderType !== account.type)
+      ) {
+        return null;
+      }
+      if (hasAuthMethods(account.type)) {
+        return await get(
+          multiAuthModelProviderEnvironment({
+            catalog: args.catalog,
+            id: account.id,
+            orgId: account.orgId,
+            userId: account.userId,
+            type: account.type,
+            authMethod: account.authMethod,
+            selectedModel: args.selectedModelOverride ?? selectedModel,
+            piExecution: args.piExecution,
+            featureSwitchContext: args.featureSwitchContext,
+            accountId: account.id,
+            secretRows,
+          }),
+        );
+      }
+      const config = MODEL_PROVIDER_TYPES[account.type];
+      if (!isSingleSecretModelProviderConfig(config)) {
+        return null;
+      }
+      const secret = secretRows
+        ? secretRows.find((row) => {
+            return row.name === config.secretName;
           })
-          .from(modelProviderAccountSecrets)
-          .where(
-            and(
-              eq(
-                modelProviderAccountSecrets.modelProviderAccountId,
-                account.id,
-              ),
-              eq(modelProviderAccountSecrets.name, config.secretName),
-            ),
-          )
-          .limit(1)
-      )[0];
-  if (!secret || secret.encryptedValue === null) {
-    return null;
-  }
-
-  return await personalProviderEnvironmentFromSnapshot(
-    args,
-    account,
-    selectedModel,
-    [{ name: config.secretName, encryptedValue: secret.encryptedValue }],
+        : (
+            await db
+              .select({
+                encryptedValue: modelProviderAccountSecrets.encryptedValue,
+              })
+              .from(modelProviderAccountSecrets)
+              .where(
+                and(
+                  eq(
+                    modelProviderAccountSecrets.modelProviderAccountId,
+                    account.id,
+                  ),
+                  eq(modelProviderAccountSecrets.name, config.secretName),
+                ),
+              )
+              .limit(1)
+          )[0];
+      if (!secret || secret.encryptedValue === null) {
+        return null;
+      }
+      return await personalProviderEnvironmentFromSnapshot(
+        args,
+        account,
+        selectedModel,
+        [{ name: config.secretName, encryptedValue: secret.encryptedValue }],
+      );
+    },
   );
 }
 
-async function resolveExactPersonalModelProviderAccount(
-  db: ReadonlyDb,
+function resolveExactPersonalModelProviderAccount(
   args: ResolveModelProviderEnvironmentArgs,
-): Promise<ResolvedModelProviderEnvironment | null> {
-  if (!args.modelProviderId || args.modelProviderCredentialScope === "org") {
-    return null;
-  }
-  const captured = args.capturedPersonalSubscriptionAccount;
-  const capturedType =
-    !args.retainedRunId &&
-    captured?.id === args.modelProviderId &&
-    captured.orgId === args.orgId &&
-    captured.userId === args.userId &&
-    (args.modelProviderType === undefined ||
-      captured.type === args.modelProviderType)
-      ? captured.type
-      : undefined;
-  const account = capturedType
-    ? null
-    : await personalModelProviderAccountById({
-        db,
-        id: args.modelProviderId,
-        orgId: args.orgId,
-        userId: args.userId,
-        runId: args.retainedRunId,
-      });
-  const accountType = capturedType ?? account?.type;
-  if (!accountType || !isPersonalSubscriptionProviderType(accountType)) {
-    return null;
-  }
-  // A deferred Run keeps the account its original request authorized, even if
-  // it has since been disconnected; a new request needs a connected account.
-  if (args.retainedRunId) {
-    if (!account) {
-      return null;
-    }
-    const [provider] = await db
-      .select({ selectedModel: modelProviders.selectedModel })
-      .from(modelProviders)
-      .where(eq(modelProviders.id, account.modelProviderId))
-      .limit(1);
-    return provider
-      ? await resolvePersonalModelProviderAccountEnvironment(
-          db,
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      const db = get(db$);
+      if (
+        !args.modelProviderId ||
+        args.modelProviderCredentialScope === "org"
+      ) {
+        return null;
+      }
+      const captured = args.capturedPersonalSubscriptionAccount;
+      const capturedType =
+        !args.retainedRunId &&
+        captured?.id === args.modelProviderId &&
+        captured.orgId === args.orgId &&
+        captured.userId === args.userId &&
+        (args.modelProviderType === undefined ||
+          captured.type === args.modelProviderType)
+          ? captured.type
+          : undefined;
+      const account = capturedType
+        ? null
+        : await get(
+            personalRunAccount({
+              id: args.modelProviderId,
+              orgId: args.orgId,
+              userId: args.userId,
+              runId: args.retainedRunId,
+            }),
+          );
+      const accountType = capturedType ?? account?.type;
+      if (!accountType || !isPersonalSubscriptionProviderType(accountType)) {
+        return null;
+      }
+      // A deferred Run keeps the account its original request authorized, even if
+      // it has since been disconnected; a new request needs a connected account.
+      if (args.retainedRunId) {
+        if (!account) {
+          return null;
+        }
+        const [provider] = await db
+          .select({ selectedModel: modelProviders.selectedModel })
+          .from(modelProviders)
+          .where(eq(modelProviders.id, account.modelProviderId))
+          .limit(1);
+        return provider
+          ? await get(
+              resolvePersonalModelProviderAccountEnvironment(
+                args,
+                account,
+                provider.selectedModel,
+              ),
+            )
+          : null;
+      }
+      const current = await get(
+        connectedPersonalRunAccount({
+          orgId: args.orgId,
+          userId: args.userId,
+          type: accountType,
+          sourceId: args.modelProviderId,
+        }),
+      );
+      if (!current) {
+        return null;
+      }
+      return await get(
+        resolvePersonalModelProviderAccountEnvironment(
           args,
-          account,
-          provider.selectedModel,
-        )
-      : null;
-  }
-  const current = await readPersonalSubscriptionAccount({
-    db,
-    orgId: args.orgId,
-    userId: args.userId,
-    type: accountType,
-    sourceId: args.modelProviderId,
-  });
-  if (!current) {
-    return null;
-  }
-  return await resolvePersonalModelProviderAccountEnvironment(
-    db,
-    args,
-    current.account,
-    current.selectedModel,
-    current.secrets,
+          current.account,
+          current.selectedModel,
+          current.secrets,
+        ),
+      );
+    },
   );
 }
 
@@ -6486,177 +6651,189 @@ function shouldResolveActivePersonalModelProviderAccount(
   );
 }
 
-async function resolveActivePersonalModelProviderAccountEnvironment(
-  db: ReadonlyDb,
+function resolveActivePersonalModelProviderAccountEnvironment(
   args: ResolveModelProviderEnvironmentArgs,
   row: ResolvableModelProviderEnvironmentRow,
-): Promise<ResolvedModelProviderEnvironment | null> {
-  const account = await activePersonalModelProviderAccount({
-    db,
-    modelProviderId: row.id,
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  return account
-    ? await resolvePersonalModelProviderAccountEnvironment(
-        db,
-        args,
-        account,
-        row.selectedModel,
-      )
-    : null;
-}
-
-async function resolveMultiAuthCandidate(
-  db: ReadonlyDb,
-  args: ResolveModelProviderEnvironmentArgs,
-  row: ResolvableModelProviderEnvironmentRow,
-): Promise<ResolvedModelProviderEnvironment | null> {
-  // Plain reads without a transaction or row lock, Azure and Bedrock included.
-  return await multiAuthModelProviderEnvironment(db, {
-    catalog: args.catalog,
-    id: row.id,
-    orgId: args.orgId,
-    userId: row.userId,
-    type: row.type,
-    authMethod: row.authMethod,
-    selectedModel: args.selectedModelOverride ?? row.selectedModel,
-    configuredModel: row.selectedModel,
-    piExecution: args.piExecution,
-    featureSwitchContext: args.featureSwitchContext,
-  });
-}
-
-async function resolveCandidateModelProviderEnvironment(
-  db: ReadonlyDb,
-  args: ResolveModelProviderEnvironmentArgs,
-  row: ResolvableModelProviderEnvironmentRow,
-): Promise<ResolvedModelProviderEnvironment | null> {
-  if (isBuiltInModelProviderType(row.type)) {
-    const selectedModel =
-      args.selectedModelOverride ??
-      row.selectedModel ??
-      args.catalog.systemDefaultModel;
-    const provider = await builtInModelProviderEnvironment(
-      db,
-      args.catalog,
-      selectedModel,
-      args.featureSwitchContext,
-      {
-        resolvedRoute: args.builtInModelRuntimeRoute,
-        newRunPricing: args.newRunPricing,
-      },
-    );
-    return provider?.concreteType &&
-      getFrameworkForType(provider.concreteType) === args.framework
-      ? provider
-      : null;
-  }
-
-  if (getFrameworkForType(row.type) !== args.framework) {
-    return null;
-  }
-
-  if (shouldResolveActivePersonalModelProviderAccount(args, row)) {
-    return await resolveActivePersonalModelProviderAccountEnvironment(
-      db,
-      args,
-      row,
-    );
-  }
-
-  if (hasAuthMethods(row.type)) {
-    return await resolveMultiAuthCandidate(db, args, row);
-  }
-
-  return await regularProviderEnvironmentFromSnapshot(args, {
-    provider: row,
-    secrets: [],
-  });
-}
-
-async function resolveModelProviderEnvironment(
-  db: ReadonlyDb,
-  args: ResolveModelProviderEnvironmentArgs,
-): Promise<ResolvedModelProviderEnvironment | null> {
-  if (isBuiltInModelProviderType(args.modelProviderType)) {
-    const provider = await builtInModelProviderEnvironment(
-      db,
-      args.catalog,
-      args.selectedModelOverride ?? args.catalog.systemDefaultModel,
-      args.featureSwitchContext,
-      {
-        resolvedRoute: args.builtInModelRuntimeRoute,
-        newRunPricing: args.newRunPricing,
-      },
-    );
-    return provider?.concreteType &&
-      getFrameworkForType(provider.concreteType) === args.framework
-      ? provider
-      : null;
-  }
-
-  const personalAccount = await resolveExactPersonalModelProviderAccount(
-    db,
-    args,
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      const [account] = await get(db$)
+        .select()
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.modelProviderId, row.id),
+            eq(modelProviderAccounts.orgId, args.orgId),
+            eq(modelProviderAccounts.userId, args.userId),
+            eq(modelProviderAccounts.isActive, true),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        )
+        .limit(1);
+      return account
+        ? await get(
+            resolvePersonalModelProviderAccountEnvironment(
+              args,
+              account,
+              row.selectedModel,
+            ),
+          )
+        : null;
+    },
   );
-  if (personalAccount) {
-    return personalAccount;
-  }
+}
 
-  const customGateway = await customGatewayModelProviderEnvironment(db, args);
-  if (customGateway) {
-    return customGateway;
-  }
+function resolveMultiAuthCandidate(
+  args: ResolveModelProviderEnvironmentArgs,
+  row: ResolvableModelProviderEnvironmentRow,
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      // Plain reads without a transaction or row lock, Azure and Bedrock included.
+      return await get(
+        multiAuthModelProviderEnvironment({
+          catalog: args.catalog,
+          id: row.id,
+          orgId: args.orgId,
+          userId: row.userId,
+          type: row.type,
+          authMethod: row.authMethod,
+          selectedModel: args.selectedModelOverride ?? row.selectedModel,
+          configuredModel: row.selectedModel,
+          piExecution: args.piExecution,
+          featureSwitchContext: args.featureSwitchContext,
+        }),
+      );
+    },
+  );
+}
 
-  const rows = await db
-    .select({
-      id: modelProviders.id,
-      type: modelProviders.type,
-      userId: modelProviders.userId,
-      isDefault: modelProviders.isDefault,
-      selectedModel: modelProviders.selectedModel,
-      authMethod: modelProviders.authMethod,
-      encryptedValue: secretsTable.encryptedValue,
-    })
-    .from(modelProviders)
-    .leftJoin(secretsTable, eq(modelProviders.secretId, secretsTable.id))
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        or(
-          eq(modelProviders.userId, args.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    );
+function resolveCandidateModelProviderEnvironment(
+  args: ResolveModelProviderEnvironmentArgs,
+  row: ResolvableModelProviderEnvironmentRow,
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      if (isBuiltInModelProviderType(row.type)) {
+        const selectedModel =
+          args.selectedModelOverride ??
+          row.selectedModel ??
+          args.catalog.systemDefaultModel;
+        const provider = await get(
+          builtInModelProviderEnvironment(
+            args.catalog,
+            selectedModel,
+            args.featureSwitchContext,
+            {
+              resolvedRoute: args.builtInModelRuntimeRoute,
+              newRunPricing: args.newRunPricing,
+            },
+          ),
+        );
+        return provider?.concreteType &&
+          getFrameworkForType(provider.concreteType) === args.framework
+          ? provider
+          : null;
+      }
+      if (getFrameworkForType(row.type) !== args.framework) {
+        return null;
+      }
+      if (shouldResolveActivePersonalModelProviderAccount(args, row)) {
+        return await get(
+          resolveActivePersonalModelProviderAccountEnvironment(args, row),
+        );
+      }
+      if (hasAuthMethods(row.type)) {
+        return await get(resolveMultiAuthCandidate(args, row));
+      }
+      return await regularProviderEnvironmentFromSnapshot(args, {
+        provider: row,
+        secrets: [],
+      });
+    },
+  );
+}
 
-  const sortedRows = rows.sort((left, right) => {
-    const leftUser = left.userId === args.userId ? 1 : 0;
-    const rightUser = right.userId === args.userId ? 1 : 0;
-    if (leftUser !== rightUser) {
-      return rightUser - leftUser;
-    }
-    const leftDefault = left.isDefault ? 1 : 0;
-    const rightDefault = right.isDefault ? 1 : 0;
-    return rightDefault - leftDefault;
-  });
-
-  for (const row of sortedRows) {
-    if (!isCandidateModelProviderRow(row, args)) {
-      continue;
-    }
-    const provider = await resolveCandidateModelProviderEnvironment(
-      db,
-      args,
-      row,
-    );
-    if (provider) {
-      return provider;
-    }
-  }
-
-  return null;
+function resolveModelProviderEnvironment(
+  args: ResolveModelProviderEnvironmentArgs,
+) {
+  return computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+      const db = get(db$);
+      if (isBuiltInModelProviderType(args.modelProviderType)) {
+        const provider = await get(
+          builtInModelProviderEnvironment(
+            args.catalog,
+            args.selectedModelOverride ?? args.catalog.systemDefaultModel,
+            args.featureSwitchContext,
+            {
+              resolvedRoute: args.builtInModelRuntimeRoute,
+              newRunPricing: args.newRunPricing,
+            },
+          ),
+        );
+        return provider?.concreteType &&
+          getFrameworkForType(provider.concreteType) === args.framework
+          ? provider
+          : null;
+      }
+      const personalAccount = await get(
+        resolveExactPersonalModelProviderAccount(args),
+      );
+      if (personalAccount) {
+        return personalAccount;
+      }
+      const customGateway = await get(
+        customGatewayModelProviderEnvironment(args),
+      );
+      if (customGateway) {
+        return customGateway;
+      }
+      const rows = await db
+        .select({
+          id: modelProviders.id,
+          type: modelProviders.type,
+          userId: modelProviders.userId,
+          isDefault: modelProviders.isDefault,
+          selectedModel: modelProviders.selectedModel,
+          authMethod: modelProviders.authMethod,
+          encryptedValue: secretsTable.encryptedValue,
+        })
+        .from(modelProviders)
+        .leftJoin(secretsTable, eq(modelProviders.secretId, secretsTable.id))
+        .where(
+          and(
+            eq(modelProviders.orgId, args.orgId),
+            or(
+              eq(modelProviders.userId, args.userId),
+              eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+            ),
+          ),
+        );
+      const sortedRows = rows.sort((left, right) => {
+        const leftUser = left.userId === args.userId ? 1 : 0;
+        const rightUser = right.userId === args.userId ? 1 : 0;
+        if (leftUser !== rightUser) {
+          return rightUser - leftUser;
+        }
+        const leftDefault = left.isDefault ? 1 : 0;
+        const rightDefault = right.isDefault ? 1 : 0;
+        return rightDefault - leftDefault;
+      });
+      for (const row of sortedRows) {
+        if (!isCandidateModelProviderRow(row, args)) {
+          continue;
+        }
+        const provider = await get(
+          resolveCandidateModelProviderEnvironment(args, row),
+        );
+        if (provider) {
+          return provider;
+        }
+      }
+      return null;
+    },
+  );
 }
 
 function createRunEnvironmentObject(
@@ -9501,24 +9678,28 @@ export function prepareModelUsageContext(args: {
  * The pricing snapshot of a Built-in run's model candidates (one read), or
  * null for every other run.
  */
-export async function loadRunRoutePricing(
-  db: ReadonlyDb,
-  args: {
-    readonly catalog: ModelCatalog;
-    readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    readonly serviceTier: CodexServiceTier | undefined;
-    readonly resolution: UsagePricingResolution;
-  },
-): Promise<BuiltInRoutePricing | null> {
-  const selectedModel = args.modelProvider?.selectedModel;
-  if (!selectedModel || !isBuiltInModelProviderType(args.modelProvider?.type)) {
-    return null;
-  }
-  return await loadBuiltInRoutePricing(db, {
-    catalog: args.catalog,
-    model: normalizeRunModelId(selectedModel),
-    serviceTier: args.serviceTier,
-    resolution: args.resolution,
+export function runRoutePricing(args: {
+  readonly catalog: ModelCatalog;
+  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+  readonly serviceTier: CodexServiceTier | undefined;
+  readonly resolution: UsagePricingResolution;
+}) {
+  return computed(async (get): Promise<BuiltInRoutePricing | null> => {
+    const selectedModel = args.modelProvider?.selectedModel;
+    if (
+      !selectedModel ||
+      !isBuiltInModelProviderType(args.modelProvider?.type)
+    ) {
+      return null;
+    }
+    return await get(
+      builtInRoutePricing({
+        catalog: args.catalog,
+        model: normalizeRunModelId(selectedModel),
+        serviceTier: args.serviceTier,
+        resolution: args.resolution,
+      }),
+    );
   });
 }
 
@@ -11547,8 +11728,7 @@ export function resolvePreparedPiModelConfig(args: {
   return config;
 }
 
-async function resolveRunModelProvider(
-  db: ReadonlyDb,
+function resolveRunModelProvider(
   args: RunModelProviderArgs,
   options: {
     readonly content: agentRunCreateAgentExecutionConfig;
@@ -11556,70 +11736,79 @@ async function resolveRunModelProvider(
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly usagePricingResolution: UsagePricingResolution;
   },
-): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
-  const hasFrameworkKey = hasExplicitFrameworkApiKey(
-    options.content,
-    options.framework,
-  );
-  const hasProviderOverride =
-    args.modelProviderId !== undefined ||
-    args.modelProviderCredentialScope !== undefined;
-  const shouldResolveModelProvider =
-    hasProviderOverride ||
-    !hasFrameworkKey ||
-    isBuiltInModelProviderType(args.modelProviderType);
-  const modelProvider = shouldResolveModelProvider
-    ? await resolveModelProviderEnvironment(db, {
-        catalog: args.catalog,
-        orgId: args.orgId,
-        userId: args.userId,
-        framework: options.framework,
-        modelProviderId: args.modelProviderId,
-        modelProviderCredentialScope: args.modelProviderCredentialScope,
-        modelProviderType: args.modelProviderType,
-        capturedPersonalSubscriptionAccount:
-          args.capturedPersonalSubscriptionAccount,
-        selectedModelOverride: args.selectedModelOverride,
-        builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
-        piExecution: args.piExecution,
-        retainedRunId: args.retainedRunId,
-        featureSwitchContext: options.featureSwitchContext,
-        newRunPricing: {
-          serviceTier: args.codexServiceTier,
-          resolution: options.usagePricingResolution,
-        },
-      })
-    : null;
-
-  if (!shouldResolveModelProvider || modelProvider) {
-    return modelProvider;
-  }
-
-  // A new Built-in run whose every executable candidate lacks usage pricing
-  // is rejected as unbillable, not as an unconfigured provider.
-  if (
-    isBuiltInModelProviderType(args.modelProviderType) &&
-    !args.builtInModelRuntimeRoute
-  ) {
-    const selectedModel =
-      args.selectedModelOverride ?? args.catalog.systemDefaultModel;
-    const unpriced = unpricedBuiltInModelMessage(
-      args.catalog,
-      selectedModel,
-      await loadBuiltInRoutePricing(db, {
-        catalog: args.catalog,
-        model: selectedModel,
-        serviceTier: args.codexServiceTier,
-        resolution: options.usagePricingResolution,
-      }),
-    );
-    if (unpriced) {
-      return providerUnavailable(unpriced);
-    }
-  }
-
-  return providerUnavailable(
-    `No model provider configured and ${frameworkApiKeyEnv(options.framework)} is not declared in compose environment`,
+) {
+  return computed(
+    async (
+      get,
+    ): Promise<
+      ResolvedModelProviderEnvironment | null | CreateRunErrorResult
+    > => {
+      const hasFrameworkKey = hasExplicitFrameworkApiKey(
+        options.content,
+        options.framework,
+      );
+      const hasProviderOverride =
+        args.modelProviderId !== undefined ||
+        args.modelProviderCredentialScope !== undefined;
+      const shouldResolveModelProvider =
+        hasProviderOverride ||
+        !hasFrameworkKey ||
+        isBuiltInModelProviderType(args.modelProviderType);
+      const modelProvider = shouldResolveModelProvider
+        ? await get(
+            resolveModelProviderEnvironment({
+              catalog: args.catalog,
+              orgId: args.orgId,
+              userId: args.userId,
+              framework: options.framework,
+              modelProviderId: args.modelProviderId,
+              modelProviderCredentialScope: args.modelProviderCredentialScope,
+              modelProviderType: args.modelProviderType,
+              capturedPersonalSubscriptionAccount:
+                args.capturedPersonalSubscriptionAccount,
+              selectedModelOverride: args.selectedModelOverride,
+              builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
+              piExecution: args.piExecution,
+              retainedRunId: args.retainedRunId,
+              featureSwitchContext: options.featureSwitchContext,
+              newRunPricing: {
+                serviceTier: args.codexServiceTier,
+                resolution: options.usagePricingResolution,
+              },
+            }),
+          )
+        : null;
+      if (!shouldResolveModelProvider || modelProvider) {
+        return modelProvider;
+      }
+      // A new Built-in run whose every executable candidate lacks usage pricing
+      // is rejected as unbillable, not as an unconfigured provider.
+      if (
+        isBuiltInModelProviderType(args.modelProviderType) &&
+        !args.builtInModelRuntimeRoute
+      ) {
+        const selectedModel =
+          args.selectedModelOverride ?? args.catalog.systemDefaultModel;
+        const unpriced = unpricedBuiltInModelMessage(
+          args.catalog,
+          selectedModel,
+          await get(
+            builtInRoutePricing({
+              catalog: args.catalog,
+              model: selectedModel,
+              serviceTier: args.codexServiceTier,
+              resolution: options.usagePricingResolution,
+            }),
+          ),
+        );
+        if (unpriced) {
+          return providerUnavailable(unpriced);
+        }
+      }
+      return providerUnavailable(
+        `No model provider configured and ${frameworkApiKeyEnv(options.framework)} is not declared in compose environment`,
+      );
+    },
   );
 }
 
@@ -11899,28 +12088,39 @@ export function agentRunResolutionOptions(
   };
 }
 
-export async function resolvePreparedRunModelProvider(args: {
-  readonly db: ReadonlyDb;
+export function preparedRunModelProvider(args: {
   readonly createArgs: RunModelProviderArgs;
   readonly timing: ApiDispatchTimingCollector;
   readonly bodyContext: Pick<
     PreparedRunBodyContext,
     "requestedFramework" | "featureSwitchContext"
-  > & { readonly content: agentRunCreateAgentExecutionConfig };
+  > & {
+    readonly content: agentRunCreateAgentExecutionConfig;
+  };
   readonly usagePricingResolution: UsagePricingResolution;
-}): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
-  const { content, requestedFramework, featureSwitchContext } =
-    args.bodyContext;
-  return await args.timing.measure(
-    "api_dispatch_prepare_context_resolve_model_provider",
-    "nested",
-    async () => {
-      return await resolveRunModelProvider(args.db, args.createArgs, {
-        content,
-        framework: requestedFramework,
-        featureSwitchContext,
-        usagePricingResolution: args.usagePricingResolution,
-      });
+}) {
+  return computed(
+    async (
+      get,
+    ): Promise<
+      ResolvedModelProviderEnvironment | null | CreateRunErrorResult
+    > => {
+      const { content, requestedFramework, featureSwitchContext } =
+        args.bodyContext;
+      return await args.timing.measure(
+        "api_dispatch_prepare_context_resolve_model_provider",
+        "nested",
+        async () => {
+          return await get(
+            resolveRunModelProvider(args.createArgs, {
+              content,
+              framework: requestedFramework,
+              featureSwitchContext,
+              usagePricingResolution: args.usagePricingResolution,
+            }),
+          );
+        },
+      );
     },
   );
 }
@@ -12513,11 +12713,7 @@ export function builtInModelProviderEnvironmentFromSnapshot(args: {
 
 export async function customGatewayProviderEnvironmentFromSnapshot(
   args: ResolveModelProviderEnvironmentArgs,
-  row: NonNullable<
-    Awaited<
-      ReturnType<ReturnType<typeof createPinnedGatewayProviderSnapshot>["read"]>
-    >
-  >,
+  row: PinnedGatewayProviderSnapshot,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (!args.selectedModelOverride) {
     return null;
@@ -12721,7 +12917,7 @@ function createPinnedProviderReadContext(
       featureSwitchContext,
     };
     return {
-      input,
+      input: { args: input.args, timing: input.timing },
       content,
       requestedFramework,
       featureSwitchContext,
@@ -12746,168 +12942,6 @@ function createPinnedProviderReadContext(
   return { providerContext$, pinnedContext$ };
 }
 
-function createPinnedBuiltInProviderSnapshot({
-  pinnedContext$,
-}: ReturnType<typeof createPinnedProviderReadContext>) {
-  return computed(
-    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
-      const context = await get(pinnedContext$);
-      if (
-        !context ||
-        !isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
-      ) {
-        return null;
-      }
-      const args = context.environmentArgs;
-      const route = args.builtInModelRuntimeRoute;
-      if (
-        !route ||
-        route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(args.catalog, route) ||
-        getFrameworkForType(route.providerType) !== args.framework
-      ) {
-        return null;
-      }
-      const [key] = await context.input.db
-        .select({ apiKey: builtInModelKeys.apiKey })
-        .from(builtInModelKeys)
-        .where(eq(builtInModelKeys.id, route.modelKeyId))
-        .limit(1);
-      return key?.apiKey
-        ? builtInModelProviderEnvironmentFromSnapshot({
-            route,
-            selectedModel: route.selectedModel,
-            featureSwitchContext: args.featureSwitchContext,
-            apiKey: key.apiKey,
-          })
-        : null;
-    },
-  );
-}
-
-function createPinnedPersonalProviderSnapshot({
-  pinnedContext$,
-}: ReturnType<typeof createPinnedProviderReadContext>) {
-  return computed(async (get) => {
-    const context = await get(pinnedContext$);
-    const args = context?.environmentArgs;
-    if (
-      !context ||
-      !args?.modelProviderId ||
-      !args.modelProviderType ||
-      !isPersonalSubscriptionProviderType(args.modelProviderType) ||
-      args.modelProviderCredentialScope === "org"
-    ) {
-      return null;
-    }
-    const rows = await context.input.db
-      .select({
-        account: modelProviderAccounts,
-        selectedModel: modelProviders.selectedModel,
-        secret: {
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: modelProviderAccountSecrets.encryptedValue,
-        },
-      })
-      .from(modelProviderAccounts)
-      .innerJoin(
-        modelProviders,
-        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-      )
-      .leftJoin(
-        modelProviderAccountSecrets,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.modelProviderId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccounts.type, args.modelProviderType),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      );
-    const first = rows[0];
-    return first
-      ? {
-          account: first.account,
-          selectedModel: first.selectedModel,
-          secrets: rows.flatMap((row) => {
-            return row.secret ? [row.secret] : [];
-          }),
-        }
-      : null;
-  });
-}
-
-function createPinnedGatewayProviderSnapshot({
-  pinnedContext$,
-}: ReturnType<typeof createPinnedProviderReadContext>) {
-  return computed(async (get) => {
-    const context = await get(pinnedContext$);
-    const args = context?.environmentArgs;
-    if (
-      !context ||
-      !args?.modelProviderId ||
-      !args.selectedModelOverride ||
-      isBuiltInModelProviderType(args.modelProviderType) ||
-      (args.modelProviderType &&
-        isPersonalSubscriptionProviderType(args.modelProviderType))
-    ) {
-      return null;
-    }
-    const [row] = await context.input.db
-      .select({
-        id: modelProviderSurfaces.id,
-        protocol: modelProviderSurfaces.protocol,
-        apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
-        authHeaderName: modelProviderSurfaces.authHeaderName,
-        authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
-        modelMappings: modelProviderSurfaces.modelMappings,
-        displayName: modelProviderConnections.displayName,
-        encryptedValue: secretsTable.encryptedValue,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-      )
-      .innerJoin(
-        secretsTable,
-        eq(modelProviderConnections.secretId, secretsTable.id),
-      )
-      .where(
-        and(
-          eq(modelProviderSurfaces.id, args.modelProviderId),
-          eq(modelProviderConnections.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  });
-}
-
-function createPinnedGatewayProviderEnvironment(
-  { pinnedContext$ }: ReturnType<typeof createPinnedProviderReadContext>,
-  gatewaySnapshot$: ReturnType<typeof createPinnedGatewayProviderSnapshot>,
-) {
-  return computed(async (get) => {
-    const [context, gateway] = await Promise.all([
-      get(pinnedContext$),
-      get(gatewaySnapshot$),
-    ]);
-    return context && gateway
-      ? await customGatewayProviderEnvironmentFromSnapshot(
-          context.environmentArgs,
-          gateway,
-        )
-      : null;
-  });
-}
-
 export function pinnedProviderSecretProjection(
   type: ModelProviderType,
   hasFirewallAuth: boolean,
@@ -12924,103 +12958,9 @@ export function pinnedProviderSecretProjection(
   return sql`NULL`.mapWith(pgNullDecoder);
 }
 
-function createPinnedRegularProviderSnapshot(
-  { pinnedContext$ }: ReturnType<typeof createPinnedProviderReadContext>,
-  gatewayEnvironment$: ReturnType<
-    typeof createPinnedGatewayProviderEnvironment
-  >,
-) {
-  return computed(async (get) => {
-    const [context, gatewayEnvironment] = await Promise.all([
-      get(pinnedContext$),
-      get(gatewayEnvironment$),
-    ]);
-    const args = context?.environmentArgs;
-    const type = args?.modelProviderType;
-    if (
-      gatewayEnvironment ||
-      !context ||
-      !args?.modelProviderId ||
-      !type ||
-      !isModelProviderType(type) ||
-      isBuiltInModelProviderType(type) ||
-      (isPersonalSubscriptionProviderType(type) &&
-        args.modelProviderCredentialScope !== "org")
-    ) {
-      return null;
-    }
-    const multiAuth = hasAuthMethods(type);
-    const hasFirewallAuth =
-      multiAuth && getModelProviderFirewall(type) !== undefined;
-    // The provider row and its cloud resource/region/credential fields share
-    // one statement snapshot, including during concurrent settings updates.
-    const rows = await context.input.db
-      .select({
-        provider: {
-          id: modelProviders.id,
-          type: modelProviders.type,
-          userId: modelProviders.userId,
-          isDefault: modelProviders.isDefault,
-          selectedModel: modelProviders.selectedModel,
-          authMethod: modelProviders.authMethod,
-        },
-        secret: {
-          name: secretsTable.name,
-          encryptedValue: pinnedProviderSecretProjection(
-            type,
-            hasFirewallAuth,
-            args.piExecution,
-          ),
-        },
-      })
-      .from(modelProviders)
-      .leftJoin(
-        secretsTable,
-        multiAuth
-          ? and(
-              eq(secretsTable.orgId, modelProviders.orgId),
-              eq(secretsTable.userId, modelProviders.userId),
-              eq(secretsTable.type, "model-provider"),
-            )
-          : eq(secretsTable.id, modelProviders.secretId),
-      )
-      .where(
-        and(
-          eq(modelProviders.id, args.modelProviderId),
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.type, type),
-          args.modelProviderCredentialScope === "org"
-            ? eq(modelProviders.userId, ORG_SENTINEL_USER_ID)
-            : args.modelProviderCredentialScope === "member"
-              ? eq(modelProviders.userId, args.userId)
-              : or(
-                  eq(modelProviders.userId, args.userId),
-                  eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-                ),
-        ),
-      );
-    const first = rows[0];
-    return first
-      ? {
-          provider: {
-            ...first.provider,
-            encryptedValue: first.secret?.encryptedValue ?? null,
-          },
-          secrets: rows.flatMap((row) => {
-            return row.secret ? [row.secret] : [];
-          }),
-        }
-      : null;
-  });
-}
-
 export async function regularProviderEnvironmentFromSnapshot(
   args: ResolveModelProviderEnvironmentArgs,
-  snapshot: NonNullable<
-    Awaited<
-      ReturnType<ReturnType<typeof createPinnedRegularProviderSnapshot>["read"]>
-    >
-  >,
+  snapshot: PinnedRegularProviderSnapshot,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   const row = snapshot.provider;
   if (
@@ -13084,55 +13024,330 @@ export async function regularProviderEnvironmentFromSnapshot(
     : null;
 }
 
-function createPinnedProviderEnvironment(
-  { pinnedContext$ }: ReturnType<typeof createPinnedProviderReadContext>,
-  snapshots: {
-    readonly builtIn$: ReturnType<typeof createPinnedBuiltInProviderSnapshot>;
-    readonly personal$: ReturnType<typeof createPinnedPersonalProviderSnapshot>;
-    readonly gateway$: ReturnType<
-      typeof createPinnedGatewayProviderEnvironment
-    >;
-    readonly regular$: ReturnType<typeof createPinnedRegularProviderSnapshot>;
-  },
-) {
-  const environment$ = computed(
-    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
-      const context = await get(pinnedContext$);
-      if (!context) {
+type PinnedGatewayProviderSnapshot = Pick<
+  typeof modelProviderSurfaces.$inferSelect,
+  | "id"
+  | "protocol"
+  | "apiBaseUrl"
+  | "authHeaderName"
+  | "authHeaderTemplate"
+  | "modelMappings"
+> & {
+  readonly displayName: (typeof modelProviderConnections.$inferSelect)["displayName"];
+  readonly encryptedValue: (typeof secretsTable.$inferSelect)["encryptedValue"];
+};
+interface PinnedRegularProviderSnapshot {
+  readonly provider: Pick<
+    typeof modelProviders.$inferSelect,
+    "id" | "type" | "userId" | "isDefault" | "selectedModel" | "authMethod"
+  > & { readonly encryptedValue: string | null };
+  readonly secrets: readonly {
+    readonly name: string;
+    readonly encryptedValue: string | null;
+  }[];
+}
+type PinnedProviderContext = NonNullable<
+  Awaited<
+    ReturnType<
+      ReturnType<
+        typeof createPinnedProviderReadContext
+      >["pinnedContext$"]["read"]
+    >
+  >
+>;
+class PinnedRunProviderOwner {
+  constructor(private readonly context: PinnedProviderContext) {}
+  private readonly context$ = computed(() => {
+    return this.context;
+  });
+  private readonly builtIn$ = this.createBuiltInSnapshot();
+  private readonly personal$ = this.createPersonalSnapshot();
+  private readonly gatewaySnapshot$ = this.createGatewaySnapshot();
+  private readonly gatewayEnvironment$ = this.createGatewayEnvironment();
+  private readonly regular$ = this.createRegularSnapshot();
+  readonly environment$ = this.createEnvironment();
+  private createBuiltInSnapshot() {
+    return computed(
+      async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+        const context = await get(this.context$);
+        if (
+          !context ||
+          !isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
+        ) {
+          return null;
+        }
+        const args = context.environmentArgs;
+        const route = args.builtInModelRuntimeRoute;
+        if (
+          !route ||
+          route.selectedModel !== args.selectedModelOverride ||
+          !isBuiltInModelRuntimeRoutePermitted(args.catalog, route) ||
+          getFrameworkForType(route.providerType) !== args.framework
+        ) {
+          return null;
+        }
+        const [key] = await get(db$)
+          .select({ apiKey: builtInModelKeys.apiKey })
+          .from(builtInModelKeys)
+          .where(eq(builtInModelKeys.id, route.modelKeyId))
+          .limit(1);
+        return key?.apiKey
+          ? builtInModelProviderEnvironmentFromSnapshot({
+              route,
+              selectedModel: route.selectedModel,
+              featureSwitchContext: args.featureSwitchContext,
+              apiKey: key.apiKey,
+            })
+          : null;
+      },
+    );
+  }
+  private createPersonalSnapshot() {
+    return computed(async (get) => {
+      const context = await get(this.context$);
+      const args = context?.environmentArgs;
+      if (
+        !context ||
+        !args?.modelProviderId ||
+        !args.modelProviderType ||
+        !isPersonalSubscriptionProviderType(args.modelProviderType) ||
+        args.modelProviderCredentialScope === "org"
+      ) {
         return null;
       }
-      const args = context.environmentArgs;
-      if (isBuiltInModelProviderType(args.modelProviderType)) {
-        return await get(snapshots.builtIn$);
-      }
+      const rows = await get(db$)
+        .select({
+          account: modelProviderAccounts,
+          selectedModel: modelProviders.selectedModel,
+          secret: {
+            name: modelProviderAccountSecrets.name,
+            encryptedValue: modelProviderAccountSecrets.encryptedValue,
+          },
+        })
+        .from(modelProviderAccounts)
+        .innerJoin(
+          modelProviders,
+          eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+        )
+        .leftJoin(
+          modelProviderAccountSecrets,
+          eq(
+            modelProviderAccountSecrets.modelProviderAccountId,
+            modelProviderAccounts.id,
+          ),
+        )
+        .where(
+          and(
+            eq(modelProviderAccounts.id, args.modelProviderId),
+            eq(modelProviderAccounts.orgId, args.orgId),
+            eq(modelProviderAccounts.userId, args.userId),
+            eq(modelProviderAccounts.type, args.modelProviderType),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        );
+      const first = rows[0];
+      return first
+        ? {
+            account: first.account,
+            selectedModel: first.selectedModel,
+            secrets: rows.flatMap((row) => {
+              return row.secret ? [row.secret] : [];
+            }),
+          }
+        : null;
+    });
+  }
+  private createGatewaySnapshot() {
+    return computed(async (get) => {
+      const context = await get(this.context$);
+      const args = context?.environmentArgs;
       if (
-        args.modelProviderType &&
-        isPersonalSubscriptionProviderType(args.modelProviderType) &&
-        args.modelProviderCredentialScope !== "org"
+        !context ||
+        !args?.modelProviderId ||
+        !args.selectedModelOverride ||
+        isBuiltInModelProviderType(args.modelProviderType) ||
+        (args.modelProviderType &&
+          isPersonalSubscriptionProviderType(args.modelProviderType))
       ) {
-        const personal = await get(snapshots.personal$);
-        return personal
-          ? await personalProviderEnvironmentFromSnapshot(
-              args,
-              personal.account,
-              personal.selectedModel,
-              personal.secrets,
-            )
-          : null;
+        return null;
       }
-      const [gateway, regular] = await Promise.all([
-        get(snapshots.gateway$),
-        get(snapshots.regular$),
+      const [row] = await get(db$)
+        .select({
+          id: modelProviderSurfaces.id,
+          protocol: modelProviderSurfaces.protocol,
+          apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
+          authHeaderName: modelProviderSurfaces.authHeaderName,
+          authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
+          modelMappings: modelProviderSurfaces.modelMappings,
+          displayName: modelProviderConnections.displayName,
+          encryptedValue: secretsTable.encryptedValue,
+        })
+        .from(modelProviderSurfaces)
+        .innerJoin(
+          modelProviderConnections,
+          eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+        )
+        .innerJoin(
+          secretsTable,
+          eq(modelProviderConnections.secretId, secretsTable.id),
+        )
+        .where(
+          and(
+            eq(modelProviderSurfaces.id, args.modelProviderId),
+            eq(modelProviderConnections.orgId, args.orgId),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    });
+  }
+  private createGatewayEnvironment() {
+    return computed(async (get) => {
+      const [context, gateway] = await Promise.all([
+        get(this.context$),
+        get(this.gatewaySnapshot$),
       ]);
-      return (
-        gateway ??
-        (regular
-          ? await regularProviderEnvironmentFromSnapshot(args, regular)
-          : null)
-      );
-    },
-  );
-  return environment$;
+      return context && gateway
+        ? await customGatewayProviderEnvironmentFromSnapshot(
+            context.environmentArgs,
+            gateway,
+          )
+        : null;
+    });
+  }
+  private createRegularSnapshot() {
+    return computed(async (get) => {
+      const [context, gatewayEnvironment] = await Promise.all([
+        get(this.context$),
+        get(this.gatewayEnvironment$),
+      ]);
+      const args = context?.environmentArgs;
+      const type = args?.modelProviderType;
+      if (
+        gatewayEnvironment ||
+        !context ||
+        !args?.modelProviderId ||
+        !type ||
+        !isModelProviderType(type) ||
+        isBuiltInModelProviderType(type) ||
+        (isPersonalSubscriptionProviderType(type) &&
+          args.modelProviderCredentialScope !== "org")
+      ) {
+        return null;
+      }
+      const multiAuth = hasAuthMethods(type);
+      const hasFirewallAuth =
+        multiAuth && getModelProviderFirewall(type) !== undefined;
+      // The provider row and its cloud resource/region/credential fields share
+      // one statement snapshot, including during concurrent settings updates.
+      const rows = await get(db$)
+        .select({
+          provider: {
+            id: modelProviders.id,
+            type: modelProviders.type,
+            userId: modelProviders.userId,
+            isDefault: modelProviders.isDefault,
+            selectedModel: modelProviders.selectedModel,
+            authMethod: modelProviders.authMethod,
+          },
+          secret: {
+            name: secretsTable.name,
+            encryptedValue: pinnedProviderSecretProjection(
+              type,
+              hasFirewallAuth,
+              args.piExecution,
+            ),
+          },
+        })
+        .from(modelProviders)
+        .leftJoin(
+          secretsTable,
+          multiAuth
+            ? and(
+                eq(secretsTable.orgId, modelProviders.orgId),
+                eq(secretsTable.userId, modelProviders.userId),
+                eq(secretsTable.type, "model-provider"),
+              )
+            : eq(secretsTable.id, modelProviders.secretId),
+        )
+        .where(
+          and(
+            eq(modelProviders.id, args.modelProviderId),
+            eq(modelProviders.orgId, args.orgId),
+            eq(modelProviders.type, type),
+            args.modelProviderCredentialScope === "org"
+              ? eq(modelProviders.userId, ORG_SENTINEL_USER_ID)
+              : args.modelProviderCredentialScope === "member"
+                ? eq(modelProviders.userId, args.userId)
+                : or(
+                    eq(modelProviders.userId, args.userId),
+                    eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+                  ),
+          ),
+        );
+      const first = rows[0];
+      return first
+        ? {
+            provider: {
+              ...first.provider,
+              encryptedValue: first.secret?.encryptedValue ?? null,
+            },
+            secrets: rows.flatMap((row) => {
+              return row.secret ? [row.secret] : [];
+            }),
+          }
+        : null;
+    });
+  }
+  private createEnvironment() {
+    const environment$ = computed(
+      async (get): Promise<ResolvedModelProviderEnvironment | null> => {
+        const context = await get(this.context$);
+        if (!context) {
+          return null;
+        }
+        const args = context.environmentArgs;
+        if (isBuiltInModelProviderType(args.modelProviderType)) {
+          return await get(this.builtIn$);
+        }
+        if (
+          args.modelProviderType &&
+          isPersonalSubscriptionProviderType(args.modelProviderType) &&
+          args.modelProviderCredentialScope !== "org"
+        ) {
+          const personal = await get(this.personal$);
+          return personal
+            ? await personalProviderEnvironmentFromSnapshot(
+                args,
+                personal.account,
+                personal.selectedModel,
+                personal.secrets,
+              )
+            : null;
+        }
+        const [gateway, regular] = await Promise.all([
+          get(this.gatewayEnvironment$),
+          get(this.regular$),
+        ]);
+        return (
+          gateway ??
+          (regular
+            ? await regularProviderEnvironmentFromSnapshot(args, regular)
+            : null)
+        );
+      },
+    );
+    return environment$;
+  }
+}
+function createPinnedProviderEnvironment(
+  context: PinnedProviderContext | null,
+) {
+  return context
+    ? new PinnedRunProviderOwner(context).environment$
+    : computed(() => {
+        return null;
+      });
 }
 
 function createRunModelProviderObjects(
@@ -13144,15 +13359,9 @@ function createRunModelProviderObjects(
   >,
 ) {
   const sources = createPinnedProviderReadContext(input$, body, identity);
-  const gateway$ = createPinnedGatewayProviderEnvironment(
-    sources,
-    createPinnedGatewayProviderSnapshot(sources),
-  );
-  const pinnedEnvironment$ = createPinnedProviderEnvironment(sources, {
-    builtIn$: createPinnedBuiltInProviderSnapshot(sources),
-    personal$: createPinnedPersonalProviderSnapshot(sources),
-    gateway$,
-    regular$: createPinnedRegularProviderSnapshot(sources, gateway$),
+  const pinnedEnvironment$ = computed(async (get) => {
+    const context = await get(sources.pinnedContext$);
+    return await get(createPinnedProviderEnvironment(context));
   });
   const queuedModelRoute$ = computed(async (get) => {
     const context = await get(sources.providerContext$);
@@ -13183,17 +13392,18 @@ function createRunModelProviderObjects(
     const providerResult = await settle(
       context.input.args.queueFirstAssociation
         ? get(queuedModelRoute$)
-        : resolvePreparedRunModelProvider({
-            db: context.input.db,
-            createArgs: context.input.args,
-            timing: context.input.timing,
-            bodyContext: {
-              content: context.content,
-              requestedFramework: context.requestedFramework,
-              featureSwitchContext: context.featureSwitchContext,
-            },
-            usagePricingResolution: get(usagePricingResolution$),
-          }),
+        : get(
+            preparedRunModelProvider({
+              createArgs: context.input.args,
+              timing: context.input.timing,
+              bodyContext: {
+                content: context.content,
+                requestedFramework: context.requestedFramework,
+                featureSwitchContext: context.featureSwitchContext,
+              },
+              usagePricingResolution: get(usagePricingResolution$),
+            }),
+          ),
     );
     if (!providerResult.ok) {
       return piConfigurationRouteError(providerResult.error);
@@ -13279,10 +13489,6 @@ export interface RunConnectorPreparation {
     readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
   } | null;
 }
-
-type RunConnectorPreparationObject = Computed<
-  Promise<RunConnectorPreparation | CreateRunErrorResult>
->;
 
 function createRunConnectorCatalogObjects(
   input$: AsyncRead<RunConnectorReadInput>,
@@ -13427,177 +13633,32 @@ export function runThreadConnectorCandidates(
   };
 }
 
-function createRunOwnedConnectorThreadObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-) {
-  return computed(async (get) => {
-    const { db, args } = await get(input$);
-    if (args.chatThreadId === undefined) {
-      return null;
-    }
-    const [thread] = await db
-      .select({ agentId: agents.id })
-      .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
-      .where(
-        and(
-          eq(chatThreads.id, args.chatThreadId),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    return thread ?? null;
+class RunConnectorAccountSelectionOwner {
+  constructor(
+    private readonly input: Omit<RunConnectorReadInput, "db">,
+    private readonly scope: EffectiveConnectorScope,
+  ) {}
+  private readonly scope$ = computed(() => {
+    return this.scope;
   });
-}
-
-function createRunThreadSelectionRowObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-  ownedThread$: ReturnType<typeof createRunOwnedConnectorThreadObject>,
-) {
-  return computed(
-    async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const { db, args } = await get(input$);
-      const [thread, scope] = await Promise.all([
-        get(ownedThread$),
-        get(scope$),
-      ]);
-      if (!thread || args.chatThreadId === undefined) {
-        return [];
-      }
-      const rows = await db
-        .select({
-          connectorId: chatThreadConnectorSelections.connectorId,
-          connectorSlug: chatThreadConnectorSelections.connectorSlug,
-          customConnectorId: chatThreadConnectorSelections.customConnectorId,
-        })
-        .from(chatThreadConnectorSelections)
-        .where(
-          eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
-        )
-        .orderBy(
-          asc(chatThreadConnectorSelections.connectorSlug),
-          asc(chatThreadConnectorSelections.customConnectorId),
-        );
-      return rows
-        .map((row) => {
-          return {
-            connectionId: row.connectorId,
-            target: runConnectorTargetFromRow(row),
-          };
-        })
-        .filter((selection) => {
-          return runConnectorTargetIsAuthorized(scope, selection.target);
-        });
-    },
-  );
-}
-
-function createRunConnectorAccountRowsObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-  selections$: ReturnType<typeof createRunThreadSelectionRowObject>,
-) {
-  return computed(async (get) => {
-    const { db, args } = await get(input$);
-    const scope = await get(scope$);
-    const selections = await get(selections$);
-    const sourceIds = [
-      ...selections.map((selection) => {
-        return selection.connectionId;
-      }),
-      ...(args.connectorSourceId ? [args.connectorSourceId] : []),
-    ];
-    if (isEmptyRunConnectorScope(scope)) {
-      return [];
-    }
-    return await db
-      .select({
-        connectorId: connectors.id,
-        connectorSlug: connectors.connectorSlug,
-        customConnectorId: connectors.customConnectorId,
-        isDefault: connectors.isDefault,
-        customDefinitionId: orgCustomConnectors.id,
-        providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-      })
-      .from(connectors)
-      .leftJoin(
-        orgCustomConnectors,
-        and(
-          eq(orgCustomConnectors.id, connectors.customConnectorId),
-          eq(orgCustomConnectors.orgId, connectors.orgId),
-        ),
-      )
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          or(
-            sourceIds.length ? inArray(connectors.id, sourceIds) : undefined,
-            and(
-              eq(connectors.isDefault, true),
-              or(
-                scope.allowedConnectorSlugs.length
-                  ? inArray(connectors.connectorSlug, [
-                      ...scope.allowedConnectorSlugs,
-                    ])
-                  : undefined,
-                scope.allowedCustomConnectorIds.length
-                  ? inArray(connectors.customConnectorId, [
-                      ...scope.allowedCustomConnectorIds,
-                    ])
-                  : undefined,
-              ),
-            ),
-          ),
-        ),
-      );
-  });
-}
-
-function createRunThreadConnectorSelectionObjects(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-) {
-  const ownedThread$ = createRunOwnedConnectorThreadObject(input$);
-  const selections$ = createRunThreadSelectionRowObject(
-    input$,
-    scope$,
-    ownedThread$,
-  );
-  const accountRows$ = createRunConnectorAccountRowsObject(
-    input$,
-    scope$,
-    selections$,
-  );
-  const threadSelections$ = computed(
+  private readonly ownedThread$ = this.createOwnedThread();
+  private readonly selections$ = this.createSelections();
+  private readonly accountRows$ = this.createAccountRows();
+  private readonly threadSelections$ = computed(
     async (
       get,
     ): Promise<
       ThreadConnectorSelectionIds | CreateRunErrorResult | undefined
     > => {
-      const { args } = await get(input$);
+      const { args } = this.input;
       if (args.chatThreadId === undefined) {
         return undefined;
       }
       const [thread, selections, accountRows, scope] = await Promise.all([
-        get(ownedThread$),
-        get(selections$),
-        get(accountRows$),
-        get(scope$),
+        get(this.ownedThread$),
+        get(this.selections$),
+        get(this.accountRows$),
+        get(this.scope$),
       ]);
       if (!thread) {
         return badRequestMessage("Chat thread is no longer available");
@@ -13635,11 +13696,11 @@ function createRunThreadConnectorSelectionObjects(
       return runThreadConnectorCandidates(projectedSelections, source);
     },
   );
-  const accountCandidates$ = computed(async (get) => {
+  private readonly accountCandidates$ = computed(async (get) => {
     const [selections, rows, scope] = await Promise.all([
-      get(threadSelections$),
-      get(accountRows$),
-      get(scope$),
+      get(this.threadSelections$),
+      get(this.accountRows$),
+      get(this.scope$),
     ]);
     return isRouteError(selections)
       ? new Map<string, readonly string[]>()
@@ -13648,70 +13709,151 @@ function createRunThreadConnectorSelectionObjects(
           rows,
         });
   });
-  return { threadSelections$, accountCandidates$ };
-}
 
-function createRunConnectorPreparationObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  connectorSelection$: RunConnectorSelectionObject,
-) {
-  return computed(
-    async (get): Promise<RunConnectorPreparation | CreateRunErrorResult> => {
-      const input = await get(input$);
-      const selection = await get(connectorSelection$);
-      if (isRouteError(selection)) {
-        return selection;
+  readonly accountSelection$ = computed(async (get) => {
+    const [threadSelections, accountCandidates] = await Promise.all([
+      get(this.threadSelections$),
+      get(this.accountCandidates$),
+    ]);
+    return { threadSelections, accountCandidates };
+  });
+  private createOwnedThread() {
+    return computed(async (get) => {
+      const { args } = this.input;
+      const db = get(db$);
+      if (args.chatThreadId === undefined) {
+        return null;
       }
-      const {
-        connectorCatalogSelection,
-        connectorScope,
-        threadConnectorSelectionIds,
-      } = selection;
-      if (connectorCatalogSelection.kind === "empty") {
-        return { selection, stored: null, custom: null };
-      }
-      const connectorCatalogSnapshot = connectorCatalogSelection.selection;
-      const allowedConnectorSlugs = [
-        ...new Set(
-          connectorScope.allowedConnectorSlugs.filter((slug) => {
-            return (
-              getConnectorRuntimeConnector(connectorCatalogSnapshot, slug)
-                ?.catalogConnector.mcp === undefined ||
-              input.args.includeOkouTokenSecret === true
-            );
-          }),
-        ),
+      const [thread] = await db
+        .select({ agentId: agents.id })
+        .from(chatThreads)
+        .innerJoin(
+          agents,
+          and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+        )
+        .where(
+          and(
+            eq(chatThreads.id, args.chatThreadId),
+            eq(chatThreads.userId, args.userId),
+          ),
+        )
+        .limit(1);
+      return thread ?? null;
+    });
+  }
+  private createSelections() {
+    return computed(
+      async (get): Promise<readonly ConnectorAccountSelection[]> => {
+        const { args } = this.input;
+        const db = get(db$);
+        const [thread, scope] = await Promise.all([
+          get(this.ownedThread$),
+          get(this.scope$),
+        ]);
+        if (!thread || args.chatThreadId === undefined) {
+          return [];
+        }
+        const rows = await db
+          .select({
+            connectorId: chatThreadConnectorSelections.connectorId,
+            connectorSlug: chatThreadConnectorSelections.connectorSlug,
+            customConnectorId: chatThreadConnectorSelections.customConnectorId,
+          })
+          .from(chatThreadConnectorSelections)
+          .where(
+            eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
+          )
+          .orderBy(
+            asc(chatThreadConnectorSelections.connectorSlug),
+            asc(chatThreadConnectorSelections.customConnectorId),
+          );
+        return rows
+          .map((row) => {
+            return {
+              connectionId: row.connectorId,
+              target: runConnectorTargetFromRow(row),
+            };
+          })
+          .filter((selection) => {
+            return runConnectorTargetIsAuthorized(scope, selection.target);
+          });
+      },
+    );
+  }
+  private createAccountRows() {
+    return computed(async (get) => {
+      const { args } = this.input;
+      const db = get(db$);
+      const scope = await get(this.scope$);
+      const selections = await get(this.selections$);
+      const sourceIds = [
+        ...selections.map((selection) => {
+          return selection.connectionId;
+        }),
+        ...(args.connectorSourceId ? [args.connectorSourceId] : []),
       ];
-      return {
-        selection,
-        stored:
-          allowedConnectorSlugs.length === 0
-            ? null
-            : {
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                allowedConnectorSlugs,
-                connectorIdCandidatesBySlug:
-                  threadConnectorSelectionIds?.connectorIdCandidatesBySlug,
-                scopeSource: connectorScope.source,
-                connectorCatalogSnapshot,
-              },
-        custom:
-          connectorScope.allowedCustomConnectorIds.length === 0
-            ? null
-            : {
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                allowedCustomConnectorIds:
-                  connectorScope.allowedCustomConnectorIds,
-                connectorIdCandidatesByCustomConnectorId:
-                  threadConnectorSelectionIds?.connectorIdCandidatesByCustomConnectorId,
-                customConnectorGrants: connectorScope.customConnectorGrants,
-                connectorCatalogSnapshot,
-              },
-      };
-    },
-  );
+      if (isEmptyRunConnectorScope(scope)) {
+        return [];
+      }
+      return await db
+        .select({
+          connectorId: connectors.id,
+          connectorSlug: connectors.connectorSlug,
+          customConnectorId: connectors.customConnectorId,
+          isDefault: connectors.isDefault,
+          customDefinitionId: orgCustomConnectors.id,
+          providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+        })
+        .from(connectors)
+        .leftJoin(
+          orgCustomConnectors,
+          and(
+            eq(orgCustomConnectors.id, connectors.customConnectorId),
+            eq(orgCustomConnectors.orgId, connectors.orgId),
+          ),
+        )
+        .leftJoin(
+          orgCustomConnectorOauthConfigs,
+          and(
+            eq(
+              orgCustomConnectorOauthConfigs.connectorId,
+              orgCustomConnectors.id,
+            ),
+            eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            or(
+              sourceIds.length ? inArray(connectors.id, sourceIds) : undefined,
+              and(
+                eq(connectors.isDefault, true),
+                or(
+                  scope.allowedConnectorSlugs.length
+                    ? inArray(connectors.connectorSlug, [
+                        ...scope.allowedConnectorSlugs,
+                      ])
+                    : undefined,
+                  scope.allowedCustomConnectorIds.length
+                    ? inArray(connectors.customConnectorId, [
+                        ...scope.allowedCustomConnectorIds,
+                      ])
+                    : undefined,
+                ),
+              ),
+            ),
+          ),
+        );
+    });
+  }
+}
+function createRunConnectorAccountSelectionObject(
+  input: Omit<RunConnectorReadInput, "db">,
+  scope: EffectiveConnectorScope,
+) {
+  return new RunConnectorAccountSelectionOwner(input, scope).accountSelection$;
 }
 
 interface RunConnectorAccountRequest {
@@ -13789,248 +13931,6 @@ export function runConnectorAccountCandidatesFromRows(args: {
         [...new Set([...explicit, ...(defaults.length === 1 ? defaults : [])])],
       ];
     }),
-  );
-}
-
-type RunConnectorAccountCandidatesObject = ReturnType<
-  typeof createRunThreadConnectorSelectionObjects
->["accountCandidates$"];
-
-function createRunStoredConnectorSelectionViewObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-  accountCandidates$: RunConnectorAccountCandidatesObject,
-) {
-  return computed(async (get) => {
-    const { db, args } = await get(input$);
-    const candidates = await get(accountCandidates$);
-    const connectorIds = (await get(scope$)).allowedConnectorSlugs.flatMap(
-      (connectorSlug) => {
-        return (
-          candidates.get(
-            connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-          ) ?? []
-        );
-      },
-    );
-    if (connectorIds.length === 0) {
-      return null;
-    }
-    return db.$with("stored_connector_candidates").as(
-      db
-        .select({
-          connectorId: connectors.id,
-          connectorSlug: sql`${connectors.connectorSlug}`
-            .mapWith(pgTextDecoder)
-            .as("connector_slug"),
-          authMethod: connectors.authMethod,
-          automaticAuthType: connectors.automaticAuthType,
-          connectorStateRevision:
-            sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`
-              .mapWith(pgInt8ToBigIntDecoder)
-              .as("connector_state_revision"),
-          needsReconnect: connectors.needsReconnect,
-          orgId: connectors.orgId,
-          storageVersion: connectors.storageVersion,
-          tokenExpiresAt: connectors.tokenExpiresAt,
-          userId: connectors.userId,
-        })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            isNotNull(connectors.connectorSlug),
-            inArray(connectors.id, connectorIds),
-          ),
-        ),
-    );
-  });
-}
-
-function createRunStoredConnectorRowObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-  accountCandidates$: RunConnectorAccountCandidatesObject,
-) {
-  const selectedConnectors$ = createRunStoredConnectorSelectionViewObject(
-    input$,
-    scope$,
-    accountCandidates$,
-  );
-  return computed(
-    async (
-      get,
-    ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const { db, args, timing } = await get(input$);
-      const selectedConnectors = await get(selectedConnectors$);
-      if (!selectedConnectors) {
-        return [];
-      }
-      const secretGroups = db
-        .select({
-          connectorId: secretsTable.connectorId,
-          secretNames: sql`jsonb_agg(${secretsTable.name})`
-            .mapWith(storedConnectorSecretNamesDecoder)
-            .as("secret_names"),
-        })
-        .from(secretsTable)
-        .innerJoin(
-          selectedConnectors,
-          and(
-            eq(selectedConnectors.connectorId, secretsTable.connectorId),
-            eq(secretsTable.orgId, args.orgId),
-            eq(secretsTable.userId, args.userId),
-          ),
-        )
-        .where(eq(secretsTable.type, "connector"))
-        .groupBy(secretsTable.connectorId)
-        .as("stored_connector_secret_groups");
-      const variableGroups = db
-        .select({
-          connectorId: variables.connectorId,
-          variableValues:
-            sql`jsonb_object_agg(${variables.name}, ${variables.value})`
-              .mapWith(storedConnectorVariableValuesDecoder)
-              .as("variable_values"),
-        })
-        .from(variables)
-        .innerJoin(
-          selectedConnectors,
-          and(
-            eq(selectedConnectors.connectorId, variables.connectorId),
-            eq(variables.orgId, args.orgId),
-            eq(variables.userId, args.userId),
-          ),
-        )
-        .where(eq(variables.type, "connector"))
-        .groupBy(variables.connectorId)
-        .as("stored_connector_variable_groups");
-      const startedAt = now();
-      const dimensions = storedConnectorTimingDimensions({
-        scopeSource: (await get(scope$)).source,
-      });
-      const rows = await onRejection(
-        db
-          .with(selectedConnectors)
-          .select({
-            connectorId: selectedConnectors.connectorId,
-            connectorSlug: selectedConnectors.connectorSlug,
-            authMethod: selectedConnectors.authMethod,
-            automaticAuthType: selectedConnectors.automaticAuthType,
-            connectorStateRevision: selectedConnectors.connectorStateRevision,
-            needsReconnect: selectedConnectors.needsReconnect,
-            orgId: selectedConnectors.orgId,
-            storageVersion: selectedConnectors.storageVersion,
-            tokenExpiresAt: selectedConnectors.tokenExpiresAt,
-            userId: selectedConnectors.userId,
-            secretNames: sql`${secretGroups.secretNames}`.mapWith(
-              nullableDriverValueDecoder(storedConnectorSecretNamesDecoder),
-            ),
-            variableValues: sql`${variableGroups.variableValues}`.mapWith(
-              nullableDriverValueDecoder(storedConnectorVariableValuesDecoder),
-            ),
-          })
-          .from(selectedConnectors)
-          .leftJoin(
-            secretGroups,
-            eq(secretGroups.connectorId, selectedConnectors.connectorId),
-          )
-          .leftJoin(
-            variableGroups,
-            eq(variableGroups.connectorId, selectedConnectors.connectorId),
-          ),
-        () => {
-          timing.recordElapsed(
-            "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-            "nested",
-            startedAt,
-            now(),
-            dimensions,
-          );
-        },
-      );
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-        "nested",
-        startedAt,
-        now(),
-        {
-          ...dimensions,
-          stored_connector_candidate_count_bucket: countBucket(rows.length),
-        },
-      );
-      return rows.map((row) => {
-        return {
-          ...row,
-          secretNames: row.secretNames ?? [],
-          variableValues: row.variableValues ?? {},
-        };
-      });
-    },
-  );
-}
-
-function createRunStoredConnectorSnapshotObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  preparation$: RunConnectorPreparationObject,
-  rows$: ReturnType<typeof createRunStoredConnectorRowObject>,
-  accountCandidates$: RunConnectorAccountCandidatesObject,
-) {
-  return computed(
-    async (
-      get,
-    ): Promise<
-      StoredConnectorMaterializationSnapshot | null | CreateRunErrorResult
-    > => {
-      const [preparation, rows, candidates] = await Promise.all([
-        get(preparation$),
-        get(rows$),
-        get(accountCandidates$),
-      ]);
-      if (isRouteError(preparation)) {
-        return preparation;
-      }
-      const args = preparation.stored;
-      if (!args) {
-        return null;
-      }
-      const available = new Set(
-        allowedStoredConnectorRows(
-          rows,
-          args.allowedConnectorSlugs,
-          args.connectorCatalogSnapshot,
-          nowDate(),
-        ).map((row) => {
-          return row.access.connectorId;
-        }),
-      );
-      const selectedIds = new Set(
-        args.allowedConnectorSlugs.flatMap((connectorSlug) => {
-          const ids =
-            candidates.get(
-              connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-            ) ?? [];
-          const id = ids.find((candidate) => {
-            return available.has(candidate);
-          });
-          return id ? [id] : [];
-        }),
-      );
-      return materializeStoredConnectorSnapshotRows(
-        {
-          rows: rows.filter((row) => {
-            return selectedIds.has(row.connectorId);
-          }),
-          allowedConnectorSlugs: args.allowedConnectorSlugs,
-          connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-          timingDimensions: storedConnectorTimingDimensions({
-            scopeSource: args.scopeSource,
-          }),
-        },
-        (await get(input$)).timing,
-      );
-    },
   );
 }
 
@@ -14136,202 +14036,6 @@ export function runCustomConnectorConnectionColumns() {
   };
 }
 
-function createRunCustomConnectorConnectionViewObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-  accountCandidates$: RunConnectorAccountCandidatesObject,
-) {
-  return computed(async (get) => {
-    const { db, args } = await get(input$);
-    const candidates = await get(accountCandidates$);
-    const connectorIds = (await get(scope$)).allowedCustomConnectorIds;
-    const memberConnectorIds = connectorIds.flatMap((customConnectorId) => {
-      return (
-        candidates.get(
-          connectorAccountTargetKey({ kind: "custom", customConnectorId }),
-        ) ?? []
-      );
-    });
-    if (memberConnectorIds.length === 0) {
-      return null;
-    }
-    return db.$with("custom_connector_runtime_connections").as(
-      db
-        .select(runCustomConnectorConnectionColumns())
-        .from(connectors)
-        .innerJoin(
-          orgCustomConnectors,
-          and(
-            eq(orgCustomConnectors.id, connectors.customConnectorId),
-            eq(orgCustomConnectors.orgId, connectors.orgId),
-          ),
-        )
-        .leftJoin(
-          runCustomConnectorAccessTokenSecret,
-          and(
-            eq(runCustomConnectorAccessTokenSecret.connectorId, connectors.id),
-            eq(runCustomConnectorAccessTokenSecret.name, "access_token"),
-          ),
-        )
-        .leftJoin(
-          runCustomConnectorRefreshTokenSecret,
-          and(
-            eq(runCustomConnectorRefreshTokenSecret.connectorId, connectors.id),
-            eq(runCustomConnectorRefreshTokenSecret.name, "refresh_token"),
-          ),
-        )
-        .leftJoin(
-          customConnectorAccountOauthBindings,
-          and(
-            eq(
-              customConnectorAccountOauthBindings.connectorAccountId,
-              connectors.id,
-            ),
-            eq(
-              customConnectorAccountOauthBindings.customConnectorId,
-              orgCustomConnectors.id,
-            ),
-          ),
-        )
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            inArray(connectors.customConnectorId, [...connectorIds]),
-            inArray(connectors.id, memberConnectorIds),
-          ),
-        ),
-    );
-  });
-}
-
-function createRunCustomConnectorValueViewObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  connections$: ReturnType<typeof createRunCustomConnectorConnectionViewObject>,
-) {
-  return computed(async (get) => {
-    const { db, args } = await get(input$);
-    const connections = await get(connections$);
-    if (!connections) {
-      return null;
-    }
-    const compatible = or(
-      eq(connections.definitionAuthMethod, connections.storedAuthMethod),
-      and(
-        eq(connections.definitionAuthMethod, "automatic"),
-        inArray(connections.storedAuthMethod, ["none", "oauth"]),
-      ),
-    );
-    const currentVersion = eq(
-      connections.storedStorageVersion,
-      connections.definitionStorageVersion,
-    );
-    const secretQuery = db
-      .select({
-        memberConnectorId: sql`${connections.id}`
-          .mapWith(pgTextDecoder)
-          .as("value_member_connector_id"),
-        kind: sql`'secret'`
-          .mapWith(runCustomConnectorStoredValueKindDecoder)
-          .as("kind"),
-        key: secretsTable.name,
-        storedValue: secretsTable.encryptedValue,
-      })
-      .from(connections)
-      .innerJoin(secretsTable, eq(secretsTable.connectorId, connections.id))
-      .where(
-        and(
-          eq(secretsTable.type, "connector"),
-          eq(secretsTable.orgId, args.orgId),
-          eq(secretsTable.userId, args.userId),
-          compatible,
-          currentVersion,
-          ne(connections.storedAuthMethod, "none"),
-        ),
-      );
-    const variableQuery = db
-      .select({
-        memberConnectorId: sql`${connections.id}`
-          .mapWith(pgTextDecoder)
-          .as("value_member_connector_id"),
-        kind: sql`'variable'`
-          .mapWith(runCustomConnectorStoredValueKindDecoder)
-          .as("kind"),
-        key: variables.name,
-        storedValue: variables.value,
-      })
-      .from(connections)
-      .innerJoin(variables, eq(variables.connectorId, connections.id))
-      .where(
-        and(
-          eq(variables.type, "connector"),
-          eq(variables.orgId, args.orgId),
-          eq(variables.userId, args.userId),
-          compatible,
-          currentVersion,
-        ),
-      );
-    return db
-      .$with("custom_connector_runtime_values")
-      .as(unionAll(secretQuery, variableQuery));
-  });
-}
-
-function createRunCustomConnectorStoredRowsObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-  accountCandidates$: RunConnectorAccountCandidatesObject,
-) {
-  const connections$ = createRunCustomConnectorConnectionViewObject(
-    input$,
-    scope$,
-    accountCandidates$,
-  );
-  const values$ = createRunCustomConnectorValueViewObject(input$, connections$);
-  return computed(
-    async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
-      const { db, timing } = await get(input$);
-      const [connections, values] = await Promise.all([
-        get(connections$),
-        get(values$),
-      ]);
-      if (!connections || !values) {
-        return [];
-      }
-      const startedAt = now();
-      const rows = await db
-        .with(connections, values)
-        .select({
-          id: connections.id,
-          updatedAt: connections.updatedAt,
-          customConnectorId: connections.customConnectorId,
-          storedAuthMethod: connections.storedAuthMethod,
-          storedStorageVersion: connections.storedStorageVersion,
-          storedNeedsReconnect: connections.storedNeedsReconnect,
-          tokenExpiresAt: connections.tokenExpiresAt,
-          definitionAuthMethod: connections.definitionAuthMethod,
-          definitionMcpTransport: connections.definitionMcpTransport,
-          definitionStorageVersion: connections.definitionStorageVersion,
-          oauthAccessTokenId: connections.oauthAccessTokenId,
-          oauthRefreshTokenId: connections.oauthRefreshTokenId,
-          automaticOAuthBindingId: connections.automaticOAuthBindingId,
-          kind: values.kind,
-          key: values.key,
-          storedValue: values.storedValue,
-        })
-        .from(connections)
-        .leftJoin(values, eq(values.memberConnectorId, connections.id));
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_custom_connector_value_rows",
-        "nested",
-        startedAt,
-        now(),
-      );
-      return rows;
-    },
-  );
-}
-
 export function customConnectorCandidateRuntimeRows(args: {
   readonly connector: CustomConnectorRuntimeDataRows[number]["connector"];
   readonly candidateIds: readonly string[];
@@ -14364,172 +14068,13 @@ export function customConnectorCandidateRuntimeRows(args: {
   });
 }
 
-function createRunCustomConnectorPermissionBundlesObject(
-  preparation$: RunConnectorPreparationObject,
-  definitionRows$: RunCustomConnectorDefinitionRowsObject,
-  storedRows$: ReturnType<typeof createRunCustomConnectorStoredRowsObject>,
-  accountCandidates$: RunConnectorAccountCandidatesObject,
-) {
-  return computed(async (get) => {
-    const [preparation, connectors, storageRows, candidates] =
-      await Promise.all([
-        get(preparation$),
-        get(definitionRows$),
-        get(storedRows$),
-        get(accountCandidates$),
-      ]);
-    if (isRouteError(preparation) || !preparation.custom) {
-      return new Map<
-        string,
-        CustomConnectorPermissionBundle | null | undefined
-      >();
-    }
-    const snapshot = preparation.custom.connectorCatalogSnapshot;
-    const entries = await Promise.all(
-      connectors.map(async (connector) => {
-        const rows = customConnectorCandidateRuntimeRows({
-          connector,
-          storageRows,
-          candidateIds:
-            candidates.get(
-              connectorAccountTargetKey({
-                kind: "custom",
-                customConnectorId: connector.id,
-              }),
-            ) ?? [],
-        });
-        const row = rows.find((candidate) => {
-          return (
-            customConnectorNewRunRowIsAdmissible(candidate) &&
-            resolveCustomConnectorBaseUrlVars({
-              row: candidate,
-              provided: undefined,
-              hasProvided: false,
-            }) !== undefined
-          );
-        });
-        if (!row) {
-          return [connector.id, null] as const;
-        }
-        const bundle = await loadEffectiveCustomConnectorPermissionBundle({
-          row,
-          snapshot,
-        });
-        return [connector.id, bundle] as const;
-      }),
-    );
-    return new Map(entries);
-  });
-}
-
-function createRunCustomConnectorContextObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  preparation$: RunConnectorPreparationObject,
-  {
-    definitionRows$,
-    storedRows$,
-    accountCandidates$,
-  }: {
-    readonly definitionRows$: RunCustomConnectorDefinitionRowsObject;
-    readonly storedRows$: ReturnType<
-      typeof createRunCustomConnectorStoredRowsObject
-    >;
-    readonly accountCandidates$: RunConnectorAccountCandidatesObject;
-  },
-  featureSwitchContext$: ReturnType<
-    typeof createRunIdentityObjects
-  >["featureSwitchContext$"],
-) {
-  const permissionBundles$ = createRunCustomConnectorPermissionBundlesObject(
-    preparation$,
-    definitionRows$,
-    storedRows$,
-    accountCandidates$,
-  );
-  return computed(
-    async (
-      get,
-    ): Promise<CustomConnectorRuntimeContext | CreateRunErrorResult> => {
-      const [
-        preparation,
-        connectors,
-        storageRows,
-        candidates,
-        featureSwitchContext,
-        permissionBundlesByConnectorId,
-      ] = await Promise.all([
-        get(preparation$),
-        get(definitionRows$),
-        get(storedRows$),
-        get(accountCandidates$),
-        get(featureSwitchContext$),
-        get(permissionBundles$),
-      ]);
-      if (isRouteError(preparation)) {
-        return preparation;
-      }
-      if (!preparation.custom) {
-        return emptyCustomConnectorRuntimeContext();
-      }
-      const args = preparation.custom;
-      const chosenRows = await Promise.all(
-        connectors.map(async (connector) => {
-          const rows = customConnectorCandidateRuntimeRows({
-            connector,
-            storageRows,
-            candidateIds:
-              candidates.get(
-                connectorAccountTargetKey({
-                  kind: "custom",
-                  customConnectorId: connector.id,
-                }),
-              ) ?? [],
-          });
-          for (const row of rows) {
-            const context = await buildNewRunCustomConnectorRuntimeContext({
-              rows: [row],
-              permissionBundlesByConnectorId,
-              featureSwitchContext,
-              connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-              grants: args.customConnectorGrants,
-            });
-            if (context.targets.length > 0) {
-              return row;
-            }
-          }
-          return {
-            connector,
-            values: [],
-            credentialAccess: { kind: "absent" as const },
-          };
-        }),
-      );
-      return await (
-        await get(input$)
-      ).timing.measure(
-        "api_dispatch_prepare_context_build_custom_connector_firewalls",
-        "nested",
-        async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-          });
-        },
-      );
-    },
-  );
-}
-
 function createRunConnectorSelectionObject(
   input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   definitionRows$: RunCustomConnectorDefinitionRowsObject,
-  threadSelections$: ReturnType<
-    typeof createRunThreadConnectorSelectionObjects
-  >["threadSelections$"],
+  threadSelections$: Computed<
+    Promise<ThreadConnectorSelectionIds | CreateRunErrorResult | undefined>
+  >,
   selectedCatalog$?: Computed<Promise<RunConnectorCatalogSelection>>,
 ) {
   const catalog$ =
@@ -14558,68 +14103,62 @@ function createRunConnectorSelectionObject(
   );
 }
 
-function createRunConnectorReadObjects(
-  input$: AsyncRead<RunConnectorReadInput>,
-  {
-    featureSwitchContext$,
-  }: Pick<ReturnType<typeof createRunIdentityObjects>, "featureSwitchContext$">,
-  scope$: RunConnectorScopeObject,
-  selectedCatalog$?: Computed<Promise<RunConnectorCatalogSelection>>,
-) {
-  const definitionRows$ = createRunCustomConnectorDefinitionRowsObject(
-    input$,
-    scope$,
-  );
-  const { threadSelections$, accountCandidates$ } =
-    createRunThreadConnectorSelectionObjects(input$, scope$);
-  const connectorSelection$ = createRunConnectorSelectionObject(
-    input$,
-    scope$,
-    definitionRows$,
-    threadSelections$,
-    selectedCatalog$,
-  );
-  const preparation$ = createRunConnectorPreparationObject(
-    input$,
-    connectorSelection$,
-  );
-  const storedRows$ = createRunStoredConnectorRowObject(
-    input$,
-    scope$,
-    accountCandidates$,
-  );
-  const storedSnapshot$ = createRunStoredConnectorSnapshotObject(
-    input$,
-    preparation$,
-    storedRows$,
-    accountCandidates$,
-  );
-  const customStoredRows$ = createRunCustomConnectorStoredRowsObject(
-    input$,
-    scope$,
-    accountCandidates$,
-  );
-  const customContext$ = createRunCustomConnectorContextObject(
-    input$,
-    preparation$,
-    { definitionRows$, storedRows$: customStoredRows$, accountCandidates$ },
-    featureSwitchContext$,
-  );
-  const connectorSnapshot$ = computed(
+interface RunConnectorMaterializationFacts {
+  readonly input: Omit<RunConnectorReadInput, "db">;
+  readonly scope: EffectiveConnectorScope;
+  readonly selection: RunConnectorSelection;
+  readonly accountCandidates: ReadonlyMap<string, readonly string[]>;
+  readonly definitionRows: readonly ReturnType<
+    typeof normaliseCustomConnectorRow
+  >[];
+  readonly featureSwitchContext: FeatureSwitchContext;
+}
+class RunConnectorMaterializationOwner {
+  constructor(private readonly facts: RunConnectorMaterializationFacts) {}
+  private readonly scope$ = computed(() => {
+    return this.facts.scope;
+  });
+  private readonly selection$ = computed(() => {
+    return this.facts.selection;
+  });
+  private readonly accountCandidates$ = computed(() => {
+    return this.facts.accountCandidates;
+  });
+  private readonly definitionRows$ = computed(() => {
+    return this.facts.definitionRows;
+  });
+  private readonly featureSwitchContext$ = computed(() => {
+    return this.facts.featureSwitchContext;
+  });
+  private readonly preparation$ = this.createRunConnectorPreparationObject();
+  private readonly selectedConnectors$ =
+    this.createRunStoredConnectorSelectionViewObject();
+  private readonly storedRows$ = this.createRunStoredConnectorRowObject();
+  private readonly storedSnapshot$ =
+    this.createRunStoredConnectorSnapshotObject();
+  private readonly connections$ =
+    this.createRunCustomConnectorConnectionViewObject();
+  private readonly values$ = this.createRunCustomConnectorValueViewObject();
+  private readonly customStoredRows$ =
+    this.createRunCustomConnectorStoredRowsObject();
+  private readonly permissionBundles$ =
+    this.createRunCustomConnectorPermissionBundlesObject();
+  private readonly customContext$ =
+    this.createRunCustomConnectorContextObject();
+  readonly connectorSnapshot$ = computed(
     async (
       get,
     ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
-      const input = await get(input$);
-      const scope = await get(scope$);
+      const { input, scope } = this.facts;
       return await input.timing.measure(
         "api_dispatch_prepare_context_load_connector_contexts",
         "nested",
         async () => {
           const [preparation, storedConnectorSnapshot, customConnectorContext] =
             await Promise.all([
-              get(preparation$),
-              get(storedSnapshot$),
-              get(customContext$),
+              get(this.preparation$),
+              get(this.storedSnapshot$),
+              get(this.customContext$),
             ]);
           if (isRouteError(preparation)) {
             return preparation;
@@ -14638,8 +14177,672 @@ function createRunConnectorReadObjects(
             customConnectorContext,
           };
         },
-        storedConnectorTimingDimensions({
-          scopeSource: scope.source,
+        storedConnectorTimingDimensions({ scopeSource: scope.source }),
+      );
+    },
+  );
+  private createRunConnectorPreparationObject() {
+    return computed(
+      async (get): Promise<RunConnectorPreparation | CreateRunErrorResult> => {
+        const input = this.facts.input;
+        const selection = await get(this.selection$);
+        if (isRouteError(selection)) {
+          return selection;
+        }
+        const {
+          connectorCatalogSelection,
+          connectorScope,
+          threadConnectorSelectionIds,
+        } = selection;
+        if (connectorCatalogSelection.kind === "empty") {
+          return { selection, stored: null, custom: null };
+        }
+        const connectorCatalogSnapshot = connectorCatalogSelection.selection;
+        const allowedConnectorSlugs = [
+          ...new Set(
+            connectorScope.allowedConnectorSlugs.filter((slug) => {
+              return (
+                getConnectorRuntimeConnector(connectorCatalogSnapshot, slug)
+                  ?.catalogConnector.mcp === undefined ||
+                input.args.includeOkouTokenSecret === true
+              );
+            }),
+          ),
+        ];
+        return {
+          selection,
+          stored:
+            allowedConnectorSlugs.length === 0
+              ? null
+              : {
+                  orgId: input.args.orgId,
+                  userId: input.args.userId,
+                  allowedConnectorSlugs,
+                  connectorIdCandidatesBySlug:
+                    threadConnectorSelectionIds?.connectorIdCandidatesBySlug,
+                  scopeSource: connectorScope.source,
+                  connectorCatalogSnapshot,
+                },
+          custom:
+            connectorScope.allowedCustomConnectorIds.length === 0
+              ? null
+              : {
+                  orgId: input.args.orgId,
+                  userId: input.args.userId,
+                  allowedCustomConnectorIds:
+                    connectorScope.allowedCustomConnectorIds,
+                  connectorIdCandidatesByCustomConnectorId:
+                    threadConnectorSelectionIds?.connectorIdCandidatesByCustomConnectorId,
+                  customConnectorGrants: connectorScope.customConnectorGrants,
+                  connectorCatalogSnapshot,
+                },
+        };
+      },
+    );
+  }
+  private createRunStoredConnectorSelectionViewObject() {
+    return computed(async (get) => {
+      const { args } = this.facts.input;
+      const db = get(db$);
+      const candidates = await get(this.accountCandidates$);
+      const connectorIds = (
+        await get(this.scope$)
+      ).allowedConnectorSlugs.flatMap((connectorSlug) => {
+        return (
+          candidates.get(
+            connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
+          ) ?? []
+        );
+      });
+      if (connectorIds.length === 0) {
+        return null;
+      }
+      return db.$with("stored_connector_candidates").as(
+        db
+          .select({
+            connectorId: connectors.id,
+            connectorSlug: sql`${connectors.connectorSlug}`
+              .mapWith(pgTextDecoder)
+              .as("connector_slug"),
+            authMethod: connectors.authMethod,
+            automaticAuthType: connectors.automaticAuthType,
+            connectorStateRevision:
+              sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`
+                .mapWith(pgInt8ToBigIntDecoder)
+                .as("connector_state_revision"),
+            needsReconnect: connectors.needsReconnect,
+            orgId: connectors.orgId,
+            storageVersion: connectors.storageVersion,
+            tokenExpiresAt: connectors.tokenExpiresAt,
+            userId: connectors.userId,
+          })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.orgId, args.orgId),
+              eq(connectors.userId, args.userId),
+              isNotNull(connectors.connectorSlug),
+              inArray(connectors.id, connectorIds),
+            ),
+          ),
+      );
+    });
+  }
+  private createRunStoredConnectorRowObject() {
+    return computed(
+      async (
+        get,
+      ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
+        const { args, timing } = this.facts.input;
+        const db = get(db$);
+        const selectedConnectors = await get(this.selectedConnectors$);
+        if (!selectedConnectors) {
+          return [];
+        }
+        const secretGroups = db
+          .select({
+            connectorId: secretsTable.connectorId,
+            secretNames: sql`jsonb_agg(${secretsTable.name})`
+              .mapWith(storedConnectorSecretNamesDecoder)
+              .as("secret_names"),
+          })
+          .from(secretsTable)
+          .innerJoin(
+            selectedConnectors,
+            and(
+              eq(selectedConnectors.connectorId, secretsTable.connectorId),
+              eq(secretsTable.orgId, args.orgId),
+              eq(secretsTable.userId, args.userId),
+            ),
+          )
+          .where(eq(secretsTable.type, "connector"))
+          .groupBy(secretsTable.connectorId)
+          .as("stored_connector_secret_groups");
+        const variableGroups = db
+          .select({
+            connectorId: variables.connectorId,
+            variableValues:
+              sql`jsonb_object_agg(${variables.name}, ${variables.value})`
+                .mapWith(storedConnectorVariableValuesDecoder)
+                .as("variable_values"),
+          })
+          .from(variables)
+          .innerJoin(
+            selectedConnectors,
+            and(
+              eq(selectedConnectors.connectorId, variables.connectorId),
+              eq(variables.orgId, args.orgId),
+              eq(variables.userId, args.userId),
+            ),
+          )
+          .where(eq(variables.type, "connector"))
+          .groupBy(variables.connectorId)
+          .as("stored_connector_variable_groups");
+        const startedAt = now();
+        const dimensions = storedConnectorTimingDimensions({
+          scopeSource: (await get(this.scope$)).source,
+        });
+        const rows = await onRejection(
+          db
+            .with(selectedConnectors)
+            .select({
+              connectorId: selectedConnectors.connectorId,
+              connectorSlug: selectedConnectors.connectorSlug,
+              authMethod: selectedConnectors.authMethod,
+              automaticAuthType: selectedConnectors.automaticAuthType,
+              connectorStateRevision: selectedConnectors.connectorStateRevision,
+              needsReconnect: selectedConnectors.needsReconnect,
+              orgId: selectedConnectors.orgId,
+              storageVersion: selectedConnectors.storageVersion,
+              tokenExpiresAt: selectedConnectors.tokenExpiresAt,
+              userId: selectedConnectors.userId,
+              secretNames: sql`${secretGroups.secretNames}`.mapWith(
+                nullableDriverValueDecoder(storedConnectorSecretNamesDecoder),
+              ),
+              variableValues: sql`${variableGroups.variableValues}`.mapWith(
+                nullableDriverValueDecoder(
+                  storedConnectorVariableValuesDecoder,
+                ),
+              ),
+            })
+            .from(selectedConnectors)
+            .leftJoin(
+              secretGroups,
+              eq(secretGroups.connectorId, selectedConnectors.connectorId),
+            )
+            .leftJoin(
+              variableGroups,
+              eq(variableGroups.connectorId, selectedConnectors.connectorId),
+            ),
+          () => {
+            timing.recordElapsed(
+              "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
+              "nested",
+              startedAt,
+              now(),
+              dimensions,
+            );
+          },
+        );
+        timing.recordElapsed(
+          "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
+          "nested",
+          startedAt,
+          now(),
+          {
+            ...dimensions,
+            stored_connector_candidate_count_bucket: countBucket(rows.length),
+          },
+        );
+        return rows.map((row) => {
+          return {
+            ...row,
+            secretNames: row.secretNames ?? [],
+            variableValues: row.variableValues ?? {},
+          };
+        });
+      },
+    );
+  }
+  private createRunStoredConnectorSnapshotObject() {
+    return computed(
+      async (
+        get,
+      ): Promise<
+        StoredConnectorMaterializationSnapshot | null | CreateRunErrorResult
+      > => {
+        const [preparation, rows, candidates] = await Promise.all([
+          get(this.preparation$),
+          get(this.storedRows$),
+          get(this.accountCandidates$),
+        ]);
+        if (isRouteError(preparation)) {
+          return preparation;
+        }
+        const args = preparation.stored;
+        if (!args) {
+          return null;
+        }
+        const available = new Set(
+          allowedStoredConnectorRows(
+            rows,
+            args.allowedConnectorSlugs,
+            args.connectorCatalogSnapshot,
+            nowDate(),
+          ).map((row) => {
+            return row.access.connectorId;
+          }),
+        );
+        const selectedIds = new Set(
+          args.allowedConnectorSlugs.flatMap((connectorSlug) => {
+            const ids =
+              candidates.get(
+                connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
+              ) ?? [];
+            const id = ids.find((candidate) => {
+              return available.has(candidate);
+            });
+            return id ? [id] : [];
+          }),
+        );
+        return materializeStoredConnectorSnapshotRows(
+          {
+            rows: rows.filter((row) => {
+              return selectedIds.has(row.connectorId);
+            }),
+            allowedConnectorSlugs: args.allowedConnectorSlugs,
+            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+            timingDimensions: storedConnectorTimingDimensions({
+              scopeSource: args.scopeSource,
+            }),
+          },
+          this.facts.input.timing,
+        );
+      },
+    );
+  }
+  private createRunCustomConnectorConnectionViewObject() {
+    return computed(async (get) => {
+      const { args } = this.facts.input;
+      const db = get(db$);
+      const candidates = await get(this.accountCandidates$);
+      const connectorIds = (await get(this.scope$)).allowedCustomConnectorIds;
+      const memberConnectorIds = connectorIds.flatMap((customConnectorId) => {
+        return (
+          candidates.get(
+            connectorAccountTargetKey({ kind: "custom", customConnectorId }),
+          ) ?? []
+        );
+      });
+      if (memberConnectorIds.length === 0) {
+        return null;
+      }
+      return db.$with("custom_connector_runtime_connections").as(
+        db
+          .select(runCustomConnectorConnectionColumns())
+          .from(connectors)
+          .innerJoin(
+            orgCustomConnectors,
+            and(
+              eq(orgCustomConnectors.id, connectors.customConnectorId),
+              eq(orgCustomConnectors.orgId, connectors.orgId),
+            ),
+          )
+          .leftJoin(
+            runCustomConnectorAccessTokenSecret,
+            and(
+              eq(
+                runCustomConnectorAccessTokenSecret.connectorId,
+                connectors.id,
+              ),
+              eq(runCustomConnectorAccessTokenSecret.name, "access_token"),
+            ),
+          )
+          .leftJoin(
+            runCustomConnectorRefreshTokenSecret,
+            and(
+              eq(
+                runCustomConnectorRefreshTokenSecret.connectorId,
+                connectors.id,
+              ),
+              eq(runCustomConnectorRefreshTokenSecret.name, "refresh_token"),
+            ),
+          )
+          .leftJoin(
+            customConnectorAccountOauthBindings,
+            and(
+              eq(
+                customConnectorAccountOauthBindings.connectorAccountId,
+                connectors.id,
+              ),
+              eq(
+                customConnectorAccountOauthBindings.customConnectorId,
+                orgCustomConnectors.id,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(connectors.orgId, args.orgId),
+              eq(connectors.userId, args.userId),
+              inArray(connectors.customConnectorId, [...connectorIds]),
+              inArray(connectors.id, memberConnectorIds),
+            ),
+          ),
+      );
+    });
+  }
+  private createRunCustomConnectorValueViewObject() {
+    return computed(async (get) => {
+      const { args } = this.facts.input;
+      const db = get(db$);
+      const connections = await get(this.connections$);
+      if (!connections) {
+        return null;
+      }
+      const compatible = or(
+        eq(connections.definitionAuthMethod, connections.storedAuthMethod),
+        and(
+          eq(connections.definitionAuthMethod, "automatic"),
+          inArray(connections.storedAuthMethod, ["none", "oauth"]),
+        ),
+      );
+      const currentVersion = eq(
+        connections.storedStorageVersion,
+        connections.definitionStorageVersion,
+      );
+      const secretQuery = db
+        .select({
+          memberConnectorId: sql`${connections.id}`
+            .mapWith(pgTextDecoder)
+            .as("value_member_connector_id"),
+          kind: sql`'secret'`
+            .mapWith(runCustomConnectorStoredValueKindDecoder)
+            .as("kind"),
+          key: secretsTable.name,
+          storedValue: secretsTable.encryptedValue,
+        })
+        .from(connections)
+        .innerJoin(secretsTable, eq(secretsTable.connectorId, connections.id))
+        .where(
+          and(
+            eq(secretsTable.type, "connector"),
+            eq(secretsTable.orgId, args.orgId),
+            eq(secretsTable.userId, args.userId),
+            compatible,
+            currentVersion,
+            ne(connections.storedAuthMethod, "none"),
+          ),
+        );
+      const variableQuery = db
+        .select({
+          memberConnectorId: sql`${connections.id}`
+            .mapWith(pgTextDecoder)
+            .as("value_member_connector_id"),
+          kind: sql`'variable'`
+            .mapWith(runCustomConnectorStoredValueKindDecoder)
+            .as("kind"),
+          key: variables.name,
+          storedValue: variables.value,
+        })
+        .from(connections)
+        .innerJoin(variables, eq(variables.connectorId, connections.id))
+        .where(
+          and(
+            eq(variables.type, "connector"),
+            eq(variables.orgId, args.orgId),
+            eq(variables.userId, args.userId),
+            compatible,
+            currentVersion,
+          ),
+        );
+      return db
+        .$with("custom_connector_runtime_values")
+        .as(unionAll(secretQuery, variableQuery));
+    });
+  }
+  private createRunCustomConnectorStoredRowsObject() {
+    return computed(
+      async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
+        const { timing } = this.facts.input;
+        const db = get(db$);
+        const [connections, values] = await Promise.all([
+          get(this.connections$),
+          get(this.values$),
+        ]);
+        if (!connections || !values) {
+          return [];
+        }
+        const startedAt = now();
+        const rows = await db
+          .with(connections, values)
+          .select({
+            id: connections.id,
+            updatedAt: connections.updatedAt,
+            customConnectorId: connections.customConnectorId,
+            storedAuthMethod: connections.storedAuthMethod,
+            storedStorageVersion: connections.storedStorageVersion,
+            storedNeedsReconnect: connections.storedNeedsReconnect,
+            tokenExpiresAt: connections.tokenExpiresAt,
+            definitionAuthMethod: connections.definitionAuthMethod,
+            definitionMcpTransport: connections.definitionMcpTransport,
+            definitionStorageVersion: connections.definitionStorageVersion,
+            oauthAccessTokenId: connections.oauthAccessTokenId,
+            oauthRefreshTokenId: connections.oauthRefreshTokenId,
+            automaticOAuthBindingId: connections.automaticOAuthBindingId,
+            kind: values.kind,
+            key: values.key,
+            storedValue: values.storedValue,
+          })
+          .from(connections)
+          .leftJoin(values, eq(values.memberConnectorId, connections.id));
+        timing.recordElapsed(
+          "api_dispatch_prepare_context_load_custom_connector_value_rows",
+          "nested",
+          startedAt,
+          now(),
+        );
+        return rows;
+      },
+    );
+  }
+  private createRunCustomConnectorPermissionBundlesObject() {
+    return computed(async (get) => {
+      const [preparation, connectors, storageRows, candidates] =
+        await Promise.all([
+          get(this.preparation$),
+          get(this.definitionRows$),
+          get(this.customStoredRows$),
+          get(this.accountCandidates$),
+        ]);
+      if (isRouteError(preparation) || !preparation.custom) {
+        return new Map<
+          string,
+          CustomConnectorPermissionBundle | null | undefined
+        >();
+      }
+      const snapshot = preparation.custom.connectorCatalogSnapshot;
+      const entries = await Promise.all(
+        connectors.map(async (connector) => {
+          const rows = customConnectorCandidateRuntimeRows({
+            connector,
+            storageRows,
+            candidateIds:
+              candidates.get(
+                connectorAccountTargetKey({
+                  kind: "custom",
+                  customConnectorId: connector.id,
+                }),
+              ) ?? [],
+          });
+          const row = rows.find((candidate) => {
+            return (
+              customConnectorNewRunRowIsAdmissible(candidate) &&
+              resolveCustomConnectorBaseUrlVars({
+                row: candidate,
+                provided: undefined,
+                hasProvided: false,
+              }) !== undefined
+            );
+          });
+          if (!row) {
+            return [connector.id, null] as const;
+          }
+          const bundle = await loadEffectiveCustomConnectorPermissionBundle({
+            row,
+            snapshot,
+          });
+          return [connector.id, bundle] as const;
+        }),
+      );
+      return new Map(entries);
+    });
+  }
+  private createRunCustomConnectorContextObject() {
+    return computed(
+      async (
+        get,
+      ): Promise<CustomConnectorRuntimeContext | CreateRunErrorResult> => {
+        const [
+          preparation,
+          connectors,
+          storageRows,
+          candidates,
+          featureSwitchContext,
+          permissionBundlesByConnectorId,
+        ] = await Promise.all([
+          get(this.preparation$),
+          get(this.definitionRows$),
+          get(this.customStoredRows$),
+          get(this.accountCandidates$),
+          get(this.featureSwitchContext$),
+          get(this.permissionBundles$),
+        ]);
+        if (isRouteError(preparation)) {
+          return preparation;
+        }
+        if (!preparation.custom) {
+          return emptyCustomConnectorRuntimeContext();
+        }
+        const args = preparation.custom;
+        const chosenRows = await Promise.all(
+          connectors.map(async (connector) => {
+            const rows = customConnectorCandidateRuntimeRows({
+              connector,
+              storageRows,
+              candidateIds:
+                candidates.get(
+                  connectorAccountTargetKey({
+                    kind: "custom",
+                    customConnectorId: connector.id,
+                  }),
+                ) ?? [],
+            });
+            for (const row of rows) {
+              const context = await buildNewRunCustomConnectorRuntimeContext({
+                rows: [row],
+                permissionBundlesByConnectorId,
+                featureSwitchContext,
+                connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+                grants: args.customConnectorGrants,
+              });
+              if (context.targets.length > 0) {
+                return row;
+              }
+            }
+            return {
+              connector,
+              values: [],
+              credentialAccess: { kind: "absent" as const },
+            };
+          }),
+        );
+        return await this.facts.input.timing.measure(
+          "api_dispatch_prepare_context_build_custom_connector_firewalls",
+          "nested",
+          async () => {
+            return await buildNewRunCustomConnectorRuntimeContext({
+              rows: chosenRows,
+              permissionBundlesByConnectorId,
+              featureSwitchContext,
+              connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+              grants: args.customConnectorGrants,
+            });
+          },
+        );
+      },
+    );
+  }
+}
+function createRunConnectorMaterializationObject(
+  facts: RunConnectorMaterializationFacts,
+) {
+  return new RunConnectorMaterializationOwner(facts).connectorSnapshot$;
+}
+function createRunConnectorReadObjects(
+  input$: AsyncRead<RunConnectorReadInput>,
+  {
+    featureSwitchContext$,
+  }: Pick<ReturnType<typeof createRunIdentityObjects>, "featureSwitchContext$">,
+  scope$: RunConnectorScopeObject,
+  selectedCatalog$?: Computed<Promise<RunConnectorCatalogSelection>>,
+) {
+  const definitionRows$ = createRunCustomConnectorDefinitionRowsObject(
+    input$,
+    scope$,
+  );
+  const accountSelection$ = computed(async (get) => {
+    const [input, scope] = await Promise.all([get(input$), get(scope$)]);
+    return await get(
+      createRunConnectorAccountSelectionObject(
+        { args: input.args, timing: input.timing },
+        scope,
+      ),
+    );
+  });
+  const threadSelections$ = computed(async (get) => {
+    return (await get(accountSelection$)).threadSelections;
+  });
+  const accountCandidates$ = computed(async (get) => {
+    return (await get(accountSelection$)).accountCandidates;
+  });
+  const connectorSelection$ = createRunConnectorSelectionObject(
+    input$,
+    scope$,
+    definitionRows$,
+    threadSelections$,
+    selectedCatalog$,
+  );
+  const connectorSnapshot$ = computed(
+    async (
+      get,
+    ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
+      const [
+        input,
+        scope,
+        selection,
+        accountCandidates,
+        definitionRows,
+        featureSwitchContext,
+      ] = await Promise.all([
+        get(input$),
+        get(scope$),
+        get(connectorSelection$),
+        get(accountCandidates$),
+        get(definitionRows$),
+        get(featureSwitchContext$),
+      ]);
+      if (isRouteError(selection)) {
+        return selection;
+      }
+      return await get(
+        createRunConnectorMaterializationObject({
+          input: { args: input.args, timing: input.timing },
+          scope,
+          selection,
+          accountCandidates,
+          definitionRows,
+          featureSwitchContext,
         }),
       );
     },
@@ -14677,7 +14880,6 @@ function createRunRuntimeObjects(
           get(connectorSelection$),
           get(connectorSnapshot$),
         ]);
-
       const selection = selectionResult;
       const bodyContext = bodyResult;
       const modelProvider = modelResult;
@@ -14754,12 +14956,14 @@ function createRunRuntimeObjects(
         catalog: input.args.catalog,
         modelProvider,
         permissionManifest: connectors.permissionManifest,
-        routePricing: await loadRunRoutePricing(input.db, {
-          catalog: input.args.catalog,
-          modelProvider,
-          serviceTier: input.args.codexServiceTier,
-          resolution: get(usagePricingResolution$),
-        }),
+        routePricing: await get(
+          runRoutePricing({
+            catalog: input.args.catalog,
+            modelProvider,
+            serviceTier: input.args.codexServiceTier,
+            resolution: get(usagePricingResolution$),
+          }),
+        ),
       });
       if (isRouteError(usage)) {
         return usage;
