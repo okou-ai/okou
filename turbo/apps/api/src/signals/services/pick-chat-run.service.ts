@@ -9,6 +9,7 @@ import {
   gt,
   notInArray,
   notExists,
+  isNotNull,
   asc,
   sql,
 } from "drizzle-orm";
@@ -91,9 +92,11 @@ import {
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
 } from "./internal-chat-run-callback.service";
-import { replaceChatEvent, insertChatEvent } from "./chat-event.service";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import { replaceLoadedChatEvent, insertChatEvent } from "./chat-event.service";
+import {
+  canonicalChatEventUserMessage,
+  canonicalChatInputModelSelection,
+} from "./canonical-chat-event-read.service";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -388,78 +391,6 @@ async function persistClaimedRun(
  * one isolated child graph in the same request Store. The cursor advances over
  * selected work; it never retries a failed launch within this pass.
  */
-/**
- * Replace an unconsumed queued input with `input.rejected` and append its
- * visible error. Returns null when the input was already consumed.
- */
-async function appendQueueHeadRejection(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly eventId: string;
-    readonly errorMarker: string;
-    readonly displayError: string;
-  },
-): Promise<{
-  readonly assistantEventId: string;
-  readonly contextType: string | null;
-  readonly contextId: string | null;
-} | null> {
-  const [head] = await tx
-    .select({
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-      ),
-    )
-    .limit(1);
-  if (!head?.userMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  const rejectedAt = new Date(
-    Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
-  );
-  const rejected = await replaceChatEvent(tx, args.eventId, {
-    chatThreadId: args.chatThreadId,
-    eventType: "input.rejected",
-    userMessage: head.userMessage,
-    runId: null,
-    error: args.errorMarker,
-    createdAt: rejectedAt,
-  });
-  if (!rejected) {
-    return null;
-  }
-  const assistant = await insertChatEvent(tx, {
-    chatThreadId: args.chatThreadId,
-    eventType: "output.error",
-    content: args.displayError,
-    runId: null,
-    error: args.errorMarker,
-    createdAt: new Date(rejectedAt.getTime() + 1),
-  });
-  if (!assistant) {
-    throw new Error("Failed to append queued input rejection");
-  }
-  await touchChatThreadLastMessageAt(
-    tx,
-    args.chatThreadId,
-    assistant.createdAt,
-  );
-  return {
-    assistantEventId: assistant.id,
-    contextType: head.contextType,
-    contextId: head.contextId,
-  };
-}
-
 /** A picked queue head a rejection records, publishes and reports. */
 interface RejectedQueueHead {
   readonly id: string;
@@ -817,6 +748,135 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
    * the claim still holds it; otherwise the transaction rolls back and nothing
    * changes. The queue row is locked last, as enqueue does.
    */
+  const rejectionInput$ = command(
+    async ({ get }, head: RejectedQueueHead, signal: AbortSignal) => {
+      const [source] = await get(db$)
+        .select({
+          id: chatEvents.id,
+          chatThreadId: chatEvents.chatThreadId,
+          eventType: chatEvents.eventType,
+          userMessage: canonicalChatEventUserMessage(),
+          createdAt: chatEvents.createdAt,
+          contextType: chatEvents.contextType,
+          contextId: chatEvents.contextId,
+          modelSelection: canonicalChatInputModelSelection(),
+        })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.id, head.id),
+            eq(chatEvents.chatThreadId, head.chatThreadId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!source?.userMessage) {
+        throw new Error("Queued input event is missing userMessage");
+      }
+      return { ...source, userMessage: source.userMessage };
+    },
+  );
+  const commitQueueHeadRejection$ = command(
+    async (
+      { set },
+      args: {
+        readonly head: RejectedQueueHead;
+        readonly errorMarker: string;
+        readonly displayError: string;
+        readonly lease?: LeasedThreadClaim;
+      },
+      signal: AbortSignal,
+    ) => {
+      const source = await set(rejectionInput$, args.head, signal);
+      const rejectedAt = new Date(
+        Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
+      );
+      return await set(writeDb$).transaction(async (tx) => {
+        const rejected = await replaceLoadedChatEvent(tx, source, {
+          chatThreadId: source.chatThreadId,
+          eventType: "input.rejected",
+          userMessage: source.userMessage,
+          runId: null,
+          error: args.errorMarker,
+          createdAt: rejectedAt,
+        });
+        signal.throwIfAborted();
+        let appended: {
+          readonly assistantEventId: string;
+          readonly contextType: string | null;
+          readonly contextId: string | null;
+        } | null = null;
+        if (rejected) {
+          const assistant = await insertChatEvent(tx, {
+            chatThreadId: source.chatThreadId,
+            eventType: "output.error",
+            content: args.displayError,
+            runId: null,
+            error: args.errorMarker,
+            createdAt: new Date(rejectedAt.getTime() + 1),
+          });
+          signal.throwIfAborted();
+          if (!assistant) {
+            throw new Error("Failed to append queued input rejection");
+          }
+          const [thread] = await tx
+            .update(chatThreads)
+            .set({
+              lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${assistant.createdAt.toISOString()}::timestamp)`,
+            })
+            .where(
+              and(
+                eq(chatThreads.id, source.chatThreadId),
+                isNotNull(chatThreads.agentId),
+              ),
+            )
+            .returning({
+              id: chatThreads.id,
+              userId: chatThreads.userId,
+              agentId: chatThreads.agentId,
+              lastMessageAt: chatThreads.lastMessageAt,
+            });
+          signal.throwIfAborted();
+          if (thread?.agentId) {
+            await tx.execute(
+              chatThreadEventInsertSql({
+                kind: "sort_touched",
+                userId: thread.userId,
+                chatThreadId: thread.id,
+                agentId: thread.agentId,
+                createdAt: thread.lastMessageAt,
+              }),
+            );
+            signal.throwIfAborted();
+          }
+          appended = {
+            assistantEventId: assistant.id,
+            contextType: source.contextType,
+            contextId: source.contextId,
+          };
+        }
+        if (args.lease) {
+          const { lease } = args;
+          const [released] = await tx
+            .update(queuedChatThreads)
+            .set({ claimId: null, claimExpiresAt: null })
+            .where(
+              and(
+                eq(queuedChatThreads.orgId, lease.orgId),
+                eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
+                eq(queuedChatThreads.claimId, lease.claimId),
+              ),
+            )
+            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+          signal.throwIfAborted();
+          if (!released) {
+            tx.rollback();
+          }
+        }
+        return appended;
+      });
+    },
+  );
   const rejectChatQueueHead$ = command(
     async (
       { get, set },
@@ -846,31 +906,11 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
                 signal,
               );
       signal.throwIfAborted();
-      const rejected = await set(writeDb$).transaction(async (tx) => {
-        const appended = await appendQueueHeadRejection(tx, {
-          chatThreadId: head.chatThreadId,
-          eventId: head.id,
-          errorMarker: error.code.toLowerCase(),
-          displayError,
-        });
-        if (lease) {
-          const [released] = await tx
-            .update(queuedChatThreads)
-            .set({ claimId: null, claimExpiresAt: null })
-            .where(
-              and(
-                eq(queuedChatThreads.orgId, lease.orgId),
-                eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
-                eq(queuedChatThreads.claimId, lease.claimId),
-              ),
-            )
-            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-          if (!released) {
-            tx.rollback();
-          }
-        }
-        return appended;
-      });
+      const rejected = await set(
+        commitQueueHeadRejection$,
+        { head, errorMarker: error.code.toLowerCase(), displayError, lease },
+        signal,
+      );
       signal.throwIfAborted();
       if (!rejected) {
         return;
