@@ -17,11 +17,9 @@ import {
   normalizeRunModelId,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { providerUnavailable } from "../../lib/error";
 import type {
   ResolvedModelProviderEnvironment,
   PermissionManifest,
-  CreateRunErrorResult,
 } from "./agent-run-contracts";
 
 /** The provider-wide row settlement uses when a category has no exact row. */
@@ -265,11 +263,21 @@ function isModelProviderFirewallName(name: string): boolean {
   return name.startsWith("model-provider:");
 }
 
+/**
+ * Why a run's usage cannot be billed: Built-in usage without a reporting
+ * provider, or a Built-in route category without pricing. Each owner maps
+ * this to its own rejection.
+ */
+interface ModelUsageRejection {
+  readonly kind: "unreported_usage" | "unpriced_route";
+  readonly message: string;
+}
+
 function validateModelUsageProviderInvariant(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
-}): CreateRunErrorResult | null {
+}): ModelUsageRejection | null {
   if (!isBuiltInModelProviderType(args.modelProvider?.type)) {
     return null;
   }
@@ -279,9 +287,11 @@ function validateModelUsageProviderInvariant(args: {
   if (args.modelUsageProvider) {
     return null;
   }
-  return providerUnavailable(
-    "Built-in model provider did not resolve a supported model for usage reporting",
-  );
+  return {
+    kind: "unreported_usage",
+    message:
+      "Built-in model provider did not resolve a supported model for usage reporting",
+  };
 }
 
 export function prepareModelUsageContext(args: {
@@ -293,7 +303,7 @@ export function prepareModelUsageContext(args: {
    * required for a Built-in run (null for every other run).
    */
   readonly routePricing: BuiltInRoutePricing | null;
-}): ModelUsageContext | CreateRunErrorResult {
+}): ModelUsageContext | ModelUsageRejection {
   const billableFirewalls = billableFirewallsForPermissions({
     modelProvider: args.modelProvider,
     permissions: args.permissionManifest,
@@ -364,7 +374,7 @@ function validateBuiltInRoutePricing(args: {
   readonly billableFirewalls: readonly string[];
   readonly route: CatalogRoute | null;
   readonly routePricing: BuiltInRoutePricing | null;
-}): CreateRunErrorResult | null {
+}): ModelUsageRejection | null {
   if (
     !args.route ||
     !args.billableFirewalls.some(isModelProviderFirewallName)
@@ -381,14 +391,15 @@ function validateBuiltInRoutePricing(args: {
   if (unpriced.length === 0) {
     return null;
   }
-  return providerUnavailable(
-    builtInRoutePricingRejectionMessage(args.route.model, [
+  return {
+    kind: "unpriced_route",
+    message: builtInRoutePricingRejectionMessage(args.route.model, [
       {
         concreteProviderType: args.route.concreteProviderType,
         categories: unpriced,
       },
     ]),
-  );
+  };
 }
 
 /**

@@ -10328,8 +10328,8 @@ export function createThreadClaimRunObjects(
         resolution: get(usagePricingResolution$),
       }),
     });
-    if (isRouteError(usage)) {
-      return usage;
+    if ("kind" in usage) {
+      return providerUnavailable(usage.message);
     }
     return {
       framework: modelProvider

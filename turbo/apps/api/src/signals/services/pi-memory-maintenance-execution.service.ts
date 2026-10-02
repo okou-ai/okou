@@ -571,7 +571,7 @@ async function prepareMaintenanceUsage(args: {
       resolution: args.resolution,
     }),
   });
-  if ("status" in usage) {
+  if ("kind" in usage) {
     throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
   }
   return { permissionManifest, usage };
