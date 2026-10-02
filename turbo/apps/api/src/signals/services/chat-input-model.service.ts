@@ -18,6 +18,7 @@ import {
   resolveDefaultModelFirstPin,
   resolveModelSelectionPin,
   isReplacedModelSelection,
+  type ModelSelectionBootstrap,
 } from "./model-selection.service";
 import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
 import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
@@ -41,6 +42,7 @@ export async function resolveChatInputModelSelection(
     readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
     /** The request's catalog snapshot, when the caller already loaded it. */
     readonly catalog?: ModelCatalog;
+    readonly modelBootstrap?: ModelSelectionBootstrap;
   },
 ) {
   const catalog = args.catalog ?? (await loadModelCatalog(db));
@@ -58,6 +60,7 @@ export async function resolveChatInputModelSelection(
         },
         orgPlanCapabilities: args.orgPlanCapabilities,
         catalog,
+        modelBootstrap: args.modelBootstrap,
       })
     : null;
   if (
@@ -79,6 +82,7 @@ export async function resolveChatInputModelSelection(
       args.userId,
       "workspace",
       args.orgPlanCapabilities,
+      args.modelBootstrap,
     );
     selectedModel = workspaceDefault.selectedModel;
     modelProviderType = workspaceDefault.modelProviderType;

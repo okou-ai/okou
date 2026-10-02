@@ -1,4 +1,12 @@
-import { resolveRunSelectionModel } from "./model-selection.service";
+import {
+  resolveRunSelectionModel,
+  type ModelSelectionBootstrap,
+} from "./model-selection.service";
+import {
+  createOrgModelBootstrap,
+  createMemberModelBootstrap,
+  type PrefetchedModelBootstrap,
+} from "./model-bootstrap.service";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   chatEventsContract,
@@ -827,6 +835,7 @@ const resolveSendThread$ = command(
         readonly agentId: string;
       };
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly modelBootstrap: ModelSelectionBootstrap;
     },
     signal: AbortSignal,
   ): Promise<SendThread | NormalSendFailure> => {
@@ -871,7 +880,7 @@ const resolveSendThread$ = command(
       args.body.model === undefined
         ? await set(
             resolveRequiredDefaultChatThreadModelPin$,
-            member,
+            { ...member, modelBootstrap: args.modelBootstrap },
             args.orgPlanCapabilities,
             signal,
           )
@@ -1409,11 +1418,18 @@ const publishEnqueuedNormalSend$ = command(
       readonly touchedAt: Date;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
       readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
+      readonly prefetchedModels: PrefetchedModelBootstrap;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const { args, thread, touchedAt, enqueueCommit, prefetchedBootstrap } =
-      input;
+    const {
+      args,
+      thread,
+      touchedAt,
+      enqueueCommit,
+      prefetchedBootstrap,
+      prefetchedModels,
+    } = input;
     const picked = await settle(
       set(
         pickEnqueuedChatThread$,
@@ -1422,6 +1438,7 @@ const publishEnqueuedNormalSend$ = command(
           chatThreadId: thread.threadId,
           ...(enqueueCommit ? { enqueueCommit } : {}),
           ...(prefetchedBootstrap ? { prefetchedBootstrap } : {}),
+          prefetchedModels,
         },
         signal,
       ),
@@ -1456,6 +1473,7 @@ const prepareNormalSendInput$ = command(
       readonly runSettings: ThreadRunSettings;
       readonly catalog: ModelCatalog;
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly modelBootstrap: ModelSelectionBootstrap;
     },
     signal: AbortSignal,
   ) => {
@@ -1475,6 +1493,7 @@ const prepareNormalSendInput$ = command(
       reasoningEffort: args.body.runOptions?.reasoningEffort,
       orgPlanCapabilities: args.orgPlanCapabilities,
       catalog: args.catalog,
+      modelBootstrap: args.modelBootstrap,
     });
     signal.throwIfAborted();
     if ("status" in modelSelection) {
@@ -1602,12 +1621,31 @@ export const sendNormalEvent$ = command(
       return prepared;
     }
     const { authorized, agentRunSource, catalog } = prepared;
+    const prefetchedModels: PrefetchedModelBootstrap = {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: args.body.agentId,
+      org: get(
+        createOrgModelBootstrap(args.orgId, {
+          capabilities: orgPlanCapabilities,
+          catalog,
+        }),
+      ),
+      member: get(createMemberModelBootstrap(args.orgId, args.userId)),
+    };
+    const [orgModels, memberModels] = await Promise.all([
+      prefetchedModels.org,
+      prefetchedModels.member,
+    ]);
+    signal.throwIfAborted();
+    const modelBootstrap = { org: orgModels, member: memberModels };
     const thread = await set(
       resolveSendThread$,
       {
         ...args,
-        orgPlanCapabilities,
+        orgPlanCapabilities: orgModels.capabilities,
         catalog,
+        modelBootstrap,
         existing:
           "thread" in authorized
             ? { thread: authorized.thread, agentId: authorized.agent.id }
@@ -1634,8 +1672,9 @@ export const sendNormalEvent$ = command(
       {
         ...args,
         runSettings: thread.runSettings,
-        orgPlanCapabilities,
+        orgPlanCapabilities: orgModels.capabilities,
         catalog,
+        modelBootstrap,
       },
       signal,
     );
@@ -1683,6 +1722,7 @@ export const sendNormalEvent$ = command(
               touchedAt: createdAt,
               ...(enqueueCommit ? { enqueueCommit } : {}),
               ...(prefetchedBootstrap ? { prefetchedBootstrap } : {}),
+              prefetchedModels,
             },
             signal,
           ),

@@ -20,6 +20,7 @@ import { db$, writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { safeSync, settle, tapError } from "../utils";
 import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
+import type { PrefetchedModelBootstrap } from "./model-bootstrap.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
   chatInputEnqueueCommits$,
@@ -221,6 +222,7 @@ export const pickEnqueuedChatThread$ = command(
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
       readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
+      readonly prefetchedModels?: PrefetchedModelBootstrap;
     },
     signal: AbortSignal,
   ) => {
@@ -234,6 +236,7 @@ export const pickEnqueuedChatThread$ = command(
       input.orgId,
       input.chatThreadId,
       input.prefetchedBootstrap,
+      input.prefetchedModels,
     );
     return await set(pick$, signal);
   },

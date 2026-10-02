@@ -33,6 +33,43 @@ export type MemberSubscriptionModel = Readonly<{
   updatedAt: Date;
 }>;
 
+export type MemberSubscriptionModelRoute = Pick<
+  MemberSubscriptionModel,
+  "model" | "providerType" | "providerId" | "needsReconnect" | "serviceTier"
+>;
+
+/** Routing needs no second catalog query once the request has captured it. */
+export function memberSubscriptionModelRoutesFromCatalog(
+  catalog: ModelCatalog,
+  member: MemberModelRouteContext,
+): readonly MemberSubscriptionModelRoute[] {
+  return catalog.routes.flatMap((route) => {
+    const subscription = member.subscriptions.find((candidate) => {
+      return candidate.type === route.subscriptionType;
+    });
+    const model = catalog.byModel.get(route.model);
+    if (
+      !subscription ||
+      !route.enabled ||
+      !model ||
+      model.replacedBy !== null
+    ) {
+      return [];
+    }
+    return [
+      {
+        model: route.model,
+        providerType: subscription.type,
+        providerId: subscription.providerId,
+        needsReconnect: subscription.needsReconnect,
+        serviceTier: route.serviceTiers.includes("priority")
+          ? "priority"
+          : null,
+      },
+    ];
+  });
+}
+
 /** Membership-scoped catalog: no connected account, no subscription models. */
 export async function loadMemberSubscriptionModels(
   db: Pick<Db, "select">,

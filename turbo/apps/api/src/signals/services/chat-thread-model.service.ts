@@ -4,6 +4,7 @@ import {
   resolveDefaultModelFirstPin,
   type DefaultModelFirstPin,
   type ModelFirstPin,
+  type ModelSelectionBootstrap,
 } from "./model-selection.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
@@ -27,6 +28,7 @@ export const resolveRequiredDefaultChatThreadModelPin$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
+      readonly modelBootstrap?: ModelSelectionBootstrap;
     },
     orgPlanCapabilities?: OrgPlanCapabilities | null,
     abortSignal?: AbortSignal,
@@ -37,6 +39,7 @@ export const resolveRequiredDefaultChatThreadModelPin$ = command(
       args.userId,
       undefined,
       orgPlanCapabilities,
+      args.modelBootstrap,
     );
     abortSignal?.throwIfAborted();
     if (!pin.selectedModel) {

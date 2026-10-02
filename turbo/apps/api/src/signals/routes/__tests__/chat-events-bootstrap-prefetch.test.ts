@@ -1,12 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { billingStatusRoutes } from "../billing-status";
 import { mockEnv } from "../../../lib/env";
 import {
   API_TEST_CONNECTOR_CATALOG,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
 import { withAgentBootstrapFailureFixture } from "../../../test-fixtures/agent-bootstrap-failure";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
+import { postAutoRechargeInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   barrierQueryBinds,
@@ -29,9 +35,89 @@ const {
   claimChatRun,
   cancelChatRun,
   requestSendEventWithBearer,
+  sessionHeaders,
 } = createChatEventsFixture(context);
 
 describe("chat agent bootstrap prefetch", () => {
+  it("keeps the prefetched credit balance when credits arrive before admission", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    await seedOrgMetadata({ orgId, tier: "pro", credits: 0 });
+    await upsertOrgPlanEntitlementFixture({
+      orgId,
+      status: "active",
+      canBuyCredits: true,
+    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const clientEventId = randomUUID();
+    const sent = await withDatabaseTransactionBarrierFixture(
+      {
+        select: (queryArgs) => {
+          return (
+            barrierQueryText(queryArgs).includes(
+              'from "credit_expires_record"',
+            ) && barrierQueryBinds(queryArgs, orgId)
+          );
+        },
+        stopAt: (_queryArgs, selecting) => {
+          return selecting;
+        },
+        work: async (barrier) => {
+          const sending = chat.requestSendEvent(
+            actor,
+            {
+              agentId,
+              model: "claude-sonnet-5",
+              prompt: "use the captured balance",
+              clientEventId,
+            },
+            [201],
+          );
+          await barrier.entered;
+          const response = await sending;
+          await postAutoRechargeInvoicePaid(context.signal, {
+            orgId,
+            credits: 100_000,
+          });
+          barrier.release();
+          await flushWaitUntilForTest();
+          return response;
+        },
+      },
+      context.signal,
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the queued send to be accepted");
+    }
+    const billing = await accept(
+      setupApp({ context, routes: billingStatusRoutes })(
+        billingStatusContract,
+      ).get({ headers: sessionHeaders(actor) }),
+      [200],
+    );
+    expect(billing.body.credits).toBeGreaterThan(0);
+    const messages = userMessages(
+      (await chat.listThreadEvents(actor, sent.body.threadId)).events,
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "insufficient_credits",
+      }),
+    );
+  });
   it("returns the accepted input while bootstrap is still reading", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const orgId = actor.orgId;

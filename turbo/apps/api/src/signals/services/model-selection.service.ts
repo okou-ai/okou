@@ -43,8 +43,19 @@ import {
 } from "./org-plan-entitlement-read.service";
 import {
   loadMemberSubscriptionModels,
-  type MemberSubscriptionModel,
+  type MemberSubscriptionModelRoute,
+  memberSubscriptionModelRoutesFromCatalog,
 } from "./member-subscription-models.service";
+
+import type {
+  OrgModelBootstrap,
+  MemberModelBootstrap,
+} from "./model-bootstrap.service";
+
+export interface ModelSelectionBootstrap {
+  readonly org: OrgModelBootstrap;
+  readonly member: MemberModelBootstrap;
+}
 
 const ORG_SENTINEL_USER_ID = "__org__";
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =
@@ -85,7 +96,8 @@ interface ModelRoutingFacts {
   readonly policies: readonly OrgModelPolicyRow[];
   readonly replacedPolicies: readonly OrgModelPolicyRow[];
   readonly catalog: ModelCatalog;
-  readonly member: PreparedMemberModelRouteContext;
+  readonly member: PreparedMemberModelRouteContext | MemberModelRouteContext;
+  readonly subscriptionModels?: readonly MemberSubscriptionModelRoute[];
   readonly modelMode: "auto" | "custom";
   readonly [modelRoutingFactsSource]: Db;
 }
@@ -153,7 +165,36 @@ async function prepareModelRoutingFacts(params: {
   readonly selectedModel: string | null;
   readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
   readonly catalog?: ModelCatalog;
+  readonly modelBootstrap?: ModelSelectionBootstrap;
 }): Promise<ModelRoutingFacts> {
+  if (params.modelBootstrap) {
+    const { org, member } = params.modelBootstrap;
+    if (
+      org.orgId !== params.orgId ||
+      member.orgId !== params.orgId ||
+      member.userId !== params.userId
+    ) {
+      throw new Error("Model bootstrap identity mismatch");
+    }
+    return {
+      identity: {
+        orgId: params.orgId,
+        userId: params.userId,
+        selectedModel: params.selectedModel,
+      },
+      orgPlanCapabilities: org.capabilities,
+      policies: org.policyFacts.policies,
+      replacedPolicies: org.policyFacts.replacedPolicies,
+      catalog: org.catalog,
+      member: member.member,
+      modelMode: org.org?.modelMode === "auto" ? "auto" : "custom",
+      subscriptionModels: memberSubscriptionModelRoutesFromCatalog(
+        org.catalog,
+        member.member,
+      ),
+      [modelRoutingFactsSource]: params.db,
+    };
+  }
   const policyFactsPromise = loadOrgModelPolicyFacts(
     params.db,
     params.orgId,
@@ -236,10 +277,11 @@ async function resolveValidPolicyRoute(params: {
     return null;
   }
   const personal = (
-    await loadMemberSubscriptionModels(
+    params.facts.subscriptionModels ??
+    (await loadMemberSubscriptionModels(
       params.facts[modelRoutingFactsSource],
       params.facts.member,
-    )
+    ))
   ).find((entry) => {
     return entry.model === selectedModel;
   });
@@ -317,6 +359,7 @@ export async function resolveDefaultModelFirstPin(
   userId: string,
   defaultSource: "member" | "workspace" = "member",
   orgPlanCapabilities?: OrgPlanCapabilities | null,
+  modelBootstrap?: ModelSelectionBootstrap,
 ): Promise<DefaultModelFirstPin> {
   const facts = await prepareModelRoutingFacts({
     db,
@@ -324,6 +367,7 @@ export async function resolveDefaultModelFirstPin(
     userId,
     selectedModel: null,
     orgPlanCapabilities,
+    modelBootstrap,
   });
   const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   if (defaultSource === "member" && userId !== "__no_preference__") {
@@ -350,11 +394,12 @@ export async function resolveDefaultModelFirstPin(
         const catalogTier =
           facts.modelMode === "auto" &&
           preferredRoute.modelProviderCredentialScope === "member"
-            ? (await loadMemberSubscriptionModels(db, facts.member)).find(
-                (entry) => {
-                  return entry.model === preferredRoute.selectedModel;
-                },
-              )?.serviceTier
+            ? (
+                facts.subscriptionModels ??
+                (await loadMemberSubscriptionModels(db, facts.member))
+              ).find((entry) => {
+                return entry.model === preferredRoute.selectedModel;
+              })?.serviceTier
             : undefined;
         const serviceTier =
           preference.serviceTier === "ultrafast" &&
@@ -440,6 +485,7 @@ export async function resolveModelSelectionPin(params: {
   readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
   /** The request's catalog snapshot, when the caller already loaded it. */
   readonly catalog?: ModelCatalog;
+  readonly modelBootstrap?: ModelSelectionBootstrap;
 }): Promise<
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>
@@ -511,6 +557,7 @@ export async function resolveModelSelectionPin(params: {
     selectedModel: modelSelection.selectedModel,
     orgPlanCapabilities: params.orgPlanCapabilities,
     catalog,
+    modelBootstrap: params.modelBootstrap,
   });
   // Resolve the configured route without plan filtering first. Model access is
   // decided from that route so BYOK never inherits a built-in-only model gate.
@@ -616,7 +663,7 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   /** Organization model mode read with the other pick facts. */
   readonly modelMode: "auto" | "custom";
   /** The member's catalog-listed subscription models; empty outside Auto. */
-  readonly subscriptionModels: readonly MemberSubscriptionModel[];
+  readonly subscriptionModels: readonly MemberSubscriptionModelRoute[];
 }):
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>

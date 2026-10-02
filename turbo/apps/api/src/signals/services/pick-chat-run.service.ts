@@ -14,8 +14,10 @@ import {
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import {
+  createOrgModelBootstrap,
+  type PrefetchedModelBootstrap,
+} from "./model-bootstrap.service";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
@@ -65,7 +67,13 @@ export function createPickObjects(
   orgId: string,
   fixedThreadId?: string,
   prefetchedBootstrap?: PrefetchedAgentBootstrap,
+  prefetchedModels?: PrefetchedModelBootstrap,
 ): PickObjects {
+  const orgModels$ = computed((get) => {
+    return prefetchedModels?.orgId === orgId
+      ? prefetchedModels.org
+      : get(createOrgModelBootstrap(orgId));
+  });
   const internalReloadPick$ = state(0);
   const internalSelectedClaim$ = state<LeasedThreadClaim | null>(null);
   const selectedClaimRunObjects$ = computed((get) => {
@@ -78,6 +86,8 @@ export function createPickObjects(
             claimId: claim.claimId,
           },
           prefetchedBootstrap,
+          prefetchedModels,
+          orgModels$,
         )
       : null;
   });
@@ -99,32 +109,17 @@ export function createPickObjects(
     get(internalReloadPick$);
     const database = get(db$);
     const at = nowDate();
-    const [[plan], subscriptions] = await Promise.all([
-      database
-        .select({
-          entitlementOrgId: orgPlanEntitlements.orgId,
-          metadataOrgId: orgMetadata.orgId,
-          baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-        })
-        .from(orgPlanEntitlements)
-        .fullJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
-        .where(
-          or(
-            eq(orgPlanEntitlements.orgId, orgId),
-            eq(orgMetadata.orgId, orgId),
-          ),
-        )
-        .limit(1),
+    const [models, subscriptions] = await Promise.all([
+      get(orgModels$),
       database
         .select({ slots: orgConcurrencySubscriptions.slots })
         .from(orgConcurrencySubscriptions)
         .where(activeConcurrencySubscriptionPredicate(orgId, at)),
     ]);
-    if (plan?.entitlementOrgId === null && plan.metadataOrgId !== null) {
-      throw new Error(`Missing org plan entitlement for ${orgId}`);
-    }
     const limit = totalConcurrencyLimit({
-      baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
+      baseLimit: cappedBaseConcurrencyLimit(
+        models.capabilities?.baseConcurrencyLimit ?? 0,
+      ),
       paidSlots: subscriptions.reduce((total, row) => {
         return total + row.slots;
       }, 0),
