@@ -96,9 +96,9 @@ function creditBalanceQuery(orgId: string, at: Date) {
   return builder
     .with(expired)
     .select({
-      credits: sql`${orgMetadata.credits}`.mapWith(
-        nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-      ),
+      credits: sql`${orgMetadata.credits}`
+        .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
+        .as("credits"),
       unsettledExpired: expired.total,
     })
     .from(expired)
@@ -109,9 +109,9 @@ function creditBalanceQuery(orgId: string, at: Date) {
 function memberCreditsQuery(orgId: string, userId: string, at: Date) {
   return new QueryBuilder()
     .select({
-      total: sum(usagePackCreditGrants.remainingAmount).mapWith(
-        nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-      ),
+      total: sum(usagePackCreditGrants.remainingAmount)
+        .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
+        .as("total"),
     })
     .from(usagePackCreditGrants)
     .where(
