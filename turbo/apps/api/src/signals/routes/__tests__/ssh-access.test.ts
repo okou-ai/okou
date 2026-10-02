@@ -1,3 +1,4 @@
+import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 import {
@@ -19,7 +20,10 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import {
+  generateSandboxToken,
+  signSandboxJwtForTests,
+} from "../../auth/tokens";
 import { sshAccessRoutes } from "../ssh-access";
 import { agentsRoutes } from "../agents";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -114,9 +118,14 @@ async function fixture(overrides: Partial<RuntimeBody> = {}) {
 }
 
 describe("live chat SSH Run inventory", () => {
+  const ordinary = createClaimedSshRuntimeApi(context, {
+    runnerHeaders: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
+    authenticate,
+  });
   const claimedRunCleanups: (() => Promise<void>)[] = [];
 
   afterEach(async () => {
+    await ordinary.cleanup();
     for (const cleanup of claimedRunCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
@@ -410,18 +419,26 @@ describe("live chat SSH Run inventory", () => {
   });
 
   it("uses only the Run user's hosts for shared Agents and rejects current visibility loss", async () => {
-    const creator = await fixture({ chat: true });
-    const shared = await createAgent("public");
-    const creatorHost = await createHost("creator.example.com");
-    const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
-    const user = await fixture({
-      orgId: creator.orgId,
-      agentId: shared.agentId,
-      chat: true,
-      ...runnerIdentity,
-    });
     const runnerSecret = "c".repeat(64);
     mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
+    const creatorOwner = {
+      orgId: `org_ssh_shared_${randomUUID()}`,
+      userId: `user_ssh_creator_${randomUUID()}`,
+    };
+    authenticate(creatorOwner);
+    const shared = await createAgent("public");
+    const creator = await ordinary.runtime(creatorOwner, {
+      agentId: shared.agentId,
+    });
+    const creatorHost = await createHost("creator.example.com");
+    const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
+    const user = await ordinary.runtime(
+      {
+        orgId: creator.orgId,
+        userId: `user_ssh_member_${randomUUID()}`,
+      },
+      { agentId: shared.agentId, runnerIdentity },
+    );
     const runner = setupApp({ context, routes: runnerSshRoutes })(
       runnerSshContract,
     );
@@ -503,7 +520,30 @@ describe("live chat SSH Run inventory", () => {
   );
 
   it("keeps the Run inventory Agent-token and capability scoped", async () => {
-    const f = await fixture();
+    // All three credential kinds are rejected before any Run lookup.
+    const owner = {
+      userId: `user_ssh_capability_${randomUUID()}`,
+      orgId: `org_ssh_capability_${randomUUID()}`,
+    };
+    authenticate(owner);
+    const runId = randomUUID();
+    const seconds = Math.floor(now() / 1000);
+    const f = {
+      sandboxToken: generateSandboxToken(owner.userId, runId, owner.orgId),
+      token: (capabilities = ["ssh:read"]) => {
+        return {
+          authorization: `Bearer ${signSandboxJwtForTests({
+            scope: "okou",
+            userId: owner.userId,
+            orgId: owner.orgId,
+            runId,
+            capabilities,
+            iat: seconds,
+            exp: seconds + 3600,
+          })}`,
+        };
+      },
+    };
     expect((await accept(inventory().list({ headers }), [403])).status).toBe(
       403,
     );

@@ -431,6 +431,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly resource?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
+  readonly userInfoEndpoint?: string;
   readonly identity?: OAuthIdentityFixtureOptions;
   readonly refreshIdentity?: OAuthIdentityFixtureOptions;
 }
@@ -509,7 +510,7 @@ export function mockAutomaticMcpOAuthProvider(
   const tokenUrl = `${issuer}/token`;
   const registrationUrl = `${issuer}/register`;
   const jwksUrl = `${issuer}/jwks.json`;
-  const userInfoUrl = `${issuer}/userinfo`;
+  const userInfoUrl = options.userInfoEndpoint ?? `${issuer}/userinfo`;
   const resourceMetadata = {
     resource: options.resource ?? endpoint,
     scopes_supported: [...(options.metadataScopes ?? ["metadata-fallback"])],

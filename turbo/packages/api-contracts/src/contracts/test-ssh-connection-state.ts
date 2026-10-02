@@ -40,16 +40,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
         fingerprint: z.string().min(1).max(64),
       })
       .strict(),
-    z
-      .object({
-        action: z.literal("match-credentials"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
-        privateKey: z.string(),
-        passphrase: z.string().nullable(),
-      })
-      .strict(),
   ],
 );
 
@@ -57,8 +47,6 @@ export const testSshConnectionStateActionResponseSchema = z
   .object({
     ok: z.literal(true),
     generation: z.int().positive().optional(),
-    privateKeyMatches: z.boolean().optional(),
-    passphraseMatches: z.boolean().optional(),
     runId: z.uuid().optional(),
     threadId: z.uuid().optional(),
     agentId: z.uuid().optional(),

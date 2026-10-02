@@ -1,10 +1,12 @@
+import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { testSshConnectionStateContract } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
+import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -12,7 +14,9 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
+import { runnerSshRoutes } from "../runner-ssh";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { mockEnv } from "../../../lib/env";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -43,12 +47,6 @@ function client() {
   );
 }
 
-function stateClient() {
-  return setupApp({ context, routes: testSshConnectionStateRoutes })(
-    testSshConnectionStateContract,
-  );
-}
-
 function createBody(
   host: string,
   overrides: Partial<{
@@ -72,6 +70,15 @@ function createBody(
 }
 
 describe("SSH connection routes", () => {
+  const runnerSecret = "e".repeat(64);
+  const runnerHeaders = {
+    authorization: `Bearer vm0_official_${runnerSecret}`,
+  };
+  const ordinary = createClaimedSshRuntimeApi(context, {
+    runnerHeaders,
+    authenticate,
+  });
+  afterEach(ordinary.cleanup);
   it.each(["org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org_ordinary_ssh"])(
     "allows host management without feature overrides in %s",
     async (orgId) => {
@@ -184,22 +191,34 @@ describe("SSH connection routes", () => {
     expect(created.body).not.toHaveProperty("account");
     expect(JSON.stringify(created.body)).not.toContain("vm0secret:");
 
-    const credentialMatch = await accept(
-      stateClient().action({
-        body: {
-          action: "match-credentials",
-          orgId: owner.orgId,
-          userId: owner.userId,
-          connectionId: created.body.id,
-          privateKey,
-          passphrase,
-        },
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers: authHeaders(),
+        params: { protocol: "ssh", connectionId: created.body.id },
+        body: { enabled: true },
       }),
       [200],
     );
-    expect(credentialMatch.body).toMatchObject({
-      privateKeyMatches: true,
-      passphraseMatches: true,
+    mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
+    const running = await ordinary.runtime(owner);
+    const runner = setupApp({ context, routes: runnerSshRoutes })(
+      runnerSshContract,
+    );
+    const request = {
+      headers: runnerHeaders,
+      params: { runId: running.runId },
+      body: {
+        connectionId: created.body.id,
+        runnerIdentity: running.runnerIdentity,
+      },
+    };
+    const credentials = await accept(runner.resolve(request), [200]);
+    expect(credentials.body).toMatchObject({
+      outcome: "resolved",
+      privateKey,
+      passphrase,
     });
 
     const summary = await accept(
@@ -213,20 +232,22 @@ describe("SSH connection routes", () => {
     );
     expect(listed.body.connections).toStrictEqual([created.body]);
 
+    const hostKey = {
+      algorithm: "ssh-ed25519" as const,
+      fingerprint: `SHA256:${Buffer.alloc(32, 1).toString("base64").replace(/=+$/u, "")}`,
+    };
     const pinned = await accept(
-      stateClient().action({
+      runner.pin({
+        ...request,
         body: {
-          action: "set-learned-host-key",
-          orgId: owner.orgId,
-          userId: owner.userId,
-          connectionId: created.body.id,
-          algorithm: "ssh-ed25519",
-          fingerprint: "SHA256:test",
+          ...request.body,
+          expectedGeneration: 1,
+          observedHostKey: hostKey,
         },
       }),
       [200],
     );
-    expect(pinned.body.generation).toBe(2);
+    expect(pinned.body).toStrictEqual({ outcome: "pinned", generation: 2 });
 
     const metadataUpdated = await accept(
       client().update({
@@ -242,10 +263,7 @@ describe("SSH connection routes", () => {
     );
     expect(metadataUpdated.body).toMatchObject({
       generation: 3,
-      learnedHostKey: {
-        algorithm: "ssh-ed25519",
-        fingerprint: "SHA256:test",
-      },
+      learnedHostKey: hostKey,
     });
 
     const credentialUpdated = await accept(
@@ -262,22 +280,11 @@ describe("SSH connection routes", () => {
     expect(credentialUpdated.body.generation).toBe(4);
     expect(credentialUpdated.body.learnedHostKey).not.toBeNull();
 
-    const replacementMatch = await accept(
-      stateClient().action({
-        body: {
-          action: "match-credentials",
-          orgId: owner.orgId,
-          userId: owner.userId,
-          connectionId: created.body.id,
-          privateKey: "replacement\n",
-          passphrase: null,
-        },
-      }),
-      [200],
-    );
-    expect(replacementMatch.body).toMatchObject({
-      privateKeyMatches: true,
-      passphraseMatches: true,
+    const replacement = await accept(runner.resolve(request), [200]);
+    expect(replacement.body).toMatchObject({
+      outcome: "resolved",
+      privateKey: "replacement\n",
+      passphrase: null,
     });
 
     const endpointUpdated = await accept(
@@ -300,23 +307,26 @@ describe("SSH connection routes", () => {
     });
 
     const repinned = await accept(
-      stateClient().action({
+      runner.pin({
+        ...request,
         body: {
-          action: "set-learned-host-key",
-          orgId: owner.orgId,
-          userId: owner.userId,
-          connectionId: created.body.id,
-          algorithm: "ssh-ed25519",
-          fingerprint: "SHA256:replacement",
+          ...request.body,
+          expectedGeneration: 5,
+          observedHostKey: {
+            algorithm: "ssh-ed25519",
+            fingerprint: `SHA256:${Buffer.alloc(32, 2).toString("base64").replace(/=+$/u, "")}`,
+          },
         },
       }),
       [200],
     );
+    expect(repinned.body).toStrictEqual({ outcome: "pinned", generation: 6 });
+
     const reset = await accept(
       client().resetHostKey({
         headers: authHeaders(),
         params: { connectionId: created.body.id },
-        body: { expectedGeneration: repinned.body.generation ?? 0 },
+        body: { expectedGeneration: 6 },
       }),
       [200],
     );
@@ -366,19 +376,11 @@ describe("SSH connection routes", () => {
       [204],
     );
     const afterDelete = await accept(
-      stateClient().action({
-        body: {
-          action: "match-credentials",
-          orgId: owner.orgId,
-          userId: owner.userId,
-          connectionId: created.body.id,
-          privateKey: "replacement\n",
-          passphrase: null,
-        },
-      }),
-      [400],
+      client().summary({ headers: authHeaders() }),
+      [200],
     );
-    expect(afterDelete.body.error).toBe("Connection not found");
+    // This counts every owner connection row; it makes no claim about credential-row deletion.
+    expect(afterDelete.body).toStrictEqual({ configuredCount: 0 });
   });
 
   it("rejects invalid input before KMS work", async () => {

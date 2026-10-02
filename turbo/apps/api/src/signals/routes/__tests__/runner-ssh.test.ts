@@ -1,3 +1,4 @@
+import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
@@ -192,6 +193,41 @@ async function fixture(
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
+const ordinary = createClaimedSshRuntimeApi(context, {
+  runnerHeaders,
+  authenticate,
+});
+
+async function ordinaryFixture(group?: string) {
+  const owner = {
+    orgId: `org_ssh_claimed_${randomUUID()}`,
+    userId: `user_ssh_claimed_${randomUUID()}`,
+  };
+  authenticate(owner);
+  const connection = await accept(
+    config().create({
+      headers: sessionHeaders,
+      body: {
+        id: randomUUID(),
+        displayName: "SSH fixture",
+        host: "ssh.example.com",
+        credential: inlineSshKey("deploy", privateKey, passphrase),
+      },
+    }),
+    [201],
+  );
+  await enableHostDefault(owner, connection.body.id);
+  const runtime = await ordinary.runtime(
+    owner,
+    group === undefined ? {} : { group },
+  );
+  return {
+    ...runtime,
+    connectionId: connection.body.id,
+    credentialId: connection.body.credentialId,
+  };
+}
+
 function useClaimedFixture() {
   const claimedRunCleanups: (() => Promise<void>)[] = [];
   // Finish owned Run cancellation before the parent context tears down its signal/mocks.
@@ -296,14 +332,16 @@ function useClaimedFixture() {
 }
 
 describe("SSH authority invalidation", () => {
+  afterEach(ordinary.cleanup);
   const claimedFixture = useClaimedFixture();
 
   it("notifies all active owner Runs after committed edits, rotations, reset and deletion", async () => {
-    const group = `ssh-cache-${randomUUID()}`;
-    const f = await fixture({ runnerGroup: group });
-    const secondRun = await createRuntime(f, { runnerGroup: group });
-    await createRuntime(f, { runnerGroup: group, status: "completed" });
-    await fixture({ runnerGroup: `other-${randomUUID()}` });
+    const group = `vm0/bdd-${randomUUID().slice(0, 8)}`;
+    const f = await ordinaryFixture(group);
+    const secondRun = await ordinary.runtime(f, { group });
+    const completed = await ordinary.runtime(f, { group });
+    await ordinary.complete(completed);
+    await ordinaryFixture();
     authenticate(f);
     const expected = [f.runId, secondRun.runId].map((runId) => {
       return [
@@ -772,6 +810,7 @@ describe("shared credential runtime authority", () => {
 });
 
 describe("SSH connection observations", () => {
+  afterEach(ordinary.cleanup);
   const claimedFixture = useClaimedFixture();
 
   async function observe(
@@ -1032,7 +1071,7 @@ describe("SSH connection observations", () => {
   });
 
   it("requires official authentication and current winning-runner, owner, Run and chat authority", async () => {
-    const f = await fixture();
+    const f = await ordinaryFixture();
     const body = {
       connectionId: f.connectionId,
       runnerIdentity: f.runnerIdentity,
@@ -1060,11 +1099,12 @@ describe("SSH connection observations", () => {
         runnerIdentity: { ...f.runnerIdentity, heartbeatGeneration: 1 },
       }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
-    const other = await fixture();
+    const other = await ordinaryFixture();
     await expect(
       observe(f, { connectionId: other.connectionId }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
-    const completed = await fixture({ status: "completed" });
+    const completed = await ordinaryFixture();
+    await ordinary.complete(completed);
     await expect(observe(completed)).resolves.toStrictEqual({
       outcome: "unavailable",
     });

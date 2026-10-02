@@ -8932,7 +8932,7 @@ describe("usage pack allocation management", () => {
 
   it("applies an immediate grouped usage pack upgrade without restoring the Plan", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId, usagePackUsd: 20 }],
       "team",
     );
@@ -9023,11 +9023,45 @@ describe("usage pack allocation management", () => {
       context.mocks.stripe.subscriptions.update.mock.calls[0]?.[1];
     expect(updateParams).not.toHaveProperty("cancel_at");
     expect(updateParams).not.toHaveProperty("cancel_at_period_end");
-    const state = await readUsagePackState(
-      fixture.orgId,
-      fixture.usagePackSubscriptionId,
+    // The invitation endpoint reads this subscription's cancellation flag
+    // before contacting Stripe or creating any invitation.
+    const retrievals =
+      context.mocks.stripe.subscriptions.retrieve.mock.calls.length;
+    const previews =
+      context.mocks.stripe.invoices.createPreview.mock.calls.length;
+    const updates = context.mocks.stripe.subscriptions.update.mock.calls.length;
+    const invitations =
+      context.mocks.clerk.organizations.createOrganizationInvitation.mock.calls
+        .length;
+    const invitation = await accept(
+      setupApp({ context, routes: orgInviteRoutes })(
+        orgInviteContract,
+      ).previewPurchase({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          email: `canceling-${randomUUID()}@example.test`,
+          role: "member",
+          usagePackUsd: 20,
+        },
+      }),
+      [409],
     );
-    expect(state.subscription?.cancelAtPeriodEnd).toBeTruthy();
+    expect(invitation.body.error).toStrictEqual({
+      code: "INVITATION_PURCHASE_SUBSCRIPTION_CANCELING",
+      message: "Restore your subscription before purchasing a member package.",
+    });
+    expect(context.mocks.stripe.subscriptions.retrieve).toHaveBeenCalledTimes(
+      retrievals,
+    );
+    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledTimes(
+      previews,
+    );
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(
+      updates,
+    );
+    expect(
+      context.mocks.clerk.organizations.createOrganizationInvitation,
+    ).toHaveBeenCalledTimes(invitations);
   });
 
   it("asks to restore the Plan before scheduling a usage pack downgrade", async () => {
@@ -9083,15 +9117,18 @@ describe("usage pack allocation management", () => {
 
   it("uses Stripe cancellation state when the Plan webhook is delayed", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId, usagePackUsd: 50 }],
       "team",
     );
+    const activeSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockClear();
+    context.mocks.stripe.invoices.createPreview.mockClear();
     const endingSubscription = {
-      ...managedUsagePackSubscription(
-        fixture,
-        new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
-      ),
+      ...activeSubscription,
       cancel_at: fixture.billingPeriod.end,
       cancel_at_period_end: true,
     };
@@ -9132,10 +9169,28 @@ describe("usage pack allocation management", () => {
       { expand: ["latest_invoice"] },
     );
     expect(context.mocks.stripe.invoices.createPreview).not.toHaveBeenCalled();
-    expect(
-      (await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId))
-        .subscription?.cancelAtPeriodEnd,
-    ).toBeFalsy();
+    // Restore only the external Stripe response. A persisted local
+    // cancellation would still reject before reaching the quote provider.
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      activeSubscription,
+    );
+    mockUsagePackChangePreviews(0, 2000);
+    const activePreview = await accept(
+      client.previewChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { memberId: userId, targetUsagePackUsd: 20 },
+      }),
+      [200],
+    );
+    expect(activePreview.body).toMatchObject({
+      kind: "downgrade",
+      sourceUsagePackUsd: 50,
+      targetUsagePackUsd: 20,
+      immediateAmountCents: 0,
+      nextRecurringAmountCents: 2000,
+      currency: "usd",
+      effectiveAt: new Date(fixture.billingPeriod.end * 1000).toISOString(),
+    });
   });
 
   it("rejects an allocation downgrade when the Plan starts ending after preview", async () => {

@@ -648,14 +648,19 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("isolates a shared Agent's inventory by the Run owner", async () => {
-    const creator = await api.fixture();
+    const creator = await claimed.fixture();
     const consumer = await owner({ orgId: creator.orgId });
     const runtime = {
       ...consumer,
-      ...(await api.runtime(consumer, { agentId: creator.agentId })),
+      ...(await claimed.runtime({ ...consumer, agentId: creator.agentId })),
     };
     expect(
-      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+      (
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
+      ).body,
     ).toStrictEqual({ hosts: [] });
     const host = await accept(
       api.connections().create({
@@ -667,7 +672,10 @@ describe("live chat VNC Run inventory", () => {
     await api.enableDefault(consumer, "vnc", host.body.id);
     expect(
       (
-        await accept(inventory().list({ headers: token(runtime) }), [200])
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          [200],
+        )
       ).body.hosts.map((entry) => {
         return entry.id;
       }),
@@ -675,18 +683,24 @@ describe("live chat VNC Run inventory", () => {
     api.authenticate(creator);
     expect(
       (
-        await accept(inventory().list({ headers: token(creator) }), [200])
+        await accept(
+          inventory().list({ headers: claimed.agentHeaders(creator) }),
+          [200],
+        )
       ).body.hosts.map((entry) => {
         return entry.id;
       }),
     ).toStrictEqual([creator.connectionId]);
     await visibility(creator.agentId, "private");
     api.authenticate(consumer);
-    await accept(inventory().list({ headers: token(runtime) }), [404]);
+    await accept(
+      inventory().list({ headers: claimed.agentHeaders(runtime) }),
+      [404],
+    );
   });
 
   it("does not accept another organization or Run owner from a valid token", async () => {
-    const f = await api.fixture();
+    const f = await claimed.fixture();
     const foreign = await owner({ userId: f.userId });
     expect(
       (
@@ -749,7 +763,7 @@ describe("live chat VNC Run inventory", () => {
   );
 
   it("keeps VNC inventory Agent-token and capability-specific", async () => {
-    const f = await api.fixture();
+    const f = await claimed.fixture();
     expect((await accept(inventory().list({ headers }), [403])).status).toBe(
       403,
     );
