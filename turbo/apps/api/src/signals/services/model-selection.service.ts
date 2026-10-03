@@ -56,12 +56,9 @@ import type {
   MemberModelBootstrap,
 } from "./model-bootstrap.service";
 
-import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
-
 export interface ModelSelectionBootstrap {
   readonly org: OrgModelBootstrap;
   readonly member: MemberModelBootstrap;
-  readonly memberMetadata: ExecutionMemberMetadata;
 }
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -341,11 +338,7 @@ const modelRoutingFacts$ = command(
         )
         .where(eq(modelProviderConnections.orgId, params.orgId)),
       memberScoped
-        ? captured
-          ? captured.memberMetadata.preferences
-            ? [captured.memberMetadata.preferences]
-            : []
-          : set(memberModelPreference$, params.orgId, params.userId, signal)
+        ? set(memberModelPreference$, params.orgId, params.userId, signal)
         : [],
     ]);
     signal?.throwIfAborted();

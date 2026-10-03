@@ -23,8 +23,6 @@ export interface ExecutionUserProfile {
 export interface ExecutionMemberPreferences {
   readonly timezone: string | null;
   readonly selectedImageModel: string | null;
-  readonly selectedModel: string | null;
-  readonly serviceTier: string | null;
 }
 
 export interface ExecutionMemberMetadata {
@@ -52,12 +50,6 @@ export function createExecutionMemberMetadata(
         selectedImageModel: sql`NULL::text`
           .mapWith(nullableTextDecoder)
           .as("selected_image_model"),
-        selectedModel: sql`NULL::text`
-          .mapWith(nullableTextDecoder)
-          .as("selected_model"),
-        serviceTier: sql`NULL::text`
-          .mapWith(nullableTextDecoder)
-          .as("service_tier"),
       })
       .from(userCache)
       .where(eq(userCache.userId, owner.userId));
@@ -69,8 +61,6 @@ export function createExecutionMemberMetadata(
           email: sql`NULL::text`.mapWith(nullableTextDecoder).as("email"),
           timezone: orgMembersMetadata.timezone,
           selectedImageModel: orgMembersMetadata.selectedImageModel,
-          selectedModel: orgMembersMetadata.selectedModel,
-          serviceTier: orgMembersMetadata.serviceTier,
         })
         .from(orgMembersMetadata)
         .where(
@@ -92,8 +82,6 @@ export function createExecutionMemberMetadata(
         ? {
             timezone: preferences.timezone,
             selectedImageModel: preferences.selectedImageModel,
-            selectedModel: preferences.selectedModel,
-            serviceTier: preferences.serviceTier,
           }
         : null,
     };
