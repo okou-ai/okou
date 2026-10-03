@@ -90,6 +90,7 @@ import {
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createWorkflowsBddApi,
@@ -114,6 +115,7 @@ const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
 const runs = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
@@ -140,6 +142,28 @@ type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,
   { readonly lifecycle: "active" }
 >;
+
+async function listAdmissionRuns(actor: ApiTestUser, agentName: string) {
+  const response = await runReadsApi.requestListLogs(
+    actor,
+    { name: agentName, limit: 100 },
+    [200],
+  );
+  expect(response.body.pagination).toMatchObject({ hasMore: false });
+  return {
+    runs: response.body.data.filter((run) => {
+      return [
+        "queued",
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "timeout",
+        "cancelled",
+      ].includes(run.status);
+    }),
+  };
+}
 
 function authHeaders(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -8287,15 +8311,11 @@ describe("Official Workflow Run admission", () => {
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const beforeRunFamily = await runs
-      .listAgentRuns(actor, {
-        status: "queued,pending,running,completed,failed,timeout,cancelled",
-        agent: agentId,
-        limit: 100,
-      })
-      .then(({ runs }) => {
+    const beforeRunFamily = await listAdmissionRuns(actor, agentId).then(
+      ({ runs }) => {
         return runs.length;
-      });
+      },
+    );
 
     const changedBlueprint: OfficialWorkflowBlueprint = {
       ...loopBlueprint(),
@@ -8340,15 +8360,9 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toMatchObject({ body: { enabled: true } });
 
     await expect(
-      runs
-        .listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          agent: agentId,
-          limit: 100,
-        })
-        .then(({ runs }) => {
-          return runs.length;
-        }),
+      listAdmissionRuns(actor, agentId).then(({ runs }) => {
+        return runs.length;
+      }),
     ).resolves.toStrictEqual(beforeRunFamily + 1);
   });
 
@@ -8450,15 +8464,9 @@ describe("Official Workflow Run admission", () => {
       ]),
     );
     await setOfficialWorkflowsEnabled(actor, false);
-    const before = await runs
-      .listAgentRuns(actor, {
-        status: "queued,pending,running,completed,failed,timeout,cancelled",
-        agent: agentId,
-        limit: 100,
-      })
-      .then(({ runs }) => {
-        return runs.length;
-      });
+    const before = await listAdmissionRuns(actor, agentId).then(({ runs }) => {
+      return runs.length;
+    });
 
     // Run now is accepted; the background pick rejects the unresolved
     // admission in the thread instead of launching a run.
@@ -8480,15 +8488,9 @@ describe("Official Workflow Run admission", () => {
       }),
     ).toStrictEqual([expect.objectContaining({ error: "conflict" })]);
     await expect(
-      runs
-        .listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          agent: agentId,
-          limit: 100,
-        })
-        .then(({ runs }) => {
-          return runs.length;
-        }),
+      listAdmissionRuns(actor, agentId).then(({ runs }) => {
+        return runs.length;
+      }),
     ).resolves.toStrictEqual(before);
 
     await withMockNowForTest(now() + 24 * 60 * 60 * 1000, async () => {
@@ -8501,15 +8503,9 @@ describe("Official Workflow Run admission", () => {
       await flushWaitUntilForTest();
     });
     await expect(
-      runs
-        .listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          agent: agentId,
-          limit: 100,
-        })
-        .then(({ runs }) => {
-          return runs.length;
-        }),
+      listAdmissionRuns(actor, agentId).then(({ runs }) => {
+        return runs.length;
+      }),
     ).resolves.toStrictEqual(before);
 
     await withMockNowForTest(now() + 120_000, async () => {
@@ -8522,15 +8518,9 @@ describe("Official Workflow Run admission", () => {
       await flushWaitUntilForTest();
     });
     await expect(
-      runs
-        .listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          agent: agentId,
-          limit: 100,
-        })
-        .then(({ runs }) => {
-          return runs.length;
-        }),
+      listAdmissionRuns(actor, agentId).then(({ runs }) => {
+        return runs.length;
+      }),
     ).resolves.toStrictEqual(before);
 
     const webhook = await postOfficialWorkflowWebhook({
@@ -8545,15 +8535,9 @@ describe("Official Workflow Run admission", () => {
     });
     await flushWaitUntilForTest();
     await expect(
-      runs
-        .listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          agent: agentId,
-          limit: 100,
-        })
-        .then(({ runs }) => {
-          return runs.length;
-        }),
+      listAdmissionRuns(actor, agentId).then(({ runs }) => {
+        return runs.length;
+      }),
     ).resolves.toStrictEqual(before);
     const unresolved = await accept(
       installationClient().get({

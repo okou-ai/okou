@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -39,6 +39,7 @@ import {
   mockTestOAuthAuthCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
 import {
   createAuthDeviceApiActions,
   mockCodexDeviceAuthProvider,
@@ -74,6 +75,7 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  */
 
 const context = testContext({ connectorCatalog: true });
+const publicConnections = createPublicFirewallConnections(context);
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
@@ -154,14 +156,12 @@ async function exactSecretConnectorSources(
   };
 }
 
-async function gmailRefreshFixture() {
+async function publicGmailRefreshFixture() {
   const fw = createFirewallApi(context);
-  const { actor, headers } = await firewallRun();
+  const { actor, headers } = await publicConnections.run();
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");
-  await fw.seedTestConnector(actor, {
-    connectorSlug: "gmail",
-    authMethod: "oauth",
+  await publicConnections.googleOAuth(actor, "gmail", {
     accessToken: "stale-gmail-access",
     refreshToken: "synthetic-gmail-refresh-secret",
     expiresIn: -60,
@@ -510,6 +510,8 @@ describe("FW-2: template resolution without connector refresh", () => {
 });
 
 describe("FW-3: billable firewall lease", () => {
+  afterEach(publicConnections.cleanup);
+
   it("leases billable auth for limited-free-1 workspaces with spendable credits", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
@@ -577,10 +579,8 @@ describe("FW-3: billable firewall lease", () => {
 
   it("does not refresh an expired connector when billable auth is denied", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -655,10 +655,8 @@ describe("FW-3: billable firewall lease", () => {
 
   it("merges the billable lease with refreshed connector token expiries", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -850,6 +848,8 @@ describe("FW-3: billable firewall lease", () => {
 });
 
 describe("FW-4: connector refresh and replacement snapshots", () => {
+  afterEach(publicConnections.cleanup);
+
   it("does not call the provider for a known storage version mismatch", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
@@ -899,10 +899,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("defaults the refreshed expiry when the provider omits expires_in", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -937,10 +935,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("re-runs refresh for a current connector when forceRefresh is set", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "current-access",
       refreshToken: "refresh-1",
       expiresIn: 3600,
@@ -1278,10 +1274,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("resolves a current connector token missing from the runtime namespace", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "db-access",
       refreshToken: "refresh-1",
       expiresIn: 3600,
@@ -1529,11 +1523,9 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("requires reconnect for unknown OAuth refresh error subtypes", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
+    const { actor, headers } = await publicConnections.run();
     const longSubtype = `invalid_rapt:${"x".repeat(200)}`;
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -1583,10 +1575,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("classifies transient OAuth refresh errors as upstream failures", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -1635,10 +1625,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("classifies provider 500s as upstream failures without marking reconnect", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -1679,7 +1667,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("recovers a temporary Gmail OAuth response within the same refresh", async () => {
-    const { fw, headers, body } = await gmailRefreshFixture();
+    const { fw, headers, body } = await publicGmailRefreshFixture();
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1710,7 +1698,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("preserves the Gmail grant after an exhausted temporary retry", async () => {
-    const { fw, headers, body } = await gmailRefreshFixture();
+    const { fw, headers, body } = await publicGmailRefreshFixture();
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1752,7 +1740,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("does not retry a Gmail invalid_grant response", async () => {
-    const { fw, headers, body } = await gmailRefreshFixture();
+    const { fw, headers, body } = await publicGmailRefreshFixture();
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1770,7 +1758,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("does not retry a rate-limited Gmail refresh without Retry-After handling", async () => {
-    const { fw, headers, body } = await gmailRefreshFixture();
+    const { fw, headers, body } = await publicGmailRefreshFixture();
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1791,7 +1779,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("does not replay a Gmail refresh after an ambiguous network failure", async () => {
-    const { fw, headers, body } = await gmailRefreshFixture();
+    const { fw, headers, body } = await publicGmailRefreshFixture();
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1810,10 +1798,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("treats refresh responses without an access token as upstream failures", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -1846,10 +1832,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("requires reconnect when the stored connector never kept a refresh token", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       expiresIn: -60,
     });
@@ -1900,10 +1884,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     onTestFinished(() => {
       mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
     });
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -1969,10 +1951,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("classifies network refresh failures as upstream and recovers", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
@@ -2070,14 +2050,16 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("refreshes mapped-input connector access and stores its variable outputs", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "api",
-      accessToken: "stale-api-access",
-      refreshToken: "api-refresh-1",
-      expiresIn: -60,
-    });
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(
+      actor,
+      {
+        accessToken: "stale-api-access",
+        refreshToken: "api-refresh-1",
+        expiresIn: -60,
+      },
+      "api",
+    );
     fw.mockTestOauthTokenRefresh(() => {
       return fw.oauthTokenResponse({
         accessToken: "fresh-api-access",
@@ -2389,13 +2371,13 @@ describe("FW-7: client-unconfigured and mixed-reason refresh failures", () => {
 });
 
 describe("FW-8: static access tokens and unavailable sources", () => {
+  afterEach(publicConnections.cleanup);
+
   it("requires reconnect for expired static tokens and syncs current ones", async () => {
     const fw = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth-device",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.deviceOAuth(actor, {
       accessToken: "stale-device",
       expiresIn: -60,
     });
@@ -2430,9 +2412,7 @@ describe("FW-8: static access tokens and unavailable sources", () => {
       expiredAccount.id,
     );
 
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth-device",
-      authMethod: "oauth",
+    await publicConnections.deviceOAuth(actor, {
       accessToken: "current-device",
       expiresIn: 3600,
     });
@@ -2452,10 +2432,8 @@ describe("FW-8: static access tokens and unavailable sources", () => {
 
   it("serves static device tokens that were stored without an expiry", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth-device",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.deviceOAuth(actor, {
       accessToken: "no-expiry-device",
     });
 
@@ -3130,12 +3108,12 @@ describe("FW-9: codex model-provider access", () => {
 });
 
 describe("FW-10: platform connector secrets", () => {
+  afterEach(publicConnections.cleanup);
+
   it("resolves platform-secret aliases from current API env", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "google-ads",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.googleOAuth(actor, "google-ads", {
       accessToken: "google-ads-access",
       refreshToken: "google-ads-refresh",
     });
@@ -3179,10 +3157,8 @@ describe("FW-10: platform connector secrets", () => {
 
   it("reports missing platform env as connector-not-configured", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "google-ads",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.googleOAuth(actor, "google-ads", {
       accessToken: "google-ads-access",
       refreshToken: "google-ads-refresh",
     });
@@ -3217,10 +3193,8 @@ describe("FW-10: platform connector secrets", () => {
 
   it("does not fall back to stale encrypted values for platform metadata", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "google-ads",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.googleOAuth(actor, "google-ads", {
       accessToken: "google-ads-access",
       refreshToken: "google-ads-refresh",
     });
@@ -3254,10 +3228,8 @@ describe("FW-10: platform connector secrets", () => {
 
   it("rejects platform metadata for non-platform connector aliases", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "google-ads",
-      authMethod: "oauth",
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.googleOAuth(actor, "google-ads", {
       accessToken: "google-ads-access",
       refreshToken: "google-ads-refresh",
     });

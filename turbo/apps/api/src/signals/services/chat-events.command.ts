@@ -1,4 +1,8 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import {
+  chatThreadRequestSelection,
+  type ChatThreadRequestFacts,
+} from "./chat-thread-request-facts";
 import { parseRawRows } from "../../lib/db-raw-rows";
 
 import {
@@ -589,15 +593,7 @@ const loadExistingSendThreadRow$ = command(
   ) => {
     const db = get(db$);
     const [thread] = await db
-      .select({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-        selectedModel: chatThreads.selectedModel,
-        modelSettings: chatThreads.modelSettings,
-        codexServiceTier: chatThreads.codexServiceTier,
-        computerUseHostId: chatThreads.computerUseHostId,
-        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-      })
+      .select(chatThreadRequestSelection())
       .from(chatThreads)
       .where(
         and(eq(chatThreads.id, threadId), eq(chatThreads.userId, args.userId)),
@@ -785,6 +781,41 @@ interface NewSendThread {
   readonly computerAccess: ThreadComputerAccess;
 }
 type SendThread = ExistingSendThread | NewSendThread;
+
+function normalSendRequestFacts(
+  args: NormalSendArgs,
+  thread: SendThread,
+  previousBinding:
+    | Pick<
+        ChatThreadRequestFacts["thread"],
+        "agentSessionId" | "agentSessionRunId"
+      >
+    | undefined,
+  event: Pick<
+    ChatThreadRequestFacts["input"],
+    "id" | "userMessage" | "modelSelection"
+  >,
+): ChatThreadRequestFacts {
+  return {
+    orgId: args.orgId,
+    thread: {
+      id: thread.threadId,
+      userId: args.userId,
+      agentId: args.body.agentId,
+      ...thread.runSettings,
+      ...thread.computerAccess,
+      agentSessionId: previousBinding?.agentSessionId ?? null,
+      agentSessionRunId: previousBinding?.agentSessionRunId ?? null,
+    },
+    input: {
+      id: event.id,
+      userMessage: event.userMessage,
+      modelSelection: event.modelSelection,
+      requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
+      captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
+    },
+  };
+}
 const resolveSendThread$ = command(
   async (
     { set },
@@ -1064,6 +1095,7 @@ function normalSendEvent(params: {
   }
 > & {
   readonly id: string;
+  readonly modelSelection: ChatInputModelSelection;
 } {
   return {
     id: params.id,
@@ -1471,10 +1503,12 @@ const publishEnqueuedNormalSend$ = command(
       readonly touchedAt: Date;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
       readonly context: AgentRunContextSignals;
+      readonly requestFacts: ChatThreadRequestFacts;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const { args, thread, touchedAt, enqueueCommit, context } = input;
+    const { args, thread, touchedAt, enqueueCommit, context, requestFacts } =
+      input;
     const picked = await settle(
       set(
         pickEnqueuedChatThread$,
@@ -1483,6 +1517,7 @@ const publishEnqueuedNormalSend$ = command(
           chatThreadId: thread.threadId,
           ...(enqueueCommit ? { enqueueCommit } : {}),
           context,
+          requestFacts,
         },
         signal,
       ),
@@ -1744,6 +1779,12 @@ export const sendNormalEvent$ = command(
               touchedAt: createdAt,
               ...(enqueueCommit ? { enqueueCommit } : {}),
               context,
+              requestFacts: normalSendRequestFacts(
+                args,
+                thread,
+                "thread" in authorized ? authorized.thread : undefined,
+                event,
+              ),
             },
             signal,
           ),
@@ -1770,11 +1811,8 @@ export const sendNormalEvent$ = command(
       }
       throw enqueued.error;
     }
-    return settledNormalSendResponse(
-      args.body,
-      thread.threadId,
-      enqueued.value,
-    );
+    const acceptedAt = enqueued.value;
+    return settledNormalSendResponse(args.body, thread.threadId, acceptedAt);
   },
 );
 function recallChatEventValues(params: {

@@ -425,8 +425,8 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     if (!actor.orgId) {
       throw new Error("Expected collision actor to have an org");
     }
+    await bdd.completeOnboarding(actor);
     const capture = api.captureHostedSitesS3();
-    await upsertOrgPlanEntitlementFixture({ orgId: actor.orgId });
     const versioned = await api.prepareHostedSite(actor, {
       site: occupied.publicSlug,
       artifactKind: "hosted-site",

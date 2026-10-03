@@ -1,3 +1,4 @@
+import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 import {
@@ -12,20 +13,28 @@ import {
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
-import { describe, expect, it } from "vitest";
+import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+import {
+  generateSandboxToken,
+  signSandboxJwtForTests,
+} from "../../auth/tokens";
 import { sshAccessRoutes } from "../ssh-access";
 import { agentsRoutes } from "../agents";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
+import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -109,6 +118,92 @@ async function fixture(overrides: Partial<RuntimeBody> = {}) {
 }
 
 describe("live chat SSH Run inventory", () => {
+  const ordinary = createClaimedSshRuntimeApi(context, {
+    runnerHeaders: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
+    authenticate,
+  });
+  const claimedRunCleanups: (() => Promise<void>)[] = [];
+
+  afterEach(async () => {
+    await ordinary.cleanup();
+    for (const cleanup of claimedRunCleanups.splice(0)) {
+      await cleanup();
+      await flushWaitUntilForTest();
+    }
+  });
+
+  async function claimedFixture() {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an SSH inventory owner organization");
+    }
+    const owner = { userId: actor.userId, orgId: actor.orgId };
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const group = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const { defaultAgentId: agentId } = await bdd.readOnboardingStatus(actor);
+    if (!agentId) {
+      throw new Error("Expected onboarding to provide the default Agent");
+    }
+    // Keep this owner host-free so first-host defaults remain the behavior under test.
+    const { runId, threadId } = await runs.createThreadRun(actor, {
+      agentId,
+      prompt: "List my enabled SSH hosts",
+    });
+    claimedRunCleanups.push(async () => {
+      await runs.requestCancelRun(actor, runId, [200]);
+    });
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    const secret = "d".repeat(64);
+    mockEnv("OFFICIAL_RUNNER_SECRET", secret);
+    const runnerHeaders = {
+      authorization: `Bearer vm0_official_${secret}`,
+    };
+    await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
+      group,
+      runnerId: runnerIdentity.runnerId,
+      snapshotGeneration: runnerIdentity.heartbeatGeneration,
+    });
+    const claim = await accept(
+      setupApp({ context, routes: runnersRoutes })(
+        runnersJobClaimContract,
+      ).claim({
+        headers: runnerHeaders,
+        params: { id: runId },
+        body: {
+          runnerIdentity,
+          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+        },
+      }),
+      [200],
+    );
+    const agentToken = claim.body.platformEnvironment.OKOU_TOKEN;
+    if (!agentToken) {
+      throw new Error("Expected the Runner claim to issue its Agent token");
+    }
+    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+      status: "running",
+    });
+    await flushWaitUntilForTest();
+    authenticate(owner);
+    return {
+      ...owner,
+      runId,
+      threadId,
+      token: () => {
+        return { authorization: `Bearer ${agentToken}` };
+      },
+    };
+  }
+
   it("filters multiple SSH hosts by the Run's chat, current defaults, and sparse overrides", async () => {
     const f = await fixture({ chat: true });
     const first = await createHost();
@@ -233,7 +328,7 @@ describe("live chat SSH Run inventory", () => {
   }
 
   it("keeps first-host and recreated-host chat access default off", async () => {
-    const f = await fixture({ chat: true });
+    const f = await claimedFixture();
     context.mocks.ably.publish.mockClear();
     const first = await createHost();
     expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
@@ -272,7 +367,7 @@ describe("live chat SSH Run inventory", () => {
   });
 
   it("lists both chat-enabled logins at a shared endpoint", async () => {
-    const f = await fixture({ chat: true });
+    const f = await claimedFixture();
     const first = await createHost();
     await enableChatDefault(first.body.id);
     const second = await accept(
@@ -324,18 +419,26 @@ describe("live chat SSH Run inventory", () => {
   });
 
   it("uses only the Run user's hosts for shared Agents and rejects current visibility loss", async () => {
-    const creator = await fixture({ chat: true });
-    const shared = await createAgent("public");
-    const creatorHost = await createHost("creator.example.com");
-    const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
-    const user = await fixture({
-      orgId: creator.orgId,
-      agentId: shared.agentId,
-      chat: true,
-      ...runnerIdentity,
-    });
     const runnerSecret = "c".repeat(64);
     mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
+    const creatorOwner = {
+      orgId: `org_ssh_shared_${randomUUID()}`,
+      userId: `user_ssh_creator_${randomUUID()}`,
+    };
+    authenticate(creatorOwner);
+    const shared = await createAgent("public");
+    const creator = await ordinary.runtime(creatorOwner, {
+      agentId: shared.agentId,
+    });
+    const creatorHost = await createHost("creator.example.com");
+    const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
+    const user = await ordinary.runtime(
+      {
+        orgId: creator.orgId,
+        userId: `user_ssh_member_${randomUUID()}`,
+      },
+      { agentId: shared.agentId, runnerIdentity },
+    );
     const runner = setupApp({ context, routes: runnerSshRoutes })(
       runnerSshContract,
     );
@@ -417,7 +520,30 @@ describe("live chat SSH Run inventory", () => {
   );
 
   it("keeps the Run inventory Agent-token and capability scoped", async () => {
-    const f = await fixture();
+    // All three credential kinds are rejected before any Run lookup.
+    const owner = {
+      userId: `user_ssh_capability_${randomUUID()}`,
+      orgId: `org_ssh_capability_${randomUUID()}`,
+    };
+    authenticate(owner);
+    const runId = randomUUID();
+    const seconds = Math.floor(now() / 1000);
+    const f = {
+      sandboxToken: generateSandboxToken(owner.userId, runId, owner.orgId),
+      token: (capabilities = ["ssh:read"]) => {
+        return {
+          authorization: `Bearer ${signSandboxJwtForTests({
+            scope: "okou",
+            userId: owner.userId,
+            orgId: owner.orgId,
+            runId,
+            capabilities,
+            iat: seconds,
+            exp: seconds + 3600,
+          })}`,
+        };
+      },
+    };
     expect((await accept(inventory().list({ headers }), [403])).status).toBe(
       403,
     );

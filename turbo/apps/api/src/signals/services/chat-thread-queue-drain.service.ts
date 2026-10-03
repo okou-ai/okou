@@ -23,6 +23,7 @@ import { db$, writeDb$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import {
   chatInputEnqueueCommits$,
   type ChatInputEnqueueCommit,
@@ -196,6 +197,7 @@ export const pickEnqueuedChatThread$ = command(
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
       readonly context?: AgentRunContextSignals;
+      readonly requestFacts?: ChatThreadRequestFacts;
     },
     signal: AbortSignal,
   ) => {

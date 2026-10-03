@@ -17,7 +17,6 @@ import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { deleteAgentRunFixture } from "../../../test-fixtures/chat-events";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -40,6 +39,7 @@ type ChatObjectStore = ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
 
 interface RunUploadFixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
+  readonly agentId: string;
   readonly runId: string;
   readonly bearer: string;
   readonly objectStore: ChatObjectStore;
@@ -125,6 +125,7 @@ async function createRunUploadFixture(
 
   return {
     actor: orgActor,
+    agentId: agent.agentId,
     runId,
     bearer: `Bearer ${okouToken({
       userId: actor.userId,
@@ -495,7 +496,10 @@ describe("POST /api/uploads/complete", () => {
     const fixture = await createRunUploadFixture();
     const fileId = randomUUID();
     addUploadObject(fixture, fileId, "late.txt", 11);
-    await deleteAgentRunFixture({ runId: fixture.runId });
+    await runsApi.requestCancelRun(fixture.actor, fixture.runId, [200]);
+    await flushWaitUntilForTest();
+    // Agent deletion also removes its threads; owner, bearer and pending upload remain.
+    await bdd.deleteAgent(fixture.actor, fixture.agentId);
 
     const response = await chat.completeUploadWithBearer(
       fixture.bearer,

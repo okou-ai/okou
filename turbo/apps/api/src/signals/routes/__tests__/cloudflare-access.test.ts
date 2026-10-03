@@ -1,5 +1,6 @@
+import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
@@ -8,6 +9,7 @@ import {
   sshConnectionResponseSchema,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
+import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import {
   agentsMainContract,
   agentsByIdContract,
@@ -26,11 +28,15 @@ import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { agentsRoutes } from "../agents";
 import { runnerSshRoutes } from "../runner-ssh";
+import { runnersRoutes } from "../runners";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { sshAccessRoutes } from "../ssh-access";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -478,6 +484,124 @@ async function fixture() {
     params: { runId: r.runId },
   };
 }
+/** Owner configuration needs no Run or Agent when its case never executes a host. */
+async function configuredOwnerFixture(o = owner()) {
+  authenticate(o);
+  const c = await config();
+  const h = await host(c.id);
+  await enableHostDefault(h.id);
+  return { ...o, config: c, host: h };
+}
+
+function useClaimedFixture() {
+  const claimedRunCleanups: (() => Promise<void>)[] = [];
+
+  // Finish owned cancellation while the parent context still owns its mocks and signal.
+  afterEach(async () => {
+    for (const cleanup of claimedRunCleanups.splice(0)) {
+      await cleanup();
+      await flushWaitUntilForTest();
+    }
+  });
+
+  /** Ordinary chat Runs use production launch/claim; historical cases keep fixture. */
+  return async function claimedFixture(): Promise<
+    Awaited<ReturnType<typeof fixture>>
+  > {
+    const o = owner();
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const bootstrapActor = bdd.user({ ...o, orgRole: "org:admin" });
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const group = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(bootstrapActor);
+    await runs.ensureOrgModelProvider(bootstrapActor, {
+      model: "claude-fable-5-1",
+    });
+    const { defaultAgentId: agentId } =
+      await bdd.readOnboardingStatus(bootstrapActor);
+    if (!agentId) {
+      throw new Error("Expected onboarding to provide the default Agent");
+    }
+    // Public host configuration and execution retain the original ordinary-member role.
+    const actor = { ...bootstrapActor, orgRole: "org:member" as const };
+    const configured = await configuredOwnerFixture(o);
+    const { runId } = await runs.createThreadRun(actor, {
+      agentId,
+      prompt: "Use my configured Cloudflare Access SSH host",
+    });
+    claimedRunCleanups.push(async () => {
+      // Restore test-owned external failures after assertions, without hiding cleanup errors.
+      authenticate(o);
+      useSecretKmsProbe();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      await runs.requestCancelRun(actor, runId, [200]);
+    });
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
+      group,
+      runnerId: runnerIdentity.runnerId,
+      snapshotGeneration: runnerIdentity.heartbeatGeneration,
+    });
+    const claim = await accept(
+      setupApp({ context, routes: runnersRoutes })(
+        runnersJobClaimContract,
+      ).claim({
+        headers: runnerHeaders,
+        params: { id: runId },
+        body: {
+          runnerIdentity,
+          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+        },
+      }),
+      [200],
+    );
+    const agentToken = claim.body.platformEnvironment.OKOU_TOKEN;
+    if (!agentToken) {
+      throw new Error("Expected the Runner claim to issue its Agent token");
+    }
+    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+      status: "running",
+    });
+    authenticate(o);
+    return {
+      ...configured,
+      runId,
+      agentId,
+      runnerIdentity,
+      guestHeaders: { authorization: `Bearer ${agentToken}` },
+      body: { connectionId: configured.host.id, runnerIdentity },
+      params: { runId },
+    };
+  };
+}
+
+const ordinary = createClaimedSshRuntimeApi(context, {
+  runnerHeaders,
+  authenticate,
+});
+
+async function ordinaryFixture() {
+  const o = owner();
+  const r = await ordinary.runtime(o);
+  const c = await config();
+  const h = await host(c.id);
+  await enableHostDefault(h.id);
+  return {
+    ...o,
+    ...r,
+    config: c,
+    host: h,
+    body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
+    params: { runId: r.runId },
+  };
+}
+
 async function resolve(f: Awaited<ReturnType<typeof fixture>>) {
   return (
     await accept(
@@ -496,6 +620,7 @@ beforeEach(() => {
 });
 
 describe("organization Cloudflare Access", () => {
+  afterEach(ordinary.cleanup);
   const scoped = { view: "scoped" as const };
 
   it("lists retained hosts as needing rebind and recovers only after an explicit choice", async () => {
@@ -503,7 +628,7 @@ describe("organization Cloudflare Access", () => {
     const shared = await sharedConfig("Shared recovery gateway");
     const next = await sharedConfig("Next shared gateway");
     const member = owner({ orgId: admin.orgId });
-    const r = await runtime(member, { runnerGroup: `access-${randomUUID()}` });
+    const r = await ordinary.runtime(member);
     const saved = await host(shared.id);
     await enableHostDefault(saved.id);
     const pinned = await accept(
@@ -814,14 +939,10 @@ describe("organization Cloudflare Access", () => {
       )
     ).body;
     const first = owner({ orgId: admin.orgId });
-    const firstRun = await runtime(first, {
-      runnerGroup: `shared-${randomUUID()}`,
-    });
+    const firstRun = await ordinary.runtime(first);
     const firstHost = await host(shared.id);
     const second = owner({ orgId: admin.orgId });
-    const secondRun = await runtime(second, {
-      runnerGroup: `shared-${randomUUID()}`,
-    });
+    const secondRun = await ordinary.runtime(second);
     const secondHost = await host(shared.id);
     authenticate(admin, "org:admin");
     await accept(
@@ -912,9 +1033,12 @@ describe("organization Cloudflare Access", () => {
 });
 
 describe("Cloudflare Access owner configuration", () => {
+  afterEach(ordinary.cleanup);
+  const claimedFixture = useClaimedFixture();
+
   it("refreshes Access metadata for unreferenced config changes without SSH invalidation", async () => {
     const o = owner();
-    await runtime(o, { runnerGroup: "config-only" });
+    await ordinary.runtime(o);
     const assertNotice = () => {
       expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
         ["cloudflare-access:changed", { orgId: o.orgId }],
@@ -1067,7 +1191,7 @@ describe("Cloudflare Access owner configuration", () => {
   });
 
   it("shares one configuration across hosts without public secret readback and rejects stale/dependent deletion", async () => {
-    const f = await fixture();
+    const f = await configuredOwnerFixture();
     const second = await host(f.config.id);
     const listed = (await accept(configs().list({ headers }), [200])).body;
     expect(listed.configs[0]?.sshHosts).toStrictEqual(
@@ -1207,7 +1331,7 @@ describe("Cloudflare Access owner configuration", () => {
   it("does not configure SSH hosts when only Access configs are created", async () => {
     const o = owner();
     await config();
-    await runtime(o);
+    await ordinary.runtime(o);
     await config("Second");
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
@@ -1215,7 +1339,7 @@ describe("Cloudflare Access owner configuration", () => {
   });
 
   it("preserves chat host authority across Access config updates", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     const second = await config("Second");
     await host(second.id);
     let revision = f.config.revision;
@@ -1240,12 +1364,15 @@ describe("Cloudflare Access owner configuration", () => {
 });
 
 describe("protected SSH authority", () => {
+  afterEach(ordinary.cleanup);
+  const claimedFixture = useClaimedFixture();
+
   it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
     const kms = useSecretKmsProbe();
     const admin = owner({}, "org:admin");
     const shared = await sharedConfig();
     const member = owner({ orgId: admin.orgId });
-    const r = await runtime(member, { runnerGroup: `access-${randomUUID()}` });
+    const r = await ordinary.runtime(member);
     const protectedHost = await host(shared.id);
     const f = {
       ...member,
@@ -1387,7 +1514,7 @@ describe("protected SSH authority", () => {
     const first = owner({}, "org:admin");
     const shared = await sharedConfig();
     const second = owner({ orgId: first.orgId });
-    const r = await runtime(second);
+    const r = await ordinary.runtime(second);
     const h = await host(shared.id);
     await enableHostDefault(h.id);
     const resolved = await accept(
@@ -1415,8 +1542,8 @@ describe("protected SSH authority", () => {
   });
 
   it("uses chat-enabled protected hosts for a later Agent", async () => {
-    const f = await fixture();
-    const later = await runtime(f);
+    const f = await ordinaryFixture();
+    const later = await ordinary.runtime(f);
     expect(
       (
         await accept(
@@ -1458,10 +1585,11 @@ describe("protected SSH authority", () => {
       }),
       [201],
     );
+    await ordinary.runtime(creator, { agentId: shared.body.agentId });
     const creatorConfig = await config();
     const creatorHost = await host(creatorConfig.id);
     const user = owner({ orgId: creator.orgId });
-    const r = await runtime(user, { agentId: shared.body.agentId });
+    const r = await ordinary.runtime(user, { agentId: shared.body.agentId });
     const ownConfig = await config();
     const ownHost = await host(ownConfig.id);
     await enableHostDefault(ownHost.id);
@@ -1529,7 +1657,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves key authentication separately from the Access token", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     await accept(
       connections().update({
         headers,
@@ -1563,7 +1691,7 @@ describe("protected SSH authority", () => {
   });
 
   it("keeps KMS failure an error instead of returning unavailable or Direct authority", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     useSecretKmsProbe(undefined, () => {
       return Promise.reject(new Error("KMS unavailable"));
     });
@@ -1585,13 +1713,13 @@ describe("protected SSH authority", () => {
   });
 
   it("invalidates only protected host IDs on Access credential rotation", async () => {
-    const f = await fixture();
+    const f = await ordinaryFixture();
     const second = await host(f.config.id);
     const direct = await host();
     await enableHostDefault(direct.id);
-    const otherAgent = await runtime(f, { runnerGroup: "other-agent" });
+    const otherAgent = await ordinary.runtime(f);
     const otherOwner = owner({ orgId: f.orgId });
-    await runtime(otherOwner, { runnerGroup: "other-owner" });
+    await ordinary.runtime(otherOwner);
     authenticate(f);
     const notices = () => {
       return context.mocks.ably.publish.mock.calls.filter(([event]) => {
@@ -1660,7 +1788,7 @@ describe("protected SSH authority", () => {
   });
 
   it("commits token replacement even when realtime publication fails", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Realtime unavailable"),
     );
@@ -1687,9 +1815,9 @@ describe("protected SSH authority", () => {
   });
 
   it("rejects foreign Run owners before decrypting protected credentials", async () => {
-    const f = await fixture();
+    const f = await ordinaryFixture();
     const foreign = owner({ orgId: f.orgId });
-    const r = await runtime(foreign, { agentId: f.agentId });
+    const r = await ordinary.runtime(foreign, { agentId: f.agentId });
     const kms = useSecretKmsProbe();
     const result = await accept(
       runner().resolve({
@@ -1704,7 +1832,7 @@ describe("protected SSH authority", () => {
   });
 
   it("hands off two independent credentials only to the winning Runner", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     await expect(resolve(f)).resolves.toMatchObject({
       outcome: "resolved_access",
       port: 443,
@@ -1764,7 +1892,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves an omitted transport binding and rejects a stale editor without affecting Direct hosts", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     const direct = await host();
     await enableHostDefault(direct.id);
     expect(sshConnectionResponseSchema.parse(direct)).toStrictEqual(direct);
@@ -1814,7 +1942,7 @@ describe("protected SSH authority", () => {
   });
 
   it("uses chat host permission for inventory, resolve, observe and pin", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     expect((await resolve(f)).outcome).toBe("resolved_access");
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
       sshHostsContract,
@@ -1862,7 +1990,7 @@ describe("protected SSH authority", () => {
   });
 
   it("allows ordinary owners to manage and execute Direct and Access hosts without feature overrides", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     const direct = await host();
     await enableHostDefault(direct.id);
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
@@ -1903,7 +2031,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves host trust across rotation, protected edits and Access transitions; rejects stale evidence", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     const second = await host(f.config.id);
     const direct = await host();
     await accept(
@@ -2008,7 +2136,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves precise Access-stage evidence instead of misclassifying SSH authentication", async () => {
-    const f = await fixture();
+    const f = await claimedFixture();
     const body = {
       ...f.body,
       expectedGeneration: 1,

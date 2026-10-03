@@ -41,7 +41,6 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import {
   UNKNOWN_PERMISSION_GRANT,
@@ -107,6 +106,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -658,6 +658,41 @@ function s3CommandName(command: unknown): string | undefined {
 
 function s3CommandKey(command: unknown): string | undefined {
   return (command as { readonly input?: { readonly Key?: string } }).input?.Key;
+}
+
+async function readWorkflowStorageObjects(
+  misc: ReturnType<typeof createMiscRoutesApi>,
+  actor: ApiTestUser,
+  workflowId: string,
+): Promise<{ readonly versionId: string; readonly archiveKey: string }> {
+  const firstCall = context.mocks.s3.send.mock.calls.length;
+  await misc.readWorkflow(actor, workflowId, [200]);
+  // Workflow GET reads the persisted HEAD and fetches its actual objects.
+  // Upload success alone would not identify the version selected by HEAD.
+  const keys = context.mocks.s3.send.mock.calls
+    .slice(firstCall)
+    .filter(([command]) => {
+      return s3CommandName(command) === "GetObjectCommand";
+    })
+    .map(([command]) => {
+      return s3CommandKey(command);
+    });
+  const archiveKeys = keys.filter((key): key is string => {
+    return key?.endsWith("/archive.tar.gz") === true;
+  });
+  const archiveKey = archiveKeys[0];
+  const versionId = archiveKey
+    ? /\/([0-9a-f]{64})\/archive\.tar\.gz$/u.exec(archiveKey)?.[1]
+    : undefined;
+  if (
+    archiveKeys.length !== 1 ||
+    !archiveKey ||
+    !versionId ||
+    !keys.includes(archiveKey.replace(/archive\.tar\.gz$/u, "manifest.json"))
+  ) {
+    throw new Error("Expected Workflow GET to read one version's objects");
+  }
+  return { versionId, archiveKey };
 }
 
 function mockSessionHistoryBlob(hash: string, history: string): void {
@@ -1388,12 +1423,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       inputError: "internal_error",
     });
     await storageFinished.promise;
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
+    const runs = await createRunReadsApi(context).requestListLogs(
+      actor,
+      { limit: 100 },
+      [200],
+    );
     expect(
-      runs.runs.filter((run) => {
+      runs.body.data.filter((run) => {
         return run.prompt === prompt;
       }),
     ).toStrictEqual([]);
@@ -1401,7 +1437,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("returns a session storage failure while large request storage is still pending", async () => {
     const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor(
       {},
@@ -1426,28 +1461,43 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the canonical memory mount");
     }
 
-    storages.mockStorageObjectsExist(4096);
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 4096 });
     const memoryFile = storageTextFile(
       "MEMORY.md",
       `session overlap ${initialRun.runId}`,
     );
-    const preparedMemory = await storages.prepareStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      baseVersion: initialMemory.versionId,
-      changes: { added: [memoryFile.path], modified: [], deleted: [] },
-      files: [memoryFile],
-    });
+    const sandboxHeaders = {
+      authorization: `Bearer ${initialClaim.sandboxToken}`,
+    };
+    const memoryPreparation = await webhooks.requestAgentStoragePrepare(
+      {
+        runId: initialRun.runId,
+        storageId: initialMemory.storageId,
+        baseVersion: initialMemory.versionId,
+        changes: { added: [memoryFile.path], modified: [], deleted: [] },
+        files: [memoryFile],
+      },
+      sandboxHeaders,
+      [200],
+    );
+    if (memoryPreparation.status !== 200) {
+      throw new Error("Expected the memory preparation to succeed");
+    }
+    const preparedMemory = memoryPreparation.body;
     const sessionArchiveKey = preparedMemory.uploads?.archive.key;
     if (!sessionArchiveKey) {
       throw new Error("Expected a session memory archive upload");
     }
-    await storages.commitStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      versionId: preparedMemory.versionId,
-      files: [memoryFile],
-    });
+    await webhooks.requestAgentStorageCommit(
+      {
+        runId: initialRun.runId,
+        storageId: initialMemory.storageId,
+        versionId: preparedMemory.versionId,
+        files: [memoryFile],
+      },
+      sandboxHeaders,
+      [200],
+    );
     await webhooks.requestAgentComplete(
       {
         runId: initialRun.runId,
@@ -1493,16 +1543,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         throw new Error("Expected workflow creation to succeed");
       }
       const name = getCustomSkillStorageName(workflow.body.id);
-      const stored = await storages.downloadStorage(actor, {
-        name,
-        owner: "organization",
-      });
-      const prefix = await readStorageS3PrefixFixture({
-        orgId: actor.orgId,
-        userId: VOLUME_ORG_USER_ID,
-        name,
-      });
-      requestArchiveKeys.add(`${prefix}/${stored.versionId}/archive.tar.gz`);
+      const stored = await readWorkflowStorageObjects(
+        misc,
+        actor,
+        workflow.body.id,
+      );
+      requestArchiveKeys.add(stored.archiveKey);
       requestMounts.push({
         name,
         mountPath: `/home/user/.claude/skills/${workflowName}`,
@@ -1589,12 +1635,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       pickError: sessionError.message,
       inputError: "internal_error",
     });
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
+    const runs = await createRunReadsApi(context).requestListLogs(
+      actor,
+      { limit: 100 },
+      [200],
+    );
     expect(
-      runs.runs.filter((run) => {
+      runs.body.data.filter((run) => {
         return run.prompt === overlapPrompt;
       }),
     ).toStrictEqual([]);
@@ -1650,24 +1697,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     const created = await api.createThreadRun(actor, { agentId, prompt });
 
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const memoryPrefix = await readStorageS3PrefixFixture({
-      orgId: actor.orgId,
-      userId: actor.userId,
-      name: "memory",
-    });
-    const emptyArtifactPutCount = context.mocks.s3.send.mock.calls.filter(
-      ([command]) => {
-        return (
-          s3CommandName(command) === "PutObjectCommand" &&
-          s3CommandKey(command)?.startsWith(`${memoryPrefix}/`)
-        );
-      },
-    ).length;
-    expect(emptyArtifactPutCount).toBe(0);
-
+    const initialStorageCalls = [...context.mocks.s3.send.mock.calls];
     const claim = await api.claimRunnerJob(created.runId);
     const mounts =
       expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts ??
@@ -1691,6 +1721,36 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the claim manifest to include memory");
     }
     expect(memoryArtifact.archiveUrl).toBeUndefined();
+    // A prepare on this existing mount exposes its persisted object prefix
+    // without publishing a version or uploading objects. Keep the original
+    // pre-claim call population for the empty-artifact assertion.
+    const prefixPreparation = await createWebhookCallbackApi(
+      context,
+    ).requestAgentStoragePrepare(
+      {
+        runId: created.runId,
+        storageId: memoryArtifact.storageId,
+        files: [storageTextFile("prefix-probe.txt", created.runId)],
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    if (prefixPreparation.status !== 200) {
+      throw new Error("Expected the memory prefix preparation to succeed");
+    }
+    const archiveKey = prefixPreparation.body.uploads?.archive.key;
+    const versionSuffix = `/${prefixPreparation.body.versionId}/archive.tar.gz`;
+    if (!archiveKey?.endsWith(versionSuffix)) {
+      throw new Error("Expected a memory upload key with the prepared version");
+    }
+    const memoryPrefix = archiveKey.slice(0, -versionSuffix.length);
+    const emptyArtifactPutCount = initialStorageCalls.filter(([command]) => {
+      return (
+        s3CommandName(command) === "PutObjectCommand" &&
+        s3CommandKey(command)?.startsWith(`${memoryPrefix}/`)
+      );
+    }).length;
+    expect(emptyArtifactPutCount).toBe(0);
     await api.requestCancelRun(actor, created.runId, [200]);
 
     const initialized = await api.createThreadRun(actor, {
@@ -1825,7 +1885,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("persists canonical mounts across historyless session continuation", async () => {
     const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor(
       {},
@@ -1847,10 +1906,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         throw new Error("Expected workflow creation to succeed");
       }
       const name = getCustomSkillStorageName(workflow.body.id);
-      const stored = await storages.downloadStorage(actor, {
-        name,
-        owner: "organization",
-      });
+      const stored = await readWorkflowStorageObjects(
+        misc,
+        actor,
+        workflow.body.id,
+      );
       workflowMounts.push({
         name,
         versionId: stored.versionId,
@@ -1883,20 +1943,35 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "MEMORY.md",
       `canonical memory ${initialRun.runId}`,
     );
-    storages.mockStorageObjectsExist(4096);
-    const preparedMemory = await storages.prepareStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      baseVersion: initialMemory.versionId,
-      changes: { added: [memoryFile.path], modified: [], deleted: [] },
-      files: [memoryFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      versionId: preparedMemory.versionId,
-      files: [memoryFile],
-    });
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 4096 });
+    const sandboxHeaders = {
+      authorization: `Bearer ${initialClaim.sandboxToken}`,
+    };
+    const memoryPreparation = await webhooks.requestAgentStoragePrepare(
+      {
+        runId: initialRun.runId,
+        storageId: initialMemory.storageId,
+        baseVersion: initialMemory.versionId,
+        changes: { added: [memoryFile.path], modified: [], deleted: [] },
+        files: [memoryFile],
+      },
+      sandboxHeaders,
+      [200],
+    );
+    if (memoryPreparation.status !== 200) {
+      throw new Error("Expected the memory preparation to succeed");
+    }
+    const preparedMemory = memoryPreparation.body;
+    await webhooks.requestAgentStorageCommit(
+      {
+        runId: initialRun.runId,
+        storageId: initialMemory.storageId,
+        versionId: preparedMemory.versionId,
+        files: [memoryFile],
+      },
+      sandboxHeaders,
+      [200],
+    );
     await webhooks.requestAgentComplete(
       {
         runId: initialRun.runId,
@@ -2767,12 +2842,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
     expectApiError(mismatch.body);
     expect(mismatch.body.error.message).toBe("Chat thread not found");
-    const ownedRuns = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
+    const ownedRuns = await createRunReadsApi(context).requestListLogs(
+      actor,
+      { limit: 100 },
+      [200],
+    );
     expect(
-      ownedRuns.runs.filter((run) => {
+      ownedRuns.body.data.filter((run) => {
         return run.prompt === mismatchPrompt;
       }),
     ).toHaveLength(0);

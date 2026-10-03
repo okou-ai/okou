@@ -34,6 +34,7 @@ import { createDeferredPromise } from "../../utils";
 import { presentationTemplatesRoutes } from "../presentation-templates";
 import { userTemplatesRoutes } from "../user-templates";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   assistantEvent,
@@ -52,6 +53,7 @@ import {
 } from "./helpers/template-publish-fixture";
 
 const context = testContext();
+const reads = createRunReadsApi(context);
 const {
   bdd,
   api,
@@ -1860,12 +1862,9 @@ describe("CHAT-02: generation templates and attachments", () => {
       body: { error: "Internal server error" },
     });
     expect(exactHeadRequests).toBe(1);
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
+    const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
     expect(
-      runs.runs.some((run) => {
+      runs.body.data.some((run) => {
         return run.prompt === prompt;
       }),
     ).toBeFalsy();
@@ -1901,12 +1900,9 @@ describe("CHAT-02: generation templates and attachments", () => {
       status: 500,
       body: { error: "Internal server error" },
     });
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
+    const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
     expect(
-      runs.runs.some((run) => {
+      runs.body.data.some((run) => {
         return run.prompt === prompt;
       }),
     ).toBeFalsy();
@@ -1955,12 +1951,9 @@ describe("CHAT-02: generation templates and attachments", () => {
       status: 500,
       body: { error: "Internal server error" },
     });
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
+    const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
     expect(
-      runs.runs.some((run) => {
+      runs.body.data.some((run) => {
         return run.prompt === prompt;
       }),
     ).toBeFalsy();

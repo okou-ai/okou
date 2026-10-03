@@ -14,6 +14,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createGithubBddApi } from "./helpers/api-bdd-github";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
   chatEventAutomationPart,
@@ -33,9 +34,21 @@ const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const gh = createGithubBddApi(context);
 const runsApi = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 
 const WORKFLOW_NAME = "github-webhook-workflow";
 const GITHUB_WEBHOOK_SECRET = "github-webhook-secret";
+
+async function listActiveRuns(actor: ApiTestUser, limit: 20) {
+  const response = await runReadsApi.requestListLogs(actor, { limit }, [200]);
+  // Keep the complete owner population before applying the active-status filter.
+  expect(response.body.pagination).toMatchObject({ hasMore: false });
+  return {
+    runs: response.body.data.filter((run) => {
+      return run.status === "pending" || run.status === "running";
+    }),
+  };
+}
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
@@ -560,7 +573,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       expect(ignored).toStrictEqual({ status: 200, text: "OK" });
       await flushWaitUntilForTest();
 
-      const listedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const listedRuns = await listActiveRuns(actor, 20);
       expect(listedRuns.runs).toHaveLength(0);
     },
   );
@@ -608,7 +621,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       );
 
       await runsApi.heartbeatRunner();
-      const listedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const listedRuns = await listActiveRuns(actor, 20);
       const runId = listedRuns.runs[0]?.id;
       if (!runId || listedRuns.runs.length !== 1) {
         throw new Error(`Expected a ${testCase.name} automation run`);
@@ -684,7 +697,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       }),
     ).toHaveLength(0);
 
-    const listedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
+    const listedRuns = await listActiveRuns(actor, 20);
     expect(listedRuns.runs).toHaveLength(0);
   });
 
@@ -807,7 +820,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     // workflow queue, the first matched event creates the only admitted run
     // and the remaining five wait as pending workflow queue events.
     await runsApi.heartbeatRunner();
-    const listedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
+    const listedRuns = await listActiveRuns(actor, 20);
     const admittedRunId = listedRuns.runs[0]?.id;
     if (!admittedRunId || listedRuns.runs.length !== 1) {
       throw new Error("Expected an admitted automation event run");
@@ -896,7 +909,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     await flushWaitUntilForTest();
 
     await runsApi.heartbeatRunner();
-    const listedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
+    const listedRuns = await listActiveRuns(actor, 20);
     const runId = listedRuns.runs[0]?.id;
     if (!runId || listedRuns.runs.length !== 1) {
       throw new Error("Expected a GitHub workflow run automation");
@@ -1005,7 +1018,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     );
 
     await runsApi.heartbeatRunner();
-    const listedRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
+    const listedRuns = await listActiveRuns(actor, 20);
     const runId = listedRuns.runs[0]?.id;
     if (!runId || listedRuns.runs.length !== 1) {
       throw new Error("Expected a startup-failure workflow automation");

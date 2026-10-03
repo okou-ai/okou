@@ -86,22 +86,6 @@ export async function readRunModelRuntimeRouteFixture(runId: string) {
   return run;
 }
 
-/** Launch options a run captured for its runtime (effort and service tier). */
-export async function readRunModelLaunchOptionsFixture(runId: string) {
-  const [run] = await db()
-    .select({
-      reasoningEffort: agentRuns.reasoningEffort,
-      codexServiceTier: agentRuns.codexServiceTier,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!run) {
-    throw new Error("Expected one run launch options row");
-  }
-  return run;
-}
-
 /** Simulate historical or alternate built-in model route metadata not constructible through current policy. */
 export async function setRunModelRuntimeRouteFixture(args: {
   readonly runId: string;

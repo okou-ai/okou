@@ -5,16 +5,15 @@ import { runnerVncContract } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { runnerVncRoutes } from "../runner-vnc";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncAccessRoutes } from "../vnc-access";
+import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
@@ -27,8 +26,10 @@ import {
   vncProfiles,
 } from "./helpers/vnc-runtime";
 
+const context = testContext();
+
 describe("VNC depends on current SSH binding", () => {
-  const context = testContext();
+  const claimed = createClaimedVncApi(context);
   const query = { view: "scoped" as const };
   const configs = () => {
     return setupApp({ context, routes: cloudflareAccessRoutes })(
@@ -48,12 +49,13 @@ describe("VNC depends on current SSH binding", () => {
   };
 
   beforeEach(initializeVncRuntimeTest);
+  afterEach(claimed.cleanup);
 
   it.each(["convert", "delete"] as const)(
     "%s blocks VNC over a retained SSH host and allows explicit SSH recovery",
     async (transition) => {
       const api = createVncRuntimeApi(context);
-      const f = await api.fixture();
+      const f = await claimed.fixture();
       const store = createStore();
       const admin = {
         orgId: f.orgId,
@@ -122,18 +124,7 @@ describe("VNC depends on current SSH binding", () => {
       const target = { ...f, connectionId: tunneled.body.id };
       await api.enableDefault(f, "ssh", ssh.body.id);
       await api.enableDefault(f, "vnc", tunneled.body.id);
-      const seconds = Math.floor(now() / 1000);
-      const guestHeaders = {
-        authorization: `Bearer ${signSandboxJwtForTests({
-          scope: "okou",
-          orgId: f.orgId,
-          userId: f.userId,
-          runId: f.runId,
-          capabilities: ["vnc:read"],
-          iat: seconds,
-          exp: seconds + 3600,
-        })}`,
-      };
+      const guestHeaders = claimed.agentHeaders(f);
       const listHosts = async () => {
         return (
           await accept(inventory().list({ headers: guestHeaders }), [200])

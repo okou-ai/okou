@@ -39,7 +39,6 @@ import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...feishuConnectRoutes,
@@ -108,7 +107,7 @@ interface FeishuTestActor extends ApiTestUser {
   readonly orgRole: "org:admin";
 }
 
-async function setupFeishuInstallation(
+async function createOnboardedFeishuInstallation(
   actorOverride?: FeishuTestActor,
   platform: FeishuPlatform = "feishu",
 ): Promise<{
@@ -127,15 +126,15 @@ async function setupFeishuInstallation(
     [FEISHU_PLATFORMS[platform].featureSwitch]: true,
   });
   authOrgApi.acceptAgentStorageWrites();
-  await runsApi.grantProEntitlement(actor);
-  const agent = await authOrgApi.createAgent(actor, {
+  const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Feishu CLI agent",
-    visibility: "public",
   });
-  await setOrgDefaultAgentFixture({
-    orgId: actor.orgId,
-    agentId: agent.agentId,
-  });
+  const agent = await authOrgApi.updateAgentMetadata(
+    actor,
+    bootstrap.body.agentId,
+    { visibility: "public" },
+  );
+  await runsApi.grantProEntitlement(actor);
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const client = setupApp({ context, routes: feishuConnectRoutes })(
     platform === "lark" ? larkConnectContract : feishuConnectContract,
@@ -340,7 +339,7 @@ describe("POST /api/integrations/feishu/message", () => {
   });
 
   it("sends chat, current-user, and threaded reply messages", async () => {
-    const { actor, installationId } = await setupFeishuInstallation();
+    const { actor, installationId } = await createOnboardedFeishuInstallation();
     await connectCurrentFeishuUser(actor);
     captured = [];
     const token = okouToken(actor);
@@ -425,7 +424,7 @@ describe("POST /api/integrations/feishu/message", () => {
   });
 
   it("maps Feishu request and response failures to contract errors", async () => {
-    const { actor, installationId } = await setupFeishuInstallation();
+    const { actor, installationId } = await createOnboardedFeishuInstallation();
     let requestCount = 0;
     server.use(
       http.post("https://open.feishu.cn/open-apis/im/v1/messages", () => {
@@ -467,7 +466,7 @@ describe("POST /api/integrations/feishu/message", () => {
   it.each(["feishu", "lark"] as const)(
     "downloads a resource from a %s message",
     async (platform) => {
-      const { actor, installationId } = await setupFeishuInstallation(
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
         undefined,
         platform,
       );
@@ -526,10 +525,8 @@ describe("POST /api/integrations/feishu/message", () => {
   it.each(["feishu", "lark"] as const)(
     "uploads a stored file and sends it as a %s message",
     async (platform) => {
-      const { actor, agentId, installationId } = await setupFeishuInstallation(
-        undefined,
-        platform,
-      );
+      const { actor, agentId, installationId } =
+        await createOnboardedFeishuInstallation(undefined, platform);
       await runsApi.grantProEntitlement(actor);
       await runsApi.ensureOrgModelProvider(actor);
       const runnerGroup = runsApi.configureRunnerGroup();

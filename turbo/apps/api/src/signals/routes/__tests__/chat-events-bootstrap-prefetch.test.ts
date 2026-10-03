@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -49,9 +50,7 @@ describe("chat agent bootstrap prefetch", () => {
       actor,
       agentId,
       `context-${randomUUID().slice(0, 8)}`,
-      {
-        content: "# Context storage\nKeep this published skill mounted.",
-      },
+      { content: "# Context storage\nKeep this published skill mounted." },
       [201],
     );
     if (workflow.status !== 201) {
@@ -119,6 +118,125 @@ describe("chat agent bootstrap prefetch", () => {
     expect(nextMount?.writeback).toBeUndefined();
     await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
   });
+  it("does not substitute the newer send's payload or capture flag for an earlier queue head", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const olderId = randomUUID();
+    const newerId = randomUUID();
+    const launched = createDeferredPromise<string>(context.signal);
+    let observedThreadId: string | undefined;
+    context.mocks.ably.publish.mockImplementation(
+      async (...args: unknown[]) => {
+        if (
+          args[0] === `chatThreadMessageCreated:${observedThreadId}` &&
+          observedThreadId
+        ) {
+          // Observe the same post-commit notification and public GET used by
+          // the client, without flushing the deliberately paused first pick.
+          const page = await chat.listThreadEvents(actor, observedThreadId);
+          const runId = userMessages(page.events).find((message) => {
+            return message.revokesEventId === olderId;
+          })?.runId;
+          if (runId && !launched.settled()) {
+            launched.resolve(runId);
+          }
+        }
+        return undefined;
+      },
+    );
+    const result = await withDatabaseTransactionBarrierFixture(
+      {
+        // Infrastructure exception: pause the real reader, without replacing
+        // its result, so another API request can take an expired queue lease.
+        select: (args) => {
+          return barrierQueryText(args).includes('"picked_input_revoker"');
+        },
+        stopAt: (_args, selecting) => {
+          return selecting;
+        },
+        work: async (barrier) => {
+          const older = await chat.requestSendEvent(
+            actor,
+            {
+              agentId,
+              clientEventId: olderId,
+              prompt: "older queue head",
+              captureNetworkBodies: true,
+            },
+            [201],
+          );
+          if (older.status !== 201) {
+            throw new Error("Expected the older input to be accepted");
+          }
+          observedThreadId = older.body.threadId;
+          await barrier.entered;
+          mockNow(now() + 11_000);
+          onTestFinished(clearMockNow);
+          const newer = await chat.requestSendEvent(
+            actor,
+            {
+              agentId,
+              threadId: older.body.threadId,
+              clientEventId: newerId,
+              prompt: "newer enqueue request",
+            },
+            [201],
+          );
+          if (newer.status !== 201) {
+            throw new Error("Expected the newer input to be accepted");
+          }
+          expect(newer.body.threadId).toBe(older.body.threadId);
+          const runId = await launched.promise;
+          const messages = await chat.listThreadEvents(
+            actor,
+            older.body.threadId,
+          );
+          expect((await api.readRun(actor, runId)).prompt).toBe(
+            "older queue head",
+          );
+          expect(userMessages(messages.events)).toContainEqual(
+            expect.objectContaining({
+              id: newerId,
+              eventType: "input.prompt",
+            }),
+          );
+          barrier.release();
+          await expect(flushWaitUntilForTest()).rejects.toThrow(
+            "Chat thread claim was lost before the pending commit",
+          );
+          return { threadId: older.body.threadId, runId };
+        },
+      },
+      context.signal,
+    );
+    clearMockNow();
+    const claimed = await claimChatRun(runnerGroup, result.runId);
+    expect(claimed.claim.captureNetworkBodies).toBeTruthy();
+    await cancelChatRun(actor, result.runId, claimed.sandboxHeaders);
+    const messages = await waitForThreadMessages(
+      actor,
+      result.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === newerId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const next = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === newerId;
+    });
+    if (!next?.runId) {
+      throw new Error("Expected the later request to drain the newer input");
+    }
+    expect((await api.readRun(actor, next.runId)).prompt).toBe(
+      "newer enqueue request",
+    );
+    const nextClaim = await claimChatRun(runnerGroup, next.runId);
+    expect(nextClaim.claim.captureNetworkBodies).toBeFalsy();
+    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
+  }, 90_000);
   it("loads the same read-only context when a later request drains queued input", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {

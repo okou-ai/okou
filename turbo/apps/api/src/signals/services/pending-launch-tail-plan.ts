@@ -33,6 +33,7 @@ export interface PendingLaunchTailInput {
   readonly action: ChatThreadSessionResolutionAction | undefined;
   readonly requestMemory: boolean;
   readonly threadAgentId: string | null;
+  readonly threadBindingFencesOwnership: boolean;
   readonly needsBinding: boolean;
   readonly binding: Binding | undefined;
 }
@@ -87,7 +88,10 @@ export function pendingLaunchTailStart(
   if (!input.requestMemory || reason || !input.chatThreadId) {
     return bindingRead(input);
   }
-  return memoryOwner(input);
+  // The atomic binding CAS fences ownership before this launch can commit.
+  return input.threadBindingFencesOwnership
+    ? requestDay(input)
+    : memoryOwner(input);
 }
 
 function bindingRead(input: PendingLaunchTailInput): PendingLaunchTailProgress {

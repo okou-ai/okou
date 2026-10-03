@@ -31,6 +31,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -49,6 +50,7 @@ import {
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
 const context = testContext({ connectorCatalog: true });
 const runs = createRunsApi(context);
+const reads = createRunReadsApi(context);
 const support = createAuthDeviceSupportApi(context);
 const firewall = createFirewallApi(context);
 
@@ -402,11 +404,8 @@ describe("personal subscription run identity", () => {
       }),
     );
     await expect(
-      runs.listAgentRuns(f.actor, {
-        status: "queued,pending,running,completed,failed,timeout,cancelled",
-        limit: 100,
-      }),
-    ).resolves.toMatchObject({ runs: [] });
+      reads.requestListLogs(f.actor, { limit: 100 }, [200]),
+    ).resolves.toMatchObject({ body: { data: [] } });
   });
 
   it.each([

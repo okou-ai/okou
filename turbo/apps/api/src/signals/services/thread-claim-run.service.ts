@@ -290,6 +290,7 @@ import {
   type ChatThreadSessionResolution,
   chatThreadSessionSelection,
   resolveChatThreadSessionSnapshot,
+  capturedChatThreadSessionSnapshot,
   type ChatThreadSessionResolutionAction,
   type ChatThreadSessionRoute,
   type ChatThreadExecutionSnapshot,
@@ -507,6 +508,10 @@ import {
 } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
+import {
+  chatThreadRequestSelection,
+  type ChatThreadRequestFacts,
+} from "./chat-thread-request-facts";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
@@ -547,6 +552,7 @@ import {
   desc,
   eq,
   exists,
+  notExists,
   gt,
   inArray,
   isNotNull,
@@ -2817,6 +2823,7 @@ export function createThreadClaimRunObjects(
   claim: ThreadClaim,
   context: AgentRunContextSignals,
   prefetchOutcome: "hit" | "not_provided" | "identity_mismatch",
+  requestFacts?: ChatThreadRequestFacts,
 ): ThreadClaimRunObjects {
   // Re-resolve the queued pin against one current catalog snapshot per claim.
   // Stripe entitlement refresh for an allowance window runs outside the
@@ -2893,87 +2900,120 @@ export function createThreadClaimRunObjects(
     },
   );
 
-  const pickedEvent$ = computed(async (get) => {
-    const database = get(db$);
-    const candidates = await database
-      .select({
-        id: chatEvents.id,
-        createdAt: chatEvents.createdAt,
-        seqId: chatEvents.seqId,
-        eventType: chatEvents.eventType,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, claim.chatThreadId),
-          chatEventRunlessInputPredicate(
-            chatEvents.runId,
-            chatEvents.eventType,
-          ),
-          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
-        ),
-      );
-    if (candidates.length === 0) {
-      return null;
+  const threadRow$ = computed(async (get) => {
+    if (requestFacts) {
+      return requestFacts.thread;
     }
-    const revocations = await database
-      .select({ eventId: chatEvents.revokesEventId })
-      .from(chatEvents)
-      .where(
-        inArray(
-          chatEvents.revokesEventId,
-          candidates.map(({ id }) => {
-            return id;
-          }),
-        ),
-      );
-    const revoked = new Set(
-      revocations.map(({ eventId }) => {
-        return eventId;
-      }),
-    );
-    const picked =
-      candidates
-        .filter(({ id }) => {
-          return !revoked.has(id);
-        })
-        .sort((left, right) => {
-          return left.seqId - right.seqId;
-        })[0] ?? null;
-    if (!picked) {
-      return null;
-    }
-    // The one read of the head row: the queue context, prompt branch and
-    // model selection all derive from it.
-    const [row] = await database
-      .select({
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        userMessage: canonicalChatEventUserMessage(),
-        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-        modelSelection: chatEvents.modelSelection,
-        canonicalModelSelection: canonicalChatInputModelSelection(),
-        sourceAutonomyBudget: agentRuns.autonomyBudget,
-        userId: chatThreads.userId,
-        agentId: chatThreads.agentId,
-      })
-      .from(chatEvents)
-      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .leftJoin(
-        agentRuns,
-        and(
-          eq(chatEvents.contextType, "agent_run"),
-          eq(agentRuns.id, chatEvents.contextId),
-        ),
-      )
+    const [row] = await get(db$)
+      .select(chatThreadRequestSelection())
+      .from(chatThreads)
       .where(
         and(
-          eq(chatEvents.id, picked.id),
-          eq(chatEvents.chatThreadId, claim.chatThreadId),
+          eq(chatThreads.id, claim.chatThreadId),
+          eq(chatThreads.userId, context.userId),
+          eq(chatThreads.agentId, context.agentId),
         ),
       )
       .limit(1);
-    return row ? { ...picked, ...row } : null;
+    return row ?? null;
+  });
+  const sessionRead$ = computed(async (get) => {
+    const thread = await get(threadRow$);
+    if (!thread?.agentSessionId) {
+      return undefined;
+    }
+    const [row] = await get(db$)
+      .select(chatThreadSessionSelection())
+      .from(agentSessions)
+      .leftJoin(
+        conversations,
+        eq(conversations.id, agentSessions.conversationId),
+      )
+      .leftJoin(blobs, eq(blobs.hash, conversations.cliAgentSessionHistoryHash))
+      .leftJoin(
+        chatThreadConversationRun,
+        eq(chatThreadConversationRun.id, conversations.runId),
+      )
+      .leftJoin(
+        agentRuns,
+        thread.agentSessionRunId
+          ? eq(agentRuns.id, thread.agentSessionRunId)
+          : sql`FALSE`,
+      )
+      .where(
+        and(
+          eq(agentSessions.id, thread.agentSessionId),
+          eq(agentSessions.userId, context.userId),
+          eq(agentSessions.orgId, claim.orgId),
+        ),
+      )
+      .limit(1);
+    return row;
+  });
+  const pickedEvent$ = computed(async (get) => {
+    const revoker = alias(chatEvents, "picked_input_revoker");
+    const [thread, [row]] = await Promise.all([
+      get(threadRow$),
+      get(db$)
+        .select({
+          id: chatEvents.id,
+          createdAt: chatEvents.createdAt,
+          seqId: chatEvents.seqId,
+          eventType: chatEvents.eventType,
+          contextType: chatEvents.contextType,
+          contextId: chatEvents.contextId,
+          userMessage: canonicalChatEventUserMessage(),
+          requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
+          modelSelection: chatEvents.modelSelection,
+          canonicalModelSelection: canonicalChatInputModelSelection(),
+          sourceAutonomyBudget: agentRuns.autonomyBudget,
+        })
+        .from(chatEvents)
+        .leftJoin(
+          agentRuns,
+          and(
+            eq(chatEvents.contextType, "agent_run"),
+            eq(agentRuns.id, chatEvents.contextId),
+          ),
+        )
+        .where(
+          and(
+            eq(chatEvents.chatThreadId, claim.chatThreadId),
+            chatEventRunlessInputPredicate(
+              chatEvents.runId,
+              chatEvents.eventType,
+            ),
+            inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
+            notExists(
+              new QueryBuilder()
+                .select({ id: revoker.id })
+                .from(revoker)
+                .where(eq(revoker.revokesEventId, chatEvents.id)),
+            ),
+          ),
+        )
+        .orderBy(asc(chatEvents.seqId))
+        .limit(1),
+    ]);
+    if (!thread || !row) {
+      return null;
+    }
+    const owned =
+      requestFacts?.input.id === row.id ? requestFacts.input : undefined;
+    return {
+      ...row,
+      ...(owned
+        ? {
+            userMessage: owned.userMessage,
+            modelSelection: owned.modelSelection,
+            canonicalModelSelection: owned.modelSelection,
+            requiredOfficialWorkflowIds:
+              owned.requiredOfficialWorkflowIds ?? null,
+          }
+        : {}),
+      userId: thread.userId,
+      agentId: thread.agentId,
+    };
   });
   // Per-claim dispatch timing collectors, created once per graph like the run
   // ids; commands record into them in their own order.
@@ -4411,41 +4451,18 @@ export function createThreadClaimRunObjects(
       input: args,
       modelRoute: model.route,
     });
-    const [thread] = await args.db
-      .select(chatThreadSessionSelection())
-      .from(chatThreads)
-      .leftJoin(
-        agentSessions,
-        and(
-          eq(agentSessions.id, chatThreads.agentSessionId),
-          eq(agentSessions.userId, args.userId),
-          eq(agentSessions.orgId, args.agent.orgId),
-        ),
-      )
-      .leftJoin(
-        conversations,
-        eq(conversations.id, agentSessions.conversationId),
-      )
-      .leftJoin(blobs, eq(blobs.hash, conversations.cliAgentSessionHistoryHash))
-      .leftJoin(
-        chatThreadConversationRun,
-        eq(chatThreadConversationRun.id, conversations.runId),
-      )
-      .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
-      .where(
-        and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-          eq(chatThreads.agentId, args.expectedThreadAgentId ?? args.agent.id),
-        ),
-      )
-      .limit(1);
-    if (!thread) {
+    const thread = await get(threadRow$);
+    if (
+      !thread ||
+      thread.id !== args.threadId ||
+      thread.userId !== args.userId ||
+      thread.agentId !== (args.expectedThreadAgentId ?? args.agent.id)
+    ) {
       throw new Error("Chat thread not found while resolving session binding");
     }
     const agent = await get((await get(promptExecutionContext$)).agent$);
     return resolveChatThreadSessionSnapshot(
-      { ...thread, agent },
+      capturedChatThreadSessionSnapshot(thread, await get(sessionRead$), agent),
       {
         agentId: args.agent.id,
         route: {
@@ -4909,22 +4926,22 @@ export function createThreadClaimRunObjects(
     },
   );
   const promptHostHost$ = computed(async (get) => {
-    const { head } = await get(promptInputInput$);
-    const db = get(db$);
-    const [host] = await db
+    const [{ head }, thread] = await Promise.all([
+      get(promptInputInput$),
+      get(threadRow$),
+    ]);
+    if (!thread?.computerUseHostId) {
+      return null;
+    }
+    const [host] = await get(db$)
       .select({
         hostId: computerUseHosts.id,
         displayName: computerUseHosts.displayName,
       })
-      .from(chatThreads)
-      .innerJoin(
-        computerUseHosts,
-        eq(chatThreads.computerUseHostId, computerUseHosts.id),
-      )
+      .from(computerUseHosts)
       .where(
         and(
-          eq(chatThreads.id, head.chatThreadId),
-          eq(chatThreads.userId, head.userId),
+          eq(computerUseHosts.id, thread.computerUseHostId),
           eq(computerUseHosts.orgId, head.orgId),
           eq(computerUseHosts.userId, head.userId),
           isNull(computerUseHosts.revokedAt),
@@ -4935,6 +4952,9 @@ export function createThreadClaimRunObjects(
   });
   const promptCaptureCapture$ = computed(async (get) => {
     const { head } = await get(promptInputInput$);
+    if (requestFacts?.input.id === head.id) {
+      return requestFacts.input.captureNetworkBodies;
+    }
     const db = get(db$);
     const [row] = await db
       .select({ id: chatNetworkBodyCaptures.chatEventId })
@@ -7202,29 +7222,23 @@ export function createThreadClaimRunObjects(
     );
   });
   const runOwnedConnectorThread$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const { args } = await get(connectorInput$);
     if (args.chatThreadId === undefined) {
       return null;
     }
-    const [agent, { command }] = await Promise.all([
+    const [agent, { command }, thread] = await Promise.all([
       get(preCreateAgentAgent$),
       get(selectedIdentityInputIdentityInput$),
+      get(threadRow$),
     ]);
     if (!agent || agent.orgId !== args.orgId) {
       return null;
     }
-    const [thread] = await db
-      .select({ agentId: chatThreads.agentId })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, args.chatThreadId),
-          eq(chatThreads.userId, args.userId),
-          eq(chatThreads.agentId, command.expectedThreadAgentId ?? agent.id),
-        ),
-      )
-      .limit(1);
-    return thread ?? null;
+    return thread?.id === args.chatThreadId &&
+      thread.userId === args.userId &&
+      thread.agentId === (command.expectedThreadAgentId ?? agent.id)
+      ? { agentId: thread.agentId }
+      : null;
   });
   const runThreadSelectionRow$ = computed(
     async (get): Promise<readonly ConnectorAccountSelection[]> => {
@@ -8143,7 +8157,6 @@ export function createThreadClaimRunObjects(
   const preCreateThreadSessionThreadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
       const { command, timing } = await get(preCreateInput$);
-      const db = get(db$);
       if (!command.chatThreadId) {
         return undefined;
       }
@@ -8160,51 +8173,23 @@ export function createThreadClaimRunObjects(
         timing,
         "api_dispatch_pre_create_agent_resolve_thread_session",
         async () => {
-          const [thread] = await db
-            .select(chatThreadSessionSelection())
-            .from(chatThreads)
-            .leftJoin(
-              agentSessions,
-              and(
-                eq(agentSessions.id, chatThreads.agentSessionId),
-                eq(agentSessions.userId, command.owner.userId),
-                eq(agentSessions.orgId, command.owner.orgId),
-              ),
-            )
-            .leftJoin(
-              conversations,
-              eq(conversations.id, agentSessions.conversationId),
-            )
-            .leftJoin(
-              blobs,
-              eq(blobs.hash, conversations.cliAgentSessionHistoryHash),
-            )
-            .leftJoin(
-              chatThreadConversationRun,
-              eq(chatThreadConversationRun.id, conversations.runId),
-            )
-            .leftJoin(
-              agentRuns,
-              eq(agentRuns.id, chatThreads.agentSessionRunId),
-            )
-            .where(
-              and(
-                eq(chatThreads.id, threadId),
-                eq(chatThreads.userId, command.owner.userId),
-                eq(
-                  chatThreads.agentId,
-                  command.expectedThreadAgentId ?? agent.id,
-                ),
-              ),
-            )
-            .limit(1);
-          if (!thread) {
+          const thread = await get(threadRow$);
+          if (
+            !thread ||
+            thread.id !== threadId ||
+            thread.userId !== command.owner.userId ||
+            thread.agentId !== (command.expectedThreadAgentId ?? agent.id)
+          ) {
             throw new Error(
               "Chat thread not found while resolving session binding",
             );
           }
           return resolveChatThreadSessionSnapshot(
-            { ...thread, agent },
+            capturedChatThreadSessionSnapshot(
+              thread,
+              await get(sessionRead$),
+              agent,
+            ),
             {
               agentId: agent.id,
               route,
@@ -12423,6 +12408,7 @@ interface QueueFirstRunClaimLost {
 interface ValidatedThreadSessionSnapshot {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
+  readonly threadAgentId: string | null;
   readonly agentSessionId: string | null;
   readonly agentSessionRunId: string | null;
 }
@@ -12867,6 +12853,7 @@ function appendLaunchCallbackCte(args: {
 
 function launchThreadBindingCte(args: {
   readonly chatThreadId: string | undefined;
+  readonly userId: string;
   readonly identity: LaunchRunIdentity;
   readonly insertedRun: ReturnedIdCte;
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
@@ -12888,6 +12875,9 @@ function launchThreadBindingCte(args: {
         },
         and(
           eq(chatThreads.id, args.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+          sql`${chatThreads.agentId} IS NOT DISTINCT FROM ${args.validatedThreadSession.threadAgentId}::uuid`,
+          sql`${chatThreads.agentSessionId} IS NOT DISTINCT FROM ${args.validatedThreadSession.agentSessionId}::uuid`,
           sql`${chatThreads.agentSessionRunId} IS NOT DISTINCT FROM ${args.validatedThreadSession.agentSessionRunId}::uuid`,
         ),
         ["id"],
@@ -12963,6 +12953,7 @@ function buildAtomicLaunchCteContext(
   const chatThreadId = args.commit.createArgs.chatThreadId;
   const updatedThread = launchThreadBindingCte({
     chatThreadId,
+    userId: args.commit.createArgs.userId,
     identity: rowsArgs.identity,
     insertedRun,
     validatedThreadSession: args.validatedThreadSession,
@@ -18982,6 +18973,11 @@ function tailFacts(
       claim?.producer?.kind === "reassign-agent"
         ? claim.producer.expectedAgentId
         : args.context.resolved.agentId,
+    threadBindingFencesOwnership:
+      Boolean(admission.validatedThreadSession) &&
+      admission.validatedThreadSession?.threadAgentId ===
+        args.context.resolved.agentId &&
+      claim?.producer?.kind !== "reassign-agent",
     needsBinding:
       Boolean(args.createArgs.chatThreadId) &&
       !admission.validatedThreadSession,

@@ -36,6 +36,7 @@ import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.servic
 interface ValidatedPendingThreadSession {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
+  readonly threadAgentId: string | null;
   readonly agentSessionId: string | null;
   readonly agentSessionRunId: string | null;
 }
@@ -48,6 +49,7 @@ interface AdmissionFacts {
 const readRecordSchema = z.discriminatedUnion("phase", [
   z.object({
     phase: z.literal("thread"),
+    threadAgentId: z.string().nullable(),
     agentSessionId: z.string().nullable(),
     agentSessionRunId: z.string().nullable(),
   }),
@@ -109,12 +111,37 @@ export function pendingLaunchAdmissionStart(
     validatedAccountIdentity: null,
   };
   const threadId = args.createArgs.chatThreadId;
+  const resolution = args.createArgs.threadSessionResolution;
+  if (threadId && resolution) {
+    const captured: AdmissionFacts = {
+      ...facts,
+      validatedThreadSession: {
+        kind: "validated-thread-session-snapshot",
+        chatThreadId: threadId,
+        threadAgentId: resolution.expected.threadAgentId,
+        agentSessionId: resolution.expected.agentSessionId,
+        agentSessionRunId: resolution.expected.agentSessionRunId,
+      },
+    };
+    // The atomic binding CAS fences both captured thread columns. Keep the
+    // separate session/conversation lock; it protects a different row.
+    const sessionId = resolution.expected.sessionId;
+    return sessionId === null
+      ? subscriptionStep(args, captured)
+      : {
+          ...captured,
+          kind: "statement",
+          phase: "session",
+          sql: sql`SELECT 'session' AS phase, ${agentSessions.conversationId} AS "conversationId"
+        FROM ${agentSessions} WHERE ${eq(agentSessions.id, sessionId)} LIMIT 1 FOR UPDATE`,
+        };
+  }
   return threadId
     ? {
         ...facts,
         kind: "statement",
         phase: "thread",
-        sql: sql`SELECT 'thread' AS phase, ${chatThreads.agentSessionId} AS "agentSessionId", ${chatThreads.agentSessionRunId} AS "agentSessionRunId"
+        sql: sql`SELECT 'thread' AS phase, ${chatThreads.agentId} AS "threadAgentId", ${chatThreads.agentSessionId} AS "agentSessionId", ${chatThreads.agentSessionRunId} AS "agentSessionRunId"
       FROM ${chatThreads} WHERE ${eq(chatThreads.id, threadId)} LIMIT 1`,
       }
     : subscriptionStep(args, facts);
@@ -284,6 +311,7 @@ function advanceThreadSnapshot(
   const validatedThreadSession: ValidatedPendingThreadSession = Object.freeze({
     kind: "validated-thread-session-snapshot",
     chatThreadId: threadId,
+    threadAgentId: row.threadAgentId,
     agentSessionId: row.agentSessionId,
     agentSessionRunId: row.agentSessionRunId,
   });

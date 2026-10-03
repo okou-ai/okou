@@ -26,10 +26,7 @@ import {
 } from "../../../test-fixtures/model-catalog";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import {
-  readRunModelLaunchOptionsFixture,
-  readRunModelRuntimeRouteFixture,
-} from "../../../test-fixtures/agent-runs";
+import { readRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -299,23 +296,22 @@ describe("model catalog authority", () => {
     });
 
     await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
+      chatEvents.api.readRun(actor, run.runId),
     ).resolves.toMatchObject({
-      modelProvider: "built-in",
-      selectedModel: model,
-      modelRuntimeProvider: "openai-api-key",
-      modelRuntimeModel: upstreamModel,
-    });
-    await expect(
-      readRunModelLaunchOptionsFixture(run.runId),
-    ).resolves.toStrictEqual({
-      reasoningEffort: "low",
-      codexServiceTier: "fast",
+      source: {
+        providerType: "built-in",
+        runtimeProviderType: "openai-api-key",
+        model,
+      },
     });
     const { claim } = await chatEvents.claimChatRun(runnerGroup, run.runId);
     expect(claim).toMatchObject({
       cliAgentType: "codex",
       environment: { OPENAI_MODEL: upstreamModel },
+      platformEnvironment: {
+        OKOU_REASONING_EFFORT: "low",
+        OKOU_CODEX_SERVICE_TIER: "fast",
+      },
       billableFirewalls: ["model-provider:openai-api-key"],
       // Built-in usage is billed under the route's pricing link
       // (`usage_pricing` provider = the model ID).
@@ -603,15 +599,19 @@ describe("model catalog authority", () => {
       model,
     });
     await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
+      chatEvents.api.readRun(actor, run.runId),
     ).resolves.toMatchObject({
-      selectedModel: model,
-      modelRuntimeProvider: "openai-api-key",
-      modelRuntimeModel: secondUpstream,
+      source: {
+        providerType: "built-in",
+        runtimeProviderType: "openai-api-key",
+        model,
+      },
     });
     const { claim } = await chatEvents.claimChatRun(runnerGroup, run.runId);
     expect(claim).toMatchObject({
+      cliAgentType: "codex",
       environment: { OPENAI_MODEL: secondUpstream },
+      billableFirewalls: ["model-provider:openai-api-key"],
       modelUsageProvider: pricedProvider,
     });
   });

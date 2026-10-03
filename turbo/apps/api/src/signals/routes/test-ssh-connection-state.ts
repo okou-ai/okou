@@ -22,7 +22,6 @@ import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { matchSshConnectionCredentials } from "../services/ssh-connection.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -180,20 +179,6 @@ async function setLearnedHostKey(
   };
 }
 
-async function matchCredentials(
-  db: Db,
-  body: TestSshConnectionStateAction<"match-credentials">,
-) {
-  const result = await matchSshConnectionCredentials({ db, ...body });
-  if (!result) {
-    return { status: 400 as const, body: { error: "Connection not found" } };
-  }
-  return {
-    status: 200 as const,
-    body: { ok: true as const, ...result },
-  };
-}
-
 const mutateSshConnectionState$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!isTestEndpointAllowed(get(request$))) {
@@ -215,9 +200,6 @@ const mutateSshConnectionState$ = command(
       }
       case "set-learned-host-key": {
         return await setLearnedHostKey(db, bodyResult.data);
-      }
-      case "match-credentials": {
-        return await matchCredentials(db, bodyResult.data);
       }
     }
   },

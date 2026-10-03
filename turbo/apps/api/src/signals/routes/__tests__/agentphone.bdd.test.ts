@@ -35,6 +35,7 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
@@ -1486,7 +1487,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const ap = createAgentPhoneBddApi(context);
     const integrations = createBddIntegrationApi(context);
-    const runs = createRunsApi(context);
+    const reads = createRunReadsApi(context);
     const chat = createChatFilesBddApi(context);
     const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
     await integrations.enableOkouDebug(actor);
@@ -1524,11 +1525,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         "Oops, something went wrong. Please try again later.",
       ]),
     );
-    const runList = await runs.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(runList.runs).toStrictEqual([
+    const runList = await reads.requestListLogs(actor, { limit: 100 }, [200]);
+    expect(runList.body.data).toStrictEqual([
       expect.objectContaining({ id: activeRun.runId, status: "completed" }),
     ]);
     const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);

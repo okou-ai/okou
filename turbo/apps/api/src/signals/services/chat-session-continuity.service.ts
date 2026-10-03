@@ -1,5 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
@@ -18,6 +18,7 @@ export type ChatThreadSessionResolutionAction =
   | "rotated";
 
 export interface ChatThreadSessionSnapshot {
+  readonly threadAgentId: string | null;
   readonly agentSessionId: string | null;
   readonly agentSessionRunId: string | null;
   readonly sessionId: string | null;
@@ -81,11 +82,7 @@ export const chatThreadConversationRun = alias(
 
 export function chatThreadSessionSelection() {
   return {
-    threadAgentId: chatThreads.agentId,
-    agentSessionId: chatThreads.agentSessionId,
-    agentSessionRunId: chatThreads.agentSessionRunId,
     selectedModel: agentRuns.selectedModel,
-    cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
     session: {
       id: agentSessions.id,
       agentId: agentSessions.agentId,
@@ -110,6 +107,35 @@ export function chatThreadSessionSelection() {
   };
 }
 
+export function capturedChatThreadSessionSnapshot(
+  thread: ChatThreadRequestRow,
+  read:
+    | Omit<
+        ChatThreadSessionQuerySnapshot,
+        | "threadAgentId"
+        | "agentSessionId"
+        | "agentSessionRunId"
+        | "cloudBrowserEnabled"
+        | "agent"
+      >
+    | undefined,
+  agent: ChatThreadExecutionSnapshot["agent"],
+): ChatThreadSessionQuerySnapshot {
+  // Preserve the original LEFT JOIN's nullable session result when no session exists.
+  return {
+    threadAgentId: thread.agentId,
+    agentSessionId: thread.agentSessionId,
+    agentSessionRunId: thread.agentSessionRunId,
+    cloudBrowserEnabled: thread.cloudBrowserEnabled,
+    agent,
+    selectedModel: read?.selectedModel ?? null,
+    session: read?.session ?? null,
+    conversation: read?.conversation ?? null,
+    historyBlob: read?.historyBlob ?? null,
+    previousRun: read?.previousRun ?? null,
+  };
+}
+
 export function resolveChatThreadSessionSnapshot(
   thread: ChatThreadSessionQuerySnapshot,
   args: { readonly agentId: string; readonly route: ChatThreadSessionRoute },
@@ -117,6 +143,7 @@ export function resolveChatThreadSessionSnapshot(
   const session = thread.session;
   if (thread.agentSessionId !== null && session !== null) {
     const expected = {
+      threadAgentId: thread.threadAgentId,
       agentSessionId: thread.agentSessionId,
       agentSessionRunId: thread.agentSessionRunId,
       sessionId: session.id,
@@ -158,6 +185,7 @@ export function resolveChatThreadSessionSnapshot(
     action: thread.threadAgentId === args.agentId ? "initialized" : "rotated",
     resetNativeSession: thread.threadAgentId !== args.agentId,
     expected: {
+      threadAgentId: thread.threadAgentId,
       agentSessionId: thread.agentSessionId,
       agentSessionRunId: thread.agentSessionRunId,
       sessionId: null,

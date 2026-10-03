@@ -31,7 +31,6 @@ import {
 import { nowDate } from "../../lib/time";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
 import { sshCreationResult, resourceIdConflict } from "./ssh-creation.service";
 import {
@@ -768,53 +767,6 @@ export const resetSshConnectionHostKey$ = command(
     return { ok: true, value: toSshConnectionResponse(updated, credential) };
   },
 );
-
-export async function matchSshConnectionCredentials(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly connectionId: string;
-  readonly privateKey: string;
-  readonly passphrase: string | null;
-}): Promise<
-  | {
-      readonly privateKeyMatches: boolean;
-      readonly passphraseMatches: boolean;
-    }
-  | undefined
-> {
-  const connection = await findOwnerConnection(args.db, args);
-  if (!connection) {
-    return undefined;
-  }
-
-  const [credential] = await args.db
-    .select({
-      encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
-      encryptedPassphrase: sshCredentials.encryptedPassphrase,
-    })
-    .from(sshCredentials)
-    .where(eq(sshCredentials.id, connection.credentialId))
-    .limit(1);
-  if (!credential) {
-    throw new Error("SSH connection credential row is missing");
-  }
-
-  if (credential.encryptedPrivateKey === null) {
-    return { privateKeyMatches: false, passphraseMatches: false };
-  }
-  const privateKey = await decryptStoredSecretValue(
-    credential.encryptedPrivateKey,
-  );
-  const passphrase =
-    credential.encryptedPassphrase === null
-      ? null
-      : await decryptStoredSecretValue(credential.encryptedPassphrase);
-  return {
-    privateKeyMatches: privateKey === args.privateKey,
-    passphraseMatches: passphrase === args.passphrase,
-  };
-}
 
 function visibleSshAccessConfig(
   owner: { readonly orgId: string; readonly userId: string },
