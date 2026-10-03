@@ -757,6 +757,116 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect(probe.decryptCalls).toBe(0);
     await flushWaitUntilForTest();
   });
+  it.each([null, " private-passphrase-canary\n"])(
+    "protects private-key JIT with passphrase %j and rechecks chat authority after decryption",
+    async (passphrase) => {
+      const o = owner();
+      const c = await config();
+      const authentication = {
+        method: "private_key" as const,
+        privateKey: "  private-key-canary\n",
+        passphrase,
+      };
+      const h = (
+        await accept(
+          hosts().create({
+            headers,
+            body: {
+              id: randomUUID(),
+              displayName: "Key-authenticated private host",
+              host: "peer",
+              port: 2222,
+              credential: {
+                create: {
+                  name: "Independent SSH key",
+                  username: "key-user",
+                  authentication,
+                },
+              },
+              transport: { type: "tailscale", configId: c.id },
+            },
+          }),
+          [201],
+        )
+      ).body;
+      const metadata = JSON.stringify(await resources());
+      for (const value of [
+        oauth.clientId,
+        oauth.clientSecret,
+        authentication.privateKey,
+        ...(passphrase === null ? [] : [passphrase]),
+      ]) {
+        expect(metadata).not.toContain(value.trim());
+      }
+      const r = await ordinary.runtime(o);
+      const params = { runId: r.runId };
+      const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
+      await accept(
+        remote().updateHostDefault({
+          headers,
+          params: { protocol: "ssh", connectionId: h.id },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const probe = useSecretKmsProbe();
+      const resolved = await accept(
+        runner().resolve({ headers: runnerHeaders, params, body }),
+        [200],
+      );
+      expect(resolved.body).toStrictEqual({
+        outcome: "resolved_tailscale",
+        host: h.host,
+        port: h.port,
+        username: "key-user",
+        generation: h.generation,
+        learnedHostKey: null,
+        authentication,
+        tailscale: {
+          ...oauth,
+          configId: c.id,
+          generation: c.generation,
+          tags: c.tags,
+        },
+      });
+      expect(probe.decryptCalls).toBeGreaterThan(0);
+      const decryptsBeforeHandoff = probe.decryptCalls;
+      const revoked = useSecretKmsProbe(undefined, async (_request, call) => {
+        // Revoke at the final external decrypt, including the optional passphrase.
+        if (call === decryptsBeforeHandoff) {
+          await accept(
+            remote().setThreadOverride({
+              headers,
+              params: {
+                threadId: r.threadId,
+                protocol: "ssh",
+                connectionId: h.id,
+              },
+              body: { enabled: false },
+            }),
+            [200],
+          );
+        }
+        return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
+      });
+      const denied = await accept(
+        runner().resolve({ headers: runnerHeaders, params, body }),
+        [200],
+      );
+      expect(revoked.decryptCalls).toBe(decryptsBeforeHandoff);
+      expect(denied.body).toStrictEqual({ outcome: "unavailable" });
+      const unauthorized = useSecretKmsProbe();
+      expect(
+        (
+          await accept(
+            runner().resolve({ headers: runnerHeaders, params, body }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ outcome: "unavailable" });
+      expect(unauthorized.decryptCalls).toBe(0);
+    },
+  );
   it("rechecks current network authority after KMS without holding DB locks across decryption", async () => {
     const o = owner();
     const c = await config();
