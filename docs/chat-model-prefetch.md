@@ -13,6 +13,12 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   subscription preparation. Routing admission, final admission and refresh
   preparation share this read. Entitlement CAS and allowance window activation
   remain in the launch transaction; they are not speculative reads.
+- `credits$`: one org/member balance snapshot. Expired organization credits and
+  unexpired member usage-pack grants are each aggregated once with the same
+  captured cutoff; routing-credit and final admission consume this computed.
+- `memberMetadata$`: one org/user owner for profile, timezone, image-model,
+  selected-model and service-tier preferences. S1 model selection and S3 runtime
+  metadata consume the same union result; missing preferences remain authoritative.
 - `modelFacts$`: the catalog, routes, organization policies, model mode and credits.
   It shares `plan$` rather than rereading the entitlement.
 - `memberModels$`: connected member model accounts, configured models and encrypted
@@ -31,14 +37,15 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 - `storageCache$`: a pure projection of all three read-only URL-cache scopes
   returned by index/revision JOINs. It issues no separate SQL. Missing cache
   rows are authoritative; local signing does not reread them.
-- `memberMetadata$`, `permissionGrants$`, `workflows$`, `featureSwitches$`,
+- `permissionGrants$`, `workflows$`, `featureSwitches$`,
   `disabledPaidTools$`, `environment$`, `connectorSelection$`,
   `customConnectorDefinitions$` and `catalog$`: individually consumable groups.
   The Connector selection statement returns grants and custom definitions once;
   catalog consumers share one captured generation without S3 revalidation.
 
 S1 creates the interface once. Authorization reads `agent$`; model validation
-reads `modelFacts$` and `memberModels$`. It does not await unrelated groups.
+reads `modelFacts$`, `memberModels$` and the member preference owner
+`memberMetadata$`. It does not await unrelated groups.
 After enqueue commits, `preloadAgentRunContext$` triggers all groups without
 awaiting them and owns their settled promises with `waitUntil`. Rejections stay
 cached in the original computeds; consumers fail fast without a second loader.
@@ -51,7 +58,9 @@ The lease UPDATE joins `chat_threads` and returns `userId` and `agentId` with it
 existing claim fields in one statement. At the start of pick, matching IDs reuse
 the supplied interface. Missing or mismatched IDs construct the same factory.
 An organization match reuses `plan$` and `modelFacts$`; an organization-and-user
-match also reuses `memberModels$`, independent of Agent identity. Only the whole
+match also reuses `memberModels$`, `memberMetadata$` and `credits$`, independent
+of Agent identity. A missing-context pick starts the same batch preload with the
+same snapshot shapes before consuming any of these groups. Only the whole
 read-only interface crosses into Thread; pick's individual graph nodes do not.
 The request Store memoizes the computeds. Later-request queue drains build their
 own interface, and no process cache or age policy is introduced.
@@ -63,8 +72,10 @@ The ordinary web path does not wait for the queue head to begin identity reads.
 ## Credit and plan semantics
 
 Ethan approved using the captured credits balance on October 2, 2026. Both
-preparation admission checks use that snapshot. Expired-credit and usage-pack
-calculations retain their existing reads. Another run's spending or a payment
+preparation admission checks use that snapshot. The D-group extension captures
+expired-credit and usage-pack totals once in `credits$`, with one shared cutoff
+and the existing safe-integer/null contracts. Both credit consumers use `get`
+instead of reaggregating the tables. Another run's spending or a payment
 between capture and admission does not replace the balance snapshot.
 The captured plan also determines the free-plan admission bit. Thread does not
 restore plan `FOR UPDATE`; the Pi maintenance entrypoint also captures the plan
@@ -182,7 +193,8 @@ flush that would deadlock the suspended reader.
    refresh, retry or unbounded cache belongs in this interface.
 2. Declare the exact identity key. Org-only groups may be reused on an org
    match (`plan$`, `modelFacts$`, `orgMetadata$`). Org+user groups may be reused
-   when those two IDs match (`memberModels$`), regardless of Agent. Agent grants,
+   when those two IDs match (`memberModels$`, `memberMetadata$`, `credits$`),
+   regardless of Agent. Agent grants,
    workflow choices, permission scope and Agent-dependent Connector material
    require the full `(orgId, userId, agentId)` match. Add the appropriate reuse
    fields to pick's context reconciliation; never accept a broader key than the
