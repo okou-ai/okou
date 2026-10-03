@@ -7760,6 +7760,10 @@ export function createThreadClaimRunObjects(
   // Capture the exact eager plan before preloading its read-only context.
   const preloadEagerCredentials$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      if (!(await get(selectionInput$))) {
+        signal.throwIfAborted();
+        return;
+      }
       const context = await get(eagerCredentialContext$);
       signal.throwIfAborted();
       set(preloadEagerConnectorCredentialContext$, context, signal);
