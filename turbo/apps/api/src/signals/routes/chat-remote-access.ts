@@ -9,14 +9,13 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
-import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   clearThreadRemoteAccessOverride$,
-  listRemoteHostDefaults,
-  listThreadRemoteAccess,
+  listRemoteHostDefaults$,
+  listThreadRemoteAccess$,
   setThreadRemoteAccessOverride$,
-  updateRemoteHostDefault,
+  updateRemoteHostDefault$,
 } from "../services/chat-remote-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
@@ -50,11 +49,7 @@ const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
   const includeVnc =
     context.vncEnabled &&
     (await hasCurrentVncMembership(get(clerk$), context.auth, signal));
-  const body = await listRemoteHostDefaults(
-    get(db$),
-    context.owner,
-    includeVnc,
-  );
+  const body = await set(listRemoteHostDefaults$, context.owner, includeVnc);
   signal.throwIfAborted();
   return { status: 200 as const, body };
 });
@@ -79,8 +74,8 @@ const updateHostDefault$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const result = await updateRemoteHostDefault(
-      set(writeDb$),
+    const result = await set(
+      updateRemoteHostDefault$,
       { ...context.owner, connectionId: params.connectionId },
       params.protocol,
       body.data.enabled,
@@ -96,8 +91,8 @@ const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   const includeVnc =
     context.vncEnabled &&
     (await hasCurrentVncMembership(get(clerk$), context.auth, signal));
-  const result = await listThreadRemoteAccess(
-    get(db$),
+  const result = await set(
+    listThreadRemoteAccess$,
     { ...context.owner, chatThreadId: params.threadId },
     includeVnc,
   );
