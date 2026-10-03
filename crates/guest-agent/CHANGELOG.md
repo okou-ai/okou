@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.103.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.3...guest-agent-v0.103.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* **guest-agent:** retry session history uploads ([#37590](https://github.com/okou-ai/okou/issues/37590)) ([6f9a019](https://github.com/okou-ai/okou/commit/6f9a019bdb3a28c725f395a9e26f7c7461b818b4))
+* preserve pi length completion and cap luna effort at xhigh ([#37607](https://github.com/okou-ai/okou/issues/37607)) ([acb1094](https://github.com/okou-ai/okou/commit/acb10941881de41850f70ab3a4930f22041812b0))
+
 ## [0.103.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.2...guest-agent-v0.103.3) (2026-10-02)
 
 ## [0.103.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.1...guest-agent-v0.103.2) (2026-10-02)

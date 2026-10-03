@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.991.4](https://github.com/okou-ai/okou/compare/app-v0.991.3...app-v0.991.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* preserve pi length completion and cap luna effort at xhigh ([#37607](https://github.com/okou-ai/okou/issues/37607)) ([acb1094](https://github.com/okou-ai/okou/commit/acb10941881de41850f70ab3a4930f22041812b0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/ui bumped to 1.12.2
+
 ## [0.991.3](https://github.com/okou-ai/okou/compare/app-v0.991.2...app-v0.991.3) (2026-10-03)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.4...runner-provider-v0.5.5) (2026-10-03)
+
+
+### Bug Fixes
+
+* **runner:** track cached firewall catalog connection resets ([#37587](https://github.com/okou-ai/okou/issues/37587)) ([1ac40a6](https://github.com/okou-ai/okou/commit/1ac40a63b5787c5aacaafde47ada7a4eb6298f9c))
+
 ## [0.5.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.3...runner-provider-v0.5.4) (2026-10-03)
 
 
