@@ -8930,6 +8930,7 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
       const captured = { ...input, at: nowDate() };
       const identity = await get(queuedIdentityContext$);
+      signal.throwIfAborted();
       const [models, memberModels] = await Promise.all([
         get(identity.modelFacts$),
         get(identity.memberModels$),
