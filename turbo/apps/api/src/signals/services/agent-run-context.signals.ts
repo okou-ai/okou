@@ -26,18 +26,13 @@ import {
   type OfficialWorkflowContextFacts,
 } from "./official-workflow-context.signals";
 import {
-  createModelFacts,
   createMemberModelBootstrap,
   type OrgModelBootstrap,
   type MemberModelBootstrap,
   type RunOrgMetadata,
 } from "./model-bootstrap.service";
-import {
-  loadOrgPlanCapabilities,
-  type OrgPlanCapabilities,
-} from "./org-plan-entitlement-read.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { z } from "zod";
 import {
   pgInt8ToBigIntDecoder,
@@ -85,11 +80,18 @@ import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-c
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
+import { createExecutionMemberContext } from "./execution-member-context.service";
 import {
-  createExecutionMemberMetadata,
-  type ExecutionMemberMetadata,
-} from "./execution-member-metadata.service";
+  createExecutionOrgRows,
+  executionOrgMetadata,
+  executionOrgPlan,
+  executionOrgSlots,
+  executionExpiredCredits,
+  executionOrgPolicies,
+} from "./execution-org-context.service";
+import { createModelCatalog } from "./model-catalog.service";
+import { orgModelPolicyFactsFromSnapshot } from "./model-policy.service";
 import {
   createAgentConnectorSelection,
   type AgentConnectorSelection,
@@ -102,9 +104,8 @@ import {
   createAgentWorkflowSelection,
   type SelectedAgentWorkflow,
 } from "./execution-agent-workflows.service";
-import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { variables } from "@okouai/db/schema/variable";
-import { and, asc, count, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, count, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { connectorCatalogRuntimeProjections } from "@okouai/db/schema/connector-catalog";
 import type { ConnectorCatalogArtifactConnector } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
@@ -116,16 +117,11 @@ import {
 } from "./usage-allowance-context.service";
 
 import {
-  executionCreditQueries,
   executionCreditBalance,
   type ExecutionCreditBalance,
 } from "./execution-credit-balance.service";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { now, nowDate } from "../../lib/time";
-import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
+import { now } from "../../lib/time";
 import {
-  activeConcurrencySubscriptionPredicate,
   totalConcurrencyLimit,
   cappedBaseConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
@@ -153,6 +149,7 @@ export interface AgentRunContextSignals {
   readonly orgId: string;
   readonly agentId: string;
   readonly agent$: Computed<Promise<BootstrapAgent | null>>;
+  readonly orgRows$: ReturnType<typeof createExecutionOrgRows>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
   readonly concurrencyCapacity$: Computed<Promise<number>>;
@@ -349,34 +346,6 @@ function createModelSourceGroups(
   };
 }
 
-function createRunOrgPlan(orgId: string) {
-  return computed((get) => {
-    return loadOrgPlanCapabilities(get(db$), orgId);
-  });
-}
-
-function createOrgCapacity(orgId: string) {
-  const plan$ = createRunOrgPlan(orgId);
-  const concurrencyCapacity$ = computed(async (get) => {
-    const at = nowDate();
-    const [plan, subscriptions] = await Promise.all([
-      get(plan$),
-      get(db$)
-        .select({ slots: orgConcurrencySubscriptions.slots })
-        .from(orgConcurrencySubscriptions)
-        .where(activeConcurrencySubscriptionPredicate(orgId, at)),
-    ]);
-    const limit = totalConcurrencyLimit({
-      baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
-      paidSlots: subscriptions.reduce((total, row) => {
-        return total + row.slots;
-      }, 0),
-    });
-    return Number.isFinite(limit) ? limit : 0;
-  });
-  return { plan$, concurrencyCapacity$ };
-}
-
 function capturedFeatureSwitchContext(
   scope: { readonly orgId: string; readonly userId: string },
   member: ExecutionMemberMetadata,
@@ -391,6 +360,66 @@ function requirePreparedContextAgent(agent: BootstrapAgent | null): void {
   }
 }
 
+function createOrgContext(orgId: string, supplied?: AgentRunContextSignals) {
+  const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
+  const orgRows$ = sharedOrg?.orgRows$ ?? createExecutionOrgRows(orgId);
+  const orgMetadata$ =
+    sharedOrg?.orgMetadata$ ??
+    computed(async (get) => {
+      return executionOrgMetadata(await get(orgRows$));
+    });
+  const plan$ =
+    sharedOrg?.plan$ ??
+    computed(async (get) => {
+      return executionOrgPlan(await get(orgRows$), orgId);
+    });
+  const concurrencyCapacity$ =
+    sharedOrg?.concurrencyCapacity$ ??
+    computed(async (get) => {
+      const [plan, rows] = await Promise.all([get(plan$), get(orgRows$)]);
+      const limit = totalConcurrencyLimit({
+        baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
+        paidSlots: executionOrgSlots(rows),
+      });
+      return Number.isFinite(limit) ? limit : 0;
+    });
+  const modelCatalog$ = createModelCatalog();
+  const allowance$ =
+    sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
+  const modelFacts$ =
+    sharedOrg?.modelFacts$ ??
+    computed(async (get) => {
+      const [capabilities, org, catalog, rows] = await Promise.all([
+        get(plan$),
+        get(orgMetadata$),
+        get(modelCatalog$),
+        get(orgRows$),
+      ]);
+      const policies = executionOrgPolicies(rows);
+      return {
+        orgId,
+        org,
+        capabilities,
+        catalog,
+        policies,
+        policyFacts: orgModelPolicyFactsFromSnapshot({
+          catalog,
+          orgId,
+          orgPlanCapabilities: capabilities,
+          stored: policies,
+        }),
+      };
+    });
+  return {
+    orgRows$,
+    orgMetadata$,
+    plan$,
+    concurrencyCapacity$,
+    allowance$,
+    modelFacts$,
+  };
+}
+
 function createIdentityContext(
   userId: string,
   orgId: string,
@@ -398,19 +427,19 @@ function createIdentityContext(
   supplied?: AgentRunContextSignals,
 ): AgentRunContextSignals {
   const scope = { userId, orgId, agentId };
-  const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
-  const orgMetadata$ = sharedOrg?.orgMetadata$ ?? createRunOrgMetadata(orgId);
+  const {
+    orgRows$,
+    orgMetadata$,
+    plan$,
+    concurrencyCapacity$,
+    allowance$,
+    modelFacts$,
+  } = createOrgContext(orgId, supplied);
   const modelSources = createModelSourceGroups(orgId, supplied);
-  const { plan$, concurrencyCapacity$ } = sharedOrg ?? createOrgCapacity(orgId);
-  const allowance$ =
-    sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
-  const modelFacts$ =
-    sharedOrg?.modelFacts$ ??
-    computed(async (get) => {
-      const [plan, org] = await Promise.all([get(plan$), get(orgMetadata$)]);
-      return await get(createModelFacts(orgId, plan, org));
-    });
-  const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
+  const sharedMember =
+    supplied?.orgId === orgId && supplied.userId === userId
+      ? supplied
+      : undefined;
   const memberModels$ =
     sharedMember?.memberModels$ ?? createMemberModelBootstrap(orgId, userId);
   const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
@@ -424,25 +453,19 @@ function createIdentityContext(
     ]);
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
-  const { memberMetadata$, credits$ } = sharedMember ?? {
-    memberMetadata$: createExecutionMemberMetadata(scope),
-    credits$: computed(async (get): Promise<ExecutionCreditBalance | null> => {
-      const db = get(db$);
-      const queries = executionCreditQueries(scope, nowDate());
-      const [org, [expired], [pack]] = await Promise.all([
+  const memberContext = createExecutionMemberContext(scope);
+  const memberMetadata$ =
+    sharedMember?.memberMetadata$ ?? memberContext.metadata$;
+  const credits$ =
+    sharedMember?.credits$ ??
+    computed(async (get): Promise<ExecutionCreditBalance | null> => {
+      const [org, rows, pack] = await Promise.all([
         get(orgMetadata$),
-        db
-          .select(queries.expired.fields)
-          .from(creditExpiresRecord)
-          .where(queries.expired.where),
-        db
-          .select(queries.pack.fields)
-          .from(usagePackCreditGrants)
-          .where(queries.pack.where),
+        get(orgRows$),
+        get(memberContext.packCredits$),
       ]);
-      return executionCreditBalance(org, expired?.total ?? 0, pack?.total ?? 0);
-    }),
-  };
+      return executionCreditBalance(org, executionExpiredCredits(rows), pack);
+    });
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
   const permissionGrants$ = createConnectorPermissionGrants(scope);
   const workflows$ = createAgentWorkflowSelection(scope);
@@ -474,14 +497,14 @@ function createIdentityContext(
   const storageCache$ = computed(async (get) => {
     return agentStorageCacheSnapshot(await get(storage$));
   });
-  const featureSwitchOverrides$ = userFeatureSwitchOverrides(orgId, userId);
-  const disabledPaidTools$ = createAgentDisabledPaidTools(userId, orgId);
+  const disabledPaidTools$ =
+    sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
   const featureSwitchContext$ =
     sharedMember?.featureSwitches$ ??
     computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
       const [member, overrides] = await Promise.all([
         get(memberMetadata$),
-        get(featureSwitchOverrides$),
+        get(memberContext.overrides$),
       ]);
       return capturedFeatureSwitchContext(scope, member, overrides);
     });
@@ -493,6 +516,7 @@ function createIdentityContext(
   return {
     ...scope,
     agent$,
+    orgRows$,
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
@@ -533,6 +557,7 @@ export const preloadAgentRunContext$ = command(
       signals.connectors$,
       signals.storage$,
       signals.agent$,
+      signals.orgRows$,
       signals.orgMetadata$,
       signals.plan$,
       signals.concurrencyCapacity$,
@@ -773,24 +798,6 @@ async function bootstrapAcceptedCatalog(captured: CapturedAgentCatalog) {
     );
   }
   return snapshot;
-}
-
-function createAgentDisabledPaidTools(userId: string, orgId: string) {
-  return computed(async (get): Promise<readonly string[]> => {
-    const rows = await get(db$)
-      .select({ toolId: userDisabledPaidTools.toolId })
-      .from(userDisabledPaidTools)
-      .where(
-        and(
-          eq(userDisabledPaidTools.orgId, orgId),
-          eq(userDisabledPaidTools.userId, userId),
-        ),
-      )
-      .orderBy(asc(userDisabledPaidTools.toolId));
-    return rows.map((row) => {
-      return row.toolId;
-    });
-  });
 }
 
 const bootstrapVariablesDecoder = zodDriverValueDecoder(
@@ -1042,21 +1049,6 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
       )
       .groupBy(secrets.connectorId),
   );
-}
-
-function createRunOrgMetadata(orgId: string) {
-  return computed(async (get) => {
-    const [row] = await get(db$)
-      .select({
-        credits: orgMetadata.credits,
-        modelMode: orgMetadata.modelMode,
-        defaultAgentId: orgMetadata.defaultAgentId,
-      })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1);
-    return row ?? null;
-  });
 }
 
 /** Connector groups share one account/environment statement and one catalog capture. */

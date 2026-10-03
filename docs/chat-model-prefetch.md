@@ -7,6 +7,7 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 
 ## Independently consumable groups
 
+- `orgRows$`: raw results of the organization-level shared statement, only for derived nodes; reused only for matching `orgId` and started by preload. Metadata, plan, capacity, expired credits and policies decode independently, so a domain invariant failure does not reject the shared transport promise.
 - `agent$`: Agent configuration and its organization-default identity.
 - `plan$`: organization plan capabilities, shared with capacity and admission.
 - `concurrencyCapacity$`: org-keyed subscription slots plus the captured plan's
@@ -20,12 +21,20 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   remain in the launch transaction; they are not speculative reads.
 - `credits$`: one org/member balance snapshot. Expired organization credits and
   unexpired member usage-pack grants are each aggregated once with the same
-  captured cutoff; routing-credit and final admission consume this computed.
+  captured statement cutoffs; routing-credit and final admission consume this computed.
+  Cross-user reuse combines shared `orgRows$` with the new member's usage-pack
+  aggregate, never with the previous member's `credits$`.
 - `memberMetadata$`: one org/user owner for profile, timezone, image-model,
   selected-model and service-tier preferences. S1 model selection and S3 runtime
   metadata consume the same union result; missing preferences remain authoritative.
+  The member UNION also captures feature-switch rows (member and organization sentinel),
+  ordered disabled tools and the member usage-pack aggregate. Each consumer decodes
+  only its own payload; standalone Pi maintenance retains its independent metadata read.
 - `modelFacts$`: the catalog, routes, organization policies, model mode and credits.
-  It shares `plan$` rather than rereading the entitlement.
+  It shares `plan$` rather than rereading the entitlement. The catalog node is
+  created once outside the derived callback and starts alongside `orgRows$`;
+  catalog SQL no longer waits for plan or metadata resolution. Policies come
+  from the shared organization statement.
 - `memberModels$`: member providers, connected accounts, configured models and
   encrypted provider/account secrets, joined once for `(orgId, userId)`. Routing,
   exact source selection and subscription candidate capture share these rows.
@@ -77,7 +86,7 @@ post-claim preload. There is no `bootstrap$` aggregate and no transported
 The lease UPDATE joins `chat_threads` and returns `userId` and `agentId` with its
 existing claim fields in one statement. At the start of pick, matching IDs reuse
 the supplied interface. Missing or mismatched IDs construct the same factory.
-An organization match reuses `plan$`, `concurrencyCapacity$` and `modelFacts$`; an organization-and-user
+An organization match reuses `orgRows$`, `plan$`, `concurrencyCapacity$` and `modelFacts$`; an organization-and-user
 match also reuses `memberModels$`, `memberMetadata$` and `credits$`, independent
 of Agent identity. A missing-context pick starts the same batch preload with the
 same snapshot shapes before consuming any of these groups. Only the whole
@@ -92,8 +101,8 @@ The ordinary web path does not wait for the queue head to begin identity reads.
 ## Credit and plan semantics
 
 Ethan approved using the captured credits balance on October 2, 2026. Both
-preparation admission checks use that snapshot. The D-group extension captures
-expired-credit and usage-pack totals once in `credits$`, with one shared cutoff
+preparation admission checks use that snapshot. The J-group extension captures
+expired-credit and usage-pack totals once in the organization and member statements, with independently captured statement cutoffs
 and the existing safe-integer/null contracts. Both credit consumers use `get`
 instead of reaggregating the tables. Another run's spending or a payment
 between capture and admission does not replace the balance snapshot.
@@ -104,6 +113,11 @@ Its credential, subscription, job/version and allowance activation fences
 remain unchanged. Account transaction validation, official workflow
 pointer/installation/automation admission, thread/session, lease and queue
 fences remain intact.
+
+`allowance$` remains a separate statement in J: its multiple windows require
+ordering and it owns independent GET-only Stripe refresh preparation. Combining
+it would expand the shared statement and decoding scope without being necessary
+for the organization/member batching. Live allowance activation is unchanged.
 
 ## Subscription capacity snapshot semantics (H group)
 
