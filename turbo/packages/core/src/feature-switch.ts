@@ -343,6 +343,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatRunningIndicatorWave]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Make running chat indicators breathe in a top-to-bottom wave through the sidebar.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatThreadMuting]: {
     maintainer: "ethan@okou.ai",
     description:

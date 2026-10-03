@@ -243,10 +243,11 @@
      animate `transform`, so consumers must set `transform` rather than the
      individual `translate`/`scale` properties, which would compose on top of
      the animation instead of being replaced by it. */
-  --animate-running-indicator-center: running-indicator-center 2400ms
-    cubic-bezier(0.33, 0, 0.66, 1) infinite;
-  --animate-running-indicator-ripple: running-indicator-ripple 2400ms ease-out
-    infinite;
+  --duration-running-indicator: 2400ms;
+  --animate-running-indicator-center: running-indicator-center
+    var(--duration-running-indicator) cubic-bezier(0.33, 0, 0.66, 1) infinite;
+  --animate-running-indicator-ripple: running-indicator-ripple
+    var(--duration-running-indicator) ease-out infinite;
 
   /* ===================================
    * Input System

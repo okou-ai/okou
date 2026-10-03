@@ -1,7 +1,14 @@
-import { type AnimationEvent, type HTMLAttributes } from "react";
+import {
+  type AnimationEvent,
+  type CSSProperties,
+  type HTMLAttributes,
+} from "react";
 import { cn } from "../../lib/utils";
 
-type RunningIndicatorProps = HTMLAttributes<HTMLSpanElement>;
+type RunningIndicatorProps = HTMLAttributes<HTMLSpanElement> & {
+  /** Fraction of a breathing cycle by which this indicator trails phase zero. */
+  phaseOffset?: number;
+};
 
 function synchronizeAnimation({
   currentTarget,
@@ -23,7 +30,19 @@ function synchronizeAnimation({
  * not started yet — iOS WebKit after the mobile sidebar becomes visible — still
  * sits where the first frame puts it.
  */
-function RunningIndicator({ className, ...rest }: RunningIndicatorProps) {
+function RunningIndicator({
+  className,
+  style,
+  phaseOffset = 0,
+  ...rest
+}: RunningIndicatorProps) {
+  // Equivalent nonpositive delay: enter the wave immediately, even on a young
+  // document or at a large list index. CSS updates preserve the shared origin.
+  const phasedStyle: CSSProperties & { "--running-indicator-phase": number } = {
+    ...style,
+    "--running-indicator-phase": ((phaseOffset % 1) - 1) % 1,
+  };
+
   return (
     <span
       aria-hidden="true"
@@ -31,15 +50,16 @@ function RunningIndicator({ className, ...rest }: RunningIndicatorProps) {
         "relative inline-flex size-[0.86rem] rounded-full text-sky-600",
         className,
       )}
+      style={phasedStyle}
       {...rest}
     >
       <span
-        className="absolute top-1/2 left-1/2 rounded-[inherit] origin-center size-[calc(100%-5px)] bg-current opacity-[0.34] [transform:translate(-50%,-50%)_scale(0.64)] animate-running-indicator-center"
+        className="absolute top-1/2 left-1/2 rounded-[inherit] origin-center size-[calc(100%-5px)] bg-current opacity-[0.34] [transform:translate(-50%,-50%)_scale(0.64)] [animation-delay:calc(var(--running-indicator-phase)*var(--duration-running-indicator))] animate-running-indicator-center"
         onAnimationStart={synchronizeAnimation}
         aria-hidden
       />
       <span
-        className="absolute top-1/2 left-1/2 rounded-[inherit] origin-center size-[calc(100%-3px)] border border-current opacity-0 [transform:translate(-50%,-50%)_scale(0.8)] animate-running-indicator-ripple"
+        className="absolute top-1/2 left-1/2 rounded-[inherit] origin-center size-[calc(100%-3px)] border border-current opacity-0 [transform:translate(-50%,-50%)_scale(0.8)] [animation-delay:calc(var(--running-indicator-phase)*var(--duration-running-indicator))] animate-running-indicator-ripple"
         onAnimationStart={synchronizeAnimation}
         aria-hidden
       />
