@@ -175,6 +175,9 @@ surface; the index does not replace their detailed rules.
   local source and restored payload sizes, representation and timing semantics.
 - [Admission-lock timing](./admission-lock-timing.md): attempt-scoped API launch
   critical-section attribution, retry identity and production readout limits.
+- [Shared Connector context observations](./connector-context-observations.md):
+  preloaded shared query/pool/materialization attribution, bounded coverage and
+  same-Run critical-path decision limits.
 - [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
   early download, apply-gate and publication timing with cancellation semantics.
 - [Guest archive connection observation](./guest-archive-connection-observation.md):

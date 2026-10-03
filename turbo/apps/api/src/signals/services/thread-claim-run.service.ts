@@ -25,6 +25,7 @@ import {
 import {
   matchAgentRunContextSignals,
   type AgentRunContextSignals,
+  type BootstrapConnectorObservation,
 } from "./agent-run-context.signals";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import {
@@ -7364,30 +7365,55 @@ export function createThreadClaimRunObjects(
         return source.sourceId;
       }),
     );
-    return (
-      await get((await get(executionContext$)).connectors$)
-    ).connectorSources.filter((result) => {
-      const source =
-        result.kind === "available" ? result.snapshot.source : result.source;
-      return source.kind === "custom" && ids.has(source.sourceId);
-    });
+    const context = await get((await get(executionContext$)).connectors$);
+    return {
+      sources: context.connectorSources.filter((result) => {
+        const source =
+          result.kind === "available" ? result.snapshot.source : result.source;
+        return source.kind === "custom" && ids.has(source.sourceId);
+      }),
+      observation: context.observation,
+      scopeSource: scope.source,
+      requestedCustomCount: scope.allowedCustomConnectorIds.length,
+    };
   });
   const runCustomConnectorStoredRows$ = computed(
     async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
       const { timing } = await get(connectorInput$);
       const startedAt = now();
-      const results = await get(runCustomConnectorSources$);
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_custom_connector_value_rows",
-        "nested",
-        startedAt,
-        now(),
-      );
-      return results.flatMap((result) => {
-        return result.kind === "available"
-          ? customConnectorSourceStorageRows(result.snapshot)
+      const result = await get(runCustomConnectorSources$);
+      const finishedAt = now();
+      bestEffortTelemetry(() => {
+        const dimensions = connectorContextTimingDimensions(result);
+        timing.recordElapsed(
+          "api_dispatch_prepare_context_load_custom_connector_value_rows",
+          "nested",
+          startedAt,
+          finishedAt,
+          dimensions,
+        );
+        recordConnectorContextObservation(
+          timing,
+          result.observation,
+          dimensions,
+        );
+      });
+      const projectionStartedAt = performance.now();
+      const rows = result.sources.flatMap((source) => {
+        return source.kind === "available"
+          ? customConnectorSourceStorageRows(source.snapshot)
           : [];
       });
+      bestEffortTelemetry(() => {
+        timing.recordDuration(
+          "api_dispatch_prepare_context_project_custom_connector_value_rows",
+          "nested",
+          performance.now() - projectionStartedAt,
+          now(),
+          connectorContextTimingDimensions(result),
+        );
+      });
+      return rows;
     },
   );
   const runCustomConnectorPermissionBundles$ = computed(async (get) => {
@@ -13590,6 +13616,115 @@ async function buildNewRunCustomConnectorRuntimeContext(
       return skill ? [skill] : [];
     }),
   };
+}
+
+function connectorContextTimingDimensions(args: {
+  readonly observation: BootstrapConnectorObservation | undefined;
+  readonly scopeSource: ConnectorScopeSource;
+  readonly requestedCustomCount: number;
+  readonly sources: readonly unknown[];
+}): ApiDispatchTimingDimensions {
+  const observation = args.observation;
+  return {
+    connector_context_schema: "shared_v1",
+    connector_value_rows_semantics: "shared_context_wait_v1",
+    connector_scope_source: args.scopeSource,
+    connector_context_requested_custom_count_bucket: countBucket(
+      args.requestedCustomCount,
+    ),
+    connector_context_candidate_custom_count_bucket: countBucket(
+      args.sources.length,
+    ),
+    connector_context_observation: !observation
+      ? "missing"
+      : observation.query &&
+          observation.materialize &&
+          observation.sources &&
+          observation.builtinResolve &&
+          observation.builtinDecrypt
+        ? "complete"
+        : "partial",
+    ...(observation
+      ? {
+          connector_context_returned_row_count_bucket: countBucket(
+            observation.returnedRowCount,
+          ),
+          connector_context_account_count_bucket: countBucket(
+            observation.accountCount,
+          ),
+          connector_context_custom_account_count_bucket: countBucket(
+            observation.customAccountCount,
+          ),
+          connector_context_stored_value_count_bucket: countBucket(
+            observation.storedValueCount,
+          ),
+          connector_context_builtin_decrypt_count_bucket: countBucket(
+            observation.builtinDecryptCount,
+          ),
+          connector_context_pool_capture:
+            observation.acquisitions.length === 1
+              ? "single"
+              : observation.acquisitions.length === 0
+                ? "missing"
+                : "multiple",
+        }
+      : {}),
+  };
+}
+
+function recordConnectorContextObservation(
+  timing: ApiDispatchTimingCollector,
+  observation: BootstrapConnectorObservation | undefined,
+  dimensions: ApiDispatchTimingDimensions,
+): void {
+  if (!observation) {
+    return;
+  }
+  const stages = [
+    [
+      "api_dispatch_prepare_context_connector_context_environment_query",
+      observation.query,
+    ],
+    [
+      "api_dispatch_prepare_context_connector_context_environment_materialize",
+      observation.materialize,
+    ],
+    [
+      "api_dispatch_prepare_context_connector_context_sources_materialize",
+      observation.sources,
+    ],
+    [
+      "api_dispatch_prepare_context_connector_context_builtin_resolve",
+      observation.builtinResolve,
+    ],
+    [
+      "api_dispatch_prepare_context_connector_context_builtin_decrypt",
+      observation.builtinDecrypt,
+    ],
+  ] as const;
+  for (const [actionType, duration] of stages) {
+    if (duration) {
+      timing.recordDuration(
+        actionType,
+        "nested",
+        duration.durationMs,
+        duration.finishedAt,
+        dimensions,
+      );
+    }
+  }
+  // This canonical statement should acquire exactly one client. Do not invent
+  // zero wait or combine multiple acquisition intervals if coverage differs.
+  const [acquisition] = observation.acquisitions;
+  if (observation.acquisitions.length === 1 && acquisition) {
+    timing.recordDuration(
+      "api_dispatch_prepare_context_connector_context_pool_acquire",
+      "nested",
+      acquisition.durationMs,
+      acquisition.finishedAt,
+      { ...dimensions, connector_context_pool_acquire_path: acquisition.path },
+    );
+  }
 }
 
 function storedConnectorTimingDimensions(args: {

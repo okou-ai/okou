@@ -1,4 +1,10 @@
 import { command, computed, type Computed } from "ccstate";
+import { performance } from "node:perf_hooks";
+import {
+  withPgPoolAcquisitionCapture,
+  type PgPoolAcquisition,
+  type PgPoolAcquisitionCapture,
+} from "../../lib/db-instrumentation";
 import {
   createOrgModelSources,
   createGatewayModelSources,
@@ -39,7 +45,7 @@ import {
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { mapConcurrent } from "../../lib/map-concurrent";
-import { settle } from "../utils";
+import { safeSync, settle } from "../utils";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
@@ -116,7 +122,7 @@ import {
 } from "./execution-credit-balance.service";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
   activeConcurrencySubscriptionPredicate,
@@ -183,7 +189,66 @@ export interface AgentRunContextSignals {
   readonly connectors$: Computed<Promise<BootstrapConnectorData>>;
 }
 
+interface ConnectorContextDuration {
+  readonly durationMs: number;
+  readonly finishedAt: number;
+}
+
+interface BootstrapEnvironmentObservation {
+  readonly query: ConnectorContextDuration | undefined;
+  readonly materialize: ConnectorContextDuration | undefined;
+  readonly acquisitions: readonly PgPoolAcquisition[];
+  readonly returnedRowCount: number;
+  readonly accountCount: number;
+  readonly customAccountCount: number;
+  readonly storedValueCount: number;
+}
+
+export interface BootstrapConnectorObservation extends BootstrapEnvironmentObservation {
+  readonly sources: ConnectorContextDuration | undefined;
+  readonly builtinResolve: ConnectorContextDuration | undefined;
+  readonly builtinDecrypt: ConnectorContextDuration | undefined;
+  readonly builtinDecryptCount: number;
+}
+
+function connectorContextDuration(
+  startedAt: number,
+): ConnectorContextDuration | undefined {
+  const result = safeSync(() => {
+    return {
+      durationMs: Math.max(0, performance.now() - startedAt),
+      finishedAt: now(),
+    };
+  });
+  return "ok" in result ? result.ok : undefined;
+}
+
+function bootstrapEnvironmentObservation(args: {
+  readonly query: ConnectorContextDuration | undefined;
+  readonly materialize: ConnectorContextDuration | undefined;
+  readonly acquisitions: readonly PgPoolAcquisition[];
+  readonly returnedRowCount: number;
+  readonly accounts: readonly Pick<ConnectorSourceRow, "customConnectorId">[];
+  readonly storedValueCount: number;
+}): BootstrapEnvironmentObservation | undefined {
+  const result = safeSync(() => {
+    return {
+      query: args.query,
+      materialize: args.materialize,
+      acquisitions: [...args.acquisitions],
+      returnedRowCount: args.returnedRowCount,
+      accountCount: args.accounts.length,
+      customAccountCount: args.accounts.filter((account) => {
+        return account.customConnectorId !== null;
+      }).length,
+      storedValueCount: args.storedValueCount,
+    };
+  });
+  return "ok" in result ? result.ok : undefined;
+}
+
 export interface BootstrapConnectorData {
+  readonly observation: BootstrapConnectorObservation | undefined;
   readonly connectorAccounts: readonly BootstrapConnectorAccount[];
   readonly connectorSources: readonly ConnectorSourceResult[];
   readonly decryptedConnectorCredentials: ReadonlyMap<
@@ -524,6 +589,7 @@ function bootstrapConnectorSnapshot(
   snapshot: BootstrapEnvironmentSnapshot,
   definitions: readonly CustomConnectorExecutionDefinition[],
 ) {
+  const startedAt = performance.now();
   const byId = new Map(
     definitions.map((definition) => {
       return [definition.id, definition];
@@ -566,13 +632,23 @@ function bootstrapConnectorSnapshot(
           ]
         : [];
   });
-  return {
+  const result = {
     accounts,
     sources: connectorSourceSnapshotsFromRows(
       { userId, orgId, sources },
       accounts,
       snapshot.values,
     ),
+  };
+  const duration = connectorContextDuration(startedAt);
+  const observation = safeSync(() => {
+    return snapshot.observation
+      ? { ...snapshot.observation, sources: duration }
+      : undefined;
+  });
+  return {
+    ...result,
+    observation: "ok" in observation ? observation.ok : undefined,
   };
 }
 
@@ -768,7 +844,7 @@ function createAgentEnvironment(userId: string, orgId: string) {
     const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
     // A single statement owns the account revision and its credential values.
     // It also supplies Agent variables, including the empty-account case.
-    const rows = await db
+    const statement = db
       .with(
         variableRows,
         variableSnapshot,
@@ -826,11 +902,21 @@ function createAgentEnvironment(userId: string, orgId: string) {
           ),
         ),
       );
+    const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+    const queryStartedAt = performance.now();
+    const rows = await withPgPoolAcquisitionCapture(
+      acquisitionCapture,
+      async () => {
+        return await statement;
+      },
+    );
+    const query = connectorContextDuration(queryStartedAt);
+    const materializeStartedAt = performance.now();
     const [first] = rows;
     if (!first) {
       throw new Error("Bootstrap environment aggregate returned no row");
     }
-    return {
+    const snapshot = {
       variables: first.variableValues ?? [],
       accounts: rows.flatMap((row) => {
         return row.account
@@ -862,6 +948,19 @@ function createAgentEnvironment(userId: string, orgId: string) {
             : [];
         }),
       },
+    };
+    const materialize = connectorContextDuration(materializeStartedAt);
+    return {
+      ...snapshot,
+      observation: bootstrapEnvironmentObservation({
+        query,
+        materialize,
+        acquisitions: acquisitionCapture.acquisitions,
+        returnedRowCount: rows.length,
+        accounts: snapshot.accounts,
+        storedValueCount:
+          snapshot.values.variables.length + snapshot.values.credentials.length,
+      }),
     };
   });
 }
@@ -1052,21 +1151,41 @@ function createConnectorContextGroups(
     },
   );
   const decryptedCredentials$ = computed(async (get) => {
+    const resolveStartedAt = performance.now();
     const [snapshot, catalog] = await Promise.all([
       get(connectorSnapshot$),
       get(catalog$),
     ]);
-    return await bootstrapDecryptedCredentials(snapshot, catalog);
+    const decryptStartedAt = performance.now();
+    const credentials = await bootstrapDecryptedCredentials(snapshot, catalog);
+    return {
+      credentials,
+      decrypt: connectorContextDuration(decryptStartedAt),
+      resolve: connectorContextDuration(resolveStartedAt),
+    };
   });
   const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
-    const [snapshot, decryptedConnectorCredentials] = await Promise.all([
+    const [snapshot, decrypted] = await Promise.all([
       get(connectorSnapshot$),
       get(decryptedCredentials$),
     ]);
+    const observation = safeSync(
+      (): BootstrapConnectorObservation | undefined => {
+        return snapshot.observation
+          ? {
+              ...snapshot.observation,
+              builtinResolve: decrypted.resolve,
+              builtinDecrypt: decrypted.decrypt,
+              builtinDecryptCount: decrypted.credentials.size,
+            }
+          : undefined;
+      },
+    );
     return {
       connectorAccounts: snapshot.accounts,
       connectorSources: snapshot.sources,
-      decryptedConnectorCredentials,
+      decryptedConnectorCredentials: decrypted.credentials,
+      observation: "ok" in observation ? observation.ok : undefined,
     };
   });
   return {

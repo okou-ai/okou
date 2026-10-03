@@ -6,6 +6,7 @@ import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
@@ -448,6 +449,80 @@ describe("chat agent bootstrap prefetch", () => {
     const claimed = await claimChatRun(runnerGroup, promoted.runId);
     await cancelChatRun(actor, promoted.runId, claimed.sandboxHeaders);
   });
+  it("preserves the custom account through prefetch and a later independent pick", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const connector = await connectors.createCustomConnector(
+      actor,
+      manualHttpCustomConnectorCreateBody({
+        slug: `_context-custom-${randomUUID()}`,
+        displayName: "Shared context custom connector",
+        prefixTemplates: ["https://context-custom.example.test/v1/"],
+      }),
+    );
+    await connectors.setCustomConnectorSecret(
+      actor,
+      connector.id,
+      "synthetic-context-secret",
+    );
+    await connectors.updateAgentCustomConnectors(actor, agentId, [
+      connector.id,
+    ]);
+    const [account] = await connectors.listCustomConnectorAccounts(
+      actor,
+      connector.id,
+    );
+    if (!account) {
+      throw new Error("Expected the API-created custom account");
+    }
+    const target = {
+      kind: "custom",
+      customConnectorId: connector.id,
+      sourceId: account.id,
+      baseUrlVars: {},
+    };
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "prefetched custom account",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim.connectorRuntimeTargets).toContainEqual(target);
+    const queuedId = randomUUID();
+    const queued = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        clientEventId: queuedId,
+        prompt: "custom account without the enqueue context",
+      },
+      [201],
+    );
+    expect(queued.body).toMatchObject({ runId: null });
+    // This separate API request cannot reuse the queued send's context signals.
+    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    const messages = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === queuedId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const next = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === queuedId;
+    });
+    if (!next?.runId) {
+      throw new Error("Expected the independent custom-account pick");
+    }
+    const nextClaim = await claimChatRun(runnerGroup, next.runId);
+    expect(nextClaim.claim.connectorRuntimeTargets).toContainEqual(target);
+    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
+  });
+
   it("keeps the captured model policy when it changes during attachment resolution", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const fileId = randomUUID();

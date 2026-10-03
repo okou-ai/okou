@@ -14,6 +14,8 @@ import type { Pool, PoolClient } from "pg";
 
 import { singleton } from "./singleton";
 import { deriveSqlSpanName } from "./sql-span-name";
+import { now } from "./time";
+import { safeSync } from "../signals/utils";
 
 const POOL_QUERY_SPAN_KEY = createContextKey("vm0.pg.pool-query-span");
 const POOL_ACQUIRE_DURATION_ATTRIBUTE = "vm0.db.pool.acquire.duration_ms";
@@ -35,6 +37,7 @@ type PoolAcquirePath = "idle" | "new" | "queued";
 export interface PgPoolAcquisition {
   readonly durationMs: number;
   readonly path: PoolAcquirePath;
+  readonly finishedAt: number;
 }
 
 export interface PgPoolAcquisitionCapture {
@@ -309,7 +312,13 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
             [POOL_ACQUIRE_PATH_ATTRIBUTE]: path,
           });
         }
-        capture?.acquisitions.push({ durationMs, path });
+        if (capture) {
+          // Optional diagnostics must not interrupt delivery of the client or
+          // its original acquisition error to the query owner.
+          safeSync(() => {
+            capture.acquisitions.push({ durationMs, path, finishedAt: now() });
+          });
+        }
         callback(error, client, release);
       };
       const wrappedArgs = [...args.slice(0, -1), wrappedCallback] as const;

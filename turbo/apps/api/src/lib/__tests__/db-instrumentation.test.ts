@@ -26,6 +26,7 @@ import {
   createInstrumentedPgStream,
   instrumentPgPool,
   withPgPoolAcquisitionCapture,
+  type PgPoolAcquisition,
 } from "../db-instrumentation";
 import { env } from "../env";
 
@@ -308,12 +309,8 @@ describe("instrumentPgPool", () => {
 
   it("captures pool acquisition paths per concurrent manifest lookup", async () => {
     const pool = createPool();
-    const first = {
-      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
-    };
-    const second = {
-      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
-    };
+    const first = { acquisitions: [] as PgPoolAcquisition[] };
+    const second = { acquisitions: [] as PgPoolAcquisition[] };
 
     await withPgPoolAcquisitionCapture(first, async () => {
       await pool.query("SELECT 401 AS captured_new");
@@ -344,6 +341,7 @@ describe("instrumentPgPool", () => {
     for (const acquisition of [...first.acquisitions, ...second.acquisitions]) {
       expect(Number.isFinite(acquisition.durationMs)).toBeTruthy();
       expect(acquisition.durationMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(acquisition.finishedAt)).toBeTruthy();
     }
   });
 
@@ -354,9 +352,7 @@ describe("instrumentPgPool", () => {
       {},
       new ProxyTracerProvider().getTracer("db-instrumentation-noop-test"),
     );
-    const capture = {
-      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
-    };
+    const capture = { acquisitions: [] as PgPoolAcquisition[] };
 
     const result = await withPgPoolAcquisitionCapture(capture, async () => {
       return await pool.query("SELECT 405 AS captured_without_span");
@@ -364,9 +360,31 @@ describe("instrumentPgPool", () => {
 
     expect(result.rowCount).toBe(1);
     expect(capture.acquisitions).toStrictEqual([
-      { durationMs: expect.any(Number), path: "new" },
+      {
+        durationMs: expect.any(Number),
+        path: "new",
+        finishedAt: expect.any(Number),
+      },
     ]);
     expect(exporter.getFinishedSpans()).toHaveLength(0);
+  });
+
+  it("preserves client delivery when optional acquisition recording fails", async () => {
+    // Infrastructure exception: callers cannot configure the process-local
+    // acquisition capture through a production API. A rejected diagnostic
+    // write must still deliver and release the real query's client.
+    const pool = createPool();
+    const acquisitions: PgPoolAcquisition[] = [];
+    Object.freeze(acquisitions);
+    const result = await withPgPoolAcquisitionCapture(
+      { acquisitions },
+      async () => {
+        return await pool.query("SELECT 406 AS capture_write_failure");
+      },
+    );
+    expect(result.rowCount).toBe(1);
+    const next = await pool.query("SELECT 407 AS capture_write_recovery");
+    expect(next.rowCount).toBe(1);
   });
 
   it("reserves idle and new capacity for earlier synchronous queries", async () => {
@@ -465,9 +483,7 @@ describe("instrumentPgPool", () => {
     const timeoutPool = createPool({ connectionTimeoutMillis: 25 });
     const heldClient = await timeoutPool.connect();
     const timeoutStatement = "SELECT 301 AS acquisition_timeout";
-    const timeoutCapture = {
-      acquisitions: [] as { durationMs: number; path: AcquirePath }[],
-    };
+    const timeoutCapture = { acquisitions: [] as PgPoolAcquisition[] };
 
     const timeoutError = await captureRejection(
       withPgPoolAcquisitionCapture(timeoutCapture, async () => {
@@ -485,7 +501,11 @@ describe("instrumentPgPool", () => {
     expect(timeoutSpan.status.code).toBe(SpanStatusCode.ERROR);
     expectAcquisition(timeoutSpan, "queued");
     expect(timeoutCapture.acquisitions).toStrictEqual([
-      { durationMs: expect.any(Number), path: "queued" },
+      {
+        durationMs: expect.any(Number),
+        path: "queued",
+        finishedAt: expect.any(Number),
+      },
     ]);
 
     const failurePool = createPool();
