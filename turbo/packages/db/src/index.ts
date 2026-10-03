@@ -159,6 +159,7 @@ import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
 import * as vncConnectionSchema from "./schema/vnc-connection";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
+import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
   ...mailNotificationSchema,
@@ -322,6 +323,7 @@ export const schema = {
   ...vncCredentialSchema,
   ...vncConnectionSchema,
   ...cloudflareAccessConfigSchema,
+  ...tailscaleConfigSchema,
 };
 
 export type DatabaseSchema = typeof schema;

@@ -5,12 +5,14 @@ import { schema } from "../index";
 import { sshCredentials } from "../schema/ssh-credential";
 import { sshConnections } from "../schema/ssh-connection";
 import { cloudflareAccessConfigs } from "../schema/cloudflare-access-config";
+import { tailscaleConfigs } from "../schema/tailscale-config";
 
 describe("SSH connection schema", () => {
   it("exports the standalone SSH tables", () => {
     expect(schema.sshConnections).toBe(sshConnections);
     expect(schema.sshCredentials).toBe(sshCredentials);
     expect(schema.cloudflareAccessConfigs).toBe(cloudflareAccessConfigs);
+    expect(schema.tailscaleConfigs).toBe(tailscaleConfigs);
   });
 
   it("defines bounded owner-scoped connection storage", () => {
@@ -28,6 +30,7 @@ describe("SSH connection schema", () => {
       "port",
       "credential_id",
       "cloudflare_access_id",
+      "tailscale_config_id",
       "needs_rebind",
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
@@ -44,6 +47,7 @@ describe("SSH connection schema", () => {
         };
       }),
     ).toStrictEqual([
+      { name: "idx_ssh_connections_tailscale", unique: false },
       { name: "idx_ssh_connections_cloudflare_access", unique: false },
       { name: "idx_ssh_connections_credential", unique: false },
       { name: "idx_ssh_connections_owner_created", unique: false },
@@ -56,6 +60,7 @@ describe("SSH connection schema", () => {
       }),
     );
     expect(Object.keys(checks)).toStrictEqual([
+      "chk_ssh_connections_tailscale_exclusive",
       "chk_ssh_connections_cloudflare_access_destination",
       "chk_ssh_connections_needs_rebind_unbound",
       "chk_ssh_connections_display_name",
@@ -95,6 +100,28 @@ describe("SSH connection schema", () => {
         return check.name;
       }),
     ).toContain("chk_cloudflare_access_configs_scope_owner");
+  });
+
+  it("restricts deletion of a referenced same-organization Tailscale configuration", () => {
+    const config = getTableConfig(sshConnections);
+    const tailscaleForeignKey = config.foreignKeys.find((key) => {
+      return key.getName() === "ssh_connections_tailscale_org_fk";
+    });
+    expect(tailscaleForeignKey?.onDelete).toBe("restrict");
+    expect(tailscaleForeignKey?.reference().foreignTable).toBe(
+      tailscaleConfigs,
+    );
+    expect(
+      tailscaleForeignKey?.reference().columns.map((column) => {
+        return column.name;
+      }),
+    ).toStrictEqual(["tailscale_config_id", "org_id"]);
+    expect(
+      tailscaleForeignKey?.reference().foreignColumns.map((column) => {
+        return column.name;
+      }),
+    ).toStrictEqual(["id", "org_id"]);
+    expect(sshConnections.tailscaleConfigId.notNull).toBe(false);
   });
 
   it("requires a same-owner credential and restricts deletion while referenced", () => {
