@@ -1,4 +1,5 @@
 use super::support::*;
+use crate::common::ControlledHttpServer;
 use crate::support::*;
 use guest_contracts::session_history_identity::{
     SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind,
@@ -653,16 +654,104 @@ async fn pi_checkpoint_commits_history_after_second_upload_retry() {
 }
 
 #[tokio::test]
+async fn pi_checkpoint_recovers_after_history_upload_transport_errors() {
+    let api = SharedApiMock::new().await;
+    let server = api.server();
+    let mut runtime = checkpoint_runtime().unwrap();
+    runtime.config.framework = guest_agent::env::Framework::Pi;
+    let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
+    let _files_guard = SessionCheckpointFilesGuard::new();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
+    let (history_file, history) = write_pi_history(&session_id, false, 0).unwrap();
+    let history_hash = hex::encode(Sha256::digest(&history));
+    let history_body = String::from_utf8(history.clone()).unwrap();
+    let mut uploads = ControlledHttpServer::start().await.unwrap();
+    let signature = "sensitive-transport-upload-signature";
+    let upload_path = format!("/test/pi-history-transport?X-Amz-Signature={signature}");
+    let upload_url = format!("{}{upload_path}", uploads.base_url);
+    let prepare = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/checkpoints/prepare-history");
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"existing":false,"presignedUrl":upload_url}));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/complete")
+            .json_body_includes(format!(
+                r#"{{"checkpoint":{{"cliAgentSessionHistoryHash":"{history_hash}"}}}}"#
+            ));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"success":true,"status":"completed"}));
+    });
+
+    let (checkpoint, ()) = tokio::time::timeout(MOCK_CALL_TIMEOUT, async {
+        let accept_uploads = async {
+            for _ in 0..2 {
+                // Close the connection without returning an HTTP response.
+                drop(uploads.next_request(MOCK_CALL_TIMEOUT).await.unwrap());
+            }
+            uploads
+                .next_request(MOCK_CALL_TIMEOUT)
+                .await
+                .unwrap()
+                .respond(200)
+                .unwrap();
+        };
+        tokio::join!(create_bounded_checkpoint(&runtime), accept_uploads)
+    })
+    .await
+    .unwrap();
+    checkpoint.unwrap();
+
+    prepare.assert_calls_async(1).await;
+    complete.assert_calls_async(1).await;
+    let requests = uploads.requests().unwrap();
+    assert_eq!(requests.len(), 3);
+    for request in requests {
+        assert_eq!(request.path, upload_path);
+        assert_eq!(request.body, history_body);
+        assert_eq!(
+            request.content_type.as_deref(),
+            Some("application/octet-stream")
+        );
+        assert!(request.authorization.is_none());
+        assert!(request.client_request_id.is_none());
+    }
+    assert_eq!(std::fs::read(&history_file.0).unwrap(), history);
+    let identity_bytes =
+        std::fs::read(runtime.paths.final_session_history_identity_file()).unwrap();
+    let identity = SessionHistoryIdentity::from_json_slice(&identity_bytes).unwrap();
+    assert_eq!(identity.framework, SessionHistoryFramework::Pi);
+    assert_eq!(identity.history_hash, history_hash);
+    assert_eq!(identity.history_size_bytes, history.len() as u64);
+    let system_log = std::fs::read_to_string(runtime.paths.system_log_file()).unwrap();
+    let retry_logs = system_log
+        .lines()
+        .filter(|line| line.contains("Presigned upload failed; retry"))
+        .collect::<Vec<_>>();
+    assert_eq!(retry_logs.len(), 2);
+    assert!(retry_logs.iter().all(|line| line.contains("[INFO]")));
+    assert!(!system_log.contains(signature));
+    assert!(!system_log.contains(&upload_path));
+}
+
+#[tokio::test]
 async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() {
     let api = SharedApiMock::new().await;
     let server = api.server();
     let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
+    let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, history) = write_pi_history(&session_id, false, 0).unwrap();
     let upload_path = "/test/exhausted-pi-history-upload";
+    let history_required = "[PI_H2_HISTORY_REQUIRED] Pi H2 requires a native session history hash";
     let prepare = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/checkpoints/prepare-history");
@@ -682,16 +771,27 @@ async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() 
             );
         then.status(400)
             .header("Content-Type", "application/json")
-            .json_body(json!({"error":"Pi H2 requires a native session history hash"}));
+            .json_body(json!({"error":{"code":"BAD_REQUEST","message":history_required}}));
     });
 
-    assert!(create_bounded_checkpoint(&runtime).await.is_err());
+    let error = create_bounded_checkpoint(&runtime).await.unwrap_err();
+    assert!(matches!(
+        error,
+        guest_agent::error::AgentError::HttpStatus { status: 400, message }
+            if message.contains(history_required)
+    ));
 
     prepare.assert_calls_async(1).await;
     upload.assert_calls_async(3).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), history);
     assert!(!std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists());
+    let system_log = std::fs::read_to_string(runtime.paths.system_log_file()).unwrap();
+    assert!(
+        system_log
+            .lines()
+            .any(|line| line.contains("[WARN]") && line.contains(history_required))
+    );
 }
 
 #[tokio::test]
