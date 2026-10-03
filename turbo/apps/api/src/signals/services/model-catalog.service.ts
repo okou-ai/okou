@@ -118,7 +118,7 @@ function followReplacementChain(
   return chain;
 }
 
-function validateModelCatalog(
+export function validateModelCatalog(
   models: readonly CatalogModel[],
   routes: readonly CatalogRoute[],
 ): ModelCatalog {

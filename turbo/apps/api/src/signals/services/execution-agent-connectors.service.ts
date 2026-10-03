@@ -83,31 +83,40 @@ export function createAgentConnectorSelection(
           ),
         ),
     ]);
-    const customConnectors = customRows
-      .map((row): SelectedCustomConnector => {
-        return {
-          customConnectorId: row.connector.id,
-          connectorSlug: row.connector.slug,
-          permissionNames: [...row.permissionNames].sort(),
-          storageVersion: row.connector.storageVersion,
-          skillStorageVersionId: row.connector.skillStorageVersionId,
-          permissionBundleRef: row.connector.permissionBundleRef,
-          isMcp: row.connector.mcpEndpoint !== null,
-        };
-      })
-      .sort((a, b) => {
-        return a.customConnectorId.localeCompare(b.customConnectorId);
-      });
-    return {
-      builtinConnectorSlugs: builtinRows
-        .map((row) => {
-          return row.connectorSlug;
-        })
-        .sort(),
-      customConnectors,
-      customConnectorDefinitions: customRows.map(executionDefinitionFromRow),
-    };
+    return agentConnectorSelectionFromRows(builtinRows, customRows);
   });
+}
+
+export function agentConnectorSelectionFromRows(
+  builtinRows: readonly { readonly connectorSlug: string }[],
+  customRows: readonly (SelectedDefinitionRow & {
+    readonly permissionNames: readonly string[];
+  })[],
+): AgentConnectorSelection {
+  const customConnectors = customRows
+    .map((row): SelectedCustomConnector => {
+      return {
+        customConnectorId: row.connector.id,
+        connectorSlug: row.connector.slug,
+        permissionNames: [...row.permissionNames].sort(),
+        storageVersion: row.connector.storageVersion,
+        skillStorageVersionId: row.connector.skillStorageVersionId,
+        permissionBundleRef: row.connector.permissionBundleRef,
+        isMcp: row.connector.mcpEndpoint !== null,
+      };
+    })
+    .sort((a, b) => {
+      return a.customConnectorId.localeCompare(b.customConnectorId);
+    });
+  return {
+    builtinConnectorSlugs: builtinRows
+      .map((row) => {
+        return row.connectorSlug;
+      })
+      .sort(),
+    customConnectors,
+    customConnectorDefinitions: customRows.map(executionDefinitionFromRow),
+  };
 }
 
 type SelectedDefinitionRow = {

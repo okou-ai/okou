@@ -35,41 +35,59 @@ export function createModelFacts(
         .from(orgModelPolicies)
         .where(eq(orgModelPolicies.orgId, orgId)),
     ]);
-    return {
-      orgId,
-      org,
-      capabilities,
-      catalog,
-      policies,
-      policyFacts: orgModelPolicyFactsFromSnapshot({
-        catalog,
-        orgId,
-        orgPlanCapabilities: capabilities,
-        stored: policies,
-      }),
-    };
+    return modelFactsFromSnapshot(orgId, capabilities, org, catalog, policies);
   });
 }
 export function createMemberModelBootstrap(orgId: string, userId: string) {
   const sources$ = createMemberModelSources(orgId, userId);
   return computed(async (get) => {
-    const { rows, providers } = await get(sources$);
-    const accounts = [
-      ...new Map(
-        rows.map((row) => {
-          return [row.account.id, row.account];
-        }),
-      ).values(),
-    ];
-    const member = memberModelRouteContextFromAccounts(
-      userId,
-      accounts.map((account) => {
-        return {
-          ...account,
-          providerId: account.modelProviderId,
-        };
-      }),
-    );
-    return { orgId, userId, rows, accounts, member, providers };
+    return memberModelBootstrapFromSources(await get(sources$));
   });
+}
+
+export function memberModelBootstrapFromSources({
+  orgId,
+  userId,
+  rows,
+  providers,
+}: Awaited<ReturnType<ReturnType<typeof createMemberModelSources>["read"]>>) {
+  const accounts = [
+    ...new Map(
+      rows.map((row) => {
+        return [row.account.id, row.account];
+      }),
+    ).values(),
+  ];
+  const member = memberModelRouteContextFromAccounts(
+    userId,
+    accounts.map((account) => {
+      return {
+        ...account,
+        providerId: account.modelProviderId,
+      };
+    }),
+  );
+  return { orgId, userId, rows, accounts, member, providers };
+}
+
+export function modelFactsFromSnapshot(
+  orgId: string,
+  capabilities: OrgPlanCapabilities | null,
+  org: RunOrgMetadata | null,
+  catalog: import("./model-catalog.service").ModelCatalog,
+  policies: readonly (typeof orgModelPolicies.$inferSelect)[],
+) {
+  return {
+    orgId,
+    org,
+    capabilities,
+    catalog,
+    policies,
+    policyFacts: orgModelPolicyFactsFromSnapshot({
+      catalog,
+      orgId,
+      orgPlanCapabilities: capabilities,
+      stored: policies,
+    }),
+  };
 }

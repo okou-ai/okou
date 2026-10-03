@@ -464,11 +464,7 @@ export function executionStorageCachePairs(
 export function createExecutionStorageObjects(
   mounts: readonly ExecutionStorageRequest[],
 ): ExecutionStorageObjects {
-  const versions$ = computed(async (get) => {
-    validateRequests(mounts);
-    return await readExactVersions(get(db$), mounts);
-  });
-  return createStorageObjects(mounts, versions$);
+  return createStorageObjects(mounts, { kind: "read" });
 }
 
 /** The canonical Thread already resolved exact rows; never reread those identities. */
@@ -477,18 +473,29 @@ export function createResolvedExecutionStorageObjects(
   versions: Awaited<ReturnType<typeof readExactVersions>>,
   cacheRows: ExecutionStorageCacheRows,
 ): ExecutionStorageObjects {
-  const versions$ = computed(() => {
-    validateRequests(mounts);
-    return Promise.resolve(versions);
-  });
-  return createStorageObjects(mounts, versions$, cacheRows);
+  return createStorageObjects(
+    mounts,
+    { kind: "captured", versions },
+    cacheRows,
+  );
 }
 
 function createStorageObjects(
   mounts: readonly ExecutionStorageRequest[],
-  versions$: Computed<Promise<Awaited<ReturnType<typeof readExactVersions>>>>,
+  input:
+    | { readonly kind: "read" }
+    | {
+        readonly kind: "captured";
+        readonly versions: Awaited<ReturnType<typeof readExactVersions>>;
+      },
   suppliedCacheRows?: ExecutionStorageCacheRows,
 ): ExecutionStorageObjects {
+  const versions$ = computed(async (get) => {
+    validateRequests(mounts);
+    return input.kind === "captured"
+      ? input.versions
+      : await readExactVersions(get(db$), mounts);
+  });
   const requests$ = computed(async (get) => {
     return signingRequests(
       mounts,

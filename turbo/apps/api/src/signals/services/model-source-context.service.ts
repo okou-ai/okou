@@ -30,7 +30,7 @@ import { usagePricingByKey } from "./built-in-route-pricing";
 import type { MemberModelBootstrap } from "./model-bootstrap.service";
 
 const MULTI_AUTH_TYPES = modelProviderTypeSchema.options.filter(hasAuthMethods);
-const providerSecretJoin = and(
+export const providerSecretJoin = and(
   eq(secrets.orgId, modelProviders.orgId),
   eq(secrets.userId, modelProviders.userId),
   or(
@@ -44,7 +44,7 @@ const providerSecretJoin = and(
     ),
   ),
 );
-function providerProjection() {
+export function providerProjection() {
   return {
     // Only identity and runtime configuration participate in these facts.
     // Account health/default/expiry fences remain on the full account projection.
@@ -74,7 +74,7 @@ type ProviderRow = {
   } | null;
 };
 
-function providerFacts(rows: readonly ProviderRow[]) {
+export function providerFacts(rows: readonly ProviderRow[]) {
   const groups = new Map<string, ProviderRow[]>();
   for (const row of rows) {
     const group = groups.get(row.provider.id);
@@ -175,26 +175,40 @@ export function createMemberModelSources(orgId: string, userId: string) {
       .where(
         and(eq(modelProviders.orgId, orgId), eq(modelProviders.userId, userId)),
       );
-    const rows = [
-      ...new Map(
-        joined.flatMap((row) => {
-          return row.account
-            ? [
-                [
-                  JSON.stringify([row.account.id, row.secret?.name]),
-                  {
-                    account: row.account,
-                    configuredModel: row.provider.selectedModel,
-                    secret: row.secret,
-                  },
-                ] as const,
-              ]
-            : [];
-        }),
-      ).values(),
-    ];
-    return { orgId, userId, providers: providerFacts(joined), rows };
+    return memberModelSourcesFromRows(orgId, userId, joined);
   });
+}
+
+export function memberModelSourcesFromRows(
+  orgId: string,
+  userId: string,
+  joined: readonly (ProviderRow & {
+    readonly account: typeof modelProviderAccounts.$inferSelect | null;
+    readonly secret: {
+      readonly name: string;
+      readonly encryptedValue: string;
+    } | null;
+  })[],
+) {
+  const rows = [
+    ...new Map(
+      joined.flatMap((row) => {
+        return row.account
+          ? [
+              [
+                JSON.stringify([row.account.id, row.secret?.name]),
+                {
+                  account: row.account,
+                  configuredModel: row.provider.selectedModel,
+                  secret: row.secret,
+                },
+              ] as const,
+            ]
+          : [];
+      }),
+    ).values(),
+  ];
+  return { orgId, userId, providers: providerFacts(joined), rows };
 }
 
 /** Mapping and credential authority are captured together, before selection. */

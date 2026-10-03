@@ -26,8 +26,7 @@ import {
   type OfficialWorkflowContextFacts,
 } from "./official-workflow-context.signals";
 import {
-  createModelFacts,
-  createMemberModelBootstrap,
+  modelFactsFromSnapshot,
   type OrgModelBootstrap,
   type MemberModelBootstrap,
   type RunOrgMetadata,
@@ -90,18 +89,13 @@ import {
   createExecutionMemberMetadata,
   type ExecutionMemberMetadata,
 } from "./execution-member-metadata.service";
-import {
-  createAgentConnectorSelection,
-  type AgentConnectorSelection,
-} from "./execution-agent-connectors.service";
-import {
-  createConnectorPermissionGrants,
-  type ConnectorPermissionGrant,
-} from "./execution-connector-permissions.service";
-import {
-  createAgentWorkflowSelection,
-  type SelectedAgentWorkflow,
-} from "./execution-agent-workflows.service";
+import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
+import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
+import { createProviderContext } from "./execution-provider-context.service";
+import { createGlobalModelContext } from "./execution-global-model-context.service";
+import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
+import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { variables } from "@okouai/db/schema/variable";
 import { and, asc, count, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
@@ -334,19 +328,60 @@ function contextAgentSelection() {
   };
 }
 
+// Private graph ownership metadata; no package cache or public interface change.
+const globalModelOwner = Symbol("agentRunGlobalModelOwner");
+type OwnedAgentRunContext = AgentRunContextSignals & {
+  readonly [globalModelOwner]: ReturnType<
+    typeof createGlobalModelContext
+  >["catalog$"];
+};
+function hasGlobalModelOwner(
+  context: AgentRunContextSignals,
+): context is OwnedAgentRunContext {
+  return globalModelOwner in context;
+}
+
 function createModelSourceGroups(
   orgId: string,
+  userId: string,
   supplied?: AgentRunContextSignals,
 ) {
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
+  const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
+  const providers =
+    sharedMember ?? createProviderContext(orgId, userId, !sharedOrg);
+  const globalReferences = supplied
+    ? hasGlobalModelOwner(supplied)
+      ? {
+          managedModelKeys$: supplied.managedModelKeys$,
+          modelPricing$: supplied.modelPricing$,
+          catalog$: supplied[globalModelOwner],
+        }
+      : undefined
+    : createGlobalModelContext();
+  if (!globalReferences) {
+    throw new Error("Agent run context has no global reference owner");
+  }
   return {
-    orgModelSources$:
-      sharedOrg?.orgModelSources$ ?? createOrgModelSources(orgId),
+    orgModelSources$: sharedOrg?.orgModelSources$ ?? providers.orgModelSources$,
+    memberModels$: providers.memberModels$,
     gatewayModelSources$:
       sharedOrg?.gatewayModelSources$ ?? createGatewayModelSources(orgId),
-    managedModelKeys$: supplied?.managedModelKeys$ ?? createManagedModelKeys(),
-    modelPricing$: supplied?.modelPricing$ ?? createModelPricing(),
+    managedModelKeys$: globalReferences.managedModelKeys$,
+    modelPricing$: globalReferences.modelPricing$,
+    globalReferences,
   };
+}
+
+function createRunAgentRow(agentId: string) {
+  return computed(async (get) => {
+    const [row] = await get(db$)
+      .select(contextAgentSelection())
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    return row ?? null;
+  });
 }
 
 function createRunOrgPlan(orgId: string) {
@@ -400,28 +435,29 @@ function createIdentityContext(
   const scope = { userId, orgId, agentId };
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
   const orgMetadata$ = sharedOrg?.orgMetadata$ ?? createRunOrgMetadata(orgId);
-  const modelSources = createModelSourceGroups(orgId, supplied);
+  const { globalReferences, memberModels$, ...modelSources } =
+    createModelSourceGroups(orgId, userId, supplied);
   const { plan$, concurrencyCapacity$ } = sharedOrg ?? createOrgCapacity(orgId);
   const allowance$ =
     sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
   const modelFacts$ =
     sharedOrg?.modelFacts$ ??
     computed(async (get) => {
-      const [plan, org] = await Promise.all([get(plan$), get(orgMetadata$)]);
-      return await get(createModelFacts(orgId, plan, org));
+      const [plan, org, catalog, policies] = await Promise.all([
+        get(plan$),
+        get(orgMetadata$),
+        get(globalReferences.catalog$),
+        get(db$)
+          .select()
+          .from(orgModelPolicies)
+          .where(eq(orgModelPolicies.orgId, orgId)),
+      ]);
+      return modelFactsFromSnapshot(orgId, plan, org, catalog, policies);
     });
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  const memberModels$ =
-    sharedMember?.memberModels$ ?? createMemberModelBootstrap(orgId, userId);
+  const agentRow$ = createRunAgentRow(agentId);
   const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
-    const [[row], org] = await Promise.all([
-      get(db$)
-        .select(contextAgentSelection())
-        .from(agents)
-        .where(eq(agents.id, agentId))
-        .limit(1),
-      get(orgMetadata$),
-    ]);
+    const [row, org] = await Promise.all([get(agentRow$), get(orgMetadata$)]);
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
   const { memberMetadata$, credits$ } = sharedMember ?? {
@@ -444,8 +480,7 @@ function createIdentityContext(
     }),
   };
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
-  const permissionGrants$ = createConnectorPermissionGrants(scope);
-  const workflows$ = createAgentWorkflowSelection(scope);
+  const { permissionGrants$, workflows$ } = connectorContext;
   const officialCatalog$ = reusedOfficialCatalog(supplied);
   const officialWorkflows$ = computed(async (get) => {
     const workflows = await get(workflows$);
@@ -490,7 +525,8 @@ function createIdentityContext(
     const snapshot = await get(connectorContext.environmentSnapshot$);
     return { variables: snapshot.variables };
   });
-  return {
+  const context: OwnedAgentRunContext = {
+    [globalModelOwner]: globalReferences.catalog$,
     ...scope,
     agent$,
     orgMetadata$,
@@ -516,6 +552,7 @@ function createIdentityContext(
     catalog$: connectorContext.catalog$,
     connectors$: connectorContext.connectors$,
   };
+  return context;
 }
 
 /**
@@ -1065,11 +1102,12 @@ function createConnectorContextGroups(
   orgId: string,
   agentId: string,
 ) {
-  const connectorSelection$ = createAgentConnectorSelection({
-    userId,
-    orgId,
-    agentId,
-  });
+  const { connectorSelection$, permissionGrants$, workflows$ } =
+    createAgentSelectionContext({
+      userId,
+      orgId,
+      agentId,
+    });
   const environmentSnapshot$ = createAgentEnvironment(userId, orgId);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
@@ -1177,6 +1215,8 @@ function createConnectorContextGroups(
   });
   return {
     connectorSelection$,
+    permissionGrants$,
+    workflows$,
     environmentSnapshot$,
     customConnectorDefinitions$,
     catalog$,
