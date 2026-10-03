@@ -463,7 +463,12 @@ function createIdentityContext(
 export const preloadAgentRunContext$ = command(
   ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
     signal.throwIfAborted();
+    // Start the launch-critical dependency chains before independent projections.
+    // All nodes still start in this post-commit turn; dispatch awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
+      signals.catalog$,
+      signals.connectors$,
+      signals.storage$,
       signals.agent$,
       signals.orgMetadata$,
       signals.plan$,
@@ -472,21 +477,18 @@ export const preloadAgentRunContext$ = command(
       signals.memberModels$,
       signals.orgModelSources$,
       signals.gatewayModelSources$,
-      signals.managedModelKeys$,
-      signals.modelPricing$,
       signals.memberMetadata$,
       signals.connectorSelection$,
       signals.permissionGrants$,
       signals.workflows$,
       signals.officialWorkflows$,
-      signals.storage$,
       signals.storageCache$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
       signals.environment$,
       signals.customConnectorDefinitions$,
-      signals.catalog$,
-      signals.connectors$,
+      signals.managedModelKeys$,
+      signals.modelPricing$,
     ];
     for (const node of nodes) {
       waitUntil(settle(get(node)));
