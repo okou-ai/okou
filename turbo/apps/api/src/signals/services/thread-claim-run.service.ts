@@ -9067,19 +9067,17 @@ export function createThreadClaimRunObjects(
       if (!rejected) {
         return;
       }
-      const logRejection =
-        error.code === "INSUFFICIENT_CREDITS"
-          ? log.debug
-          : error.code === "AUTONOMY_BUDGET_EXHAUSTED"
-            ? log.info
-            : log.warn;
-      logRejection("Rejected queued chat input", {
-        chatThreadId: head.chatThreadId,
-        eventId: head.id,
-        contextType: head.contextType,
-        code: error.code,
-        error: error.message,
-      });
+      if (error.code !== "AUTONOMY_BUDGET_EXHAUSTED") {
+        const logRejection =
+          error.code === "INSUFFICIENT_CREDITS" ? log.debug : log.warn;
+        logRejection("Rejected queued chat input", {
+          chatThreadId: head.chatThreadId,
+          eventId: head.id,
+          contextType: head.contextType,
+          code: error.code,
+          error: error.message,
+        });
+      }
       if (head.contextType === "automation") {
         await set(
           settleRejectedAutomationInput$,
