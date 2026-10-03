@@ -12,7 +12,7 @@ import { and, asc, count, eq, sql } from "drizzle-orm";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   canonicalizeVncHost,
@@ -295,40 +295,20 @@ function validUpdatedCredentialProfile(
   );
 }
 
-async function hasOwnedSshConnection(
-  db: Pick<ReadonlyDb, "select">,
-  owner: VncOwner,
-  sshConnectionId: string,
-): Promise<boolean> {
-  const [ssh] = await db
-    .select({ id: sshConnections.id })
-    .from(sshConnections)
-    .where(
-      and(
-        eq(sshConnections.id, sshConnectionId),
-        eq(sshConnections.orgId, owner.orgId),
-        eq(sshConnections.userId, owner.userId),
-      ),
-    );
-  return ssh !== undefined;
+function ownedSshConnection(owner: VncOwner, sshConnectionId: string) {
+  return and(
+    eq(sshConnections.id, sshConnectionId),
+    eq(sshConnections.orgId, owner.orgId),
+    eq(sshConnections.userId, owner.userId),
+  );
 }
 
-async function selectOwnedCredential(
-  db: Pick<ReadonlyDb, "select">,
-  owner: VncOwner,
-  credentialId: string,
-): Promise<CredentialMetadata | undefined> {
-  const [credential] = await db
-    .select(vncCredentialMetadata)
-    .from(vncCredentials)
-    .where(
-      and(
-        eq(vncCredentials.id, credentialId),
-        eq(vncCredentials.orgId, owner.orgId),
-        eq(vncCredentials.userId, owner.userId),
-      ),
-    );
-  return credential;
+function ownedCredential(owner: VncOwner, credentialId: string) {
+  return and(
+    eq(vncCredentials.id, credentialId),
+    eq(vncCredentials.orgId, owner.orgId),
+    eq(vncCredentials.userId, owner.userId),
+  );
 }
 
 interface CreateVncConnectionArgs {
@@ -432,12 +412,11 @@ export const createVncConnection$ = command(
             : vncFailure("resourceIdConflict");
         }
         if (transport.value.sshConnectionId !== null) {
-          const ssh = await hasOwnedSshConnection(
-            tx,
-            owner,
-            transport.value.sshConnectionId,
-          );
-          if (!ssh) {
+          const [ssh] = await tx
+            .select({ id: sshConnections.id })
+            .from(sshConnections)
+            .where(ownedSshConnection(owner, transport.value.sshConnectionId));
+          if (ssh === undefined) {
             return vncFailure("sshConnectionNotFound");
           }
         }
@@ -448,11 +427,10 @@ export const createVncConnection$ = command(
             .values({ ...owner, ...preparedCredential.create })
             .returning(vncCredentialMetadata);
         } else if (preparedCredential !== null) {
-          credential = await selectOwnedCredential(
-            tx,
-            owner,
-            preparedCredential.id,
-          );
+          [credential] = await tx
+            .select(vncCredentialMetadata)
+            .from(vncCredentials)
+            .where(ownedCredential(owner, preparedCredential.id));
         }
         if (credential === undefined) {
           return vncFailure("credentialNotFound");
@@ -708,12 +686,11 @@ export const updateVncConnection$ = command(
         }
         const { newHost, newPort, transport, securityType } = resolved.value;
         if (transport.value.sshConnectionId !== null) {
-          const ssh = await hasOwnedSshConnection(
-            tx,
-            owner,
-            transport.value.sshConnectionId,
-          );
-          if (!ssh) {
+          const [ssh] = await tx
+            .select({ id: sshConnections.id })
+            .from(sshConnections)
+            .where(ownedSshConnection(owner, transport.value.sshConnectionId));
+          if (ssh === undefined) {
             return vncFailure("sshConnectionNotFound");
           }
         }
@@ -728,7 +705,10 @@ export const updateVncConnection$ = command(
           if (credentialId === null) {
             return vncFailure("credentialNotFound");
           }
-          credential = await selectOwnedCredential(tx, owner, credentialId);
+          [credential] = await tx
+            .select(vncCredentialMetadata)
+            .from(vncCredentials)
+            .where(ownedCredential(owner, credentialId));
         }
         if (credential === undefined) {
           return vncFailure("credentialNotFound");

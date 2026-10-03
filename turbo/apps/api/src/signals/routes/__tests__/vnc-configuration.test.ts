@@ -1367,6 +1367,152 @@ describe("VNC owner configuration", () => {
     }
   });
 
+  it.each(["orgId", "userId"] as const)(
+    "rejects an owned connection rebind to a foreign credential sharing the %s without changing configuration",
+    async (shared) => {
+      useSecretKmsProbe();
+      const first = await owner();
+      const created = await accept(
+        connections().create({ headers, body: hostBody() }),
+        [201],
+      );
+      const before = (await accept(credentials().list({ headers }), [200])).body
+        .credentials;
+      const peer = await owner({ [shared]: first[shared] });
+      const foreign = await accept(
+        credentials().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            name: "Foreign credential",
+            authentication: passwordAuthentication("foreign"),
+          },
+        }),
+        [201],
+      );
+      await owner(first);
+      const denied = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: {
+            expectedGeneration: 1,
+            displayName: "Forbidden credential rebind",
+            credential: { id: foreign.body.id },
+          },
+        }),
+        [404],
+      );
+      expect(denied.body.error.code).toBe("VNC_CREDENTIAL_NOT_FOUND");
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([created.body]);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual(before);
+      await owner(peer);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual([foreign.body]);
+      await owner(first);
+      const recovered = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: { expectedGeneration: 1, displayName: "Recovered" },
+        }),
+        [200],
+      );
+      expect(recovered.body).toMatchObject({
+        id: created.body.id,
+        credentialId: requireVncCredentialId(created.body),
+        displayName: "Recovered",
+        generation: 2,
+      });
+    },
+  );
+
+  it.each(["orgId", "userId"] as const)(
+    "rejects an owned connection rebind to a foreign SSH route sharing the %s without storing an inline credential",
+    async (shared) => {
+      useSecretKmsProbe();
+      const first = await owner();
+      const created = await accept(
+        connections().create({ headers, body: hostBody() }),
+        [201],
+      );
+      const before = (await accept(credentials().list({ headers }), [200])).body
+        .credentials;
+      const peer = await owner({ [shared]: first[shared] });
+      const foreign = await accept(
+        sshConnectionsClient().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Foreign gateway",
+            host: "gateway.example.com",
+            credential: inlineSshKey("deploy", "synthetic-private-key"),
+          },
+        }),
+        [201],
+      );
+      const peerRoutes = (
+        await accept(sshConnectionsClient().list({ headers }), [200])
+      ).body.connections;
+      await owner(first);
+      const denied = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: {
+            expectedGeneration: 1,
+            host: "127.0.0.1",
+            transport: { type: "ssh", connectionId: foreign.body.id },
+            credential: {
+              create: {
+                name: "Rejected inline credential",
+                authentication: passwordAuthentication("rejected"),
+              },
+            },
+          },
+        }),
+        [404],
+      );
+      expect(denied.body.error.code).toBe("VNC_SSH_CONNECTION_NOT_FOUND");
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([created.body]);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual(before);
+      await owner(peer);
+      expect(
+        (await accept(sshConnectionsClient().list({ headers }), [200])).body
+          .connections,
+      ).toStrictEqual(peerRoutes);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toStrictEqual([]);
+      await owner(first);
+      const recovered = await accept(
+        connections().update({
+          headers,
+          params: { connectionId: created.body.id },
+          body: { expectedGeneration: 1, displayName: "Recovered" },
+        }),
+        [200],
+      );
+      expect(recovered.body).toMatchObject({
+        id: created.body.id,
+        credentialId: requireVncCredentialId(created.body),
+        host: created.body.host,
+        displayName: "Recovered",
+        generation: 2,
+      });
+      expect(recovered.body).not.toHaveProperty("transport");
+    },
+  );
+
   it("makes creation retries no-ops even with changed inline secrets and metadata", async () => {
     useSecretKmsProbe();
     await owner();
