@@ -539,6 +539,37 @@ async fn pinned_tls_authority_password_uncertain_delivery_and_established_expiry
 
 #[tokio::test]
 #[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+async fn pinned_native_renew_expired_ticket_has_live_renew_till() {
+    let root = fixture(0);
+    let mut relay = Relay::new(&root);
+    // An expired initial ticket is distinct from exhaustion of renew-till.
+    // Refusal must not issue KDC traffic or silently reacquire the same source.
+    let (mut context, status) = kerberos_worker::open(
+        &root.join("private"),
+        credentials(&root, "keytab"),
+        TicketPolicy::new(Duration::from_secs(2), Duration::from_secs(60)).unwrap(),
+        Instant::now() + Duration::from_secs(10),
+        &mut relay,
+    )
+    .await
+    .unwrap();
+    assert!(status.renewable);
+    tokio::time::sleep_until(status.expires_at + Duration::from_secs(1)).await;
+    assert!(
+        UNIX_EPOCH + Duration::from_secs(u64::from(status.declared_renew_till)) > SystemTime::now()
+    );
+    let requests = relay.requests;
+    assert_eq!(
+        context.renew(&mut relay).await.unwrap_err(),
+        kerberos_worker::Error::Expired
+    );
+    assert_eq!(relay.requests, requests);
+    context.close().await.unwrap();
+    assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+}
+
+#[tokio::test]
+#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
 async fn pinned_native_renew_nonrenewable_same_source_reacquisition() {
     let root = fixture(0);
     let deadline = Instant::now() + Duration::from_secs(15);
