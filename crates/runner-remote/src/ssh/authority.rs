@@ -90,6 +90,7 @@ impl Authority {
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
             expected_generation: observation.generation,
+            expected_tailscale_config: None,
             observed_at: observation
                 .observed_at
                 .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
@@ -194,7 +195,10 @@ impl Authority {
             )
             .await?;
         let (host, port, username, generation, learned_host_key, auth, transport) = match response {
-            ResolveResponse::Unavailable => return Err(FailureReason::Unavailable),
+            ResolveResponse::Unavailable | ResolveResponse::ResolvedTailscale { .. } => {
+                // No qualified private carrier in this foundation PR. Never infer Direct.
+                return Err(FailureReason::Unavailable);
+            }
             ResolveResponse::ResolvedAccess {
                 host,
                 port,
@@ -302,6 +306,7 @@ impl Authority {
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
             expected_generation: generation,
+            expected_tailscale_config: None,
             observed_host_key: observed,
         };
         let result = self

@@ -47,6 +47,11 @@ export const rustRouteBindings = [
     rustConstName: "GET",
   },
   {
+    route: runnerSshContract.lease,
+    rustModulePath: ["runners", "runs", "by_run_id", "ssh", "lease"],
+    rustConstName: "LEASE",
+  },
+  {
     route: runnerSshContract.observe,
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "observations"],
     rustConstName: "OBSERVE",

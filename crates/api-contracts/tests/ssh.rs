@@ -49,6 +49,81 @@ fn access_handoff_separates_and_bounds_both_credentials() {
 }
 
 #[test]
+fn tailscale_handoff_has_independent_protected_network_and_ssh_credentials() {
+    use api_contracts::generated::types::runners::ssh::ResolveResponseResolvedAccessAuthentication;
+    let body = json!({
+        "outcome": "resolved_tailscale", "host": "peer.tail-test.ts.net", "port": 2222,
+        "username": "deploy", "generation": 5, "learnedHostKey": null,
+        "authentication": { "method": "password", "password": " ssh-password\n" },
+        "tailscale": { "configId": "00000000-0000-4000-8000-000000000001", "generation": 2,
+            "tags": ["tag:okou"], "clientId": "oauth-id-canary", "clientSecret": "oauth-secret-canary" }
+    });
+    let response: ResolveResponse = serde_json::from_str(&body.to_string()).unwrap();
+    let ResolveResponse::ResolvedTailscale {
+        authentication,
+        tailscale,
+        ..
+    } = response
+    else {
+        panic!("expected distinct private-network handoff");
+    };
+    let ResolveResponseResolvedAccessAuthentication::Password { password } = authentication else {
+        panic!("expected independent SSH login");
+    };
+    assert_eq!(password.expose(), " ssh-password\n");
+    assert_eq!(tailscale.client_id.expose(), "oauth-id-canary");
+    assert_eq!(tailscale.client_secret.expose(), "oauth-secret-canary");
+    for field in ["clientId", "clientSecret"] {
+        for invalid in [String::new(), "x".repeat(4097)] {
+            let mut invalid_body = body.clone();
+            invalid_body["tailscale"][field] = json!(invalid);
+            assert!(serde_json::from_str::<ResolveResponse>(&invalid_body.to_string()).is_err());
+        }
+    }
+    for field in ["authentication", "tailscale"] {
+        let duplicate = format!("{{\"{field}\":{},{}", body[field], &body.to_string()[1..]);
+        let error = serde_json::from_str::<ResolveResponse>(&duplicate)
+            .err()
+            .unwrap();
+        assert!(!error.to_string().contains("oauth-secret-canary"));
+    }
+    let mut mixed = body;
+    mixed["access"] = json!({ "clientSecret": "private-canary" });
+    let error = serde_json::from_str::<ResolveResponse>(&mixed.to_string())
+        .err()
+        .unwrap();
+    assert!(!error.to_string().contains("private-canary"));
+}
+
+#[test]
+fn legacy_carrier_guards_stay_absent_and_lease_has_only_identifiers() {
+    use api_contracts::generated::types::runners::ssh::{LeaseRequest, LeaseResponse, PinRequest};
+    let body = json!({"connectionId":"00000000-0000-4000-8000-000000000001", "runnerIdentity":{"runnerId":"00000000-0000-4000-8000-000000000002","heartbeatGeneration":3}, "expectedGeneration":4,"observedHostKey":{"algorithm":"ssh-ed25519","fingerprint":"SHA256:pin"}});
+    let legacy: PinRequest = serde_json::from_value(body.clone()).unwrap();
+    assert!(legacy.expected_tailscale_config.is_none());
+    assert!(
+        serde_json::to_value(&legacy)
+            .unwrap()
+            .get("expectedTailscaleConfig")
+            .is_none()
+    );
+    let mut lease = body;
+    lease.as_object_mut().unwrap().remove("observedHostKey");
+    lease["expectedTailscaleConfig"] =
+        json!({"configId":"00000000-0000-4000-8000-000000000003","generation":2});
+    let request: LeaseRequest = serde_json::from_value(lease).unwrap();
+    assert_eq!(request.expected_tailscale_config.generation, 2);
+    let response: LeaseResponse =
+        serde_json::from_value(json!({"outcome":"permitted","validForMs":60000})).unwrap();
+    assert!(matches!(
+        response,
+        LeaseResponse::Permitted {
+            valid_for_ms: 60000
+        }
+    ));
+}
+
+#[test]
 fn password_handoff_requires_exact_variant_fields_and_bounded_secrets() {
     let password = format!(" {}  \n", "😀".repeat(2046));
     assert_eq!(password.encode_utf16().count(), 4096);

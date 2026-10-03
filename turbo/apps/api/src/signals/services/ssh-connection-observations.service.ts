@@ -1,7 +1,8 @@
 import { sshConnectionObservationSchema } from "@okouai/api-contracts/contracts/ssh-connection-observations";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
@@ -24,8 +25,42 @@ export const listSshConnectionObservations$ = command(
           eq(sshConnectionObservations.generation, sshConnections.generation),
         ),
       )
+      .leftJoin(
+        tailscaleConfigs,
+        and(
+          eq(tailscaleConfigs.id, sshConnections.tailscaleConfigId),
+          eq(tailscaleConfigs.orgId, orgId),
+          or(
+            eq(tailscaleConfigs.scope, "organization"),
+            and(
+              eq(tailscaleConfigs.scope, "personal"),
+              eq(tailscaleConfigs.userId, userId),
+            ),
+          ),
+        ),
+      )
       .where(
-        and(eq(sshConnections.orgId, orgId), eq(sshConnections.userId, userId)),
+        and(
+          eq(sshConnections.orgId, orgId),
+          eq(sshConnections.userId, userId),
+          or(
+            and(
+              isNull(sshConnections.tailscaleConfigId),
+              isNull(sshConnectionObservations.tailscaleConfigId),
+            ),
+            and(
+              eq(tailscaleConfigs.enabled, true),
+              eq(
+                sshConnectionObservations.tailscaleConfigId,
+                tailscaleConfigs.id,
+              ),
+              eq(
+                sshConnectionObservations.tailscaleConfigGeneration,
+                tailscaleConfigs.generation,
+              ),
+            ),
+          ),
+        ),
       )
       .orderBy(asc(sshConnections.id));
     signal.throwIfAborted();

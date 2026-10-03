@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sshCredentials } from "./ssh-credential";
 import { cloudflareAccessConfigs } from "./cloudflare-access-config";
+import { tailscaleConfigs } from "./tailscale-config";
 
 export const sshConnections = pgTable(
   "ssh_connections",
@@ -26,6 +27,7 @@ export const sshConnections = pgTable(
     port: integer("port").notNull().default(22),
     credentialId: uuid("credential_id").notNull(),
     cloudflareAccessId: uuid("cloudflare_access_id"),
+    tailscaleConfigId: uuid("tailscale_config_id"),
     needsRebind: boolean("needs_rebind").default(false).notNull(),
     learnedHostKeyAlgorithm: varchar("learned_host_key_algorithm", {
       length: 64,
@@ -55,6 +57,19 @@ export const sshConnections = pgTable(
           cloudflareAccessConfigs.orgId,
         ],
       }).onDelete("restrict"),
+      foreignKey({
+        name: "ssh_connections_tailscale_org_fk",
+        columns: [table.tailscaleConfigId, table.orgId],
+        foreignColumns: [tailscaleConfigs.id, tailscaleConfigs.orgId],
+      }).onDelete("restrict"),
+      index("idx_ssh_connections_tailscale").on(
+        table.tailscaleConfigId,
+        table.id,
+      ),
+      check(
+        "chk_ssh_connections_tailscale_exclusive",
+        sql`${table.tailscaleConfigId} IS NULL OR (${table.cloudflareAccessId} IS NULL AND NOT ${table.needsRebind})`,
+      ),
       index("idx_ssh_connections_cloudflare_access").on(
         table.cloudflareAccessId,
         table.id,

@@ -47,7 +47,65 @@ function hostKeyDocs(name: string): RustTypeDeclarationDoc[] {
   ];
 }
 
+function configGuardDocs(name: string): RustTypeDeclarationDoc {
+  return {
+    rustTypeName: name,
+    rustDoc: [
+      "Exact effective Tailscale network authority, independent of SSH host generation.",
+    ],
+    fields: {
+      configId: ["Selected configuration UUID."],
+      generation: ["Effective credential, tag and enabled-state generation."],
+    },
+  };
+}
+
 export const sshTypeBindings = [
+  {
+    schema: runnerSshContract.lease.body,
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "LeaseRequest",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "LeaseRequest",
+        rustDoc: [
+          "Identifier-only Tailscale authority; no credentials or provider operation.",
+        ],
+        fields: {
+          connectionId: ["Exact host UUID."],
+          runnerIdentity: ["Winning process."],
+          expectedGeneration: ["Exact host generation."],
+          expectedTailscaleConfig: ["Required exact current network tuple."],
+        },
+      },
+      identityDocs("LeaseRequestRunnerIdentity"),
+      configGuardDocs("LeaseRequestExpectedTailscaleConfig"),
+    ],
+  },
+  {
+    schema: runnerSshContract.lease.responses[200],
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "LeaseResponse",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "LeaseResponse",
+        rustDoc: [
+          "Finite current authority; anchor monotonic deadline before request, renew every 30 seconds.",
+        ],
+        fields: {
+          validForMs: [
+            "At most 60000 milliseconds. Never extends deadline by response delay.",
+          ],
+        },
+        variants: {
+          unavailable: ["Deny and stop exact host use."],
+          permitted: ["Finite authority, not SSH/node readiness."],
+        },
+      },
+    ],
+  },
   {
     schema: runnerSshContract.observe.body,
     rustModulePath: ["runners", "ssh"],
@@ -65,6 +123,9 @@ export const sshTypeBindings = [
           expectedGeneration: [
             "Configuration used, including successful TOFU advancement.",
           ],
+          expectedTailscaleConfig: [
+            "Required exact network tuple for Tailscale; absent for existing carriers.",
+          ],
           observedAt: [
             "UTC observation time, ordered independently of report delivery.",
           ],
@@ -74,6 +135,7 @@ export const sshTypeBindings = [
         },
       },
       identityDocs("ObservationRequestRunnerIdentity"),
+      configGuardDocs("ObservationRequestExpectedTailscaleConfig"),
       {
         rustTypeName: "ObservationRequestFailureReason",
         rustDoc: [
@@ -166,9 +228,13 @@ export const sshTypeBindings = [
           runnerIdentity: ["Host-owned process identity."],
           expectedGeneration: ["Generation delivered by JIT."],
           observedHostKey: ["Identity after KEX proof verification."],
+          expectedTailscaleConfig: [
+            "Required exact network tuple for Tailscale; absent for existing carriers.",
+          ],
         },
       },
       identityDocs("PinRequestRunnerIdentity"),
+      configGuardDocs("PinRequestExpectedTailscaleConfig"),
       ...hostKeyDocs("PinRequestObservedHostKey"),
     ],
   },
@@ -218,6 +284,9 @@ export const sshTypeBindings = [
             "SSH authentication after protected carrier and host proof.",
           ],
           access: ["Private Access authority for the exact saved recipient."],
+          tailscale: [
+            "Private network authority, never guest data or an SSH login.",
+          ],
           host: ["Current destination, private to Runner."],
           port: ["Current destination port."],
           username: ["Current login identity."],
@@ -234,6 +303,9 @@ export const sshTypeBindings = [
             "Authorized protected carrier and SSH credential handoff.",
           ],
           unavailable: ["Current authority not available; no secrets."],
+          resolved_tailscale: [
+            "Authorized SSH/network handoff; requires qualified native carrier.",
+          ],
           resolved: ["Authorized current credential handoff."],
           resolved_password: [
             "Authorized current password credential handoff.",
@@ -254,6 +326,19 @@ export const sshTypeBindings = [
         variants: {
           private_key: ["SSH private key."],
           password: ["SSH password."],
+        },
+      },
+      {
+        rustTypeName: "ResolveResponseResolvedTailscaleTailscale",
+        rustDoc: [
+          "Write-only OAuth authority for trusted ephemeral registration; never SDK, guest or log data.",
+        ],
+        fields: {
+          configId: ["Exact selected configuration UUID."],
+          generation: ["Effective network generation."],
+          tags: ["Bounded permitted registration tags."],
+          clientId: ["Bounded zeroizing OAuth client ID."],
+          clientSecret: ["Bounded zeroizing OAuth client secret."],
         },
       },
       {

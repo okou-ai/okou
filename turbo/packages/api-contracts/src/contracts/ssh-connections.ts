@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { createCloudflareAccessRequestSchema } from "./cloudflare-access";
+import { createTailscaleRequestSchema } from "./tailscale";
 import { sshConnectionObservationSchema } from "./ssh-connection-observations";
 import {
   SSH_DISPLAY_NAME_MAX_LENGTH,
@@ -29,9 +30,19 @@ const portSchema = z.int().min(1).max(65_535);
 const accessTransportSchema = z
   .object({ type: z.literal("cloudflare_access"), configId: z.uuid() })
   .strict();
+const tailscaleTransportSchema = z
+  .object({ type: z.literal("tailscale"), configId: z.uuid() })
+  .strict();
 const transportSchema = z.union([
   z.object({ type: z.literal("direct") }).strict(),
   accessTransportSchema,
+  tailscaleTransportSchema,
+  z
+    .object({
+      type: z.literal("tailscale"),
+      create: createTailscaleRequestSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("cloudflare_access"),
@@ -112,7 +123,6 @@ export const sshConnectionMetadataSchema = z
 export const sshConnectionResponseSchema = z.union([
   sshConnectionMetadataSchema,
   sshConnectionMetadataSchema.extend({ transport: accessTransportSchema }),
-  // Prepare readers before a later release introduces Tailscale write inputs.
   sshConnectionMetadataSchema.extend({
     transport: z
       .object({ type: z.literal("tailscale"), configId: z.uuid() })
