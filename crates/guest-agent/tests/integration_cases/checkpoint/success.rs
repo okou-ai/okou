@@ -575,7 +575,7 @@ async fn checkpoint_rejects_prepare_response_without_upload_url() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_commits_history_after_third_upload_retry() {
+async fn pi_checkpoint_commits_history_after_second_upload_retry() {
     let api = SharedApiMock::new().await;
     let server = api.server();
     let mut runtime = checkpoint_runtime().unwrap();
@@ -611,7 +611,7 @@ async fn pi_checkpoint_commits_history_after_third_upload_retry() {
             if !upload_request_matches(request, &upload_body, &upload_len) {
                 return http_status(400);
             }
-            if upload_attempts.record() <= 3 {
+            if upload_attempts.record() <= 2 {
                 http_status(502)
             } else {
                 http_status(200)
@@ -632,7 +632,7 @@ async fn pi_checkpoint_commits_history_after_third_upload_retry() {
     create_bounded_checkpoint(&runtime).await.unwrap();
 
     prepare.assert_calls_async(1).await;
-    upload.assert_calls_async(4).await;
+    upload.assert_calls_async(3).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), history);
     let identity_bytes =
@@ -646,7 +646,7 @@ async fn pi_checkpoint_commits_history_after_third_upload_retry() {
         .lines()
         .filter(|line| line.contains("Presigned upload failed; retry"))
         .collect::<Vec<_>>();
-    assert_eq!(retry_logs.len(), 3);
+    assert_eq!(retry_logs.len(), 2);
     assert!(retry_logs.iter().all(|line| line.contains("[INFO]")));
     assert!(!system_log.contains(signature));
     assert!(!system_log.contains(upload_path));
@@ -672,7 +672,7 @@ async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() 
     });
     let upload = server.mock(|when, then| {
         when.method(PUT).path(upload_path);
-        then.respond_with(retry_then_response(4, http_status(200)));
+        then.respond_with(retry_then_response(3, http_status(200)));
     });
     let complete = server.mock(|when, then| {
         when.method(POST)
@@ -688,7 +688,7 @@ async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() 
     assert!(create_bounded_checkpoint(&runtime).await.is_err());
 
     prepare.assert_calls_async(1).await;
-    upload.assert_calls_async(4).await;
+    upload.assert_calls_async(3).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), history);
     assert!(!std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists());
@@ -762,7 +762,7 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
     create_bounded_checkpoint(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(1).await;
-    upload_mock.assert_calls_async(4).await;
+    upload_mock.assert_calls_async(3).await;
     complete_mock.assert_calls_async(1).await;
 
     let operations = std::fs::read_to_string(runtime.paths.sandbox_ops_file()).unwrap();
@@ -782,7 +782,7 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
 
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file()).unwrap();
     assert!(system_log.contains(
-        "[INFO] [sandbox:guest-agent] Session history upload failed after 3 retries; \
+        "[INFO] [sandbox:guest-agent] Session history upload failed after 3 attempts; \
          continuing checkpoint without history: http: PUT presigned: HTTP 502 Bad Gateway"
     ));
     assert!(!system_log.contains(upload_path));
