@@ -130,5 +130,7 @@ function ownerRows(value: unknown, userId: string) {
   return z
     .array(z.object({ userId: z.string() }).passthrough())
     .parse(value)
-    .filter((row) => {return row.userId === userId});
+    .filter((row) => {
+      return row.userId === userId;
+    });
 }
