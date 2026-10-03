@@ -884,7 +884,7 @@ export const createChatThread$ = command(
       }
       const createdThreadPlan = ordinaryChatThreadInsertPlan(args);
       const [createdThreadRow] = await tx
-        .with(createdThreadPlan.defaults)
+        .with(...createdThreadPlan.defaults)
         .insert(chatThreads)
         .values(createdThreadPlan.values)
         .onConflictDoNothing()

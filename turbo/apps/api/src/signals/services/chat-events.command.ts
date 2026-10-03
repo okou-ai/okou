@@ -92,7 +92,6 @@ import {
   prepareChatThreadInsert,
   createdChatThreadFromRow,
 } from "./chat-thread-create.service";
-import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
@@ -818,7 +817,7 @@ function normalSendRequestFacts(
 }
 const resolveSendThread$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -830,6 +829,7 @@ const resolveSendThread$ = command(
       };
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
+      readonly context: AgentRunContextSignals;
     },
     signal: AbortSignal,
   ): Promise<SendThread | NormalSendFailure> => {
@@ -879,8 +879,15 @@ const resolveSendThread$ = command(
             signal,
           )
         : null;
-    const defaults = await set(loadNewChatThreadDefaults$, member, signal);
+    const memberMetadata = await get(args.context.memberMetadata$);
     signal.throwIfAborted();
+    const defaults = {
+      modelSettings: modelSettingsSchema.parse(
+        memberMetadata.preferences?.modelSettings ?? {},
+      ),
+      cloudBrowserEnabled:
+        memberMetadata.preferences?.cloudBrowserEnabledByDefault ?? true,
+    };
     const runSettings = requestedThreadRunSettings(args.catalog, args.body, {
       selectedModel: initialModel?.selectedModel ?? null,
       modelSettings: defaults.modelSettings,
@@ -1263,7 +1270,7 @@ const appendNormalSendInput$ = command(
       if (thread.kind === "new") {
         const createdPlan = newSendThreadInsertPlan(args, thread);
         const [createdRow] = await tx
-          .with(createdPlan.defaults)
+          .with(...createdPlan.defaults)
           .insert(chatThreads)
           .values(createdPlan.values)
           .onConflictDoNothing()
@@ -1724,6 +1731,7 @@ export const sendNormalEvent$ = command(
         orgPlanCapabilities: orgModels.capabilities,
         catalog,
         modelBootstrap,
+        context,
         existing:
           "thread" in authorized
             ? { thread: authorized.thread, agentId: authorized.agent.id }

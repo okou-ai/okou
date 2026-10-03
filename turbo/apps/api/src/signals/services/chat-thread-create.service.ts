@@ -62,10 +62,6 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
         and(
           eq(orgMembersMetadata.orgId, args.orgId),
           eq(orgMembersMetadata.userId, args.userId),
-          args.modelSettings !== undefined &&
-            args.cloudBrowserEnabled !== undefined
-            ? sql`false`
-            : sql`true`,
         ),
       )
       .limit(1),
@@ -74,7 +70,12 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
   const computerUseHostId =
     args.cloudBrowserEnabled === true ? null : (args.computerUseHostId ?? null);
   return {
-    defaults,
+    // Omit the member lookup entirely when the owner supplied both defaults.
+    // Standalone creation can still resolve omitted preferences atomically.
+    defaults:
+      args.modelSettings !== undefined && args.cloudBrowserEnabled !== undefined
+        ? []
+        : [defaults],
     values: {
       ...values,
       modelSettings:

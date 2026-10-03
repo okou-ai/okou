@@ -1,3 +1,4 @@
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { computed, type Computed } from "ccstate";
@@ -25,6 +26,8 @@ export interface ExecutionMemberPreferences {
   readonly selectedImageModel: string | null;
   readonly selectedModel: string | null;
   readonly serviceTier: string | null;
+  readonly modelSettings: ModelSettings;
+  readonly cloudBrowserEnabledByDefault: boolean;
 }
 
 export interface ExecutionMemberMetadata {
@@ -58,6 +61,16 @@ export function createExecutionMemberMetadata(
         serviceTier: sql`NULL::text`
           .mapWith(nullableTextDecoder)
           .as("service_tier"),
+        modelSettings: sql`NULL::jsonb`
+          .mapWith(nullableDriverValueDecoder(orgMembersMetadata.modelSettings))
+          .as("model_settings"),
+        cloudBrowserEnabledByDefault: sql`NULL::boolean`
+          .mapWith(
+            nullableDriverValueDecoder(
+              orgMembersMetadata.cloudBrowserEnabledByDefault,
+            ),
+          )
+          .as("cloud_browser_enabled_by_default"),
       })
       .from(userCache)
       .where(eq(userCache.userId, owner.userId));
@@ -71,6 +84,9 @@ export function createExecutionMemberMetadata(
           selectedImageModel: orgMembersMetadata.selectedImageModel,
           selectedModel: orgMembersMetadata.selectedModel,
           serviceTier: orgMembersMetadata.serviceTier,
+          modelSettings: orgMembersMetadata.modelSettings,
+          cloudBrowserEnabledByDefault:
+            orgMembersMetadata.cloudBrowserEnabledByDefault,
         })
         .from(orgMembersMetadata)
         .where(
@@ -94,6 +110,9 @@ export function createExecutionMemberMetadata(
             selectedImageModel: preferences.selectedImageModel,
             selectedModel: preferences.selectedModel,
             serviceTier: preferences.serviceTier,
+            modelSettings: preferences.modelSettings ?? {},
+            cloudBrowserEnabledByDefault:
+              preferences.cloudBrowserEnabledByDefault ?? true,
           }
         : null,
     };

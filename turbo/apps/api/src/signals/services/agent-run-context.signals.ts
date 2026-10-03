@@ -239,22 +239,11 @@ function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
   return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
 }
 
-function createSelectedOfficialFacts(
-  workflows$: AgentRunContextSignals["workflows$"],
-  officialCatalog$: AgentRunContextSignals["officialCatalog$"],
+function hasSelectedOfficialWorkflow(
+  workflows: readonly SelectedAgentWorkflow[],
 ) {
-  return computed(async (get) => {
-    const workflows = await get(workflows$);
-    if (
-      !workflows.some((workflow) => {
-        return workflow.officialDefinitionName !== null;
-      })
-    ) {
-      return null;
-    }
-    return await get(
-      createOfficialWorkflowFacts(workflows, await get(officialCatalog$)),
-    );
+  return workflows.some((workflow) => {
+    return workflow.officialDefinitionName !== null;
   });
 }
 
@@ -360,28 +349,26 @@ function createIdentityContext(
       return executionCreditBalance(org, expired?.total ?? 0, pack?.total ?? 0);
     }),
   };
-  const {
-    connectorSelection$,
-    environmentSnapshot$,
-    customConnectorDefinitions$,
-    catalog$,
-    connectors$,
-  } = createConnectorContextGroups(userId, orgId, agentId);
+  const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
   const permissionGrants$ = createConnectorPermissionGrants(scope);
   const workflows$ = createAgentWorkflowSelection(scope);
   const officialCatalog$ = reusedOfficialCatalog(supplied);
-  const officialWorkflows$ = createSelectedOfficialFacts(
-    workflows$,
-    officialCatalog$,
-  );
+  const officialWorkflows$ = computed(async (get) => {
+    const workflows = await get(workflows$);
+    return hasSelectedOfficialWorkflow(workflows)
+      ? await get(
+          createOfficialWorkflowFacts(workflows, await get(officialCatalog$)),
+        )
+      : null;
+  });
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
     const plan = agentStorageReadPlan(
       scope,
       await Promise.all([
         get(agent$),
         get(workflows$),
-        get(connectorSelection$),
-        get(catalog$),
+        get(connectorContext.connectorSelection$),
+        get(connectorContext.catalog$),
         get(officialWorkflows$),
       ]),
     );
@@ -406,7 +393,7 @@ function createIdentityContext(
     });
   const environment$ = computed(async (get) => {
     requirePreparedContextAgent(await get(agent$));
-    const snapshot = await get(environmentSnapshot$);
+    const snapshot = await get(connectorContext.environmentSnapshot$);
     return { variables: snapshot.variables };
   });
   return {
@@ -420,7 +407,7 @@ function createIdentityContext(
     memberModels$,
     ...modelSources,
     memberMetadata$,
-    connectorSelection$,
+    connectorSelection$: connectorContext.connectorSelection$,
     permissionGrants$,
     workflows$,
     officialCatalog$,
@@ -430,9 +417,9 @@ function createIdentityContext(
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
     environment$,
-    customConnectorDefinitions$,
-    catalog$,
-    connectors$,
+    customConnectorDefinitions$: connectorContext.customConnectorDefinitions$,
+    catalog$: connectorContext.catalog$,
+    connectors$: connectorContext.connectors$,
   };
 }
 

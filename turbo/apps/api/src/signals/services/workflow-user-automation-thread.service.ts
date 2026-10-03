@@ -255,7 +255,7 @@ async function createAutomationChatThread(
     updatedAt: args.currentTime,
   });
   const [threadRow] = await db
-    .with(threadPlan.defaults)
+    .with(...threadPlan.defaults)
     .insert(chatThreads)
     .values(threadPlan.values)
     .onConflictDoNothing()
