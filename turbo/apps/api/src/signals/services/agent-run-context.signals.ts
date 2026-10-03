@@ -365,10 +365,10 @@ function createIdentityContext(
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  const memberMetadata$ =
-    sharedMember?.memberMetadata$ ?? createExecutionMemberMetadata(scope);
-  const credits$ =
-    sharedMember?.credits$ ?? createExecutionCreditBalance(scope, orgMetadata$);
+  const { memberMetadata$, credits$ } = sharedMember ?? {
+    memberMetadata$: createExecutionMemberMetadata(scope),
+    credits$: createExecutionCreditBalance(scope, orgMetadata$),
+  };
   const {
     connectorSelection$,
     environmentSnapshot$,
