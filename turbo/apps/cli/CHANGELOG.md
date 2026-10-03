@@ -1,5 +1,11 @@
 # Changelog
 
+## [9.376.2](https://github.com/okou-ai/okou/compare/cli-v9.376.1...cli-v9.376.2) (2026-10-03)
+
+### Dependencies
+
+* Publish the updated CLI bundle under a new immutable version.
+
 ## [9.376.1](https://github.com/okou-ai/okou/compare/cli-v9.376.0...cli-v9.376.1) (2026-10-02)
 
 
