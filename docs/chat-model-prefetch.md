@@ -8,7 +8,12 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 ## Independently consumable groups
 
 - `agent$`: Agent configuration and its organization-default identity.
-- `plan$`: organization plan capabilities; capacity consumes only this group.
+- `plan$`: organization plan capabilities, shared with capacity and admission.
+- `concurrencyCapacity$`: org-keyed subscription slots plus the captured plan's
+  capped base limit. Its subscription predicate uses the snapshot evaluation
+  time. Matching organizations reuse the node regardless of member/Agent; normal
+  sends start it before authorization, and missing-context picks preload the same
+  node. Pick never has a second subscription-capacity reader.
 - `allowance$`: org-keyed entitlement/window snapshot plus GET-only Stripe
   subscription preparation. Routing admission, final admission and refresh
   preparation share this read. Entitlement CAS and allowance window activation
@@ -72,7 +77,7 @@ post-claim preload. There is no `bootstrap$` aggregate and no transported
 The lease UPDATE joins `chat_threads` and returns `userId` and `agentId` with its
 existing claim fields in one statement. At the start of pick, matching IDs reuse
 the supplied interface. Missing or mismatched IDs construct the same factory.
-An organization match reuses `plan$` and `modelFacts$`; an organization-and-user
+An organization match reuses `plan$`, `concurrencyCapacity$` and `modelFacts$`; an organization-and-user
 match also reuses `memberModels$`, `memberMetadata$` and `credits$`, independent
 of Agent identity. A missing-context pick starts the same batch preload with the
 same snapshot shapes before consuming any of these groups. Only the whole
@@ -99,6 +104,23 @@ Its credential, subscription, job/version and allowance activation fences
 remain unchanged. Account transaction validation, official workflow
 pointer/installation/automation admission, thread/session, lease and queue
 fences remain intact.
+
+## Subscription capacity snapshot semantics (H group)
+
+Ethan's October 3, 2026 decision supersedes terminal document §§2/4 only for
+subscription capacity: the limit is authoritative for this context even if a
+subscription changes/expires between preload and pick. A roughly 100–200 ms
+window can temporarily admit more runs than the current organization limit;
+this is explicitly accepted. Newly purchased slots become visible in the next
+context (a new request or independently rebuilt missing-context pick), not by
+rereading the current context's subscription rows.
+
+`active_agent_runs` remains a live pick-time count. The separately owned
+post-release observation re-counts occupancy while sharing the same capacity
+snapshot, so a released run still makes its slot available. No occupancy result
+is prefetched; no subscription fallback/dual reader, new lock, or retry is added.
+The org-level capacity node reuses the existing `plan$`, preserves cap/unlimited
+and finite-result normalization, and settles under the existing preload owner.
 
 ## Scope and acceptance boundary
 

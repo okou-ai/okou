@@ -235,6 +235,7 @@ export type RunnerClaim = Awaited<
 
 export interface EntitledChatActor {
   readonly actor: ApiTestUser;
+  readonly customerId: string;
   readonly agentId: string;
   readonly runnerGroup: string;
   readonly providerId: string;
@@ -599,7 +600,7 @@ export function createChatEventsFixture(context: TestContext) {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     chatCallbacks.disableVapid();
     const runnerGroup = api.configureRunnerGroup();
-    await api.grantProEntitlement(actor, {
+    const { customerId } = await api.grantProEntitlement(actor, {
       ...(options.orgId === STAFF_ORG_ID
         ? {
             customerId: "cus_bdd_chat_events_staff",
@@ -614,7 +615,13 @@ export function createChatEventsFixture(context: TestContext) {
       description: "Exercises the web chat send route.",
       visibility: "private",
     });
-    return { actor, agentId: agent.agentId, runnerGroup, providerId };
+    return {
+      actor,
+      customerId,
+      agentId: agent.agentId,
+      runnerGroup,
+      providerId,
+    };
   }
 
   /**

@@ -13,24 +13,17 @@ import {
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
   matchAgentRunContextSignals,
   preloadAgentRunContext$,
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  activeConcurrencySubscriptionPredicate,
-  totalConcurrencyLimit,
-  cappedBaseConcurrencyLimit,
-} from "./org-concurrency-entitlements.service";
 import {
   createThreadClaimRunObjects,
   type ThreadClaim,
@@ -60,8 +53,9 @@ export type PickResult =
   | { readonly kind: "org-full" }
   | { readonly kind: "none" };
 
-/** An independent observation, evaluated only when its owner first reads it. */
-function createOrgHasCapacity(orgId: string, plan: OrgPlanCapabilities | null) {
+/** A fresh occupancy observation combined with the org's captured limit. */
+function createOrgHasCapacity(context: AgentRunContextSignals) {
+  const { orgId } = context;
   const orgActiveRunCount$ = computed(async (get) => {
     const database = get(db$);
     const [row] = await database
@@ -74,26 +68,10 @@ function createOrgHasCapacity(orgId: string, plan: OrgPlanCapabilities | null) {
     return row.count;
   });
 
-  const orgCapacity$ = computed(async (get) => {
-    const database = get(db$);
-    const at = nowDate();
-    const subscriptions = await database
-      .select({ slots: orgConcurrencySubscriptions.slots })
-      .from(orgConcurrencySubscriptions)
-      .where(activeConcurrencySubscriptionPredicate(orgId, at));
-    const limit = totalConcurrencyLimit({
-      baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
-      paidSlots: subscriptions.reduce((total, row) => {
-        return total + row.slots;
-      }, 0),
-    });
-    return Number.isFinite(limit) ? limit : 0;
-  });
-
   return computed(async (get) => {
     const [activeCount, capacity] = await Promise.all([
       get(orgActiveRunCount$),
-      get(orgCapacity$),
+      get(context.concurrencyCapacity$),
     ]);
     return capacity === 0 || activeCount < capacity;
   });
@@ -102,7 +80,6 @@ function createOrgHasCapacity(orgId: string, plan: OrgPlanCapabilities | null) {
 function createCapturedClaimObjects(
   claim: LeasedThreadClaim,
   context: AgentRunContextSignals,
-  plan: OrgPlanCapabilities | null,
 ) {
   const preparation = createThreadClaimRunObjects(
     {
@@ -118,10 +95,10 @@ function createCapturedClaimObjects(
         : "identity_mismatch",
     claim.requestFacts,
   );
-  const orgHasCapacity$ = createOrgHasCapacity(claim.orgId, plan);
-  // This separate, predeclared graph is first evaluated after an org-full
-  // release. Re-reading the initial memoized graph would lose a slot wakeup.
-  const orgHasCapacityAfterRelease$ = createOrgHasCapacity(claim.orgId, plan);
+  const orgHasCapacity$ = createOrgHasCapacity(context);
+  // Reobserve occupancy after release, but retain the same org capacity snapshot.
+  // Newly purchased slots take effect only in a subsequent context.
+  const orgHasCapacityAfterRelease$ = createOrgHasCapacity(context);
   return {
     ...preparation,
     context,
@@ -163,15 +140,14 @@ function createPickObjects() {
       if (!graph) {
         // Install the private receipt node synchronously, before its model
         // promise can yield. Concurrent receipt-list evaluations share it.
-        graph = computed(async (read) => {
+        graph = computed(() => {
           const context = matchAgentRunContextSignals(
             claim.context,
             claim.userId,
             claim.orgId,
             claim.agentId,
           );
-          const plan = await read(context.plan$);
-          return createCapturedClaimObjects(claim, context, plan);
+          return Promise.resolve(createCapturedClaimObjects(claim, context));
         });
         graphCache.set(claim, graph);
       }

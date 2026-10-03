@@ -117,6 +117,12 @@ import {
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { nowDate } from "../../lib/time";
+import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
+import {
+  activeConcurrencySubscriptionPredicate,
+  totalConcurrencyLimit,
+  cappedBaseConcurrencyLimit,
+} from "./org-concurrency-entitlements.service";
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
@@ -143,6 +149,7 @@ export interface AgentRunContextSignals {
   readonly agent$: Computed<Promise<BootstrapAgent | null>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
+  readonly concurrencyCapacity$: Computed<Promise<number>>;
   readonly allowance$: Computed<Promise<UsageAllowanceContext>>;
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
@@ -294,6 +301,28 @@ function createRunOrgPlan(orgId: string) {
   });
 }
 
+function createOrgCapacity(orgId: string) {
+  const plan$ = createRunOrgPlan(orgId);
+  const concurrencyCapacity$ = computed(async (get) => {
+    const at = nowDate();
+    const [plan, subscriptions] = await Promise.all([
+      get(plan$),
+      get(db$)
+        .select({ slots: orgConcurrencySubscriptions.slots })
+        .from(orgConcurrencySubscriptions)
+        .where(activeConcurrencySubscriptionPredicate(orgId, at)),
+    ]);
+    const limit = totalConcurrencyLimit({
+      baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
+      paidSlots: subscriptions.reduce((total, row) => {
+        return total + row.slots;
+      }, 0),
+    });
+    return Number.isFinite(limit) ? limit : 0;
+  });
+  return { plan$, concurrencyCapacity$ };
+}
+
 function capturedFeatureSwitchContext(
   scope: { readonly orgId: string; readonly userId: string },
   member: ExecutionMemberMetadata,
@@ -318,7 +347,7 @@ function createIdentityContext(
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
   const orgMetadata$ = sharedOrg?.orgMetadata$ ?? createRunOrgMetadata(orgId);
   const modelSources = createModelSourceGroups(orgId, supplied);
-  const plan$ = sharedOrg?.plan$ ?? createRunOrgPlan(orgId);
+  const { plan$, concurrencyCapacity$ } = sharedOrg ?? createOrgCapacity(orgId);
   const allowance$ =
     sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
   const modelFacts$ =
@@ -414,6 +443,7 @@ function createIdentityContext(
     agent$,
     orgMetadata$,
     plan$,
+    concurrencyCapacity$,
     allowance$,
     credits$,
     modelFacts$,
@@ -453,6 +483,7 @@ export const preloadAgentRunContext$ = command(
       signals.agent$,
       signals.orgMetadata$,
       signals.plan$,
+      signals.concurrencyCapacity$,
       signals.allowance$,
       signals.credits$,
       signals.modelFacts$,
