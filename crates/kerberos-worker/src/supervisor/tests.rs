@@ -3,10 +3,15 @@
 use super::*;
 
 fn allocation() -> (tempfile::TempDir, Arc<Semaphore>, Resources) {
-    let target = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("target");
+    // Test-only public resource path; never a helper/source/runtime override.
+    let target = std::env::var_os("KERBEROS_NATIVE_TEST_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("target")
+        });
     let root = tempfile::tempdir_in(target).unwrap();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let semaphore = Arc::new(Semaphore::new(1));
@@ -176,6 +181,52 @@ fn actual_private_pipe_magic_version_reserved_sequence_length_and_state_refuse()
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
         assert_eq!(semaphore.available_permits(), 1);
     }
+}
+
+#[test]
+#[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
+fn malformed_boolean_timesync_profile_refuses_before_ready_or_credentials() {
+    let (root, semaphore, resources) = allocation();
+    let profile = std::str::from_utf8(PROFILE)
+        .unwrap()
+        .replace("kdc_timesync = 0", "kdc_timesync = false");
+    assert_ne!(profile.as_bytes(), PROFILE);
+    fs::write(resources.tree.path().join("profile.conf"), profile).unwrap();
+    let mut child = Command::new(resources.tree.path().join("helper"))
+        .current_dir(resources.tree.path())
+        .env_clear()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let reaped = resources.capacity.reaped.clone();
+    reaped.store(false, Ordering::Release);
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let id = child.id();
+    let mut owner = Reaper {
+        child,
+        resources: Some(resources),
+        reaped,
+        failed_cleanup: false,
+    };
+    fcntl_setfl(&stdin, fcntl_getfl(&stdin).unwrap() | OFlags::NONBLOCK).unwrap();
+    fcntl_setfl(&stdout, fcntl_getfl(&stdout).unwrap() | OFlags::NONBLOCK).unwrap();
+    let aborted = AtomicBool::new(false);
+    let mut io = Io {
+        input: &mut stdin,
+        output: &mut stdout,
+        aborted: &aborted,
+        deadline: WallInstant::now() + Duration::from_secs(2),
+    };
+    assert!(matches!(io.reply(0, None), Err(Error::Unavailable)));
+    drop(stdin);
+    drop(stdout);
+    owner.finish().unwrap();
+    assert!(!Path::new(&format!("/proc/{id}")).exists());
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    assert_eq!(semaphore.available_permits(), 1);
 }
 
 #[test]

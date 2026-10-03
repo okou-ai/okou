@@ -260,7 +260,8 @@ static int renew(void) {
     if (!mode) return -1;
     if (!(initial.ticket_flags & TKT_FLG_RENEWABLE)) { native_error = 9; return -1; }
     if (krb5_timeofday(context, &now)) { native_error = 8; return -1; }
-    if (initial.times.renew_till <= now || initial.times.endtime <= now) { native_error = 10; return -1; }
+    if (initial.times.renew_till <= now) { native_error = 10; return -1; }
+    if (initial.times.endtime <= now) { native_error = 4; return -1; }
     krb5_error_code code = krb5_get_renewed_creds(context, &c, initiator, source_cache, NULL);
     if (code) { native_error = exchange_failure(code); goto done; }
     if (tgt_valid(&c) || krb5_cc_initialize(context, source_cache, initiator) || krb5_cc_store_cred(context, source_cache, &c)) goto done;
@@ -314,11 +315,16 @@ static int initialize(void) {
     }
     if (position != input_size || profile_init(NULL, &profile) ||
         relation("dns_lookup_kdc", "false") || relation("dns_lookup_realm", "false") ||
-        relation("rdns", "false") || relation("canonicalize", "false") || relation("kdc_timesync", "false") ||
+        relation("rdns", "false") || relation("canonicalize", "false") || relation("kdc_timesync", "0") ||
         relation("default_ccache_name", "FILE:/absent") || relation("default_keytab_name", "FILE:/absent") ||
         relation("default_client_keytab_name", "FILE:/absent") || relation("udp_preference_limit", "1") ||
         relation("default_tgs_enctypes", "aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96") ||
         relation("permitted_enctypes", "aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96")) return -1;
+    /* MIT reads kdc_timesync as an INTEGER and silently retains its enabled
+       default on "false". Refuse a malformed static profile before acquisition
+       instead of allowing replies to shift the caller/local-clock boundary. */
+    int timesync = 1;
+    if (profile_get_integer(profile, "libdefaults", "kdc_timesync", NULL, 1, &timesync) || timesync != 0) return -1;
     const char *keys[] = {"realms", initiator->realm.data, "kdc", NULL};
     if (profile_add_relation(profile, keys, "127.0.0.1:1") || krb5_init_context_profile(profile, 0, &context)) return -1;
     krb5_set_kdc_send_hook(context, relay, NULL);
@@ -409,9 +415,19 @@ static void cleanup(void) {
     if (profile) profile_release(profile);
     erase(password, sizeof(password)); erase(input, sizeof(input)); erase(output, sizeof(output));
 }
+static int readonly_profile_contract(void) {
+    const char *files[] = {"/profile.conf", NULL};
+    profile_t checked = NULL;
+    int value = 1;
+    if (profile_init(files, &checked)) return -1;
+    int result = profile_get_integer(checked, "libdefaults", "kdc_timesync", NULL, 1, &value) || value != 0;
+    profile_release(checked);
+    return result ? -1 : 0;
+}
 int main(void) {
-    /* Fixed non-secret configuration path; the parent supplies an empty environment. */
-    if (clearenv() || setenv("KRB5_CONFIG", "/profile.conf", 1) || isolate() || send_frame(0, NULL, 0)) return 1;
+    /* Fixed non-secret configuration path; the parent supplies an empty environment.
+       Verify the maintained integer contract BEFORE Ready/any credential bytes. */
+    if (clearenv() || setenv("KRB5_CONFIG", "/profile.conf", 1) || isolate() || readonly_profile_contract() || send_frame(0, NULL, 0)) return 1;
     int result = 1;
     for (unsigned operations = 0; operations < 32; ++operations) {
         unsigned kind; ++sequence; native_error = 1; exchanges = 0; exchange_bytes = 0;

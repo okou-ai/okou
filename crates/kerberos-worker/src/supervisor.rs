@@ -27,7 +27,7 @@ use crate::{Credentials, Error, KdcExchange, Source, Step, TicketPolicy, TicketS
 mod tests;
 
 const MAX_FRAME: usize = 131072;
-const PROFILE: &[u8] = b"[libdefaults]\n dns_lookup_kdc = false\n dns_lookup_realm = false\n rdns = false\n canonicalize = false\n kdc_timesync = false\n default_ccache_name = FILE:/absent\n default_client_keytab_name = FILE:/absent\n default_keytab_name = FILE:/absent\n";
+const PROFILE: &[u8] = b"[libdefaults]\n dns_lookup_kdc = false\n dns_lookup_realm = false\n rdns = false\n canonicalize = false\n kdc_timesync = 0\n default_ccache_name = FILE:/absent\n default_client_keytab_name = FILE:/absent\n default_keytab_name = FILE:/absent\n";
 static QUEUE: Semaphore = Semaphore::const_new(16);
 static RUNNING: OnceLock<Arc<Semaphore>> = OnceLock::new();
 

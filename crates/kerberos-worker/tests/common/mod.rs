@@ -4,6 +4,7 @@ use kerberos_worker::{Credentials, Source, TicketPolicy};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
+    path::PathBuf,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -84,8 +85,13 @@ pub fn credentials_until(encoded: Vec<u8>, now: u32, end: u32) -> Credentials {
     Credentials::new(client, server, Source::Ticket(parsed)).unwrap()
 }
 pub fn root() -> tempfile::TempDir {
-    fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).unwrap();
-    let root = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    // The CI-only root fixture lives on a private namespace tmpfs; leaving it
+    // under a different UID's private checkout would correctly prevent bootstrap.
+    let target = std::env::var_os("KERBEROS_NATIVE_TEST_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_TARGET_TMPDIR")));
+    fs::create_dir_all(&target).unwrap();
+    let root = tempfile::tempdir_in(target).unwrap();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     root
 }

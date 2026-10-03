@@ -65,7 +65,7 @@ headers=subprocess.check_output(['readelf','-h','-l','-d',str(binary)],text=True
 assert 'INTERP' not in headers and '(NEEDED)' not in headers
 machine='AArch64' if arch=='aarch64' else 'Advanced Micro Devices X86-64';assert machine in headers
 (receipt/'elf.txt').write_text(headers)
-(receipt/'package.json').write_text(json.dumps({'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'worktreeDirty':bool(subprocess.check_output(['git','status','--porcelain'],text=True).strip()),'runtimeVerified':False,'runtimeProfile':runtime_profile,'runtimeUid':0 if runtime_profile=='privileged-synthetic' else uid,'ownerBootstrap':'not-checked','nativeTarget':env['KERBEROS_WORKER_TARGET'],'binarySha256':sha,'noticesSha256':notice_sha,'mitVersion':'1.22.2','mitSourceSha256':'3243ffbc8ea4d4ac22ddc7dd2a1dc54c57874c40648b60ff97009763554eaf13'},indent=2)+'\n')
+(receipt/'package.json').write_text(json.dumps({'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'worktreeDirty':bool(subprocess.check_output(['git','status','--porcelain'],text=True).strip()),'runtimeVerified':False,'runtimeProfile':runtime_profile,'runtimeUid':0 if runtime_profile=='privileged-synthetic' else uid,'ownerUid':uid,'ownerBootstrap':'not-checked','nativeTarget':env['KERBEROS_WORKER_TARGET'],'binarySha256':sha,'noticesSha256':notice_sha,'mitVersion':'1.22.2','mitSourceSha256':'3243ffbc8ea4d4ac22ddc7dd2a1dc54c57874c40648b60ff97009763554eaf13'},indent=2)+'\n')
 (receipt/'executables.txt').write_text('\n'.join(executables[name] for name in ('kerberos_worker','process','cleanup_unknown'))+'\n')
 PY
 # Always exercise the ORIGINAL owner's availability/refusal boundary, without
@@ -75,18 +75,6 @@ process_executable=$(head -n 2 "$receipt/executables.txt" | tail -n 1)
 sudo unshare --mount --pid --fork --kill-child --mount-proc --propagation private \
   bash -c 'set -e; setpriv --reuid "$2" --regid "$3" --clear-groups --bounding-set=-all "$1" --exact supported_or_explicitly_unavailable_bootstrap_never_uses_another_backend --nocapture & child=$!; wait "$child"' \
   bash "$process_executable" "$uid" "$gid" | tee -a "$receipt/tests.txt"
-while IFS= read -r executable; do
-  # PID1 supervises rather than execs: native PDEATHSIG needs a real live parent.
-  # Explicit CI synthetic-root mode retains only the existing sudo harness's
-  # bootstrap privilege. The unchanged worker must remove all capabilities and
-  # pass readonly-root/Landlock/seccomp self-checks BEFORE Ready/any credential.
-  # Owner mode still drops to the actual file owner; never widen private ancestors.
-  sudo unshare --mount --pid --fork --kill-child --mount-proc --propagation private \
-    bash -c 'set -e; if [[ "$4" == privileged-synthetic ]]; then "$1" --include-ignored --test-threads=1 & else setpriv --reuid "$2" --regid "$3" --clear-groups --bounding-set=-all "$1" --include-ignored --test-threads=1 & fi; child=$!; wait "$child"' \
-    bash "$executable" "$uid" "$gid" "$runtime_profile" | tee -a "$receipt/tests.txt"
-done < "$receipt/executables.txt"
-cargo --version > "$receipt/toolchain.txt"
-rustc --version >> "$receipt/toolchain.txt"
 python3 - "$receipt/package.json" "$receipt/tests.txt" <<'PY'
 import json,sys
 from pathlib import Path
@@ -94,6 +82,25 @@ path=Path(sys.argv[1]);data=json.loads(path.read_text());tests=Path(sys.argv[2])
 markers=[line.split('owner bootstrap: ',1)[1] for line in tests.splitlines() if 'owner bootstrap: ' in line]
 assert len(markers)==1 and markers[0] in ('supported','explicitly unavailable')
 data['ownerBootstrap']=markers[0]
-data['runtimeVerified']=True
+path.write_text(json.dumps(data,indent=2)+'\n')
+PY
+while IFS= read -r executable; do
+  # PID1 supervises rather than execs: native PDEATHSIG needs a real live parent.
+  # Explicit CI synthetic-root mode retains only the existing sudo harness's
+  # bootstrap privilege. The unchanged worker must remove all capabilities and
+  # pass readonly-root/Landlock/seccomp self-checks BEFORE Ready/any credential.
+  # Root fixtures use a bounded CHILD-ONLY tmpfs, not another UID's private checkout
+  # ancestors (unmapped after native unshare). Owner mode still uses its actual
+  # files/UID; never widen ancestors or alter the host /run/device/policy view.
+  sudo unshare --mount --pid --fork --kill-child --mount-proc --propagation private \
+    bash -c 'set -e; if [[ "$4" == privileged-synthetic ]]; then mount -t tmpfs -o size=67108864,nr_inodes=128,mode=0755 none /run; mkdir -m 0700 /run/kerberos-native-fixture; export KERBEROS_NATIVE_TEST_ROOT=/run/kerberos-native-fixture; "$1" --include-ignored --test-threads=1 & else setpriv --reuid "$2" --regid "$3" --clear-groups --bounding-set=-all "$1" --include-ignored --test-threads=1 & fi; child=$!; wait "$child"' \
+    bash "$executable" "$uid" "$gid" "$runtime_profile" | tee -a "$receipt/tests.txt"
+done < "$receipt/executables.txt"
+cargo --version > "$receipt/toolchain.txt"
+rustc --version >> "$receipt/toolchain.txt"
+python3 - "$receipt/package.json" <<'PY'
+import json,sys
+from pathlib import Path
+path=Path(sys.argv[1]);data=json.loads(path.read_text());data['runtimeVerified']=True
 path.write_text(json.dumps(data,indent=2)+'\n')
 PY
