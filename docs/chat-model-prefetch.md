@@ -55,11 +55,16 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 S1 creates the interface once. Authorization reads `agent$`; model validation
 reads `modelFacts$`, `memberModels$` and the member preference owner
 `memberMetadata$`. It does not await unrelated groups.
-After enqueue commits, `preloadAgentRunContext$` triggers all groups without
-awaiting them and owns their settled promises with `waitUntil`. Rejections stay
-cached in the original computeds; consumers fail fast without a second loader.
-No preloading competes with the enqueue transaction. There is no `bootstrap$`
-aggregate and no transported `PrefetchedAgentBootstrap`/`PrefetchedModelBootstrap`.
+Immediately after S1 creates the authenticated org/member/Agent interface,
+`preloadAgentRunContext$` triggers all groups once without awaiting them, in
+parallel with authorization, remaining S1 validation and enqueue writes. It owns
+their settled promises with `waitUntil`, even when validation rejects the request
+before enqueue. Rejections stay cached in the original computeds; pick consumers
+fail fast without a second loader. Rejected requests never use or return these
+speculative facts. Reads on rejected requests and connection contention are
+accepted for this timing phase; a missing-context pick retains its existing
+post-claim preload. There is no `bootstrap$` aggregate and no transported
+`PrefetchedAgentBootstrap`/`PrefetchedModelBootstrap`.
 
 ## Claim identity and graph boundaries
 
@@ -201,7 +206,7 @@ flush that would deadlock the suspended reader.
 
 Global key/pricing nodes survive any identity reconciliation. Organization source
 nodes survive an org match; member providers/accounts survive an org+user match.
-All are included in post-enqueue preload. Required org/gateway route facts are
+All are included in immediate pre-authorization preload. Required org/gateway route facts are
 consumed in S1; unrelated global groups are not awaited before enqueue. A missing
 key, source or pricing category is authoritative; a rejected read is not retried.
 Selection is pure; secret decryption occurs only for the selected source. Native
@@ -249,12 +254,14 @@ fences are unchanged. No credits/member-metadata ownership changes are included.
    query/data authority allows. Reused groups must retain their dependent source
    identities too, not just a computed that secretly rereads a replaced source.
 3. Include the new field in `preloadAgentRunContext$`'s node list. That command
-   triggers and settles each promise under `waitUntil` after enqueue commit.
+   triggers and settles each promise under `waitUntil` immediately after context
+   creation, before authorization/enqueue; missing-context picks keep their
+   post-claim starter.
    Preserve the computed's original rejection so a selected group fails fast;
    do not substitute a successful default or invoke another loader.
 4. S1 may await the group only if authorization, validation or enqueue itself
    needs it. Use `get(context.<group>$)` directly. Do not wait for unrelated
-   groups, and do not start remaining reads alongside enqueue writes.
+   groups. Early preload may overlap enqueue writes; it does not delay consume.
 5. Pass the whole interface through queue-drain/pick/Thread. S3 reads only the
    group it consumes with `get(context.<group>$)`; do not pass individual nodes
    or rebuild a local S3 loader. Missing-context and mismatched-identity picks

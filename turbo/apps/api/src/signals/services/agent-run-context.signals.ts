@@ -494,7 +494,7 @@ export const preloadAgentRunContext$ = command(
   ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
     signal.throwIfAborted();
     // Start the launch-critical dependency chains before independent projections.
-    // All nodes still start in this post-commit turn; dispatch awaits none of them.
+    // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
       signals.catalog$,
       signals.connectors$,

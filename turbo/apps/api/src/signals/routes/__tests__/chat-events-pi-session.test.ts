@@ -71,7 +71,10 @@ describe("CHAT-02: model-first provider policies", () => {
         expect(claim.claim.resumeSession).toBeNull();
         expect(claim.claim.piSessionId).toBe(run.threadId);
         expect(claim.claim.piModelConfig).toMatchObject({
-          thinkingLevel: "max",
+          thinkingLevel:
+            model === "gpt-6-luna" || model === "gpt-5.6-luna"
+              ? "xhigh"
+              : "max",
         });
         expect(claim.claim.piModelConfig).not.toHaveProperty("serviceTier");
       }

@@ -94,6 +94,11 @@ function assertCatalogRows(rows: readonly CatalogRow[]): void {
 function assertRoute(route: RouteRow): void {
   const label = `${route.model}/${route.provider_type}/${route.priority}`;
   assert.equal(new Set(route.efforts).size, route.efforts.length, label);
+  if (route.model === "gpt-5.6-luna" || route.model === "gpt-6-luna") {
+    assert.ok(!route.efforts.includes("max"), `${label}: Luna offers max`);
+    assert.ok(route.efforts.includes("xhigh"), `${label}: Luna lacks xhigh`);
+    assert.equal(route.default_effort, "xhigh", `${label}: Luna default`);
+  }
   assert.ok(
     route.default_effort === null ||
       route.efforts.includes(route.default_effort),

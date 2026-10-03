@@ -10,7 +10,7 @@ type MockCatalogRoute = ModelCatalogResponse["routes"][number];
 
 const CLAUDE_EFFORTS = ["low", "medium", "high", "extra", "max", "ultracode"];
 const GPT_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
-const GPT_LUNA_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const GPT_LUNA_EFFORTS = ["low", "medium", "high", "xhigh"];
 const DEEPSEEK_EFFORTS = ["low", "high", "xhigh", "max"];
 const ANTHROPIC_BYOK = [
   "anthropic-api-key",
@@ -105,12 +105,18 @@ function profileFor(model: string): MockModelProfile {
       subscription: null,
     };
   }
-  const luna = model.includes("luna") || model === "gpt-5.5";
+  const luna = model.includes("luna");
+  const legacyLuna = model === "gpt-5.5";
   return {
     builtIn: "openai-api-key",
-    priceTier: model === "gpt-6-astra" ? "$$$$" : luna ? "$" : "$$$",
-    efforts: luna ? GPT_LUNA_EFFORTS : GPT_EFFORTS,
-    defaultEffort: "max",
+    priceTier:
+      model === "gpt-6-astra" ? "$$$$" : luna || legacyLuna ? "$" : "$$$",
+    efforts: luna
+      ? GPT_LUNA_EFFORTS
+      : legacyLuna
+        ? [...GPT_LUNA_EFFORTS, "max"]
+        : GPT_EFFORTS,
+    defaultEffort: luna ? "xhigh" : "max",
     serviceTiers: ["priority"],
     byok: OPENAI_BYOK,
     subscription: "codex-oauth-token",

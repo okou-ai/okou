@@ -1682,6 +1682,9 @@ const prepareNormalSendContext$ = command(
       args.orgId,
       args.body.agentId,
     );
+    // Start authenticated org/member reads immediately; authorization consumes
+    // the same promises. Settled waitUntil work stays owned on rejection/abort.
+    set(preloadAgentRunContext$, context, signal);
     const prepared = await set(
       prepareNormalSend$,
       { ...args, context },
@@ -1778,7 +1781,6 @@ export const sendNormalEvent$ = command(
           inserted: { createdAt },
           enqueueCommit,
         } = committed;
-        set(preloadAgentRunContext$, context, signal);
         // Schedule before observing abort; touch/realtime follow this pick's outcome.
         waitUntil(
           set(

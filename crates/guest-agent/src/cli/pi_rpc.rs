@@ -173,17 +173,17 @@
 //! ## Terminal result and failure ownership
 //!
 //! Each assistant `message_end` updates `PiAssistantTerminal`; it does not
-//! itself close the public run. `stopReason` values `error`, `aborted`, and `length` set
+//! itself close the public run. `stopReason` values `error` and `aborted` set
 //! the cached failure flag. The result text uses `errorMessage` when present,
 //! otherwise the joined non-empty assistant text. An `errorMessage` is
 //! upstream-controlled, so it passes through
 //! [`crate::upstream_error_text::project_model_error_text`]: a markup document
 //! becomes a bounded content-free description and any other message keeps its
 //! exact text under a size bound. Assistant text is the run's own answer and is
-//! never bounded here. If both are empty, it falls back to
+//! never bounded here. Except for `length`, an empty result falls back to
 //! `Pi model turn <stopReason>` when a stop reason exists.
-//! A final `length` result uses a bounded output-limit message and the existing
-//! `output_token_limit` reason; any partial assistant answer remains in its event.
+//! A final `length` result follows Pi's completed outcome and retains the partial
+//! assistant answer. The SDK owns truncated-response recovery before settlement.
 //! Runtime model diagnostics carry observed HTTP status, attempt counts,
 //! allowlisted transport exception evidence, and a failure reason. No raw causes
 //! or network addresses enter `modelRequest`. The reason is forwarded separately
@@ -405,20 +405,21 @@ struct PiAssistantTerminal {
 impl PiAssistantTerminal {
     fn from_message(message: &Value, preserve_empty_result: bool) -> Self {
         let stop_reason = message.get("stopReason").and_then(Value::as_str);
-        let failed = matches!(stop_reason, Some("error" | "aborted" | "length"));
+        let failed = matches!(stop_reason, Some("error" | "aborted"));
         // A model error is upstream-controlled text. Bounding it here keeps the
         // public result, the delivered event and the failure diagnostic on the
         // same actionable value; assistant text stays untouched because it is
         // the run's own answer.
         let result = if stop_reason == Some("length") {
-            "Pi model response exceeded the output token limit.".to_owned()
+            assistant_text(message)
         } else {
             message
                 .get("errorMessage")
                 .and_then(Value::as_str)
                 .map_or_else(|| assistant_text(message), project_model_error_text)
         };
-        let result = if result.is_empty() && !preserve_empty_result {
+        let result = if stop_reason != Some("length") && result.is_empty() && !preserve_empty_result
+        {
             stop_reason.map_or_else(String::new, |reason| format!("Pi model turn {reason}"))
         } else {
             result
@@ -427,7 +428,6 @@ impl PiAssistantTerminal {
             .then(|| model_request_diagnostic(message))
             .flatten();
         let failure_reason = match stop_reason {
-            Some("length") => Some(guest_contracts::diagnostics::FailureReason::OutputTokenLimit),
             Some("error") if model_request.is_some() => model_request_details(message)
                 .and_then(|details| details.get("failureReason"))
                 .and_then(|reason| serde_json::from_value(reason.clone()).ok()),

@@ -262,11 +262,27 @@ runtime field; newer Guests still accept messages without it. The open reason
 token contract accepts additive API/Runner taxonomy entries without a database
 migration.
 
-A settled final Pi `length` response fails with `output_token_limit`; partial
-assistant text stays in its event. Native tools and subsequent responses remain
-owned by the same sandbox session.
+A settled final Pi `length` response follows Pi's completed outcome: partial
+assistant text stays in its event and becomes the public result, without a
+synthetic `output_token_limit` failure. An empty answer remains empty; completion
+does not assert that an answer is complete. Pi owns bounded truncated-response
+recovery and refuses to execute truncated tool arguments before settlement.
+Native tools and subsequent responses remain owned by the same sandbox session.
+Existing API/Runner completion contracts already accept this success result, so
+old and new consumers need no schema migration. Older Guests retain their former
+length-failure behavior until upgraded; historical run statuses are not rewritten.
 Retry budgets, cancellation, Runner logging rules and user-owned-provider
 warning suppression are unchanged.
+
+GPT 5.6 Luna and GPT 6 Luna have a product effort ceiling of `xhigh`. Migration
+1317 removes `max` from their catalog routes and changes a `max` or omitted route
+default to `xhigh`, including subscription routes. Both the composer choices and
+API validation read that catalog; there is no separate frontend denylist. An
+unavailable stored `max` preference resolves to the new route default without
+rewriting the preference or a historical run. Already captured runs retain their
+launch effort. Old clients that explicitly submit `max` receive the existing
+unsupported-effort response and must refresh; rollback to an earlier application
+does not restore the removed database catalog choice.
 
 The exact failed-provider sentence "We were unable to start processing your
 request within the 900-second timeout limit. Please try again later." is
