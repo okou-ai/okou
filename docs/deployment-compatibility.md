@@ -751,9 +751,7 @@ forward-fix migration that restores the columns and the enum value.
 ## Unified chat queue final cleanup (after release 7)
 
 This change contracts what release 7 (#37200, released in #37237) retired and
-removes compatibility that no longer has a reader. It also deletes the
-one-time `019-pi-api-first-turn-cleanup` script, which was run in production on
-2026-09-28 (17 objects deleted, `pi-api-first-turn/` verified empty).
+removes compatibility that no longer has a reader.
 
 **Migration 1282: retired integration agent tables.** Migration
 `1282_drop_retired_integration_agent_tables` drops
@@ -1182,7 +1180,7 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
-## Unified chat queue (release 7): legacy steer and Pi API-first removal
+## Unified chat queue (release 7): current launch compatibility
 
 Release 7 completes the unified queue and removes compatibility code made
 unreachable by release 6:
@@ -1198,67 +1196,21 @@ unreachable by release 6:
   response shape remains the existing event ID and prompt.
   The completion body is not strict, so a stray `activeInputDeliveryIds` is
   stripped.
-- The four API-first steps listed under release 6: the Sandbox CLI no longer
-  writes the `vm0_pi_api_first_turn_boundary` startup record; the API no longer
-  writes `piLaunchConfig.apiFirstTurn` (removed from the strict contract),
-  `pi-sandbox-handoff.service.ts`, the completion-time handoff object deletion
-  and the `pi-api-first-turn/` sweep in the sandbox cleanup cron; the Guest
-  reads the installed-CLI requirement only from `piInstalledCliRequirement` and
-  no longer parses the startup record or launch config. The Runner's generated
-  `PiLaunchConfig` has no `deny_unknown_fields`, so it tolerates the removed
-  slot; only the installed release 7 CLI's strict launch schema rejects it.
-  `okou run usage` accepts only the `sandboxProxy` source.
-- `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` rises to the first CLI release without
-  the slot, because release 6 installed CLIs parse the launch config strictly
-  and require `apiFirstTurn`. The value is the last released CLI version plus
-  one patch; if another release ships before this change merges, raise it
-  again so it stays above every release 6 CLI.
+- The Guest reads installed-CLI requirements from `piInstalledCliRequirement`
+  in the captured execution context. `okou run usage` accepts only the
+  `sandboxProxy` source.
+- `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` remains **9.370.3**, the launch-payload
+  compatibility floor. A newer published CLI does not justify raising it:
+  eligible installed CLIs must still satisfy the captured runtime/session
+  construction identity, otherwise the Guest uses the commit-addressed
+  `CLI_PKG_URL`. Do not lower the floor without proving that older strict CLI
+  readers accept the current launch payload.
 
-**Merge gate:** every release 6 Runner is live and earlier Runners have drained
-(no reserve or receipt calls in production since 2026-09-28 05:30 UTC).
-
-Mixed versions during rollout (API first, then Runner with its Guest; old
-Runners drain for up to about two hours; the Sandbox CLI is either the
-commit-addressed `CLI_PKG_URL` of the API that created the run or the CLI
-preinstalled in the Runner image):
-
-- New API with a release 6 Runner and Guest: the API writes no slot and the new
-  CLI floor, so the release 6 Guest rejects its installed release 6 CLI and
-  launches the new commit-addressed CLI. That CLI accepts the slot-free launch
-  config and writes no startup record, which release 6 Guests tolerate. The
-  release 6 Runner validates the launch config without the slot, steers only
-  through the remaining endpoints and reports no `apiFirstTurn` usage source.
-- New Guest with an old CLI that still writes the startup record: reachable only
-  when a new Guest launches a release 6 CLI, which needs a launch context
-  written by a release 6 API. The Guest treats the record as an unknown JSON
-  record: it is written to the local transcript only, takes no event sequence,
-  and public events still start at 1.
-- Old Guest with the new CLI: release 6 Guests start at sequence 1 without the
-  startup record.
-- Pi runs queued by a release 6 API and claimed after the new API is promoted:
-  their stored `piLaunchConfig` still carries `apiFirstTurn`, which the strict
-  claim reader rejects, so the claim fails the run. This affects only Pi runs
-  created before promotion and not yet claimed; runs are normally claimed
-  within seconds and the pending timeout bounds the window at five minutes.
-  This is accepted; release at low traffic.
-- No reader remains for handoff objects that earlier APIs wrote under
-  `pi-api-first-turn/`. The one-time `019-pi-api-first-turn-cleanup` script
-  was run in production on 2026-09-28, after release 7 promotion and the old
-  API writer drain: it deleted 17 objects from that prefix in
-  `vm0-s3-user-storages-prod` and verified the prefix is empty. Canonical
-  session history outside the prefix is untouched. The script has since been
-  removed.
-
-**API rollback floor: this release**, pinned by the marker
-`.github/rollback-floors/pi-api-first-turn-retired` in
-`resolve-production-rollback-target.sh`. Earlier APIs write `apiFirstTurn` and
-the old CLI floor on every Pi run: a release 7 Guest would launch its
-preinstalled release 7 CLI, which rejects the slot, so every Pi run fails until
-the Runners are rolled back as well. This rejection comes from the installed
-CLI, not the Runner's generated type or the Guest. Earlier APIs also require
-the slot when they decode contexts queued by this release. The release 6
-Runner protocol is the minimum supported predecessor; the stricter release 7
-API floor subsumes it.
+The completed rollout gates and predecessor handoff protocol no longer
+constrain deployments. The independent Chat Event V8, Browser session mutation
+and migration 1315 rollback checks are later first-parent main commits than
+this release, so they subsume its former standalone rollback marker. Those
+checks remain mandatory in `resolve-production-rollback-target.sh`.
 
 ### Integration DM threads and org default agent
 
@@ -1301,7 +1253,7 @@ API floor subsumes it.
   backfill is performed: pending inputs from an outgoing API lack a captured
   model and are rejected by the new pick instead of being re-resolved. Steering
   inputs into an already-running run uses that run's existing model. Keep the
-  column on rollback; the existing Release 7 API floor remains unchanged.
+  column on rollback; the existing rollback resolver floors remain unchanged.
 - **Org default agent only.** Integrations no longer read or write the
   `*_user_agent_preferences` tables or installation-level `default_agent_id`;
   every integration message runs the org default agent. The tables and columns
@@ -1337,7 +1289,7 @@ API floor subsumes it.
   optional contract field and keep accepting earlier events without it. An old
   App may also omit the field from cached events; upgrading does not change
   those cached facts, and a newer canonical snapshot resolves their identity.
-  This field adds no rollback floor beyond the release 7 API floor above. Keep the
+  This field adds no rollback floor beyond the existing rollback resolver floors. Keep the
   column on rollback; older APIs and Apps can ignore it, while snapshots read
   the canonical thread agent directly. It is a permanent event fact with no
   compatibility fallback or removal deadline.
@@ -1375,95 +1327,6 @@ org picks through `waitUntil`. Entry-owned context rows commit with their input,
 and idempotent sends that append nothing do not touch `queued_chat_threads`.
 The existing runless-input predicate and index from #37193 are unchanged.
 
-## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
-
-The Runner reads steerable input from
-`GET /api/runners/runs/:runId/steerable-inputs/next` instead of reserve, and
-the Guest declares each input the CLI backend accepted through
-`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered` instead of
-receipt. The process-control payload carries the source chat-event ID
-(`eventId`); delivery IDs, the Guest receipt journal, Runner journal recovery
-and `activeInputDeliveryIds` in completion requests are gone. A `409` from the
-steered endpoint is final, and a failed declaration is not retried: the input
-stays queued for the next pick.
-
-The Sandbox Pi CLI no longer waits for the per-run handoff manifest. It opens
-the session the Runner restored from `resumeSession` (inline `sessionHistory`
-or blob `historyRef`) as `restored-<sessionId>.jsonl`, or the file a reused
-sandbox's previous run appended to, and starts a fresh session on a first
-turn. It still writes the private `vm0_pi_api_first_turn_boundary` startup
-record (`sandboxEventSequenceStart: 1`, `sandbox-first`) because pre-release-6
-Guests require it. The release 6 Guest accepts the record when present and
-otherwise starts at sequence 1 on the first official RPC record; it rejects
-the retired continuation modes. The Runner validates the launch config
-without `apiFirstTurn` and `run.usage` no longer reports the always-unavailable
-`apiFirstTurn` source.
-
-The installed-CLI launch requirements (`requiredPiAgentRuntimeVersion`,
-`minCliVersion`, `requiredPiSessionConstructionDigest`) move to the execution
-context as `piInstalledCliRequirement`, forwarded by the Runner to the Guest in
-the run payload. They are not added to `piLaunchConfig`, because the Pi CLI
-parses the launch config strictly and an older installed CLI would reject an
-unknown key. The API writes both the new field and the old `apiFirstTurn`
-copy. The Guest reads the new field and falls back to `apiFirstTurn` only for
-runs created before this API release. An older API that reads a queued context
-strips the unknown top-level field, so rollback is unaffected.
-
-Guest binaries ship inside the Runner binary, so Runner and Guest never skew.
-Mixed versions during rollout:
-
-- New Runner with an API below release 4: unsupported. **API rollback floor:
-  release 4**, main commit `fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da`, pinned in
-  `resolve-production-rollback-target.sh`, because a draining release 6 Runner
-  only calls the steer endpoints.
-- Old Runner with this API: unchanged; release 4 and later still serve reserve,
-  receipt and `activeInputDeliveryIds`, and the old Guest keeps reading the
-  requirement from `apiFirstTurn`.
-- Old Sandbox CLI (commit-addressed `CLI_PKG_URL` of a run created before this
-  release) with a new Guest: it still waits for the manifest the API keeps
-  publishing and writes the startup record. Its `okou run usage` rejects the
-  new result without `apiFirstTurn` as `invalid-response`.
-- New Sandbox CLI with an old Guest (a run created after API promotion that an
-  old Runner claims): the CLI writes the startup record the old Guest requires
-  and reads the session the old Runner restored the same way. `okou run usage`
-  accepts results with or without `apiFirstTurn`.
-
-Accepted in this release:
-
-- The old-CLI `okou run usage` break above is accepted rather than staged. It
-  reaches only runs created before this release that the installed-CLI parity
-  check sends to `npx`, and the removed source was always `unavailable` since
-  release 4.
-- The staff-only Pi Langfuse relay no longer parents Sandbox observations under
-  the Run End-to-End span, and no longer emits Sandbox Wait. The parent and
-  `sandboxWaitStartedAt` came from the handoff manifest, and the API-first
-  phases they linked no longer exist. Sandbox traces become root traces.
-- A steered declaration that fails without a `409` is not retried. That input
-  stays the run's steer anchor, so later inputs wait for the next pick after
-  the run ends, and the model sees that input again.
-
-**Release 7 deletion order.** Release 7 only deletes. It may merge once every
-release 6 Runner is live and every earlier Runner has drained:
-
-1. The Sandbox CLI stops writing the startup record; release 6 Guests already
-   start without it.
-2. The API stops writing and the contract drops `piLaunchConfig.apiFirstTurn`,
-   together with `pi-sandbox-handoff.service.ts`, the `pi-api-first-turn/`
-   cleanup cron, the reserve and receipt endpoints, and the steer settlement of
-   `activeInputDeliveryIds` in completion requests; Rust bindings follow.
-3. The Guest drops the `apiFirstTurn` fallback for the installed-CLI
-   requirement and the startup-record parser, and the Runner stops tolerating
-   the slot. Runs queued before release 7 still carry
-   `piInstalledCliRequirement`, so the fallback has no remaining reader.
-4. The CLI drops its tolerance for `sources.apiFirstTurn` in `okou run usage`;
-   no Runner reports it after the pre-release-6 Runners drain.
-
-Release 6 installed CLIs parse `piLaunchConfig` strictly and require
-`apiFirstTurn`. The release 7 API must therefore raise
-`PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` to the release 7 CLI in the same change
-that stops writing the slot. Release 6 Guests then launch the commit-addressed
-CLI instead of an installed release 6 CLI.
-
 ## Unified chat queue (release 4)
 
 Migration `1273_drop_active_input_delivery_tables` drops
@@ -1492,32 +1355,6 @@ with the same replacement event as receipt. No Runner calls them yet; the
 current Runner keeps using reserve, receipt and `activeInputDeliveryIds`, so the
 additive endpoints need no deploy order. A later Runner that calls them
 requires an API at or above this release.
-
-## Pi API-first retirement (release 4, API side)
-
-The API no longer runs Pi first turns in-process. Every Pi run goes to the
-Sandbox. Run creation publishes the no-inference `sandbox-first` handoff under
-`pi-api-first-turn/<runId>/` (v3 manifest plus session object, or a v4 manifest
-referencing blob-backed history) before the run and its runner job commit.
-`piLaunchConfig.apiFirstTurn` stays populated because the Runner validator and
-the CLI handoff resolver still require it; the contract, Runner, Guest and CLI
-are unchanged and are cleaned up in a later release. The `pi_api_first_turn`
-advisory lock is gone. No database migration.
-
-Old and new instances during deploy:
-
-- An old API instance still runs its in-flight API-first attempts in its own
-  process and completes, fails or hands them off itself; new instances need no
-  state from it. Cancellation handled by a new instance no longer takes the
-  lock or aborts the old process's provider call; the status-guarded terminal
-  transition still decides the winner, and a losing attempt stops at its own
-  deadline.
-- Completion deletes the handoff objects of every Pi run, and the sandbox
-  cleanup cron still sweeps the unchanged `pi-api-first-turn/` prefix after the
-  presigned URL TTL, so objects written by old instances are not orphaned.
-
-**Rollback:** safe down to the release 3 floor; an earlier API resumes API-first
-for new runs and reads nothing this release writes differently.
 
 ## Unified chat queue (release 3)
 
@@ -4887,48 +4724,21 @@ nor the Guest's commit-addressed runtime fallback is removed retroactively.
 
 Compatibility is negotiated per run rather than by deployment order:
 
-- `piLaunchConfig.apiFirstTurn` carries two optional fields:
-  `requiredPiAgentRuntimeVersion` (the runtime the backend prepared the
-  API-first turn with) and `minCliVersion` (the lowest CLI release that
-  understands the current launch payload). They are optional so contexts
-  captured by earlier backends remain valid.
-- **The backend writes them.** This launch config is persisted in the
-  encrypted queue payload and decoded by whichever API instance serves the
-  claim, and `piApiFirstTurnConfigSchema` is strict, so a backend from before
-  these fields existed rejects a payload that carries them. The tolerant reader
-  shipped first with the writer off, in `8d8f3a3e14d23f7471e0773bd9acb988f59217af`
-  (#36000, released as api 1.657.0 in `1807fbf7e37dc98e99793a57e7799f6dc804ad53`);
-  the writer followed in its own release after that API was promoted. This is
-  the same staging the API-first usage handoff producer (#35413) used.
-
-  **API rollback floor: `8d8f3a3e14d23f7471e0773bd9acb988f59217af`** (#36000's
-  merge commit). An API artifact that predates it rejects, at claim time, every
-  queued Pi run created after the writer was enabled. The production rollback
-  resolver (`.github/scripts/resolve-production-rollback-target.sh`) enforces
-  the floor for API targets; verify manually with
-  `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
-  and require `ahead` or `identical`. Retained Runner tags are not constrained:
-  the guest ignores unknown launch-config fields.
-
-- `piLaunchConfig.apiFirstTurn` also accepts the optional
-  `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
-  code-determined session construction (the system prompt template, ordered
-  tool schemas for fixed inputs, and verified model-limit corrections; one
-  profile without and one with the memory tools) that
-  `@okouai/pi-agent-runtime` commits in
-  `session-construction-digest.json` and whose test fails while it is stale.
-  Every CLI artifact manifest carries the same value as
-  `sessionConstruction.digest`, and the runner build copies it into the
-  installed manifest. It moves only when code that feeds the constructed
-  session changes, in whichever package that code lives, whereas
-  `piAgentRuntime` also moves on dependency-only release bumps and therefore
-  forced the `npx` launch after most releases. **The backend writes it now**:
-  the reader shipped first in `322efb6d72508e15b90dc788100a776da1485751`
-  (#36142, released as api 1.659.0 in
-  `3ffd0d5086a02cd8328cf60defab7a242b682273`), and the writer followed
-  after that API was promoted. The production rollback resolver enforces this
-  reader as an additional API floor so old strict readers cannot claim queued
-  runs carrying the digest. Retained Runner tags are unaffected.
+- The captured execution context carries `piInstalledCliRequirement`, forwarded
+  by the Runner to the Guest. Its runtime version, minimum CLI version and
+  session-construction digest are separate from the strict `piLaunchConfig`.
+- `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` remains `9.370.3`. The Guest uses an
+  installed CLI only when its manifest satisfies the captured launch-payload
+  floor and runtime/session identity; otherwise it uses the run's
+  commit-addressed `CLI_PKG_URL`. New releases do not automatically raise the
+  compatibility floor.
+- `requiredPiSessionConstructionDigest` is a build-time SHA-256 over the
+  code-determined session construction that `@okouai/pi-agent-runtime` commits
+  in `session-construction-digest.json`. CLI artifact manifests carry it as
+  `sessionConstruction.digest`, and Runner builds copy it into the installed
+  manifest. It changes when session-construction inputs change, independently
+  of dependency-only runtime version bumps. The current rollback resolver's
+  independent floors already exclude APIs predating this context contract.
 - Official Runner binaries embed the source-bound CLI package alongside their
   Guest binaries. A local full rootfs build without a bundled CLI remains
   possible; neither preview nor production image preparation downloads a
@@ -7195,7 +7005,7 @@ required.
 Provider results already known at transfer are included. Pre-provider transfer
 is marked `no-inference`. A transfer made before a late provider result becomes
 known has no snapshot and stays explicitly unavailable in this initial
-handoff-only design. See [API-first run usage handoff](api-run-usage.md).
+handoff-only design. See [Sandbox run usage](api-run-usage.md).
 
 ## Current-run usage general availability
 

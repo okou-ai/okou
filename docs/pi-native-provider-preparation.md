@@ -35,7 +35,7 @@ The sandbox SigV4 client signs with fake markers; existing MITM `auth.awsSigv4` 
 
 Native `input`, `output`, `cacheRead` and `cacheWrite` are disjoint provider quantities. The optional one-hour cache-create count remains a subset of cache creation and is never added again. Short cache retention preserves existing pricing; this change does not add TTL price categories or rewrite historical usage.
 
-API-owned provider calls write through `recordPiApiFirstTurnUsage`; sandbox calls retain the proxy writer. Idempotent response/category identities are unchanged, including retries and late cancellation observations. Native user-owned credentials bypass Built-in model-token charges even if an obsolete billable marker is present. This does not waive tool, infrastructure or maintenance charges. Phase 2 keeps the #32626 proxy-only accounting path and its existing maintenance model/key owner; foreground native usage does not enter that path.
+Foreground Sandbox provider calls use the proxy usage writer. Idempotent response/category identities are unchanged, including retries and late cancellation observations. Native user-owned credentials bypass Built-in model-token charges even if an obsolete billable marker is present. This does not waive tool, infrastructure or maintenance charges. Phase 2 keeps the #32626 proxy-only accounting path and its existing maintenance model/key owner; foreground native usage does not enter that path.
 
 ## Publication and activation gates
 

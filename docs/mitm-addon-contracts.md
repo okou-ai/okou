@@ -225,8 +225,8 @@ the retained run; missing provider evidence can therefore never become an
 unqualified complete result. The read copies small totals under a short lock,
 without file, parser or delivery I/O. Blocked billing does not block it.
 
-This is an in-memory source measurement, not durable accounting, API-first-turn
-usage or a combined CLI query. Runner and its addon ship together; the optional
+This is an in-memory source measurement, not durable accounting or a combined
+CLI query. Runner and its addon ship together; the optional
 registry field keeps older entries readable with explicit incomplete coverage.
 There is no new listener, guest-selected identity or automatic protocol fallback.
 

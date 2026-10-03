@@ -90,12 +90,12 @@ export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 /**
- * Lowest `@okouai/cli` release whose `__agent-loop` understands the current
- * launch payload. The API records it in every Pi run's installed-CLI
+ * Minimum `@okouai/cli` version boundary for `__agent-loop` launch-payload
+ * compatibility. The API records it in every Pi run's installed-CLI
  * requirement; a rootfs whose installed CLI is older keeps launching the
  * commit-addressed package. Raise it whenever the launch payload changes in a
- * way an older CLI rejects. The first release without
- * `piLaunchConfig.apiFirstTurn` is the floor: earlier CLIs require that slot.
+ * way an older CLI rejects. Keep the boundary at 9.370.3; earlier installed
+ * CLIs require a retired launch payload and must use the commit-addressed CLI.
  */
 export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.370.3";
 /** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */

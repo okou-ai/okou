@@ -1,55 +1,14 @@
-# API-first run usage handoff
+# Sandbox run usage
 
-The API no longer executes Pi turns. Every manifest it now publishes is a
-pre-provider `sandbox-first` transfer marked `no-inference`; the observed-usage
-paths below describe the retired API-first producer and its tolerant readers.
-
-API-first Pi inference does not traverse the Runner MITM addon. When API-first
-execution transfers ownership to a Sandbox, the API therefore includes the
-usage it has observed in the existing handoff payload:
-
-- legacy ownership transfer: `PiApiFirstTurnManifest.apiUsage`
-- durable ownership transfer: `PiSandboxContinuation.apiUsage`
-
-The contract and tolerant readers are delivered by #34787. Issue #35413 enables
-the producer only after those readers are deployed and older strict readers
-have drained. The snapshot is observational. It does not change billing,
-execution ownership, output publication, retry behavior, or whether a Sandbox
-is launched.
-
-`observed` carries the provider evidence available at the handoff boundary as
-disjoint ordinary input, cache-read, cache-creation, and output quantities.
-Each quantity is either a non-negative safe integer or `null` when the provider
-did not establish it. Coverage remains `complete`, `partial`, or `unavailable`;
-`complete` requires every quantity to be known, `partial` requires at least one
-known quantity, and `unavailable` requires every quantity to be `null`. Known
-zero is preserved as zero. `no-inference` is emitted only when ownership
-transfers before any provider attempt can start.
-
-Absence of `apiUsage` means the producer has no handoff-time snapshot. Readers
-must treat absence as unavailable, never as zero. This includes payloads from an
-older API, reconstructed historical results without retained provider evidence,
-and transfers that occur while a provider result is still unknown. The initial
-feature does not backfill a result that arrives after ownership has already
-transferred.
-
-The handoff objects intentionally strip unknown additive fields instead of
-rejecting the payload. Semantic discriminants, versions, identities, bounds,
-and token quantities remain validated. This keeps old payloads readable and
-allows this producer to add optional metadata without breaking the deployed
-reader.
-
-There is no API usage table or Runner read endpoint in this source. A compatible
-Runner can capture the durable continuation from its assigned run and combine
-the API snapshot once with the independently sampled MITM source. The combined
-query must continue to expose source-level coverage and freshness; handoff
-metadata does not make the two sources atomic.
+Foreground Pi inference and usage belong to the Sandbox and Runner. The
+current query exposes the Runner's independently sampled MITM source, not an
+API-owned inference handoff. Unknown usage remains unavailable rather than
+being coerced to zero.
 
 ## Current-assignment query
 
 For every official API-backed assignment, the Runner freezes the host-assigned
-Run identity, the immutable durable-continuation observation and the current
-MITM addon generation before Agent work starts. The guest can then call
+Run identity and the current MITM addon generation before Agent work starts. The guest can then call
 `run.usage` with exactly empty parameters:
 
 ```json
@@ -95,9 +54,8 @@ It requires no SSH grant. The result is versioned and source preserving:
 }
 ```
 
-`sources` contains only `sandboxProxy`. Runners before release 6 also reported
-an always-unavailable `apiFirstTurn` source; `okou run usage` no longer accepts
-it and treats such a result as `invalid-response`.
+`sources` contains only `sandboxProxy`. Unsupported source shapes are treated
+as `invalid-response`.
 
 `sandboxProxy` is either an observed MITM snapshot or `unavailable` with
 `not-observed`, `launch-unavailable`, `busy`, `timed-out`, `invalid-response`
