@@ -1,0 +1,11 @@
+[package]
+name = "kerberos-credentials"
+version = "0.1.0"
+edition.workspace = true
+description = "Bounded, no-I/O Kerberos FILE credential canonicalization"
+
+[dependencies]
+zeroize = { workspace = true, features = ["alloc"] }
+
+[lints]
+workspace = true

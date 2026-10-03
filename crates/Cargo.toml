@@ -19,6 +19,7 @@ members = [
     "guest-write-file",
     "guest-workspace-mount",
     "linux-mountinfo",
+    "kerberos-credentials",
     "nbd-cow",
     "runner",
     "runner-executor",
@@ -67,6 +68,7 @@ guest-state-restore = { path = "guest-state-restore" }
 guest-write-file = { path = "guest-write-file" }
 guest-workspace-mount = { path = "guest-workspace-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
+kerberos-credentials = { path = "kerberos-credentials" }
 nbd-cow = { path = "nbd-cow" }
 runner-host = { path = "runner-host" }
 runner-executor = { path = "runner-executor" }

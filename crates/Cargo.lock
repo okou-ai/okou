@@ -2487,6 +2487,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kerberos-credentials"
+version = "0.1.0"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
