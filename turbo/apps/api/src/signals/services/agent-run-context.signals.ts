@@ -113,6 +113,15 @@ import {
   type UsageAllowanceContext,
 } from "./usage-allowance-context.service";
 
+import {
+  executionCreditQueries,
+  executionCreditBalance,
+  type ExecutionCreditBalance,
+} from "./execution-credit-balance.service";
+import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
+import { nowDate } from "../../lib/time";
+
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
   readonly orgId: string;
@@ -139,6 +148,7 @@ export interface AgentRunContextSignals {
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
   readonly allowance$: Computed<Promise<UsageAllowanceContext>>;
+  readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
   readonly orgModelSources$: ReturnType<typeof createOrgModelSources>;
@@ -320,6 +330,21 @@ function createSelectedOfficialFacts(
   });
 }
 
+function contextAgentSelection() {
+  return {
+    id: agents.id,
+    name: agents.name,
+    orgId: agents.orgId,
+    owner: agents.owner,
+    visibility: agents.visibility,
+    displayName: agents.displayName,
+    description: agents.description,
+    sound: agents.sound,
+    modelProviderId: agents.modelProviderId,
+    selectedModel: agents.selectedModel,
+  };
+}
+
 function createModelSourceGroups(
   orgId: string,
   supplied?: AgentRunContextSignals,
@@ -365,18 +390,7 @@ function createIdentityContext(
   const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
     const [[row], org] = await Promise.all([
       get(db$)
-        .select({
-          id: agents.id,
-          name: agents.name,
-          orgId: agents.orgId,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          displayName: agents.displayName,
-          description: agents.description,
-          sound: agents.sound,
-          modelProviderId: agents.modelProviderId,
-          selectedModel: agents.selectedModel,
-        })
+        .select(contextAgentSelection())
         .from(agents)
         .where(eq(agents.id, agentId))
         .limit(1),
@@ -385,8 +399,25 @@ function createIdentityContext(
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  const memberMetadata$ =
-    sharedMember?.memberMetadata$ ?? createExecutionMemberMetadata(scope);
+  const { memberMetadata$, credits$ } = sharedMember ?? {
+    memberMetadata$: createExecutionMemberMetadata(scope),
+    credits$: computed(async (get): Promise<ExecutionCreditBalance | null> => {
+      const db = get(db$);
+      const queries = executionCreditQueries(scope, nowDate());
+      const [org, [expired], [pack]] = await Promise.all([
+        get(orgMetadata$),
+        db
+          .select(queries.expired.fields)
+          .from(creditExpiresRecord)
+          .where(queries.expired.where),
+        db
+          .select(queries.pack.fields)
+          .from(usagePackCreditGrants)
+          .where(queries.pack.where),
+      ]);
+      return executionCreditBalance(org, expired?.total ?? 0, pack?.total ?? 0);
+    }),
+  };
   const {
     connectorSelection$,
     environmentSnapshot$,
@@ -432,13 +463,12 @@ function createIdentityContext(
     return { variables: snapshot.variables };
   });
   return {
-    userId,
-    orgId,
-    agentId,
+    ...scope,
     agent$,
     orgMetadata$,
     plan$,
     allowance$,
+    credits$,
     modelFacts$,
     memberModels$,
     ...modelSources,
@@ -473,6 +503,7 @@ export const preloadAgentRunContext$ = command(
       signals.orgMetadata$,
       signals.plan$,
       signals.allowance$,
+      signals.credits$,
       signals.modelFacts$,
       signals.memberModels$,
       signals.orgModelSources$,

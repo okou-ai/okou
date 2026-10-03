@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -55,6 +55,19 @@ function getCssBlock(selector: string) {
   }
 
   throw new Error(`Missing CSS rule for ${selector}`);
+}
+
+// Happy DOM does not implement CSS animations or the Web Animations API.
+// Model the browser-owned animation returned by each layer at this boundary.
+function mockAnimation(layer: Element, startTime: number) {
+  const animation = { startTime };
+  Object.defineProperty(layer, "getAnimations", {
+    configurable: true,
+    value: () => {
+      return [animation];
+    },
+  });
+  return animation;
 }
 
 describe("RunningIndicator", () => {
@@ -112,33 +125,46 @@ describe("RunningIndicator", () => {
     );
   });
 
-  it("keeps indicators mounted at different times on one pulse phase", () => {
-    const now = vi.spyOn(Date, "now");
-
-    now.mockReturnValue(125);
-    const first = render(<RunningIndicator data-testid="first-running" />);
-
-    now.mockReturnValue(725);
-    const second = render(<RunningIndicator data-testid="second-running" />);
-
-    const firstDelay = Number.parseInt(
-      first
-        .getByTestId("first-running")
-        .style.getPropertyValue("--running-indicator-delay"),
-      10,
+  it("keeps both layers of separately mounted indicators on one timeline", () => {
+    const onAnimationStart = vi.fn();
+    render(
+      <RunningIndicator
+        data-testid="first-running"
+        onAnimationStart={onAnimationStart}
+      />,
     );
-    const secondDelay = Number.parseInt(
-      second
-        .getByTestId("second-running")
-        .style.getPropertyValue("--running-indicator-delay"),
-      10,
-    );
+    const first = screen.getByTestId("first-running");
+    const outerAnimation = mockAnimation(first, 125);
+    for (const layer of first.children) {
+      const animation = mockAnimation(layer, 125);
+      fireEvent.animationStart(layer);
+      expect(animation.startTime).toBe(0);
+    }
+    expect(onAnimationStart).toHaveBeenCalledTimes(2);
+    expect(outerAnimation.startTime).toBe(125);
 
-    const observationTime = 800;
-    const firstPhase = observationTime - 125 - firstDelay;
-    const secondPhase = observationTime - 725 - secondDelay;
+    render(<RunningIndicator data-testid="second-running" />);
+    for (const layer of screen.getByTestId("second-running").children) {
+      const animation = mockAnimation(layer, 725);
+      fireEvent.animationStart(layer);
+      expect(animation.startTime).toBe(0);
+    }
+  });
 
-    expect(firstPhase).toBe(observationTime);
-    expect(secondPhase).toBe(observationTime);
+  it("realigns recreated animations without remounting the indicator", () => {
+    render(<RunningIndicator data-testid="running-indicator" />);
+    const indicator = screen.getByTestId("running-indicator");
+
+    for (const layer of indicator.children) {
+      const initialAnimation = mockAnimation(layer, 125);
+      fireEvent.animationStart(layer);
+      expect(initialAnimation.startTime).toBe(0);
+
+      // Hiding and showing an ancestor creates a new CSS animation on the
+      // same element, rather than mounting a new RunningIndicator.
+      const restartedAnimation = mockAnimation(layer, 975);
+      fireEvent.animationStart(layer);
+      expect(restartedAnimation.startTime).toBe(0);
+    }
   });
 });

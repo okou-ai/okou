@@ -1653,18 +1653,21 @@ const validateSendThreadRevocation$ = command(
 
 const prepareNormalSendModels$ = command(
   async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
-    const [orgModels, memberModels, providers, surfaces] = await Promise.all([
-      get(context.modelFacts$),
-      get(context.memberModels$),
-      get(context.orgModelSources$),
-      get(context.gatewayModelSources$),
-    ]);
+    const [orgModels, memberModels, memberMetadata, providers, surfaces] =
+      await Promise.all([
+        get(context.modelFacts$),
+        get(context.memberModels$),
+        get(context.memberMetadata$),
+        get(context.orgModelSources$),
+        get(context.gatewayModelSources$),
+      ]);
     signal.throwIfAborted();
     return {
       orgModels,
       modelBootstrap: {
         org: orgModels,
         member: memberModels,
+        memberMetadata,
         providers,
         surfaces,
       },

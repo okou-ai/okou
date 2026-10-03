@@ -22,7 +22,6 @@ import {
   memberAccountSourceFromSnapshot,
   registeredSourceFromSnapshot,
 } from "./model-source-context.service";
-import type { OrgModelBootstrap } from "./model-bootstrap.service";
 import {
   matchAgentRunContextSignals,
   type AgentRunContextSignals,
@@ -190,7 +189,6 @@ import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
-  pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
@@ -522,7 +520,6 @@ import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { conversations } from "@okouai/db/schema/conversation";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
@@ -539,7 +536,6 @@ import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
@@ -556,13 +552,11 @@ import {
   isNotNull,
   isNull,
   lt,
-  lte,
   max,
   min,
   ne,
   or,
   sql,
-  sum,
   like,
   type WithSubquery,
   type SQL,
@@ -2757,70 +2751,6 @@ export interface ThreadClaimRunObjects {
 }
 
 /** The admission input with the instant its reads are taken. */
-type CapturedRunAdmissionInput = RunAdmissionInput & { readonly at: Date };
-
-/** Plan, credit and usage-pack reads for one admission check. */
-const readRunAdmissionCredits$ = command(
-  async (
-    { get },
-    input: CapturedRunAdmissionInput,
-    models: OrgModelBootstrap,
-    signal: AbortSignal,
-  ) => {
-    const { orgId, userId, at } = input;
-    const db = get(db$);
-    const [[expired], [row]] = await Promise.all([
-      db
-        .select({
-          total: sum(creditExpiresRecord.remaining).mapWith(
-            nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-          ),
-        })
-        .from(creditExpiresRecord)
-        .where(
-          and(
-            eq(creditExpiresRecord.orgId, orgId),
-            lte(creditExpiresRecord.expiresAt, at),
-            gt(creditExpiresRecord.remaining, 0),
-          ),
-        ),
-      db
-        .select({
-          total: sum(usagePackCreditGrants.remainingAmount).mapWith(
-            nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-          ),
-        })
-        .from(usagePackCreditGrants)
-        .where(
-          and(
-            eq(usagePackCreditGrants.orgId, orgId),
-            eq(usagePackCreditGrants.userId, userId),
-            gt(usagePackCreditGrants.remainingAmount, 0),
-            gt(usagePackCreditGrants.expiresAt, at),
-          ),
-        ),
-    ]);
-    signal.throwIfAborted();
-    const spendableCredits =
-      models.org === null ? null : models.org.credits - (expired?.total ?? 0);
-    const capabilities = models.capabilities;
-    const usagePackCredits = row?.total ?? 0;
-    return {
-      capabilities,
-      availability:
-        capabilities && spendableCredits !== null
-          ? {
-              status: capabilities.status,
-              supportByok: capabilities.supportByok,
-              restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-              spendableCredits,
-              usagePackCredits,
-            }
-          : null,
-    };
-  },
-);
-
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
   context: AgentRunContextSignals,
@@ -3341,63 +3271,11 @@ export function createThreadClaimRunObjects(
     featureSwitchContext$: queuedModelRuntimeFeatureSwitchContext$,
     builtInRuntimeRoute$: queuedModelRuntimeBuiltInRuntimeRoute$,
   };
-  const {
-    input$: queuedModelCreditsInput$,
-    orgMetadata$: queuedModelCreditsOrgMetadata$,
-  } = queuedModelSources;
-  const expiredCredits$ = computed(async (get) => {
-    const [row] = await get(db$)
-      .select({
-        total: sum(creditExpiresRecord.remaining).mapWith(
-          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-        ),
-      })
-      .from(creditExpiresRecord)
-      .where(
-        and(
-          eq(
-            creditExpiresRecord.orgId,
-            (await get(queuedModelCreditsInput$)).orgId,
-          ),
-          lte(creditExpiresRecord.expiresAt, nowDate()),
-          gt(creditExpiresRecord.remaining, 0),
-        ),
-      );
-    return row?.total ?? 0;
-  });
-  const usagePackCredits$ = computed(async (get) => {
-    const input = await get(queuedModelCreditsInput$);
-    const [row] = await get(db$)
-      .select({
-        total: sum(usagePackCreditGrants.remainingAmount).mapWith(
-          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-        ),
-      })
-      .from(usagePackCreditGrants)
-      .where(
-        and(
-          eq(usagePackCreditGrants.orgId, input.orgId),
-          eq(usagePackCreditGrants.userId, input.userId),
-          gt(usagePackCreditGrants.remainingAmount, 0),
-          gt(usagePackCreditGrants.expiresAt, nowDate()),
-        ),
-      );
-    return row?.total ?? 0;
-  });
-  const creditBalance$ = computed(async (get) => {
-    const [org, expiredCredits, usagePackCredits] = await Promise.all([
-      get(queuedModelCreditsOrgMetadata$),
-      get(expiredCredits$),
-      get(usagePackCredits$),
-    ]);
-    if (org && !Number.isSafeInteger(org.credits)) {
-      throw new Error("Credit snapshot exceeds safe integer precision");
-    }
-    return org
-      ? { spendableCredits: org.credits - expiredCredits, usagePackCredits }
-      : null;
-  });
-  const credits = { creditBalance$: creditBalance$ };
+  const credits = {
+    creditBalance$: computed(async (get) => {
+      return get((await get(queuedIdentityContext$)).credits$);
+    }),
+  };
   const allowanceSnapshot$ = computed(async (get) => {
     return (await get(context.allowance$)).availability;
   });
@@ -8892,11 +8770,7 @@ export function createThreadClaimRunObjects(
     return undefined;
   });
   const resolveAdmissionUsageAllowance$ = command(
-    async (
-      { get, set },
-      input: CapturedRunAdmissionInput,
-      signal: AbortSignal,
-    ) => {
+    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
       const startedAt = performance.now();
       const selected = await get(executionContext$);
       signal.throwIfAborted();
@@ -8928,7 +8802,6 @@ export function createThreadClaimRunObjects(
   const runAdmissionCheckCheckAdmission$ = command(
     async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const captured = { ...input, at: nowDate() };
       const identity = await get(queuedIdentityContext$);
       signal.throwIfAborted();
       const [models, memberModels] = await Promise.all([
@@ -8952,12 +8825,11 @@ export function createThreadClaimRunObjects(
           }) ?? null
         );
       }
-      const { availability } = await set(
-        readRunAdmissionCredits$,
-        captured,
-        models,
-        signal,
-      );
+      const balance = await get(identity.credits$);
+      signal.throwIfAborted();
+      const capabilities = models.capabilities;
+      const availability =
+        capabilities && balance ? { ...capabilities, ...balance } : null;
       const routeFailure = checkCatalogRunRoute(input.catalog, input);
       if (routeFailure) {
         return routeFailure;
@@ -8982,7 +8854,7 @@ export function createThreadClaimRunObjects(
       }
       const allowance = await set(
         resolveAdmissionUsageAllowance$,
-        captured,
+        input,
         signal,
       );
       signal.throwIfAborted();

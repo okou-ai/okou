@@ -968,10 +968,11 @@ replaced by it, so the layer would carry the centring offset twice for the whole
 cycle and visibly misplace the indicator at every phase.
 
 Register a keyframe animation as an `--animate-*` theme entry so consumers reach
-it through `animate-*` rather than an `animation` shorthand. A per-instance
-runtime value, such as the indicator's phase-anchoring
-`--running-indicator-delay`, stays a narrowly named custom property that the
-component sets, read through an arbitrary `[animation-delay:var(...)]`.
+it through `animate-*` rather than an `animation` shorthand. Each
+`RunningIndicator` layer aligns its animation start time to the document
+timeline's zero on every `animationstart`, including CSS restarts after an
+ancestor stops being `display: none`. This keeps separately mounted or revealed
+indicators in phase without a wall-clock delay or a timer.
 
 A `@media (prefers-reduced-motion: reduce)` override that resets a value back to
 its initial belongs on `motion-safe:` on the rule it would override, rather than

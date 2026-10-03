@@ -56,11 +56,13 @@ import type {
   MemberModelBootstrap,
 } from "./model-bootstrap.service";
 
+import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 
 export interface ModelSelectionBootstrap {
   readonly org: OrgModelBootstrap;
   readonly member: MemberModelBootstrap;
+  readonly memberMetadata: ExecutionMemberMetadata;
   readonly providers: Awaited<
     ReturnType<AgentRunContextSignals["orgModelSources$"]["read"]>
   >;
@@ -245,6 +247,10 @@ const memberModelPreference$ = command(
   },
 );
 
+function capturedMemberPreferences(member: ExecutionMemberMetadata) {
+  return member.preferences ? [member.preferences] : [];
+}
+
 const modelRoutingFacts$ = command(
   async (
     { get, set },
@@ -353,7 +359,9 @@ const modelRoutingFacts$ = command(
             )
             .where(eq(modelProviderConnections.orgId, params.orgId)),
       memberScoped
-        ? set(memberModelPreference$, params.orgId, params.userId, signal)
+        ? captured
+          ? capturedMemberPreferences(captured.memberMetadata)
+          : set(memberModelPreference$, params.orgId, params.userId, signal)
         : [],
     ]);
     signal?.throwIfAborted();

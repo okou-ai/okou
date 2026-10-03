@@ -40,6 +40,70 @@ const {
 } = createChatEventsFixture(context);
 
 describe("chat agent bootstrap prefetch", () => {
+  it("preserves a non-default member model preference through prefetch and an independent pick", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { providerId } = await api.ensureOrgModelProvider(actor, {
+      model: "claude-fable-5-1",
+    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "claude-sonnet-5",
+        preferred: false,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    await api.updateUserModelPreference(actor, "claude-sonnet-5");
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "use my saved non-default model",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim.modelUsageProvider).toBe("claude-sonnet-5");
+    const eventId = randomUUID();
+    const queued = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        clientEventId: eventId,
+        prompt: "independent pick keeps my selected model",
+      },
+      [201],
+    );
+    expect(queued.body).toMatchObject({ runId: null });
+    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    const messages = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === eventId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const promoted = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === eventId;
+    });
+    if (!promoted?.runId) {
+      throw new Error("Expected the independent queued pick");
+    }
+    const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
+    expect(nextClaim.claim.modelUsageProvider).toBe("claude-sonnet-5");
+    await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
+  });
+
   it("mounts the same exact workflow version from prefetch and a later independent pick", async () => {
     context.mocks.s3.getSignedUrl.mockImplementation(() => {
       const url = `https://storage.example.com/context/${randomUUID()}`;
