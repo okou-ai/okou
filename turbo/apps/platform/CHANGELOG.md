@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.991.3](https://github.com/okou-ai/okou/compare/app-v0.991.2...app-v0.991.3) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deps:** clear new high pnpm audit findings without patched releases ([#37601](https://github.com/okou-ai/okou/issues/37601)) ([47440e8](https://github.com/okou-ai/okou/commit/47440e804b57e7c00fde42cc14ffdd72ae593749))
+
 ## [0.991.2](https://github.com/okou-ai/okou/compare/app-v0.991.1...app-v0.991.2) (2026-10-02)
 
 
