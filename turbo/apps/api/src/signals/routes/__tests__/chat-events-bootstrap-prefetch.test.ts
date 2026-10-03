@@ -3,6 +3,8 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { testContext } from "../../../__tests__/test-context";
@@ -40,6 +42,106 @@ const {
 } = createChatEventsFixture(context);
 
 describe("chat agent bootstrap prefetch", () => {
+  it("mounts user memory published through the Sandbox API in matching and independent picks", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const webhooks = createWebhookCallbackApi(context);
+    const seed = await sendChatRun(actor, {
+      agentId,
+      prompt: "publish my memory",
+    });
+    const seedClaim = await claimChatRun(runnerGroup, seed.runId);
+    const initialMemory = expectCanonicalStorageManifest(
+      seedClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory";
+    });
+    if (!initialMemory) {
+      throw new Error("Expected a writable memory root");
+    }
+    const file = storageTextFile("MEMORY.md", `owned memory ${randomUUID()}`);
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 4096 });
+    const prepared = await webhooks.requestAgentStoragePrepare(
+      {
+        runId: seed.runId,
+        storageId: initialMemory.storageId,
+        baseVersion: initialMemory.versionId,
+        changes: { added: [file.path], modified: [], deleted: [] },
+        files: [file],
+      },
+      seedClaim.sandboxHeaders,
+      [200],
+    );
+    if (prepared.status !== 200) {
+      throw new Error("Expected memory preparation");
+    }
+    await webhooks.requestAgentStorageCommit(
+      {
+        runId: seed.runId,
+        storageId: initialMemory.storageId,
+        versionId: prepared.body.versionId,
+        files: [file],
+      },
+      seedClaim.sandboxHeaders,
+      [200],
+    );
+    await cancelChatRun(actor, seed.runId, seedClaim.sandboxHeaders);
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "mount the published memory",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const memory = expectCanonicalStorageManifest(
+      firstClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory";
+    });
+    expect(memory).toMatchObject({
+      storageId: initialMemory.storageId,
+      versionId: prepared.body.versionId,
+    });
+    const eventId = randomUUID();
+    const queued = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        clientEventId: eventId,
+        prompt: "independent memory pick",
+      },
+      [201],
+    );
+    expect(queued.body).toMatchObject({ runId: null });
+    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    const messages = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === eventId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const promoted = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === eventId;
+    });
+    if (!promoted?.runId) {
+      throw new Error("Expected independent memory promotion");
+    }
+    const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
+    const nextMemory = expectCanonicalStorageManifest(
+      nextClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory";
+    });
+    expect(nextMemory).toMatchObject({
+      storageId: initialMemory.storageId,
+      versionId: prepared.body.versionId,
+    });
+    await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
+  });
   it("preserves a non-default member model preference through prefetch and an independent pick", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const { providerId } = await api.ensureOrgModelProvider(actor, {

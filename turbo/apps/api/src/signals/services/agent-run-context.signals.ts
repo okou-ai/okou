@@ -240,7 +240,7 @@ export function matchAgentRunContextSignals(
 }
 
 function createStorageContextGroups(
-  orgId: string,
+  owner: { readonly orgId: string; readonly userId: string },
   inputs: Pick<
     AgentRunContextSignals,
     "workflows$" | "connectorSelection$" | "catalog$" | "officialWorkflows$"
@@ -254,7 +254,7 @@ function createStorageContextGroups(
       get(inputs.officialWorkflows$),
     ]);
     const requests = agentStorageRequests(
-      orgId,
+      owner,
       workflows,
       selection,
       catalog,
@@ -432,7 +432,7 @@ function createIdentityContext(
     workflows$,
     officialCatalog$,
   );
-  const { storage$, storageCache$ } = createStorageContextGroups(orgId, {
+  const { storage$, storageCache$ } = createStorageContextGroups(scope, {
     workflows$,
     connectorSelection$,
     catalog$,

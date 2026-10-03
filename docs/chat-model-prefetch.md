@@ -41,8 +41,8 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   reads for Agents with no Official mounts.
 - `officialWorkflows$`: accepted catalog, immutable revisions and their exact
   Storage rows, selected from mounted Workflow identities without model routing.
-- `storage$`: Agent-owned skill/Connector mount lookup keys and the shared
-  HEAD/exact-version index. Published Official rows are reused from revisions.
+- `storage$`: Agent-owned skill/Connector mount lookup keys, the org/user
+  `memory` root, and the shared HEAD/exact-version index. Published Official rows are reused from revisions.
 - `storageCache$`: a pure projection of all three read-only URL-cache scopes
   returned by index/revision JOINs. It issues no separate SQL. Missing cache
   rows are authoritative; local signing does not reread them.
@@ -120,8 +120,13 @@ and does not claim production latency improvements from a small sample.
 The accepted catalog reuses its global authority key. Selected revision facts
 and Agent mount groups reuse only the complete org/user/Agent identity. Revision selection has no model/CLI/path dependency: Thread assembles
 framework-specific mount paths later from the captured accepted definitions.
-Thread/session memory, previous-session versions and request-owned mount keys
-stay local. Their keys use the same index/cache JOIN loader once; an absent Agent row or a
+The default `memory` root key is `(orgId, userId, "memory")`, independent of
+framework, thread or message. Its HEAD and joined presign-cache rows are captured
+by `storage$` / `storageCache$`; an absent root remains authoritative until the
+existing write path initializes it. Thread/session-selected memory versions,
+previous-session exact versions and request-owned mount keys stay local. These
+are resolved by the single captured Thread Storage index, not per-consumer
+loaders. Their keys use the same index/cache JOIN loader once; an absent Agent row or a
 failed Agent snapshot is never retried by the thread loader. The exact Storage
 rows and joined URL-cache rows resolved for the manifest also feed execution
 signing, eliminating both the second `readExactVersions` call and a standalone

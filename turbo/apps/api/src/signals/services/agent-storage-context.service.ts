@@ -2,6 +2,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
 import {
   SYSTEM_ORG_ID,
+  MEMORY_ARTIFACT_NAME,
   VOLUME_ORG_USER_ID,
   getSkillStorageName,
   getCustomSkillStorageName,
@@ -80,13 +81,21 @@ export function agentStorageCacheMounts(context: AgentStorageContext) {
 
 /** Database identities only: framework-specific mount paths are assembled later. */
 export function agentStorageRequests(
-  orgId: string,
+  owner: { readonly orgId: string; readonly userId: string },
   workflows: readonly SelectedAgentWorkflow[],
   connectors: AgentConnectorSelection,
   catalog: ConnectorRuntimeSelection | null,
   official: OfficialWorkflowContextFacts,
 ): readonly StorageRequest[] {
-  const requests: StorageRequest[] = [];
+  const { orgId, userId } = owner;
+  // The root identity is independent of framework, thread and message. A Pi
+  // continuation's pinned historical version is still resolved by its Thread.
+  const requests: StorageRequest[] = [
+    {
+      lookup: { orgId, userId, name: MEMORY_ARTIFACT_NAME },
+      version: undefined,
+    },
+  ];
   const add = (ownerOrgId: string, name: string, version?: string) => {
     requests.push({
       lookup: { orgId: ownerOrgId, userId: VOLUME_ORG_USER_ID, name },
