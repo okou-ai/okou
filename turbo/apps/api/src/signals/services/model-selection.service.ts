@@ -56,9 +56,17 @@ import type {
   MemberModelBootstrap,
 } from "./model-bootstrap.service";
 
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
+
 export interface ModelSelectionBootstrap {
   readonly org: OrgModelBootstrap;
   readonly member: MemberModelBootstrap;
+  readonly providers: Awaited<
+    ReturnType<AgentRunContextSignals["orgModelSources$"]["read"]>
+  >;
+  readonly surfaces: Awaited<
+    ReturnType<AgentRunContextSignals["gatewayModelSources$"]["read"]>
+  >;
 }
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -312,31 +320,38 @@ const modelRoutingFacts$ = command(
                 ),
               )
           : [],
-      db
-        .select({
-          id: modelProviders.id,
-          type: modelProviders.type,
-          userId: modelProviders.userId,
-        })
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.orgId, params.orgId),
-            eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-          ),
-        ),
-      db
-        .select({
-          id: modelProviderSurfaces.id,
-          protocol: modelProviderSurfaces.protocol,
-          modelMappings: modelProviderSurfaces.modelMappings,
-        })
-        .from(modelProviderSurfaces)
-        .innerJoin(
-          modelProviderConnections,
-          eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-        )
-        .where(eq(modelProviderConnections.orgId, params.orgId)),
+      captured
+        ? captured.providers
+        : db
+            .select({
+              id: modelProviders.id,
+              type: modelProviders.type,
+              userId: modelProviders.userId,
+            })
+            .from(modelProviders)
+            .where(
+              and(
+                eq(modelProviders.orgId, params.orgId),
+                eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+              ),
+            ),
+      captured
+        ? captured.surfaces
+        : db
+            .select({
+              id: modelProviderSurfaces.id,
+              protocol: modelProviderSurfaces.protocol,
+              modelMappings: modelProviderSurfaces.modelMappings,
+            })
+            .from(modelProviderSurfaces)
+            .innerJoin(
+              modelProviderConnections,
+              eq(
+                modelProviderSurfaces.connectionId,
+                modelProviderConnections.id,
+              ),
+            )
+            .where(eq(modelProviderConnections.orgId, params.orgId)),
       memberScoped
         ? set(memberModelPreference$, params.orgId, params.userId, signal)
         : [],

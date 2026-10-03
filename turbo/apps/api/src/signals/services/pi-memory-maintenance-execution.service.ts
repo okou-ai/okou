@@ -357,28 +357,27 @@ const admitMaintenance$ = command(
 
 /** Exact pinned source → resolved runtime → Pi model configuration. */
 async function prepareMaintenanceModel(
-  db: ReadonlyDb,
   admitted: MaintenanceAdmission,
   job: ClaimedPiMemoryPhase2Job,
-  source: Parameters<typeof prepareManagedModelEnvironment>[1],
+  source: Parameters<typeof prepareManagedModelEnvironment>[0],
 ) {
   const { catalog, credential, selectedModel, framework } = admitted;
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
     source.identity.kind === "gateway"
-      ? await prepareGatewayModelEnvironment(db, source, {
+      ? await prepareGatewayModelEnvironment(source, {
           selectedModel,
           framework,
           modelProviderType: credential.pin.modelProvider,
         })
       : source.identity.kind === "built-in"
-        ? await prepareManagedModelEnvironment(db, source, {
+        ? await prepareManagedModelEnvironment(source, {
             builtInModelRuntimeRoute: credential.route ?? undefined,
             selectedModelOverride: selectedModel,
             catalog,
             framework,
             featureSwitchContext: admitted.featureSwitchContext,
           })
-        : await prepareRegisteredModelEnvironment(db, source, selectedModel, {
+        : await prepareRegisteredModelEnvironment(source, selectedModel, {
             catalog,
             userId: job.userId,
             sourceId: credential.pin.modelProviderId ?? "",
@@ -917,7 +916,7 @@ function createMaintenanceModelReads(
     if (!source) {
       throw new PiMaintenanceDispositionError("credential_unavailable");
     }
-    return await prepareMaintenanceModel(get(db$), admitted, job, source);
+    return await prepareMaintenanceModel(admitted, job, source);
   });
   const usage$ = computed(async (get) => {
     const { modelProvider } = await get(model$);

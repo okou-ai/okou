@@ -128,6 +128,13 @@ interface BuiltInRoutePricingInput {
   readonly resolution: UsagePricingResolution;
 }
 
+export function builtInRoutePricingFromSnapshot(
+  args: Pick<BuiltInRoutePricingInput, "resolution" | "serviceTier">,
+  byKey: ReadonlyMap<string, unknown>,
+): BuiltInRoutePricing {
+  return { byKey, resolution: args.resolution, serviceTier: args.serviceTier };
+}
+
 export function builtInRoutePricing(args: BuiltInRoutePricingInput) {
   return computed(async (get): Promise<BuiltInRoutePricing> => {
     const db = get(db$);
@@ -345,6 +352,20 @@ export function prepareModelUsageContext(args: {
  * The pricing snapshot of a Built-in run's model candidates (one read), or
  * null for every other run.
  */
+export function runRoutePricingFromSnapshot(
+  args: {
+    readonly modelProvider: ResolvedModelProviderEnvironment | null;
+    readonly serviceTier: CodexServiceTier | undefined;
+    readonly resolution: UsagePricingResolution;
+  },
+  byKey: ReadonlyMap<string, unknown>,
+): BuiltInRoutePricing | null {
+  return args.modelProvider?.selectedModel &&
+    isBuiltInModelProviderType(args.modelProvider.type)
+    ? builtInRoutePricingFromSnapshot(args, byKey)
+    : null;
+}
+
 export function runRoutePricing(args: {
   readonly catalog: ModelCatalog;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;

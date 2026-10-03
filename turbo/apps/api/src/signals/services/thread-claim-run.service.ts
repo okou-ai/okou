@@ -7,8 +7,8 @@ import type {
   PermissionManifest,
 } from "./agent-run-contracts";
 import {
-  builtInRoutePricing,
-  runRoutePricing,
+  builtInRoutePricingFromSnapshot,
+  runRoutePricingFromSnapshot,
   prepareModelUsageContext,
 } from "./built-in-route-pricing";
 import {
@@ -16,7 +16,12 @@ import {
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
 import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
-import { createModelSourceSnapshot } from "./execution-model-source.service";
+import {
+  gatewaySourceFromSnapshot,
+  managedSourceFromSnapshot,
+  memberAccountSourceFromSnapshot,
+  registeredSourceFromSnapshot,
+} from "./model-source-context.service";
 import type { OrgModelBootstrap } from "./model-bootstrap.service";
 import {
   matchAgentRunContextSignals,
@@ -497,7 +502,6 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { blobs } from "@okouai/db/schema/blob";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
@@ -525,12 +529,6 @@ import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-rou
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import {
-  modelProviderConnections,
-  modelProviderSurfaces,
-} from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -2389,13 +2387,17 @@ type RunErrorResponse = {
  * lacks usage pricing is rejected as unbillable (not as a temporary outage).
  */
 function unpricedBuiltInModelRejection(
-  args: Parameters<typeof builtInRoutePricing>[0],
+  args: Parameters<typeof builtInRoutePricingFromSnapshot>[0] & {
+    readonly catalog: ModelCatalog;
+    readonly model: string;
+  },
+  context: AgentRunContextSignals,
 ) {
   return computed(async (get): Promise<RunErrorResponse | undefined> => {
     const message = unpricedBuiltInModelMessage(
       args.catalog,
       args.model,
-      await get(builtInRoutePricing(args)),
+      builtInRoutePricingFromSnapshot(args, await get(context.modelPricing$)),
     );
     return message
       ? {
@@ -3173,6 +3175,15 @@ export function createThreadClaimRunObjects(
     policyFacts$: queuedModelRoutingPolicyFacts$,
   } = queuedModelSources;
   const { memberRoutes$: queuedModelRoutingMemberRoutes$ } = member;
+  const queuedIdentityContext$ = computed(async (get) => {
+    const input = await get(queuedModelRoutingInput$);
+    return matchAgentRunContextSignals(
+      context,
+      input.userId,
+      input.orgId,
+      context.agentId,
+    );
+  });
   const orgProviderType$ = computed(async (get) => {
     const policy = await get(queuedModelRoutingPolicy$);
     if (
@@ -3183,17 +3194,11 @@ export function createThreadClaimRunObjects(
     ) {
       return null;
     }
-    const [provider] = await get(db$)
-      .select({ type: modelProviders.type })
-      .from(modelProviders)
-      .where(
-        and(
-          eq(modelProviders.id, policy.modelProviderId),
-          eq(modelProviders.orgId, (await get(queuedModelRoutingInput$)).orgId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      )
-      .limit(1);
+    const provider = (
+      await get((await get(queuedIdentityContext$)).orgModelSources$)
+    ).find((row) => {
+      return row.id === policy.modelProviderId;
+    });
     return provider?.type ?? null;
   });
   const customSurface$ = computed(async (get) => {
@@ -3201,27 +3206,11 @@ export function createThreadClaimRunObjects(
     if (!policy?.modelProviderSurfaceId) {
       return null;
     }
-    const [surface] = await get(db$)
-      .select({
-        id: modelProviderSurfaces.id,
-        protocol: modelProviderSurfaces.protocol,
-        modelMappings: modelProviderSurfaces.modelMappings,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-      )
-      .where(
-        and(
-          eq(modelProviderSurfaces.id, policy.modelProviderSurfaceId),
-          eq(
-            modelProviderConnections.orgId,
-            (await get(queuedModelRoutingInput$)).orgId,
-          ),
-        ),
-      )
-      .limit(1);
+    const surface = (
+      await get((await get(queuedIdentityContext$)).gatewayModelSources$)
+    ).find((row) => {
+      return row.id === policy.modelProviderSurfaceId;
+    });
     return surface ?? null;
   });
   const subscriptionModels$ = computed(async (get) => {
@@ -3286,9 +3275,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const keyIdsByVendor$ = computed(async (get) => {
-    const rows = await get(db$)
-      .select({ id: builtInModelKeys.id, vendor: builtInModelKeys.vendor })
-      .from(builtInModelKeys);
+    const rows = await get(context.managedModelKeys$);
     return new Map(
       rows.map((row) => {
         return [row.vendor, row.id];
@@ -3329,14 +3316,13 @@ export function createThreadClaimRunObjects(
     const catalog = await get(claimCatalog$);
     // A new run skips Built-in candidates whose billable categories for the
     // requested service tier lack usage_pricing, like any unavailable one.
-    const routePricing = await get(
-      builtInRoutePricing({
-        catalog,
-        model: pin.selectedModel,
+    const routePricing = builtInRoutePricingFromSnapshot(
+      {
         serviceTier: (await get(queuedModelRuntimeSelection$))
           ?.codexServiceTier,
         resolution: get(usagePricingResolution$),
-      }),
+      },
+      await get(context.modelPricing$),
     );
     const [keyIdsByVendor, cooldowns] = await Promise.all([
       get(keyIdsByVendor$),
@@ -3614,12 +3600,15 @@ export function createThreadClaimRunObjects(
     const unpriced =
       builtInModelRuntimeRoute === null && pin.selectedModel
         ? await get(
-            unpricedBuiltInModelRejection({
-              catalog: await get(claimCatalog$),
-              model: pin.selectedModel,
-              serviceTier: selection.codexServiceTier,
-              resolution: get(usagePricingResolution$),
-            }),
+            unpricedBuiltInModelRejection(
+              {
+                catalog: await get(claimCatalog$),
+                model: pin.selectedModel,
+                serviceTier: selection.codexServiceTier,
+                resolution: get(usagePricingResolution$),
+              },
+              context,
+            ),
           )
         : undefined;
     return {
@@ -5349,15 +5338,6 @@ export function createThreadClaimRunObjects(
         : await get(promptFeaturesFeatures$);
     },
   );
-  const promptExecutionResourcesMemberAccountSnapshot$ = computed(
-    async (get) => {
-      if (await get(internalEarlyAssembly$)) {
-        return null;
-      }
-      const model = await get(promptModelModel$);
-      return "error" in model ? null : model.route.memberAccountSnapshot;
-    },
-  );
   const availableMaterial$ = computed(async (get) => {
     if (await get(internalEarlyAssembly$)) {
       return null;
@@ -5986,12 +5966,6 @@ export function createThreadClaimRunObjects(
     },
   );
   const workflowAutomationLaunchAssembly$ = assembleWorkflowAutomationRun$;
-  const workflowAutomationLaunchMemberAccountSnapshot$ = computed(
-    async (get) => {
-      const model = await get(workflowAutomationLaunchModel$);
-      return model.ok ? model.memberAccountSnapshot : null;
-    },
-  );
   const {
     event$: queuedAutomationAssemblerEvent$,
     target$: queuedAutomationAssemblerTarget$,
@@ -6218,11 +6192,6 @@ export function createThreadClaimRunObjects(
   const queuedAutomationAssemblerSelectionInput$ = computed(async (get) => {
     return await get(workflowAutomationLaunchSelectionInput$);
   });
-  const queuedAutomationAssemblerMemberAccountSnapshot$ = computed(
-    async (get) => {
-      return await get(workflowAutomationLaunchMemberAccountSnapshot$);
-    },
-  );
   const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
     if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
@@ -6275,13 +6244,6 @@ export function createThreadClaimRunObjects(
     return (await get(isAutomation$))
       ? undefined
       : get(promptExecutionResourcesFeatureSwitchContext$);
-  });
-  const memberAccountSnapshot$ = computed(async (get) => {
-    return get(
-      (await get(isAutomation$))
-        ? queuedAutomationAssemblerMemberAccountSnapshot$
-        : promptExecutionResourcesMemberAccountSnapshot$,
-    );
   });
   const callbackInputs$ = computed(
     async (get): Promise<readonly RunCallback[] | undefined> => {
@@ -6509,7 +6471,6 @@ export function createThreadClaimRunObjects(
       | ReturnType<typeof conflict>
     > => {
       const { command, timing } = await get(preCreateInput$);
-      const db = get(db$);
       const pin = command.agentRunModelPin;
       if (
         !pin ||
@@ -6524,41 +6485,12 @@ export function createThreadClaimRunObjects(
         timing,
         "api_dispatch_pre_create_agent_capture_subscription_account",
         async () => {
-          const preloaded = personalSubscriptionAccountCandidates({
+          const accountCandidates = personalSubscriptionAccountCandidates({
             command,
             providerType,
             modelProviderId: pin.modelProviderId,
-            snapshot: await get(memberAccountSnapshot$),
+            snapshot: await get((await get(executionContext$)).memberModels$),
           });
-          const accountCandidates =
-            preloaded ??
-            (await db
-              .select()
-              .from(modelProviderAccounts)
-              .where(
-                and(
-                  eq(modelProviderAccounts.orgId, command.owner.orgId),
-                  eq(modelProviderAccounts.userId, command.owner.userId),
-                  isNull(modelProviderAccounts.disconnectedAt),
-                  pin.modelProviderId === null
-                    ? and(
-                        eq(modelProviderAccounts.type, providerType),
-                        eq(modelProviderAccounts.isActive, true),
-                      )
-                    : or(
-                        eq(modelProviderAccounts.id, pin.modelProviderId),
-                        and(
-                          eq(
-                            modelProviderAccounts.modelProviderId,
-                            pin.modelProviderId,
-                          ),
-                          eq(modelProviderAccounts.type, providerType),
-                          eq(modelProviderAccounts.isActive, true),
-                        ),
-                      ),
-                ),
-              )
-              .limit(pin.modelProviderId === null ? 1 : 2));
           const account =
             accountCandidates.find((candidate) => {
               return candidate.id === pin.modelProviderId;
@@ -6828,7 +6760,6 @@ export function createThreadClaimRunObjects(
       return validation;
     }
     const composeFramework = validation.framework;
-    const db = input.db;
     const args = input.args;
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
       return (
@@ -6842,25 +6773,16 @@ export function createThreadClaimRunObjects(
     if (!args.modelProviderId) {
       return composeFramework;
     }
-    const [provider] = await db
-      .select({
-        type: modelProviders.type,
-        selectedModel: modelProviders.selectedModel,
-      })
-      .from(modelProviders)
-      .where(
-        and(
-          eq(modelProviders.id, args.modelProviderId),
-          eq(modelProviders.orgId, args.orgId),
-          or(
-            eq(modelProviders.userId, args.userId),
-            eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-          ),
-        ),
-      )
-      .limit(1);
+    const identity = await get(executionContext$);
+    const [orgProviders, member] = await Promise.all([
+      get(identity.orgModelSources$),
+      get(identity.memberModels$),
+    ]);
+    const provider = [...orgProviders, ...member.providers].find((row) => {
+      return row.id === args.modelProviderId;
+    });
     if (!provider) {
-      const account = (await get(memberModels$)).accounts.find((account) => {
+      const account = member.accounts.find((account) => {
         return account.id === args.modelProviderId;
       });
       return account && isModelProviderType(account.type)
@@ -6948,8 +6870,12 @@ export function createThreadClaimRunObjects(
       return null;
     }
     const args = context.environmentArgs;
+    const identity = await get(executionContext$);
+    if (identity.orgId !== args.orgId || identity.userId !== args.userId) {
+      throw new Error("Model source snapshot identity mismatch");
+    }
     if (isBuiltInModelProviderType(args.modelProviderType)) {
-      const route = args?.builtInModelRuntimeRoute;
+      const route = args.builtInModelRuntimeRoute;
       if (
         !route ||
         route.selectedModel !== args.selectedModelOverride ||
@@ -6958,72 +6884,48 @@ export function createThreadClaimRunObjects(
       ) {
         return null;
       }
-      return await get(
-        createModelSourceSnapshot({
-          orgId: args.orgId,
-          userId: args.userId,
-          source: { kind: "built-in", modelKeyId: route.modelKeyId },
+      return managedSourceFromSnapshot(
+        (await get(identity.managedModelKeys$)).find((key) => {
+          return key.id === route.modelKeyId;
         }),
       );
     }
     if (args.modelProviderId && isMigratedAccountSource(args)) {
-      const source =
-        args.modelProviderCredentialScope === "org"
-          ? {
-              kind: "organization" as const,
-              modelProviderId: args.modelProviderId,
-            }
-          : { kind: "member" as const, accountId: args.modelProviderId };
-      return await get(
-        createModelSourceSnapshot(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            source,
-          },
-          await get(memberModels$),
-        ),
-      );
+      return args.modelProviderCredentialScope === "org"
+        ? ((await get(identity.orgModelSources$)).find((provider) => {
+            return provider.id === args.modelProviderId;
+          })?.source ?? null)
+        : memberAccountSourceFromSnapshot(
+            await get(identity.memberModels$),
+            args.modelProviderId,
+          );
     }
     if (
       !args.modelProviderId ||
       !args.selectedModelOverride ||
-      isBuiltInModelProviderType(args.modelProviderType) ||
       (args.modelProviderType &&
         isPersonalSubscriptionProviderType(args.modelProviderType))
     ) {
       return null;
     }
     const type = args.modelProviderType;
-    if (type !== undefined && isMigratedRegisteredSource(type)) {
-      const scope = args.modelProviderCredentialScope;
-      // The source reader resolves an unscoped pin's owner in its own read.
-      return await get(
-        createModelSourceSnapshot({
-          orgId: args.orgId,
-          userId: args.userId,
-          source: {
-            kind:
-              scope === undefined
-                ? "unscoped-provider"
-                : scope === "member"
-                  ? "member-provider"
-                  : "organization",
-            modelProviderId: args.modelProviderId,
-          },
-        }),
+    if (isMigratedRegisteredSource(type)) {
+      return registeredSourceFromSnapshot(
+        args.modelProviderId,
+        args.modelProviderCredentialScope,
+        await get(identity.orgModelSources$),
+        await get(identity.memberModels$),
       );
     }
-    return await get(
-      createModelSourceSnapshot({
-        orgId: args.orgId,
-        userId: args.userId,
-        source: { kind: "gateway", surfaceId: args.modelProviderId },
+    return gatewaySourceFromSnapshot(
+      args.orgId,
+      (await get(identity.gatewayModelSources$)).find((surface) => {
+        return surface.id === args.modelProviderId;
       }),
     );
   });
-  // The selected source's model runtime. KMS decryption and the exact
-  // managed-key read have no side effects, so the runtime is derived here
+  // The selected source's model runtime. KMS decryption and captured
+  // managed-key values have no side effects, so the runtime is derived here
   // (Ethan 2026-10-02); each graph resolves it once.
   const preparedConfiguredEnvironment$ = computed(
     async (get): Promise<ResolvedModelProviderEnvironment | null> => {
@@ -7040,7 +6942,6 @@ export function createThreadClaimRunObjects(
       }
       if (source.identity.kind === "built-in") {
         return await prepareManagedModelEnvironment(
-          get(db$),
           source,
           context.environmentArgs,
         );
@@ -7061,22 +6962,17 @@ export function createThreadClaimRunObjects(
         if (!sourceId) {
           throw new Error("Selected registered source has no identity");
         }
-        return await prepareRegisteredModelEnvironment(
-          get(db$),
-          source,
-          selectedModel,
-          {
-            catalog: await get(claimCatalog$),
-            userId: context.environmentArgs.userId,
-            sourceId,
-            piExecution: context.environmentArgs.piExecution,
-          },
-        );
+        return await prepareRegisteredModelEnvironment(source, selectedModel, {
+          catalog: await get(claimCatalog$),
+          userId: context.environmentArgs.userId,
+          sourceId,
+          piExecution: context.environmentArgs.piExecution,
+        });
       }
       if (source.identity.kind !== "gateway") {
         throw new Error("Selected gateway has an invalid source kind");
       }
-      return await prepareGatewayModelEnvironment(get(db$), source, {
+      return await prepareGatewayModelEnvironment(source, {
         selectedModel: context.environmentArgs.selectedModelOverride,
         framework: context.environmentArgs.framework,
         modelProviderType: context.environmentArgs.modelProviderType,
@@ -8823,13 +8719,13 @@ export function createThreadClaimRunObjects(
       catalog,
       modelProvider,
       permissionManifest: connectors.permissionManifest,
-      routePricing: await get(
-        runRoutePricing({
-          catalog,
+      routePricing: runRoutePricingFromSnapshot(
+        {
           modelProvider,
           serviceTier: (await get(contextInput$)).args.codexServiceTier,
           resolution: get(usagePricingResolution$),
-        }),
+        },
+        await get((await get(executionContext$)).modelPricing$),
       ),
     });
     if ("kind" in usage) {
@@ -14312,16 +14208,15 @@ function personalSubscriptionAccountCandidates(args: {
   readonly command: ThreadRunIdentity;
   readonly providerType: string;
   readonly modelProviderId: string | null;
-  readonly snapshot?: MemberModelAccountSnapshot | null;
+  readonly snapshot: MemberModelAccountSnapshot;
 }) {
   const snapshot = args.snapshot;
   if (
-    !snapshot ||
     snapshot.orgId !== args.command.owner.orgId ||
     snapshot.userId !== args.command.owner.userId ||
     !isPersonalSubscriptionProviderType(args.providerType)
   ) {
-    return undefined;
+    throw new Error("Subscription account snapshot identity mismatch");
   }
   return snapshot.accounts.filter((account) => {
     if (

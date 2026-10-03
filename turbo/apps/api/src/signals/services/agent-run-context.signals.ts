@@ -1,4 +1,10 @@
 import { command, computed, type Computed } from "ccstate";
+import {
+  createOrgModelSources,
+  createGatewayModelSources,
+  createManagedModelKeys,
+  createModelPricing,
+} from "./model-source-context.service";
 import { waitUntil } from "../context/wait-until";
 import {
   agentStorageRequests,
@@ -135,6 +141,10 @@ export interface AgentRunContextSignals {
   readonly allowance$: Computed<Promise<UsageAllowanceContext>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
+  readonly orgModelSources$: ReturnType<typeof createOrgModelSources>;
+  readonly gatewayModelSources$: ReturnType<typeof createGatewayModelSources>;
+  readonly managedModelKeys$: ReturnType<typeof createManagedModelKeys>;
+  readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
   readonly permissionGrants$: Computed<
@@ -310,6 +320,21 @@ function createSelectedOfficialFacts(
   });
 }
 
+function createModelSourceGroups(
+  orgId: string,
+  supplied?: AgentRunContextSignals,
+) {
+  const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
+  return {
+    orgModelSources$:
+      sharedOrg?.orgModelSources$ ?? createOrgModelSources(orgId),
+    gatewayModelSources$:
+      sharedOrg?.gatewayModelSources$ ?? createGatewayModelSources(orgId),
+    managedModelKeys$: supplied?.managedModelKeys$ ?? createManagedModelKeys(),
+    modelPricing$: supplied?.modelPricing$ ?? createModelPricing(),
+  };
+}
+
 function createIdentityContext(
   userId: string,
   orgId: string,
@@ -319,6 +344,7 @@ function createIdentityContext(
   const scope = { userId, orgId, agentId };
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
   const orgMetadata$ = sharedOrg?.orgMetadata$ ?? createRunOrgMetadata(orgId);
+  const modelSources = createModelSourceGroups(orgId, supplied);
   const plan$ =
     sharedOrg?.plan$ ??
     computed((get) => {
@@ -415,6 +441,7 @@ function createIdentityContext(
     allowance$,
     modelFacts$,
     memberModels$,
+    ...modelSources,
     memberMetadata$,
     connectorSelection$,
     permissionGrants$,
@@ -443,6 +470,10 @@ export const preloadAgentRunContext$ = command(
       signals.allowance$,
       signals.modelFacts$,
       signals.memberModels$,
+      signals.orgModelSources$,
+      signals.gatewayModelSources$,
+      signals.managedModelKeys$,
+      signals.modelPricing$,
       signals.memberMetadata$,
       signals.connectorSelection$,
       signals.permissionGrants$,
