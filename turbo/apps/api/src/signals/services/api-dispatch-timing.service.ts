@@ -12,9 +12,11 @@ import { safeSync } from "../utils";
 
 type ApiDispatchTimingSpanKind = "top_level" | "nested";
 export type ApiDispatchTimingDimensions = Readonly<Record<string, string>>;
+// Bounded string dimensions and numeric observation metrics share the ingest fields.
+type ApiDispatchTimingFields = Readonly<Record<string, string | number>>;
 export type ApiDispatchTimingDimensionsInput =
-  | ApiDispatchTimingDimensions
-  | (() => ApiDispatchTimingDimensions | undefined);
+  | ApiDispatchTimingFields
+  | (() => ApiDispatchTimingFields | undefined);
 
 type ApiProcessAgeBucket =
   | "0_1s"
@@ -363,8 +365,7 @@ interface ApiDispatchTimingRecord {
   readonly spanKind: ApiDispatchTimingSpanKind;
   readonly durationMs: number;
   readonly timestamp: string;
-  readonly dimensions?: ApiDispatchTimingDimensions;
-  readonly metrics?: Readonly<Record<string, number>>;
+  readonly dimensions?: ApiDispatchTimingFields;
 }
 
 export class ApiDispatchTimingCollector {
@@ -380,7 +381,6 @@ export class ApiDispatchTimingCollector {
     durationMs: number,
     finishedAt: number,
     dimensions?: ApiDispatchTimingDimensionsInput,
-    metrics?: Readonly<Record<string, number>>,
   ): void {
     this.records.push({
       actionType,
@@ -388,7 +388,6 @@ export class ApiDispatchTimingCollector {
       durationMs: Math.max(0, durationMs),
       timestamp: new Date(finishedAt).toISOString(),
       dimensions: resolveApiDispatchTimingDimensions(dimensions),
-      metrics,
     });
   }
 
@@ -469,7 +468,6 @@ export class ApiDispatchTimingCollector {
           dimensions: {
             ...dimensions,
             ...record.dimensions,
-            ...record.metrics,
             span_kind: record.spanKind,
             ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
           },
@@ -511,7 +509,6 @@ export class ApiDispatchTimingCollector {
           dimensions: {
             ...args.dimensions,
             ...record.dimensions,
-            ...record.metrics,
             ...processDimensions,
             runner_group: args.runnerGroup,
             profile: args.profile,
@@ -543,6 +540,6 @@ export async function measureApiDispatchTiming<T>(
 
 function resolveApiDispatchTimingDimensions(
   dimensions: ApiDispatchTimingDimensionsInput | undefined,
-): ApiDispatchTimingDimensions | undefined {
+): ApiDispatchTimingFields | undefined {
   return typeof dimensions === "function" ? dimensions() : dimensions;
 }

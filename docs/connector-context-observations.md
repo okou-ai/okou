@@ -75,8 +75,8 @@ coverage stays independently single/missing/multiple. No new raw identity,
 connector/account/secret name/value, SQL/parameter, exception text, user content,
 provider label or byte payload is recorded. Optional capture/record failures omit
 diagnostics; required source reads, selected results and original errors are never
-caught or replaced. Numeric metrics are carried separately from bounded string
-dimensions by the existing timing collector and flattened by the existing ingest.
+caught or replaced. Numeric metrics share the existing timing/ingest fields without widening the
+base string-dimension interfaces used by unrelated admission collectors.
 
 ## Presence, failure and consumer boundary
 

@@ -120,7 +120,7 @@ describe("selected eager Axiom operation payload", () => {
           _time: expect.any(String),
         });
         expect(matches[0]!.duration_ms).toBeGreaterThanOrEqual(0);
-        expect(Number.isFinite(Date.parse(matches[0]!._time!))).toBe(true);
+        expect(Number.isFinite(Date.parse(matches[0]!._time!))).toBeTruthy();
       }
       const shared = events.filter((event) => {
         return event.connector_context_schema === "shared_v2";
@@ -133,7 +133,7 @@ describe("selected eager Axiom operation payload", () => {
             event.connector_context_builtin_decrypt_count_bucket === undefined
           );
         }),
-      ).toBe(true);
+      ).toBeTruthy();
       await fixture.cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
     },
   );

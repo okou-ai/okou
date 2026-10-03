@@ -9650,9 +9650,11 @@ export function createThreadClaimRunObjects(
       // One owned consumer records the original completed intervals, never preload.
       if (observation && !isRouteError(plan)) {
         bestEffortTelemetry(() => {
-          const dimensions: ApiDispatchTimingDimensions = {
+          const dimensions = {
             ...plan.timingDimensions,
             connector_context_schema: "selected_eager_v1",
+            connector_context_builtin_decrypt_count:
+              observation.builtinDecryptCount,
             connector_context_observation:
               observation.builtinResolve && observation.builtinDecrypt
                 ? "complete"
@@ -9678,10 +9680,6 @@ export function createThreadClaimRunObjects(
                 duration.durationMs,
                 duration.finishedAt,
                 dimensions,
-                {
-                  connector_context_builtin_decrypt_count:
-                    observation.builtinDecryptCount,
-                },
               );
             }
           }
