@@ -1,5 +1,53 @@
 # Changelog
 
+## [9.377.0](https://github.com/okou-ai/okou/compare/cli-v9.376.2...cli-v9.377.0) (2026-10-03)
+
+
+### Features
+
+* **api:** enqueue once and pick in the background for every chat input ([#37116](https://github.com/okou-ai/okou/issues/37116)) ([a4aaee6](https://github.com/okou-ai/okou/commit/a4aaee679a34922e1069146d265190e43a627b31))
+* archive imessage group history with per-message access control ([#37516](https://github.com/okou-ai/okou/issues/37516)) ([c7bd6af](https://github.com/okou-ai/okou/commit/c7bd6af7f99afe1ed700315993cbab38ce68dbbd))
+* **browser:** support bounded native file input ([#36959](https://github.com/okou-ai/okou/issues/36959)) ([3479f0a](https://github.com/okou-ai/okou/commit/3479f0ac82563e817f74b71b094c01312a196e05))
+* **browser:** support native color inputs ([#37067](https://github.com/okou-ai/okou/issues/37067)) ([351704f](https://github.com/okou-ai/okou/commit/351704facfd73434f93af3d8973b5efc8610f2bd))
+* **browser:** support native date and time inputs ([#36889](https://github.com/okou-ai/okou/issues/36889)) ([db3145c](https://github.com/okou-ai/okou/commit/db3145cef2d62bb17ad8062279419a1a8cc96d83))
+* **browser:** support native radio groups ([#36827](https://github.com/okou-ai/okou/issues/36827)) ([2fcfef5](https://github.com/okou-ai/okou/commit/2fcfef5399320ee7c94e76db79f4ce0fc9c4266f))
+* **browser:** support native range input requests ([#37047](https://github.com/okou-ai/okou/issues/37047)) ([8a221c9](https://github.com/okou-ai/okou/commit/8a221c9632f40ba9b711659e3accfbeda2a9523c))
+* **cli:** unify messaging command flags and output ([#37212](https://github.com/okou-ai/okou/issues/37212)) ([f276160](https://github.com/okou-ai/okou/commit/f276160290b1c7a4dd7e5fe5e09ecc8143ceb1cb))
+* drop retired video model columns and ignore retired templates ([#37266](https://github.com/okou-ai/okou/issues/37266)) ([66d0134](https://github.com/okou-ai/okou/commit/66d0134b4253a716f00a1e6662c1c1484599f3d6))
+* finish the unified chat queue cleanup after release 7 ([#37260](https://github.com/okou-ai/okou/issues/37260)) ([48e84d6](https://github.com/okou-ai/okou/commit/48e84d6e1d0dbf8705002069f23f91d8f346ac70))
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+* **host:** let owners soft-delete a hosted site with okou host delete ([#37182](https://github.com/okou-ai/okou/issues/37182)) ([2d7b45c](https://github.com/okou-ai/okou/commit/2d7b45cff7a39047acd200659010fbb176902a86))
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+* make the image model a member setting in built-in tools ([#37246](https://github.com/okou-ai/okou/issues/37246)) ([e6ba7f7](https://github.com/okou-ai/okou/commit/e6ba7f7a1a2a6b96e2017d00c5e199dbbf0eec0b))
+* retire file transcription and seedream 5 models ([#37575](https://github.com/okou-ai/okou/issues/37575)) ([b7ff2f1](https://github.com/okou-ai/okou/commit/b7ff2f12a14123ca3cd56d5804126c1333662896))
+* retire video, voice, and talking-avatar generation ([#37242](https://github.com/okou-ai/okou/issues/37242)) ([45b537a](https://github.com/okou-ai/okou/commit/45b537a596a153a91b76c3bc7223187840f52775))
+
+
+### Bug Fixes
+
+* **billing:** simplify settlement and preserve successful provider results ([#37579](https://github.com/okou-ai/okou/issues/37579)) ([8970c35](https://github.com/okou-ai/okou/commit/8970c3548d5f80670067ae1a96ed4066200d5e0b))
+* **browser:** prefer native input before user takeover ([#37090](https://github.com/okou-ai/okou/issues/37090)) ([7421f04](https://github.com/okou-ai/okou/commit/7421f04be2136fe0be188cc56364e45765e84699))
+* **browser:** safely recover tabs after native input ([#37337](https://github.com/okou-ai/okou/issues/37337)) ([e3384ea](https://github.com/okou-ai/okou/commit/e3384eab4f0c3cfdd348e85bb9a027fa07a0c26a))
+* **cli:** include markdown link in chat get output ([#37302](https://github.com/okou-ai/okou/issues/37302)) ([669e3ca](https://github.com/okou-ai/okou/commit/669e3ca5a281142c2408448e523da70cc67d341c))
+* **phone:** send proactive messages to the caller's linked handle ([#36849](https://github.com/okou-ai/okou/issues/36849)) ([7f1091d](https://github.com/okou-ai/okou/commit/7f1091d2967db0f2bc126262c548d21a62684e8f))
+
+
+### Refactoring
+
+* **chat:** complete chat event v8 transition cleanup ([#37411](https://github.com/okou-ai/okou/issues/37411)) ([cd4aac5](https://github.com/okou-ai/okou/commit/cd4aac5fa635dd7f71eb82756529c5643c552cc9))
+* **chat:** retire archived and legacy snapshot rollout fallbacks ([#36942](https://github.com/okou-ai/okou/issues/36942)) ([e5f37a7](https://github.com/okou-ai/okou/commit/e5f37a7972785d66284a1600d4ed3807bf50f482))
+* **chat:** retire inline thread snapshot client compatibility ([#37000](https://github.com/okou-ai/okou/issues/37000)) ([418db77](https://github.com/okou-ai/okou/commit/418db77431c28c3f02ce708aef3aa999b55afcfc))
+* **chat:** retire ios inline snapshot response ([#36945](https://github.com/okou-ai/okou/issues/36945)) ([3d93ff8](https://github.com/okou-ai/okou/commit/3d93ff8d4b4a07a5888e3030e69b340f40da0ad4))
+* remove model catalog rollout compatibility ([#37457](https://github.com/okou-ai/okou/issues/37457)) ([bfdefb5](https://github.com/okou-ai/okou/commit/bfdefb56cc71e50764957c7f168584df7398c7b4))
+* remove redundant rollback checks and discord retry advice ([#36962](https://github.com/okou-ai/okou/issues/36962)) ([566e37b](https://github.com/okou-ai/okou/commit/566e37b48dc2ff1d6b3b55321d21769932493c09))
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+* remove retired video generation entitlement ([#37580](https://github.com/okou-ai/okou/issues/37580)) ([d6fb17a](https://github.com/okou-ai/okou/commit/d6fb17af11171e4edd1e7a9b289e255db602a402))
+* remove thread image model compatibility and dead generation metadata ([#37306](https://github.com/okou-ai/okou/issues/37306)) ([bb79964](https://github.com/okou-ai/okou/commit/bb7996407cbf06854852966ef1c5fc04a390d4d2))
+* retire custom chat schema, client product, and unused cors headers ([#37110](https://github.com/okou-ai/okou/issues/37110)) ([08c7ad2](https://github.com/okou-ai/okou/commit/08c7ad2455c8fcd2b043ba8fe3639b558cb98b48))
+* retire legacy free organization tier ([#37581](https://github.com/okou-ai/okou/issues/37581)) ([26691d8](https://github.com/okou-ai/okou/commit/26691d89ca363d22a9ed045b23fc02894a21d043))
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+* simplify generation and template internals ([#37328](https://github.com/okou-ai/okou/issues/37328)) ([363beba](https://github.com/okou-ai/okou/commit/363beba298d77a4746bf7097f49d11342ea3fbb2))
+
 ## [9.376.2](https://github.com/okou-ai/okou/compare/cli-v9.376.1...cli-v9.376.2) (2026-10-03)
 
 ### Dependencies

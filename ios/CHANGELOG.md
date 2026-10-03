@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/ios-v0.5.0...ios-v0.6.0) (2026-10-03)
+
+
+### Features
+
+* **ios:** persist and replay chat threads from server events ([#37658](https://github.com/okou-ai/okou/issues/37658)) ([415824a](https://github.com/okou-ai/okou/commit/415824ab86f7f8842db67d9fd26f67652ff6325b))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/ios-v0.4.1...ios-v0.5.0) (2026-09-30)
 
 
