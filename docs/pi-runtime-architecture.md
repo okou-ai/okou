@@ -262,9 +262,15 @@ runtime field; newer Guests still accept messages without it. The open reason
 token contract accepts additive API/Runner taxonomy entries without a database
 migration.
 
-A settled final Pi `length` response fails with `output_token_limit`; partial
-assistant text stays in its event. Native tools and subsequent responses remain
-owned by the same sandbox session.
+A settled final Pi `length` response follows Pi's completed outcome: partial
+assistant text stays in its event and becomes the public result, without a
+synthetic `output_token_limit` failure. An empty answer remains empty; completion
+does not assert that an answer is complete. Pi owns bounded truncated-response
+recovery and refuses to execute truncated tool arguments before settlement.
+Native tools and subsequent responses remain owned by the same sandbox session.
+Existing API/Runner completion contracts already accept this success result, so
+old and new consumers need no schema migration. Older Guests retain their former
+length-failure behavior until upgraded; historical run statuses are not rewritten.
 Retry budgets, cancellation, Runner logging rules and user-owned-provider
 warning suppression are unchanged.
 
