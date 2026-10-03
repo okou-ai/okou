@@ -113,6 +113,8 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
 // state indicators keep their own contrast.
 const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
+// One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
+const RUNNING_INDICATOR_WAVE_ROWS = 12;
 const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
 
 function ChatThreadMenuShortcut({ shortcut }: { readonly shortcut: string }) {
@@ -141,15 +143,23 @@ function equalSidebarChatThreadWindows(
 
 function SessionStateIndicator({
   signals,
+  rowIndex,
 }: {
   signals: SidebarChatThreadItemSignals;
+  rowIndex: number;
 }) {
+  const waveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatRunningIndicatorWave] === true;
   const state = useLastResolved(signals.indicatorState$) ?? null;
   if (state === null) {
     return null;
   }
   if (state === "running") {
-    return <RunningIndicator />;
+    return (
+      <RunningIndicator
+        phaseOffset={waveEnabled ? rowIndex / RUNNING_INDICATOR_WAVE_ROWS : 0}
+      />
+    );
   }
   if (state === "unread") {
     return <span className="h-2 w-2 rounded-full bg-sky-600" />;
@@ -307,8 +317,10 @@ function ChatThreadPinMenuItems({
 
 function ChatThreadMenu({
   signals,
+  rowIndex,
 }: {
   signals: SidebarChatThreadItemSignals;
+  rowIndex: number;
 }) {
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
@@ -369,7 +381,10 @@ function ChatThreadMenu({
                         className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
                       >
                         {showStateIndicator ? (
-                          <SessionStateIndicator signals={signals} />
+                          <SessionStateIndicator
+                            signals={signals}
+                            rowIndex={rowIndex}
+                          />
                         ) : (
                           <Pin size={17} className="opacity-70" />
                         )}
@@ -549,15 +564,17 @@ function ChatThreadItemLink({
 function ChatThreadItem({
   signals,
   shortcutNumber,
+  rowIndex,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
+  rowIndex: number;
 }) {
   return (
     <div className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center">
       <ChatThreadItemLink signals={signals} shortcutNumber={shortcutNumber} />
       <div className="pointer-events-none relative col-start-1 row-start-1 flex h-8 w-8 items-center justify-center justify-self-end">
-        <ChatThreadMenu signals={signals} />
+        <ChatThreadMenu signals={signals} rowIndex={rowIndex} />
       </div>
     </div>
   );
@@ -819,6 +836,7 @@ function VirtualizedChatThreads({
           >
             <ChatThreadItem
               signals={signals}
+              rowIndex={index}
               shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
             />
           </div>
@@ -1284,6 +1302,7 @@ function UnreadChatThreadsContent({
           <div key={signals.threadId} className="pb-1">
             <ChatThreadItem
               signals={signals}
+              rowIndex={index}
               shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
             />
           </div>

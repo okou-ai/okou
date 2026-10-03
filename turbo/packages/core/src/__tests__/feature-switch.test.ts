@@ -105,6 +105,23 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("keeps the running-indicator wave staff-only and honors overrides", () => {
+    const key = FeatureSwitchKey.ChatRunningIndicatorWave;
+    expect(isFeatureEnabled(key, {})).toBe(false);
+    expect(isFeatureEnabled(key, { orgId: "org_external" })).toBe(false);
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(
+      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(key, {
+        orgId: "org_external",
+        overrides: { [key]: true },
+      }),
+    ).toBe(true);
+  });
+
   it("enables chat thread archiving for staff and honors explicit overrides", () => {
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(

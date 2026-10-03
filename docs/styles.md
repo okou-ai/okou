@@ -972,7 +972,22 @@ it through `animate-*` rather than an `animation` shorthand. Each
 `RunningIndicator` layer aligns its animation start time to the document
 timeline's zero on every `animationstart`, including CSS restarts after an
 ancestor stops being `display: none`. This keeps separately mounted or revealed
-indicators in phase without a wall-clock delay or a timer.
+indicators on one clock without a wall-clock sample or a timer.
+
+The optional `phaseOffset` prop is the fraction of a cycle by which an indicator
+trails phase zero; it defaults to zero for same-phase consumers. The component
+normalizes it into a nonpositive fractional CSS delay, so even a large offset
+starts animating immediately. Both layers use the registered
+`--duration-running-indicator` token for their cycle and delay calculation.
+Changing the prop updates the phase relative to the existing timeline origin,
+not the mount or re-render time.
+
+With `chatRunningIndicatorWave` enabled, the chat sidebar supplies its complete
+filtered-list row index divided by 12: the existing 2.4-second cycle reaches
+each lower row 200ms later and repeats spatially every 12 rows. Virtual scrolling
+must not substitute the window-local offset. Reordering adopts the new row
+position immediately; unread dots remain static, and search/command results
+keep the default zero offset. With the switch off, sidebar dots remain in phase.
 
 A `@media (prefers-reduced-motion: reduce)` override that resets a value back to
 its initial belongs on `motion-safe:` on the rule it would override, rather than
