@@ -166,6 +166,8 @@ def run_tests(argv, *, env=None, timeout):
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
+            # ESRCH means the owned group already exited; wait/reap and the
+            # explicit group-disappearance check below still must complete.
             pass
         try:
             process.wait(timeout=5)
@@ -176,6 +178,8 @@ def run_tests(argv, *, env=None, timeout):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The preceding TERM may already have removed this group. This
+            # expected race does not bypass adopted-child/group verification.
             pass
         until = time.monotonic() + 5
         while True:
@@ -184,6 +188,8 @@ def run_tests(argv, *, env=None, timeout):
                 if child:
                     continue
             except ChildProcessError:
+                # No waitable adopted group child remains right now; that alone
+                # does not prove termination, so killpg(0) below still gates exit.
                 pass
             try:
                 os.killpg(process.pid, 0)
