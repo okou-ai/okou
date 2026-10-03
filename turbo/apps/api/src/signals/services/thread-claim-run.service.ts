@@ -24,6 +24,8 @@ import {
 } from "./model-source-context.service";
 import {
   matchAgentRunContextSignals,
+  createEagerConnectorCredentialContext,
+  preloadEagerConnectorCredentialContext$,
   type AgentRunContextSignals,
   type BootstrapConnectorObservation,
 } from "./agent-run-context.signals";
@@ -7750,6 +7752,19 @@ export function createThreadClaimRunObjects(
       });
     },
   );
+  const eagerCredentialContext$ = computed(async (get) => {
+    return createEagerConnectorCredentialContext(
+      await get(runConnectorEncryptedRows$),
+    );
+  });
+  // Capture the exact eager plan before preloading its read-only context.
+  const preloadEagerCredentials$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const context = await get(eagerCredentialContext$);
+      signal.throwIfAborted();
+      set(preloadEagerConnectorCredentialContext$, context, signal);
+    },
+  );
   // Stored connector secrets, decrypted once per graph; KMS decryption has no
   // side effects (Ethan 2026-10-02).
   const decryptedSecrets$ = computed(async (get) => {
@@ -7764,8 +7779,9 @@ export function createThreadClaimRunObjects(
     if (isRouteError(plan)) {
       return {};
     }
-    const decrypted = (await get((await get(executionContext$)).connectors$))
-      .decryptedConnectorCredentials;
+    const decrypted = await get(
+      (await get(eagerCredentialContext$)).credentials$,
+    );
     return Object.fromEntries(
       rows.map((row) => {
         const result = decrypted.get(row.id);
@@ -9565,6 +9581,7 @@ export function createThreadClaimRunObjects(
   });
   const prepareRunnerStorage$ = command(
     async ({ get, set }, signal: AbortSignal) => {
+      await set(preloadEagerCredentials$, signal);
       const [input, preparedStorage, piResources] = await Promise.all([
         set(prepareRunnerInput$, signal),
         get(preparedStorage$),
@@ -9613,6 +9630,7 @@ export function createThreadClaimRunObjects(
   });
   const prepareEncryptedSecrets$ = command(
     async ({ get, set }, signal: AbortSignal) => {
+      await set(preloadEagerCredentials$, signal);
       const input = await get(storedSecretsInput$);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {

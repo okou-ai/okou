@@ -72,10 +72,7 @@ import {
   takeCachedProjectedConnectors,
   rememberProjectedConnectors,
   type ConnectorRuntimeSelection,
-  getConnectorRuntimeConnector,
-  getConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
-import { connectorAuthMethodOwnedSecretNames } from "@okouai/connectors/connector-auth-method";
 import {
   decodeAcceptedConnectorCatalogPayload,
   readCachedConnectorCatalogSnapshot,
@@ -251,10 +248,6 @@ export interface BootstrapConnectorData {
   readonly observation: BootstrapConnectorObservation | undefined;
   readonly connectorAccounts: readonly BootstrapConnectorAccount[];
   readonly connectorSources: readonly ConnectorSourceResult[];
-  readonly decryptedConnectorCredentials: ReadonlyMap<
-    string,
-    Awaited<ReturnType<typeof settle<string>>>
-  >;
 }
 
 function catalogMetadataSlugs(selection: AgentConnectorSelection) {
@@ -639,47 +632,45 @@ function bootstrapConnectorSnapshot(
   };
 }
 
-async function bootstrapDecryptedCredentials(
-  snapshot: ReturnType<typeof bootstrapConnectorSnapshot>,
-  catalog: ConnectorRuntimeSelection | null,
-) {
-  const { sources } = snapshot;
-  const credentials = sources.flatMap((source) => {
-    if (
-      source.kind !== "available" ||
-      source.snapshot.source.kind !== "builtin" ||
-      !catalog
-    ) {
-      return [];
-    }
-    const connectorSlug = source.snapshot.source.connectorSlug;
-    const connector = getConnectorRuntimeConnector(catalog, connectorSlug);
-    if (!connector || connector.catalogConnector.mcp) {
-      return [];
-    }
-    const method = getConnectorRuntimeMethod({
-      snapshot: catalog,
-      connectorSlug,
-      authMethodId: source.snapshot.connection.authMethod,
-    });
-    if (!method?.executable) {
-      return [];
-    }
-    const names = new Set(connectorAuthMethodOwnedSecretNames(method.method));
-    return source.snapshot.credentials.filter((credential) => {
-      return names.has(credential.name);
-    });
-  });
-  // An unused account's malformed credential must not fail another account's
-  // run. Preserve each result; only the selected, catalog-owned names consume it.
-  const decrypted = await mapConcurrent(credentials, 4, async (credential) => {
-    return [
-      credential.id,
-      await settle(decryptStoredSecretValue(credential.encryptedValue)),
-    ] as const;
-  });
-  return new Map(decrypted);
+export interface EagerConnectorCredentialContext {
+  readonly credentials$: Computed<
+    Promise<ReadonlyMap<string, Awaited<ReturnType<typeof settle<string>>>>>
+  >;
 }
+
+/** Own decryption only after the run's eager plan selects captured values. */
+export function createEagerConnectorCredentialContext(
+  credentials: readonly {
+    readonly id: string;
+    readonly encryptedValue: string;
+  }[],
+): EagerConnectorCredentialContext {
+  const credentials$ = computed(async () => {
+    const decrypted = await mapConcurrent(
+      credentials,
+      4,
+      async (credential) => {
+        return [
+          credential.id,
+          await settle(decryptStoredSecretValue(credential.encryptedValue)),
+        ] as const;
+      },
+    );
+    return new Map(decrypted);
+  });
+  return { credentials$ };
+}
+
+export const preloadEagerConnectorCredentialContext$ = command(
+  (
+    { get },
+    context: EagerConnectorCredentialContext,
+    signal: AbortSignal,
+  ): void => {
+    signal.throwIfAborted();
+    waitUntil(settle(get(context.credentials$)));
+  },
+);
 
 function bootstrapCatalogRequest(selection: AgentConnectorSelection) {
   const scope = agentConnectorScopeFromRows({
@@ -1137,33 +1128,16 @@ function createConnectorContextGroups(
         : null;
     },
   );
-  const decryptedCredentials$ = computed(async (get) => {
-    const resolveStartedAt = performance.now();
-    const [snapshot, catalog] = await Promise.all([
-      get(connectorSnapshot$),
-      get(catalog$),
-    ]);
-    const decryptStartedAt = performance.now();
-    const credentials = await bootstrapDecryptedCredentials(snapshot, catalog);
-    return {
-      credentials,
-      decrypt: connectorContextDuration(decryptStartedAt),
-      resolve: connectorContextDuration(resolveStartedAt),
-    };
-  });
   const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
-    const [snapshot, decrypted] = await Promise.all([
-      get(connectorSnapshot$),
-      get(decryptedCredentials$),
-    ]);
+    const snapshot = await get(connectorSnapshot$);
     const observation = safeSync(
       (): BootstrapConnectorObservation | undefined => {
         return snapshot.observation
           ? {
               ...snapshot.observation,
-              builtinResolve: decrypted.resolve,
-              builtinDecrypt: decrypted.decrypt,
-              builtinDecryptCount: decrypted.credentials.size,
+              builtinResolve: undefined,
+              builtinDecrypt: undefined,
+              builtinDecryptCount: 0,
             }
           : undefined;
       },
@@ -1171,7 +1145,6 @@ function createConnectorContextGroups(
     return {
       connectorAccounts: snapshot.accounts,
       connectorSources: snapshot.sources,
-      decryptedConnectorCredentials: decrypted.credentials,
       observation: "ok" in observation ? observation.ok : undefined,
     };
   });
