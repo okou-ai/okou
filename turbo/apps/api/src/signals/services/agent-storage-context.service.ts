@@ -6,6 +6,7 @@ import {
   VOLUME_ORG_USER_ID,
   getSkillStorageName,
   getCustomSkillStorageName,
+  getInstructionsStorageName,
   getCustomConnectorSkillStorageName,
 } from "@okouai/core/storage-names";
 import {
@@ -18,10 +19,15 @@ import type { OfficialWorkflowContextFacts } from "./official-workflow-context.s
 import {
   storageRequestKey,
   storageIndexKey,
+  mergeStorageIndexes,
   type StorageRequest,
   type StorageIndex,
 } from "./storage-index.service";
-import type { ExecutionStorageRequest } from "./execution-storage.service";
+import {
+  executionStorageCachePairs,
+  type ExecutionStorageRequest,
+} from "./execution-storage.service";
+import type { BootstrapAgent } from "./agent-data.service";
 
 export interface AgentStorageContext {
   readonly requests: readonly StorageRequest[];
@@ -29,7 +35,7 @@ export interface AgentStorageContext {
   readonly index: StorageIndex;
 }
 
-export function agentStorageCacheMounts(context: AgentStorageContext) {
+function agentStorageCacheMounts(context: AgentStorageContext) {
   const facts = context.requests.flatMap((request, position) => {
     const storage = context.index.get(
       storageIndexKey(
@@ -80,8 +86,12 @@ export function agentStorageCacheMounts(context: AgentStorageContext) {
 }
 
 /** Database identities only: framework-specific mount paths are assembled later. */
-export function agentStorageRequests(
-  owner: { readonly orgId: string; readonly userId: string },
+function agentStorageRequests(
+  owner: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly agent: Pick<BootstrapAgent, "name" | "orgId"> | null;
+  },
   workflows: readonly SelectedAgentWorkflow[],
   connectors: AgentConnectorSelection,
   catalog: ConnectorRuntimeSelection | null,
@@ -102,6 +112,9 @@ export function agentStorageRequests(
       version,
     });
   };
+  if (owner.agent) {
+    add(owner.agent.orgId, getInstructionsStorageName(owner.agent.name));
+  }
   for (const skill of SEED_SKILLS) {
     const parsed = parseGitHubTreeUrl(resolveSkillRef(skill));
     if (parsed) {
@@ -159,4 +172,69 @@ export function agentStorageRequests(
       }),
     ).values(),
   ];
+}
+
+export function agentStorageReadPlan(
+  owner: { readonly orgId: string; readonly userId: string },
+  facts: readonly [
+    BootstrapAgent | null,
+    readonly SelectedAgentWorkflow[],
+    AgentConnectorSelection,
+    ConnectorRuntimeSelection | null,
+    OfficialWorkflowContextFacts,
+  ],
+) {
+  const [agent, workflows, connectors, catalog, official] = facts;
+  const requests = agentStorageRequests(
+    { ...owner, agent },
+    workflows,
+    connectors,
+    catalog,
+    official,
+  );
+  const published = official?.storageIndex ?? new Map();
+  const ownedRequests = requests.filter((request) => {
+    return !published.has(
+      storageIndexKey(
+        request.lookup.orgId,
+        request.lookup.userId,
+        request.lookup.name,
+      ),
+    );
+  });
+  return { requests, published, ownedRequests };
+}
+
+export function captureAgentStorageContext(
+  plan: ReturnType<typeof agentStorageReadPlan>,
+  index: StorageIndex,
+): AgentStorageContext {
+  return {
+    requests: plan.requests,
+    lookupKeys: new Set(
+      plan.requests.map((request) => {
+        return storageIndexKey(
+          request.lookup.orgId,
+          request.lookup.userId,
+          request.lookup.name,
+        );
+      }),
+    ),
+    index: mergeStorageIndexes(index, plan.published),
+  };
+}
+
+export function agentStorageCacheSnapshot(context: AgentStorageContext) {
+  const { mounts, versions } = agentStorageCacheMounts(context);
+  const { pairs } = executionStorageCachePairs(mounts, versions);
+  return {
+    keys: new Set(
+      pairs.map((pair) => {
+        return JSON.stringify([pair.scope, pair.cacheKey]);
+      }),
+    ),
+    rows: [...context.index.values()].flatMap((entry) => {
+      return entry.cachedUrls ?? [];
+    }),
+  };
 }

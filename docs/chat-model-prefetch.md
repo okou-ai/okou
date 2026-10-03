@@ -42,7 +42,8 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 - `officialWorkflows$`: accepted catalog, immutable revisions and their exact
   Storage rows, selected from mounted Workflow identities without model routing.
 - `storage$`: Agent-owned skill/Connector mount lookup keys, the org/user
-  `memory` root, and the shared HEAD/exact-version index. Published Official rows are reused from revisions.
+  `memory` root, Agent-name instructions root, and the shared HEAD/exact-version
+  index. Published Official rows are reused from revisions.
 - `storageCache$`: a pure projection of all three read-only URL-cache scopes
   returned by index/revision JOINs. It issues no separate SQL. Missing cache
   rows are authoritative; local signing does not reread them.
@@ -127,8 +128,11 @@ and Agent mount groups reuse only the complete org/user/Agent identity. Revision
 framework-specific mount paths later from the captured accepted definitions.
 The default `memory` root key is `(orgId, userId, "memory")`, independent of
 framework, thread or message. Its HEAD and joined presign-cache rows are captured
-by `storage$` / `storageCache$`; an absent root remains authoritative until the
-existing write path initializes it. Thread/session-selected memory versions,
+by `storage$` / `storageCache$`; the Agent-name instructions key uses the captured
+Agent's org and name, not its framework-specific target filename/path. Both
+computed nodes belong to the identity owner and directly read lexical facts; no
+individual `Computed` is injected into a Storage factory. An absent root remains
+authoritative until the existing write path initializes it. Thread/session-selected memory versions,
 previous-session exact versions and request-owned mount keys stay local. These
 are resolved by the single captured Thread Storage index, not per-consumer
 loaders. Their keys use the same index/cache JOIN loader once; an absent Agent row or a

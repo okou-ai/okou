@@ -7,17 +7,13 @@ import {
 } from "./model-source-context.service";
 import { waitUntil } from "../context/wait-until";
 import {
-  agentStorageRequests,
-  agentStorageCacheMounts,
+  agentStorageReadPlan,
+  captureAgentStorageContext,
+  agentStorageCacheSnapshot,
   type AgentStorageContext,
 } from "./agent-storage-context.service";
-import { executionStorageCachePairs } from "./execution-storage.service";
 import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
-import {
-  readStorageBaseIndex,
-  mergeStorageIndexes,
-  storageIndexKey,
-} from "./storage-index.service";
+import { readStorageBaseIndex } from "./storage-index.service";
 import {
   createOfficialWorkflowFacts,
   createOfficialWorkflowCatalog,
@@ -239,74 +235,6 @@ export function matchAgentRunContextSignals(
   return createIdentityContext(userId, orgId, agentId, supplied);
 }
 
-function createStorageContextGroups(
-  owner: { readonly orgId: string; readonly userId: string },
-  inputs: Pick<
-    AgentRunContextSignals,
-    "workflows$" | "connectorSelection$" | "catalog$" | "officialWorkflows$"
-  >,
-) {
-  const storage$ = computed(async (get): Promise<AgentStorageContext> => {
-    const [workflows, selection, catalog, official] = await Promise.all([
-      get(inputs.workflows$),
-      get(inputs.connectorSelection$),
-      get(inputs.catalog$),
-      get(inputs.officialWorkflows$),
-    ]);
-    const requests = agentStorageRequests(
-      owner,
-      workflows,
-      selection,
-      catalog,
-      official,
-    );
-    const published = official?.storageIndex ?? new Map();
-    const index = mergeStorageIndexes(
-      await readStorageBaseIndex(
-        get(db$),
-        requests.filter((request) => {
-          return !published.has(
-            JSON.stringify([
-              request.lookup.orgId,
-              request.lookup.userId,
-              request.lookup.name,
-            ]),
-          );
-        }),
-      ),
-      published,
-    );
-    return {
-      requests,
-      lookupKeys: new Set(
-        requests.map((request) => {
-          return storageIndexKey(
-            request.lookup.orgId,
-            request.lookup.userId,
-            request.lookup.name,
-          );
-        }),
-      ),
-      index,
-    };
-  });
-  const storageCache$ = computed(async (get) => {
-    const { mounts, versions } = agentStorageCacheMounts(await get(storage$));
-    const { pairs } = executionStorageCachePairs(mounts, versions);
-    return {
-      keys: new Set(
-        pairs.map((pair) => {
-          return JSON.stringify([pair.scope, pair.cacheKey]);
-        }),
-      ),
-      rows: [...(await get(storage$)).index.values()].flatMap((entry) => {
-        return entry.cachedUrls ?? [];
-      }),
-    };
-  });
-  return { storage$, storageCache$ };
-}
-
 function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
   return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
 }
@@ -360,6 +288,26 @@ function createModelSourceGroups(
   };
 }
 
+function createRunOrgPlan(orgId: string) {
+  return computed((get) => {
+    return loadOrgPlanCapabilities(get(db$), orgId);
+  });
+}
+
+function capturedFeatureSwitchContext(
+  scope: { readonly orgId: string; readonly userId: string },
+  member: ExecutionMemberMetadata,
+  overrides: BootstrapFeatureSwitchContext["overrides"],
+): BootstrapFeatureSwitchContext {
+  return { ...scope, email: member.profile?.email ?? undefined, overrides };
+}
+
+function requirePreparedContextAgent(agent: BootstrapAgent | null): void {
+  if (!agent) {
+    throw new Error("Agent disappeared after preparation authorization");
+  }
+}
+
 function createIdentityContext(
   userId: string,
   orgId: string,
@@ -370,11 +318,7 @@ function createIdentityContext(
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
   const orgMetadata$ = sharedOrg?.orgMetadata$ ?? createRunOrgMetadata(orgId);
   const modelSources = createModelSourceGroups(orgId, supplied);
-  const plan$ =
-    sharedOrg?.plan$ ??
-    computed((get) => {
-      return loadOrgPlanCapabilities(get(db$), orgId);
-    });
+  const plan$ = sharedOrg?.plan$ ?? createRunOrgPlan(orgId);
   const allowance$ =
     sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
   const modelFacts$ =
@@ -383,10 +327,9 @@ function createIdentityContext(
       const [plan, org] = await Promise.all([get(plan$), get(orgMetadata$)]);
       return await get(createModelFacts(orgId, plan, org));
     });
+  const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
   const memberModels$ =
-    sharedOrg?.userId === userId
-      ? sharedOrg.memberModels$
-      : createMemberModelBootstrap(orgId, userId);
+    sharedMember?.memberModels$ ?? createMemberModelBootstrap(orgId, userId);
   const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
     const [[row], org] = await Promise.all([
       get(db$)
@@ -398,7 +341,6 @@ function createIdentityContext(
     ]);
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
-  const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
   const { memberMetadata$, credits$ } = sharedMember ?? {
     memberMetadata$: createExecutionMemberMetadata(scope),
     credits$: computed(async (get): Promise<ExecutionCreditBalance | null> => {
@@ -432,11 +374,24 @@ function createIdentityContext(
     workflows$,
     officialCatalog$,
   );
-  const { storage$, storageCache$ } = createStorageContextGroups(scope, {
-    workflows$,
-    connectorSelection$,
-    catalog$,
-    officialWorkflows$,
+  const storage$ = computed(async (get): Promise<AgentStorageContext> => {
+    const plan = agentStorageReadPlan(
+      scope,
+      await Promise.all([
+        get(agent$),
+        get(workflows$),
+        get(connectorSelection$),
+        get(catalog$),
+        get(officialWorkflows$),
+      ]),
+    );
+    return captureAgentStorageContext(
+      plan,
+      await readStorageBaseIndex(get(db$), plan.ownedRequests),
+    );
+  });
+  const storageCache$ = computed(async (get) => {
+    return agentStorageCacheSnapshot(await get(storage$));
   });
   const featureSwitchOverrides$ = userFeatureSwitchOverrides(orgId, userId);
   const disabledPaidTools$ = createAgentDisabledPaidTools(userId, orgId);
@@ -447,18 +402,10 @@ function createIdentityContext(
         get(memberMetadata$),
         get(featureSwitchOverrides$),
       ]);
-      return {
-        orgId,
-        userId,
-        email: member.profile?.email ?? undefined,
-        overrides,
-      };
+      return capturedFeatureSwitchContext(scope, member, overrides);
     });
   const environment$ = computed(async (get) => {
-    const agent = await get(agent$);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
+    requirePreparedContextAgent(await get(agent$));
     const snapshot = await get(environmentSnapshot$);
     return { variables: snapshot.variables };
   });
