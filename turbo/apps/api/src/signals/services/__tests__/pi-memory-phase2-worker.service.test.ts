@@ -288,6 +288,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       {
         piSessionId: randomUUID(),
         sourceRunId,
+        sourceCompletedAt: now,
         rawMemory: "maintenance does not wait for chat capacity",
         rolloutSummary: "maintenance does not wait for chat capacity",
       },
@@ -1537,7 +1538,7 @@ test.each([false, true])(
     );
     await insertPhase2Candidates(
       job.scope,
-      [{ piSessionId: randomUUID() }],
+      [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
       provider.binding,
     );
     const refreshed = makeCodexJwt({
@@ -1871,7 +1872,7 @@ test("refreshes quota for a new hourly attempt and never re-admits committed rec
   );
   await insertPhase2Candidates(
     job.scope,
-    [{ piSessionId: randomUUID() }],
+    [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
     native.binding,
   );
   let used = 90;
@@ -1922,7 +1923,7 @@ test.each(["disconnect", "feature", "storage", "token", "cancel"])(
     );
     await insertPhase2Candidates(
       job.scope,
-      [{ piSessionId: randomUUID() }],
+      [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
       native.binding,
     );
     const controller = new AbortController();
@@ -2066,7 +2067,7 @@ test("makes exactly one quota GET and no reset-credit request for a real native 
   );
   await insertPhase2Candidates(
     job.scope,
-    [{ piSessionId: randomUUID() }],
+    [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
     native.binding,
   );
   let reads = 0;
@@ -2117,7 +2118,7 @@ test.each([
     const provider = await createPhase2Provider(testContext(), job.scope, type);
     await insertPhase2Candidates(
       job.scope,
-      [{ piSessionId: randomUUID() }],
+      [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
       provider.binding,
     );
     await seedOrgMetadata({ orgId: job.scope.orgId, tier: "pro", credits: 0 });
@@ -2233,7 +2234,7 @@ test("exhausts quota-denied Phase 2 work after three hourly attempts", async () 
   );
   await insertPhase2Candidates(
     job.scope,
-    [{ piSessionId: randomUUID() }],
+    [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
     native.binding,
   );
   let reads = 0;

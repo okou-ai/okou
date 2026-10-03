@@ -388,7 +388,7 @@ async function launch(
     piSessionId: randomUUID(),
     sourceRunId: randomUUID(),
     sourceHistoryHash: createHash("sha256").update(randomUUID()).digest("hex"),
-    sourceCompletedAt: new Date("2026-09-03T04:00:00.000Z"),
+    sourceCompletedAt: nowDate(),
     rawMemory: secretCandidate,
     rolloutSummary: "private evidence",
   };
@@ -1068,6 +1068,7 @@ describe("maintenance routing admission and captured authority", () => {
       await insertPhase2Candidates(scope, [
         {
           piSessionId: randomUUID(),
+          sourceCompletedAt: nowDate(),
           rawMemory: secretCandidate,
           rolloutSummary: "private routing evidence",
         },

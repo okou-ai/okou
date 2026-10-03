@@ -109,7 +109,7 @@ async function dispatchMaintenance(
       sourceHistoryHash: createHash("sha256")
         .update(randomUUID())
         .digest("hex"),
-      sourceCompletedAt: new Date("2026-09-03T04:00:00Z"),
+      sourceCompletedAt: nowDate(),
       rawMemory: `${name} private candidate`,
       rolloutSummary: `${name} complete evidence`,
     };
