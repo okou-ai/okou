@@ -29,7 +29,7 @@ import {
   isUniqueViolation,
 } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
 import { sshCreationResult, resourceIdConflict } from "./ssh-creation.service";
@@ -256,28 +256,6 @@ function shouldClearLearnedHostKey(
     current.cloudflareAccessId === null &&
     selectedAccessId === null
   );
-}
-
-async function findOwnerConnection(
-  db: Pick<ReadonlyDb, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectionId: string;
-  },
-): Promise<SshConnectionRow | undefined> {
-  const [row] = await db
-    .select()
-    .from(sshConnections)
-    .where(
-      and(
-        eq(sshConnections.id, args.connectionId),
-        eq(sshConnections.orgId, args.orgId),
-        eq(sshConnections.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return row;
 }
 
 export const listSshConnections$ = command(
@@ -729,7 +707,11 @@ export const resetSshConnectionHostKey$ = command(
     },
   ): Promise<SshConnectionResult<SshConnectionResponse>> => {
     const db = set(writeDb$);
-    const current = await findOwnerConnection(db, args);
+    const [current] = await db
+      .select()
+      .from(sshConnections)
+      .where(ownedSshConnection(args))
+      .limit(1);
     if (!current) {
       return failure("notFound");
     }

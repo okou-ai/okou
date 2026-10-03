@@ -639,6 +639,75 @@ describe("SSH connection routes", () => {
     expect(otherList.body.connections).toStrictEqual([]);
   });
 
+  it.each(["orgId", "userId"] as const)(
+    "rejects a foreign host-key reset sharing the %s without changing either owner's configuration",
+    async (shared) => {
+      useSecretKmsProbe();
+      const owner = actor("reset-owner");
+      authenticate(owner);
+      const created = await accept(
+        client().create({
+          headers: authHeaders(),
+          body: { id: randomUUID(), ...createBody("reset-owner.example.com") },
+        }),
+        [201],
+      );
+      const peer = { ...actor("reset-peer"), [shared]: owner[shared] };
+      authenticate(peer);
+      const peerCreated = await accept(
+        client().create({
+          headers: authHeaders(),
+          body: { id: randomUUID(), ...createBody("reset-peer.example.com") },
+        }),
+        [201],
+      );
+      const denied = await accept(
+        client().resetHostKey({
+          headers: authHeaders(),
+          params: { connectionId: created.body.id },
+          body: { expectedGeneration: 1 },
+        }),
+        [404],
+      );
+      expect(denied.body.error.code).toBe("SSH_CONNECTION_NOT_FOUND");
+      const missing = await accept(
+        client().resetHostKey({
+          headers: authHeaders(),
+          params: { connectionId: randomUUID() },
+          body: { expectedGeneration: 1 },
+        }),
+        [404],
+      );
+      expect(missing.body).toStrictEqual(denied.body);
+      expect(
+        (await accept(client().list({ headers: authHeaders() }), [200])).body
+          .connections,
+      ).toStrictEqual([peerCreated.body]);
+      authenticate(owner);
+      expect(
+        (await accept(client().list({ headers: authHeaders() }), [200])).body
+          .connections,
+      ).toStrictEqual([created.body]);
+      const reset = await accept(
+        client().resetHostKey({
+          headers: authHeaders(),
+          params: { connectionId: created.body.id },
+          body: { expectedGeneration: 1 },
+        }),
+        [200],
+      );
+      expect(reset.body).toStrictEqual({
+        ...created.body,
+        generation: 2,
+        updatedAt: reset.body.updatedAt,
+      });
+      expect(
+        (await accept(client().list({ headers: authHeaders() }), [200])).body
+          .connections,
+      ).toStrictEqual([reset.body]);
+    },
+  );
+
   it("preserves concurrent configurations for the same endpoint and username", async () => {
     useSecretKmsProbe();
     const duplicateOwner = actor("concurrent-duplicate");
