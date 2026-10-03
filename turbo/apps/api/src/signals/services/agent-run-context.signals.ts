@@ -108,9 +108,13 @@ import {
 } from "./usage-allowance-context.service";
 
 import {
-  createExecutionCreditBalance,
+  executionCreditQueries,
+  executionCreditBalance,
   type ExecutionCreditBalance,
 } from "./execution-credit-balance.service";
+import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
+import { nowDate } from "../../lib/time";
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
@@ -316,6 +320,21 @@ function createSelectedOfficialFacts(
   });
 }
 
+function contextAgentSelection() {
+  return {
+    id: agents.id,
+    name: agents.name,
+    orgId: agents.orgId,
+    owner: agents.owner,
+    visibility: agents.visibility,
+    displayName: agents.displayName,
+    description: agents.description,
+    sound: agents.sound,
+    modelProviderId: agents.modelProviderId,
+    selectedModel: agents.selectedModel,
+  };
+}
+
 function createIdentityContext(
   userId: string,
   orgId: string,
@@ -345,18 +364,7 @@ function createIdentityContext(
   const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
     const [[row], org] = await Promise.all([
       get(db$)
-        .select({
-          id: agents.id,
-          name: agents.name,
-          orgId: agents.orgId,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          displayName: agents.displayName,
-          description: agents.description,
-          sound: agents.sound,
-          modelProviderId: agents.modelProviderId,
-          selectedModel: agents.selectedModel,
-        })
+        .select(contextAgentSelection())
         .from(agents)
         .where(eq(agents.id, agentId))
         .limit(1),
@@ -367,7 +375,23 @@ function createIdentityContext(
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
   const { memberMetadata$, credits$ } = sharedMember ?? {
     memberMetadata$: createExecutionMemberMetadata(scope),
-    credits$: createExecutionCreditBalance(scope, orgMetadata$),
+    credits$: computed(async (get): Promise<ExecutionCreditBalance | null> => {
+      const db = get(db$);
+      const at = nowDate();
+      const queries = executionCreditQueries(scope, at);
+      const [org, [expired], [pack]] = await Promise.all([
+        get(orgMetadata$),
+        db
+          .select(queries.expired.fields)
+          .from(creditExpiresRecord)
+          .where(queries.expired.where),
+        db
+          .select(queries.pack.fields)
+          .from(usagePackCreditGrants)
+          .where(queries.pack.where),
+      ]);
+      return executionCreditBalance(org, expired?.total ?? 0, pack?.total ?? 0);
+    }),
   };
   const {
     connectorSelection$,
@@ -414,9 +438,7 @@ function createIdentityContext(
     return { variables: snapshot.variables };
   });
   return {
-    userId,
-    orgId,
-    agentId,
+    ...scope,
     agent$,
     orgMetadata$,
     plan$,
