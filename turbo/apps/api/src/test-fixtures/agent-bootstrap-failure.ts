@@ -11,6 +11,8 @@ import {
  * Fail only the first selected bootstrap read in the test-owned request.
  * Organization reads match the fixture identity; global key/pricing reads
  * run only while this isolated test owns the fixture's PostgreSQL client.
+ * Both callers belong to vitest.config.ts's api-bootstrap-failure project,
+ * which explicitly isolates workers and runs its files and cases serially.
  * No production API can request a database cancellation. PostgreSQL produces
  * the real error; later reads remain healthy, so a retry would be observable
  * as a launched run instead of the required input rejection.

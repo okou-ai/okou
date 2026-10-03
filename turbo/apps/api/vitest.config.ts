@@ -9,6 +9,13 @@ const catalogTests = [
   "src/signals/routes/__tests__/model-catalog.test.ts",
 ];
 
+// PostgreSQL cancellation fixtures temporarily replace Client.prototype.query.
+// Keep their owning files and cases serial in an explicitly isolated project.
+const bootstrapFailureTests = [
+  "src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts",
+  "src/signals/routes/__tests__/chat-events-model-source-context.test.ts",
+];
+
 export default defineConfig({
   test: {
     globals: true,
@@ -28,7 +35,10 @@ export default defineConfig({
     projects: [
       {
         extends: true,
-        test: { name: "api", exclude: catalogTests },
+        test: {
+          name: "api",
+          exclude: [...catalogTests, ...bootstrapFailureTests],
+        },
       },
       {
         extends: true,
@@ -38,6 +48,17 @@ export default defineConfig({
           benchmark: { enabled: false },
           fileParallelism: false,
           sequence: { groupOrder: 1 },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "api-bootstrap-failure",
+          include: bootstrapFailureTests,
+          benchmark: { enabled: false },
+          isolate: true,
+          fileParallelism: false,
+          sequence: { groupOrder: 2, concurrent: false },
         },
       },
     ],
