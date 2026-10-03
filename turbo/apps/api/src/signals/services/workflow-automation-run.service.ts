@@ -4,7 +4,10 @@ import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { waitUntil } from "../context/wait-until";
-import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import {
+  ApiDispatchTimingCollector,
+  type ApiDispatchTimingDimensions,
+} from "./api-dispatch-timing.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
   pickEnqueuedChatThread$,
@@ -402,14 +405,102 @@ type WorkflowSqlTimingMark = {
   readonly startedAt: number;
 };
 
-/** Observation receives only timestamps, never a SQL resource or callback. */
+class WorkflowPendingTickTiming {
+  lookupStartedAt?: number;
+  lookupFinishedAt?: number;
+  revocationStartedAt?: number;
+  revocationFinishedAt?: number;
+  targetCount?: number;
+
+  readonly finishLookup = (): void => {
+    safeSync(() => {
+      this.lookupFinishedAt = now();
+    });
+  };
+
+  startRevocation(): void {
+    safeSync(() => {
+      this.revocationStartedAt = now();
+    });
+  }
+
+  readonly finishRevocation = (): void => {
+    safeSync(() => {
+      this.revocationFinishedAt = now();
+    });
+  };
+}
+
+function createWorkflowSqlTiming(): {
+  readonly startedAt: number;
+  readonly marks: WorkflowSqlTimingMark[];
+  readonly tickTiming: WorkflowPendingTickTiming;
+} {
+  return {
+    startedAt: now(),
+    marks: [],
+    tickTiming: new WorkflowPendingTickTiming(),
+  };
+}
+
+function workflowPendingTickTargetCountBucket(count: number): string {
+  if (count === 0) {
+    return "0";
+  }
+  if (count === 1) {
+    return "1";
+  }
+  if (count <= 4) {
+    return "2_4";
+  }
+  if (count <= 16) {
+    return "5_16";
+  }
+  return "17_plus";
+}
+
+function recordWorkflowPendingTickTimings(
+  timing: ApiDispatchTimingCollector,
+  observation: WorkflowPendingTickTiming,
+  dimensions: ApiDispatchTimingDimensions | undefined,
+): void {
+  const intervals = [
+    [
+      "api_dispatch_workflow_enqueue_pending_tick_lookup",
+      observation.lookupStartedAt,
+      observation.lookupFinishedAt,
+    ],
+    [
+      "api_dispatch_workflow_enqueue_pending_tick_revocation_append",
+      observation.revocationStartedAt,
+      observation.revocationFinishedAt,
+    ],
+  ] as const;
+  for (const [action, startedAt, finishedAt] of intervals) {
+    if (startedAt !== undefined && finishedAt !== undefined) {
+      timing.recordElapsed(action, "nested", startedAt, finishedAt, dimensions);
+    }
+  }
+}
+
+/** Recording reads numeric metadata only, never SQL resources or query callbacks. */
 function recordWorkflowSqlTimings(
   timing: ApiDispatchTimingCollector,
   marks: readonly WorkflowSqlTimingMark[],
   transactionStartedAt: number,
+  pendingTickTiming: WorkflowPendingTickTiming,
 ) {
   safeSync(() => {
     const finishedAt = now();
+    const pendingTickDimensions =
+      pendingTickTiming.targetCount === undefined
+        ? undefined
+        : {
+            workflow_pending_tick_target_count_bucket:
+              workflowPendingTickTargetCountBucket(
+                pendingTickTiming.targetCount,
+              ),
+          };
     timing.recordElapsed(
       "api_dispatch_workflow_enqueue_transaction",
       "nested",
@@ -433,9 +524,15 @@ function recordWorkflowSqlTimings(
           "nested",
           mark.startedAt,
           marks[index + 1]?.startedAt ?? finishedAt,
+          mark.step === "ticks" ? pendingTickDimensions : undefined,
         );
       }
     }
+    recordWorkflowPendingTickTimings(
+      timing,
+      pendingTickTiming,
+      pendingTickDimensions,
+    );
   });
 }
 
@@ -445,6 +542,18 @@ interface PreparedWorkflowInputCommit {
   readonly source: WorkflowSourceAdmissionPlan;
   readonly replacePendingTicks: ReturnType<typeof pendingTickReplacement>;
   readonly timing: ApiDispatchTimingCollector;
+}
+
+/** Compose the existing append from plain values; SQL executes in the owner. */
+function pendingTickRevocationSql(
+  chatThreadId: string,
+  targets: Parameters<typeof workflowScheduleRevocationRows>[0]["targets"],
+  currentTime: Date,
+) {
+  return appendCanonicalChatEventsSql(
+    workflowScheduleRevocationRows({ chatThreadId, targets, currentTime }),
+    "any",
+  );
 }
 
 function requireWorkflowInputInserted(
@@ -466,8 +575,7 @@ const commitWorkflowInput$ = command(
     const { args, plan, source, replacePendingTicks, timing } = input;
     const { automation, chatThreadId } = args.due;
     const queueTarget = { chatThreadId, orgId: automation.orgId };
-    const transactionStartedAt = now();
-    const marks: WorkflowSqlTimingMark[] = [];
+    const { startedAt, marks, tickTiming } = createWorkflowSqlTiming();
     // Context + input + queue + receipt/claim share one rollback authority.
     // The finite callback performs only SQL, never commands or external I/O.
     const eventId = await set(writeDb$)
@@ -529,7 +637,8 @@ const commitWorkflowInput$ = command(
         // Claim first, so a losing tick never revokes the winner. Manual runs
         // stay distinct. A batch preserves target ordering and context edges.
         if (replacePendingTicks) {
-          marks.push({ step: "ticks", startedAt: now() });
+          tickTiming.lookupStartedAt = now();
+          marks.push({ step: "ticks", startedAt: tickTiming.lookupStartedAt });
           const targets = await tx
             .select({
               id: chatEvents.id,
@@ -549,18 +658,17 @@ const commitWorkflowInput$ = command(
                 eventId,
               }),
             )
-            .orderBy(asc(chatEvents.seqId));
+            .orderBy(asc(chatEvents.seqId))
+            .finally(tickTiming.finishLookup);
+          tickTiming.targetCount = targets.length;
           if (targets.length > 0) {
-            await tx.execute(
-              appendCanonicalChatEventsSql(
-                workflowScheduleRevocationRows({
-                  chatThreadId,
-                  targets,
-                  currentTime: nowDate(),
-                }),
-                "any",
-              ),
-            );
+            tickTiming.startRevocation();
+            // Discard raw rows inside the owner; only the void promise is observed.
+            await (async () => {
+              await tx.execute(
+                pendingTickRevocationSql(chatThreadId, targets, nowDate()),
+              );
+            })().finally(tickTiming.finishRevocation);
           }
         }
         marks.push({ step: "source", startedAt: now() });
@@ -587,7 +695,7 @@ const commitWorkflowInput$ = command(
         return eventId;
       })
       .finally(() => {
-        recordWorkflowSqlTimings(timing, marks, transactionStartedAt);
+        recordWorkflowSqlTimings(timing, marks, startedAt, tickTiming);
       });
     signal.throwIfAborted();
     return eventId === null ? null : { eventId, committedAt: now() };
