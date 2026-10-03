@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -16,6 +17,7 @@ import type { ApiTestUser } from "./helpers/api-bdd";
 const context = testContext({ connectorCatalog: true });
 const {
   api,
+  bdd,
   chat,
   misc,
   entitledNativeChatActor,
@@ -111,6 +113,108 @@ async function launchedQueuedInput(
 }
 
 describe("identity model source context through real sends", () => {
+  it.each(["missing-agent", "thread-agent-mismatch"] as const)(
+    "preserves %s authorization rejection while early preload fails",
+    async (path) => {
+      const { actor, agentId } = await entitledNativeChatActor();
+      const other = await bdd.createAgent(actor);
+      const thread = await chat.createThread(actor, { agentId });
+      if (!actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const before = await chat.listThreadEvents(actor, thread.id);
+      const requestedAgentId =
+        path === "missing-agent" ? randomUUID() : other.agentId;
+      await withAgentBootstrapFailureFixture(
+        {
+          userId: actor.userId,
+          orgId: actor.orgId,
+          agentId: requestedAgentId,
+          read: "pricing",
+        },
+        async () => {
+          const rejected = await chat.requestSendEvent(
+            actor,
+            {
+              agentId: requestedAgentId,
+              ...(path === "thread-agent-mismatch"
+                ? { threadId: thread.id }
+                : {}),
+              prompt: "unauthorized input must not enqueue",
+            },
+            [404],
+          );
+          expect(rejected.status).toBe(404);
+          expect(rejected.body).toMatchObject({
+            error: {
+              code: "NOT_FOUND",
+              message:
+                path === "missing-agent"
+                  ? "Agent not found"
+                  : "Chat thread not found",
+            },
+          });
+          await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
+          const after = await chat.listThreadEvents(actor, thread.id);
+          expect(after.events).toStrictEqual(before.events);
+        },
+      );
+    },
+  );
+
+  it("settles early preload when attachment resolution aborts before enqueue", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, { agentId });
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const before = await chat.listThreadEvents(actor, thread.id);
+    const controller = new AbortController();
+    const error = new Error("client disconnected during attachment lookup");
+    error.name = "AbortError";
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof ListObjectsV2Command) {
+        controller.abort(error);
+      }
+      return Promise.resolve({ Contents: [] });
+    });
+    await withAgentBootstrapFailureFixture(
+      { userId: actor.userId, orgId: actor.orgId, agentId },
+      async () => {
+        const rejected = await requestSendEventRaw(
+          actor,
+          {
+            agentId,
+            threadId: thread.id,
+            prompt: "abort before enqueue",
+            hasTextContent: true,
+            userMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "file",
+                  fileId: randomUUID(),
+                  filenameSnapshot: "aborted.txt",
+                  contentType: "text/plain",
+                },
+                { type: "text", text: "abort before enqueue" },
+              ],
+            },
+          },
+          controller.signal,
+        );
+        expect(controller.signal.aborted).toBeTruthy();
+        expect(rejected).toStrictEqual({
+          status: 500,
+          body: { error: "Internal server error" },
+        });
+        await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
+        const after = await chat.listThreadEvents(actor, thread.id);
+        expect(after.events).toStrictEqual(before.events);
+      },
+    );
+  });
+
   it("preserves validation rejection when an authorized send's early preload fails", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {

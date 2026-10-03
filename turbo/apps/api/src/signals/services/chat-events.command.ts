@@ -1425,9 +1425,6 @@ const prepareNormalSend$ = command(
     if ("status" in authorized) {
       return authorized;
     }
-    // Read-only preload starts only after Agent/thread authorization. Each node
-    // is settled and held by waitUntil even if a later validation rejects input.
-    set(preloadAgentRunContext$, args.context, signal);
     const source = await set(
       resolveNormalSendAgentRunSource$,
       {
@@ -1682,6 +1679,9 @@ const prepareNormalSendContext$ = command(
       args.orgId,
       args.body.agentId,
     );
+    // Start authenticated org/member reads immediately; authorization consumes
+    // the same promises. Settled waitUntil work stays owned on rejection/abort.
+    set(preloadAgentRunContext$, context, signal);
     const prepared = await set(
       prepareNormalSend$,
       { ...args, context },
