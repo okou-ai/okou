@@ -37,10 +37,15 @@ impl<S> Session<S> {
     /// operation lifetime. Run/lease owners may close it earlier.
     pub fn new(connection: FramebufferConnection<S>) -> Self {
         let budget = connection.budget.clone();
+        let expires_at = Instant::now() + Duration::from_secs(2 * 60 * 60);
+        let expires_at = connection
+            .stream
+            .authentication_expires_at()
+            .map_or(expires_at, |bound| bound.min(expires_at));
         Self {
             connection: Some(connection),
             id: Uuid::new_v4(),
-            expires_at: Instant::now() + Duration::from_secs(2 * 60 * 60),
+            expires_at,
             budget,
         }
     }

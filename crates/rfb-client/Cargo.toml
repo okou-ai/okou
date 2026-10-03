@@ -14,6 +14,7 @@ eax = { workspace = true }
 flate2 = { workspace = true, features = ["rust_backend"] }
 getrandom = { workspace = true }
 hmac = { workspace = true, features = ["zeroize"] }
+kerberos-worker = { workspace = true }
 md-5 = { workspace = true }
 png = { workspace = true }
 rand = { version = "0.10", default-features = false, features = ["std", "std_rng", "sys_rng"] }
@@ -31,6 +32,7 @@ webpki-roots = { workspace = true }
 zeroize = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
+kerberos-credentials = { workspace = true }
 hex = { workspace = true, features = ["alloc"] }
 pbkdf2 = { version = "0.13" }
 rcgen = { workspace = true, features = ["crypto", "ring"] }

@@ -657,6 +657,34 @@ jobs:
         shell: bash
         run: bash .github/scripts/check-packaged-addon-control.sh
 
+  native-kerberos-runtime:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    needs: [detect]
+    if: needs.detect.outputs.any-changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select host stable Rust (same policy as the toolchain image)
+        shell: bash
+        run: rustup toolchain install stable --profile minimal
+      - name: Compile sealed package and run real native containment/lifecycle conformance
+        shell: bash
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: bash .github/scripts/check-native-kerberos.sh
+      - name: Preserve exact-head native receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-kerberos-${{ matrix.os }}
+          path: crates/target/native-kerberos-receipt/
+          if-no-files-found: error
+          retention-days: 14
+
   nbd-cow-test:
     runs-on: ubuntu-latest
     container:
@@ -1338,6 +1366,7 @@ jobs:
       - guest-rpc-firecracker-build
       - nbd-cow-test
       - runner-rootfs-process-test
+      - native-kerberos-runtime
     # Always run so the gate reports an explicit result (not "skipped").
     if: always()
     steps:
@@ -1400,6 +1429,7 @@ jobs:
           # May-skip only when the corresponding work was not selected.
           check_result "check" "${{ needs.check.result }}" "true"
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
+          check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "$FIREWALL_CONTRACT_ALLOW_SKIP"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"

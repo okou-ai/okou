@@ -20,6 +20,7 @@ members = [
     "guest-home-mount",
     "linux-mountinfo",
     "kerberos-credentials",
+    "kerberos-worker",
     "nbd-cow",
     "runner",
     "runner-executor",
@@ -69,6 +70,7 @@ guest-write-file = { path = "guest-write-file" }
 guest-home-mount = { path = "guest-home-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
 kerberos-credentials = { path = "kerberos-credentials" }
+kerberos-worker = { path = "kerberos-worker" }
 nbd-cow = { path = "nbd-cow" }
 runner-host = { path = "runner-host" }
 runner-executor = { path = "runner-executor" }

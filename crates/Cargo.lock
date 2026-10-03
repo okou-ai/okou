@@ -2497,6 +2497,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kerberos-worker"
+version = "0.1.0"
+dependencies = [
+ "kerberos-credentials",
+ "rustix",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3446,6 +3459,8 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "hmac 0.13.0",
+ "kerberos-credentials",
+ "kerberos-worker",
  "md-5",
  "pbkdf2 0.13.0",
  "png",
