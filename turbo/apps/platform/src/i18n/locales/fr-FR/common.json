@@ -1896,6 +1896,15 @@
       "title": "Connecteurs",
       "useDefault": "Utiliser le compte par défaut"
     },
+    "controlDelivery": {
+      "accepted": "{{action}} a été accepté. La conversation sera mise à jour après confirmation par le serveur.",
+      "pending": "Demande de {{action}} en cours… En attente de la confirmation du serveur.",
+      "refresh": "Actualiser la conversation",
+      "rejected": "{{action}} a été refusé. Cette demande n'a pas modifié la conversation. Actualisez et vérifiez son état avant de réessayer.",
+      "remove": "Retirer l'élément en attente",
+      "stop": "Arrêter l'exécution",
+      "uncertain": "Impossible de confirmer {{action}}. L'action a peut-être eu lieu. Actualisez l'état du serveur et ne répétez pas l'action sans confirmation."
+    },
     "documentTitle": "Discussion",
     "errors": {
       "genericTitle": "Cette exécution n’a pas pu se terminer",

@@ -21,6 +21,10 @@ import { registerActiveChatEventSignals$ } from "./chat-event-signal-registry.ts
 import { logger } from "../log.ts";
 import { chatEventTraceTime } from "./chat-event-debug.ts";
 import { withSelectedModelAnnotation } from "./model-selection-request.ts";
+import {
+  createControlChatEventSignals,
+  type ControlChatEventSignals,
+} from "./control-chat-events.ts";
 
 const L = logger("ChatEventSignals");
 
@@ -198,96 +202,11 @@ function createSendInputChatEvent({
   );
 }
 
-function createSendRevokeChatEvent({
-  threadId,
-  appendOptimisticEvent$,
-}: SendChatEventDependencies): Command<
-  Promise<void>,
-  [SendRevokeChatEvent, AbortSignal]
-> {
-  return command(
-    async ({ get, set }, input: SendRevokeChatEvent, signal: AbortSignal) => {
-      const clientEventId = crypto.randomUUID();
-      await set(
-        appendOptimisticEvent$,
-        {
-          threadId,
-          event: {
-            id: clientEventId,
-            threadId,
-            eventType: "control.revoke",
-            content: null,
-            revokesEventId: input.revokesEventId,
-            createdAt: nowDate().toISOString(),
-          },
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      await sendChatEvent(
-        get(apiClient$),
-        {
-          agentId: input.agentId,
-          threadId,
-          revokesEventId: input.revokesEventId,
-          clientEventId,
-        },
-        signal,
-      );
-    },
-  );
-}
-
-function createSendInterruptChatEvent({
-  threadId,
-  appendOptimisticEvent$,
-}: SendChatEventDependencies): Command<
-  Promise<void>,
-  [SendInterruptChatEvent, AbortSignal]
-> {
-  return command(
-    async (
-      { get, set },
-      input: SendInterruptChatEvent,
-      signal: AbortSignal,
-    ) => {
-      const clientEventId = crypto.randomUUID();
-      await set(
-        appendOptimisticEvent$,
-        {
-          threadId,
-          event: {
-            id: clientEventId,
-            threadId,
-            eventType: "control.interrupt",
-            content: null,
-            interruptsRunId: input.interruptsRunId,
-            createdAt: nowDate().toISOString(),
-          },
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      await sendChatEvent(
-        get(apiClient$),
-        {
-          agentId: input.agentId,
-          threadId,
-          interruptsRunId: input.interruptsRunId,
-          clientEventId,
-        },
-        signal,
-      );
-    },
-  );
-}
-
 function createSendChatEvent(
   dependencies: SendChatEventDependencies,
+  controls: ControlChatEventSignals,
 ): Command<Promise<void>, [SendChatEventInput, AbortSignal]> {
   const sendInput$ = createSendInputChatEvent(dependencies);
-  const sendRevoke$ = createSendRevokeChatEvent(dependencies);
-  const sendInterrupt$ = createSendInterruptChatEvent(dependencies);
   return command(
     async ({ set }, input: SendChatEventInput, signal: AbortSignal) => {
       switch (input.kind) {
@@ -295,10 +214,20 @@ function createSendChatEvent(
           return await set(sendInput$, input, signal);
         }
         case "revoke": {
-          return await set(sendRevoke$, input, signal);
+          return await set(
+            controls.sendRevoke$,
+            input.agentId,
+            input.revokesEventId,
+            signal,
+          );
         }
         case "interrupt": {
-          return await set(sendInterrupt$, input, signal);
+          return await set(
+            controls.sendInterrupt$,
+            input.agentId,
+            input.interruptsRunId,
+            signal,
+          );
         }
       }
     },
@@ -351,19 +280,28 @@ export interface ChatEventSignals {
     Promise<void>,
     [SendChatEventInput, AbortSignal]
   >;
+  readonly controls: Pick<ControlChatEventSignals, "status$" | "refresh$">;
 }
 
 export function createChatEventSignals(threadId: string): ChatEventSignals {
   const events = createChatEventStorageSignals({ threadId });
-  const sendEvent$ = createSendChatEvent({
-    threadId,
-    appendOptimisticEvent$: events.appendOptimisticEvent$,
-  });
   const setup = createChatEventSetup({
     threadId,
     initializeIndexedDbEvents$: events.initializeIndexedDbEvents$,
     syncRemoteEvents$: events.syncRemoteEvents$,
   });
+  const controls = createControlChatEventSignals({
+    threadId,
+    chatEvents$: events.chatEvents$,
+    catchUp$: events.refreshRemoteEvents$,
+  });
+  const sendEvent$ = createSendChatEvent(
+    {
+      threadId,
+      appendOptimisticEvent$: events.appendOptimisticEvent$,
+    },
+    controls,
+  );
   return {
     threadId,
     chatEvents$: events.chatEvents$,
@@ -371,5 +309,6 @@ export function createChatEventSignals(threadId: string): ChatEventSignals {
     serverRunState$: events.serverRunState$,
     ...setup,
     sendEvent$,
+    controls,
   };
 }

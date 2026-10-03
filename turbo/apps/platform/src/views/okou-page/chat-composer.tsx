@@ -574,6 +574,81 @@ function PendingItemsStripHeader({
   );
 }
 
+function ComposerControlDelivery({
+  controls,
+}: {
+  controls: NonNullable<ComposerSignals["controls"]>;
+}) {
+  const { t } = useTranslation();
+  const statuses = useGet(controls.status$);
+  const [refreshLoadable, refresh] = useLoadableSet(controls.refresh$);
+  const pageSignal = useGet(pageSignal$);
+  if (statuses.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mx-5 mb-2 space-y-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
+      {statuses.map((status) => {
+        const action = t(($) => {
+          return status.kind === "interrupt"
+            ? $.chat.controlDelivery.stop
+            : $.chat.controlDelivery.remove;
+        });
+        const message = {
+          pending: t(
+            ($) => {
+              return $.chat.controlDelivery.pending;
+            },
+            { action },
+          ),
+          accepted: t(
+            ($) => {
+              return $.chat.controlDelivery.accepted;
+            },
+            { action },
+          ),
+          rejected: t(
+            ($) => {
+              return $.chat.controlDelivery.rejected;
+            },
+            { action },
+          ),
+          uncertain: t(
+            ($) => {
+              return $.chat.controlDelivery.uncertain;
+            },
+            { action },
+          ),
+        }[status.outcome];
+        return (
+          <p
+            key={status.eventId}
+            role={
+              status.outcome === "rejected" || status.outcome === "uncertain"
+                ? "alert"
+                : "status"
+            }
+          >
+            {message}
+          </p>
+        );
+      })}
+      <button
+        type="button"
+        className="rounded-md font-medium text-foreground underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        disabled={refreshLoadable.state === "loading"}
+        onClick={() => {
+          detach(refresh(pageSignal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return $.chat.controlDelivery.refresh;
+        })}
+      </button>
+    </div>
+  );
+}
+
 function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
   const pendingEvents =
@@ -9609,6 +9684,9 @@ export function ChatComposer({
         ref={setImageAnnotationLifecycleRef}
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
+        {signals.controls ? (
+          <ComposerControlDelivery controls={signals.controls} />
+        ) : null}
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         <ComposerCard signals={signals} />
         <ComposerNoticeSlot signals={signals} />

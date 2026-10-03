@@ -1896,6 +1896,15 @@
       "title": "Connettori",
       "useDefault": "Usa predefinito"
     },
+    "controlDelivery": {
+      "accepted": "{{action}} è stato accettato. La conversazione verrà aggiornata dopo la conferma dell'evento del server.",
+      "pending": "Richiesta di {{action}} in corso… In attesa della conferma del server.",
+      "refresh": "Aggiorna la conversazione",
+      "rejected": "{{action}} è stato rifiutato. Questa richiesta non ha modificato la conversazione. Aggiorna e verifica lo stato prima di riprovare.",
+      "remove": "Rimuovi elemento in attesa",
+      "stop": "Interrompi esecuzione",
+      "uncertain": "Impossibile confermare {{action}}. Potrebbe essere già avvenuto. Aggiorna lo stato del server e non ripetere l'azione senza conferma."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Non è stato possibile completare questa esecuzione",

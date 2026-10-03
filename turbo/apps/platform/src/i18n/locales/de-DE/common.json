@@ -1862,6 +1862,15 @@
       "title": "Integrationen",
       "useDefault": "Standard verwenden"
     },
+    "controlDelivery": {
+      "accepted": "{{action}} wurde angenommen. Die Unterhaltung wird nach Bestätigung durch das Serverereignis aktualisiert.",
+      "pending": "{{action}} wird angefordert… Wir warten auf die Serverbestätigung.",
+      "refresh": "Unterhaltung aktualisieren",
+      "rejected": "{{action}} wurde abgelehnt. Diese Anfrage hat die Unterhaltung nicht geändert. Bitte vor einem neuen Versuch aktualisieren und den Status prüfen.",
+      "remove": "Wartenden Eintrag entfernen",
+      "stop": "Ausführung stoppen",
+      "uncertain": "Das Ergebnis von {{action}} ist unklar. Die Aktion könnte erfolgt sein. Bitte den Serverstatus aktualisieren und die Aktion ohne Bestätigung nicht wiederholen."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",

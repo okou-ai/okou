@@ -98,6 +98,7 @@ function installWorkflowQueueFixture(
   rows: readonly ChatEventRow[],
 ): { readonly revokedEventIds: string[] } {
   const revokedEventIds: string[] = [];
+  const canonicalRows = [...rows];
   testContextValue.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -152,26 +153,31 @@ function installWorkflowQueueFixture(
     chatThreadEventsContract.rows,
     ({ query, respond }) => {
       if (query.sinceSeqId === 0) {
-        const last = rows.at(-1);
+        const last = canonicalRows.at(-1);
         const cursor: ChatEventCursor =
           last === undefined
             ? { lastEventId: null, lastSeqId: 0 }
             : { lastEventId: last.id, lastSeqId: last.seqId };
         return respond(200, {
-          rows: [...rows],
+          rows: [...canonicalRows],
           cursor,
           hasMore: false,
         });
       }
-      const cursor: ChatEventCursor =
-        query.sinceEventId === undefined
+      const newer = canonicalRows.filter((row) => {
+        return row.seqId > query.sinceSeqId;
+      });
+      const last = newer.at(-1);
+      const cursor: ChatEventCursor = last
+        ? { lastEventId: last.id, lastSeqId: last.seqId }
+        : query.sinceEventId === undefined
           ? { lastEventId: null, lastSeqId: 0 }
           : {
               lastEventId: query.sinceEventId,
               lastSeqId: query.sinceSeqId,
             };
       return respond(200, {
-        rows: [],
+        rows: newer,
         cursor,
         hasMore: false,
       });
@@ -191,6 +197,18 @@ function installWorkflowQueueFixture(
   testContextValue.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     if (body.revokesEventId !== undefined) {
       revokedEventIds.push(body.revokesEventId);
+      const sequence = (canonicalRows.at(-1)?.seqId ?? 0) + 1;
+      canonicalRows.push(
+        chatEventRowSchema.parse({
+          ...eventRow(threadId, sequence, {
+            eventType: "control.revoke",
+            runId: null,
+            payload: null,
+          }),
+          id: body.clientEventId ?? crypto.randomUUID(),
+          revokesEventId: body.revokesEventId,
+        }),
+      );
     }
     return respond(201, {
       runId: null,

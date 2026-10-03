@@ -44,6 +44,22 @@ persisted but has not reached the client yet. A stale optimistic projection is
 recoverable: refreshing the page discards page-local optimistic state and
 reloads the authoritative persistent state, restoring eventual consistency.
 
+## Control Actions
+
+`control.revoke` and `control.interrupt` do not use the prompt delivery-intent retry
+path. The server's normal-send `clientEventId` duplicate resolution is not a
+control retry contract. Web Chat therefore does not append optimistic control
+events: pending, accepted-but-not-yet-observed, rejected, and uncertain control
+POSTs have an accessible status, while the queue and run state continue to
+reflect canonical events. An explicit conversation refresh forces a server
+catch-up even when local cache rows exist, then matches the control's original
+event ID, or a canonical control event for the same target if another client
+won the race. A repeated click for the same unresolved target is blocked within
+the current page; no control request is
+automatically retried. A full page reload starts from server history, without
+restoring page-local control attempts. Users must check the canonical state
+before manually trying an action again.
+
 ## Session Output Streaming
 
 Sandbox runs can publish sanitized text deltas through the session-output
