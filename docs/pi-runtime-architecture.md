@@ -274,6 +274,16 @@ length-failure behavior until upgraded; historical run statuses are not rewritte
 Retry budgets, cancellation, Runner logging rules and user-owned-provider
 warning suppression are unchanged.
 
+GPT 5.6 Luna and GPT 6 Luna have a product effort ceiling of `xhigh`. Migration
+1317 removes `max` from their catalog routes and changes a `max` or omitted route
+default to `xhigh`, including subscription routes. Both the composer choices and
+API validation read that catalog; there is no separate frontend denylist. An
+unavailable stored `max` preference resolves to the new route default without
+rewriting the preference or a historical run. Already captured runs retain their
+launch effort. Old clients that explicitly submit `max` receive the existing
+unsupported-effort response and must refresh; rollback to an earlier application
+does not restore the removed database catalog choice.
+
 The exact failed-provider sentence "We were unable to start processing your
 request within the 900-second timeout limit. Please try again later." is
 `provider_queue_timeout`. Recognized SDK error envelopes and code prefixes are

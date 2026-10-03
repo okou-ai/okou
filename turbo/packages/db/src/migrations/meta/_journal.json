@@ -1674,6 +1674,13 @@
       "when": 1790954198092,
       "tag": "1316_retire_legacy_free_tier",
       "breakpoints": true
+    },
+    {
+      "idx": 1317,
+      "version": "7",
+      "when": 1790999464659,
+      "tag": "1317_luna_xhigh_ceiling",
+      "breakpoints": true
     }
   ]
 }

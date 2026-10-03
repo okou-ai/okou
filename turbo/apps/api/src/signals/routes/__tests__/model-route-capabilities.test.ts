@@ -105,6 +105,39 @@ async function addBuiltInPolicy(model: string) {
 }
 
 describe("model route capabilities", () => {
+  it.each(["gpt-5.6-luna", "gpt-6-luna"])(
+    "rejects max and accepts xhigh for the seeded %s catalog routes",
+    async (model) => {
+      await signInUnrestrictedAdmin();
+      await seedBuiltInModelCandidateKeys(context, model);
+      await addBuiltInPolicy(model);
+      await accept(
+        preferencesApi().update({
+          headers: authHeaders(),
+          body: {
+            selectedModel: model,
+            serviceTier: null,
+            modelSettingsPatch: { model, effort: "max" },
+          },
+        }),
+        [400],
+      );
+      const saved = await accept(
+        preferencesApi().update({
+          headers: authHeaders(),
+          body: {
+            selectedModel: model,
+            serviceTier: null,
+            modelSettingsPatch: { model, effort: "xhigh" },
+          },
+        }),
+        [200],
+      );
+      expect(saved.body.modelSettings).toStrictEqual({
+        [model]: { effort: "xhigh" },
+      });
+    },
+  );
   it("accepts the reasoning efforts the model's route lists", async () => {
     await signInUnrestrictedAdmin();
     const model = await insertRouteModel();

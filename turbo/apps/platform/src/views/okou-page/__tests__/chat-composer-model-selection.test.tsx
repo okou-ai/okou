@@ -638,11 +638,11 @@ test("Keep independent effort selections when changing models", async () => {
   await expect(findButton("GPT 5.6 Luna")).resolves.toBeVisible();
   await openEffortPanel();
   slider = await screen.findByRole("slider", { name: "Effort" });
-  expect(slider).toHaveAttribute("aria-valuetext", "Max");
+  expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Max");
+    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
   });
   await user.keyboard("{Escape}");
   click(
@@ -654,6 +654,44 @@ test("Keep independent effort selections when changing models", async () => {
     screen.findByRole("slider", { name: "Effort" }),
   ).resolves.toHaveAttribute("aria-valuetext", "Extra");
 });
+
+test.each(["gpt-5.6-luna", "gpt-6-luna"])(
+  "Cap %s at xHigh even with a saved Max preference",
+  async (model) => {
+    const user = userEvent.setup({ delay: null });
+    const updates: { reasoningEffort?: string | null }[] = [];
+    installRunChat({
+      selectedModel: model,
+      reasoningEffort: "max",
+      onModelSelectionUpdate: (body) => {
+        updates.push(body);
+      },
+    });
+    configurePolicies([model]);
+    await setupPage({ context, path: RUN_PATH });
+    await readyChat();
+    const settings = await openEffortPanel();
+    const slider = await screen.findByRole("slider", { name: "Effort" });
+    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
+    expect(
+      within(settings).queryByText("Max", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(updates).toStrictEqual([]);
+    slider.focus();
+    await user.keyboard("{End}{ArrowRight}");
+    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
+    await user.keyboard("{ArrowLeft}");
+    await waitFor(() => {
+      expect(slider).toHaveAttribute("aria-valuetext", "High");
+    });
+    await user.keyboard("{End}");
+    await waitFor(() => {
+      expect(updates).toContainEqual(
+        expect.objectContaining({ reasoningEffort: "xhigh" }),
+      );
+    });
+  },
+);
 
 test("Show the Pi fallback without overwriting a saved native preference", async () => {
   const updates: { reasoningEffort?: string | null }[] = [];
