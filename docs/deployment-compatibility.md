@@ -6204,6 +6204,31 @@ Run to obtain SSH guidance and capabilities. Runner/guest/CLI DTOs and stored
 hosts, credentials, pins, grants and observations do not change. Source-level GA
 does not attest deployment state or waive the protected-reader constraints below.
 
+## Tailscale private SSH foundation (#37638)
+
+The [Tailscale foundation](tailscale-access.md) adds generated migration
+`1318_oval_smiling_tiger`, dedicated write-only OAuth configuration, scoped
+restrictive saved-host binding and nullable composite observation snapshots.
+Apply the migration before new-column reads. Direct/Cloudflare rows, secrets,
+trust and per-chat permissions retain their old shapes/behavior. New Runner
+pin/observation guards are optional for old carriers and required for Tailscale;
+identifier-only leases recheck exact current authority without KMS/provider IO.
+The foundation Runner explicitly rejects `resolved_tailscale` before DNS/TCP/SSH
+until the separately qualified SDK integration lands. The App recognizes retained
+Tailscale bindings and does not let its legacy editor misinterpret them.
+
+Before deploying any Tailscale-capable API writer, coordinate compatible serving
+and rollback API and App/cached-client readers. An old API can infer Direct from
+a retained binding; an old App can mislabel it as Cloudflare. UI hiding is not a
+write barrier: authorized API callers can create rows while UI is off. Once a
+binding exists, do not roll back below the reader floor or silently rewrite/delete
+it. This preparation does not set a production floor, deploy or activate anything.
+A qualified compatible official native Runner fleet must precede usable private
+JIT. The default-off `TailscaleAccess` registry/UI switch belongs to #37640 only;
+API/Runner do not evaluate it, and UI-off does not revoke authority or stop sessions.
+SDK lifecycle/routing/privacy/musl proof, real-provider/end-to-end/performance
+acceptance, deployment/rollback and feature activation remain separate gates.
+
 ## Cloudflare Access for SSH
 
 The #31996 delivery adds a protected transport to the existing SSH host domain.

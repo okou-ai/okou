@@ -29,7 +29,7 @@ import {
   isUniqueViolation,
 } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
 import { sshCreationResult, resourceIdConflict } from "./ssh-creation.service";
@@ -38,6 +38,16 @@ import {
   prepareCloudflareAccessConfig,
 } from "./cloudflare-access.service";
 import { publishCloudflareAccessClientInvalidation } from "./cloudflare-access-client-invalidation.service";
+import {
+  prepareTailscaleConfig,
+  tailscaleFailure,
+  canBindTailscaleConfig,
+  insertInlineTailscaleConfig,
+  requestedTailscaleConfigId,
+  prepareInlineTailscaleConfig,
+} from "./tailscale.service";
+import { canonicalTailscaleDestination } from "./tailscale-destination";
+import { publishTailscaleClientInvalidation } from "./tailscale-client-invalidation.service";
 
 const MAX_SSH_GENERATION = 2_147_483_647;
 const credentialSelection = Object.freeze({
@@ -200,21 +210,28 @@ function toSshConnectionResponse(
   }
 
   return {
-    ...(row.needsRebind
+    ...(row.tailscaleConfigId !== null
       ? {
           transport: {
-            type: "cloudflare_access" as const,
-            needsRebind: true as const,
+            type: "tailscale" as const,
+            configId: row.tailscaleConfigId,
           },
         }
-      : row.cloudflareAccessId === null
-        ? {}
-        : {
+      : row.needsRebind
+        ? {
             transport: {
               type: "cloudflare_access" as const,
-              configId: row.cloudflareAccessId,
+              needsRebind: true as const,
             },
-          }),
+          }
+        : row.cloudflareAccessId === null
+          ? {}
+          : {
+              transport: {
+                type: "cloudflare_access" as const,
+                configId: row.cloudflareAccessId,
+              },
+            }),
     id: row.id,
     displayName: row.displayName,
     host: row.host,
@@ -315,10 +332,50 @@ export const summarizeSshConnections$ = command(
 interface PreparedSshConnectionCreation extends CreateSshConnectionArgs {
   readonly canonicalHost: string;
   readonly accessId: string | null;
+  readonly tailscaleId: string | null;
+  readonly preparedTailscale:
+    | Awaited<ReturnType<typeof prepareTailscaleConfig>>
+    | undefined;
   readonly preparedAccess: Awaited<ReturnType<typeof prepareAccessCreation>>;
   readonly preparedCredential: Awaited<
     ReturnType<typeof prepareSshCredentialSelection>
   >;
+}
+
+async function selectedPreparedCredential(
+  db: Pick<Db, "select" | "insert">,
+  owner: { readonly orgId: string; readonly userId: string },
+  prepared: Awaited<ReturnType<typeof prepareSshCredentialSelection>>,
+) {
+  const [credential] =
+    prepared.id !== undefined
+      ? await db
+          .select(credentialSelection)
+          .from(sshCredentials)
+          .where(ownedSshCredential(owner, prepared.id))
+      : await db
+          .insert(sshCredentials)
+          .values({
+            orgId: owner.orgId,
+            userId: owner.userId,
+            ...prepared.create,
+          })
+          .returning(credentialSelection);
+  return credential;
+}
+
+function isTailscaleConnection(connection: SshConnectionResponse): boolean {
+  return "transport" in connection && connection.transport.type === "tailscale";
+}
+
+async function publishTailscaleBindingChange(
+  owner: { readonly orgId: string; readonly userId: string },
+  priorId: string | null,
+  current: SshConnectionResponse,
+): Promise<void> {
+  if (priorId !== null || isTailscaleConnection(current)) {
+    await publishTailscaleClientInvalidation(owner);
+  }
 }
 
 const commitSshConnectionCreation$ = command(
@@ -367,20 +424,21 @@ const commitSshConnectionCreation$ = command(
             return cloudflareAccessFailure("notFound");
           }
         }
-        const [credential] =
-          args.preparedCredential.id !== undefined
-            ? await tx
-                .select(credentialSelection)
-                .from(sshCredentials)
-                .where(ownedSshCredential(args, args.preparedCredential.id))
-            : await tx
-                .insert(sshCredentials)
-                .values({
-                  orgId: args.orgId,
-                  userId: args.userId,
-                  ...args.preparedCredential.create,
-                })
-                .returning(credentialSelection);
+        if (
+          !(await canBindTailscaleConfig(
+            tx,
+            args,
+            args.tailscaleId,
+            args.preparedTailscale,
+          ))
+        ) {
+          return tailscaleFailure("notFound");
+        }
+        const credential = await selectedPreparedCredential(
+          tx,
+          args,
+          args.preparedCredential,
+        );
         if (!credential) {
           return sshCredentialFailure("notFound");
         }
@@ -399,6 +457,7 @@ const commitSshConnectionCreation$ = command(
         if (args.preparedAccess !== undefined && !createdAccess) {
           throw new Error("Cloudflare Access insert returned no row");
         }
+        await insertInlineTailscaleConfig(tx, args, args.preparedTailscale);
         const [connection] = await tx
           .insert(sshConnections)
           .values(
@@ -423,6 +482,12 @@ const commitSshConnectionCreation$ = command(
       if (isSshCredentialReferenceViolation(transaction.error)) {
         return sshCredentialFailure("notFound");
       }
+      if (isTailscaleReferenceViolation(transaction.error)) {
+        return tailscaleFailure("notFound");
+      }
+      if (isUniqueViolation(transaction.error, "tailscale_configs_pkey")) {
+        return tailscaleFailure("resourceIdConflict");
+      }
       if (isCloudflareAccessReferenceViolation(transaction.error)) {
         return cloudflareAccessFailure("notFound");
       }
@@ -446,7 +511,14 @@ export const createSshConnection$ = command(
     { set },
     args: CreateSshConnectionArgs,
   ): Promise<SshConnectionResult<SshConnectionResponse | undefined>> => {
-    const canonicalHost = canonicalizeSshHost(args.body.host);
+    const tailscaleTransport =
+      args.body.transport?.type === "tailscale"
+        ? args.body.transport
+        : undefined;
+    const canonicalHost = canonicalizeSelectedSshHost(
+      args.body.host,
+      tailscaleTransport !== undefined,
+    );
     if (!canonicalHost.ok) {
       return canonicalHost;
     }
@@ -472,8 +544,19 @@ export const createSshConnection$ = command(
       preparedAccess,
       preparedCredential,
       accessId,
+      tailscaleId: requestedTailscaleConfigId(args.body.transport),
+      preparedTailscale: await prepareInlineTailscaleConfig(
+        args.body.transport,
+        args.featureContext,
+      ),
     });
     if (result.ok && result.value) {
+      if (
+        "transport" in result.value &&
+        result.value.transport.type === "tailscale"
+      ) {
+        await publishTailscaleClientInvalidation(args);
+      }
       await set(publishSshRuntimeInvalidation$, {
         orgId: args.orgId,
         userId: args.userId,
@@ -489,6 +572,10 @@ export const createSshConnection$ = command(
 
 interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
   readonly current: SshConnectionRow;
+  readonly tailscaleId: string | null;
+  readonly preparedTailscale:
+    | Awaited<ReturnType<typeof prepareTailscaleConfig>>
+    | undefined;
   readonly host: string;
   readonly port: number;
   readonly accessId: string | null;
@@ -507,6 +594,27 @@ const commitSshConnectionUpdate$ = command(
     const committed = await settle(
       db.transaction<SshConnectionMutationResult<SshConnectionResponse>>(
         async (tx) => {
+          const [lockedHost] = await tx
+            .select()
+            .from(sshConnections)
+            .where(ownedSshConnection(args))
+            .for("update");
+          if (!lockedHost) {
+            return failure("notFound");
+          }
+          if (lockedHost.generation !== args.body.expectedGeneration) {
+            return failure("generationConflict");
+          }
+          if (
+            !(await canBindTailscaleConfig(
+              tx,
+              args,
+              args.tailscaleId,
+              args.preparedTailscale,
+            ))
+          ) {
+            return tailscaleFailure("notFound");
+          }
           const selectedCredential = args.preparedCredential ?? {
             id: args.current.credentialId,
           };
@@ -542,6 +650,7 @@ const commitSshConnectionUpdate$ = command(
           if (args.preparedAccess !== undefined && !createdAccess) {
             throw new Error("Cloudflare Access insert returned no row");
           }
+          await insertInlineTailscaleConfig(tx, args, args.preparedTailscale);
           const [updated] = await tx
             .update(sshConnections)
             .set(
@@ -551,6 +660,7 @@ const commitSshConnectionUpdate$ = command(
                 port: args.port,
                 credentialId: credential.id,
                 accessId: createdAccess?.id ?? args.accessId,
+                tailscaleId: args.tailscaleId,
               }),
             )
             .where(ownedSshConnection(args))
@@ -571,6 +681,12 @@ const commitSshConnectionUpdate$ = command(
     }
     if (isSshCredentialReferenceViolation(committed.error)) {
       return sshCredentialFailure("notFound");
+    }
+    if (isTailscaleReferenceViolation(committed.error)) {
+      return tailscaleFailure("notFound");
+    }
+    if (isUniqueViolation(committed.error, "tailscale_configs_pkey")) {
+      return tailscaleFailure("resourceIdConflict");
     }
     if (isCloudflareAccessReferenceViolation(committed.error)) {
       return cloudflareAccessFailure("notFound");
@@ -612,7 +728,20 @@ export const updateSshConnection$ = command(
         return cloudflareAccessFailure("notFound");
       }
     }
-    const host = canonicalHost?.value ?? current.host;
+    const tailscaleId = requestedTailscaleConfigId(
+      args.body.transport,
+      current.tailscaleConfigId,
+    );
+    let host = canonicalHost?.value ?? current.host;
+    if (tailscaleId !== null) {
+      const peer = canonicalTailscaleDestination(
+        args.body.host ?? current.host,
+      );
+      if (peer === null) {
+        return failure("invalidHost");
+      }
+      host = peer;
+    }
     const port = args.body.port ?? current.port;
     const rejected = validateSshHostUpdate(current, {
       body: args.body,
@@ -646,8 +775,18 @@ export const updateSshConnection$ = command(
       accessId,
       preparedAccess,
       preparedCredential,
+      tailscaleId,
+      preparedTailscale: await prepareInlineTailscaleConfig(
+        args.body.transport,
+        args.featureContext,
+      ),
     });
     if (result.ok) {
+      await publishTailscaleBindingChange(
+        args,
+        current.tailscaleConfigId,
+        result.value,
+      );
       await set(publishSshRuntimeInvalidation$, {
         orgId: args.orgId,
         userId: args.userId,
@@ -673,10 +812,10 @@ export const deleteSshConnection$ = command(
     const db = set(writeDb$);
     // The RESTRICT VNC FK rejects deleting a host used by a VNC connection.
     const deletion = await settle(
-      db
-        .delete(sshConnections)
-        .where(ownedSshConnection(args))
-        .returning({ id: sshConnections.id }),
+      db.delete(sshConnections).where(ownedSshConnection(args)).returning({
+        id: sshConnections.id,
+        tailscaleConfigId: sshConnections.tailscaleConfigId,
+      }),
     );
     if (!deletion.ok) {
       if (isVncReferenceRestriction(deletion.error)) {
@@ -686,6 +825,13 @@ export const deleteSshConnection$ = command(
     }
     if (deletion.value.length === 0) {
       return failure("notFound");
+    }
+    if (
+      deletion.value.some((row) => {
+        return row.tailscaleConfigId !== null;
+      })
+    ) {
+      await publishTailscaleClientInvalidation(args);
     }
     await set(publishSshRuntimeInvalidation$, {
       orgId: args.orgId,
@@ -829,6 +975,7 @@ function sshHostUpdateValues(
     readonly port: number;
     readonly credentialId: string;
     readonly accessId: string | null;
+    readonly tailscaleId: string | null;
   },
 ) {
   const endpointChanged = shouldClearLearnedHostKey(
@@ -843,6 +990,7 @@ function sshHostUpdateValues(
     port: args.port,
     credentialId: args.credentialId,
     cloudflareAccessId: args.accessId,
+    tailscaleConfigId: args.tailscaleId,
     needsRebind: false,
     learnedHostKeyAlgorithm: endpointChanged
       ? null
@@ -869,5 +1017,28 @@ function sshConnectionCreationValues(
     port: args.body.port,
     credentialId,
     cloudflareAccessId: accessId,
+    tailscaleConfigId: args.tailscaleId,
   };
+}
+
+function canonicalizeSelectedSshHost(
+  host: string,
+  tailscale: boolean,
+): SshConnectionResult<string> {
+  if (!tailscale) {
+    return canonicalizeSshHost(host);
+  }
+  const peer = canonicalTailscaleDestination(host);
+  return peer === null ? failure("invalidHost") : { ok: true, value: peer };
+}
+
+function isTailscaleReferenceViolation(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    isForeignKeyViolation(error) &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === "ssh_connections_tailscale_org_fk"
+  );
 }

@@ -7,8 +7,12 @@ import {
   runnerSshAccessResolvedSchema,
   type RunnerSshResolveResponse,
   type RunnerSshObservationRequest,
+  type RunnerSshLeaseRequest,
+  type RunnerSshLeaseResponse,
+  runnerSshTailscaleResolvedSchema,
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
+import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -51,6 +55,15 @@ function currentConnectionQuery(
       encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
       encryptedPassphrase: sshCredentials.encryptedPassphrase,
       accessId: sshConnections.cloudflareAccessId,
+      tailscaleId: sshConnections.tailscaleConfigId,
+      tailscale: {
+        id: tailscaleConfigs.id,
+        generation: tailscaleConfigs.generation,
+        enabled: tailscaleConfigs.enabled,
+        tags: tailscaleConfigs.tags,
+        encryptedClientId: tailscaleConfigs.encryptedClientId,
+        encryptedClientSecret: tailscaleConfigs.encryptedClientSecret,
+      },
       needsRebind: sshConnections.needsRebind,
       access: {
         id: cloudflareAccessConfigs.id,
@@ -106,6 +119,20 @@ function currentConnectionQuery(
         ),
       ),
     )
+    .leftJoin(
+      tailscaleConfigs,
+      and(
+        eq(tailscaleConfigs.id, sshConnections.tailscaleConfigId),
+        eq(tailscaleConfigs.orgId, agentRuns.orgId),
+        or(
+          eq(tailscaleConfigs.scope, "organization"),
+          and(
+            eq(tailscaleConfigs.scope, "personal"),
+            eq(tailscaleConfigs.userId, agentRuns.userId),
+          ),
+        ),
+      ),
+    )
     .where(
       and(
         eq(agentRuns.id, input.runId),
@@ -138,6 +165,30 @@ async function currentConnection(
   }
   if (row.needsRebind) {
     return null;
+  }
+  if (row.tailscaleId !== null) {
+    if (row.tailscale === null || !row.tailscale.enabled) {
+      return null;
+    }
+    if (lockAuthority) {
+      const [authority] = await db
+        .select({ id: tailscaleConfigs.id })
+        .from(tailscaleConfigs)
+        .where(
+          and(
+            eq(tailscaleConfigs.id, row.tailscaleId),
+            eq(tailscaleConfigs.orgId, row.orgId),
+            eq(tailscaleConfigs.generation, row.tailscale.generation),
+            eq(tailscaleConfigs.enabled, true),
+          ),
+        )
+        .for("share");
+      signal.throwIfAborted();
+      if (!authority) {
+        return null;
+      }
+    }
+    return row;
   }
   if (row.accessId === null) {
     return row;
@@ -206,6 +257,20 @@ export async function resolveRunnerSsh(
     generation: row.generation,
     learnedHostKey: hostKey,
   };
+  const network = row.tailscaleId === null ? null : row.tailscale;
+  const tailscaleCredentials =
+    network === null
+      ? null
+      : {
+          configId: network.id,
+          generation: network.generation,
+          tags: network.tags,
+          clientId: await decryptStoredSecretValue(network.encryptedClientId),
+          clientSecret: await decryptStoredSecretValue(
+            network.encryptedClientSecret,
+          ),
+        };
+  signal.throwIfAborted();
   const access = row.accessId === null ? null : row.access;
   const accessCredentials =
     access === null
@@ -229,6 +294,18 @@ export async function resolveRunnerSsh(
     }
     const password = await decryptStoredSecretValue(row.encryptedPassword);
     signal.throwIfAborted();
+    if (tailscaleCredentials) {
+      return tailscaleHandoff(
+        db,
+        input,
+        {
+          ...common,
+          tailscale: tailscaleCredentials,
+          authentication: { method: "password", password },
+        },
+        signal,
+      );
+    }
     if (accessCredentials) {
       return runnerSshAccessResolvedSchema.parse({
         outcome: "resolved_access",
@@ -249,6 +326,18 @@ export async function resolveRunnerSsh(
       ? null
       : await decryptStoredSecretValue(row.encryptedPassphrase);
   signal.throwIfAborted();
+  if (tailscaleCredentials) {
+    return tailscaleHandoff(
+      db,
+      input,
+      {
+        ...common,
+        tailscale: tailscaleCredentials,
+        authentication: { method: "private_key", privateKey, passphrase },
+      },
+      signal,
+    );
+  }
   if (accessCredentials) {
     return runnerSshAccessResolvedSchema.parse({
       outcome: "resolved_access",
@@ -289,6 +378,9 @@ export async function pinRunnerSsh(
     const row = await currentConnection(tx, input, true, signal);
     if (!row) {
       return unavailable;
+    }
+    if (!matchesTailscaleGuard(row, input.expectedTailscaleConfig)) {
+      return { outcome: "configuration_changed" };
     }
     const existing = learnedHostKey(row);
     if (existing) {
@@ -376,7 +468,10 @@ export async function recordRunnerSshObservation(
     if (!row) {
       return { ...unavailable, notify: false };
     }
-    if (row.generation !== input.expectedGeneration) {
+    if (
+      row.generation !== input.expectedGeneration ||
+      !matchesTailscaleGuard(row, input.expectedTailscaleConfig)
+    ) {
       return { outcome: "ignored", notify: false };
     }
     const [previous] = await tx
@@ -393,6 +488,9 @@ export async function recordRunnerSshObservation(
       generation: row.generation,
       observedAt,
       failureReason: input.failureReason,
+      tailscaleConfigId: row.tailscaleId,
+      tailscaleConfigGeneration:
+        row.tailscaleId === null ? null : (row.tailscale?.generation ?? null),
     };
     const [written] = await tx
       .insert(sshConnectionObservations)
@@ -402,6 +500,8 @@ export async function recordRunnerSshObservation(
         set: values,
         setWhere: or(
           ne(sshConnectionObservations.generation, row.generation),
+          sql`${sshConnectionObservations.tailscaleConfigId} IS DISTINCT FROM ${values.tailscaleConfigId}`,
+          sql`${sshConnectionObservations.tailscaleConfigGeneration} IS DISTINCT FROM ${values.tailscaleConfigGeneration}`,
           lt(sshConnectionObservations.observedAt, observedAt),
         ),
       })
@@ -423,4 +523,82 @@ export async function recordRunnerSshObservation(
   }
   signal.throwIfAborted();
   return { outcome: result.outcome };
+}
+
+function matchesTailscaleGuard(
+  row: {
+    readonly tailscaleId: string | null;
+    readonly tailscale: {
+      readonly id: string;
+      readonly generation: number;
+    } | null;
+  },
+  guard: RunnerSshPinRequest["expectedTailscaleConfig"],
+): boolean {
+  return row.tailscaleId === null
+    ? guard === undefined
+    : guard !== undefined &&
+        row.tailscale !== null &&
+        guard.configId === row.tailscaleId &&
+        guard.generation === row.tailscale.generation;
+}
+
+async function stableTailscaleAuthority(
+  db: Pick<Db, "select">,
+  input: RunnerSshResolveRequest & { readonly runId: string },
+  hostGeneration: number,
+  config: { readonly configId: string; readonly generation: number },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const current = await currentConnection(db, input, false, signal);
+  return (
+    current !== null &&
+    current.generation === hostGeneration &&
+    matchesTailscaleGuard(current, config)
+  );
+}
+
+type TailscaleHandoff = Extract<
+  RunnerSshResolveResponse,
+  { outcome: "resolved_tailscale" }
+>;
+async function tailscaleHandoff(
+  db: Pick<Db, "select">,
+  input: SshResolveInput,
+  handoff: Omit<TailscaleHandoff, "outcome">,
+  signal: AbortSignal,
+): Promise<RunnerSshResolveResponse> {
+  if (
+    !(await stableTailscaleAuthority(
+      db,
+      input,
+      handoff.generation,
+      handoff.tailscale,
+      signal,
+    ))
+  ) {
+    return unavailable;
+  }
+  return runnerSshTailscaleResolvedSchema.parse({
+    outcome: "resolved_tailscale",
+    ...handoff,
+  });
+}
+
+/** A finite authority handoff, not a connection/credential or provider request. */
+export async function leaseRunnerSsh(
+  db: Pick<Db, "select">,
+  input: RunnerSshLeaseRequest & { readonly runId: string },
+  signal: AbortSignal,
+): Promise<RunnerSshLeaseResponse> {
+  const row = await currentConnection(db, input, false, signal);
+  if (
+    !row ||
+    row.tailscaleId === null ||
+    row.generation !== input.expectedGeneration ||
+    !matchesTailscaleGuard(row, input.expectedTailscaleConfig)
+  ) {
+    return unavailable;
+  }
+  return { outcome: "permitted", validForMs: 60_000 };
 }

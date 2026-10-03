@@ -10,6 +10,7 @@ import {
   pinRunnerSsh,
   resolveRunnerSsh,
   recordRunnerSshObservation,
+  leaseRunnerSsh,
 } from "../services/runner-ssh.service";
 
 const authorizeSshRunner$ = command(
@@ -63,6 +64,26 @@ const resolveSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result };
 });
 
+const leaseSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const error = await set(authorizeSshRunner$, signal);
+  if (error) {
+    return error;
+  }
+  const body = await get(bodyResultOf(runnerSshContract.lease));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const { runId } = get(pathParamsOf(runnerSshContract.lease));
+  const result = await leaseRunnerSsh(
+    set(writeDb$),
+    { runId, ...body.data },
+    signal,
+  );
+  signal.throwIfAborted();
+  return { status: 200 as const, body: result };
+});
+
 const pinSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   const error = await set(authorizeSshRunner$, signal);
   if (error) {
@@ -105,6 +126,7 @@ const observeSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const runnerSshRoutes: readonly RouteEntry[] = [
+  { route: runnerSshContract.lease, handler: leaseSsh$ },
   { route: runnerSshContract.observe, handler: observeSsh$ },
   { route: runnerSshContract.resolve, handler: resolveSsh$ },
   { route: runnerSshContract.pin, handler: pinSsh$ },

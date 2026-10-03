@@ -22,11 +22,17 @@ export const sshConnectionObservations = pgTable(
         { onDelete: "cascade" },
       ),
     generation: integer("generation").notNull(),
+    tailscaleConfigId: uuid("tailscale_config_id"),
+    tailscaleConfigGeneration: integer("tailscale_config_generation"),
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
     failureReason: varchar("failure_reason", { length: 64 }),
   },
   (table) => {
     return [
+      check(
+        "chk_ssh_connection_observation_tailscale_pair",
+        sql`(${table.tailscaleConfigId} IS NULL) = (${table.tailscaleConfigGeneration} IS NULL) AND (${table.tailscaleConfigGeneration} IS NULL OR ${table.tailscaleConfigGeneration} > 0)`,
+      ),
       check(
         "chk_ssh_connection_observation_generation",
         sql`${table.generation} > 0`,
