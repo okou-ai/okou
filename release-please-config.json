@@ -174,6 +174,10 @@
             "release-type": "rust",
             "skip-changelog": true
         },
+        "crates/kerberos-credentials": {
+            "release-type": "rust",
+            "skip-changelog": true
+        },
         "crates/linux-mountinfo": {
             "release-type": "rust",
             "skip-changelog": true
