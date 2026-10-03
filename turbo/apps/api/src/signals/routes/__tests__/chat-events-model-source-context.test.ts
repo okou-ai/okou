@@ -111,6 +111,48 @@ async function launchedQueuedInput(
 }
 
 describe("identity model source context through real sends", () => {
+  it("preserves validation rejection when an authorized send's early preload fails", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "early preload rejection anchor",
+    });
+    const claimed = await claimChatRun(runnerGroup, first.runId);
+    await cancelChatRun(actor, first.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    const before = await chat.listThreadEvents(actor, first.threadId);
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    await withAgentBootstrapFailureFixture(
+      { userId: actor.userId, orgId: actor.orgId, agentId },
+      async () => {
+        const rejected = await chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            threadId: first.threadId,
+            clientEventId: randomUUID(),
+            model: "missing-preload-rejection-model",
+            prompt: "must not enqueue",
+          },
+          [400],
+        );
+        expect(rejected.status).toBe(400);
+        expect(rejected.body).toMatchObject({
+          error: {
+            code: "BAD_REQUEST",
+            message: 'Unknown model "missing-preload-rejection-model"',
+          },
+        });
+        // The infrastructure fixture requires an actual cancelled read. All
+        // speculative promises must settle even though no pick will consume them.
+        await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
+        const after = await chat.listThreadEvents(actor, first.threadId);
+        expect(after.events).toStrictEqual(before.events);
+      },
+    );
+  });
   it.each(PATHS)(
     "uses %s with a matching context and a later request without context",
     async (path) => {

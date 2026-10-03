@@ -1425,6 +1425,9 @@ const prepareNormalSend$ = command(
     if ("status" in authorized) {
       return authorized;
     }
+    // Read-only preload starts only after Agent/thread authorization. Each node
+    // is settled and held by waitUntil even if a later validation rejects input.
+    set(preloadAgentRunContext$, args.context, signal);
     const source = await set(
       resolveNormalSendAgentRunSource$,
       {
@@ -1775,7 +1778,6 @@ export const sendNormalEvent$ = command(
           inserted: { createdAt },
           enqueueCommit,
         } = committed;
-        set(preloadAgentRunContext$, context, signal);
         // Schedule before observing abort; touch/realtime follow this pick's outcome.
         waitUntil(
           set(
