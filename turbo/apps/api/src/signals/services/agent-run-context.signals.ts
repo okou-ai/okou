@@ -107,6 +107,11 @@ import {
   type UsageAllowanceContext,
 } from "./usage-allowance-context.service";
 
+import {
+  createExecutionCreditBalance,
+  type ExecutionCreditBalance,
+} from "./execution-credit-balance.service";
+
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
   readonly orgId: string;
@@ -133,6 +138,7 @@ export interface AgentRunContextSignals {
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
   readonly allowance$: Computed<Promise<UsageAllowanceContext>>;
+  readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
@@ -359,8 +365,10 @@ function createIdentityContext(
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  const memberMetadata$ =
-    sharedMember?.memberMetadata$ ?? createExecutionMemberMetadata(scope);
+  const { memberMetadata$, credits$ } = sharedMember ?? {
+    memberMetadata$: createExecutionMemberMetadata(scope),
+    credits$: createExecutionCreditBalance(scope, orgMetadata$),
+  };
   const {
     connectorSelection$,
     environmentSnapshot$,
@@ -413,6 +421,7 @@ function createIdentityContext(
     orgMetadata$,
     plan$,
     allowance$,
+    credits$,
     modelFacts$,
     memberModels$,
     memberMetadata$,
@@ -441,6 +450,7 @@ export const preloadAgentRunContext$ = command(
       signals.orgMetadata$,
       signals.plan$,
       signals.allowance$,
+      signals.credits$,
       signals.modelFacts$,
       signals.memberModels$,
       signals.memberMetadata$,
