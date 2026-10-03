@@ -33,6 +33,11 @@ auditConfig:
     # @hono/vite-build/vercel requires node-server v1. This advisory only
     # affects serve-static on Windows; the API uses neither surface.
     - GHSA-frvp-7c67-39w9
+    # No patched http-cache-semantics release exists yet. It is reachable only
+    # through ably>got>cacheable-request, and Ably's Node REST client never
+    # passes got's `cache` option, so the vulnerable max-stale path is unused.
+    # Remove when a fixed release is published or Ably drops got.
+    - GHSA-ch52-4w7c-c8xp
 
 overrides:
   # Upstream dependencies still resolve vulnerable releases without these floors.
