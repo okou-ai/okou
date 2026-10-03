@@ -102,19 +102,24 @@ export function createExecutionMemberMetadata(
     const preferences = rows.find((row) => {
       return row.kind === "preferences";
     });
+    let capturedPreferences: ExecutionMemberPreferences | null = null;
+    if (preferences) {
+      const { modelSettings, cloudBrowserEnabledByDefault } = preferences;
+      if (modelSettings === null || cloudBrowserEnabledByDefault === null) {
+        throw new Error("Required execution member preferences are missing");
+      }
+      capturedPreferences = {
+        timezone: preferences.timezone,
+        selectedImageModel: preferences.selectedImageModel,
+        selectedModel: preferences.selectedModel,
+        serviceTier: preferences.serviceTier,
+        modelSettings,
+        cloudBrowserEnabledByDefault,
+      };
+    }
     return {
       profile: profile ? { name: profile.name, email: profile.email } : null,
-      preferences: preferences
-        ? {
-            timezone: preferences.timezone,
-            selectedImageModel: preferences.selectedImageModel,
-            selectedModel: preferences.selectedModel,
-            serviceTier: preferences.serviceTier,
-            modelSettings: preferences.modelSettings ?? {},
-            cloudBrowserEnabledByDefault:
-              preferences.cloudBrowserEnabledByDefault ?? true,
-          }
-        : null,
+      preferences: capturedPreferences,
     };
   });
 }
