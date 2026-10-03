@@ -203,10 +203,15 @@ a default model/key. The selected model determines which candidate keys are
 consumed; final billing validation shares the same projection. This intentionally
 reads only existence columns, not monetary rates, and does not change settlement.
 
-Subscription capture used to receive a null account snapshot for automations,
-and a mismatched owner could also reach a separate account SELECT. Both now use
-`executionContext$`, which reconciles the final owner/Agent through the canonical
-matcher. Candidate filtering requires matching org/member identity. The live
+The removed subscription loader was guarded by a null or owner-mismatched account
+snapshot (or a non-subscription provider type, which its caller already excludes).
+Healthy web and automation producers supply a non-null snapshot; an early/rejected
+assembly does not proceed to subscription capture. Thus automation alone was not
+evidence that the fallback executed. Owner reconciliation was the remaining
+identity boundary: routing now obtains member facts from the matched queued
+identity, and automation execution preserves that same member node while matching
+the final Agent. Subscription capture consumes `executionContext$` directly;
+candidate filtering requires matching org/member identity. The live
 subscription-account transaction check, queue/session CAS, catalog and allowance
 fences are unchanged. No credits/member-metadata ownership changes are included.
 

@@ -3151,7 +3151,9 @@ export function createThreadClaimRunObjects(
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
       const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
-      const { accounts } = await get(memberModels$);
+      const { accounts } = await get(
+        (await get(queuedIdentityContext$)).memberModels$,
+      );
       return { orgId, userId, accounts };
     },
   );
@@ -6359,7 +6361,7 @@ export function createThreadClaimRunObjects(
     // Reconciled integrations may select a different default Agent. Preserve only
     // groups whose authority key still matches, including their dependencies.
     const supplied = (await get(isAutomation$))
-      ? context
+      ? await get(queuedIdentityContext$)
       : await get(promptExecutionContext$);
     return matchAgentRunContextSignals(
       supplied,
