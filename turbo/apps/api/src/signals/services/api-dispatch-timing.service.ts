@@ -154,6 +154,8 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_workflow_enqueue_schedule_claim"
   | "api_dispatch_workflow_enqueue_event_binding"
   | "api_dispatch_workflow_enqueue_replace_pending_ticks"
+  | "api_dispatch_workflow_enqueue_pending_tick_lookup"
+  | "api_dispatch_workflow_enqueue_pending_tick_revocation_append"
   | "api_dispatch_workflow_enqueue_source_transition"
   | "api_dispatch_workflow_event_created_to_consume_start"
   | "api_dispatch_enqueue_commit_to_consume_start"

@@ -18,6 +18,8 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import type { ApiTestUser } from "./helpers/api-bdd";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import {
   readCustomConnectorCredentialStorageParent,
@@ -153,6 +155,198 @@ async function configureRuntimeContextGateway(
     },
   ]);
 }
+
+describe("chat eager connector credentials", () => {
+  it("does not decrypt firewall-only credentials at launch", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const figma = await connectors.connectManualGrant(
+      actor,
+      "figma",
+      "api-token",
+      { accessToken: "firewall-figma" },
+      agentId,
+    );
+    await connectors.connectManualGrant(
+      actor,
+      "gitlab",
+      "api-token",
+      { accessToken: "firewall-gitlab" },
+      agentId,
+    );
+    const kms = useSecretKmsProbe();
+    const run = await sendChatRun(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+      prompt: "Use my firewall-only connectors",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.environment).toMatchObject({
+      FIGMA_TOKEN: "fixture-figma-token",
+    });
+    expect(claim.secretConnectorMetadataMap?.FIGMA_TOKEN).toMatchObject({
+      sourceId: figma.id,
+      sourceType: "connector",
+    });
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
+
+  it("decrypts only the eager connector and delivers its plaintext to the runner", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const openai = await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "eager-openai-token" },
+      agentId,
+    );
+    await connectors.connectManualGrant(
+      actor,
+      "figma",
+      "api-token",
+      { accessToken: "deferred-figma-token" },
+      agentId,
+    );
+    const kms = useSecretKmsProbe();
+    const run = await sendChatRun(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+      prompt: "Use eager and deferred connector credentials",
+    });
+    expect(kms.decryptCalls).toBe(1);
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.environment).toMatchObject({
+      OPENAI_TOKEN: "eager-openai-token",
+      FIGMA_TOKEN: "fixture-figma-token",
+    });
+    expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+      sourceId: openai.id,
+    });
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected runner launch secrets");
+    }
+    const plaintext = await createFirewallApi(context).requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+        },
+      },
+      [200],
+    );
+    expect(plaintext.body).toMatchObject({
+      headers: { Authorization: "Bearer eager-openai-token" },
+    });
+    const deferred = await createFirewallApi(context).requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("FIGMA_TOKEN")}`,
+        },
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+      },
+      [200],
+    );
+    expect(deferred.body).toMatchObject({
+      headers: { Authorization: "Bearer deferred-figma-token" },
+    });
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
+
+  it("isolates an undecryptable unselected account from the selected eager account", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    let badAccount = true;
+    const kms = useSecretKmsProbe(
+      (request) => {
+        return badAccount
+          ? Promise.resolve({
+              keyId: request.keyId,
+              plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+              encryptedDataKey: Buffer.from("unavailable-account-key"),
+            })
+          : undefined;
+      },
+      (request) => {
+        return Buffer.from(request.ciphertext).toString() ===
+          "unavailable-account-key"
+          ? Promise.reject(new Error("KMS account key unavailable"))
+          : undefined;
+      },
+    );
+    await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "bad-account-token" },
+      agentId,
+    );
+    badAccount = false;
+    const good = await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "good-account-token" },
+      agentId,
+    );
+    const thread = await chat.createThread(actor, {
+      agentId,
+      title: "Credential failure isolation",
+    });
+    await accept(
+      chatThreadConnectorSelectionsClient().update({
+        headers: sessionHeaders(actor),
+        params: { id: thread.id },
+        body: {
+          connectionId: good.id,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
+      }),
+      [200],
+    );
+    const beforeLaunch = kms.decryptCalls;
+    const run = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      model: "claude-fable-5-1",
+      prompt: "Use only my selected healthy account",
+    });
+    expect(kms.decryptCalls - beforeLaunch).toBe(1);
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+      sourceId: good.id,
+    });
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected runner launch secrets");
+    }
+    const resolved = await createFirewallApi(context).requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+        },
+      },
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: "Bearer good-account-token" },
+    });
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
+});
 
 describe("CHAT-02: thread connector account selection", () => {
   it.each(["missing", "incomplete"] as const)(

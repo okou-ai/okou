@@ -1,6 +1,7 @@
 import { Client } from "pg";
 import { z } from "zod";
 import { closeDbPool } from "../lib/db";
+import { flushWaitUntilForTest } from "../signals/context/wait-until";
 import { settleIncludingAbort } from "../signals/utils";
 import {
   barrierQueryBinds,
@@ -26,6 +27,9 @@ export async function withAgentBootstrapFailureFixture<T>(
   },
   work: () => Promise<T>,
 ): Promise<T> {
+  // Setup can also own request background work; finish it before replacing
+  // the pool and taking ownership of the cancellation interceptor.
+  await flushWaitUntilForTest();
   await closeDbPool();
   const original = Client.prototype.query;
   let injected = false;
@@ -84,10 +88,19 @@ export async function withAgentBootstrapFailureFixture<T>(
     },
   });
   const result = await settleIncludingAbort(work());
+  // A failed HTTP request can return before independent preload reads finish.
+  // pg-pool.end() stops servicing queued acquisitions without rejecting them;
+  // ending it now would orphan their query/settled waitUntil promises forever.
+  // Drain the request-owned work while the healthy pool and interceptor still
+  // exist, even if the scenario assertion failed. Preserve every rejection.
+  const drained = await settleIncludingAbort(flushWaitUntilForTest());
   const closed = await settleIncludingAbort(closeDbPool());
   Client.prototype.query = original;
   if (!result.ok) {
     throw result.error;
+  }
+  if (!drained.ok) {
+    throw drained.error;
   }
   if (!closed.ok) {
     throw closed.error;

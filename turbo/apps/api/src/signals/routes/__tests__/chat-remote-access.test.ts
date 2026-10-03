@@ -443,4 +443,282 @@ describe("chat remote access owner API", () => {
       [404],
     );
   });
+
+  it.each([
+    ["ssh", "orgId"],
+    ["ssh", "userId"],
+    ["vnc", "orgId"],
+    ["vnc", "userId"],
+  ] as const)(
+    "rejects foreign %s configuration changes sharing the %s and preserves both owners' choices",
+    async (protocol, shared) => {
+      if (protocol === "vnc") {
+        initializeVncRuntimeTest();
+      } else {
+        useSecretKmsProbe();
+      }
+      const owner = await ownerWithThread();
+      if (protocol === "vnc") {
+        await updateFeatureSwitchesForUser(context, owner.actor, {
+          [FeatureSwitchKey.VncAccess]: true,
+        });
+        vnc.authenticate(owner.actor);
+      }
+      const ownerHost =
+        protocol === "ssh"
+          ? await createSshHost("Owner host")
+          : (
+              await accept(
+                vnc.connections().create({
+                  headers,
+                  body: vncConnectionBody(),
+                }),
+                [201],
+              )
+            ).body.id;
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const ownerDefaults = await accept(
+        accessClient().listHostDefaults({ headers }),
+        [200],
+      );
+      const ownerAccess = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: owner.threadId },
+        }),
+        [200],
+      );
+
+      const peer = await ownerWithThread(
+        bdd.user({ [shared]: owner.actor[shared] }),
+      );
+      if (protocol === "vnc") {
+        await updateFeatureSwitchesForUser(context, peer.actor, {
+          [FeatureSwitchKey.VncAccess]: true,
+        });
+        vnc.authenticate(peer.actor);
+      }
+      const peerHost =
+        protocol === "ssh"
+          ? await createSshHost("Peer host")
+          : (
+              await accept(
+                vnc.connections().create({
+                  headers,
+                  body: vncConnectionBody(),
+                }),
+                [201],
+              )
+            ).body.id;
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: peerHost,
+          },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const peerDefaults = await accept(
+        accessClient().listHostDefaults({ headers }),
+        [200],
+      );
+      expect(
+        peerDefaults.body[protocol].map((host) => {
+          return host.connectionId;
+        }),
+      ).toStrictEqual([peerHost]);
+      const peerAccess = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: peer.threadId },
+        }),
+        [200],
+      );
+      expect(
+        peerAccess.body[protocol].map((host) => {
+          return host.connectionId;
+        }),
+      ).toStrictEqual([peerHost]);
+      const deniedDefault = await accept(
+        accessClient().updateHostDefault({
+          headers,
+          params: { protocol, connectionId: ownerHost },
+          body: { enabled: true },
+        }),
+        [404],
+      );
+      const missingDefault = await accept(
+        accessClient().updateHostDefault({
+          headers,
+          params: { protocol, connectionId: randomUUID() },
+          body: { enabled: true },
+        }),
+        [404],
+      );
+      expect(missingDefault.body).toStrictEqual(deniedDefault.body);
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+          body: { enabled: false },
+        }),
+        [404],
+      );
+      const deniedClear = await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+        }),
+        [404],
+      );
+      const missingClear = await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: randomUUID(),
+          },
+        }),
+        [404],
+      );
+      expect(missingClear.body).toStrictEqual(deniedClear.body);
+      const deniedThread = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: owner.threadId },
+        }),
+        [404],
+      );
+      const missingThread = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: randomUUID() },
+        }),
+        [404],
+      );
+      expect(missingThread.body).toStrictEqual(deniedThread.body);
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: peerHost,
+          },
+          body: { enabled: false },
+        }),
+        [404],
+      );
+      await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+        }),
+        [404],
+      );
+      expect(
+        (await accept(accessClient().listHostDefaults({ headers }), [200]))
+          .body,
+      ).toStrictEqual(peerDefaults.body);
+      expect(
+        (
+          await accept(
+            accessClient().listThreadAccess({
+              headers,
+              params: { threadId: peer.threadId },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual(peerAccess.body);
+
+      if (protocol === "vnc") {
+        vnc.authenticate(owner.actor);
+      } else {
+        mocks.clerk.session(
+          owner.actor.userId,
+          owner.actor.orgId,
+          owner.actor.orgRole,
+        );
+      }
+      expect(
+        (await accept(accessClient().listHostDefaults({ headers }), [200]))
+          .body,
+      ).toStrictEqual(ownerDefaults.body);
+      expect(
+        (
+          await accept(
+            accessClient().listThreadAccess({
+              headers,
+              params: { threadId: owner.threadId },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual(ownerAccess.body);
+      const cleared = await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+        }),
+        [200],
+      );
+      expect(cleared.body).toStrictEqual({
+        ...ownerAccess.body[protocol][0],
+        overrideEnabled: null,
+        enabled: false,
+        source: "default",
+      });
+      await accept(
+        accessClient().updateHostDefault({
+          headers,
+          params: { protocol, connectionId: ownerHost },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const recovered = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: owner.threadId },
+        }),
+        [200],
+      );
+      expect(recovered.body[protocol]).toStrictEqual([
+        { ...cleared.body, defaultEnabled: true, enabled: true },
+      ]);
+    },
+  );
 });

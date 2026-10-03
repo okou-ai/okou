@@ -604,6 +604,67 @@ Older queue heads and later cron requests have no receipt and emit no substitute
 measurement. Concurrent preparation spans overlap; their durations must not be added as sequential stages. The context span measures the joined preparation work, and the pre-create/context completion checkpoints no longer imply a serial query pipeline. The existing input-created-to-consume duration remains queue age;
 it overlaps enqueue time and must not be added to S1.
 
+### Workflow pending-tick replacement attribution
+
+Workflow ingress retains the inclusive
+`api_dispatch_workflow_enqueue_replace_pending_ticks` span. Its start is the
+pending-tick lookup boundary and its end is the next source-stage mark, or the
+existing transaction-settlement boundary on failure. Two nested observations
+partition the work without changing that parent:
+
+- `api_dispatch_workflow_enqueue_pending_tick_lookup`: the existing candidate
+  SELECT, including query construction, driver/network wait and result delivery.
+  It is not measured server execution, scanned-row count or pool acquisition.
+- `api_dispatch_workflow_enqueue_pending_tick_revocation_append`: construction of
+  the canonical revocation rows/statement and the existing append await. It exists
+  only when a non-empty lookup result enters that write, not for zero targets.
+
+Each child ends when its query/write promise settles, including rejection,
+without including subsequent transaction rollback. Plain numeric observations
+are recorded through the existing best-effort collector only after the
+transaction settles; synchronous capture callbacks do not emit telemetry or
+receive a database handle. Observation/recording failure cannot replace the
+original admission, SQL error or cancellation. Missing capture remains missing.
+The inclusive parent and its children overlap; do not add their percentiles or
+interpret their difference as directly measured database overhead.
+
+A returned lookup result adds `workflow_pending_tick_target_count_bucket` to the
+parent and applicable children, using only `0`, `1`, `2_4`, `5_16`, `17_plus`.
+This counts returned candidate targets, not scanned rows, successfully committed
+revocations or launched Runs. A failed lookup has no count, never a fabricated
+zero. A failed append can still have a known target count. The existing anonymous
+flush's `success`, `schedule_path` and `admission_outcome` describe the admission,
+not each SQL statement: a later transaction failure does not mean every earlier
+query failed.
+
+Non-schedule/manual, idempotent no-insert and unavailable-claim paths that never
+reach replacement emit neither child nor target count. Empty lookup emits the
+lookup and bucket `0`, with no append record. Earlier APIs have no child spans;
+absence is a coverage limit, not zero latency or proof of failure. The change adds
+at most two timing records per replacement attempt and constant-size numeric
+observations per admission, with five count buckets. It adds no SQL, transport in the transaction,
+persisted field, public/Runner contract or new identifier/content/error dimension.
+
+After separately authorized deployment, report lookup/known-count/append coverage
+and missing records for a fixed event-time window, grouped by exact API marker,
+schedule path, admission outcome and count bucket. Keep optional/error branches
+separate and use per-cohort nearest-rank distributions with denominators. These
+spans remain anonymous: neither their parents nor children can be paired to
+arbitrary Runs, and this pre-pick cost is not a duration to subtract from
+`api_to_spawn`. A returned-target bucket cannot establish an index miss; an actual
+query-plan/critical-path owner and independent failure, retry, cancellation,
+resource and tail guards are needed before any behavior optimization. The
+production analysis/no-change-or-follow-up decision remains in #37066.
+
+Existing route coverage in `workflow-queue.test.ts` exercises zero/nonzero target
+replacement, newest-only drain and preservation/FIFO of manual inputs. Scheduler
+and official schedule-claim routes protect competing/unavailable claims and
+rollback/rejection. API tests do not assert these diagnostic logs or intercept
+telemetry; static boundary/privacy review and post-deployment emission coverage
+verify the observations.
+
+### Storage and route verification
+
 Storage planning finishes before the final mount assembly. The nested
 `api_dispatch_prepare_storage_manifest_resolve_plan` span measures the read
 plan, while storage preparation covers version selection, URL-cache reads, local
