@@ -9068,7 +9068,11 @@ export function createThreadClaimRunObjects(
         return;
       }
       const logRejection =
-        error.code === "INSUFFICIENT_CREDITS" ? log.debug : log.warn;
+        error.code === "INSUFFICIENT_CREDITS"
+          ? log.debug
+          : error.code === "AUTONOMY_BUDGET_EXHAUSTED"
+            ? log.info
+            : log.warn;
       logRejection("Rejected queued chat input", {
         chatThreadId: head.chatThreadId,
         eventId: head.id,
