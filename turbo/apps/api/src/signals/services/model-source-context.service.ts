@@ -46,7 +46,16 @@ const providerSecretJoin = and(
 );
 function providerProjection() {
   return {
-    provider: modelProviders,
+    // Only identity and runtime configuration participate in these facts.
+    // Account health/default/expiry fences remain on the full account projection.
+    provider: {
+      id: modelProviders.id,
+      type: modelProviders.type,
+      userId: modelProviders.userId,
+      orgId: modelProviders.orgId,
+      authMethod: modelProviders.authMethod,
+      selectedModel: modelProviders.selectedModel,
+    },
     providerSecret: {
       name: secrets.name,
       encryptedValue: secrets.encryptedValue,
@@ -55,7 +64,10 @@ function providerProjection() {
 }
 
 type ProviderRow = {
-  readonly provider: typeof modelProviders.$inferSelect;
+  readonly provider: Pick<
+    typeof modelProviders.$inferSelect,
+    "id" | "type" | "userId" | "orgId" | "authMethod" | "selectedModel"
+  >;
   readonly providerSecret: {
     readonly name: string;
     readonly encryptedValue: string;
