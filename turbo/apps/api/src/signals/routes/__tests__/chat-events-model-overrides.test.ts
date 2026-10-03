@@ -45,6 +45,10 @@ const {
   piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
+function expectedDefaultEffort(model: string): "xhigh" | "max" {
+  return model === "gpt-6-luna" || model === "gpt-5.6-luna" ? "xhigh" : "max";
+}
+
 function completedSubscriptionHistory(
   h0: string,
   prompt: string,
@@ -384,10 +388,7 @@ describe("CHAT-02: run-level model overrides", () => {
           provider: "openai-codex",
           baseUrl: "https://chatgpt.com/backend-api",
           model: selectedModel,
-          thinkingLevel:
-            selectedModel === "gpt-6-luna" || selectedModel === "gpt-5.6-luna"
-              ? "xhigh"
-              : "max",
+          thinkingLevel: expectedDefaultEffort(selectedModel),
           credentialBindings: [
             {
               kind: "access-token",
