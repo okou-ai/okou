@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.991.2",
+  "version": "0.991.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -36,7 +36,6 @@
     "@okouai/ui": "workspace:*",
     "@sentry/browser": "^10.73.0",
     "@sentry/react": "^10.73.0",
-    "@sentry/vite-plugin": "^4.9.0",
     "@solana/web3.js": "1.98.4",
     "@tiptap/core": "3.31.0",
     "@tiptap/extension-blockquote": "3.31.0",
@@ -93,6 +92,7 @@
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@sentry/cli": "^2.58.5",
+    "@sentry/vite-plugin": "^4.9.0",
     "@tailwindcss/vite": "^4.1.8",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",

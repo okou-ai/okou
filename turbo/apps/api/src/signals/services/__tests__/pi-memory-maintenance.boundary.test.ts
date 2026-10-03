@@ -388,7 +388,7 @@ async function launch(
     piSessionId: randomUUID(),
     sourceRunId: randomUUID(),
     sourceHistoryHash: createHash("sha256").update(randomUUID()).digest("hex"),
-    sourceCompletedAt: new Date("2026-09-03T04:00:00.000Z"),
+    sourceCompletedAt: nowDate(),
     rawMemory: secretCandidate,
     rolloutSummary: "private evidence",
   };
@@ -1068,6 +1068,7 @@ describe("maintenance routing admission and captured authority", () => {
       await insertPhase2Candidates(scope, [
         {
           piSessionId: randomUUID(),
+          sourceCompletedAt: nowDate(),
           rawMemory: secretCandidate,
           rolloutSummary: "private routing evidence",
         },
@@ -1155,11 +1156,7 @@ describe("maintenance routing admission and captured authority", () => {
         builtInModelRuntimeRoute: route,
         featureSwitchContext: featureSwitchContextFromRows(orgId, userId, []),
       };
-      const permitted = await prepareManagedModelEnvironment(
-        db(),
-        source,
-        request,
-      );
+      const permitted = await prepareManagedModelEnvironment(source, request);
       expect(permitted).toMatchObject({
         selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
         upstreamModel: route.upstreamModel,
@@ -1167,7 +1164,7 @@ describe("maintenance routing admission and captured authority", () => {
       // A valid managed key cannot authorize an upstream absent from the
       // captured catalog. Reject instead of silently selecting another route.
       await expect(
-        prepareManagedModelEnvironment(db(), source, {
+        prepareManagedModelEnvironment(source, {
           ...request,
           builtInModelRuntimeRoute: {
             ...route,
@@ -1177,7 +1174,7 @@ describe("maintenance routing admission and captured authority", () => {
       ).resolves.toBeNull();
       // A permitted route cannot borrow another managed key's source identity.
       await expect(
-        prepareManagedModelEnvironment(db(), source, {
+        prepareManagedModelEnvironment(source, {
           ...request,
           builtInModelRuntimeRoute: {
             ...route,

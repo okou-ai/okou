@@ -1,11 +1,7 @@
 import { computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { createMemberModelSources } from "./model-source-context.service";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import {
-  modelProviderAccounts,
-  modelProviderAccountSecrets,
-} from "@okouai/db/schema/model-provider-account";
-import { modelProviders } from "@okouai/db/schema/model-provider";
 import { db$ } from "../external/db";
 import { createModelCatalog } from "./model-catalog.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
@@ -55,35 +51,9 @@ export function createModelFacts(
   });
 }
 export function createMemberModelBootstrap(orgId: string, userId: string) {
+  const sources$ = createMemberModelSources(orgId, userId);
   return computed(async (get) => {
-    const rows = await get(db$)
-      .select({
-        account: modelProviderAccounts,
-        configuredModel: modelProviders.selectedModel,
-        secret: {
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: modelProviderAccountSecrets.encryptedValue,
-        },
-      })
-      .from(modelProviderAccounts)
-      .innerJoin(
-        modelProviders,
-        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-      )
-      .leftJoin(
-        modelProviderAccountSecrets,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviderAccounts.orgId, orgId),
-          eq(modelProviderAccounts.userId, userId),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      );
+    const { rows, providers } = await get(sources$);
     const accounts = [
       ...new Map(
         rows.map((row) => {
@@ -100,6 +70,6 @@ export function createMemberModelBootstrap(orgId: string, userId: string) {
         };
       }),
     );
-    return { orgId, userId, rows, accounts, member };
+    return { orgId, userId, rows, accounts, member, providers };
   });
 }

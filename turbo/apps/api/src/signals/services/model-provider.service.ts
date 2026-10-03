@@ -37,7 +37,7 @@ import { modelProviderConnections } from "@okouai/db/schema/model-provider-gatew
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishModelPoliciesChangedForOrgSafely,
   publishPersonalModelProvidersChangedSafely,
@@ -59,7 +59,6 @@ import {
   type UpsertPersonalAccountArgs,
   visiblePersonalModelProviderCondition,
 } from "./model-provider-account.service";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
   type BuiltInModelRuntimeRoute,
   isBuiltInModelRuntimeRoutePermitted,
@@ -1537,7 +1536,6 @@ function deferredCredentialReferences(
  * workspace routing compares with the account check; it is not a credential.
  */
 async function codexAccountCredentials(
-  db: ReadonlyDb,
   source: ModelSourceSnapshot,
   piExecution: boolean | undefined,
 ): Promise<ModelCredentialValues | null> {
@@ -1561,7 +1559,7 @@ async function codexAccountCredentials(
   if (piExecution) {
     return references;
   }
-  const account = await resolveModelCredentialValues(db, {
+  const account = await resolveModelCredentialValues({
     ...own,
     credentials: own.credentials.filter((credential) => {
       return credential.name === "CHATGPT_ACCOUNT_ID";
@@ -1573,7 +1571,6 @@ async function codexAccountCredentials(
 }
 
 async function resolveModelCredentialValues(
-  db: ReadonlyDb,
   source: ModelSourceSnapshot,
 ): Promise<ModelCredentialValues | null> {
   const values: Record<string, string> = {};
@@ -1590,21 +1587,10 @@ async function resolveModelCredentialValues(
       ) {
         throw new Error("Managed key identity mismatch");
       }
-      const [key] = await db
-        .select({
-          vendor: builtInModelKeys.vendor,
-          apiKey: builtInModelKeys.apiKey,
-        })
-        .from(builtInModelKeys)
-        .where(eq(builtInModelKeys.id, credential.modelKeyId))
-        .limit(1);
-      if (!key?.apiKey) {
+      if (!credential.apiKey) {
         return null;
       }
-      if (key.vendor !== source.configuration.managedVendor) {
-        throw new Error("Managed key vendor changed");
-      }
-      values[credential.name] = key.apiKey;
+      values[credential.name] = credential.apiKey;
     }
   }
   return values;
@@ -1612,7 +1598,6 @@ async function resolveModelCredentialValues(
 
 /** Exact registered/account source → resolved credentials → runtime. */
 export async function prepareRegisteredModelEnvironment(
-  db: ReadonlyDb,
   source: ModelSourceSnapshot,
   selectedModel: string,
   options: {
@@ -1630,7 +1615,7 @@ export async function prepareRegisteredModelEnvironment(
   // capture stays encrypted: the runtime only sees its secret reference.
   const credentials =
     deferred && type === "codex-oauth-token"
-      ? await codexAccountCredentials(db, source, piExecution)
+      ? await codexAccountCredentials(source, piExecution)
       : deferred &&
           !capture &&
           !hasAuthMethods(type) &&
@@ -1638,7 +1623,7 @@ export async function prepareRegisteredModelEnvironment(
             return credential.kind === "encrypted";
           })
         ? deferredCredentialReferences(source)
-        : await resolveModelCredentialValues(db, source);
+        : await resolveModelCredentialValues(source);
   if (!credentials) {
     return null;
   }
@@ -1726,7 +1711,6 @@ interface ManagedModelEnvironmentRequest {
 
 /** Exact managed-key source → explicit key resolution → managed runtime. */
 export async function prepareManagedModelEnvironment(
-  db: ReadonlyDb,
   source: ModelSourceSnapshot,
   args: ManagedModelEnvironmentRequest,
 ): Promise<ResolvedModelProviderEnvironment | null> {
@@ -1743,7 +1727,7 @@ export async function prepareManagedModelEnvironment(
   ) {
     return null;
   }
-  const credentials = await resolveModelCredentialValues(db, source);
+  const credentials = await resolveModelCredentialValues(source);
   if (!credentials) {
     return null;
   }
@@ -1798,7 +1782,6 @@ export async function prepareManagedModelEnvironment(
 
 /** Exact selected gateway surface → resolved key → gateway runtime. */
 export async function prepareGatewayModelEnvironment(
-  db: ReadonlyDb,
   source: ModelSourceSnapshot,
   selection: {
     readonly selectedModel: string | undefined;
@@ -1824,7 +1807,7 @@ export async function prepareGatewayModelEnvironment(
   ) {
     return null;
   }
-  const credentials = await resolveModelCredentialValues(db, source);
+  const credentials = await resolveModelCredentialValues(source);
   // A blank stored gateway key is an unavailable source, as on main.
   if (!credentials?.[GATEWAY_RUNTIME_SECRET_NAME]?.trim()) {
     return null;

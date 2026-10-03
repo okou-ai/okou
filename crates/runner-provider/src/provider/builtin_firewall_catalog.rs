@@ -24,8 +24,9 @@
 //! exposes no catalog for that identity and marks builtin-dependent sandbox entries
 //! invalid until a usable cache is loaded.
 //!
-//! A send timeout or known transient JSON body-read failure with a usable cache is INFO. The
-//! next scheduled refresh gets one opportunity to recover; a failed observation
+//! A send timeout or connection reset, or known transient JSON body-read failure,
+//! with a usable cache is INFO. The next scheduled refresh gets one opportunity
+//! to recover; a failed observation
 //! at least one refresh interval later warns once per episode. Only a complete
 //! successful refresh clears the episode, including an unchanged catalog. Other
 //! failures remain warnings. Cache usability includes the consumer's Unix owner
@@ -430,13 +431,18 @@ async fn log_periodic_refresh_failure(
     interval: Duration,
 ) {
     enum TransientFailure<'a> {
-        SendTimeout(&'a ApiTransportError),
+        Send(&'a ApiTransportError),
         BodyRead(&'a ApiBodyReadError),
     }
 
     let failure = match error {
-        ProviderError::ApiTransport(error) if error.failure_cause == ApiTransportCause::Timeout => {
-            TransientFailure::SendTimeout(error)
+        ProviderError::ApiTransport(error)
+            if matches!(
+                error.failure_cause,
+                ApiTransportCause::Timeout | ApiTransportCause::ConnectionReset
+            ) =>
+        {
+            TransientFailure::Send(error)
         }
         ProviderError::ApiBodyRead(error)
             if error.content_type == "application/json"
@@ -500,7 +506,7 @@ async fn log_periodic_refresh_failure(
     macro_rules! emit_failure {
         ($emit:ident, $message:literal) => {
             match failure {
-                TransientFailure::SendTimeout(error) => $emit!(
+                TransientFailure::Send(error) => $emit!(
                     cache_path = %cache_path.display(),
                     endpoint = error.request.endpoint_label,
                     method = %error.request.method,
@@ -669,7 +675,7 @@ fn validate_catalog_digest(value: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    mod send_timeout;
+    mod send_transport;
 
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};

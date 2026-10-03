@@ -21,8 +21,17 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   metadata consume the same union result; missing preferences remain authoritative.
 - `modelFacts$`: the catalog, routes, organization policies, model mode and credits.
   It shares `plan$` rather than rereading the entitlement.
-- `memberModels$`: connected member model accounts, configured models and encrypted
-  account secrets. Routing and source selection share these rows.
+- `memberModels$`: member providers, connected accounts, configured models and
+  encrypted provider/account secrets, joined once for `(orgId, userId)`. Routing,
+  exact source selection and subscription candidate capture share these rows.
+- `orgModelSources$`: organization provider configuration and encrypted credentials,
+  read once for `(orgId, __org__)`; S1 policy resolution and S3 source assembly share it.
+- `gatewayModelSources$`: organization gateway surfaces, connection configuration
+  and encrypted credentials, read together for `orgId`.
+- `managedModelKeys$`: global managed-key IDs, vendors and secret values in one
+  projection. Route selection and the exact selected key consume this same snapshot.
+- `modelPricing$`: global `(kind, provider, category)` existence projection, indexed
+  once. Request-specific pricing aliases and service tiers consume it without SQL.
 - `orgMetadata$`: one organization row shared by Agent default identity and model facts.
 - `connectors$`: #37563's joined account/variable/credential statement, source
   snapshots and safely settled credential decryption. `environment$` shares the
@@ -182,6 +191,40 @@ a newer send claiming an older input while the previous lease is suspended,
 and a separate request draining without S1 facts. The overlapping case waits
 on the public post-commit notification and message GET, not a global background
 flush that would deadlock the suspended reader.
+
+## Model credentials and pricing authority (E group)
+
+Global key/pricing nodes survive any identity reconciliation. Organization source
+nodes survive an org match; member providers/accounts survive an org+user match.
+All are included in post-enqueue preload. Required org/gateway route facts are
+consumed in S1; unrelated global groups are not awaited before enqueue. A missing
+key, source or pricing category is authoritative; a rejected read is not retried.
+Selection is pure; secret decryption occurs only for the selected source. Native
+registered-provider firewall references and Pi credential capture retain their
+existing protocols. The standalone Pi maintenance source reader also captures
+managed metadata and its secret together; runtime preparation issues no SQL.
+
+Pricing `kind` and raw `provider` originate in each catalog candidate route's
+`pricingKind`/`pricingProvider`. `UsagePricingResolution` maps that raw provider
+under the request's middleware policy; the global projection contains all raw
+keys, so selection-dependent aliases do not require a second query. Categories
+come from token usage, long-context thresholds and service tier. The existing
+settlement `__fallback__` category is still a pricing row, not a loader retry or
+a default model/key. The selected model determines which candidate keys are
+consumed; final billing validation shares the same projection. This intentionally
+reads only existence columns, not monetary rates, and does not change settlement.
+
+The removed subscription loader was guarded by a null or owner-mismatched account
+snapshot (or a non-subscription provider type, which its caller already excludes).
+Healthy web and automation producers supply a non-null snapshot; an early/rejected
+assembly does not proceed to subscription capture. Thus automation alone was not
+evidence that the fallback executed. Owner reconciliation was the remaining
+identity boundary: routing now obtains member facts from the matched queued
+identity, and automation execution preserves that same member node while matching
+the final Agent. Subscription capture consumes `executionContext$` directly;
+candidate filtering requires matching org/member identity. The live
+subscription-account transaction check, queue/session CAS, catalog and allowance
+fences are unchanged. No credits/member-metadata ownership changes are included.
 
 ## Adding an identity-scoped data group
 

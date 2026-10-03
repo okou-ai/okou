@@ -7,6 +7,38 @@ use tokio::sync::oneshot;
 use super::*;
 use crate::axiom_layer::{init_with_base_url, with_ingest_filter};
 
+#[derive(Clone, Copy)]
+enum SendFailure {
+    Timeout,
+    ConnectionReset,
+}
+
+impl SendFailure {
+    fn action(self) -> (RawHttpAction, Option<oneshot::Sender<()>>) {
+        match self {
+            Self::Timeout => {
+                let (action, release) = timeout_action();
+                (action, Some(release))
+            }
+            Self::ConnectionReset => (RawHttpAction::ResetConnection, None),
+        }
+    }
+
+    fn cause(self) -> &'static str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::ConnectionReset => "connection_reset",
+        }
+    }
+
+    fn kind(self) -> &'static str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::ConnectionReset => "request",
+        }
+    }
+}
+
 struct Refresh {
     handle: BuiltinFirewallCatalogRefreshHandle,
     cache_path: PathBuf,
@@ -21,7 +53,7 @@ impl Refresh {
             HttpClient::new(HttpClientConfig {
                 api_url: server.url(),
                 vercel_bypass: None,
-                client_session_id: "catalog-send-timeout-test".to_string(),
+                client_session_id: "catalog-send-transport-test".to_string(),
                 runner_version: env!("CARGO_PKG_VERSION"),
             })
             .unwrap(),
@@ -90,20 +122,24 @@ async fn outcome(captured: &CapturedEvents) -> CapturedEvent {
     }
 }
 
-async fn next_timeout(
+async fn next_send_failure(
     server: &mut RawHttpTestServer,
     captured: &CapturedEvents,
-    release: oneshot::Sender<()>,
+    release: Option<oneshot::Sender<()>>,
 ) -> (CapturedEvent, String) {
     advance_interval(captured).await;
-    let request = server.next_request("catalog request to time out").await;
-    // No response headers have been sent. Expire the production request's
-    // ten-second budget only after the external server has received the request.
-    tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
-    tokio::time::resume();
+    let request = server.next_request("periodic catalog send failure").await;
+    if release.is_some() {
+        // No response headers have been sent. Expire the production request's
+        // ten-second budget only after the external server has received the request.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
+        tokio::time::resume();
+    }
     let event = outcome(captured).await;
-    release.send(()).unwrap();
+    if let Some(release) = release {
+        release.send(()).unwrap();
+    }
     (event, request)
 }
 
@@ -115,6 +151,20 @@ async fn next_response(server: &mut RawHttpTestServer, captured: &CapturedEvents
 
 #[tokio::test]
 async fn send_timeout_recovers_unchanged_cache_without_axiom_warning() {
+    assert_send_failure_recovers_unchanged_cache_without_axiom_warning(SendFailure::Timeout).await;
+}
+
+#[tokio::test]
+async fn send_connection_reset_recovers_unchanged_cache_without_axiom_warning() {
+    assert_send_failure_recovers_unchanged_cache_without_axiom_warning(
+        SendFailure::ConnectionReset,
+    )
+    .await;
+}
+
+async fn assert_send_failure_recovers_unchanged_cache_without_axiom_warning(
+    send_failure: SendFailure,
+) {
     let axiom = MockServer::start_async().await;
     let ingest = axiom
         .mock_async(|when, then| {
@@ -130,10 +180,10 @@ async fn send_timeout_recovers_unchanged_cache_without_axiom_warning() {
             .with(captured.clone())
             .with(with_ingest_filter(layer)),
     );
-    let (timeout, release) = timeout_action();
+    let (action, release) = send_failure.action();
     let mut server = RawHttpTestServer::spawn(vec![
         RawHttpAction::Respond(catalog_response()),
-        timeout,
+        action,
         RawHttpAction::Respond(catalog_response()),
     ])
     .await;
@@ -148,11 +198,11 @@ async fn send_timeout_recovers_unchanged_cache_without_axiom_warning() {
             .ino()
     };
 
-    let (failure, request) = next_timeout(&mut server, &captured, release).await;
+    let (failure, request) = next_send_failure(&mut server, &captured, release).await;
     assert_eq!(failure.level, Level::INFO, "{failure:?}");
     assert_eq!(failure.fields["failure_stage"], "send");
-    assert_eq!(failure.fields["failure_cause"], "timeout");
-    assert_eq!(failure.fields["failure_kind"], "timeout");
+    assert_eq!(failure.fields["failure_cause"], send_failure.cause());
+    assert_eq!(failure.fields["failure_kind"], send_failure.kind());
     assert_eq!(failure.fields["consecutive_failures"], "1");
     assert_eq!(failure.fields["degraded"], "false");
     assert_eq!(
@@ -166,7 +216,7 @@ async fn send_timeout_recovers_unchanged_cache_without_axiom_warning() {
     );
     assert_eq!(
         failure.fields["client_session_id"],
-        "catalog-send-timeout-test"
+        "catalog-send-transport-test"
     );
     assert!(request.contains(&format!(
         "x-client-request-id: {}",
@@ -211,7 +261,7 @@ async fn send_timeout_recovers_unchanged_cache_without_axiom_warning() {
 }
 
 #[tokio::test]
-async fn send_timeout_shares_degradation_with_body_reads_and_preserves_genuine_warnings() {
+async fn send_failures_share_degradation_with_body_reads_and_preserve_genuine_warnings() {
     let axiom = MockServer::start_async().await;
     let ingested = Arc::new(Mutex::new(Vec::<Value>::new()));
     let sink = Arc::clone(&ingested);
@@ -226,8 +276,8 @@ async fn send_timeout_shares_degradation_with_body_reads_and_preserves_genuine_w
             });
         })
         .await;
-    // Queue through the real production layer during the scenario, then drive
-    // its HTTP dispatcher on an independent clock after all catalog time jumps.
+    // Queue through the provider's test-only Axiom harness, then drive its
+    // HTTP dispatcher on an independent clock after all catalog time jumps.
     // Advancing the catalog clock must not expire a loopback ingest in flight.
     let axiom_runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -258,6 +308,7 @@ async fn send_timeout_shares_degradation_with_body_reads_and_preserves_genuine_w
         second,
         RawHttpAction::Respond(truncated_response("application/json")),
         RawHttpAction::ResetConnection,
+        RawHttpAction::Disconnect,
         RawHttpAction::Respond(json_response(
             "401 Unauthorized",
             r#"{"error":"unauthorized"}"#,
@@ -271,12 +322,16 @@ async fn send_timeout_shares_degradation_with_body_reads_and_preserves_genuine_w
         RawHttpAction::Respond(truncated_response("application/json")),
         reset_episode,
         RawHttpAction::Respond(catalog_response()),
+        RawHttpAction::ResetConnection,
+        RawHttpAction::ResetConnection,
+        RawHttpAction::ResetConnection,
+        RawHttpAction::Respond(catalog_response()),
     ])
     .await;
     let refresh = Refresh::start(&mut server).await;
-    let (first, _) = next_timeout(&mut server, &captured, first_release).await;
+    let (first, _) = next_send_failure(&mut server, &captured, Some(first_release)).await;
     assert_eq!(first.level, Level::INFO);
-    let (second, _) = next_timeout(&mut server, &captured, second_release).await;
+    let (second, _) = next_send_failure(&mut server, &captured, Some(second_release)).await;
     assert_eq!(second.level, Level::WARN);
     assert_eq!(
         second.fields["message"],
@@ -289,6 +344,11 @@ async fn send_timeout_shares_degradation_with_body_reads_and_preserves_genuine_w
     assert_eq!(body.fields["consecutive_failures"], "3");
     assert_eq!(body.fields["degraded"], "true");
     assert_eq!(body.fields["status"], "200");
+    let reset = next_response(&mut server, &captured).await;
+    assert_eq!(reset.level, Level::INFO);
+    assert_eq!(reset.fields["failure_cause"], "connection_reset");
+    assert_eq!(reset.fields["consecutive_failures"], "4");
+    assert_eq!(reset.fields["degraded"], "true");
     for _ in 0..4 {
         let genuine = next_response(&mut server, &captured).await;
         assert_eq!(genuine.level, Level::WARN, "{genuine:?}");
@@ -298,36 +358,76 @@ async fn send_timeout_shares_degradation_with_body_reads_and_preserves_genuine_w
         );
     }
     let recovery = next_response(&mut server, &captured).await;
-    assert_eq!(recovery.fields["recovered_after_failures"], "3");
+    assert_eq!(recovery.fields["recovered_after_failures"], "4");
     assert_eq!(recovery.fields["was_degraded"], "true");
     let body = next_response(&mut server, &captured).await;
     assert_eq!(body.level, Level::INFO);
     assert_eq!(body.fields["consecutive_failures"], "1");
     assert_eq!(body.fields["degraded"], "false");
-    let (timeout, _) = next_timeout(&mut server, &captured, reset_release).await;
+    let (timeout, _) = next_send_failure(&mut server, &captured, Some(reset_release)).await;
     assert_eq!(timeout.level, Level::WARN);
     assert_eq!(timeout.fields["consecutive_failures"], "2");
     let recovery = next_response(&mut server, &captured).await;
     assert_eq!(recovery.fields["recovered_after_failures"], "2");
+    for (index, expected_level) in [Level::INFO, Level::WARN, Level::INFO]
+        .into_iter()
+        .enumerate()
+    {
+        let reset = next_response(&mut server, &captured).await;
+        assert_eq!(reset.level, expected_level, "{reset:?}");
+        assert_eq!(reset.fields["failure_cause"], "connection_reset");
+        assert_eq!(
+            reset.fields["consecutive_failures"],
+            (index + 1).to_string()
+        );
+        assert_eq!(reset.fields["degraded"], (index > 0).to_string());
+        if index == 1 {
+            assert_eq!(
+                reset.fields["message"],
+                "builtin firewall catalog refresh degraded"
+            );
+            assert!(reset.fields["failure_elapsed_ms"].parse::<u64>().unwrap() >= 300_000);
+        }
+    }
+    let recovery = next_response(&mut server, &captured).await;
+    assert_eq!(recovery.fields["recovered_after_failures"], "3");
+    assert_eq!(recovery.fields["was_degraded"], "true");
     refresh.handle.shutdown().await;
     server.assert_finished().await;
     finish_export.send(()).unwrap();
     exporter.await.unwrap();
     assert!(ingest.calls_async().await > 0);
     let ingested = ingested.lock().unwrap();
-    assert_eq!(ingested.len(), 6, "{ingested:?}");
+    assert_eq!(ingested.len(), 7, "{ingested:?}");
     assert!(ingested.iter().all(|event| event["level"] == "warn"));
     assert_eq!(
         ingested
             .iter()
             .filter(|event| event["message"] == "builtin firewall catalog refresh degraded")
             .count(),
-        2
+        3
     );
 }
 
 #[tokio::test]
 async fn send_timeout_warns_immediately_when_published_cache_is_no_longer_usable() {
+    assert_send_failure_warns_immediately_when_published_cache_is_no_longer_usable(
+        SendFailure::Timeout,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn send_connection_reset_warns_immediately_when_published_cache_is_no_longer_usable() {
+    assert_send_failure_warns_immediately_when_published_cache_is_no_longer_usable(
+        SendFailure::ConnectionReset,
+    )
+    .await;
+}
+
+async fn assert_send_failure_warns_immediately_when_published_cache_is_no_longer_usable(
+    send_failure: SendFailure,
+) {
     #[derive(Debug)]
     enum CacheDamage {
         Missing,
@@ -342,10 +442,10 @@ async fn send_timeout_warns_immediately_when_published_cache_is_no_longer_usable
         let captured = CapturedEvents::default();
         let _subscriber =
             tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
-        let (timeout, release) = timeout_action();
+        let (action, release) = send_failure.action();
         let mut server = RawHttpTestServer::spawn(vec![
             RawHttpAction::Respond(catalog_response()),
-            timeout,
+            action,
             RawHttpAction::Respond(catalog_response()),
         ])
         .await;
@@ -365,7 +465,7 @@ async fn send_timeout_warns_immediately_when_published_cache_is_no_longer_usable
                 .unwrap();
             }
         }
-        let (failure, _) = next_timeout(&mut server, &captured, release).await;
+        let (failure, _) = next_send_failure(&mut server, &captured, release).await;
         assert_eq!(failure.level, Level::WARN, "{damage:?}: {failure:?}");
         assert_eq!(
             failure.fields["message"],
@@ -401,20 +501,37 @@ async fn send_timeout_warns_immediately_when_published_cache_is_no_longer_usable
 
 #[tokio::test]
 async fn cancellation_after_send_timeout_does_not_fabricate_recovery() {
+    assert_cancellation_after_send_failure_does_not_fabricate_recovery(SendFailure::Timeout).await;
+}
+
+#[tokio::test]
+async fn cancellation_after_send_connection_reset_does_not_fabricate_recovery() {
+    assert_cancellation_after_send_failure_does_not_fabricate_recovery(
+        SendFailure::ConnectionReset,
+    )
+    .await;
+}
+
+async fn assert_cancellation_after_send_failure_does_not_fabricate_recovery(
+    send_failure: SendFailure,
+) {
     let captured = CapturedEvents::default();
     let _subscriber =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
-    let (timeout, release) = timeout_action();
+    let (action, release) = send_failure.action();
     let mut server = RawHttpTestServer::spawn(vec![
         RawHttpAction::Respond(catalog_response()),
-        timeout,
+        action,
         RawHttpAction::WaitForDisconnect,
     ])
     .await;
     let refresh = Refresh::start(&mut server).await;
     let original = tokio::fs::read(&refresh.cache_path).await.unwrap();
     assert_eq!(
-        next_timeout(&mut server, &captured, release).await.0.level,
+        next_send_failure(&mut server, &captured, release)
+            .await
+            .0
+            .level,
         Level::INFO
     );
     advance_interval(&captured).await;

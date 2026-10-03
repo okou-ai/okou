@@ -20,7 +20,7 @@ use guest_contracts::session_history_identity::SessionHistorySourceRef;
 use guest_telemetry::telemetry::{
     SandboxOpDimensions, record_sandbox_op, record_sandbox_op_with_dimensions,
 };
-use guest_telemetry::{log_error, log_info, log_warn};
+use guest_telemetry::{log_info, log_warn};
 use session_history_selector::{
     ClaudeHistoryCandidate, ClaudeHistoryIneligibleReason, ClaudeHistorySelection,
     CodexHistoryCandidate, CodexHistoryIneligibleReason, CodexHistorySelection,
@@ -34,6 +34,7 @@ use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::time::Duration;
 
+const SESSION_HISTORY_UPLOAD_MAX_ATTEMPTS: u32 = 3;
 const SESSION_HISTORY_ZSTD_LEVEL: i32 = 3;
 const SESSION_HISTORY_COMPRESSION_MIN_BYTES: usize = SESSION_HISTORY_GZIP_MIN_BYTES as usize;
 
@@ -481,8 +482,10 @@ enum SessionHistoryUploadOutcome {
 /// the prepare endpoint reports `existing=true`, skip the upload
 /// (content-addressed dedup). Telemetry is recorded under
 /// `session_history_prepare` and `session_history_s3_upload` to match the
-/// pre-parallelization op names. A failed presigned upload is observable but
-/// leaves history unavailable so the remaining checkpoint can still persist.
+/// pre-parallelization op names. Content-addressed uploads make at most three
+/// attempts with the same bytes. Exhausted uploads leave history unavailable so
+/// the remaining checkpoint can still persist where the framework permits missing
+/// history.
 async fn upload_session_history(
     http: &HttpClient,
     run_id: &str,
@@ -577,7 +580,12 @@ async fn upload_session_history(
     );
     let upload_start = std::time::Instant::now();
     if let Err(e) = http
-        .put_presigned(&presigned_url, upload_bytes, "application/octet-stream")
+        .put_presigned_with_retries(
+            &presigned_url,
+            upload_bytes,
+            "application/octet-stream",
+            SESSION_HISTORY_UPLOAD_MAX_ATTEMPTS - 1,
+        )
         .await
     {
         let error = e.to_string();
@@ -587,9 +595,10 @@ async fn upload_session_history(
             false,
             Some(&error),
         );
-        log_error!(
+        log_info!(
             LOG_TAG,
-            "Session history upload failed; continuing checkpoint without history: {error}"
+            "Session history upload failed after {SESSION_HISTORY_UPLOAD_MAX_ATTEMPTS} attempts; \
+             continuing checkpoint without history: {error}"
         );
         return Ok(SessionHistoryUploadOutcome::Unavailable);
     }

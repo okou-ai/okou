@@ -57,11 +57,18 @@ import type {
 } from "./model-bootstrap.service";
 
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 
 export interface ModelSelectionBootstrap {
   readonly org: OrgModelBootstrap;
   readonly member: MemberModelBootstrap;
   readonly memberMetadata: ExecutionMemberMetadata;
+  readonly providers: Awaited<
+    ReturnType<AgentRunContextSignals["orgModelSources$"]["read"]>
+  >;
+  readonly surfaces: Awaited<
+    ReturnType<AgentRunContextSignals["gatewayModelSources$"]["read"]>
+  >;
 }
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -240,6 +247,10 @@ const memberModelPreference$ = command(
   },
 );
 
+function capturedMemberPreferences(member: ExecutionMemberMetadata) {
+  return member.preferences ? [member.preferences] : [];
+}
+
 const modelRoutingFacts$ = command(
   async (
     { get, set },
@@ -315,36 +326,41 @@ const modelRoutingFacts$ = command(
                 ),
               )
           : [],
-      db
-        .select({
-          id: modelProviders.id,
-          type: modelProviders.type,
-          userId: modelProviders.userId,
-        })
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.orgId, params.orgId),
-            eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-          ),
-        ),
-      db
-        .select({
-          id: modelProviderSurfaces.id,
-          protocol: modelProviderSurfaces.protocol,
-          modelMappings: modelProviderSurfaces.modelMappings,
-        })
-        .from(modelProviderSurfaces)
-        .innerJoin(
-          modelProviderConnections,
-          eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-        )
-        .where(eq(modelProviderConnections.orgId, params.orgId)),
+      captured
+        ? captured.providers
+        : db
+            .select({
+              id: modelProviders.id,
+              type: modelProviders.type,
+              userId: modelProviders.userId,
+            })
+            .from(modelProviders)
+            .where(
+              and(
+                eq(modelProviders.orgId, params.orgId),
+                eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+              ),
+            ),
+      captured
+        ? captured.surfaces
+        : db
+            .select({
+              id: modelProviderSurfaces.id,
+              protocol: modelProviderSurfaces.protocol,
+              modelMappings: modelProviderSurfaces.modelMappings,
+            })
+            .from(modelProviderSurfaces)
+            .innerJoin(
+              modelProviderConnections,
+              eq(
+                modelProviderSurfaces.connectionId,
+                modelProviderConnections.id,
+              ),
+            )
+            .where(eq(modelProviderConnections.orgId, params.orgId)),
       memberScoped
         ? captured
-          ? captured.memberMetadata.preferences
-            ? [captured.memberMetadata.preferences]
-            : []
+          ? capturedMemberPreferences(captured.memberMetadata)
           : set(memberModelPreference$, params.orgId, params.userId, signal)
         : [],
     ]);

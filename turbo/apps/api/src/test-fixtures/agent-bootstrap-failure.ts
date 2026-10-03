@@ -8,7 +8,11 @@ import {
 } from "./database-transaction-barrier";
 
 /**
- * Fail only the first bootstrap permission read for one test-owned identity.
+ * Fail only the first selected bootstrap read in the test-owned request.
+ * Organization reads match the fixture identity; global key/pricing reads
+ * run only while this isolated test owns the fixture's PostgreSQL client.
+ * Both callers belong to vitest.config.ts's api-bootstrap-failure project,
+ * which explicitly isolates workers and runs its files and cases serially.
  * No production API can request a database cancellation. PostgreSQL produces
  * the real error; later reads remain healthy, so a retry would be observable
  * as a launched run instead of the required input rejection.
@@ -18,6 +22,7 @@ export async function withAgentBootstrapFailureFixture<T>(
     readonly userId: string;
     readonly orgId: string;
     readonly agentId: string;
+    readonly read?: "managed-keys" | "org-providers" | "gateways" | "pricing";
   },
   work: () => Promise<T>,
 ): Promise<T> {
@@ -28,13 +33,23 @@ export async function withAgentBootstrapFailureFixture<T>(
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const text = barrierQueryText(queryArgs);
-      if (
-        injected ||
-        !text.includes('from "user_permission_grants"') ||
-        !barrierQueryBinds(queryArgs, identity.userId) ||
-        !barrierQueryBinds(queryArgs, identity.orgId) ||
-        !barrierQueryBinds(queryArgs, identity.agentId)
-      ) {
+      const selected =
+        identity.read === "managed-keys"
+          ? text.includes('from "built_in_model_keys"')
+          : identity.read === "pricing"
+            ? text.includes('from "usage_pricing"')
+            : identity.read === "org-providers"
+              ? text.includes('from "model_providers"') &&
+                barrierQueryBinds(queryArgs, identity.orgId) &&
+                barrierQueryBinds(queryArgs, "__org__")
+              : identity.read === "gateways"
+                ? text.includes('from "model_provider_surfaces"') &&
+                  barrierQueryBinds(queryArgs, identity.orgId)
+                : text.includes('from "user_permission_grants"') &&
+                  barrierQueryBinds(queryArgs, identity.userId) &&
+                  barrierQueryBinds(queryArgs, identity.orgId) &&
+                  barrierQueryBinds(queryArgs, identity.agentId);
+      if (injected || !selected) {
         return Reflect.apply(target, receiver, queryArgs);
       }
       injected = true;

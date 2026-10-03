@@ -15,8 +15,6 @@ import { secrets } from "@okouai/db/schema/secret";
 import {
   hasAuthMethods,
   modelProviderTypeSchema,
-  BUILT_IN_MODEL_ROUTE_PROVIDERS,
-  getSecretNameForType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { db$, type ReadonlyDb } from "../external/db";
 import {
@@ -25,6 +23,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
+import { managedSourceFromSnapshot } from "./model-source-context.service";
 
 export type ModelSourceIdentity =
   | { readonly kind: "built-in"; readonly modelKeyId: string }
@@ -51,6 +50,7 @@ export interface ManagedModelKeyReference {
   readonly kind: "managed-key";
   readonly name: string;
   readonly modelKeyId: string;
+  readonly apiKey: string;
 }
 export interface EncryptedModelCredential {
   readonly kind: "encrypted";
@@ -150,38 +150,15 @@ async function loadManagedSource(
   source: Extract<ModelSourceIdentity, { kind: "built-in" }>,
 ): Promise<ModelSourceSnapshot | null> {
   const [key] = await db
-    .select({ id: builtInModelKeys.id, vendor: builtInModelKeys.vendor })
+    .select({
+      id: builtInModelKeys.id,
+      vendor: builtInModelKeys.vendor,
+      apiKey: builtInModelKeys.apiKey,
+    })
     .from(builtInModelKeys)
     .where(eq(builtInModelKeys.id, source.modelKeyId))
     .limit(1);
-  if (!key) {
-    return null;
-  }
-  const provider = Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).find(
-    ([, config]) => {
-      return config.vendor === key.vendor;
-    },
-  );
-  if (!provider) {
-    throw new Error("Managed model key vendor is unsupported");
-  }
-  const name = getSecretNameForType(modelProviderTypeSchema.parse(provider[0]));
-  if (!name) {
-    throw new Error("Managed model key has no credential binding");
-  }
-  return {
-    identity: source,
-    credentialOwner: "builtin",
-    configuration: {
-      kind: "registered-provider",
-      providerType: "built-in",
-      authMethod: null,
-      managedVendor: key.vendor,
-      configuredModel: null,
-    },
-    credentials: [{ kind: "managed-key", name, modelKeyId: key.id }],
-    accountIdentity: null,
-  };
+  return managedSourceFromSnapshot(key);
 }
 
 const MULTI_AUTH_PROVIDER_TYPES = modelProviderTypeSchema.options.filter(
