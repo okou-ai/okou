@@ -7130,10 +7130,17 @@ snapshots, and exports. Private hosted preview tokens retain that same two-day
 lifetime. Provider-owned URLs and OAuth token lifetimes are unchanged.
 
 The app no longer renews preview credentials on a timer or after media errors.
-Presigned uploads and Runner/Guest object downloads make one application-level attempt;
-errors remain visible to the caller. Existing preview-resolution API contracts
-remain available to deployed older app and CLI versions. Old Runner versions can
-consume the longer-lived URLs without a wire-format change.
+Presigned uploads and Runner/Guest object downloads make one application-level
+attempt, except for content-addressed session-history uploads. History uploads
+make at most three total attempts (the initial PUT plus two retries) with the same
+presigned URL and exact bytes. They do not renew the URL or change request,
+upload, or overall run timeouts. Exhaustion preserves the existing unavailable
+history outcome; Pi H2 still rejects a checkpoint without a native history hash.
+
+Existing preview-resolution API contracts remain available to deployed older app
+and CLI versions. Old Runner versions can consume the longer-lived URLs without
+a wire-format change. Older Guests retain their single-attempt history policy;
+both policies use unchanged prepare-history and checkpoint wire contracts.
 
 Storage URL caches are read on demand and reuse unexpired entries. Missing or
 expired entries are signed once during the normal API request. There is no
