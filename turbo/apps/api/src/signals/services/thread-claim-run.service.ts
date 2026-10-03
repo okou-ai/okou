@@ -2837,7 +2837,6 @@ export function createThreadClaimRunObjects(
   const claimCatalog$ = computed(async (get) => {
     return (await get(orgModels$)).catalog;
   });
-  const memberModels$ = context.memberModels$;
   const pickStartedAt$ = computed(() => {
     return now();
   });
@@ -8930,9 +8929,10 @@ export function createThreadClaimRunObjects(
     async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
       const captured = { ...input, at: nowDate() };
+      const identity = await get(queuedIdentityContext$);
       const [models, memberModels] = await Promise.all([
-        get(context.modelFacts$),
-        get(memberModels$),
+        get(identity.modelFacts$),
+        get(identity.memberModels$),
       ]);
       signal.throwIfAborted();
       const personalSubscription = isMemberSubscriptionRoute({
