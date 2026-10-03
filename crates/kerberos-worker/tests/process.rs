@@ -139,8 +139,13 @@ async fn supported_or_explicitly_unavailable_bootstrap_never_uses_another_backen
     )
     .await;
     match result {
-        Ok((context, _)) => context.close().await.unwrap(),
-        Err(Error::Unavailable) => (),
+        Ok((context, _)) => {
+            context.close().await.unwrap();
+            println!("owner bootstrap: supported");
+        }
+        Err(Error::Unavailable) => {
+            println!("owner bootstrap: explicitly unavailable");
+        }
         other => panic!("{other:?}"),
     }
     let until = Instant::now() + Duration::from_secs(2);

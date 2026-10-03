@@ -1,7 +1,6 @@
 //! Explicit opt-in, independent QEMU9.2/Cyrus/KDC fixture. See QEMU_GSSAPI.md.
 #![cfg(test)]
 #![cfg(target_os = "linux")]
-#[path = "qemu_gssapi/controlled_peer.rs"]
 mod controlled_peer;
 use base64::Engine;
 use kerberos_credentials::{ClientKeytab, Principal, ServiceTicketCache};
