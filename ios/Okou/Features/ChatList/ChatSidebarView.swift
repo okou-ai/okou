@@ -17,7 +17,10 @@ struct ChatSidebarView: View {
   }
 
   private var visibleThreads: [ChatThread] {
-    store.threads.filter { !store.canArchiveChats || $0.isArchived == showArchived }
+    store.threads.filter { thread in
+      thread.agentID == store.selectedAgentID
+        && (!store.canArchiveChats || thread.isArchived == showArchived)
+    }
   }
 
   var body: some View {

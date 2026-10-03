@@ -12,7 +12,14 @@ enum ChatEventProjection {
       }.compactMap(\.runId)
     ).subtracting(terminated)
     let queuedInputs = rows.filter {
-      $0.eventType == .inputPrompt && $0.runId == nil && !revoked.contains($0.id)
+      ($0.eventType == .inputPrompt || $0.eventType == .inputAutomation)
+        && $0.runId == nil && !revoked.contains($0.id)
+    }.sorted { left, right in
+      let leftIsPrompt = left.eventType == .inputPrompt
+      let rightIsPrompt = right.eventType == .inputPrompt
+      if leftIsPrompt != rightIsPrompt { return leftIsPrompt }
+      if left.createdAt != right.createdAt { return left.createdAt < right.createdAt }
+      return left.id < right.id
     }.map(\.id)
 
     var messages: [ChatMessage] = []

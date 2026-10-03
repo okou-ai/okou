@@ -3,33 +3,45 @@ import Foundation
 // Current contracts: turbo/packages/api-contracts/src/contracts/chat-threads.ts.
 // These are the fields this client consumes; unrelated server fields are ignored.
 enum ThreadSnapshot: Decodable, Sendable {
-  case inline([ThreadProjection], latestSeqId: Int?)
-  case remote(URL, latestSeqId: Int?)
+  case inline([ThreadProjection], latestEventId: String?, latestSeqId: Int?)
+  case remote(URL, latestEventId: String?, latestSeqId: Int?)
 
-  private enum CodingKeys: String, CodingKey { case chatThreads, url, latestSeqId }
+  private enum CodingKeys: String, CodingKey { case chatThreads, url, latestEventId, latestSeqId }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    let latestEventId = try container.decodeIfPresent(String.self, forKey: .latestEventId)
     let latestSeqId = try container.decodeIfPresent(Int.self, forKey: .latestSeqId)
     if container.contains(.url) {
       guard !container.contains(.chatThreads) else {
         throw DecodingError.dataCorruptedError(
           forKey: .url, in: container, debugDescription: "Ambiguous chat thread snapshot")
       }
-      self = .remote(try container.decode(URL.self, forKey: .url), latestSeqId: latestSeqId)
+      self = .remote(
+        try container.decode(URL.self, forKey: .url), latestEventId: latestEventId,
+        latestSeqId: latestSeqId)
     } else {
       self = .inline(
         try container.decode([ThreadProjection].self, forKey: .chatThreads),
-        latestSeqId: latestSeqId)
+        latestEventId: latestEventId, latestSeqId: latestSeqId)
     }
   }
 }
 
-struct ThreadSnapshotArchive: Decodable, Sendable {
+struct ThreadSnapshotArchive: Codable, Sendable {
   let chatThreads: [ThreadProjection]
 }
 
-struct ThreadProjection: Decodable, Sendable {
+struct ThreadModelSetting: Codable, Equatable, Sendable {
+  let effort: String?
+}
+
+struct ThreadModelSettingsPatch: Codable, Sendable {
+  let model: String
+  let effort: String
+}
+
+struct ThreadProjection: Codable, Sendable {
   let id: String
   let agentId: String
   let title: String?
@@ -40,12 +52,20 @@ struct ThreadProjection: Decodable, Sendable {
   let pinnedAt: Date?
   let pinOrder: String?
   let archived: Bool?
+  let renamedAt: Date?
+  let modelSettings: [String: ThreadModelSetting]?
+  let serviceTier: String?
+  let computerUseHostId: String?
+  let cloudBrowserEnabled: Bool?
 
   var thread: ChatThread {
     ChatThread(
       id: id, agentID: agentId, title: title ?? "", selectedModel: selectedModel,
       createdAt: createdAt, updatedAt: updatedAt, sortAt: sortAt,
-      pinnedAt: pinnedAt, pinOrder: pinOrder, isArchived: archived ?? false, indicator: nil)
+      pinnedAt: pinnedAt, pinOrder: pinOrder, renamedAt: renamedAt,
+      modelSettings: modelSettings ?? [:], serviceTier: serviceTier,
+      computerUseHostId: computerUseHostId, cloudBrowserEnabled: cloudBrowserEnabled ?? false,
+      isArchived: archived ?? false, indicator: nil)
   }
 }
 
@@ -54,13 +74,12 @@ struct ThreadEventsPage: Decodable, Sendable {
   let hasMore: Bool
 }
 
-struct ThreadEvent: Decodable, Sendable {
-  enum Kind: String, Decodable, Sendable {
+struct ThreadEvent: Codable, Sendable {
+  enum Kind: String, Codable, Sendable {
     case created, renamed, deleted, pinned, unpinned
     case modelSelectionUpdated = "model_selection_updated"
     case serviceTierUpdated = "service_tier_updated"
     case computerUseHostUpdated = "computer_use_host_updated"
-    case imageModelUpdated = "image_model_updated"
     case sortTouched = "sort_touched"
     case archived, unarchived
   }
@@ -69,9 +88,15 @@ struct ThreadEvent: Decodable, Sendable {
   let kind: Kind
   let chatThreadId: String
   let agentId: String
+  let reassignedAgentId: String?
   let title: String?
   let selectedModel: String?
   let pinOrder: String?
+  let modelSettings: [String: ThreadModelSetting]?
+  let modelSettingsPatch: ThreadModelSettingsPatch?
+  let serviceTier: String?
+  let computerUseHostId: String?
+  let cloudBrowserEnabled: Bool?
   let createdAt: Date
 }
 
@@ -189,14 +214,51 @@ struct ModelPolicies: Decodable, Sendable {
   struct Policy: Decodable, Sendable {
     let model: String
     let routeStatus: String
+    let defaultProviderType: String?
+    let memberEffective: MemberRoute?
+    let subscriptionOptions: SubscriptionOptions?
+
+    struct MemberRoute: Decodable, Sendable {
+      let providerType: String
+      let credentialScope: String
+      let availability: String
+    }
+
+    struct SubscriptionOptions: Decodable, Sendable {
+      let serviceTier: String?
+    }
+
+    /// Matches the web client's configurable and plan-restricted selections.
+    /// Admission still determines whether the selected route can run now.
+    func hasUsableRoute(catalog: ModelCatalog) -> Bool {
+      guard let route = memberEffective else { return routeStatus == "valid" }
+      switch route.availability {
+      case "available", "reconnect_required", "plan_restricted": return true
+      case "unavailable":
+        return route.credentialScope == "member"
+          && catalog.hasEnabledRoute(model: model, providerType: route.providerType)
+      default: return false
+      }
+    }
+
+    func supportsServiceTier(_ tier: String, catalog: ModelCatalog) -> Bool {
+      if tier == "priority", let subscriptionOptions {
+        return subscriptionOptions.serviceTier == "priority"
+      }
+      guard let providerType = memberEffective?.providerType ?? defaultProviderType,
+        catalog.supportsServiceTier(tier, model: model, providerType: providerType)
+      else { return false }
+      return memberEffective != nil || routeStatus == "valid"
+    }
   }
 }
 
 /// Global run model catalog: the product authority for the system default and for
-/// retired models. Only the fields the app uses are decoded; routes are ignored.
+/// retired models. Only the fields the app uses are decoded.
 struct ModelCatalog: Decodable, Sendable {
   let systemDefaultModel: String
   let models: [Model]
+  let routes: [Route]
 
   struct Model: Decodable, Sendable {
     let model: String
@@ -204,9 +266,32 @@ struct ModelCatalog: Decodable, Sendable {
     let resolvedModel: String
   }
 
-  /// Maps a stored (possibly retired) selection to the active model it resolves to.
-  func resolve(_ model: String) -> String {
-    models.first(where: { $0.model == model })?.resolvedModel ?? model
+  struct Route: Decodable, Sendable {
+    let model: String
+    let providerType: String
+    let enabled: Bool
+    let serviceTiers: [String]
+  }
+
+  /// Maps a stored selection to its active model; unknown models are unavailable.
+  func resolve(_ model: String) -> String? {
+    models.first(where: { $0.model == model })?.resolvedModel
+  }
+
+  func hasEnabledRoute(model: String, providerType: String) -> Bool {
+    guard let resolvedModel = resolve(model) else { return false }
+    // model-provider-types.ts defines only "built-in" as a Built-in type,
+    // so normalization preserves every current provider identifier.
+    return routes.contains {
+      $0.model == resolvedModel && $0.providerType == providerType && $0.enabled
+    }
+  }
+
+  func supportsServiceTier(_ tier: String, model: String, providerType: String) -> Bool {
+    routes.contains {
+      $0.model == model && $0.providerType == providerType && $0.enabled
+        && $0.serviceTiers.contains(tier)
+    }
   }
 }
 

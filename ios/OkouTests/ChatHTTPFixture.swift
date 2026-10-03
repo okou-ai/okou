@@ -6,7 +6,7 @@ import Synchronization
 struct ChatHTTPResponse: Sendable {
   var status = 200
   var body: String
-  var headers = ["Content-Type": "application/json", "X-Chat-Event-Schema-Version": "7"]
+  var headers = ["Content-Type": "application/json"]
 }
 
 /// HTTP boundary fixture. Production decoding, pagination, and commands remain real.

@@ -6,6 +6,80 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
+  func testCancelledStartupDoesNotCreateRealtimeOrReadNavigation() async {
+    let requests = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      requests.withLock { $0.append(request.url?.path ?? "") }
+      throw URLError(.unsupportedURL)
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
+    startup.cancel()
+    await startup.value
+
+    XCTAssertTrue(requests.withLock { $0.isEmpty })
+    XCTAssertTrue(store.threads.isEmpty)
+    XCTAssertNil(store.navigationError)
+  }
+
+  func testClosingOrCancellingStartupStopsReadsAfterCachedNavigation() async throws {
+    for cancelStartup in [false, true] {
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "okou-startup-tests-\(UUID().uuidString)", isDirectory: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let navigationStarted = expectation(description: "Cached chats are visible during navigation")
+      let releaseNavigation = HTTPResponseGate()
+      defer { releaseNavigation.open() }
+      let requests = Mutex<[String]>([])
+      let fixture = ChatHTTPFixture { request in
+        requests.withLock { $0.append(request.url?.path ?? "") }
+        switch request.url?.path {
+        case "/api/agents":
+          navigationStarted.fulfill()
+          await releaseNavigation.wait()
+          return ChatHTTPResponse(
+            body: """
+              [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
+              """)
+        case "/api/realtime/token":
+          return ChatHTTPResponse(
+            status: 403, body: "{\"error\":{\"message\":\"No live updates\"}}")
+        default: throw URLError(.unsupportedURL)
+        }
+      }
+      let cache = ChatCache(
+        scope: ChatCacheScope(
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
+        directory: directory)
+      try await cache.replaceThreadList(
+        snapshot: Data(threadSnapshot(title: "Cached chat").body.utf8),
+        cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
+      let store = WorkspaceStore(
+        client: fixture.client, webURL: fixture.baseURL, cacheDirectory: directory)
+      defer { store.close() }
+      let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
+      await fulfillment(of: [navigationStarted], timeout: 2)
+      XCTAssertEqual(store.threads.map(\.title), ["Cached chat"])
+
+      if cancelStartup {
+        startup.cancel()
+      } else {
+        store.close()
+      }
+      releaseNavigation.open()
+      await startup.value
+
+      XCTAssertEqual(store.threads.map(\.title), ["Cached chat"])
+      XCTAssertTrue(store.agents.isEmpty)
+      XCTAssertNil(store.navigationError)
+      XCTAssertTrue(
+        requests.withLock {
+          $0.allSatisfy { $0 == "/api/agents" || $0 == "/api/realtime/token" }
+        })
+    }
+  }
+
   func testSidebarUsesPinnedAgentsAndTracksSelectedChatAgent() async {
     let otherAgentID = "40000000-0000-4000-8000-000000000006"
     let fixture = ChatHTTPFixture { request in
@@ -44,6 +118,68 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(store.selectedThreadID, storeThreadID)
   }
 
+  func testSelectedChatReassignmentUpdatesAgentContextAndNewChat() async {
+    let otherAgentID = "40000000-0000-4000-8000-000000000006"
+    let reassigned = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        let url = URL(string: "/thread-snapshot", relativeTo: request.url!)!.absoluteURL
+        return ChatHTTPResponse(
+          body: """
+            {"url":"\(url.absoluteString)","latestEventId":null,"latestSeqId":null}
+            """)
+      case "/thread-snapshot": return threadSnapshot(title: "Reassigned chat")
+      case "/api/chat-threads/events":
+        guard reassigned.withLock({ $0 }) else {
+          return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+        }
+        return ChatHTTPResponse(
+          body: """
+            {"events":[{"id":"40000000-0000-4000-8000-000000000007","seqId":1,\
+            "kind":"sort_touched","chatThreadId":"\(storeThreadID)",\
+            "agentId":"\(storeAgentID)","reassignedAgentId":"\(otherAgentID)",\
+            "createdAt":"\(storeDate)"}],"hasMore":false}
+            """)
+      case "/api/indicators": return ChatHTTPResponse(body: "{\"threads\":{}}")
+      case "/api/chat-threads/\(storeThreadID)/event-snapshot":
+        return ChatHTTPResponse(
+          status: 404,
+          body: """
+            {"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"No snapshot"}}
+            """)
+      case "/api/chat-threads/\(storeThreadID)/event-rows":
+        return ChatHTTPResponse(
+          body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
+      case "/api/chat-threads/\(storeThreadID)":
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    await store.refresh()
+    store.selectChat(storeThreadID)
+    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+
+    reassigned.withLock { $0 = true }
+    await store.refresh()
+
+    XCTAssertEqual(store.selectedThreadID, storeThreadID)
+    XCTAssertEqual(store.threads.first?.agentID, otherAgentID)
+    XCTAssertEqual(store.selectedAgentID, otherAgentID)
+    XCTAssertNil(store.error)
+    XCTAssertNil(store.threadErrors[storeThreadID])
+    store.startNewChat()
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.selectedAgentID, otherAgentID)
+
+    // An explicit new-chat agent selection remains independent of list updates.
+    store.startNewChat(agentID: storeAgentID)
+    await store.refresh()
+    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+  }
+
   func testNewChatDoesNotCreateUntilSendAndKeepsDraftIfCreationFails() async {
     let requests = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
@@ -76,8 +212,14 @@ final class WorkspaceStoreTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
-        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No snapshot\"}}")
+        return ChatHTTPResponse(
+          status: 404,
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        if cursor == "3" { return historyPage(rows: [], lastSequence: 3) }
         let firstRead = historyReads.withLock {
           $0 += 1
           return $0 == 1
@@ -234,7 +376,10 @@ final class WorkspaceStoreTests: XCTestCase {
         let indicators = unread.withLock { $0 ? "\"\(storeThreadID)\":\"unread\"" : "" }
         return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{\(indicators)}}")
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
-        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No snapshot\"}}")
+        return ChatHTTPResponse(
+          status: 404,
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case "/api/chat-threads/\(storeThreadID)/event-rows":
         let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value
@@ -297,8 +442,14 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/indicators":
         return ChatHTTPResponse(body: "{\"threads\":{\"\(storeThreadID)\":\"unread\"}}")
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
-        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No snapshot\"}}")
+        return ChatHTTPResponse(
+          status: 404,
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        if cursor == "2" { return historyPage(rows: [], lastSequence: 2) }
         oldReadStarted.fulfill()
         await releaseOldResponse.wait()
         return historyPage(
@@ -332,8 +483,14 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators": return ChatHTTPResponse(body: "{\"threads\":{}}")
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
-        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No snapshot\"}}")
+        return ChatHTTPResponse(
+          status: 404,
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        if cursor == "2" { return historyPage(rows: [], lastSequence: 2) }
         return historyPage(
           rows: [
             historyEvent(
@@ -392,10 +549,20 @@ final class WorkspaceStoreTests: XCTestCase {
           // The server accepted this identity, but the response never reaches the client.
           throw URLError(.networkConnectionLost)
         case "/api/chat-threads/\(storeThreadID)/event-snapshot":
-          return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No snapshot\"}}")
+          return ChatHTTPResponse(
+            status: 404,
+            body:
+              "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}"
+          )
         case "/api/chat-threads/\(storeThreadID)/event-rows":
           guard let input = sentInputs.withLock({ $0.first }) else {
             throw URLError(.badServerResponse)
+          }
+          let lastSequence = revoked ? 2 : 3
+          let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "sinceSeqId" }?.value
+          if cursor == String(lastSequence) {
+            return historyPage(rows: [], lastSequence: lastSequence)
           }
           var rows = [
             historyEvent(
@@ -416,7 +583,7 @@ final class WorkspaceStoreTests: XCTestCase {
                 sequence: 2, type: "output.message", payload: "{\"content\":\"Received\"}"))
             rows.append(historyEvent(sequence: 3, type: "run.completed"))
           }
-          return historyPage(rows: rows, lastSequence: revoked ? 2 : 3)
+          return historyPage(rows: rows, lastSequence: lastSequence)
         case "/api/chat-threads/\(storeThreadID)":
           return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
         default: throw URLError(.unsupportedURL)

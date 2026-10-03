@@ -74,7 +74,7 @@ final class SnapshotHTTPTests: XCTestCase {
 private final class SnapshotLoopbackServer: Sendable {
   static let threadID = "30000000-0000-4000-8000-000000000001"
   private static let lastEventID = "30000000-0000-4000-8000-000000000004"
-  // Two canonical schema-7 rows, gzip-compressed once with mtime=0.
+  // Two history rows, gzip-compressed once with mtime=0.
   private static let compressedSnapshot = Data(
     base64Encoded:
       "H4sIAAAAAAAC/91QsW7CMBDd+YrIM4mcgCiwMVQVCwuZurnJiUQktrHPgTTKv3MmrUBMESMn66Sz33v3/DpW5mzNZnyo8Nbmvi3/x7+asSnLCoFpYUDk25GsmFjGybHwxMOhUUewnw1I9DzpqopWK4lwwbTV8HR1x9CiG2sPJwcyg52rf8A8v97xFk5+iEmK/oSQb5BsJjxZhHwVxh9pzNfcn4isfZM18PzBAlMOtcOoBmvFAehRi7ZSgvS6wZn0Yl+/pQ6K0qIybXBW5mgj1veTbnTs87eNPXkpdpKLMlXrCoj4mLrX7idXS9t9i9ACAAA="
@@ -234,7 +234,7 @@ private final class SnapshotLoopbackServer: Sendable {
         """
         {"url":"http://127.0.0.1:\(port.rawValue)/snapshot.ndjson","expiresInSeconds":60,"lastEventId":"\(Self.lastEventID)","lastSeqId":2}
         """.utf8)
-      contentHeaders = "Content-Type: application/json\r\nX-Chat-Event-Schema-Version: 7\r\n"
+      contentHeaders = "Content-Type: application/json\r\n"
     case "/snapshot.ndjson":
       body = Self.compressedSnapshot
       contentHeaders = "Content-Type: application/x-ndjson\r\nContent-Encoding: gzip\r\n"
@@ -243,7 +243,7 @@ private final class SnapshotLoopbackServer: Sendable {
         """
         {"rows":[],"cursor":{"lastEventId":"\(Self.lastEventID)","lastSeqId":2},"hasMore":false}
         """.utf8)
-      contentHeaders = "Content-Type: application/json\r\nX-Chat-Event-Schema-Version: 7\r\n"
+      contentHeaders = "Content-Type: application/json\r\n"
     case "/api/chat-threads/\(Self.threadID)":
       body = Data("{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}".utf8)
       contentHeaders = "Content-Type: application/json\r\n"

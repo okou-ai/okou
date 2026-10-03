@@ -68,7 +68,7 @@ final class ChatServiceTests: XCTestCase {
       case "/api/model-policies":
         return ChatHTTPResponse(
           body:
-            "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"}]}"
+            "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[{\"model\":\"gpt-5.6-sol\",\"routeStatus\":\"valid\"}]}"
         )
       case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
       case "/api/chat-threads":
@@ -93,7 +93,7 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high", "high"])
   }
 
-  func testCreateWithoutSavedModelUsesRoutableCatalogDefault() async throws {
+  func testCreateWithoutSavedModelUsesCatalogDefaultRegardlessOfRoute() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let model: String
     }
@@ -135,10 +135,9 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5"])
 
     routeStatus.withLock { $0 = "missing_provider" }
-    do {
-      _ = try await ChatService(client: fixture.client).createThread()
-      XCTFail("Expected no available default model")
-    } catch ChatServiceError.noDefaultModel {}
+    let needsProvider = try await ChatService(client: fixture.client).createThread()
+    XCTAssertEqual(needsProvider.selectedModel, "claude-sonnet-5")
+    XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5", "claude-sonnet-5"])
   }
 
   func testCreateResolvesRetiredSavedModelThroughCatalog() async throws {
@@ -164,7 +163,8 @@ final class ChatServiceTests: XCTestCase {
       case "/api/model-policies":
         return ChatHTTPResponse(
           body: """
-            {"revision":"test","writePreconditionRequired":true,"policies":[]}
+            {"revision":"test","writePreconditionRequired":true,\
+            "policies":[{"model":"claude-opus-5-5","routeStatus":"valid"}]}
             """)
       case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
       case "/api/chat-threads":
@@ -185,10 +185,53 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"])
   }
 
-  func testUnsupportedEventSchemaRequiresAnUpdate() async throws {
+  func testCreateReplacesUnknownOrUnavailableSavedModelWithCatalogDefault() async throws {
+    struct CreatedRequest: Decodable, Sendable {
+      let model: String
+      let serviceTier: String?
+    }
+    for savedModel in ["unknown-model", "gpt-5.6-sol"] {
+      let createdRequests = Mutex<[CreatedRequest]>([])
+      let fixture = ChatHTTPFixture { request in
+        switch request.url?.path {
+        case "/api/agents":
+          return ChatHTTPResponse(
+            body: """
+              [{"agentId":"\(fixtureAgent)","isDefaultAgent":true,"displayName":"Okou"}]
+              """)
+        case "/api/user-model-preference":
+          return ChatHTTPResponse(
+            body: """
+              {"selectedModel":"\(savedModel)","serviceTier":"priority","modelSettings":{}}
+              """)
+        case "/api/model-policies":
+          return ChatHTTPResponse(
+            body: """
+              {"policies":[{"model":"gpt-5.6-sol","routeStatus":"missing_provider"}]}
+              """)
+        case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
+        case "/api/chat-threads":
+          let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
+          createdRequests.withLock { $0.append(body) }
+          return ChatHTTPResponse(
+            status: 201,
+            body: """
+              {"id":"\(newThread)","title":null,"createdAt":"\(fixtureDate)","selectedModel":"\(body.model)"}
+              """)
+        default: throw URLError(.unsupportedURL)
+        }
+      }
+      let created = try await ChatService(client: fixture.client).createThread()
+      XCTAssertEqual(created.selectedModel, "okou-1.0")
+      XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["okou-1.0"])
+      XCTAssertNil(createdRequests.withLock { $0.first?.serviceTier })
+    }
+  }
+
+  func testUpgradeRequiredBlocksHistory() async throws {
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(
-        status: 426, body: "{\"error\":{\"message\":\"Unsupported Chat Event schema version\"}}")
+        status: 426, body: "{\"error\":{\"message\":\"Client update required\"}}")
     }
     do {
       _ = try await ChatService(client: fixture.client).history(threadID: fixtureThread)
@@ -197,6 +240,30 @@ final class ChatServiceTests: XCTestCase {
       XCTAssertEqual(error.statusCode, 426)
       XCTAssertEqual(error.errorDescription, "Update Okou in TestFlight to continue.")
     }
+  }
+
+  func testMissingThreadSnapshotDoesNotBecomeEmptyHistory() async throws {
+    let tailReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
+        return ChatHTTPResponse(
+          status: 404,
+          body: "{\"error\":{\"code\":\"CHAT_THREAD_NOT_FOUND\",\"message\":\"Chat not found\"}}")
+      case "/api/chat-threads/\(fixtureThread)/event-rows":
+        tailReads.withLock { $0 += 1 }
+        throw URLError(.unsupportedURL)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+
+    do {
+      _ = try await ChatService(client: fixture.client).history(threadID: fixtureThread)
+      XCTFail("A missing thread must not render as empty history")
+    } catch let error as APIClientError {
+      XCTAssertEqual(error.statusCode, 404)
+    }
+    XCTAssertEqual(tailReads.withLock { $0 }, 0)
   }
 
   func testListReplaysRenameDeletionAndNewThreadAfterSnapshot() async throws {
@@ -264,6 +331,273 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(unarchived.first?.isArchived, false)
   }
 
+  func testRestartReadsCachedListAndHistoryBeforeIncrementalCatchUp() async throws {
+    let directory = try temporaryChatCacheDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let requests = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url?.path ?? ""
+      let since = chatQueryValue("sinceSeqId", in: request)
+      requests.withLock { $0.append("\(path)?\(since ?? "")") }
+      switch path {
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"url":"https://\(request.url!.host!)/list-snapshot","latestEventId":"\(eventIdentity(10))","latestSeqId":10}
+            """)
+      case "/list-snapshot":
+        return ChatHTTPResponse(body: "{\"chatThreads\":[\(threadJSON(id: fixtureThread))]}")
+      case "/api/chat-threads/events":
+        if since == "10" {
+          return ChatHTTPResponse(
+            body:
+              "{\"events\":[\(threadEventJSON(seq: 11, kind: "renamed", thread: fixtureThread, title: "Synced title"))],\"hasMore\":false}"
+          )
+        }
+        guard since == "11" else { throw URLError(.badServerResponse) }
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"url":"https://\(request.url!.host!)/history-snapshot","lastEventId":"\(eventIdentity(1))","lastSeqId":1}
+            """)
+      case "/history-snapshot":
+        return ChatHTTPResponse(
+          body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Hello")) + "\n")
+      case "/api/chat-threads/\(fixtureThread)/event-rows":
+        if since == "1" {
+          return ChatHTTPResponse(
+            body: """
+              {"rows":[\(eventJSON(seq: 2, type: "output.message", payload: "{\"content\":\"Answer\"}")),\(eventJSON(seq: 3, type: "run.completed"))],"cursor":{"lastEventId":"\(eventIdentity(3))","lastSeqId":3},"hasMore":false}
+              """)
+        }
+        guard since == "3" else { throw URLError(.badServerResponse) }
+        return ChatHTTPResponse(
+          body:
+            "{\"rows\":[],\"cursor\":{\"lastEventId\":\"\(eventIdentity(3))\",\"lastSeqId\":3},\"hasMore\":false}"
+        )
+      case "/api/chat-threads/\(fixtureThread)":
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "warm-cache-user", workspaceID: "warm-cache-workspace")
+    let first = ChatService(client: fixture.client)
+    await first.configureCache(scope: scope, directory: directory)
+    let firstThreads = try await first.threads()
+    let firstHistory = try await first.history(threadID: fixtureThread)
+    XCTAssertEqual(firstThreads.first?.title, "Synced title")
+    XCTAssertEqual(firstHistory.messages.map(\.text), ["Hello", "Answer"])
+
+    let requestsBeforeRestart = requests.withLock { $0.count }
+    let restarted = ChatService(client: fixture.client)
+    await restarted.configureCache(scope: scope, directory: directory)
+    let cachedThreads = await restarted.cachedThreads()
+    let cachedHistory = await restarted.cachedHistory(threadID: fixtureThread)
+    XCTAssertEqual(cachedThreads?.first?.title, "Synced title")
+    XCTAssertEqual(cachedHistory?.messages.map(\.text), ["Hello", "Answer"])
+    XCTAssertEqual(requests.withLock { $0.count }, requestsBeforeRestart)
+
+    let restartedThreads = try await restarted.threads()
+    let restartedHistory = try await restarted.history(threadID: fixtureThread)
+    XCTAssertEqual(restartedThreads.first?.title, "Synced title")
+    XCTAssertEqual(restartedHistory.messages.map(\.text), ["Hello", "Answer"])
+    let paths = requests.withLock { $0 }
+    XCTAssertEqual(paths.filter { $0 == "/api/chat-threads/snapshot?" }.count, 1)
+    XCTAssertEqual(paths.filter { $0 == "/list-snapshot?" }.count, 1)
+    XCTAssertEqual(
+      paths.filter { $0 == "/api/chat-threads/\(fixtureThread)/event-snapshot?" }.count, 1)
+    XCTAssertEqual(paths.filter { $0 == "/history-snapshot?" }.count, 1)
+    XCTAssertTrue(paths.contains("/api/chat-threads/events?11"))
+    XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?3"))
+  }
+
+  func testExpiredListAndHistoryCursorsReplacePersistedCacheAfterRestart() async throws {
+    let directory = try temporaryChatCacheDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let generation = Mutex(1)
+    let requests = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url?.path ?? ""
+      let since = chatQueryValue("sinceSeqId", in: request)
+      let current = generation.withLock { $0 }
+      requests.withLock { $0.append("\(path)?\(since ?? "")") }
+      switch path {
+      case "/api/chat-threads/snapshot":
+        let sequence = current == 1 ? 10 : 20
+        return ChatHTTPResponse(
+          body: """
+            {"url":"https://\(request.url!.host!)/list-snapshot","latestEventId":"\(eventIdentity(sequence))","latestSeqId":\(sequence)}
+            """)
+      case "/list-snapshot":
+        let title = current == 1 ? "Old title" : "Rebased title"
+        let thread = threadJSON(id: fixtureThread)
+          .replacingOccurrences(of: "Original title", with: title)
+        return ChatHTTPResponse(body: "{\"chatThreads\":[\(thread)]}")
+      case "/api/chat-threads/events":
+        if current == 2 && since == "10" {
+          return ChatHTTPResponse(status: 410, body: "{\"error\":{\"message\":\"Expired\"}}")
+        }
+        if current == 2 && since == "20" {
+          return ChatHTTPResponse(
+            body:
+              "{\"events\":[\(threadEventJSON(seq: 21, kind: "renamed", thread: fixtureThread, title: "Current title"))],\"hasMore\":false}"
+          )
+        }
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
+        let sequence = current == 1 ? 1 : 3
+        return ChatHTTPResponse(
+          body: """
+            {"url":"https://\(request.url!.host!)/history-snapshot","lastEventId":"\(eventIdentity(sequence))","lastSeqId":\(sequence)}
+            """)
+      case "/history-snapshot":
+        if current == 1 {
+          return ChatHTTPResponse(
+            body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Old question"))
+              + "\n")
+        }
+        return ChatHTTPResponse(
+          body: [
+            eventJSON(seq: 1, type: "input.prompt", payload: userPayload("New question")),
+            eventJSON(seq: 3, type: "output.message", payload: "{\"content\":\"New answer\"}"),
+          ].joined(separator: "\n") + "\n")
+      case "/api/chat-threads/\(fixtureThread)/event-rows":
+        if current == 2 && since == "1" {
+          return ChatHTTPResponse(status: 410, body: "{\"error\":{\"message\":\"Expired\"}}")
+        }
+        if current == 2 && since == "3" {
+          return ChatHTTPResponse(
+            body: """
+              {"rows":[\(eventJSON(seq: 4, type: "run.completed"))],"cursor":{"lastEventId":"\(eventIdentity(4))","lastSeqId":4},"hasMore":false}
+              """)
+        }
+        let cursor = current == 1 ? 1 : 4
+        return ChatHTTPResponse(
+          body:
+            "{\"rows\":[],\"cursor\":{\"lastEventId\":\"\(eventIdentity(cursor))\",\"lastSeqId\":\(cursor)},\"hasMore\":false}"
+        )
+      case "/api/chat-threads/\(fixtureThread)":
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "rebase-user", workspaceID: "rebase-workspace")
+    let first = ChatService(client: fixture.client)
+    await first.configureCache(scope: scope, directory: directory)
+    let firstThreads = try await first.threads()
+    let firstHistory = try await first.history(threadID: fixtureThread)
+    XCTAssertEqual(firstThreads.first?.title, "Old title")
+    XCTAssertEqual(firstHistory.messages.map(\.text), ["Old question"])
+
+    generation.withLock { $0 = 2 }
+    let restarted = ChatService(client: fixture.client)
+    await restarted.configureCache(scope: scope, directory: directory)
+    let oldThreads = await restarted.cachedThreads()
+    let oldHistory = await restarted.cachedHistory(threadID: fixtureThread)
+    XCTAssertEqual(oldThreads?.first?.title, "Old title")
+    XCTAssertEqual(oldHistory?.messages.map(\.text), ["Old question"])
+    let rebuiltThreads = try await restarted.threads()
+    let rebuiltHistory = try await restarted.history(threadID: fixtureThread)
+    XCTAssertEqual(rebuiltThreads.first?.title, "Current title")
+    XCTAssertEqual(rebuiltHistory.messages.map(\.text), ["New question", "New answer"])
+    let rebuiltCachedThreads = await restarted.cachedThreads()
+    let rebuiltCachedHistory = await restarted.cachedHistory(threadID: fixtureThread)
+    XCTAssertEqual(rebuiltCachedThreads?.first?.title, "Current title")
+    XCTAssertEqual(rebuiltCachedHistory?.messages.map(\.text), ["New question", "New answer"])
+    let paths = requests.withLock { $0 }
+    XCTAssertEqual(paths.filter { $0 == "/api/chat-threads/snapshot?" }.count, 2)
+    XCTAssertEqual(paths.filter { $0 == "/list-snapshot?" }.count, 2)
+    XCTAssertEqual(
+      paths.filter { $0 == "/api/chat-threads/\(fixtureThread)/event-snapshot?" }.count, 2)
+    XCTAssertTrue(paths.contains("/api/chat-threads/events?10"))
+    XCTAssertTrue(paths.contains("/api/chat-threads/events?20"))
+    XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?1"))
+    XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?3"))
+  }
+
+  func testExpiredSecondListPageRebasesWithoutSavingAbandonedTail() async throws {
+    let directory = try temporaryChatCacheDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let requests = Mutex<[String]>([])
+    let snapshotReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url?.path ?? ""
+      let since = chatQueryValue("sinceSeqId", in: request)
+      requests.withLock { $0.append("\(path)?\(since ?? "")") }
+      switch path {
+      case "/api/chat-threads/snapshot":
+        let count = snapshotReads.withLock {
+          $0 += 1
+          return $0
+        }
+        guard count <= 2 else { throw URLError(.badServerResponse) }
+        let sequence = count == 1 ? 10 : 20
+        return ChatHTTPResponse(
+          body: """
+            {"url":"https://\(request.url!.host!)/list-snapshot-\(count)","latestEventId":"\(eventIdentity(sequence))","latestSeqId":\(sequence)}
+            """)
+      case "/list-snapshot-1":
+        return ChatHTTPResponse(body: "{\"chatThreads\":[\(threadJSON(id: fixtureThread))]}")
+      case "/list-snapshot-2":
+        let thread = threadJSON(id: fixtureThread)
+          .replacingOccurrences(of: "Original title", with: "Rebased title")
+        return ChatHTTPResponse(body: "{\"chatThreads\":[\(thread)]}")
+      case "/api/chat-threads/events":
+        switch since {
+        case "10":
+          return ChatHTTPResponse(
+            body:
+              "{\"events\":[\(threadEventJSON(seq: 11, kind: "renamed", thread: fixtureThread, title: "Abandoned title"))],\"hasMore\":true}"
+          )
+        case "11":
+          return ChatHTTPResponse(status: 410, body: "{\"error\":{\"message\":\"Expired\"}}")
+        case "20":
+          return ChatHTTPResponse(
+            body:
+              "{\"events\":[\(threadEventJSON(seq: 21, kind: "renamed", thread: fixtureThread, title: "Final title"))],\"hasMore\":false}"
+          )
+        case "21":
+          return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+        default: throw URLError(.badServerResponse)
+        }
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "paged-rebase-user",
+      workspaceID: "paged-rebase-workspace")
+    let first = ChatService(client: fixture.client)
+    await first.configureCache(scope: scope, directory: directory)
+    let resolved = try await first.threads()
+    XCTAssertEqual(resolved.map(\.title), ["Final title"])
+    let cached = await first.cachedThreads()
+    XCTAssertEqual(cached?.map(\.title), ["Final title"])
+
+    let restarted = ChatService(client: fixture.client)
+    await restarted.configureCache(scope: scope, directory: directory)
+    let restored = await restarted.cachedThreads()
+    XCTAssertEqual(restored?.map(\.title), ["Final title"])
+    let caughtUp = try await restarted.threads()
+    XCTAssertEqual(caughtUp.map(\.title), ["Final title"])
+    XCTAssertEqual(snapshotReads.withLock { $0 }, 2)
+    let paths = requests.withLock { $0 }
+    XCTAssertEqual(paths.filter { $0 == "/api/chat-threads/events?10" }.count, 1)
+    XCTAssertEqual(paths.filter { $0 == "/api/chat-threads/events?11" }.count, 1)
+    XCTAssertEqual(paths.filter { $0 == "/api/chat-threads/events?20" }.count, 1)
+    XCTAssertEqual(paths.filter { $0 == "/api/chat-threads/events?21" }.count, 1)
+    XCTAssertEqual(paths.filter { $0 == "/list-snapshot-1?" }.count, 1)
+    XCTAssertEqual(paths.filter { $0 == "/list-snapshot-2?" }.count, 1)
+  }
+
   func testHistoryRecoversExpiredCursorAndNeverSendsBearerToSnapshot() async throws {
     struct State: Sendable {
       var snapshotCount = 0
@@ -305,10 +639,10 @@ final class ChatServiceTests: XCTestCase {
           $0.tailCount += 1
           return $0.tailCount
         }
-        if count == 2 {
+        if count == 3 {
           return ChatHTTPResponse(status: 410, body: "{\"error\":{\"message\":\"Expired\"}}")
         }
-        let sequence = count == 1 ? 2 : 4
+        let sequence = count <= 3 ? 2 : 4
         return ChatHTTPResponse(
           body:
             "{\"rows\":[],\"cursor\":{\"lastEventId\":\"\(eventIdentity(sequence))\",\"lastSeqId\":\(sequence)},\"hasMore\":false}"
@@ -469,11 +803,20 @@ final class ChatServiceTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/chat-threads/\(fixtureThread)/event-snapshot":
-        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No snapshot\"}}")
+        return ChatHTTPResponse(
+          status: 404,
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case "/api/chat-threads/\(fixtureThread)/event-rows":
+        if chatQueryValue("sinceSeqId", in: request) == "0" {
+          return ChatHTTPResponse(
+            body:
+              "{\"rows\":[\(eventJSON(seq:1,type:"input.prompt",payload:userPayload("First"))),\(eventJSON(seq:2,type:"input.prompt",run:nil,payload:userPayload("Follow-up"))),\(eventJSON(seq:3,type:"input.automation",run:nil))],\"cursor\":{\"lastEventId\":\"\(eventIdentity(3))\",\"lastSeqId\":3},\"hasMore\":false}"
+          )
+        }
         return ChatHTTPResponse(
           body:
-            "{\"rows\":[\(eventJSON(seq:1,type:"input.prompt",payload:userPayload("First"))),\(eventJSON(seq:2,type:"input.prompt",run:nil,payload:userPayload("Follow-up")))],\"cursor\":{\"lastEventId\":\"\(eventIdentity(2))\",\"lastSeqId\":2},\"hasMore\":false}"
+            "{\"rows\":[],\"cursor\":{\"lastEventId\":\"\(eventIdentity(3))\",\"lastSeqId\":3},\"hasMore\":false}"
         )
       case "/api/chat-threads/\(fixtureThread)":
         return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
@@ -486,7 +829,8 @@ final class ChatServiceTests: XCTestCase {
       }
     }
     try await ChatService(client: fixture.client).stop(thread: sampleThread())
-    XCTAssertEqual(commands.withLock { $0.compactMap(\.revokesEventId) }, [eventIdentity(2)])
+    XCTAssertEqual(
+      commands.withLock { $0.compactMap(\.revokesEventId) }, [eventIdentity(2), eventIdentity(3)])
     XCTAssertEqual(commands.withLock { $0.compactMap(\.interruptsRunId) }, [fixtureRun])
   }
 }
@@ -557,6 +901,19 @@ private func eventJSON(seq: Int, type: String, run: String? = fixtureRun, payloa
 
 private func eventIdentity(_ sequence: Int) -> String {
   String(format: "20000000-0000-4000-8000-%012d", sequence)
+}
+
+private func chatQueryValue(_ name: String, in request: URLRequest) -> String? {
+  guard let url = request.url else { return nil }
+  return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+    .queryItems?.first(where: { $0.name == name })?.value
+}
+
+private func temporaryChatCacheDirectory() throws -> URL {
+  let directory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("okou-chat-cache-tests-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  return directory
 }
 
 private func userPayload(_ text: String) -> String {

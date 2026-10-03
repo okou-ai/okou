@@ -18,6 +18,7 @@ final class WorkspaceStore {
 
   private let service: ChatService
   private let client: APIClient
+  private let cacheDirectory: URL?
   let webURL: URL
   private(set) var threads: [ChatThread] = []
   private(set) var agents: [AgentRecord] = []
@@ -47,15 +48,39 @@ final class WorkspaceStore {
   private var refreshTask: Task<Void, Never>?
   private var closed = false
   private var isForeground = false
+  private var startupGeneration = UUID()
 
-  init(client: APIClient, webURL: URL) {
+  init(client: APIClient, webURL: URL, cacheDirectory: URL? = nil) {
     self.client = client
     self.service = ChatService(client: client)
     self.webURL = webURL
+    self.cacheDirectory = cacheDirectory
   }
 
   func start(userID: String, workspaceID: String) async {
+    guard !Task.isCancelled else { return }
     closed = false
+    let generation = UUID()
+    startupGeneration = generation
+    realtime?.stop()
+    realtime = nil
+    defer {
+      if Task.isCancelled, startupGeneration == generation {
+        realtime?.stop()
+        realtime = nil
+      }
+    }
+    await service.configureCache(
+      scope: ChatCacheScope(
+        apiBaseURL: client.baseURL, userID: userID, workspaceID: workspaceID),
+      directory: cacheDirectory)
+    guard canContinueStartup(generation) else { return }
+    let cached = await service.cachedThreads()
+    guard canContinueStartup(generation) else { return }
+    if let cached {
+      threads = cached
+      if selectedAgentID == nil { selectedAgentID = cached.first?.agentID }
+    }
     let realtime = RealtimeService(
       userID: userID, workspaceID: workspaceID,
       tokenProvider: { [client] in
@@ -67,28 +92,37 @@ final class WorkspaceStore {
     self.realtime = realtime
     realtime.start()
     await refreshNavigation()
+    guard canContinueStartup(generation) else { return }
     await refresh()
   }
 
+  private func canContinueStartup(_ generation: UUID) -> Bool {
+    !closed && !needsUpgrade && !Task.isCancelled && startupGeneration == generation
+  }
+
   func refreshNavigation() async {
-    guard !closed, !needsUpgrade else { return }
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     do {
       let result: [AgentRecord] = try await client.request("/api/agents")
-      guard !closed else { return }
+      guard !closed, !Task.isCancelled else { return }
       agents = result
       if selectedAgentID == nil { selectedAgentID = result.first(where: \.isDefaultAgent)?.agentId }
       let preferences: SidebarPreferences = try await client.request("/api/user-preferences")
-      guard !closed else { return }
+      guard !closed, !Task.isCancelled else { return }
       pinnedAgentIDs = preferences.pinnedAgentIds
       navigationError = nil
+    } catch is CancellationError {
+      return
     } catch let error as APIClientError where error.statusCode == 409 {
+      guard !closed, !Task.isCancelled else { return }
       pinnedAgentIDs = []
       navigationError = nil
     } catch {
+      guard !closed, !Task.isCancelled else { return }
       navigationError = error.localizedDescription
     }
     let switches: SidebarFeatureSwitches? = try? await client.request("/api/feature-switches")
-    guard !closed else { return }
+    guard !closed, !Task.isCancelled else { return }
     canArchiveChats = switches?.effectiveSwitches["chatThreadArchiving"] == true
   }
 
@@ -104,6 +138,7 @@ final class WorkspaceStore {
 
   func close() {
     closed = true
+    startupGeneration = UUID()
     refreshTask?.cancel()
     refreshTask = nil
     realtime?.stop()
@@ -142,8 +177,12 @@ final class WorkspaceStore {
           try Task.checkCancellation()
           guard !closed else { return }
           threads = result
-          if let selectedThreadID, !result.contains(where: { $0.id == selectedThreadID }) {
-            self.selectedThreadID = nil
+          if let selectedThreadID {
+            if let selectedThread = result.first(where: { $0.id == selectedThreadID }) {
+              selectedAgentID = selectedThread.agentID
+            } else {
+              self.selectedThreadID = nil
+            }
           }
           error = nil
         } catch is CancellationError {
@@ -163,6 +202,10 @@ final class WorkspaceStore {
     }
     loadingThreads.insert(id)
     defer { loadingThreads.remove(id) }
+    if histories[id] == nil, let cached = await service.cachedHistory(threadID: id) {
+      guard !closed else { return }
+      histories[id] = cached
+    }
     repeat {
       historyRefreshAgain.remove(id)
       do {

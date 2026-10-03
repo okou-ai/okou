@@ -3,24 +3,29 @@ import OSLog
 import Synchronization
 
 enum APIClientError: LocalizedError, Sendable {
-  case http(status: Int, message: String)
+  case http(status: Int, message: String, code: String? = nil)
   case invalidResponse
   case incompatibleData
   case invalidURL
 
   var statusCode: Int? {
-    if case .http(let status, _) = self { return status }
+    if case .http(let status, _, _) = self { return status }
+    return nil
+  }
+
+  var serverCode: String? {
+    if case .http(_, _, let code) = self { return code }
     return nil
   }
 
   var errorDescription: String? {
     switch self {
-    case .http(401, _): "Your session expired. Sign in again."
-    case .http(426, _): "Update Okou in TestFlight to continue."
-    case .http(402, let message): "\(message) Manage your plan on the Okou website."
-    case .http(403, let message): "\(message) Check your workspace access on the Okou website."
-    case .http(429, let message): "\(message) Wait a moment, then refresh."
-    case .http(_, let message): message
+    case .http(401, _, _): "Your session expired. Sign in again."
+    case .http(426, _, _): "Update Okou in TestFlight to continue."
+    case .http(402, let message, _): "\(message) Manage your plan on the Okou website."
+    case .http(403, let message, _): "\(message) Check your workspace access on the Okou website."
+    case .http(429, let message, _): "\(message) Wait a moment, then refresh."
+    case .http(_, let message, _): message
     case .invalidResponse: "The server returned an invalid response. Try refreshing."
     case .incompatibleData:
       "This app could not read the server response. Please try again or use Okou on the web."
@@ -114,13 +119,7 @@ struct APIClient: Sendable {
     request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Client-Request-Id")
     if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
-    let result = try await execute(request)
-    if let requiredVersion = headers["X-Chat-Event-Schema-Version"],
-      result.response.value(forHTTPHeaderField: "X-Chat-Event-Schema-Version") != requiredVersion
-    {
-      throw APIClientError.incompatibleData
-    }
-    return result
+    return try await execute(request)
   }
 
   /// Snapshot URLs are signed separately. Never forward the user's bearer token.
@@ -146,7 +145,8 @@ struct APIClient: Sendable {
       throw APIClientError.http(
         status: response.statusCode,
         message: serverError?.error.message
-          ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode)
+          ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode),
+        code: serverError?.error.code
       )
     }
     return APIResponse(data: data, response: response)
@@ -181,6 +181,9 @@ struct APIClient: Sendable {
 
   private struct ErrorEnvelope: Decodable {
     let error: Detail
-    struct Detail: Decodable { let message: String }
+    struct Detail: Decodable {
+      let message: String
+      let code: String?
+    }
   }
 }
