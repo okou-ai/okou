@@ -49,14 +49,29 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
-import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import {
+  resolveBuiltInModelRouteFixture,
+  seedBuiltInModelCandidateKeys,
+  seedBuiltInModelKey,
+} from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import {
   advancePiMemoryPhase2InputRevision,
   notifyPiMemoryPhase2ExternalHeadChange,
 } from "../pi-memory-phase2-job.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
-import { PI_MEMORY_PHASE2_USAGE_DRAIN_MS } from "../pi-memory-phase2-usage.service";
+import { createModelSourceSnapshot } from "../execution-model-source.service";
+import { modelCatalog$ } from "../model-catalog.service";
+import { prepareManagedModelEnvironment } from "../model-provider.service";
+import { featureSwitchContextFromRows } from "../feature-switch-scope";
+import {
+  PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
+} from "../pi-memory-phase2-usage.service";
+import {
+  seedLegacyDirectMaintenanceKey,
+  readLegacyDirectMaintenanceRoute,
+} from "../../../test-fixtures/pi-memory-maintenance-routing";
 import {
   piMemoryPhase2MaintenanceCallbackPayloadSchema,
   handlePiMemoryPhase2MaintenanceCallback,
@@ -89,6 +104,13 @@ const cargo = JSON.parse(
   }),
 ) as { target_directory: string };
 const secretCandidate = "PRIVATE_CANDIDATE_31937";
+
+function maintenanceSwitches(usRouting = false) {
+  return {
+    [FeatureSwitchKey.PiMemory]: true,
+    [FeatureSwitchKey.OpenRouterUsRouting]: usRouting,
+  };
+}
 
 function sse(response: ServerResponse, index: number, failure: boolean) {
   const id = `resp_boundary_${index}`;
@@ -340,7 +362,12 @@ async function crossActiveCleanupBoundary(
   }
 }
 
-async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
+async function launch(
+  fault: Fault,
+  noDiff = false,
+  cleanupMode?: CleanupMode,
+  usRouting?: boolean,
+) {
   const scope = await createPhase2TestScope(`boundary-${fault}`, {
     emptyBase: true,
   });
@@ -349,7 +376,7 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
   await updateFeatureSwitchesForUser(
     context,
     { orgId: scope.orgId, userId: scope.userId },
-    { [FeatureSwitchKey.PiMemory]: true },
+    maintenanceSwitches(usRouting),
   );
   onTestFinished(async () => {
     await deleteFeatureSwitchesForUser(context, {
@@ -434,7 +461,7 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
       await db().delete(agentRuns).where(eq(agentRuns.id, cleanup.runId));
     }
   });
-  await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
+  await seedBuiltInModelKey(context, PI_MEMORY_PHASE2_BUILT_IN_MODEL);
   // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
   configureNativeCliArtifact();
   context.mocks.s3.getSignedUrl.mockResolvedValue(
@@ -609,7 +636,7 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
             ...entry,
             idempotencyKey: randomUUID(),
             kind: "model",
-            provider: "gpt-6-luna",
+            provider: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
           };
         }),
       });
@@ -640,6 +667,12 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
         const bytes = Buffer.concat(chunks);
         const path = request.url ?? "/";
         if (path === "/v1/responses") {
+          expect(JSON.parse(bytes.toString())).toMatchObject({
+            model: "deepseek/deepseek-v4.1-flash",
+          });
+          expect(request.headers.authorization).toBe(
+            "Bearer boundary-provider-key",
+          );
           await respondProvider(response);
           return;
         }
@@ -780,9 +813,21 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
     ]),
   });
   expect(execution.piModelConfig).toMatchObject({
-    provider: "deepseek",
-    model: "deepseek-flash",
+    provider: "openrouter",
+    model: "deepseek/deepseek-v4.1-flash",
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiKeyEnv: "OPENAI_API_KEY",
+    credentialSecretName: "OPENROUTER_API_KEY",
   });
+  expect(execution.firewalls).toStrictEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "model-provider:openrouter-codex" }),
+    ]),
+  );
+  expect(execution.billableFirewalls).toContain(
+    "model-provider:openrouter-codex",
+  );
+  expect(execution.modelUsageProvider).toBe(PI_MEMORY_PHASE2_BUILT_IN_MODEL);
   expect(maintenance).toMatchObject({
     memoryStorageId: scope.memoryStorageId,
     claimedBaseVersionId: baseVersion.versionId,
@@ -820,12 +865,12 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
         },
       ]),
       piLaunchConfig: JSON.stringify(piLaunchConfig),
+      // Keep the claimed provider/model/credential projection; only redirect
+      // its transport to this test-owned Responses server. Do not substitute
+      // an unrelated OpenAI model for the production OpenRouter route.
       piModelConfig: JSON.stringify({
-        provider: "openai",
-        model: "gpt-6-luna",
+        ...execution.piModelConfig,
         baseUrl: `${baseUrl}/v1`,
-        apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENAI_API_KEY",
       }),
     }),
     { mode: 0o600 },
@@ -946,7 +991,7 @@ async function assertUsageReplay(
           return (
             entry.quantity === quantity &&
             entry.runId === run.runId &&
-            entry.provider === "gpt-6-luna"
+            entry.provider === PI_MEMORY_PHASE2_BUILT_IN_MODEL
           );
         }),
     ).toBeTruthy();
@@ -989,7 +1034,170 @@ async function assertUsageReplay(
   expect(accounting(replayUsage)).toStrictEqual(accounting(run.usage));
 }
 
+describe("maintenance routing admission and captured authority", () => {
+  it.each([false, true])(
+    "fails closed with only a historical direct key (US routing %s)",
+    async (usRouting) => {
+      const scope = await createPhase2TestScope("routing-closed", {
+        emptyBase: true,
+      });
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: scope.orgId, userId: scope.userId },
+        maintenanceSwitches(usRouting),
+      );
+      onTestFinished(async () => {
+        await deleteFeatureSwitchesForUser(context, scope);
+      });
+      await seedOrgMetadata({
+        orgId: scope.orgId,
+        tier: "pro",
+        credits: 100_000,
+      });
+      await seedLegacyDirectMaintenanceKey();
+      await expect(readLegacyDirectMaintenanceRoute()).resolves.toMatchObject({
+        providerType: "deepseek",
+      });
+      await expect(
+        resolveBuiltInModelRouteFixture(
+          context,
+          PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+        ),
+      ).resolves.toBeNull();
+      configureNativeCliArtifact();
+      await insertPhase2Candidates(scope, [
+        {
+          piSessionId: randomUUID(),
+          rawMemory: secretCandidate,
+          rolloutSummary: "private routing evidence",
+        },
+      ]);
+      const dispatchTime = nowDate();
+      await insertPendingPhase2Job(scope, phase2JobSeed("none", dispatchTime));
+      const result = await createStore().set(
+        executePiMemoryPhase2Work$,
+        { scope, currentTime: dispatchTime },
+        context.signal,
+      );
+      expect(result).toStrictEqual({
+        outcome: "failed",
+        errorClass: "model_route_unavailable",
+      });
+      await expect(readPhase2Job(scope)).resolves.toMatchObject({
+        maintenanceRunId: null,
+        lastErrorClass: "model_route_unavailable",
+      });
+      await expect(
+        db()
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.orgId, scope.orgId),
+              eq(agentRuns.triggerSource, "agent"),
+            ),
+          ),
+      ).resolves.toStrictEqual([]);
+      await expect(
+        db()
+          .select({ id: usageEvent.id })
+          .from(usageEvent)
+          .where(eq(usageEvent.orgId, scope.orgId)),
+      ).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each(["current", "legacy"] as const)(
+    "keeps catalog permission checks for a captured %s route",
+    async (kind) => {
+      // All-candidate fixtures intentionally retain direct keys for captured
+      // history. Their existence must not make them eligible for new work.
+      await seedBuiltInModelCandidateKeys(
+        context,
+        PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      );
+      const current = await resolveBuiltInModelRouteFixture(
+        context,
+        PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      );
+      if (!current) {
+        throw new Error("Missing current OpenRouter route");
+      }
+      expect(current.provider_type).toBe("openrouter-codex");
+      const route =
+        kind === "legacy"
+          ? await readLegacyDirectMaintenanceRoute()
+          : {
+              selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+              providerType: "openrouter-codex" as const,
+              upstreamModel: current.upstream_model,
+              modelKeyId: current.model_key_id,
+            };
+      const orgId = `boundary-captured-org-${randomUUID()}`;
+      const userId = `boundary-captured-user-${randomUUID()}`;
+      const store = createStore();
+      const source = await store.get(
+        createModelSourceSnapshot({
+          orgId,
+          userId,
+          source: { kind: "built-in", modelKeyId: route.modelKeyId },
+        }),
+      );
+      if (!source) {
+        throw new Error("Missing captured managed credential source");
+      }
+      const request = {
+        catalog: await store.get(modelCatalog$),
+        // The provider adapter is Codex/Responses; maintenance materializes
+        // its prepared environment into a Pi Guest configuration afterwards.
+        framework: "codex" as const,
+        selectedModelOverride: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+        builtInModelRuntimeRoute: route,
+        featureSwitchContext: featureSwitchContextFromRows(orgId, userId, []),
+      };
+      const permitted = await prepareManagedModelEnvironment(
+        db(),
+        source,
+        request,
+      );
+      expect(permitted).toMatchObject({
+        selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+        upstreamModel: route.upstreamModel,
+      });
+      // A valid managed key cannot authorize an upstream absent from the
+      // captured catalog. Reject instead of silently selecting another route.
+      await expect(
+        prepareManagedModelEnvironment(db(), source, {
+          ...request,
+          builtInModelRuntimeRoute: {
+            ...route,
+            upstreamModel: `unpermitted/${randomUUID()}`,
+          },
+        }),
+      ).resolves.toBeNull();
+      // A permitted route cannot borrow another managed key's source identity.
+      await expect(
+        prepareManagedModelEnvironment(db(), source, {
+          ...request,
+          builtInModelRuntimeRoute: {
+            ...route,
+            modelKeyId: randomUUID(),
+          },
+        }),
+      ).resolves.toBeNull();
+    },
+  );
+});
+
 describe("private maintenance across CLI, Guest, generic checkpoint and real PostgreSQL", () => {
+  it("keeps the global OpenRouter route when US routing is enabled", async () => {
+    const run = await launch("none", false, undefined, true);
+    expect(run.exit, run.output).toBe(0);
+    expect(run.job?.status).toBe("idle");
+    expect(run.providerCount).toBeGreaterThan(0);
+    await assertUsageReplay(run, run.providerCount);
+  });
+
   it.each([
     { label: "none", fault: "none", cleanupMode: undefined },
     {
