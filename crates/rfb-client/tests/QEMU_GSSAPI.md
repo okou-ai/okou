@@ -1,0 +1,40 @@
+# QEMU verified-X509263 / GSSAPI engine fixture
+
+This is engine/protocol interoperability, not Owner→Agent→Runner product acceptance, compatibility with every QEMU release, merge permission or production activation. #37612 leaves #37613 and `VncAccess.enabled: false` unchanged. SCRAM remains a separate profile; rsasl's ambient GSS backend is not enabled.
+
+## Independent server and client identity
+
+The local server is QEMU **9.2.0**, source commit `ae35f033b874c627d81d51070187fbf55f0bf1a7`, archive SHA256 `f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894`, `ui/vnc-auth-sasl.c` SHA256 `3dfd2c4be76597983641fde3d99b64ac5b0d6a56b59e4d6a08edacc95075bc2d`. The audited local fixture binary is SHA256 `cef1a9a4a18daad78f74b4997fafdb3c18aeaead1596732bf6c5bc5bb32eabc8`; the harness refuses a substituted binary. QEMU 8.2.2's GSS token/NUL behavior is not a reason to weaken parsing.
+
+Independent private server/KDC libraries came from signed official Ubuntu Noble package indexes: Cyrus `2.1.28+dfsg1-5ubuntu3`, MIT `1.20.1-6ubuntu2`, GnuTLS `3.8.3-1.1ubuntu3.6`. These are fixture identities, **not** the production client's maintenance/security baseline. The client uses the sealed, separately built MIT1.22.2/musl worker described in [`../../kerberos-worker/README.md`](../../kerberos-worker/README.md).
+
+TLS `localhost`, the loopback TCP destination and the explicit same-realm `vnc/<fixture-instance>` service are independent identities. The library does no TCP/DNS/KDC discovery. Two synthetic realms use independent exact caller routes, locally generated AES17/18 keytabs/passwords/service-only caches, and a private synthetic TLS CA. Password leading/trailing spaces are intentional. None is a real account credential.
+
+## Reproduce
+
+Use the pinned private QEMU/server-runtime build described above, not a system GSS client or an arbitrary executable override. From the repository root:
+
+```bash
+python3 crates/rfb-client/tests/fixtures/qemu_gssapi.py \
+  --runtime-dir codex-work/probe/issue-35048-gssapi/root \
+  --qemu codex-work/probe/issue-35048-gssapi/qemu-build-9.2.0/qemu-system-x86_64
+```
+
+The harness compiles the current Rust test target and owns only its synthetic loopback listeners/processes/private generated directory. Secrets go through private stdin/files, never CLI arguments or environment values. Public fixture-directory/stopped-KDC indicators select the opt-in test target; default ignored tests are not an acceptance result. Cargo/test descendants run in an owned process group; the harness is a subreaper and verifies descendant termination/reap, listener closure and exact secret-tree removal even on timeout/failure. Actual native child reaping is checked by process tests and completed-context/finality controls, not inferred merely from the intentionally unlinked input directory. Do not use external hosts/KDCs, public ingress, global Kerberos/PAM/SSH settings or retained credentials.
+
+## Matrix and limits
+
+- Actual password and keytab AS/TGS plus verified TLS, mutual GSS, integrity-protected RFC4752 no-layer selection, complete SecurityResult/ServerInit and 640×480 PNG.
+- Two concurrent distinct realms/initiators with independent checked caller transports and MEMORY handles.
+- Prefetched service-only imports after both KDC processes are stopped: successful PNG and **zero** caller KDC exchanges. Missing/expired input is not an online fallback.
+- Wrong TLS/name, current authority, password/keytab and service refuse; changed current authority blocks the next actual KDC exchange. Online sources against actually stopped KDC listeners report `KdcUnavailable` without retry. A caller-injected `DeliveryUnknown` is observed once and never replayed; it is not proof a real packet had uncertain delivery or a ticket was revoked.
+- Actual native renewal extends new ticket metadata; nonrenewable and exhausted renew-till controls refuse, without automatic reacquisition. Explicit same-source reacquisition after expiry succeeds only as a future handshake source. No active RFB deadline is extended.
+- Established sessions separately reach a selected three-second Run deadline and an acquired four-second ticket/GSS bound, with a still-live 60-second Run, and close. Neither is full product/idle-owner acceptance.
+- The independent maintained MIT acceptor (`mit_gss_peer.py`, fixture MIT1.20.1, no custom GSS/crypto) actually verifies a valid mutual context and no-layer selection. Corrupt AP-REP/MIC, confidentiality, incorrect layer bits/maxbuf/length and an authenticated sequence gap refuse. Controlled RFB/TLS peers backed by that acceptor verify NULL/empty final success and reject early/invalid finality, absent/empty/oversized/padded-invalid tokens, post-selection data and a rejected SecurityResult.
+- `qemu_gssapi_framing.rs` separately checks subtype/mechanism aliases and malformed offers before native credential authority, plus pending-authority deadline/cancellation and original-stream closure. Nested native deadlines retain the public RFB authentication-deadline/stage category.
+
+Public process canaries separately cover exact encoded-ticket service/realm/case and canonical DER framing (including suffix/concatenation refusal), absent-versus-empty/oversized/malformed GSS states, real queue/process capacity, authority/KDC cancellation, idle deadline/reaping, cleanup uncertainty/quarantined capacity and subsecond timestamp mapping. Their fake zero-key tickets are never delivered to a peer and are not mutual authentication.
+
+Both architecture runtime receipts must come from the current Crates native matrix, not older static probes or user-mode emulation. Current ARM runtime/containment/interoperability is still unverified locally. Completed-context MIC/finality controls above do not prove every hostile name/mechanism/flag/QOP, CPU or bootstrap interleaving. An earlier local renewal-test invocation observed `Expired` during initial acquisition; later isolated and full runs passed, which does **not** establish its cause or prove a flaky-test diagnosis. Preserve that unresolved observation in current-head review/acceptance.
+
+Engine evidence does not complete product custody/KMS, exact KDC permissions, saved capabilities/DTO/App, real Run handoff or production readiness.

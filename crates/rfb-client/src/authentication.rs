@@ -65,7 +65,7 @@ where
 }
 
 async fn authenticate_with_config<S>(
-    mut stream: S,
+    stream: S,
     server_name: &str,
     authentication: X509Authentication,
     config: Arc<ClientConfig>,
@@ -75,28 +75,13 @@ async fn authenticate_with_config<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let server_name = ServerName::try_from(server_name)
-        .map_err(|_| Error::InvalidServerName)?
-        .to_owned();
-    phase(
-        AuthenticationStage::RfbVersion,
+    let mut stream = verified_tls(
+        stream,
+        server_name,
+        authentication.subtype(),
+        config,
         deadline,
-        exchange_version(&mut stream),
     )
-    .await?;
-    let subtype = authentication.subtype();
-    phase(
-        AuthenticationStage::SecurityNegotiation,
-        deadline,
-        negotiate_security(&mut stream, subtype),
-    )
-    .await?;
-    let mut stream = phase(AuthenticationStage::TlsHandshake, deadline, async {
-        TlsConnector::from(config)
-            .connect(server_name, stream)
-            .await
-            .map_err(Error::Tls)
-    })
     .await?;
     // No password or SecurityResult may be processed for a required-client-cert
     // profile unless this *handshake* received a request and selected the key.
@@ -114,6 +99,40 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::verified_tls(stream),
     })
+}
+
+pub(crate) async fn verified_tls<S>(
+    mut stream: S,
+    server_name: &str,
+    subtype: u32,
+    config: Arc<ClientConfig>,
+    deadline: Instant,
+) -> Result<tokio_rustls::client::TlsStream<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let server_name = ServerName::try_from(server_name)
+        .map_err(|_| Error::InvalidServerName)?
+        .to_owned();
+    phase(
+        AuthenticationStage::RfbVersion,
+        deadline,
+        exchange_version(&mut stream),
+    )
+    .await?;
+    phase(
+        AuthenticationStage::SecurityNegotiation,
+        deadline,
+        negotiate_security(&mut stream, subtype),
+    )
+    .await?;
+    phase(AuthenticationStage::TlsHandshake, deadline, async {
+        TlsConnector::from(config)
+            .connect(server_name, stream)
+            .await
+            .map_err(Error::Tls)
+    })
+    .await
 }
 
 pub(crate) async fn phase<T>(
