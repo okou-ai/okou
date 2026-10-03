@@ -384,7 +384,10 @@ describe("CHAT-02: run-level model overrides", () => {
           provider: "openai-codex",
           baseUrl: "https://chatgpt.com/backend-api",
           model: selectedModel,
-          thinkingLevel: "max",
+          thinkingLevel:
+            selectedModel === "gpt-6-luna" || selectedModel === "gpt-5.6-luna"
+              ? "xhigh"
+              : "max",
           credentialBindings: [
             {
               kind: "access-token",

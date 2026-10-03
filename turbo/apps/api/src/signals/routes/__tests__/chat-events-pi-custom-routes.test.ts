@@ -48,6 +48,10 @@ const {
   piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
+function expectedDefaultEffort(model: string): "xhigh" | "max" {
+  return model === "gpt-6-luna" || model === "gpt-5.6-luna" ? "xhigh" : "max";
+}
+
 async function configureCustomPiModel(
   actor: ApiTestUser,
   selectedModel: string,
@@ -140,7 +144,11 @@ describe("CHAT-02: model-first provider policies", () => {
           model: selectedModel,
           ...(selectedModel === "deepseek-v4.1-flash"
             ? {}
-            : { runOptions: { reasoningEffort: "max" } }),
+            : {
+                runOptions: {
+                  reasoningEffort: expectedDefaultEffort(selectedModel),
+                },
+              }),
         },
         usagePricingResolution,
       );
@@ -152,7 +160,9 @@ describe("CHAT-02: model-first provider policies", () => {
         piModelConfig: {
           provider: runtimeProvider,
           model: runtimeModel,
-          ...(selectedModel.startsWith("gpt-") ? { thinkingLevel: "max" } : {}),
+          ...(selectedModel.startsWith("gpt-")
+            ? { thinkingLevel: expectedDefaultEffort(selectedModel) }
+            : {}),
         },
       });
       await completeSandboxFirstPiRun({
@@ -260,7 +270,9 @@ describe("CHAT-02: model-first provider policies", () => {
       const firstClaim = await claimChatRun(runnerGroup, run.runId);
       expect(firstClaim.claim.piModelConfig).toMatchObject({
         model: upstreamModel,
-        ...(selectedModel.startsWith("gpt-") ? { thinkingLevel: "max" } : {}),
+        ...(selectedModel.startsWith("gpt-")
+          ? { thinkingLevel: expectedDefaultEffort(selectedModel) }
+          : {}),
       });
       expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
       await completeSandboxFirstPiRun({
@@ -304,7 +316,7 @@ describe("CHAT-02: model-first provider policies", () => {
           const claim = await claimChatRun(runnerGroup, continuation.runId);
           expect(claim.claim.piModelConfig).toMatchObject({
             model: upstreamModel,
-            thinkingLevel: "max",
+            thinkingLevel: expectedDefaultEffort(selectedModel),
           });
           if (tier === "fast") {
             expect(claim.claim.piModelConfig).toMatchObject({
@@ -431,7 +443,7 @@ describe("CHAT-02: model-first provider policies", () => {
         baseUrl: gateway.surface.apiBaseUrl,
         model: gateway.upstreamModel,
         catalogModel: selectedModel,
-        thinkingLevel: "max",
+        thinkingLevel: expectedDefaultEffort(selectedModel),
         ...(tier === undefined ? {} : { serviceTier: "priority" }),
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OKOU_MODEL_PROVIDER_API_KEY",
@@ -831,7 +843,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(claim.claim.piModelConfig).toMatchObject({
       model: gateway.upstreamModel,
       serviceTier: "priority",
-      thinkingLevel: "max",
+      thinkingLevel: "xhigh",
     });
     await expect(api.readRun(actor, promoted.runId)).resolves.toMatchObject({
       source: { model: "gpt-6-luna" },
