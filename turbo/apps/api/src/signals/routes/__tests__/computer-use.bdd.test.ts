@@ -14,7 +14,7 @@ import {
   computerUsePluginCapability,
   computerUsePluginToolCapability,
 } from "@okouai/api-contracts/contracts/computer-use-plugins";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
@@ -239,6 +239,17 @@ function requestTokenFromUrl(authorizationUrl: string): string {
   return decodeURIComponent(url.pathname.slice(prefix.length));
 }
 
+// Cancel runs before shared teardown aborts and drains their background work.
+const trackAuthorizationRun = createFixtureTracker(
+  async (fixture: { readonly actor: ApiTestUser; readonly runId: string }) => {
+    await createRunsApi(context).requestCancelRun(
+      fixture.actor,
+      fixture.runId,
+      [200],
+    );
+  },
+);
+
 async function createAuthorizationScenario(actor: ApiTestUser) {
   const runs = createRunsApi(context);
   const chat = createChatFilesBddApi(context);
@@ -256,9 +267,7 @@ async function createAuthorizationScenario(actor: ApiTestUser) {
     agentId: agent.agentId,
     prompt: "Authorize this thread to use my desktop",
   });
-  onTestFinished(async () => {
-    await runs.requestCancelRun(actor, run.runId, [200]);
-  });
+  await trackAuthorizationRun(Promise.resolve({ actor, runId: run.runId }));
   await runs.heartbeatRunner(runnerGroup);
   const claim = await runs.claimRunnerJob(run.runId);
   const token = claim.platformEnvironment.OKOU_TOKEN;
