@@ -550,14 +550,9 @@ export async function createPublicAnnotationIngress(
     } else {
       await installTeamsForTest(context.signal, fixture);
     }
-    let removed = false;
-    const removeInstallation = async () => {
-      if (!removed) {
-        await removeTeamsForTest(context.signal, fixture);
-        removed = true;
-      }
-    };
-    registerCleanup(removeInstallation);
+    registerCleanup(async () => {
+      await removeTeamsForTest(context.signal, fixture);
+    });
     await flushWaitUntilForTest();
     await accept(
       setupApp({ context, routes: teamsConnectRoutes })(
