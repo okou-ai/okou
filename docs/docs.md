@@ -160,6 +160,8 @@ surface; the index does not replace their detailed rules.
   reference releases, lifecycle locks, cascade inventory and bounded SQL costs.
 - [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
   memory, accounting, retained compatibility, and patch ownership boundaries.
+- [Local Guest archive profiling](./guest-storage-archive-profiling.md): test-only
+  real-extractor measurements, nested phase accounting and component limitations.
 - [Guest/Runner transport placement](./runner-rpc-transport.md#choosing-a-guestrunner-transport-for-new-work):
   decide between the control vsock, Guest-to-Runner RPC, and no cross-VM
   transport for a new operation.

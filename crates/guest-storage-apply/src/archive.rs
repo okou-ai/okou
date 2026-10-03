@@ -40,15 +40,25 @@ use std::path::Path;
 /// written before an error remain in the target directory.
 pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(), DownloadError> {
     let (reader, http_body_read_failure) = source.into_parts();
+    #[cfg(test)]
+    let reader = profile::reader(reader, profile::Phase::CompressedRead);
     let decoder = flate2::read::GzDecoder::new(reader);
+    #[cfg(test)]
+    let decoder = profile::reader(decoder, profile::Phase::GzipRead);
     let budget = MetadataBudget::default();
     let mut archive = tar::Archive::new(MetadataReader::new(decoder, &budget));
 
     // Extract entries one by one, validating paths to prevent symlink path traversal.
+    #[cfg(test)]
+    let metadata_profile = profile::scope(profile::Phase::TarMetadata);
     let mut entries = archive
         .entries()
         .map_err(|e| archive_error("Failed to read archive entries", e))?;
+    #[cfg(test)]
+    drop(metadata_profile);
     loop {
+        #[cfg(test)]
+        let metadata_profile = profile::scope(profile::Phase::TarMetadata);
         budget.begin_entry();
         let Some(entry) = entries.next() else {
             break;
@@ -57,6 +67,10 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
         budget
             .allow_payload(&mut entry)
             .map_err(|e| archive_error("Failed to read archive entry", e))?;
+        #[cfg(test)]
+        drop(metadata_profile);
+        #[cfg(test)]
+        let validation_profile = profile::scope(profile::Phase::EntryValidation);
 
         let entry_path = entry
             .path()
@@ -154,6 +168,10 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
             continue;
         }
 
+        #[cfg(test)]
+        drop(validation_profile);
+        #[cfg(test)]
+        let _unpack_profile = profile::scope(profile::Phase::Unpack);
         // This check-plus-unpack sequence is not TOCTOU-safe: sequential processing of a single
         // archive stream only orders entries within this process, and another process can still
         // replace a checked directory or symlink between the ancestor check and the extraction
@@ -170,6 +188,8 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
     // Tar iteration stops at its end marker before gzip necessarily reaches its
     // trailer. Finish the same decoder to validate its CRC and uncompressed size.
     let mut decoder = archive.into_inner();
+    #[cfg(test)]
+    let _trailer_profile = profile::scope(profile::Phase::Trailer);
     io::copy(&mut decoder, &mut io::sink())
         .map_err(|e| archive_error("Failed to finish gzip archive", e))?;
 
@@ -213,6 +233,8 @@ pub(crate) fn ancestors_within_target(path: &Path, target: &Path) -> bool {
     }
 }
 
+#[cfg(test)]
+mod profile;
 #[cfg(test)]
 mod property_tests;
 
