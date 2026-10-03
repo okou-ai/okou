@@ -436,7 +436,11 @@ function createIdentityContext(
   };
 }
 
-/** Trigger each group after enqueue; cached failures remain authoritative. */
+/**
+ * Trigger each group immediately after context creation, before authorization in
+ * prepareNormalSendContext$, or at pick start when no matching context is passed.
+ * Cached failures remain authoritative.
+ */
 export const preloadAgentRunContext$ = command(
   ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
     signal.throwIfAborted();
