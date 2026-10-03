@@ -86,6 +86,12 @@ fn profiling_preserves_local_output_and_gzip_failure_partial_writes() {
     .unwrap();
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("input.tar.gz");
+    // Temp directories can be reached through a symlinked TMPDIR. Exercise that
+    // alias here, while still honoring the extractor's canonical-target contract.
+    let outputs = root.path().join("outputs");
+    fs::create_dir(&outputs).unwrap();
+    let output_alias = root.path().join("output-alias");
+    std::os::unix::fs::symlink(&outputs, &output_alias).unwrap();
     for variant in ["valid", "corrupt_crc", "missing_trailer"] {
         let mut bytes = fixture.archive.clone();
         match variant {
@@ -97,10 +103,12 @@ fn profiling_preserves_local_output_and_gzip_failure_partial_writes() {
             _ => {}
         }
         fs::write(&archive, &bytes).unwrap();
-        let baseline_target = root.path().join(format!("{variant}-baseline"));
-        let profiled_target = root.path().join(format!("{variant}-profiled"));
+        let baseline_target = output_alias.join(format!("{variant}-baseline"));
+        let profiled_target = output_alias.join(format!("{variant}-profiled"));
         fs::create_dir(&baseline_target).unwrap();
         fs::create_dir(&profiled_target).unwrap();
+        let baseline_target = baseline_target.canonicalize().unwrap();
+        let profiled_target = profiled_target.canonicalize().unwrap();
         let baseline = extract_tar_gz(source(&archive).unwrap(), &baseline_target);
         let (profiled, profile) =
             collect(|| extract_tar_gz(source(&archive).unwrap(), &profiled_target));
