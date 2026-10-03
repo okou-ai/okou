@@ -1,165 +1,138 @@
-# Shared Connector context observations
+# Connector context observations
 
-Issues [#37628](https://github.com/okou-ai/okou/issues/37628) and parent
-[#37627](https://github.com/okou-ai/okou/issues/37627) add attribution only. They
-change no SQL, preload order, account selection, authorization/currentness,
-credential storage/decryption, retry/cancellation, launch fence or pool setting.
-They do not authorize merge, deployment, credential caching or an optimization.
+## Owners and versioned scopes
 
-## Current owner and scopes
+The shared identity context captures accounts, variables, encrypted credentials,
+OAuth bindings and catalog authority without decrypting all saved accounts.
+Thread derives the existing selected eager plan from those captured facts. MCP,
+firewall-placeholder, model/body override, environment-reference and selected-account
+rules are unchanged. SQL, admission/currentness, lease/account fences, credential
+storage and runtime firewall credential resolution are unchanged by task M.
 
-`agent-run-context.signals.ts::createAgentEnvironment` executes one statement
-for the member's accounts, variables, encrypted credentials and OAuth bindings.
-Agent `environment$` shares it. Source materialization additionally awaits
-custom definitions; builtin credential resolution additionally awaits the
-catalog. Individual builtin decryption failures remain settled until their
-selected method/account consumes them. Custom runtime credential handling is
-unchanged.
+Two independent cohorts now report their actual work:
 
-The context carries plain read-only numeric observations with its existing
-computed result, not a timing collector, command/state, DB handle, new computed
-node or process credential cache. Preload emits nothing. Thread copies the
-completed observations into its existing Run collector, retaining their
-original wall-clock finish times. Nothing is added to public/Runner payloads.
+- `connector_context_schema=shared_v2`: shared snapshot query, pool acquisition,
+  environment materialization and source materialization. `connectors$` no longer
+  contains `builtinResolve`, `builtinDecrypt` or `builtinDecryptCount`. Shared
+  observations do not emit a fabricated decrypt zero or require decrypt stages
+  to be classified complete.
+- `connector_context_schema=selected_eager_v1`: the claim-owned eager credential
+  context captures `builtinResolve`, `builtinDecrypt` and `builtinDecryptCount`
+  alongside its memoized credential result. One owned launch consumer
+  (`prepareEncryptedSecrets$`) copies the completed observations into the existing
+  Run collector. Preload schedules work but emits nothing. Each claim has its own
+  read-only context; there is no process plaintext cache or mutable timing state.
 
-The existing `api_dispatch_prepare_context_load_custom_connector_value_rows`
-retains its original boundaries: remaining wait for the selected custom source
-results. Those depend on shared `connectors$`, account candidates and scope.
-This is **not custom-only SQL duration**, and it excludes the subsequent
-runtime-row projection. New records identify these semantics with
-`connector_value_rows_semantics=shared_context_wait_v1` and
-`connector_context_schema=shared_v1`. Never compare mixed legacy/new versions as
-if that name identified one unchanged implementation.
+The old `shared_v1` cohort measured all saved built-in method-owned credentials,
+not the selected eager set. During L it instead omitted the two intervals and
+reported a shared zero. Do not combine those cohorts with either new cohort.
+Source/build SHA remains necessary for historical interpretation.
 
-## Stages
+## Stage definitions
 
-All names below have the prefix `api_dispatch_prepare_context_` and
-`span_kind=nested`. A nested label does not imply interval containment: early
-preload can finish before the consumer wait or even before `api_to_spawn` starts.
+All action names have prefix `api_dispatch_prepare_context_`, `span_kind=nested`.
+Original wall-clock finish timestamps and monotonic elapsed durations survive
+preload: a nested record can finish before the later consuming launch phase.
 
-| Suffix                                      | Actual boundary                                                                                                                                                                                                     |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `load_custom_connector_value_rows`          | Existing remaining source-consumer wait, including account/scope/shared dependencies.                                                                                                                               |
-| `project_custom_connector_value_rows`       | Synchronous conversion of the resolved available custom sources to runtime rows; no query/decrypt.                                                                                                                  |
-| `connector_context_environment_query`       | Awaited execution/results envelope of the unchanged shared statement, including pool acquisition, statement/network/driver work and Drizzle decoding. Query-builder construction is outside this interval.          |
-| `connector_context_pool_acquire`            | Actual pg-pool connect callback duration, with its actual callback finish time and `idle/new/queued` classification. Only emitted for exactly one captured acquisition.                                             |
-| `connector_context_environment_materialize` | Synchronous conversion of decoded statement rows into accounts, variables and encrypted credential values.                                                                                                          |
-| `connector_context_sources_materialize`     | Synchronous account/definition binding and source-snapshot construction, after environment and definitions resolve. It does not measure the prior definition wait.                                                  |
-| `connector_context_builtin_resolve`         | Builtin credential computed envelope, including waiting for shared source snapshots/catalog and the decrypt function.                                                                                               |
-| `connector_context_builtin_decrypt`         | Invocation of the existing builtin method-owned credential selection/decryption function, excluding its prior source/catalog wait. The count bucket can be zero: an empty invocation is not evidence of a KMS call. |
+| Suffix                                      | Cohort            | Boundary                                                                                                                                                                                                                                           |
+| ------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `load_custom_connector_value_rows`          | shared_v2         | Existing remaining consumer wait for selected custom source results, including shared dependencies; not custom-only SQL or decryption. `connector_value_rows_semantics=shared_context_wait_v1` is unchanged.                                       |
+| `project_custom_connector_value_rows`       | shared_v2         | Synchronous conversion of resolved custom sources to runtime rows; no query/decrypt.                                                                                                                                                               |
+| `connector_context_environment_query`       | shared_v2         | Shared statement execution/results, including pool acquisition, network/driver work and decoding; excludes query-builder construction.                                                                                                             |
+| `connector_context_pool_acquire`            | shared_v2         | One actual pg-pool acquisition with original finish time and idle/new/queued path; omitted for zero/multiple captures.                                                                                                                             |
+| `connector_context_environment_materialize` | shared_v2         | Synchronous conversion of decoded shared statement rows.                                                                                                                                                                                           |
+| `connector_context_sources_materialize`     | shared_v2         | Synchronous account/definition/source binding, after required reads resolve.                                                                                                                                                                       |
+| `connector_context_builtin_resolve`         | selected_eager_v1 | Envelope from requesting the selected encrypted rows/eager plan until the eager context finishes decryption. Includes prerequisite plan/model/permission/source waits and the decrypt interval; not a DB-only duration or remaining consumer wait. |
+| `connector_context_builtin_decrypt`         | selected_eager_v1 | Actual concurrent per-credential `decryptStoredSecretValue`/settle envelope, excluding the preceding selection/plan wait. Empty eager sets are still timed.                                                                                        |
 
-The query, environment and source costs cover **all identity-scoped saved
-accounts**, including unused/unavailable builtin/custom accounts, and Agent
-variables. They are not costs of only the selected custom connectors. The
-builtin stages are shared prerequisites, not custom credential decryption.
-Definition/catalog/account/scope waits are not individually partitioned here;
-retain an unattributed dependency/scheduling remainder rather than declaring it
-measured DB wait. Existing catalog/selection telemetry and bounded OTel traces
-may support a separately scoped investigation.
+Resolve includes decrypt: never sum these overlapping durations or subtract
+preloaded intervals wholesale from startup. Query minus acquisition is a
+post-acquisition residual (network, driver, decoding and scheduling), not measured
+server CPU. Counts and intervals do not authorize deleting a current-state fence.
 
-Query duration minus the one measured acquisition is a **post-acquisition
-residual**, not measured server execution. It includes network, driver, decoding
-and scheduling. Acquisition includes connection setup or queued/idle delivery,
-not solely pool saturation. Do not infer server CPU, row transfer bytes or a
-removable current-state read from either number.
+## Counts and privacy
 
-## Bounded dimensions and privacy
+Shared numeric facts remain captured plain values. Shared records retain existing
+finite account, custom-account, returned-row, stored-value, requested-custom and
+candidate-custom count buckets (`0 / 1 / 2_4 / 5_8 / 9_16 / 17_plus`). These are
+identity-snapshot counts, not final selected account counts.
 
-In addition to existing Run correlation, exact API build marker, process-age,
-Runner group/profile and source tags, the new dimensions are only:
+Selected eager records include:
 
-- `connector_context_schema`: `shared_v1`.
-- `connector_value_rows_semantics`: `shared_context_wait_v1`.
-- `connector_scope_source`: the existing finite Connector scope source.
-- `connector_context_observation`: `complete`, `partial` or `missing` for the
-  five shared operation intervals (pool coverage is separate).
-- `connector_context_pool_capture`: `single`, `missing` or `multiple`.
-- `connector_context_pool_acquire_path`: `idle`, `new` or `queued`, only on the
-  acquisition record.
-- Count buckets with prefix `connector_context_` and suffix `_count_bucket`:
-  `requested_custom`, `candidate_custom`, `returned_row`, `account`,
-  `custom_account`, `stored_value` and `builtin_decrypt`.
+- `connector_context_builtin_decrypt_count`: numeric metric copied from
+  `builtinDecryptCount`, the number of uniquely keyed selected credential attempts,
+  including settled failures. It is not a string label, success count or total Run
+  KMS HTTP-call count. A malformed envelope can fail before issuing KMS; other Run
+  operations can issue KMS independently.
+- `connector_context_builtin_decrypt_count_bucket`: the same finite count buckets
+  for bounded grouping.
+- `connector_context_observation=complete/partial`: presence of both completed
+  eager intervals. Missing diagnostics are not interpreted as zero latency.
+- Existing finite connector-scope/count dimensions from the selected plan.
 
-Every count uses the existing `0 / 1 / 2_4 / 5_8 / 9_16 / 17_plus` buckets.
-Requested custom counts are scope definitions; candidate custom counts are the
-matching saved source results before final per-definition account admission,
-including unavailable results. Neither is the final selected account count.
-Shared counts describe returned SQL rows, saved accounts, custom saved accounts,
-and connector variable/credential entries before declared-field filtering.
-Builtin decrypt count is the number of uniquely keyed settled credential results,
-not successes. No exact count is emitted.
+Shared complete/partial/missing covers its three shared intervals only. Pool
+coverage stays independently single/missing/multiple. No new raw identity,
+connector/account/secret name/value, SQL/parameter, exception text, user content,
+provider label or byte payload is recorded. Optional capture/record failures omit
+diagnostics; required source reads, selected results and original errors are never
+caught or replaced. Numeric metrics are carried separately from bounded string
+dimensions by the existing timing collector and flattened by the existing ingest.
 
-No new raw org/user/Agent/connector/account/secret ID, credential name/value,
-SQL/parameter text, exception content, user content, provider label, byte payload
-or dynamic dimension is logged. Existing OTel SQL tracing is not widened or
-copied into these records. Optional metadata construction/recording failures
-omit diagnostics; required reads, mappings and decrypt results/errors are not
-caught or replaced. The pool callback still delivers its original client/error
-if the optional capture write fails.
+## Presence, failure and consumer boundary
 
-## Presence and absence
+- A successfully consumed run with no eligible eager credentials reports both
+  selected intervals and count zero. This is not evidence of zero total Run KMS.
+- Mixed eager/deferred connectors report only selected eager credential attempts;
+  runtime-only and unselected accounts do not inflate the selected count.
+- Preload and both launch consumers share the same memoized credential result.
+  Only the encrypted-secret consumer records selected intervals, avoiding duplicates.
+- Selected credential failures remain per-item settled, then propagate when the
+  consumer needs that selected credential. Unselected bad accounts remain isolated.
+- A failed/rejected/unconsumed launch can have no selected observation pair. The
+  successful-consumer denominator is not a census of all attempted decrypts.
+- Optional capture failure can leave partial/absent records. Sink failure can omit
+  records entirely without changing the required launch outcome.
 
-This contract applies when Thread actually consumes and successfully resolves
-`runCustomConnectorStoredRows$`; it is not a census of all attempted starts.
+There are at most two selected eager records per consuming Run, in addition to
+shared records. No new SQL, query, connection, worker, sampling loop, timer or
+unbounded retained collection is introduced.
 
-| Case                                                                             | Expected observations                                                                                                                                 |
-| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No accounts, no allowed custom definitions                                       | Wait/projection and all five shared intervals; account/custom/value/decrypt buckets are zero. The aggregate SQL still returns an empty-account row.   |
-| Builtin-only or custom-only scope                                                | Same stages; full saved-account counts may include the other kind. Empty builtin decrypt is still timed with a zero count.                            |
-| Mixed scope or unused saved accounts                                             | Same stages; shared counts include all saved accounts, while candidate/requested custom buckets describe the consuming scope.                         |
-| Unavailable/reconnect/incompatible custom account                                | Same completed shared stages if the required read succeeds; final admission/omission remains the existing behavior. Counts do not grant availability. |
-| Matching preload finished early                                                  | Original captured shared intervals plus the remaining consumer wait; no reread. Early shared durations may be entirely off the startup critical path. |
-| Later-request/mismatched context                                                 | Same factory, statement and stage definitions, with that request's own captured intervals; no backfill from another context.                          |
-| Zero or multiple pool captures                                                   | Query and other intervals remain; no pool record is fabricated/combined. `pool_capture` identifies missing/multiple coverage.                         |
-| Optional metadata interval failure                                               | Missing interval or shared observation, with `partial/missing` where the outer record is retained. Sink failure can omit records entirely.            |
-| Required read/definition/catalog/source failure or a rejected/unconsumed preload | No completed shared result is emitted by this path. Do not interpret absent records as zero latency or count them as successful starts.               |
+## Consumer and query migration inventory
 
-Per completed consuming Run there are at most seven new records: five shared
-operation intervals, one exact acquisition and one projection. Capture adds one
-async-local scope around the existing query, small request-only numeric objects,
-and a linear custom-account count over an already materialized array; no SQL,
-connection, worker, sampling loop or unbounded retained collection is added.
-Actual production overhead/resource guardrails remain a deployment follow-up.
+Repository search finds the producer/type in `agent-run-context.signals.ts`,
+shared and selected recording in `thread-claim-run.service.ts`, action-name
+inventory in `api-dispatch-timing.service.ts`, and this guide. No checked-in Axiom
+panel definition or dashboard query consumes the builtin fields.
 
-## Parent readout and decision gate
+Saved/external queries that select the two existing builtin action names or
+`connector_context_builtin_decrypt_count_bucket`, or require five shared stages
+for `connector_context_observation=complete`, must change:
 
-1. Verify the exact serving API markers after separately authorized deployment;
-   merge/release is not deployment. Dispatch API SHA/process-age identifies the
-   dispatch process, not necessarily the later Runner-claim API binary. Confirm
-   the Runner release independently from Runner startup records.
-2. Select a fixed event-time startup window and record query/read time and
-   partial-result status. Allow a documented bounded lookback for preload
-   records that finish before the startup window. Join only by `run_id` and
-   report observed startup denominators, missing/duplicate/partial/out-of-window
-   stages, invalid durations/timestamps and late-ingestion limits. Do not
-   deduplicate arbitrary repeated records into a complete observation.
-3. Stratify exact API/Runner cohorts, startup path, API process-age bucket,
-   source/scope and shared/requested/candidate count buckets. Report nearest-rank
-   per-Run p50/p90/p95/p99 (`ceil(p * n)`, one-based), <=1 second and sample sizes.
-   Shared stages with zero eligible decrypts are their own workload class.
-4. Infer an interval from each original finish time and duration. Account for
-   millisecond timestamp precision/clock discontinuities. Verify one measured
-   acquisition lies within its query before deriving a nonnegative residual;
-   inconsistent samples are invalid coverage, not clamped evidence.
-5. Intersect each candidate interval with both the actual remaining consumer
-   wait and startup interval. Early/parallel/nested work cannot be subtracted
-   wholesale. Build counterfactuals per Run before aggregating, subtracting only
-   a justified non-overlapping intersection and labeling impossible complete
-   removal as an optimistic bound, never predicted savings. Do not sum nested
-   percentiles or treat shared builtin/Agent work as custom-only cost.
-6. Independently inspect failed starts, retries, cancellation, credential/auth
-   outcomes and CPU/memory/database/pool connections/queue pressure. Successful
-   Run spans alone cannot establish these rates or a safe behavior change.
-7. Retain #37627/#24203 until their own gates pass. Only reproducible safe
-   removable/overlap-able critical-path leverage justifies a separately
-   authorized behavior slice. Otherwise record a no-change decision. No arbitrary
-   minimum-ms threshold, production explain/analyze or credential skip/cache is
-   authorized by this instrumentation.
+1. Group shared work by `shared_v2`; require query/materialize/sources (pool separate).
+2. Filter builtin intervals/counts to `selected_eager_v1`; use the numeric count
+   metric for exact attempt comparisons and the bucket for cohort grouping.
+3. Join only by existing Run correlation and exact API SHA; maintain separate
+   coverage denominators, reject duplicates, and retain original finish times.
+4. Do not backfill a missing builtin metric on shared records as zero, mix the
+   pre-L all-account workload with selected eager, or sum resolve and decrypt.
 
-API tests cover public send/Run/Runner outcomes and relevant credential/account
-safety, not logger output or internal callback counts. The pool-instrumentation
-suite owns the infrastructure capture contract (including a non-recording
-tracer and a failed diagnostic write), which a production endpoint cannot
-configure. Static stage/dimension/consumer review verifies the source contract;
-actual emitted presence/absence is an explicit post-deployment gate, not a local
-log-test or source-level improvement claim.
+Axiom dashboard inventory was attempted read-only. Okou permission diagnosis
+allows `dashboards|read`, but the provider token returned HTTP 403 (`token does not
+have access to resource: dashboards with action: read`). External dashboard
+inventory is therefore **unverified**, not an assertion that no such panels exist.
+No dashboard/provider configuration was changed.
+
+## Verification
+
+Logger-owned transport tests in `lib/__tests__/log-axiom-transport.test.ts` construct
+N=0/1/2 scenarios through production connect/send/Runner claim endpoints. At the
+existing mocked external SDK ingest boundary they compare the numeric observation
+with actual external KMS decrypt calls, require both completed finite intervals,
+and reject shared decrypt fields. This is the documented logger-owner exception;
+ordinary API route tests still assert HTTP/Runner/firewall outcomes, not logs.
+No production test hook, logger mock bypass or lint exception is added.
+
+Deployed acceptance uses fixed finite UTC Axiom windows, exact serving SHA, complete
+query responses, completed new-thread/continuation outputs, and explicit stage/count,
+KMS and SQL evidence. Preview mock execution with synthetic credentials does not
+prove real provider actions, production rollout or production latency improvement.

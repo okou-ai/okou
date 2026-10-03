@@ -25,7 +25,6 @@ import {
 import {
   matchAgentRunContextSignals,
   createEagerConnectorCredentialContext,
-  preloadEagerConnectorCredentialContext$,
   type AgentRunContextSignals,
   type BootstrapConnectorObservation,
 } from "./agent-run-context.signals";
@@ -7753,20 +7752,22 @@ export function createThreadClaimRunObjects(
     },
   );
   const eagerCredentialContext$ = computed(async (get) => {
+    const resolveStartedAt = performance.now();
     return createEagerConnectorCredentialContext(
       await get(runConnectorEncryptedRows$),
+      resolveStartedAt,
     );
   });
   // Capture the exact eager plan before preloading its read-only context.
   const preloadEagerCredentials$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async ({ get }, signal: AbortSignal): Promise<void> => {
       if (!(await get(selectionInput$))) {
         signal.throwIfAborted();
         return;
       }
       const context = await get(eagerCredentialContext$);
       signal.throwIfAborted();
-      set(preloadEagerConnectorCredentialContext$, context, signal);
+      waitUntil(settle(get(context.credentials$)));
     },
   );
   // Stored connector secrets, decrypted once per graph; KMS decryption has no
@@ -7783,7 +7784,7 @@ export function createThreadClaimRunObjects(
     if (isRouteError(plan)) {
       return {};
     }
-    const decrypted = await get(
+    const { credentials: decrypted } = await get(
       (await get(eagerCredentialContext$)).credentials$,
     );
     return Object.fromEntries(
@@ -9639,6 +9640,52 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
         return input;
+      }
+      const { observation } = await get(
+        (await get(eagerCredentialContext$)).credentials$,
+      );
+      signal.throwIfAborted();
+      const plan = await get(runConnectorEagerSecretPlan$);
+      signal.throwIfAborted();
+      // One owned consumer records the original completed intervals, never preload.
+      if (observation && !isRouteError(plan)) {
+        bestEffortTelemetry(() => {
+          const dimensions: ApiDispatchTimingDimensions = {
+            ...plan.timingDimensions,
+            connector_context_schema: "selected_eager_v1",
+            connector_context_observation:
+              observation.builtinResolve && observation.builtinDecrypt
+                ? "complete"
+                : "partial",
+            connector_context_builtin_decrypt_count_bucket: countBucket(
+              observation.builtinDecryptCount,
+            ),
+          };
+          for (const [actionType, duration] of [
+            [
+              "api_dispatch_prepare_context_connector_context_builtin_resolve",
+              observation.builtinResolve,
+            ],
+            [
+              "api_dispatch_prepare_context_connector_context_builtin_decrypt",
+              observation.builtinDecrypt,
+            ],
+          ] as const) {
+            if (duration) {
+              plan.input.timing.recordDuration(
+                actionType,
+                "nested",
+                duration.durationMs,
+                duration.finishedAt,
+                dimensions,
+                {
+                  connector_context_builtin_decrypt_count:
+                    observation.builtinDecryptCount,
+                },
+              );
+            }
+          }
+        });
       }
       const encryptedSecrets = await set(
         encryptExecutionSecrets$,
@@ -13648,7 +13695,7 @@ function connectorContextTimingDimensions(args: {
 }): ApiDispatchTimingDimensions {
   const observation = args.observation;
   return {
-    connector_context_schema: "shared_v1",
+    connector_context_schema: "shared_v2",
     connector_value_rows_semantics: "shared_context_wait_v1",
     connector_scope_source: args.scopeSource,
     connector_context_requested_custom_count_bucket: countBucket(
@@ -13659,11 +13706,7 @@ function connectorContextTimingDimensions(args: {
     ),
     connector_context_observation: !observation
       ? "missing"
-      : observation.query &&
-          observation.materialize &&
-          observation.sources &&
-          observation.builtinResolve &&
-          observation.builtinDecrypt
+      : observation.query && observation.materialize && observation.sources
         ? "complete"
         : "partial",
     ...(observation
@@ -13679,9 +13722,6 @@ function connectorContextTimingDimensions(args: {
           ),
           connector_context_stored_value_count_bucket: countBucket(
             observation.storedValueCount,
-          ),
-          connector_context_builtin_decrypt_count_bucket: countBucket(
-            observation.builtinDecryptCount,
           ),
           connector_context_pool_capture:
             observation.acquisitions.length === 1
@@ -13714,14 +13754,6 @@ function recordConnectorContextObservation(
     [
       "api_dispatch_prepare_context_connector_context_sources_materialize",
       observation.sources,
-    ],
-    [
-      "api_dispatch_prepare_context_connector_context_builtin_resolve",
-      observation.builtinResolve,
-    ],
-    [
-      "api_dispatch_prepare_context_connector_context_builtin_decrypt",
-      observation.builtinDecrypt,
     ],
   ] as const;
   for (const [actionType, duration] of stages) {

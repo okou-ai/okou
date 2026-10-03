@@ -200,9 +200,6 @@ interface BootstrapEnvironmentObservation {
 
 export interface BootstrapConnectorObservation extends BootstrapEnvironmentObservation {
   readonly sources: ConnectorContextDuration | undefined;
-  readonly builtinResolve: ConnectorContextDuration | undefined;
-  readonly builtinDecrypt: ConnectorContextDuration | undefined;
-  readonly builtinDecryptCount: number;
 }
 
 function connectorContextDuration(
@@ -657,9 +654,22 @@ function bootstrapConnectorSnapshot(
   };
 }
 
+export interface EagerConnectorCredentialObservation {
+  readonly builtinResolve: ConnectorContextDuration | undefined;
+  readonly builtinDecrypt: ConnectorContextDuration | undefined;
+  /** Selected credential attempts, including settled failures; not total Run KMS. */
+  readonly builtinDecryptCount: number;
+}
+
 export interface EagerConnectorCredentialContext {
   readonly credentials$: Computed<
-    Promise<ReadonlyMap<string, Awaited<ReturnType<typeof settle<string>>>>>
+    Promise<{
+      readonly credentials: ReadonlyMap<
+        string,
+        Awaited<ReturnType<typeof settle<string>>>
+      >;
+      readonly observation: EagerConnectorCredentialObservation | undefined;
+    }>
   >;
 }
 
@@ -669,8 +679,10 @@ export function createEagerConnectorCredentialContext(
     readonly id: string;
     readonly encryptedValue: string;
   }[],
+  resolveStartedAt: number,
 ): EagerConnectorCredentialContext {
   const credentials$ = computed(async () => {
+    const decryptStartedAt = performance.now();
     const decrypted = await mapConcurrent(
       credentials,
       4,
@@ -681,21 +693,21 @@ export function createEagerConnectorCredentialContext(
         ] as const;
       },
     );
-    return new Map(decrypted);
+    const result = new Map(decrypted);
+    const observation = safeSync((): EagerConnectorCredentialObservation => {
+      return {
+        builtinDecrypt: connectorContextDuration(decryptStartedAt),
+        builtinResolve: connectorContextDuration(resolveStartedAt),
+        builtinDecryptCount: result.size,
+      };
+    });
+    return {
+      credentials: result,
+      observation: "ok" in observation ? observation.ok : undefined,
+    };
   });
   return { credentials$ };
 }
-
-export const preloadEagerConnectorCredentialContext$ = command(
-  (
-    { get },
-    context: EagerConnectorCredentialContext,
-    signal: AbortSignal,
-  ): void => {
-    signal.throwIfAborted();
-    waitUntil(settle(get(context.credentials$)));
-  },
-);
 
 function bootstrapCatalogRequest(selection: AgentConnectorSelection) {
   const scope = agentConnectorScopeFromRows({
@@ -1122,22 +1134,10 @@ function createConnectorContextGroups(
   );
   const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
     const snapshot = await get(connectorSnapshot$);
-    const observation = safeSync(
-      (): BootstrapConnectorObservation | undefined => {
-        return snapshot.observation
-          ? {
-              ...snapshot.observation,
-              builtinResolve: undefined,
-              builtinDecrypt: undefined,
-              builtinDecryptCount: 0,
-            }
-          : undefined;
-      },
-    );
     return {
       connectorAccounts: snapshot.accounts,
       connectorSources: snapshot.sources,
-      observation: "ok" in observation ? observation.ok : undefined,
+      observation: snapshot.observation,
     };
   });
   return {

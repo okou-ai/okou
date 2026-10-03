@@ -12,10 +12,132 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { withRealAxiomLoggingForTest } from "../../__tests__/mocks";
 import { server } from "../../mocks/server";
+import { createChatEventsFixture } from "../../signals/routes/__tests__/helpers/chat-events-fixture";
+import { useSecretKmsProbe } from "../../signals/routes/__tests__/helpers/secret-kms-probe";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const FAILURE_MESSAGE =
   "Fal built-in generation webhook reported failed generation";
+
+// Logger-owned transport exception: verify the selected-eager operation payload
+// at the existing external SDK ingest boundary, using real connect/send/claim
+// endpoints. Ordinary API route tests must not inspect incidental diagnostics.
+describe("selected eager Axiom operation payload", () => {
+  it.each([0, 1, 2])(
+    "reports %i selected decrypts with both completed intervals",
+    async (expectedCount) => {
+      const fixture = createChatEventsFixture(context);
+      const { actor, agentId, runnerGroup, providerId } =
+        await fixture.entitledChatActor();
+      await fixture.api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          preferred: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
+      await fixture.connectors.connectManualGrant(
+        actor,
+        "figma",
+        "api-token",
+        {
+          accessToken: "deferred-transport-token",
+        },
+        agentId,
+      );
+      if (expectedCount) {
+        await fixture.connectors.connectManualGrant(
+          actor,
+          "openai",
+          "api-token",
+          {
+            apiKey: "eager-transport-token",
+          },
+          agentId,
+        );
+      }
+      if (expectedCount === 2) {
+        await fixture.connectors.connectManualGrant(
+          actor,
+          "parallel",
+          "api-token",
+          { apiKey: "parallel-transport-token" },
+          agentId,
+        );
+      }
+      context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
+      const kms = useSecretKmsProbe();
+      const run = await fixture.sendChatRun(actor, {
+        agentId,
+        model: "claude-fable-5-1",
+        prompt: "Verify selected eager observations",
+      });
+      const actualDecrypts = kms.decryptCalls;
+      const claimed = await fixture.claimChatRun(runnerGroup, run.runId);
+      expect(claimed.claim.environment).toMatchObject({
+        FIGMA_TOKEN: "fixture-figma-token",
+        ...(expectedCount ? { OPENAI_TOKEN: "eager-transport-token" } : {}),
+        ...(expectedCount === 2
+          ? { PARALLEL_API_KEY: "parallel-transport-token" }
+          : {}),
+      });
+      expect(actualDecrypts).toBe(expectedCount);
+      const eventSchema = z.object({
+        run_id: z.string().optional(),
+        op_type: z.string().optional(),
+        connector_context_schema: z.string().optional(),
+        connector_context_builtin_decrypt_count: z.number().optional(),
+        connector_context_builtin_decrypt_count_bucket: z.string().optional(),
+        duration_ms: z.number().optional(),
+        _time: z.string().optional(),
+      });
+      const events = context.mocks.axiom.sdkIngest.mock.calls
+        .flatMap(([, payload]) => {
+          return z.array(eventSchema).parse(payload);
+        })
+        .filter((event) => {
+          return event.run_id === run.runId;
+        });
+      const selected = events.filter((event) => {
+        return event.connector_context_schema === "selected_eager_v1";
+      });
+      expect(selected).toHaveLength(2);
+      for (const suffix of ["builtin_resolve", "builtin_decrypt"]) {
+        const matches = selected.filter((event) => {
+          return (
+            event.op_type ===
+            `api_dispatch_prepare_context_connector_context_${suffix}`
+          );
+        });
+        expect(matches).toHaveLength(1);
+        expect(matches[0]).toMatchObject({
+          connector_context_builtin_decrypt_count: actualDecrypts,
+          connector_context_builtin_decrypt_count_bucket:
+            expectedCount === 2 ? "2_4" : String(expectedCount),
+          duration_ms: expect.any(Number),
+          _time: expect.any(String),
+        });
+        expect(matches[0]!.duration_ms).toBeGreaterThanOrEqual(0);
+        expect(Number.isFinite(Date.parse(matches[0]!._time!))).toBe(true);
+      }
+      const shared = events.filter((event) => {
+        return event.connector_context_schema === "shared_v2";
+      });
+      expect(shared.length).toBeGreaterThan(0);
+      expect(
+        shared.every((event) => {
+          return (
+            event.connector_context_builtin_decrypt_count === undefined &&
+            event.connector_context_builtin_decrypt_count_bucket === undefined
+          );
+        }),
+      ).toBe(true);
+      await fixture.cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    },
+  );
+});
 
 describe("Axiom logging transport", () => {
   it("sends Fal info/warn diagnostics with the default SDK transport and restores mocks", async () => {
