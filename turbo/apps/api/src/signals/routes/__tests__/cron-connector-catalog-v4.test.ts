@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { corruptApiTestConnectorCatalogActiveSnapshotPayload } from "../../../test-fixtures/connector-catalog";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
@@ -574,6 +574,158 @@ describe("connector catalog v4 preparation", () => {
       ).toStrictEqual(["catalog-service"]);
     },
   );
+
+  it("reports strict cold filtering through staff diagnostics before and after a rejected sync", async () => {
+    const features = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+      }),
+      [200],
+    );
+    const before = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(before.body).toMatchObject({
+      schemaVersion: 4,
+      state: "never-synced",
+      active: null,
+    });
+    expect(before.body.filtering).toStrictEqual({
+      capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+      evaluatedAt: null,
+      stale: true,
+      filteredAuthMethods: [],
+    });
+
+    serveObjects(new Map());
+    const rejected = await sync();
+    expect(rejected.body).toMatchObject({
+      outcome: "rejected",
+      state: "never-synced",
+      active: null,
+      lastAttempt: { failureCode: "source-unavailable" },
+    });
+    expect(rejected.body.filtering).toStrictEqual(before.body.filtering);
+    context.mocks.s3.send.mockClear();
+    const after = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(after.body.filtering).toStrictEqual(before.body.filtering);
+    expect(after.body).not.toHaveProperty("sourceId");
+    expect(after.body).not.toHaveProperty("catalog");
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
+
+  it("isolates staff filtering by current capability and accepted v4 catalog identity", async () => {
+    const features = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+      }),
+      [200],
+    );
+    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
+    const initial = release({ mcpSlug: "notes-mcp" });
+    serveObjects(initial.objects);
+    const accepted = await sync();
+    expect(accepted.body).toMatchObject({
+      outcome: "accepted",
+      active: {
+        catalogVersion: initial.pointer.catalogVersion,
+        catalogDigest: initial.pointer.catalogDigest,
+      },
+      filtering: { stale: false, filteredAuthMethods: [] },
+    });
+    expect(accepted.body.filtering.evaluatedAt).not.toBeNull();
+    context.mocks.s3.send.mockClear();
+    const original = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(original.body.filtering).toStrictEqual(accepted.body.filtering);
+
+    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "catalog-capability-client-id");
+    const stale = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(stale.body.filtering).toStrictEqual({
+      capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+      evaluatedAt: null,
+      stale: true,
+      filteredAuthMethods: [],
+    });
+    expect(stale.body.filtering.capabilityDigest).not.toBe(
+      original.body.filtering.capabilityDigest,
+    );
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+
+    const configured = await sync();
+    expect(configured.body).toMatchObject({
+      outcome: "unchanged",
+      filtering: {
+        capabilityDigest: stale.body.filtering.capabilityDigest,
+        stale: false,
+        filteredAuthMethods: [],
+      },
+    });
+    expect(configured.body.filtering.evaluatedAt).not.toBeNull();
+    const current = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(current.body.filtering).toStrictEqual(configured.body.filtering);
+    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
+    const restored = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(restored.body.filtering).toStrictEqual(original.body.filtering);
+
+    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "catalog-capability-client-id");
+    const replacement = release({
+      version: `${CATALOG_VERSION}.capability-next`,
+      label: "Replacement v4",
+      mcpSlug: "notes-mcp",
+    });
+    serveObjects(replacement.objects);
+    const replaced = await sync();
+    expect(replaced.body).toMatchObject({
+      outcome: "accepted",
+      active: {
+        catalogVersion: replacement.pointer.catalogVersion,
+        catalogDigest: replacement.pointer.catalogDigest,
+      },
+      filtering: {
+        capabilityDigest: configured.body.filtering.capabilityDigest,
+        stale: false,
+        filteredAuthMethods: [],
+      },
+    });
+    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
+    context.mocks.s3.send.mockClear();
+    const notReused = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(notReused.body.active).toStrictEqual(replaced.body.active);
+    expect(notReused.body.filtering).toStrictEqual({
+      capabilityDigest: original.body.filtering.capabilityDigest,
+      evaluatedAt: null,
+      stale: true,
+      filteredAuthMethods: [],
+    });
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
 
   it("reports a cold catalog as unavailable until v4 is accepted", async () => {
     serveObjects(new Map());
