@@ -157,6 +157,7 @@ import { vncAccessRoutes } from "./routes/vnc-access";
 import { runnerVncRoutes } from "./routes/runner-vnc";
 import { runnerWssTicketRoutes } from "./routes/runner-wss-tickets";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
+import { tailscaleRoutes } from "./routes/tailscale";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { browserRoutes } from "./routes/browser";
@@ -363,6 +364,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnerVncRoutes,
   ...runnerWssTicketRoutes,
   ...cloudflareAccessRoutes,
+  ...tailscaleRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,
   ...browserRoutes,

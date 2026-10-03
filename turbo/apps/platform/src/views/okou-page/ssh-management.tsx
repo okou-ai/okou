@@ -917,6 +917,14 @@ export function SshDialog() {
   );
 }
 
+function cloudflareConfigId(connection: SshConnectionResponse): string | null {
+  return "transport" in connection &&
+    connection.transport.type === "cloudflare_access" &&
+    "configId" in connection.transport
+    ? connection.transport.configId
+    : null;
+}
+
 function HostCard({
   connection,
 }: {
@@ -926,10 +934,9 @@ function HostCard({
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
   const configs = useLoadable(cloudflareAccessConfigs$);
-  const configId =
-    "transport" in connection && "configId" in connection.transport
-      ? connection.transport.configId
-      : null;
+  const tailscale =
+    "transport" in connection && connection.transport.type === "tailscale";
+  const configId = cloudflareConfigId(connection);
   const needsRebind =
     "transport" in connection && "needsRebind" in connection.transport;
   const unavailable =
@@ -964,6 +971,7 @@ function HostCard({
       <p className="break-all text-sm">
         {connection.username}@{connection.host}:{connection.port}
       </p>
+      {tailscale && <p className="text-sm text-muted-foreground">Tailscale</p>}
       {configId && (
         <p className="text-sm text-muted-foreground">
           {unavailable
@@ -1001,7 +1009,7 @@ function HostCard({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          disabled={unavailable}
+          disabled={unavailable || tailscale}
           onClick={() => {
             return detach(open("edit", connection, signal), Reason.DomCallback);
           }}

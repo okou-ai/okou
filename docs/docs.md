@@ -56,6 +56,8 @@ surface; the index does not replace their detailed rules.
 - [External MCP server](./mcp-server.md): OAuth resource setup, organization
   authority, Streamable HTTP behavior and hosted-client acceptance gates.
 
+- [Tailscale private SSH foundation](./tailscale-access.md): reusable configuration,
+  protected network/login handoff, composite authority leases and reader/fleet gates.
 - [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
 - [OpenSSH plus TigerVNC interoperability](../crates/runner/tests/VNC_SSH_INTEROPERABILITY.md):

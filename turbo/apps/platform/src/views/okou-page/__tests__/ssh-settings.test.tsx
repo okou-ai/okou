@@ -424,6 +424,32 @@ async function page(path = "/connectors?scope=remote-control&type=ssh") {
   });
 }
 
+test("Retained Tailscale hosts stay distinguishable and cannot enter the legacy carrier editor", async () => {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, {
+      connections: [
+        {
+          ...base,
+          transport: {
+            type: "tailscale",
+            configId: "e0000000-0000-4000-8000-000000000001",
+          },
+        },
+      ],
+    });
+  });
+  await page();
+  const title = await screen.findByRole("heading", { name: base.displayName });
+  const card = title.closest("article");
+  if (!card) {
+    throw new Error("Expected production host card");
+  }
+  expect(within(card).getByText("Tailscale")).toBeVisible();
+  expect(getAction("button", "Edit host", card)).toBeDisabled();
+  expect(getAction("button", "Delete host", card)).toBeEnabled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
 async function openAddHostPage() {
   await page();
   click(
