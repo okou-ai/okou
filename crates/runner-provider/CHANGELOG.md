@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.3...runner-provider-v0.5.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* **runner:** allow three total completion reporting attempts ([#37584](https://github.com/okou-ai/okou/issues/37584)) ([70bf078](https://github.com/okou-ai/okou/commit/70bf0780ba916bffc8ab1ac23ef04cfaaa2e9ffa))
+
 ## [0.5.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.2...runner-provider-v0.5.3) (2026-10-02)
 
 ## [0.5.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.1...runner-provider-v0.5.2) (2026-10-01)
