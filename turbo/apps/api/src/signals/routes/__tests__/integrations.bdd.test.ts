@@ -912,7 +912,11 @@ async function expectFirstSlackPiExecution(args: {
   expect(claim.piModelConfig).toMatchObject({
     provider: "openai",
     model: args.scenario.selectedModel,
-    thinkingLevel: "max",
+    thinkingLevel:
+      args.scenario.selectedModel === "gpt-6-luna" ||
+      args.scenario.selectedModel === "gpt-5.6-luna"
+        ? "xhigh"
+        : "max",
   });
   // The fresh Pi session still carries the canonical Slack history to the
   // Sandbox that executes the first turn.

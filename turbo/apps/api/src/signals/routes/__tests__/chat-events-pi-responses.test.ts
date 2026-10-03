@@ -69,7 +69,11 @@ function expectApiKeyGptSandboxCarrier(
     ...(route.type === "vercel-ai-gateway-codex"
       ? { catalogModel: route.catalogModel }
       : {}),
-    thinkingLevel: "max",
+    thinkingLevel:
+      route.selectedModel === "gpt-6-luna" ||
+      route.selectedModel === "gpt-5.6-luna"
+        ? "xhigh"
+        : "max",
     credentialBindings: [
       {
         kind: "api-key",
