@@ -290,6 +290,7 @@ jobs:
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/resolve-desktop-version-change.sh \
             .github/scripts/run-semgrep.sh \
+            .github/scripts/run-nbd-cow-tests.sh \
             .github/scripts/run-workflow-script-test-shard.sh \
             .github/scripts/runner-behavior-*.sh \
             .github/scripts/smoke-okou-cli-artifact.sh \
@@ -320,6 +321,7 @@ jobs:
             .github/scripts/tests/verify-okou-app-runtime-test.sh \
             .github/scripts/tests/download-verified-test.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
+            .github/scripts/tests/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \

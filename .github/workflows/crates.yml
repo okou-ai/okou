@@ -714,14 +714,8 @@ jobs:
         env:
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           HOST: ${{ steps.selected-host.outputs.host }}
-          JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
-        run: |
-          REMOTE="${METAL_USER}@${HOST}"
-          REMOTE_BIN="/tmp/nbd-cow-test-${JOB_REF}-${RUNNER_HOST_GROUP_ID}"
-          scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
-          # shellcheck disable=SC2029
-          ssh "$REMOTE" "trap 'rm -f ${REMOTE_BIN}' EXIT && sudo modprobe nbd nbds_max=4096 && sudo ${REMOTE_BIN} --ignored --test-threads=1"
+        run: bash .github/scripts/run-nbd-cow-tests.sh
 
       - name: Report peak memory
         if: always()
