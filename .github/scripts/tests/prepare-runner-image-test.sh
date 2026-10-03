@@ -604,37 +604,42 @@ REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
 cmp "$runner" "${upload_success_case}/uploads/runner" || fail "successful upload must publish the complete executable"
 [ "$(< "${upload_success_case}/upload-count")" -eq 1 ] || fail "healthy upload must run once"
 grep -Fqx -- "$setup_command" "${upload_success_case}/ssh.log" || fail "validated upload must continue to setup"
-grep -Fq 'runner upload completed: host=dev-arm-1 attempt=1/2 elapsed_seconds=' "${upload_success_case}/out" || fail "expected successful upload timing"
+grep -Fq 'runner upload completed: host=dev-arm-1 attempt=1/3 elapsed_seconds=' "${upload_success_case}/out" || fail "expected successful upload timing"
 
 for status in 255 124 141; do
-  upload_retry_case="${TMPDIR}/upload-retry-${status}"
-  prepare_remote_case "$upload_retry_case"
-  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES="${status},0" \
-    run_remote_case "$upload_retry_case"
-  [ "$(< "${upload_retry_case}/upload-count")" -eq 2 ] || fail "transient upload failure must retry once"
-  cmp "$runner" "${upload_retry_case}/uploads/runner" || fail "retry must restart input and publish only the complete candidate"
-  failed_candidate=$(< "${upload_retry_case}/uploads/failed-candidate")
-  grep -Fxq 'late stale bytes' "$failed_candidate" || fail "expected a late write to the failed candidate"
-  grep -Fqx -- "$setup_command" "${upload_retry_case}/ssh.log" || fail "recovered upload must continue to setup"
-  [ "$(grep -c '^mutate mkdir ' "${upload_retry_case}/systemctl.log")" -eq 1 ] || fail "upload retry must not repeat destructive preparation"
-  [ "$(< "${upload_retry_case}/gc-count")" -eq 1 ] || fail "upload retry must not repeat GC"
-  grep -Fq "runner upload failed: host=dev-arm-1 attempt=1/2 status=${status} elapsed_seconds=" "${upload_retry_case}/out" || fail "expected original upload status and timing"
-  grep -Fq "expected_bytes=${runner_size}" "${upload_retry_case}/out" || fail "expected upload size diagnostic"
-  grep -Fq 'fixture transfer interrupted' "${upload_retry_case}/out" || fail "expected original upload stderr"
+  for statuses in "${status},0" "${status},${status},0"; do
+    upload_retry_case="${TMPDIR}/upload-retry-${statuses}"
+    prepare_remote_case "$upload_retry_case"
+    REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES="$statuses" \
+      run_remote_case "$upload_retry_case"
+    IFS=',' read -r -a expected_statuses <<< "$statuses"
+    expected_attempts=${#expected_statuses[@]}
+    [ "$(< "${upload_retry_case}/upload-count")" -eq "$expected_attempts" ] || fail "transient upload failures must recover within three attempts"
+    cmp "$runner" "${upload_retry_case}/uploads/runner" || fail "retry must restart input and publish only the complete candidate"
+    failed_candidate=$(< "${upload_retry_case}/uploads/failed-candidate")
+    grep -Fxq 'late stale bytes' "$failed_candidate" || fail "expected a late write to the failed candidate"
+    grep -Fqx -- "$setup_command" "${upload_retry_case}/ssh.log" || fail "recovered upload must continue to setup"
+    [ "$(grep -c '^mutate mkdir ' "${upload_retry_case}/systemctl.log")" -eq 1 ] || fail "upload retry must not repeat destructive preparation"
+    [ "$(< "${upload_retry_case}/gc-count")" -eq 1 ] || fail "upload retry must not repeat GC"
+    grep -Fq "runner upload failed: host=dev-arm-1 attempt=1/3 status=${status} elapsed_seconds=" "${upload_retry_case}/out" || fail "expected original upload status and timing"
+    grep -Fq "runner upload completed: host=dev-arm-1 attempt=${expected_attempts}/3 elapsed_seconds=" "${upload_retry_case}/out" || fail "expected recovered upload timing"
+    grep -Fq "expected_bytes=${runner_size}" "${upload_retry_case}/out" || fail "expected upload size diagnostic"
+    grep -Fq 'fixture transfer interrupted' "${upload_retry_case}/out" || fail "expected original upload stderr"
+  done
 done
 
-for statuses in 255,255 7 130 137 143; do
+for statuses in 255,255,255 124,124,124 141,141,141 7 130 137 143 124,143; do
   upload_failure_case="${TMPDIR}/upload-failure-${statuses}"
   prepare_remote_case "$upload_failure_case"
   REMOTE_REACH_GC=1 REMOTE_UPLOAD_STATUSES="$statuses" \
     run_remote_case "$upload_failure_case"
-  expected_attempts=1
-  if [ "$statuses" = 255,255 ]; then expected_attempts=2; fi
+  IFS=',' read -r -a expected_statuses <<< "$statuses"
+  expected_attempts=${#expected_statuses[@]}
   [ "$(< "${upload_failure_case}/upload-count")" -eq "$expected_attempts" ] || fail "upload failures must respect retry and cancellation boundaries"
   [ ! -e "${upload_failure_case}/uploads/runner" ] || fail "failed upload must not publish an executable"
   [ ! -e "${upload_failure_case}/manifest.json" ] || fail "failed upload must not publish a manifest"
   [ "$(< "${upload_failure_case}/gc-count")" -eq 0 ] || fail "failed upload must not reach GC"
-  grep -Fq "attempt=${expected_attempts}/2 status=${statuses##*,}" "${upload_failure_case}/out" || fail "expected terminal upload status"
+  grep -Fq "attempt=${expected_attempts}/3 status=${statuses##*,}" "${upload_failure_case}/out" || fail "expected terminal upload status"
 done
 
 upload_corrupt_case="${TMPDIR}/upload-corrupt"
