@@ -326,8 +326,8 @@ async function connectFeishu(
   return { message };
 }
 
-/** Actual signed ingress and public Web sends; every event keeps its real thread. */
-export async function createPublicAnnotationInputs(
+/** Prepare one owned actor and create only the ingress requested by a test. */
+export async function createPublicAnnotationIngress(
   context: TestContext,
   registerCleanup: RegisterCleanup,
 ) {
@@ -341,7 +341,6 @@ export async function createPublicAnnotationInputs(
     throw new Error("Expected the annotation owner's organization");
   }
   const actor = { ...candidate, orgId: candidate.orgId };
-  integrations.configureSlackAppMocks();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -376,69 +375,74 @@ export async function createPublicAnnotationInputs(
     return events;
   }
 
-  const slackUserId = uniqueSlackUserId();
-  const slack = await integrations.installSlackWorkspace(actor, {
-    installerSlackUserId: slackUserId,
-  });
-  registerCleanup(async () => {
-    await integrations.requestSlackDisconnect(actor, "uninstall", [200]);
-  });
-  await integrations.postSlackEvent(slack.teamId, {
-    type: "app_mention",
-    user: slackUserId,
-    channel: "C123",
-    channel_type: "channel",
-    ts: "1753257600.000100",
-    text: `<@${slack.botUserId}> slack linked`,
-  });
-  const slackEvents = await readInput("@Slack User slack linked");
+  async function slackInput() {
+    integrations.configureSlackAppMocks();
+    const slackUserId = uniqueSlackUserId();
+    const slack = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    registerCleanup(async () => {
+      await integrations.requestSlackDisconnect(actor, "uninstall", [200]);
+    });
+    await integrations.postSlackEvent(slack.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      channel: "C123",
+      channel_type: "channel",
+      ts: "1753257600.000100",
+      text: `<@${slack.botUserId}> slack linked`,
+    });
+    return await readInput("@Slack User slack linked");
+  }
 
-  const feishu = await connectFeishu(context, actor, registerCleanup);
-  await feishu.message("feishu linked");
-  const feishuEvents = await readInput("feishu linked");
+  async function feishuInput() {
+    const feishu = await connectFeishu(context, actor, registerCleanup);
+    await feishu.message("feishu linked");
+    return await readInput("feishu linked");
+  }
 
-  setupTeamsConnectTestEnv();
-  mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "annotation-teams-password");
-  server.use(
-    http.post(
-      "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/oauth2/v2.0/token",
-      () => {
-        return HttpResponse.json({
-          access_token: "annotation-teams-token",
-          token_type: "Bearer",
-          expires_in: 3600,
-        });
-      },
-    ),
-    http.post("https://smba.trafficmanager.net/amer/v3/conversations", () => {
-      return HttpResponse.json({ id: `welcome-${randomUUID()}` });
-    }),
-    http.post(
-      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities",
-      () => {
-        return HttpResponse.json({ id: randomUUID() });
-      },
-    ),
-    http.post(
-      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities/:activityId",
-      () => {
-        return HttpResponse.json({ id: randomUUID() });
-      },
-    ),
-    http.put(
-      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities/:activityId/reactions/:reactionType",
-      () => {
-        return new HttpResponse(null, { status: 200 });
-      },
-    ),
-    http.delete(
-      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities/:activityId/reactions/:reactionType",
-      () => {
-        return new HttpResponse(null, { status: 200 });
-      },
-    ),
-  );
   async function teamsInput(personal: boolean) {
+    setupTeamsConnectTestEnv();
+    mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "annotation-teams-password");
+    server.use(
+      http.post(
+        "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/oauth2/v2.0/token",
+        () => {
+          return HttpResponse.json({
+            access_token: "annotation-teams-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          });
+        },
+      ),
+      http.post("https://smba.trafficmanager.net/amer/v3/conversations", () => {
+        return HttpResponse.json({ id: `welcome-${randomUUID()}` });
+      }),
+      http.post(
+        "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities",
+        () => {
+          return HttpResponse.json({ id: randomUUID() });
+        },
+      ),
+      http.post(
+        "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities/:activityId",
+        () => {
+          return HttpResponse.json({ id: randomUUID() });
+        },
+      ),
+      http.put(
+        "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities/:activityId/reactions/:reactionType",
+        () => {
+          return new HttpResponse(null, { status: 200 });
+        },
+      ),
+      http.delete(
+        "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities/:activityId/reactions/:reactionType",
+        () => {
+          return new HttpResponse(null, { status: 200 });
+        },
+      ),
+    );
     const fixture = teamsConnectFixture({
       orgId: actor.orgId,
       userId: actor.userId,
@@ -585,99 +589,108 @@ export async function createPublicAnnotationInputs(
     const events = await readInput(
       personal ? "teams personal unlinked" : "@Nova teams channel linked",
     );
-    // An organization can bind only one tenant. Finish this owned installation
-    // before constructing the next, genuinely fresh null-recipient tenant.
-    await removeInstallation();
-    await flushWaitUntilForTest();
     return { events, tenantId: fixture.teamsTenantId };
   }
-  const teamsChannel = await teamsInput(false);
-  const teamsPersonal = await teamsInput(true);
 
-  const botToken = "987654:annotation-telegram-token";
-  const webhookSecret = "annotation-telegram-secret";
-  mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", botToken);
-  mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", webhookSecret);
-  // The public account-link endpoint requires the configured bot username.
-  mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "annotation_bot");
-  let replyId = 700;
-  server.use(
-    http.post(`https://api.telegram.org/bot${botToken}/sendChatAction`, () => {
-      return HttpResponse.json({ ok: true, result: true });
-    }),
-    http.post(
-      `https://api.telegram.org/bot${botToken}/sendMessage`,
-      async ({ request }) => {
-        const body = z
-          .object({
-            chat_id: z.union([z.string(), z.number()]),
-            text: z.string(),
-          })
-          .parse(await request.json());
-        return HttpResponse.json({
-          ok: true,
-          result: {
-            message_id: replyId++,
-            chat: { id: Number(body.chat_id) },
-            text: body.text,
-          },
-        });
-      },
-    ),
-    http.post(`https://api.telegram.org/bot${botToken}/deleteMessage`, () => {
-      return HttpResponse.json({ ok: true, result: true });
-    }),
-  );
-  const telegram = setupApp({ context, routes: integrationsTelegramRoutes })(
-    integrationsTelegramContract,
-  );
-  const telegramAuth = {
-    id: randomInt(1_000_000_000, 9_000_000_000),
-    auth_date: Math.floor(now() / 1000),
-    first_name: "Annotation owner",
-  };
-  const authData = Object.entries(telegramAuth)
-    .sort(([left], [right]) => {
-      return left.localeCompare(right);
-    })
-    .map(([key, value]) => {
-      return `${key}=${value}`;
-    })
-    .join("\n");
-  const hash = createHmac(
-    "sha256",
-    createHash("sha256").update(botToken).digest(),
-  )
-    .update(authData)
-    .digest("hex");
-  await accept(
-    telegram.link({
-      headers: authenticate(context, actor),
-      body: {
-        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
-        telegramAuth: { ...telegramAuth, hash },
-      },
-    }),
-    [200],
-  );
-  registerCleanup(async () => {
-    await accept(
-      telegram.unlink({
-        headers: authenticate(context, actor),
-        query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+  async function telegramInput(type: "supergroup" | "private" | "group") {
+    const botToken = "987654:annotation-telegram-token";
+    const webhookSecret = "annotation-telegram-secret";
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", botToken);
+    mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", webhookSecret);
+    // The public account-link endpoint requires the configured bot username.
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "annotation_bot");
+    let replyId = 700;
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${botToken}/sendChatAction`,
+        () => {
+          return HttpResponse.json({ ok: true, result: true });
+        },
+      ),
+      http.post(
+        `https://api.telegram.org/bot${botToken}/sendMessage`,
+        async ({ request }) => {
+          const body = z
+            .object({
+              chat_id: z.union([z.string(), z.number()]),
+              text: z.string(),
+            })
+            .parse(await request.json());
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              message_id: replyId++,
+              chat: { id: Number(body.chat_id) },
+              text: body.text,
+            },
+          });
+        },
+      ),
+      http.post(`https://api.telegram.org/bot${botToken}/deleteMessage`, () => {
+        return HttpResponse.json({ ok: true, result: true });
       }),
-      [204],
     );
-  });
-  // Ingress still has the token, numeric bot ID and webhook secret. Only the
-  // optional username is now absent, preserving the private-chat no-href case.
-  mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", undefined);
-  async function telegramInput(
-    type: "supergroup" | "private" | "group",
-    chatId: number,
-    messageId: number,
-    text: string,
-  ) {
+    const telegram = setupApp({ context, routes: integrationsTelegramRoutes })(
+      integrationsTelegramContract,
+    );
+    const telegramAuth = {
+      id: randomInt(1_000_000_000, 9_000_000_000),
+      auth_date: Math.floor(now() / 1000),
+      first_name: "Annotation owner",
+    };
+    const authData = Object.entries(telegramAuth)
+      .sort(([left], [right]) => {
+        return left.localeCompare(right);
+      })
+      .map(([key, value]) => {
+        return `${key}=${value}`;
+      })
+      .join("\n");
+    const hash = createHmac(
+      "sha256",
+      createHash("sha256").update(botToken).digest(),
+    )
+      .update(authData)
+      .digest("hex");
+    await accept(
+      telegram.link({
+        headers: authenticate(context, actor),
+        body: {
+          telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+          telegramAuth: { ...telegramAuth, hash },
+        },
+      }),
+      [200],
+    );
+    registerCleanup(async () => {
+      await accept(
+        telegram.unlink({
+          headers: authenticate(context, actor),
+          query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+        }),
+        [204],
+      );
+    });
+    // Ingress still has the token, numeric bot ID and webhook secret. Only the
+    // optional username is now absent, preserving the private-chat no-href case.
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", undefined);
+    const { chatId, messageId, text } = {
+      supergroup: {
+        chatId: -1_001_234_567_890,
+        messageId: 42,
+        text: "telegram supergroup linked",
+      },
+      private: {
+        chatId: telegramAuth.id,
+        messageId: 43,
+        text: "telegram dm unlinked",
+      },
+      group: {
+        chatId: -123_456_789,
+        messageId: 44,
+        text: "telegram group unlinked",
+      },
+    }[type];
     const response = await createAppWithRoutes({
       signal: context.signal,
       routes: integrationsTelegramRoutes,
@@ -718,25 +731,6 @@ export async function createPublicAnnotationInputs(
     await response.text();
     return await readInput(text);
   }
-  const telegramSupergroup = await telegramInput(
-    "supergroup",
-    -1_001_234_567_890,
-    42,
-    "telegram supergroup linked",
-  );
-  const telegramPrivate = await telegramInput(
-    "private",
-    telegramAuth.id,
-    43,
-    "telegram dm unlinked",
-  );
-  const telegramGroup = await telegramInput(
-    "group",
-    -123_456_789,
-    44,
-    "telegram group unlinked",
-  );
-
   async function githubInput(text: string, href: string) {
     await chat.sendAndLaunch(actor, {
       agentId,
@@ -751,23 +745,11 @@ export async function createPublicAnnotationInputs(
     });
     return await readInput(text);
   }
-  const githubIssue = await githubInput(
-    "github issue comment linked",
-    "https://github.com/okou-ai/okou/issues/24218#issuecomment-123456",
-  );
-  const githubPull = await githubInput(
-    "github pull request linked",
-    "https://github.com/okou-ai/okou/pull/24219",
-  );
   return {
-    slackEvents,
-    feishuEvents,
-    teamsChannel,
-    teamsPersonal,
-    telegramSupergroup,
-    telegramPrivate,
-    telegramGroup,
-    githubIssue,
-    githubPull,
+    slackInput,
+    feishuInput,
+    teamsInput,
+    telegramInput,
+    githubInput,
   };
 }

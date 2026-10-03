@@ -16,7 +16,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { findPendingInputEventByText } from "./helpers/chat-event-test-reader";
-import { createPublicAnnotationInputs } from "./helpers/chat-annotation-ingress";
+import { createPublicAnnotationIngress } from "./helpers/chat-annotation-ingress";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installTeamsForTest,
@@ -27,7 +27,7 @@ import {
   teamsMessageActivityForTest,
 } from "./helpers/teams-connect";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
@@ -68,71 +68,109 @@ describe("chat event annotations", () => {
       await flushWaitUntilForTest();
     }
   });
-  it("projects precise source links for chat events", async () => {
-    const inputs = await createPublicAnnotationInputs(context, (cleanup) => {
+
+  function createIngress() {
+    return createPublicAnnotationIngress(context, (cleanup) => {
       publicCleanups.push(cleanup);
     });
-    expect(
-      sourcePartForText(inputs.slackEvents, "@Slack User slack linked"),
-    ).toStrictEqual({
-      type: "source",
-      kind: "slack",
-      href: "https://vm0.slack.com/archives/C123/p1753257600000100",
-    });
-    expect(
-      sourcePartForText(inputs.feishuEvents, "feishu linked"),
-    ).toStrictEqual({
+  }
+
+  it("projects precise source links for Slack messages", async () => {
+    const ingress = await createIngress();
+    const events = await ingress.slackInput();
+    expect(sourcePartForText(events, "@Slack User slack linked")).toStrictEqual(
+      {
+        type: "source",
+        kind: "slack",
+        href: "https://vm0.slack.com/archives/C123/p1753257600000100",
+      },
+    );
+  });
+
+  it("projects precise source links for Feishu messages", async () => {
+    const ingress = await createIngress();
+    const events = await ingress.feishuInput();
+    expect(sourcePartForText(events, "feishu linked")).toStrictEqual({
       type: "source",
       kind: "feishu",
       href: "https://applink.feishu.cn/client/chat/open?openChatId=oc_123",
     });
+  });
+
+  it("projects precise source links for Teams channel messages", async () => {
+    const ingress = await createIngress();
+    const { events, tenantId } = await ingress.teamsInput(false);
     expect(
-      sourcePartForText(
-        inputs.teamsChannel.events,
-        "@Nova teams channel linked",
-      ),
+      sourcePartForText(events, "@Nova teams channel linked"),
     ).toStrictEqual({
       type: "source",
       kind: "teams",
-      href: `https://teams.microsoft.com/l/message/19%3Achannel%40thread.tacv2/activity-1?tenantId=${inputs.teamsChannel.tenantId}`,
+      href: `https://teams.microsoft.com/l/message/19%3Achannel%40thread.tacv2/activity-1?tenantId=${tenantId}`,
     });
-    expect(
-      sourcePartForText(inputs.teamsPersonal.events, "teams personal unlinked"),
-    ).toStrictEqual({
+  });
+
+  it("omits source links for Teams personal messages without a bot recipient", async () => {
+    const ingress = await createIngress();
+    const { events } = await ingress.teamsInput(true);
+    expect(sourcePartForText(events, "teams personal unlinked")).toStrictEqual({
       type: "source",
       kind: "teams",
     });
+  });
+
+  it("projects precise source links for Telegram supergroup messages", async () => {
+    const ingress = await createIngress();
+    const events = await ingress.telegramInput("supergroup");
     expect(
-      sourcePartForText(
-        inputs.telegramSupergroup,
-        "telegram supergroup linked",
-      ),
+      sourcePartForText(events, "telegram supergroup linked"),
     ).toStrictEqual({
       type: "source",
       kind: "telegram",
       href: "https://t.me/c/1234567890/42",
     });
-    expect(
-      sourcePartForText(inputs.telegramPrivate, "telegram dm unlinked"),
-    ).toStrictEqual({
+  });
+
+  it("omits source links for Telegram private messages without a bot username", async () => {
+    const ingress = await createIngress();
+    const events = await ingress.telegramInput("private");
+    expect(sourcePartForText(events, "telegram dm unlinked")).toStrictEqual({
       type: "source",
       kind: "telegram",
     });
-    expect(
-      sourcePartForText(inputs.telegramGroup, "telegram group unlinked"),
-    ).toStrictEqual({
+  });
+
+  it("omits source links for Telegram basic group messages", async () => {
+    const ingress = await createIngress();
+    const events = await ingress.telegramInput("group");
+    expect(sourcePartForText(events, "telegram group unlinked")).toStrictEqual({
       type: "source",
       kind: "telegram",
     });
+  });
+
+  it("projects precise source links for GitHub issue comments", async () => {
+    const ingress = await createIngress();
+    const events = await ingress.githubInput(
+      "github issue comment linked",
+      "https://github.com/okou-ai/okou/issues/24218#issuecomment-123456",
+    );
     expect(
-      sourcePartForText(inputs.githubIssue, "github issue comment linked"),
+      sourcePartForText(events, "github issue comment linked"),
     ).toStrictEqual({
       type: "source",
       kind: "github",
       href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-123456",
     });
+  });
+
+  it("projects precise source links for GitHub pull requests", async () => {
+    const ingress = await createIngress();
+    const events = await ingress.githubInput(
+      "github pull request linked",
+      "https://github.com/okou-ai/okou/pull/24219",
+    );
     expect(
-      sourcePartForText(inputs.githubPull, "github pull request linked"),
+      sourcePartForText(events, "github pull request linked"),
     ).toStrictEqual({
       type: "source",
       kind: "github",
