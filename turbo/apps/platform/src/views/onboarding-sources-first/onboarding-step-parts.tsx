@@ -75,6 +75,8 @@ export function ProductMark({
       className={cn(
         "shrink-0 object-contain",
         PRODUCT_MARK_SIZES[size],
+        // Match the sidebar's compensation for the Slack artwork's padding.
+        name === "slack" && "scale-[2.2]",
         invertInDarkMode && "dark:invert",
       )}
     />
