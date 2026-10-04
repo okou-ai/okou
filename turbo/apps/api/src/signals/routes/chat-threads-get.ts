@@ -28,6 +28,7 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       codexServiceTier: chatThreads.codexServiceTier,
       pinnedAt: chatThreads.pinnedAt,
       archived: chatThreads.archived,
+      muted: chatThreads.muted,
       computerUseHostId: chatThreads.computerUseHostId,
       cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
     })
@@ -57,6 +58,7 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
       pinnedAt: thread.pinnedAt?.toISOString() ?? null,
       archived: thread.archived,
+      muted: thread.muted,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
     },

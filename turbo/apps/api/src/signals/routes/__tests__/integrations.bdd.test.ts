@@ -6259,7 +6259,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       channel: "sms",
       agentId: "agt-bdd-agentphone",
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         from: "+15555551212",
         to: "+19039853128",
         message: "missing event type",
@@ -6283,7 +6283,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       agentId: "agt-bdd-agentphone",
       data: {
         channel: "sms",
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         from: "+15555551212",
         to: "+19039853128",
         message: "missing channel",
@@ -6326,7 +6326,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       channel: "sms",
       agentId: "agt-bdd-agentphone",
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         to: "+19039853128",
         message: "missing sender",
       },
@@ -6348,7 +6348,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       channel: "sms",
       agentId: "agt-bdd-agentphone",
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         from: "+15555551212",
         to: "+19039853128",
         message: "",
@@ -6373,7 +6373,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       agentId: "agt-bdd-agentphone",
       id: `msg-root-alias-${randomUUID()}`,
       data: {
-        messageId: `msg-data-alias-${randomUUID()}`,
         from: "+15555551212",
         to: "+19039853128",
         message: "identity aliases are not provider message ids",
@@ -6395,7 +6394,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       event: "agent.message",
       channel: "sms",
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         agentId: "agt-bdd-agentphone",
         from: "+15555551212",
         to: "+19039853128",
@@ -6419,7 +6418,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       channel: "sms",
       agentId: "agt-bdd-agentphone",
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         from: "+15555551212",
         to: "+15555550000",
         message: "wrong destination",
@@ -6440,7 +6439,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       channel: "sms",
       agentId: "agt-bdd-agentphone",
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         from: "+15555551212",
         to: "not-a-phone-number",
         message: "invalid recipient identity",
@@ -6467,7 +6466,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       channel: "sms",
       agentId: "agt-bdd-agentphone",
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         from: uniquePhoneHandle(),
         to: "+19039853128",
         message: "/connect",
@@ -6494,7 +6493,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       agentId: "agt-bdd-agentphone",
       timestamp: new Date(now()).toISOString(),
       data: {
-        id: `msg-bdd-agentphone-${randomUUID()}`,
+        messageId: `msg-bdd-agentphone-${randomUUID()}`,
         from: unmentionedGroupSender,
         senderIdentifier: unmentionedGroupSender,
         to: "+19039853128",

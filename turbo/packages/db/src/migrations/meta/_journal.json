@@ -1681,6 +1681,13 @@
       "when": 1790999464659,
       "tag": "1317_luna_xhigh_ceiling",
       "breakpoints": true
+    },
+    {
+      "idx": 1318,
+      "version": "7",
+      "when": 1791088990644,
+      "tag": "1318_calm_grandmaster",
+      "breakpoints": true
     }
   ]
 }

@@ -2210,6 +2210,8 @@
       "markUnread": "Marcar como não lida",
       "movePinDown": "Mover para baixo",
       "movePinUp": "Mover para cima",
+      "mute": "Silenciar conversa",
+      "muted": "Silenciada",
       "newChatWith": "Nova conversa com {{agentName}}",
       "noArchived": "Nenhuma conversa arquivada",
       "noUnread": "Nenhuma conversa não lida",
@@ -2223,6 +2225,7 @@
       "showArchivedChats": "Mostrar conversas arquivadas",
       "titlePlaceholder": "Título da conversa",
       "unarchive": "Desarquivar conversa",
+      "unmute": "Reativar notificações",
       "unpin": "Desafixar conversa",
       "unread": "Não lida",
       "unreadOnly": "Não lida"

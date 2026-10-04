@@ -1,7 +1,9 @@
 # Issue #37513: bounded Thread read-cursor ownership
 
 Related to #37513. E1 covers only mark-read and mark-Agent-threads-read, based
-on fresh main `a243235f5661255b6f4a1d46bdf7c4e0956c597c`.
+initially based on `a243235f5661255b6f4a1d46bdf7c4e0956c597c`, then normally
+merged with fresh main `267fa71b3cf85592fcbb7b644cdfefc1f5d642ff` to preserve
+organization-gated muting from #37681.
 
 ## Actual call graph and public surface
 
@@ -46,14 +48,17 @@ For admitted, non-aborted requests, query counts are unchanged:
 | Agent with no candidates      | Agent + candidate query; zero watermark queries  | None                                    |
 | Agent with candidates         | Agent + candidates + one batched DISTINCT ON     | One CAS per eligible cursor, no retries |
 
-Candidates retain the seven-day lookback, 128 limit and descending
+Candidates retain main's `muted = false`, seven-day lookback, 128 limit and descending
 `lastMessageAt` / `id` order. Watermarks retain only terminal event types,
 `DISTINCT ON(threadId)` and `threadId, createdAt DESC, id DESC`, scoped to those
 candidate IDs, not all Threads or the global newest event. Empty input starts
 no watermark query. Schema columns retain null/Date decoding and encoders.
 
 The CAS retains `id + userId + (lastReadAt IS NULL OR lastReadAt < watermark)`
-and `RETURNING id`. Equal/newer cursors and lost races do not retry. Single
+and `RETURNING id`. Batch passes `unmutedOnly: true`, adding main's `muted = false`
+CAS guard so a thread muted after candidate selection is not consumed/published.
+Single explicit marking does not pass that flag, including for muted Threads.
+Equal/newer cursors and lost races do not retry. Single
 responses use the original pre-read cursor unless this request wins the CAS;
 there is no post-race refresh. Active/started/newer-input events do not replace
 terminal watermarks with the current clock.
@@ -71,8 +76,9 @@ Transaction ledger: removed **0**, combined **0**, moved **0**, retained **0**
 in this slice. The pre-existing nontransactional boundary is unchanged.
 
 An offline AST-extracted builder comparison checks all seven new owning query
-builders against the six old shared/route builders, including one/two-ID
-watermarks. SQL, ordered/encoded bindings, selected field names/nullability and
+builders against the six current-main (`267fa71b3c`) shared/route builders,
+including one/two-ID watermarks and CAS `unmutedOnly` absent/false/true. This
+integration is not claimed SQL-identical to pre-muting main `a243235f56`. SQL, ordered/encoded bindings, selected field names/nullability and
 schema-column encoder/decoder functions match. It executes no SQL and is
 supplementary serialization evidence, not HTTP/database behavior acceptance.
 No material plan shape, literal, index predicate or decoder changes require an
@@ -88,10 +94,15 @@ historical terminal event types, repeated marks, ownership/404s, lookback,
 exact-ID versus Agent-scope notification budgets and newest terminal cursors.
 Existing bulk fixture exceptions are not expanded or newly used for assertions.
 
-Three added public scenarios fill specific gaps: competing single marks with
+Four added public scenarios fill specific gaps: competing single marks with
 only one committed-cursor publication; actual cursor advancement without an
 organization and with a different active org; and batch missing-org,
-foreign-user, cross-org and unknown-Agent no-effect responses. Setup and cursor
+foreign-user, cross-org and unknown-Agent no-effect responses; and batch exclusion
+of muted Threads while explicit single marking still advances their cursors.
+Main's muting feature/API/fixtures/tests are retained unchanged. There is no
+publicly controlled pause between candidate read and CAS; the concurrent-muting
+CAS guard is source/SQL-reviewed, not claimed deterministically exercised.
+Setup and cursor
 assertions use production APIs; only auth/storage/provider/realtime boundaries
 are mocked. Concurrent endpoint success does not force a particular SQL
 interleaving or prove a deterministic losing CAS; the unchanged CAS predicate

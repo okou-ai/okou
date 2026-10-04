@@ -128,6 +128,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       title: "CLI renamed title",
       pinnedAt: null,
       archived: false,
+      muted: false,
       selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       modelSettings: {},
       serviceTier: null,

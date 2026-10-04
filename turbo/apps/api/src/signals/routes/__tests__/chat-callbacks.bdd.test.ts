@@ -1593,6 +1593,81 @@ describe("CHAT-02: completed chat callback", () => {
     );
   });
 
+  it("keeps muted runs active but suppresses terminal unread, push and automatic unarchive", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      {
+        [FeatureSwitchKey.ChatThreadArchiving]: true,
+        [FeatureSwitchKey.ChatThreadMuting]: true,
+      },
+    );
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
+    async function readIndicators() {
+      const response = await chat.requestIndicators(actor, [200]);
+      if (response.status !== 200) {
+        throw new Error("Expected indicators");
+      }
+      return response.body;
+    }
+    for (const status of ["completed", "failed"] as const) {
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt: `Muted ${status}`,
+      });
+      const headers = await claimChatRun(runnerGroup, run.runId);
+      // Mute after admission, so a captured Run state cannot decide delivery.
+      await chat.requestSetThreadMuted(actor, run.threadId, true, [204]);
+      await chat.requestSetThreadArchived(actor, run.threadId, true, [204]);
+      expect((await readIndicators()).threads[run.threadId]).toBe("active");
+      context.mocks.webpush.sendNotification.mockClear();
+      if (status === "completed") {
+        chatCallbacks.mockChatOutputEvents([assistantEvent(0, "Muted answer")]);
+        await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+      } else {
+        await failChatRun(run.runId, headers, "Muted failure");
+      }
+      await flushWaitUntilForTest();
+      const indicators = await readIndicators();
+      expect(indicators.threads[run.threadId]).toBeUndefined();
+      expect(indicators.unreadAt[run.threadId]).toBeUndefined();
+      expect(indicators.agents[agentId]).toBeUndefined();
+      expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+      await expect(
+        chat.readThreadMetadata(actor, run.threadId),
+      ).resolves.toMatchObject({
+        archived: true,
+        muted: true,
+      });
+      const events = await chat.requestThreadEvents(actor, {}, [200]);
+      if (events.status !== 200) {
+        throw new Error("Expected events");
+      }
+      expect(
+        events.body.events.filter((event) => {
+          return (
+            event.chatThreadId === run.threadId && event.kind === "unarchived"
+          );
+        }),
+      ).toHaveLength(0);
+      await chat.markAgentThreadsRead(actor, agentId);
+      await chat.requestSetThreadMuted(actor, run.threadId, false, [204]);
+      expect((await readIndicators()).threads[run.threadId]).toBe("unread");
+      await expect(
+        chat.readThreadMetadata(actor, run.threadId),
+      ).resolves.toMatchObject({
+        archived: true,
+        muted: false,
+      });
+      await chat.markThreadRead(actor, run.threadId);
+    }
+  });
+
   it("unarchives the thread when a completed or failed run makes it unread, but not on cancellation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {

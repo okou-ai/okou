@@ -7,6 +7,7 @@ import { sidebarActiveThreadIds$ } from "./chat-thread-indicators-from-worker.ts
 import {
   pinChatThread$,
   setChatThreadArchived$,
+  setChatThreadMuted$,
   unpinChatThread$,
 } from "./chat-event.ts";
 import {
@@ -22,7 +23,11 @@ import { markChatThreadUnread$ } from "./chat-thread-mark-unread.ts";
 import { sidebarDraftThreadIds$ } from "./sidebar-draft-threads.ts";
 import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
 
-export type SidebarChatThreadIndicatorState = "running" | "unread" | "draft";
+export type SidebarChatThreadIndicatorState =
+  | "running"
+  | "muted"
+  | "unread"
+  | "draft";
 
 export type SidebarChatThreadPaneIndicator = "main" | "sidebar";
 export type SidebarChatThreadTargetPane = "main" | "sidebar";
@@ -31,6 +36,7 @@ export interface SidebarChatThreadItemSignals {
   readonly threadId: string;
   readonly title$: Computed<string | null>;
   readonly archived$: Computed<boolean>;
+  readonly muted$: Computed<boolean>;
   readonly pinned$: Computed<boolean>;
   readonly currentPage$: Computed<boolean>;
   readonly highlighted$: Computed<boolean>;
@@ -42,6 +48,7 @@ export interface SidebarChatThreadItemSignals {
   readonly select$: Command<boolean, [SidebarChatThreadTargetPane]>;
   readonly togglePinned$: Command<Promise<void>, [AbortSignal]>;
   readonly toggleArchived$: Command<Promise<void>, [AbortSignal]>;
+  readonly toggleMuted$: Command<Promise<void>, [AbortSignal]>;
   readonly markUnread$: Command<Promise<void>, [AbortSignal]>;
   readonly openRename$: Command<void, [AbortSignal]>;
   readonly requestDelete$: Command<void, []>;
@@ -62,6 +69,9 @@ function createSidebarChatThreadItemSignals(
   });
   const archived$ = computed((get): boolean => {
     return get(meta$)?.archived ?? false;
+  });
+  const muted$ = computed((get): boolean => {
+    return get(meta$)?.muted ?? false;
   });
   const currentPage$ = computed((get): boolean => {
     return get(pathParams$)?.threadId === threadId;
@@ -86,6 +96,7 @@ function createSidebarChatThreadItemSignals(
     threadId,
     title$,
     archived$,
+    muted$,
     pinned$: computed((get): boolean => {
       const pinnedAt = get(meta$)?.pinnedAt;
       return pinnedAt !== null && pinnedAt !== undefined;
@@ -107,6 +118,9 @@ function createSidebarChatThreadItemSignals(
       async (get): Promise<SidebarChatThreadIndicatorState | null> => {
         if ((await get(sidebarActiveThreadIds$)).has(threadId)) {
           return "running";
+        }
+        if (get(muted$)) {
+          return "muted";
         }
         if (await get(unread$)) {
           return "unread";
@@ -156,6 +170,9 @@ function createSidebarChatThreadItemSignals(
         { threadId, archived: !get(archived$) },
         signal,
       );
+    }),
+    toggleMuted$: command(async ({ get, set }, signal: AbortSignal) => {
+      await set(setChatThreadMuted$, { threadId, muted: !get(muted$) }, signal);
     }),
     markUnread$: command(async ({ set }, signal: AbortSignal) => {
       await set(markChatThreadUnread$, { threadId }, signal);

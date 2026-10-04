@@ -117,6 +117,7 @@ export function createAgentThreadReadPreparation(args: {
         and(
           eq(chatThreads.userId, args.userId),
           eq(chatThreads.agentId, args.agentId),
+          eq(chatThreads.muted, false),
           gte(
             chatThreads.lastMessageAt,
             new Date(nowDate().getTime() - INDICATOR_UNREAD_LOOKBACK_MS),
@@ -187,6 +188,8 @@ export const advanceChatThreadReadCursor$ = command(
       readonly threadId: string;
       readonly userId: string;
       readonly watermark: Date;
+      /** Bulk unread actions must not consume a concurrently muted thread. */
+      readonly unmutedOnly?: boolean;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -198,6 +201,7 @@ export const advanceChatThreadReadCursor$ = command(
         and(
           eq(chatThreads.id, args.threadId),
           eq(chatThreads.userId, args.userId),
+          args.unmutedOnly ? eq(chatThreads.muted, false) : undefined,
           or(
             isNull(chatThreads.lastReadAt),
             lt(chatThreads.lastReadAt, args.watermark),

@@ -454,6 +454,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatThreadMuting]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
     description:

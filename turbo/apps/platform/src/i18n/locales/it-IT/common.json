@@ -2210,6 +2210,8 @@
       "markUnread": "Segna come non letta",
       "movePinDown": "Sposta giù",
       "movePinUp": "Sposta su",
+      "mute": "Silenzia chat",
+      "muted": "Silenziata",
       "newChatWith": "Nuova chat con {{agentName}}",
       "noArchived": "Nessuna chat archiviata",
       "noUnread": "Nessuna chat non letta",
@@ -2223,6 +2225,7 @@
       "showArchivedChats": "Mostra chat archiviate",
       "titlePlaceholder": "Titolo della chat",
       "unarchive": "Rimuovi dall'archivio",
+      "unmute": "Riattiva notifiche chat",
       "unpin": "Rimuovi la chat",
       "unread": "Non letto",
       "unreadOnly": "Non letto"

@@ -2186,9 +2186,13 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await updateFeatureSwitchesForUser(
       context,
       { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.ChatThreadArchiving]: true },
+      {
+        [FeatureSwitchKey.ChatThreadArchiving]: true,
+        [FeatureSwitchKey.ChatThreadMuting]: true,
+      },
     );
     await chat.requestSetThreadArchived(actor, liveThread.id, true, [204]);
+    await chat.requestSetThreadMuted(actor, liveThread.id, true, [204]);
 
     const incrementalSnapshotAt = initialSnapshotAt + 1000;
     mockNow(incrementalSnapshotAt);
@@ -2222,6 +2226,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         renamedAt: expect.any(String),
         selectedModel: "claude-sonnet-5",
         archived: true,
+        muted: true,
       }),
     ]);
 
@@ -2797,6 +2802,43 @@ describe("CHAT-01 chat thread read state", () => {
       [],
     );
   }, 120_000);
+
+  it("does not let a muted thread hide another unread thread under the same agent", async () => {
+    const { actor, agentId, runnerGroup } =
+      await entitledChatActor("Mixed mute states");
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.ChatThreadMuting]: true },
+    );
+    const muted = await completeChatRunInThread(actor, runnerGroup, {
+      agentId,
+      prompt: "Muted unread task",
+    });
+    const other = await completeChatRunInThread(actor, runnerGroup, {
+      agentId,
+      prompt: "Unmuted unread task",
+    });
+    await chat.requestSetThreadMuted(actor, muted.threadId, true, [204]);
+    await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
+      other.threadId,
+    ]);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([
+      agentId,
+    ]);
+    await chat.markThreadRead(actor, other.threadId);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
+    await chat.requestSetThreadMuted(actor, muted.threadId, false, [204]);
+    await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
+      muted.threadId,
+    ]);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([
+      agentId,
+    ]);
+  });
 
   it("lists active thread ids without hiding the agent's unread state", async () => {
     const {

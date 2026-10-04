@@ -56,6 +56,7 @@ import { chatThreadPinOrderRoutes } from "./chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "./chat-threads-rename";
 import { chatThreadUnpinRoutes } from "./chat-threads-unpin";
 import { chatThreadArchiveRoutes } from "./chat-threads-archive";
+import { chatThreadMuteRoutes } from "./chat-threads-mute";
 
 const chatThreadIdSchema = z.string().uuid();
 const catchUpChatEventsBody$ = bodyResultOf(chatThreadEventsContract.catchUp);
@@ -440,6 +441,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatThreadUsageRoutes,
   ...chatThreadActivitySummaryRoutes,
   ...chatThreadArchiveRoutes,
+  ...chatThreadMuteRoutes,
   ...chatThreadsArtifactsSyncRoutes,
   ...chatThreadComputerUseHostRoutes,
   ...chatThreadConnectorSelectionRoutes,

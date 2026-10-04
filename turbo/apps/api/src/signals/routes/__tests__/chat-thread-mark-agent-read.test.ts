@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { describe, expect, it } from "vitest";
@@ -19,6 +20,7 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -334,6 +336,44 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
       new Set(fixture.threadIds),
     );
     expect(publishedReadCursorPayloads()).toStrictEqual([]);
+  });
+
+  it("excludes muted threads from bulk marking but permits explicit single-thread marking", async () => {
+    const fixture = await createUnreadAgentThreads(1);
+    const before = await readCursors(fixture);
+    const [threadId] = fixture.threadIds;
+    if (!threadId) {
+      throw new Error("Expected one unread thread");
+    }
+    await bdd.readOnboardingStatus(fixture.actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      {
+        userId: fixture.actor.userId,
+        orgId: fixture.orgId,
+        orgRole: fixture.actor.orgRole,
+      },
+      { [FeatureSwitchKey.ChatThreadMuting]: true },
+    );
+    await chat.requestSetThreadMuted(fixture.actor, threadId, true, [204]);
+    clearPublishedNotifications();
+
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+    await expect(readCursors(fixture)).resolves.toStrictEqual(before);
+    expect(publishedReadCursorPayloads()).toStrictEqual([]);
+
+    const marked = await chat.markThreadRead(fixture.actor, threadId);
+    expect(marked.lastReadAt).not.toBe(before.get(threadId));
+    await expect(
+      chat.readThreadMetadata(fixture.actor, threadId),
+    ).resolves.toMatchObject({ muted: true });
+    expect(publishedReadCursorPayloads()).toStrictEqual([
+      { threadId, agentId: fixture.agentId, lastReadAt: marked.lastReadAt },
+    ]);
+    await chat.requestSetThreadMuted(fixture.actor, threadId, false, [204]);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(),
+    );
   });
 
   it("leaves another Agent's unread threads untouched", async () => {

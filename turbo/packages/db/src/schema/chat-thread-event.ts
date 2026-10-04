@@ -68,6 +68,8 @@ export const chatThreadEvents = pgTable(
     reassignedAgentId: uuid("reassigned_agent_id"),
     title: text("title"),
     pinOrder: text("pin_order"),
+    /** Metadata-only sort_touched payload; NULL means no mute change. */
+    muted: boolean("muted"),
     selectedModel: varchar("selected_model", { length: 255 }),
     /** Full map for created events. */
     modelSettings: jsonb("model_settings").$type<ModelSettings>(),

@@ -186,10 +186,14 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
         .update(chatThreads)
         .set({
           lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
-          ...(unarchive ? { archived: false } : {}),
+          ...(unarchive
+            ? {
+                archived: sql`CASE WHEN ${chatThreads.muted} THEN ${chatThreads.archived} ELSE false END`,
+              }
+            : {}),
         })
         .where(eq(chatThreads.id, threadId))
-        .returning({ id: chatThreads.id }),
+        .returning({ id: chatThreads.id, archived: chatThreads.archived }),
     );
     signal.throwIfAborted();
     reportChatEventSideEffect(
@@ -199,7 +203,9 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
       timestampWrite,
     );
     const unarchived =
-      unarchive && timestampWrite.ok && timestampWrite.value.length > 0;
+      unarchive &&
+      timestampWrite.ok &&
+      timestampWrite.value[0]?.archived === false;
     const sortStartedAt = performance.now();
     const sortWrite = await settleIncludingAbort(
       set(

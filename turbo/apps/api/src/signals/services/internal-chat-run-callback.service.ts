@@ -1937,6 +1937,7 @@ const runCompletedChatCallbackSideEffects$ = command(
       await sendUserPushNotifications({
         db: args.db,
         userId: args.chatThread.userId,
+        threadId: args.chatThread.chatThreadId,
         notification: {
           title: args.run.prompt.slice(0, 60),
           body: summary ?? "Your task is complete",
@@ -2034,6 +2035,7 @@ async function runFailedChatCallbackSideEffects(args: {
   await sendUserPushNotifications({
     db: args.db,
     userId: args.chatThread.userId,
+    threadId: args.chatThread.chatThreadId,
     notification: {
       title: args.run.prompt.slice(0, 60),
       body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,

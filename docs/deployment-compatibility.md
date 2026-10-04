@@ -1,5 +1,36 @@
 # Deployment Compatibility
 
+## Thread mute (staff organization rollout)
+
+`ChatThreadMuting` is independent of archiving and defaults to disabled with the
+same staff organization allowlist. Migration 1318 adds `chat_threads.muted`
+(default false, non-null) and a nullable mute payload to `chat_thread_events`.
+Apply the expansion before the new API; old writers omit both columns safely.
+Do not enable mute while old APIs still serve indicators, terminal callbacks or
+push delivery, since those versions do not enforce mute.
+
+Mute changes use the existing `sort_touched` event with an optional `muted`
+payload, not a new strict-enum kind. The event captures the thread's existing
+`lastMessageAt`; old readers ignore the payload without promoting activity.
+New readers change only mute, preserving activity and metadata timestamps.
+Snapshot/metadata mute fields are optional on the wire and normalize to false
+for old snapshots, cached projections and old API responses. The compactor
+captures the canonical mute state. The existing snapshot/event version remains
+unchanged and old readers continue to parse the stream.
+
+New App/old API has no mute operation (404); keep the rollout switch disabled
+until the serving API understands it. Old App/new API continues to receive
+filtered unread indicators and suppressed pushes, though it has no mute menu or
+icon. Mute preserves read cursors and active indicators; bulk agent mark-read
+excludes muted threads. Terminal success/failure still writes content and
+activity, but its UPDATE tests the current mute value before unarchiving.
+External channel result deliveries and realtime invalidations remain intact.
+
+Rollback preserves the additive columns and stored mute state, but old APIs do
+not honor that state. Rollback therefore requires disabling access and accepting
+that enforcement is unavailable until a mute-aware API is restored. This PR does
+not activate production overrides, deploy or update the Web floor.
+
 ## Firewall auth effective expiry (#37670)
 
 Firewall auth keeps the existing `expiresAt` response shape. For refreshable

@@ -62,7 +62,7 @@ const markAgentReadInner$ = command(
     for (const cursor of cursors) {
       const advanced = await set(
         advanceChatThreadReadCursor$,
-        { ...cursor, userId },
+        { ...cursor, userId, unmutedOnly: true },
         signal,
       );
       signal.throwIfAborted();

@@ -155,7 +155,7 @@ function buildAgentPhoneInboundWebhookBody(args: {
     agentId: AGENTPHONE_BDD_AGENT_ID,
     ...(message.recentHistory ? { recentHistory: message.recentHistory } : {}),
     data: {
-      ...(messageId === undefined ? {} : { id: messageId }),
+      ...(messageId === undefined ? {} : { messageId }),
       from: message.from,
       to: AGENTPHONE_BDD_PHONE_NUMBER,
       message: message.body,
