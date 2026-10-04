@@ -1,5 +1,10 @@
 import { defineConfig } from "vitest/config";
 
+const realDatabaseSetupFiles = [
+  "./src/__tests__/env-stub.ts",
+  "./src/__tests__/setup.ts",
+];
+
 const immutableCatalogTests = [
   "src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
 ];
@@ -27,7 +32,6 @@ export default defineConfig({
     env: {
       TZ: "UTC",
     },
-    setupFiles: ["./src/__tests__/env-stub.ts", "./src/__tests__/setup.ts"],
     exclude: [
       "node_modules/**",
       "dist/**",
@@ -38,8 +42,8 @@ export default defineConfig({
     // scheduling; no database session or production lock is a test resource.
     projects: [
       {
-        // Do not inherit setupFiles: Vitest merges inherited arrays rather than
-        // replacing them with [], which would open the shared real database.
+        // Root setupFiles would be inherited even without extends. Real-DB
+        // setup is assigned only to the three ordinary projects below.
         test: {
           name: "api-immutable-catalog",
           globals: true,
@@ -54,6 +58,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "api",
+          setupFiles: realDatabaseSetupFiles,
           exclude: [
             ...catalogTests,
             ...bootstrapFailureTests,
@@ -65,6 +70,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "api-catalog",
+          setupFiles: realDatabaseSetupFiles,
           include: catalogTests,
           benchmark: { enabled: false },
           fileParallelism: false,
@@ -75,6 +81,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "api-bootstrap-failure",
+          setupFiles: realDatabaseSetupFiles,
           include: bootstrapFailureTests,
           benchmark: { enabled: false },
           isolate: true,
