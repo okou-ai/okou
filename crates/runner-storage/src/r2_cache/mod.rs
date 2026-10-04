@@ -172,15 +172,9 @@ pub struct R2ImageCache {
 }
 
 impl R2ImageCache {
-    /// Object identity used by the existing template download caller logs.
-    pub fn template_download_identity(
-        &self,
-        hash: &str,
-    ) -> guest_contracts::r2_download::R2DownloadIdentity {
-        guest_contracts::r2_download::R2DownloadIdentity {
-            r2_bucket: self.bucket.clone(),
-            r2_key: keys::key_for_template_hash(hash),
-        }
+    /// The SDK object key, for existing Runner-local INFO template logs only.
+    pub fn template_download_key(&self, hash: &str) -> String {
+        keys::key_for_template_hash(hash)
     }
 }
 

@@ -260,35 +260,30 @@ fn record_session_history_download_timings(
         "session_history_download_request_status",
         timings.request_status(),
         metadata,
-        timings.r2_object(),
     );
     record_session_history_download_phase(
         telemetry,
         "session_history_download_body_read",
         timings.body_read(),
         metadata,
-        timings.r2_object(),
     );
     record_session_history_download_phase(
         telemetry,
         "session_history_download_validation",
         timings.validation(),
         metadata,
-        timings.r2_object(),
     );
     record_session_history_download_phase(
         telemetry,
         "session_history_download_decompression",
         timings.decompression(),
         metadata,
-        timings.r2_object(),
     );
     record_session_history_download_phase(
         telemetry,
         "session_history_download_hash_verification",
         timings.hash_verification(),
         metadata,
-        timings.r2_object(),
     );
 }
 
@@ -297,17 +292,15 @@ fn record_session_history_download_phase(
     action_type: &'static str,
     phase: Option<SessionHistoryDownloadPhaseTiming>,
     metadata: Option<SessionHistoryTelemetryMetadata>,
-    r2_object: Option<&guest_contracts::r2_download::R2DownloadIdentity>,
 ) {
     if let Some(phase) = phase {
-        let mut record = crate::telemetry::SandboxOpRecord::new(
+        telemetry.record_with_session_history_metadata(
             action_type,
             phase.elapsed(),
             phase.success(),
             (!phase.success()).then_some(SESSION_HISTORY_DOWNLOAD_PHASE_TELEMETRY_ERROR),
+            metadata,
         );
-        record.r2_object = r2_object.cloned();
-        telemetry.record_r2_session_history_phase(record, metadata);
     }
 }
 

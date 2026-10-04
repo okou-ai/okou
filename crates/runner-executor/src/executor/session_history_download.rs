@@ -161,10 +161,9 @@ struct SessionHistoryDownloadTaskResult {
     result: RunnerResult<SessionHistoryCpuMaterialization>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(super) struct SessionHistoryDownloadTimings {
     metadata: Option<SessionHistoryTelemetryMetadata>,
-    r2_object: Option<guest_contracts::r2_download::R2DownloadIdentity>,
     request_status: Option<SessionHistoryDownloadPhaseTiming>,
     body_read: Option<SessionHistoryDownloadPhaseTiming>,
     validation: Option<SessionHistoryDownloadPhaseTiming>,
@@ -186,10 +185,6 @@ impl SessionHistoryDownloadTimings {
 
     pub(super) fn metadata(&self) -> Option<SessionHistoryTelemetryMetadata> {
         self.metadata
-    }
-
-    pub(super) fn r2_object(&self) -> Option<&guest_contracts::r2_download::R2DownloadIdentity> {
-        self.r2_object.as_ref()
     }
 
     pub(super) fn request_status(&self) -> Option<SessionHistoryDownloadPhaseTiming> {
@@ -900,7 +895,6 @@ async fn download_body(
     timings: &mut SessionHistoryDownloadTimings,
 ) -> RunnerResult<Vec<u8>> {
     let deadline = tokio::time::Instant::now() + SESSION_HISTORY_DOWNLOAD_BUDGET;
-    timings.r2_object = guest_contracts::r2_download::R2DownloadIdentity::from_url(url);
     tokio::select! {
         biased;
         _ = cancel.cancelled() => Err(session_history_download_cancelled_error()),
@@ -945,10 +939,7 @@ async fn download_body_with_retries(
                 }
                 tracing::info!(
                     action = "session_history_download_retry",
-                    r2_bucket = timings
-                        .r2_object()
-                        .map(|identity| identity.r2_bucket.as_str()),
-                    r2_key = timings.r2_object().map(|identity| identity.r2_key.as_str()),
+                    r2_key = runner_storage::r2_download::key_from_url(url).as_deref(),
                     attempt,
                     max_attempts = SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
                     failure_kind = error.failure_kind,

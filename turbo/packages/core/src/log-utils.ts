@@ -6,56 +6,6 @@ const CIRCULAR_MARKER = "[Circular]";
 const TRUNCATED_MARKER = "[Truncated]";
 const UNREADABLE_MARKER = "[Unreadable]";
 
-export interface R2DownloadLogFields {
-  readonly r2_bucket: string;
-  readonly r2_key: string;
-}
-
-// Diagnostic associations never mutate SDK errors or their public responses.
-const r2DownloadErrors = new WeakMap<object, R2DownloadLogFields | null>();
-
-export function associateR2DownloadError(
-  error: unknown,
-  fields: R2DownloadLogFields | null,
-): void {
-  if (typeof error !== "object" || error === null) return;
-  const previous = r2DownloadErrors.get(error);
-  if (fields === null || previous === undefined) {
-    r2DownloadErrors.set(error, fields);
-  } else if (
-    previous !== null &&
-    (previous.r2_bucket !== fields.r2_bucket ||
-      previous.r2_key !== fields.r2_key)
-  ) {
-    r2DownloadErrors.set(error, null);
-  }
-}
-
-export function r2DownloadErrorLogFields(
-  error: unknown,
-): R2DownloadLogFields | undefined {
-  return typeof error === "object" && error !== null
-    ? (r2DownloadErrors.get(error) ?? undefined)
-    : undefined;
-}
-
-export function r2DownloadArgumentLogFields(
-  args: readonly unknown[],
-): R2DownloadLogFields | undefined {
-  for (const arg of args) {
-    const direct = r2DownloadErrorLogFields(arg);
-    if (direct) return direct;
-    if (typeof arg === "object" && arg !== null) {
-      const error = safeReadValue(() => {
-        return Object.getOwnPropertyDescriptor(arg, "error")?.value;
-      });
-      const fields = r2DownloadErrorLogFields(error);
-      if (fields) return fields;
-    }
-  }
-  return undefined;
-}
-
 interface SerializationState {
   readonly seen: WeakSet<object>;
   nodes: number;

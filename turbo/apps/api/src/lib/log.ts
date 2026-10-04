@@ -5,11 +5,7 @@ import {
 } from "@axiomhq/logging";
 import { Axiom } from "@axiomhq/js";
 
-import {
-  formatMessage,
-  extractFields,
-  r2DownloadArgumentLogFields,
-} from "@okouai/core/log-utils";
+import { formatMessage, extractFields } from "@okouai/core/log-utils";
 
 import { env } from "./env";
 import { singleton } from "./singleton";
@@ -105,10 +101,6 @@ function formatArgs(
   args: unknown[],
 ): [string, ...unknown[]] {
   const prefix = `[${level.toUpperCase()}][${name}]`;
-  const r2Fields = r2DownloadArgumentLogFields(args);
-  if (r2Fields) {
-    args = [...args, r2Fields];
-  }
   if (args.length === 0) {
     return [prefix];
   }
@@ -422,10 +414,7 @@ function logToAxiom(level: Level, name: string, args: unknown[]): void {
   }
 
   const message = formatMessage(args);
-  const fields = {
-    ...extractFields(args),
-    ...r2DownloadArgumentLogFields(args),
-  };
+  const fields = extractFields(args);
   const eventRootFields = rootEventFields(fields);
   const data = {
     [EVENT]: {

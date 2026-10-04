@@ -5,7 +5,6 @@ import {
   CreateMultipartUploadCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
-  type GetObjectCommandInput,
   type GetObjectCommandOutput,
   HeadObjectCommand,
   ListMultipartUploadsCommand,
@@ -36,7 +35,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { env } from "../../lib/env";
-import { withR2DownloadLogFields } from "../../lib/r2-download-log-fields";
 import { detach, Mechanism, settle } from "../utils";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
@@ -107,21 +105,15 @@ async function registerLegacyArtifactWrite(
   if (!isS3PreconditionFailedError(written.error)) {
     throw written.error;
   }
-  const existing = await getS3Object(
-    client,
-    { Bucket: bucket, Key: key },
+  const existing = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
     { abortSignal: signal },
   );
   if (!existing.Body) {
     throw new Error("Public artifact registration has no body");
   }
   const previous = artifactDeliveryRecordSchema.parse(
-    JSON.parse(
-      await withR2DownloadLogFields(existing.Body.transformToString(), {
-        r2_bucket: bucket,
-        r2_key: key,
-      }),
-    ),
+    JSON.parse(await existing.Body.transformToString()),
   );
   if (JSON.stringify(previous) !== body) {
     throw new Error("Artifact delivery alias is already allocated");
@@ -632,13 +624,12 @@ export function downloadS3BufferWithMaxBytesIfChanged(
   return computed(async (get): Promise<ConditionalS3BufferDownload> => {
     const client = get(s3ClientForBucket(bucket));
     const downloaded = await settle(
-      getS3Object(
-        client,
-        {
+      client.send(
+        new GetObjectCommand({
           Bucket: bucket,
           Key: key,
           IfNoneMatch: ifNoneMatch ?? undefined,
-        },
+        }),
         { abortSignal: signal },
       ),
     );
@@ -651,13 +642,7 @@ export function downloadS3BufferWithMaxBytesIfChanged(
     const response: GetObjectCommandOutput = downloaded.value;
     return {
       kind: "downloaded",
-      buffer: await readS3ObjectBody(
-        response,
-        bucket,
-        key,
-        { maxBytes },
-        signal,
-      ),
+      buffer: await readS3ObjectBody(response, key, { maxBytes }, signal),
       etag: response.ETag ?? null,
     };
   });
@@ -720,22 +705,6 @@ function closeS3Body(body: unknown): void {
   }
 }
 
-// Attribute only actual SDK reads; GetObject commands used for presigning do
-// not pass through this helper and no new download event is emitted.
-function getS3Object(
-  client: S3Client,
-  input: GetObjectCommandInput & {
-    readonly Bucket: string;
-    readonly Key: string;
-  },
-  options: { readonly abortSignal?: AbortSignal },
-): Promise<GetObjectCommandOutput> {
-  return withR2DownloadLogFields(
-    client.send(new GetObjectCommand(input), options),
-    { r2_bucket: input.Bucket, r2_key: input.Key },
-  );
-}
-
 function downloadS3BufferWithClient(
   client$: Computed<S3Client>,
   bucket: string,
@@ -747,13 +716,9 @@ function downloadS3BufferWithClient(
     const client = get(client$);
     const startedAt = performance.now();
     const downloaded = await settle(
-      getS3Object(
-        client,
-        { Bucket: bucket, Key: key },
-        {
-          abortSignal: signal,
-        },
-      ),
+      client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
+        abortSignal: signal,
+      }),
     );
     if (!downloaded.ok) {
       options.onFailure?.({
@@ -764,30 +729,11 @@ function downloadS3BufferWithClient(
       });
       throw downloaded.error;
     }
-    return await readS3ObjectBody(
-      downloaded.value,
-      bucket,
-      key,
-      options,
-      signal,
-    );
+    return await readS3ObjectBody(downloaded.value, key, options, signal);
   });
 }
 
-function readS3ObjectBody(
-  response: Parameters<typeof readS3ObjectBodyBytes>[0],
-  bucket: string,
-  key: string,
-  options: DownloadS3BufferOptions,
-  signal?: AbortSignal,
-): Promise<Buffer> {
-  return withR2DownloadLogFields(
-    readS3ObjectBodyBytes(response, key, options, signal),
-    { r2_bucket: bucket, r2_key: key },
-  );
-}
-
-async function readS3ObjectBodyBytes(
+async function readS3ObjectBody(
   response: {
     readonly Body?: unknown;
     readonly ContentLength?: number;
@@ -1496,14 +1442,12 @@ export function readHostedSiteSnapshotSource(
   etag?: string,
 ) {
   return computed(async (get) => {
-    const response = await getS3Object(
-      get(hostedSitesS3Client$),
-      { Bucket: bucket, Key: key, IfMatch: etag },
+    const response = await get(hostedSitesS3Client$).send(
+      new GetObjectCommand({ Bucket: bucket, Key: key, IfMatch: etag }),
       { abortSignal: signal },
     );
     const buffer = await readS3ObjectBody(
       response,
-      bucket,
       key,
       { maxBytes: 4 * 1024 * 1024 },
       signal,
@@ -1586,12 +1530,11 @@ export const copyPublicArtifactObject$ = command(
     // Private and public buckets have separate scoped credentials.
     await using body = requireReadableBody(
       (
-        await getS3Object(
-          sourceClient,
-          {
+        await sourceClient.send(
+          new GetObjectCommand({
             ...source,
             IfMatch: head.ETag,
-          },
+          }),
           { abortSignal: signal },
         )
       ).Body,
@@ -1617,12 +1560,11 @@ export function readArtifactSharePolicyObject(
   signal: AbortSignal,
 ) {
   return computed(async (get) => {
-    const response = await getS3Object(
-      get(hostedSitesS3Client$),
-      { Bucket: bucket, Key: key },
+    const response = await get(hostedSitesS3Client$).send(
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
       { abortSignal: signal },
     );
-    const buffer = await readS3ObjectBody(response, bucket, key, {}, signal);
+    const buffer = await readS3ObjectBody(response, key, {}, signal);
     if (!response.ETag) {
       throw new Error("Artifact sharing policy has no storage revision");
     }
@@ -1723,20 +1665,18 @@ export function readS3ObjectRange(
     ) {
       throw new Error("Invalid bounded storage range");
     }
-    const response = await getS3Object(
-      get(s3ClientForBucket(args.bucket)),
-      {
+    const response = await get(s3ClientForBucket(args.bucket)).send(
+      new GetObjectCommand({
         Bucket: args.bucket,
         Key: args.key,
         Range: `bytes=${args.offset}-${args.offset + args.length - 1}`,
         IfMatch: args.etag,
-      },
+      }),
       { abortSignal: signal },
     );
     signal.throwIfAborted();
     const body = await readS3ObjectBody(
       response,
-      args.bucket,
       args.key,
       { maxBytes: args.length },
       signal,

@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach, onTestFinished } from "vitest";
 import { mockEnv, mockOptionalEnv } from "../env";
 import { flushLogs, logger, __resetForTest } from "../log";
 import { testContext } from "../../__tests__/test-context";
-import { withR2DownloadLogFields } from "../r2-download-log-fields";
 
 const { axiom, axiomLogging, console: consoleOutput } = testContext().mocks;
 
@@ -16,34 +15,6 @@ function configureDebug(value: string | undefined): void {
 beforeEach(() => {
   __resetForTest();
   axiomLogging.flush.mockResolvedValue(undefined);
-});
-
-describe("R2 error attributes on existing logs", () => {
-  it("adds identity to the same console and Axiom warning without mutating its error", async () => {
-    const restoreConsole = consoleOutput.capture();
-    onTestFinished(restoreConsole);
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", "test-telemetry-token");
-    const error = Object.freeze(new Error("download failed"));
-    const fields = {
-      r2_bucket: "example-bucket",
-      r2_key: "prefix/archive.tar.gz",
-    };
-    await expect(
-      withR2DownloadLogFields(Promise.reject(error), fields),
-    ).rejects.toBe(error);
-    logger("r2-download-test").warn("existing warning", { error });
-    expect(consoleOutput.log).toHaveBeenCalledExactlyOnceWith(
-      "[WARN][r2-download-test] existing warning",
-      { error },
-      fields,
-    );
-    expect(axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-      "existing warning",
-      expect.objectContaining({ ...fields, context: "r2-download-test" }),
-    );
-    expect(error).not.toHaveProperty("r2_key");
-    expect(error).not.toHaveProperty("r2_bucket");
-  });
 });
 
 describe("debug environment", () => {

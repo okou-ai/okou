@@ -143,27 +143,18 @@ def log_http_network_entry(log_path: str, entry: dict, raw_url: str) -> None:
 
     original_url_char_count = len(raw_url)
     log_entry = {**entry, "timestamp": _utc_log_timestamp()}
-    r2_fields = (
-        network_log_sanitization.r2_download_log_fields(raw_url)
-        if entry.get("method") == "GET"
-        else {}
-    )
-    log_entry.update(r2_fields)
     if original_url_char_count > URL_LOG_MAX_CHARACTERS:
-        log_entry = _http_network_log_omission_entry(log_entry, original_url_char_count)
-    else:
-        log_entry["url"] = network_log_sanitization.sanitize_request_url_for_network_log(raw_url)
+        _write_jsonl_entry(
+            log_path,
+            _http_network_log_omission_entry(log_entry, original_url_char_count),
+            "network",
+        )
+        return
+
+    log_entry["url"] = network_log_sanitization.sanitize_request_url_for_network_log(raw_url)
     line = _encode_jsonl_entry(log_entry, "network")
     if line is None:
         return
-
-    if r2_fields and len(line) > HTTP_NETWORK_LOG_MAX_JSONL_BYTES:
-        # Optional attributes must not consume an existing record's size budget.
-        for field in r2_fields:
-            log_entry.pop(field, None)
-        line = _encode_jsonl_entry(log_entry, "network")
-        if line is None:
-            return
 
     if len(line) > HTTP_NETWORK_LOG_MAX_JSONL_BYTES:
         omission_line = _encode_jsonl_entry(

@@ -432,9 +432,6 @@ const networkLogDetailFields = {
   action: detailField("action", "action"),
   method: detailField("method", "method"),
   url: detailField("url", "url"),
-  // Native R2 identity remains available in log data; the URL owns presentation.
-  r2_bucket: null,
-  r2_key: null,
   // The URL cell already displays the omission sentinel.
   url_truncated: null,
   url_original_char_count: null,

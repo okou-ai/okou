@@ -60,25 +60,30 @@ open for incident request-level attribution and serving-version verification;
 synthetic coverage does not establish Notion old-token invalidation or resolve
 its reported 401s.
 
-## Optional R2 download log attributes
+## Runner-local INFO R2 keys
 
-Existing download records may include `r2_bucket` and `r2_key`; event names,
-levels and counts are unchanged. Keys are bounded log attributes, not metric
-labels, outcomes or reasons. GET presigning emits no download event. Native R2
-URLs contribute only decoded object identity, never signing parameters; unknown
-CDN/proxy URLs contribute no inferred identity. Runner logs retain upstream
-identity when delivery uses a local cache; a Guest `file://` label does not infer
-it from the local path.
+Only existing ordinary Runner INFO events gain `r2_key` or a
+`r2_storage_sources` list containing keys and logical name/version/mount
+correlation. Event names, levels, counts and conditions are unchanged. These
+sources retain the original API identity when cache delivery rewrites URLs to
+`file://`; the list does not assert every source downloaded in every batch.
+Native R2 URL keys are decoded once and bounded to 1024 bytes, without signing
+parameters, fragments or userinfo. Unknown CDN/Worker/custom endpoints and local
+paths contribute no inferred key. Template keys use the SDK's key construction.
 
-New API accepts records from old Runner/addon versions without these optional
-fields. Old API accepts new records but strips unknown attributes, so remote
-queries gain these fields only after API and producer updates; local logs do not
-require API deployment. New Platform accepts old records and does not render the
-new attributes as additional detail rows. Old Platform ignores additional
-response attributes. SDK error associations preserve error identity and HTTP
-responses without creating an SDK download event. No migration, Web floor,
-production activation or deployment is included; rollback removes the optional
-attributes without changing download behavior.
+Runner Start's existing formatter tees INFO to stderr and the local rolling
+Runner file (seven daily files retained); other Runner commands use stderr.
+These events do not match the existing Axiom ingest filter. No new key fields
+are added to WARN/ERROR, Guest logs, addon network logs, sandbox-operation
+telemetry, API logs/contracts, Platform responses or metric labels. Existing URL
+and error-text policies are unchanged; this is not universal redaction.
+
+Keys can contain sensitive tenant identifiers or paths. Local file and journal
+access and retention remain relevant; omitting credentials does not make keys
+public. Missing fields do not imply no R2 download, and existing log-free paths
+remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration,
+Web floor, production activation or deployment is required or included. Runner
+rollback removes the local attributes only, without changing download behavior.
 
 ## File transcription and Seedream 5 retirement
 

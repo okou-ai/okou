@@ -31,18 +31,6 @@ use tokio::sync::Notify;
 const SMALL_TEMPLATE_BYTES: u64 = 5;
 const BODY_CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[tokio::test]
-async fn template_download_log_identity_matches_the_sdk_object_location() {
-    let cache = mock_cache("example-bucket", &[]);
-    assert_eq!(
-        cache.template_download_identity("template-hash"),
-        guest_contracts::r2_download::R2DownloadIdentity {
-            r2_bucket: "example-bucket".into(),
-            r2_key: "runner-templates/template-hash.tar.zst".into(),
-        }
-    );
-}
-
 #[derive(Default)]
 struct ControlledBodyState {
     released: AtomicBool,
@@ -144,6 +132,10 @@ async fn downloads_exact_regular_template_from_template_key() {
         regular_template_archive(b"hello"),
     );
     let cache = mock_cache("test-bucket", &[&get]);
+    assert_eq!(
+        cache.template_download_key("hash"),
+        "runner-templates/hash.tar.zst"
+    );
     let dst = tempfile::tempdir().unwrap();
     let destination = dst.path().join("rootfs.ext4.staging");
 

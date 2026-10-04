@@ -242,16 +242,15 @@ impl TemplateMaterializationTarget<'_> {
         input: &TemplateInput<'_>,
         downloaded_template: &Path,
     ) -> RunnerResult<()> {
-        let r2 = input
-            .cache
-            .as_cache()
-            .map(|cache| cache.template_download_identity(input.template_hash));
         match self {
             Self::RootfsStaging(staging) => {
                 move_file_sync(downloaded_template, staging, "materialize template")?;
                 tracing::info!(
-                    r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
-                    r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
+                    r2_key = input
+                        .cache
+                        .as_cache()
+                        .map(|cache| cache.template_download_key(input.template_hash))
+                        .as_deref(),
                     "[OK] template downloaded from R2 into staging: {}",
                     staging.display()
                 );
@@ -259,8 +258,11 @@ impl TemplateMaterializationTarget<'_> {
             }
             Self::RemoteCacheOnly => {
                 tracing::info!(
-                    r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
-                    r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
+                    r2_key = input
+                        .cache
+                        .as_cache()
+                        .map(|cache| cache.template_download_key(input.template_hash))
+                        .as_deref(),
                     "[OK] template already in R2: {}",
                     input.template_hash
                 );
@@ -545,9 +547,6 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
     let r2 = R2ImageCache::from_env()
         .await
         .map_err(|e| RunnerError::Internal(format!("R2 cache init: {e}")))?;
-    let r2_download = r2
-        .as_ref()
-        .map(|cache| cache.template_download_identity(&hashes.template_hash));
     let template_cache = TemplateCache::from_optional(mode, r2.as_ref())?;
     if template_cache.is_disabled() {
         // Info, not warn — dev environments routinely run without R2 configured.
@@ -608,8 +607,6 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
             if let RootfsImageLock::Exclusive { guard } = &_rootfs_lock {
                 let template_lock_path = paths.template_lock(&hashes.template_hash);
                 tracing::info!(
-                    r2_bucket = r2_download.as_ref().map(|source| source.r2_bucket.as_str()),
-                    r2_key = r2_download.as_ref().map(|source| source.r2_key.as_str()),
                     "acquiring exclusive template lock for image build: {}",
                     template_lock_path.display()
                 );
@@ -730,11 +727,16 @@ async fn ensure_template_cached_under_lock_with_scripts(
 
     match cache.template_exists(input.template_hash).await {
         Ok(true) => {
-            tracing::info!("[OK] template already in R2: {}", input.template_hash);
+            tracing::info!(
+                r2_key = ?cache.template_download_key(input.template_hash),
+                "[OK] template already in R2: {}",
+                input.template_hash
+            );
             return Ok(());
         }
         Ok(false) => {
             tracing::info!(
+                r2_key = ?cache.template_download_key(input.template_hash),
                 "R2 template cache miss for {} — building locally",
                 input.template_hash
             );
@@ -974,7 +976,6 @@ async fn resolve_remote_template(
         ));
     };
 
-    let r2 = cache.template_download_identity(input.template_hash);
     let expected_template_bytes = u64::from(input.rootfs_disk_mb) * 1024 * 1024;
     match cache
         .try_download_template_to_file(
@@ -989,16 +990,12 @@ async fn resolve_remote_template(
             Err(e) => {
                 if input.cache.is_required() {
                     tracing::warn!(
-                        r2_bucket = r2.r2_bucket,
-                        r2_key = r2.r2_key,
                         "R2 template object for {} failed required-cache validation ({e}) — \
                          rebuilding locally and force-overwriting the bad object",
                         input.template_hash
                     );
                 } else {
                     tracing::warn!(
-                        r2_bucket = r2.r2_bucket,
-                        r2_key = r2.r2_key,
                         "R2 template object for {} failed validation ({e}) — \
                          rebuilding locally and force-overwriting the bad object",
                         input.template_hash
@@ -1011,8 +1008,7 @@ async fn resolve_remote_template(
         },
         Ok(false) => {
             tracing::info!(
-                r2_bucket = r2.r2_bucket,
-                r2_key = r2.r2_key,
+                r2_key = ?cache.template_download_key(input.template_hash),
                 "R2 template cache miss for {} — building locally",
                 input.template_hash
             );
@@ -1023,16 +1019,12 @@ async fn resolve_remote_template(
         Err(e) if e.is_invalid_object() => {
             if input.cache.is_required() {
                 tracing::warn!(
-                    r2_bucket = r2.r2_bucket,
-                    r2_key = r2.r2_key,
                     "R2 template object for {} is invalid in required-cache mode ({e}) — \
                      rebuilding locally and force-overwriting the bad object",
                     input.template_hash
                 );
             } else {
                 tracing::warn!(
-                    r2_bucket = r2.r2_bucket,
-                    r2_key = r2.r2_key,
                     "R2 template object for {} is invalid ({e}) — \
                      rebuilding locally and force-overwriting the bad object",
                     input.template_hash
@@ -1046,11 +1038,7 @@ async fn resolve_remote_template(
             "R2 template download failed while template cache is required: {e}"
         ))),
         Err(e) => {
-            tracing::warn!(
-                r2_bucket = r2.r2_bucket,
-                r2_key = r2.r2_key,
-                "R2 template download failed: {e} — falling back to local build"
-            );
+            tracing::warn!("R2 template download failed: {e} — falling back to local build");
             Ok(RemoteTemplateDecision::BuildAndUpload(
                 TemplateUploadIntent::Deduplicated,
             ))

@@ -302,8 +302,6 @@ struct SandboxOp {
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
-    #[serde(flatten)]
-    r2_object: Option<guest_contracts::r2_download::R2DownloadIdentity>,
 }
 
 #[derive(Clone, Serialize)]
@@ -451,7 +449,6 @@ impl JobTelemetry {
         );
         operation.archive_size_mismatch = mismatch;
         operation.archive_connection_attempt = connection_attempt;
-        operation.r2_object = record.r2_object;
         self.push_operation(operation);
     }
 
@@ -568,23 +565,6 @@ impl JobTelemetry {
         metadata: Option<SessionHistoryTelemetryMetadata>,
     ) {
         self.record_inner(action_type, duration, success, error, None, metadata);
-    }
-
-    pub(crate) fn record_r2_session_history_phase(
-        &mut self,
-        record: SandboxOpRecord,
-        metadata: Option<SessionHistoryTelemetryMetadata>,
-    ) {
-        let mut operation = sandbox_op(
-            record.action_type,
-            record.duration,
-            record.success,
-            record.error,
-            None,
-            metadata,
-        );
-        operation.r2_object = record.r2_object;
-        self.push_operation(operation);
     }
 
     pub(crate) fn reporter(&self) -> SandboxOpReporter {
@@ -929,16 +909,14 @@ impl SandboxOpReporter {
         let ops = records
             .into_iter()
             .map(|record| {
-                let mut operation = sandbox_op(
+                sandbox_op(
                     record.action_type,
                     record.duration,
                     record.success,
                     record.error,
                     None,
                     None,
-                );
-                operation.r2_object = record.r2_object;
-                operation
+                )
             })
             .collect();
         send_telemetry(
@@ -1071,7 +1049,6 @@ fn sandbox_op_at(
         storage_batch: None,
         archive_size_mismatch: None,
         archive_connection_attempt: None,
-        r2_object: None,
     }
 }
 
@@ -1214,7 +1191,6 @@ mod tests {
             storage_batch: None,
             archive_size_mismatch: None,
             archive_connection_attempt: None,
-            r2_object: None,
         };
         let json = serde_json::to_value(&op).unwrap();
         assert_eq!(
@@ -1570,7 +1546,6 @@ mod tests {
                 storage_batch: None,
                 archive_size_mismatch: None,
                 archive_connection_attempt: None,
-                r2_object: None,
             }],
         };
         let json = serde_json::to_value(&payload).unwrap();
@@ -1795,7 +1770,7 @@ mod tests {
                 Duration::from_millis(7),
                 false,
                 Some("response-size-mismatch"),
-            ).with_r2_url("https://example-bucket.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/prefix/archive.tar.gz?X-Amz-Signature=signature-secret"),
+            ),
             completed_at,
             Some(ArchiveSizeMismatch::new(
                 5,
@@ -1821,8 +1796,6 @@ mod tests {
                 "duration_ms": 7,
                 "success": false,
                 "error": "response-size-mismatch",
-                "r2_bucket": "example-bucket",
-                "r2_key": "prefix/archive.tar.gz",
                 "archive_size_mismatch": {
                     "expected_bytes": "5",
                     "response_bytes": "18446744073709551615",
@@ -1832,44 +1805,6 @@ mod tests {
                 },
             })
         );
-    }
-
-    #[tokio::test]
-    async fn r2_history_phase_adds_identity_without_changing_event_count() {
-        let receiver = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
-            "200 OK",
-            r#"{"success":true}"#,
-        ))])
-        .await;
-        let mut telemetry = JobTelemetry::new(
-            http_client_for_api_url(&receiver.url()),
-            RunId::from(uuid::Uuid::nil()),
-            "tok".into(),
-            None,
-        );
-        telemetry.record_r2_session_history_phase(
-            SandboxOpRecord::new("session_history_download_body_read", Duration::from_millis(4), true, None)
-                .with_r2_url("https://0123456789abcdef0123456789abcdef.eu.r2.cloudflarestorage.com/example-bucket/history/encoded.jsonl.zst?X-Amz-Credential=credential-secret#fragment-secret"),
-            None,
-        );
-        telemetry.flush().await;
-        let requests = receiver.assert_finished_with_requests().await;
-        assert_eq!(requests.len(), 1);
-        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
-        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
-        let operations = payload["sandboxOperations"].as_array().unwrap();
-        assert_eq!(operations.len(), 1);
-        assert_eq!(
-            operations[0]["action_type"],
-            "session_history_download_body_read"
-        );
-        assert_eq!(operations[0]["duration_ms"], 4);
-        assert_eq!(operations[0]["success"], true);
-        assert_eq!(operations[0]["r2_bucket"], "example-bucket");
-        assert_eq!(operations[0]["r2_key"], "history/encoded.jsonl.zst");
-        for forbidden in ["X-Amz", "credential-secret", "fragment-secret"] {
-            assert!(!body.contains(forbidden));
-        }
     }
 
     #[tokio::test]
@@ -1989,7 +1924,7 @@ mod tests {
                 Duration::from_millis(42),
                 true,
                 None,
-            ).with_r2_url("https://example-bucket.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/background/archive.tar.gz?X-Amz-Signature=signature-secret")])
+            )])
             .await;
 
         let requests = server.assert_finished_with_requests().await;
@@ -2004,10 +1939,6 @@ mod tests {
         assert!(request.contains(r#""action_type":"storage_cache_background_fill_filled""#));
         assert!(request.contains(r#""duration_ms":42"#));
         assert!(request.contains(r#""success":true"#));
-        assert!(request.contains(r#""r2_bucket":"example-bucket""#));
-        assert!(request.contains(r#""r2_key":"background/archive.tar.gz""#));
-        assert!(!request.contains("X-Amz"));
-        assert!(!request.contains("signature-secret"));
     }
 
     #[tokio::test]

@@ -22,7 +22,8 @@ use runner_types::types::ExecutionContext;
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
-// Keep the API source identity: cache population can replace the guest URL with file://.
+// Runner-local INFO only. Keep API keys when cache delivery uses file://;
+// this source list does not claim every source was downloaded in this batch.
 fn r2_storage_sources(
     manifest: Option<&runner_types::storage_manifest::StorageManifest>,
 ) -> serde_json::Value {
@@ -56,13 +57,12 @@ fn r2_storage_sources(
                 )
         })
         .filter_map(|(url, name, version_id, mount_path)| {
-            let identity = guest_contracts::r2_download::R2DownloadIdentity::from_url(url?)?;
+            let key = runner_storage::r2_download::key_from_url(url?)?;
             Some(serde_json::json!({
                 "name": name,
                 "version_id": version_id,
                 "mount_path": mount_path,
-                "r2_bucket": identity.r2_bucket,
-                "r2_key": identity.r2_key,
+                "r2_key": key,
             }))
         })
         .collect();
@@ -531,8 +531,8 @@ mod r2_log_tests {
         assert_eq!(
             sources,
             serde_json::json!([
-                { "name": "skill", "version_id": "skill-version", "mount_path": "/skills", "r2_bucket": "example-bucket", "r2_key": "prefix/archive.tar.gz" },
-                { "name": "memory", "version_id": "memory-version", "mount_path": "/memory", "r2_bucket": "example-bucket", "r2_key": "prefix/archive.tar.gz" }
+                { "name": "skill", "version_id": "skill-version", "mount_path": "/skills", "r2_key": "prefix/archive.tar.gz" },
+                { "name": "memory", "version_id": "memory-version", "mount_path": "/memory", "r2_key": "prefix/archive.tar.gz" }
             ])
         );
         assert!(!sources.to_string().contains("X-Amz"));
