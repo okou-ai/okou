@@ -1041,6 +1041,86 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     },
   );
 
+  it("preserves mixed refresh failures and rotation when one refreshed lifetime is unusable", async () => {
+    const fw = createFirewallApi(context);
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
+      accessToken: "stale-access",
+      refreshToken: "refresh-1",
+      expiresIn: -60,
+    });
+    await publicConnections.googleOAuth(actor, "gmail", {
+      accessToken: "stale-gmail-access",
+      refreshToken: "gmail-refresh-1",
+      expiresIn: -60,
+    });
+    const refreshTokens: (string | null)[] = [];
+    fw.mockTestOauthTokenRefresh(async (request) => {
+      refreshTokens.push(
+        new URLSearchParams(await request.text()).get("refresh_token"),
+      );
+      return fw.oauthTokenResponse({
+        accessToken:
+          refreshTokens.length === 1 ? "unusable-access" : "recovered-access",
+        refreshToken: "rotated-refresh",
+        expiresIn: refreshTokens.length === 1 ? 60 : 3600,
+      });
+    });
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
+      }),
+    );
+    const body = {
+      encryptedSecrets: fw.encryptedSecretsBody({
+        TEST_OAUTH_TOKEN: "stale-access",
+        GMAIL_TOKEN: "stale-gmail-access",
+      }),
+      authHeaders: {
+        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
+        "X-Gmail": `Bearer ${secretTemplate("GMAIL_TOKEN")}`,
+      },
+      ...(await exactSecretConnectorSources(actor, {
+        TEST_OAUTH_TOKEN: "test-oauth",
+        GMAIL_TOKEN: "gmail",
+      })),
+    };
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected both refresh failures to remain visible");
+    }
+    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
+    expect(failed.body.error.connectors?.slice().sort()).toStrictEqual([
+      "gmail",
+      "test-oauth",
+    ]);
+    // The unusable lifetime is upstream_provider; Gmail remains a distinct
+    // reconnect_required failure, so no single reason represents the batch.
+    expect(failed.body.error.failureReason).toBeUndefined();
+    expect(refreshTokens).toStrictEqual(["refresh-1"]);
+
+    const before = Math.floor(now() / 1000);
+    const recovered = await fw.requestFirewallAuth(
+      headers,
+      {
+        ...body,
+        authHeaders: { Authorization: body.authHeaders.Authorization },
+      },
+      [200],
+    );
+    if (recovered.status !== 200) {
+      throw new Error("Expected the unaffected rotated source to recover");
+    }
+    expect(recovered.body.headers.Authorization).toBe(
+      "Bearer recovered-access",
+    );
+    expect(recovered.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
+    expect(recovered.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3535);
+    expect(recovered.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
+    expect(refreshTokens).toStrictEqual(["refresh-1", "rotated-refresh"]);
+  });
+
   it("re-runs refresh for a current connector when forceRefresh is set", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await publicConnections.run();
