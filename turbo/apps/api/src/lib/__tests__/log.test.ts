@@ -20,6 +20,8 @@ beforeEach(() => {
 
 describe("R2 error attributes on existing logs", () => {
   it("adds identity to the same console and Axiom warning without mutating its error", async () => {
+    const restoreConsole = consoleOutput.capture();
+    onTestFinished(restoreConsole);
     mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", "test-telemetry-token");
     const error = Object.freeze(new Error("download failed"));
     const fields = {
