@@ -213,6 +213,59 @@ async fn execute_job_reuse_cancelled_staging_never_admits_guest_apply() {
 }
 
 #[tokio::test]
+async fn reused_staging_cancellation_retains_the_admitted_write_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let context = cached_context(&config).await;
+    let cancel = CancellationToken::new();
+    let mut telemetry = test_telemetry(&config, &context);
+    let mut controls = RunControls::new(cancel.clone(), None).with_guest_state_prepared(true);
+    controls.prepared_storage = crate::executor::sandbox_run::prepare_storage(
+        &context,
+        None,
+        &config,
+        &cancel,
+        &mut telemetry,
+    )
+    .await
+    .unwrap();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let writes = MockLifecycleGate::new();
+    overrides.set_write_file_lifecycle_gate(writes.clone());
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let start = RunStart {
+        restore_guest_state: false,
+        reuse_result: SandboxReuseResult::Reused,
+        workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+        prev_storage: None,
+    };
+    let mut staging = Box::pin(controls.prepare_reused_storage_staging(
+        sandbox.as_ref(),
+        &context,
+        &config,
+        &start,
+        &mut telemetry,
+    ));
+    tokio::select! {
+        _ = staging.as_mut() => panic!("staging returned before its external write was released"),
+        entered = writes.wait_entered(1, super::super::support::RUN_IN_SANDBOX_TEST_TIMEOUT) => { entered.unwrap(); },
+    }
+    cancel.cancel();
+    assert!(
+        staging.as_mut().now_or_never().is_none(),
+        "cancellation must not drop an admitted remote write"
+    );
+    writes.release_one();
+    assert!(matches!(
+        staging.await,
+        Some(crate::executor::agent_run::PreparedGuestRuntime::Cancelled)
+    ));
+    assert!(overrides.storage_manifest_calls().is_empty());
+    assert!(overrides.start_agent_process_calls().is_empty());
+    assert_eq!(overrides.write_files_calls().len(), 1);
+}
+
+#[tokio::test]
 async fn execute_job_fresh_does_not_stage_until_proxy_and_vm_start_complete() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;

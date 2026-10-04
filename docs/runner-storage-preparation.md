@@ -81,11 +81,14 @@ External Sandbox RPCs are mocked in these deterministic tests; they are not
 native VM latency evidence.
 
 Local base: 138 sandbox-entrypoint tests pass (512 other tests filtered).
-Changed executor: 655 library tests pass. Targeted Runner storage/executor Clippy
+Changed executor: 656 library tests pass. Guest storage apply: 116 regression
+tests pass. Targeted Runner storage/executor Clippy
 passes with the CI feature set (`--all-targets --all-features`); formatting and
 `git diff --check` pass. An extra non-CI `-D warnings` check without all features
 reported existing warnings in test-fixture modules and is not counted as passing.
 
-Native preview before/after measurements and CI are pending. No claim-to-spawn
-improvement, small-cost threshold result, or production-release success is
-claimed from the local deterministic tests.
+[Native preview observations](runner-storage-preparation-preview.md) include
+before/after reused-path CI cohorts and explicit coverage gaps. The measured
+runtime head passed 102 CI checks (13 skipped), but observed paired branch
+overlap has p50/p90 0/0ms. A causal improvement and native fresh-creation control
+are unverified. The PR remains Draft; no production-release success is claimed.
