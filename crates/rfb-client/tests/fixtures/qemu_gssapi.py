@@ -266,7 +266,7 @@ def main():
         kdcs = [fixture(parent, index, runtime, qemu, ports, children, files, multiarch) for index in range(2)]
         env = os.environ.copy();env["QEMU_GSSAPI_FIXTURE"] = str(parent)
         # Only public fixture paths are environment inputs to tests, never secrets.
-        targets = ("pinned_completed_gss", "pinned_rfb_finality") if args.controlled_peer_only else ("pinned_online_password", "pinned_tls_authority", "pinned_native_renew", "pinned_completed_gss", "pinned_rfb_finality")
+        targets = ("pinned_native_acquisition", "pinned_completed_gss", "pinned_rfb_finality") if args.controlled_peer_only else ("pinned_online_password", "pinned_tls_authority", "pinned_native_acquisition", "pinned_native_renew", "pinned_completed_gss", "pinned_rfb_finality")
         for name in targets:
             run_tests(cargo + [name] + separator + ["--ignored", "--nocapture", "--test-threads=1"], env=env, timeout=90)
         for process in kdcs: stop(process)

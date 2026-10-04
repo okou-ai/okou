@@ -581,9 +581,14 @@ impl Context {
         if duration == 0 || renewable > 1 {
             return Err(Error::Expired);
         }
+        // Acquisition/renewal issues a new ticket during the operation. Its
+        // remaining lifetime must not be backdated to before KDC latency. The
+        // absolute native endtime still caps response transit with full current
+        // wall-clock precision; imported material retains its original bound.
+        let received_at = Instant::now();
         let expires_at =
             declared_deadline(be32(reply.payload.get(9..13).ok_or(Error::Protocol)?)?)?
-                .min(self.operation_started + Duration::from_secs(u64::from(duration)));
+                .min(received_at + Duration::from_secs(u64::from(duration)));
         let expires_at = self
             .imported_expiry
             .map_or(expires_at, |bound| bound.min(expires_at));

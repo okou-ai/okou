@@ -182,6 +182,71 @@ impl KdcExchange for Relay {
         Ok(reply)
     }
 }
+#[tokio::test]
+#[ignore = "requires independent signed MIT KDC and actual native worker"]
+async fn pinned_native_acquisition_preserves_valid_short_ticket_after_kdc_latency() {
+    struct DelayedFirstRequest {
+        relay: Relay,
+        requested_at: Option<Instant>,
+    }
+    impl KdcExchange for DelayedFirstRequest {
+        async fn authorize(&mut self) -> Result<(), kerberos_worker::Error> {
+            self.relay.authorize().await
+        }
+        async fn exchange(
+            &mut self,
+            realm: &str,
+            request: &[u8],
+        ) -> Result<Zeroizing<Vec<u8>>, kerberos_worker::Error> {
+            if self.requested_at.is_none() {
+                self.requested_at = Some(Instant::now());
+                // Actual KDC latency is the contract: the native request's
+                // ticket endtime remains finite, but acquisition predates it.
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+            self.relay.exchange(realm, request).await
+        }
+    }
+    let root = fixture(0);
+    let private = root.join("private");
+    let mut caller = DelayedFirstRequest {
+        relay: Relay::new(&root),
+        requested_at: None,
+    };
+    let started = Instant::now();
+    let (mut context, status) = kerberos_worker::open(
+        &private,
+        credentials(&root, "keytab"),
+        TicketPolicy::new(Duration::from_secs(8), Duration::ZERO).unwrap(),
+        started + Duration::from_secs(12),
+        &mut caller,
+    )
+    .await
+    .unwrap();
+    let id = context.process_id();
+    let live_status = status.expires_at > Instant::now();
+    let step = context.step(None, &mut caller).await;
+    // Do not repair early expiry by granting a fresh requested lifetime at
+    // receipt. The actual returned native endtime still closes this context.
+    tokio::time::sleep_until(status.expires_at).await;
+    let expired = context
+        .step(Some(Zeroizing::new(vec![1])), &mut caller)
+        .await;
+    context.close().await.unwrap();
+    assert!(!Path::new(&format!("/proc/{id}")).exists());
+    assert_eq!(fs::read_dir(private).unwrap().count(), 0);
+    assert!(
+        live_status,
+        "acquisition must not backdate a still-live ticket"
+    );
+    assert!(status.expires_at <= caller.requested_at.unwrap() + Duration::from_secs(8));
+    let step = step.expect("a still-live service ticket must permit the initial AP-REQ");
+    assert!(!step.complete);
+    assert!(step.token.as_ref().is_some_and(|bytes| !bytes.is_empty()));
+    assert_eq!(expired.unwrap_err(), kerberos_worker::Error::Expired);
+    assert!(caller.relay.requests > 0);
+}
+
 async fn connect(
     root: &Path,
     mode: &str,
