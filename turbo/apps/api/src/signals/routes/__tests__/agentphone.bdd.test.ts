@@ -2244,7 +2244,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       channel: "imessage",
       agentId: AGENTPHONE_BDD_AGENT_ID,
       data: {
-        id: `ap-group-alias-time-${randomUUID()}`,
+        messageId: `ap-group-alias-time-${randomUUID()}`,
         from: aliasSender,
         senderIdentifier: aliasSender,
         to: AGENTPHONE_BDD_PHONE_NUMBER,
@@ -2308,6 +2308,41 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(sends.messages).toHaveLength(sendsBefore);
   });
 
+  it("processes iMessage webhooks with messageId even when testMode is set", async () => {
+    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const messageId = `ap-msg-test-mode-${randomUUID()}`;
+    const response = await ap.postRawAgentPhoneInboundWebhook(
+      JSON.stringify({
+        event: "agent.message",
+        channel: "imessage",
+        agentId: AGENTPHONE_BDD_AGENT_ID,
+        timestamp: new Date(now()).toISOString(),
+        data: {
+          messageId,
+          conversationId: uniqueConversationId(),
+          from: phone,
+          to: AGENTPHONE_BDD_PHONE_NUMBER,
+          message: "process this identified message",
+          direction: "inbound",
+          receivedAt: new Date(now()).toISOString(),
+        },
+        conversationState: { testMode: true },
+      }),
+      [200],
+    );
+    expect(response.body).toBe("OK");
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toBe("process this identified message");
+    const sendsBeforeCompletion = sends.messages.length;
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await waitForSendCount(sends, sendsBeforeCompletion + 1);
+    expect(lastSend(sends)).toMatchObject({
+      toNumber: phone,
+      replyToMessageId: messageId,
+      body: "Task completed successfully.",
+    });
+  });
+
   it("returns 500 for direct message webhooks without provider message ids", async () => {
     const integrations = createBddIntegrationApi(context);
     const ap = createAgentPhoneBddApi(context);
@@ -2338,7 +2373,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       channel: "sms",
       agentId: AGENTPHONE_BDD_AGENT_ID,
       data: {
-        id: `ap-invalid-sender-${randomUUID()}`,
+        messageId: `ap-invalid-sender-${randomUUID()}`,
         from: "not-a-phone-number",
         to: AGENTPHONE_BDD_PHONE_NUMBER,
         message: "this sender cannot be routed safely",

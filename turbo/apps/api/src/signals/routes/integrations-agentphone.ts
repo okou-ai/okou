@@ -916,7 +916,7 @@ function extractAgentPhoneMessageFields(
   data: Record<string, unknown>,
 ) {
   const isGroup = extractAgentPhoneIsGroup(body, data);
-  const messageId = stringValue(data, ["id"]);
+  const messageId = stringValue(data, ["messageId"]);
   const agentphoneAgentId = stringValue(body, ["agentId"]);
   const senderIdentifier = stringValue(data, ["senderIdentifier"]);
   const fromNumber = isGroup ? senderIdentifier : stringValue(data, ["from"]);
@@ -1216,7 +1216,7 @@ function isMissingAgentPhoneGroupTimestamp(
 function isIdlessAgentPhoneTestWebhook(body: Record<string, unknown>): boolean {
   return (
     valueObject(body.conversationState).testMode === true &&
-    !stringValue(valueObject(body.data), ["id"])
+    !stringValue(valueObject(body.data), ["messageId"])
   );
 }
 
