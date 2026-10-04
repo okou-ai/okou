@@ -8,6 +8,7 @@ import json
 import os
 import socket
 import ssl
+import threading
 import time
 import urllib.error
 import uuid
@@ -1519,6 +1520,68 @@ class TestFirewallAuthCacheDeadlines:
             assert later["headers"] == {"Auth": "new-fetch"}
             assert later["cache_hit"] is False
         assert endpoint.request_count == 2
+
+    async def test_in_flight_401_wins_over_short_token_coalescing(self, mitm_ctx):
+        endpoint = FakeAuthEndpoint()
+        release = threading.Event()
+        endpoint.queue_json_response(
+            firewall_auth_success_response({"Auth": "old"}, expires_at=1200.0)
+            | {"cacheExpiresAt": 1100.0}
+        )
+        endpoint.queue_json_response(
+            firewall_auth_success_response({"Auth": "maybe-stale"}, expires_at=1105.0)
+            | {"cacheExpiresAt": 1045.0},
+            release_event=release,
+        )
+        endpoint.queue_json_response(
+            firewall_auth_success_response({"Auth": "forced"}, expires_at=1500.0)
+            | {"cacheExpiresAt": 1440.0}
+        )
+        request = firewall_auth_request(
+            auth_headers={"Auth": "${{ secrets.TOKEN }}"}, firewall_billable=True
+        )
+        key = auth_cache_key()
+        follower_started = asyncio.Event()
+
+        async def follow_fetch():
+            follower_started.set()
+            return await auth_cache.get_firewall_headers(key, request)
+
+        with (
+            endpoint.run(),
+            mitm_ctx(api_url=endpoint.api_url),
+            patch.object(platform_api, "VERCEL_BYPASS", ""),
+            patch.object(auth_cache.time, "time", return_value=1000.0) as clock,
+        ):
+            old = await auth_cache.get_firewall_headers(key, request)
+            clock.return_value = 1100.0
+            leader = asyncio.create_task(auth_cache.get_firewall_headers(key, request))
+            follower = None
+            try:
+                assert await asyncio.to_thread(endpoint.wait_for_request_count, 2)
+                auth_cache.invalidate_cached_firewall_headers(key, old["cache_entry_identity"])
+                follower = asyncio.create_task(follow_fetch())
+                await asyncio.wait_for(follower_started.wait(), timeout=2.0)
+                release.set()
+                leader_result, follower_result = await asyncio.gather(leader, follower)
+                assert leader_result["headers"] == {"Auth": "maybe-stale"}
+                assert follower_result["headers"] == {"Auth": "forced"}
+                cached = await auth_cache.get_firewall_headers(key, request)
+                assert cached["headers"] == {"Auth": "forced"}
+                assert cached["cache_hit"] is True
+            finally:
+                release.set()
+                for task in (leader, follower):
+                    if task is not None:
+                        task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await task
+        assert endpoint.request_count == 3
+        assert [item.json_body().get("forceRefresh", False) for item in endpoint.requests] == [
+            False,
+            False,
+            True,
+        ]
 
     @pytest.mark.parametrize(
         "deadline",
