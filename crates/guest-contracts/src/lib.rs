@@ -25,6 +25,7 @@ pub mod okou_cli;
 pub mod oom_evidence;
 pub mod private_duplex;
 pub mod process_containment;
+pub mod r2_download;
 pub mod reuse_preparation;
 pub mod runtime_paths;
 pub mod session_history;

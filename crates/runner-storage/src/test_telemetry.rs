@@ -22,6 +22,8 @@ struct Operation {
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
+    #[serde(flatten)]
+    r2_object: Option<guest_contracts::r2_download::R2DownloadIdentity>,
 }
 
 impl Operation {
@@ -42,6 +44,7 @@ impl Operation {
             reason: None,
             archive_size_mismatch: None,
             archive_connection_attempt: None,
+            r2_object: None,
         }
     }
 }
@@ -157,6 +160,7 @@ impl StorageTelemetry for TestJobTelemetry {
         );
         op.archive_size_mismatch = mismatch;
         op.archive_connection_attempt = connection_attempt;
+        op.r2_object = record.r2_object;
         self.pending_ops.push(op);
     }
 
@@ -168,13 +172,15 @@ impl StorageTelemetry for TestJobTelemetry {
                 let ops = records
                     .into_iter()
                     .map(|record| {
-                        Operation::new(
+                        let mut operation = Operation::new(
                             record.action_type,
                             record.duration,
                             record.success,
                             record.error,
                             Utc::now(),
-                        )
+                        );
+                        operation.r2_object = record.r2_object;
+                        operation
                     })
                     .collect();
                 send(api_url, ops).await;

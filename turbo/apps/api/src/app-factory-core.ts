@@ -10,7 +10,10 @@ import {
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
-import { serializeError } from "@okouai/core/log-utils";
+import {
+  r2DownloadErrorLogFields,
+  serializeError,
+} from "@okouai/core/log-utils";
 import { command } from "ccstate";
 // oxlint-disable-next-line no-restricted-imports -- app factory owns the Hono instance
 import { Hono, type Context, type Next } from "hono";
@@ -527,6 +530,7 @@ function unhandledRequestErrorLogFields(
     ...(errorCode ? { errorCode } : {}),
     ...(download ? { download } : {}),
     ...clientHeaderLogFields(context),
+    ...r2DownloadErrorLogFields(error),
     error: serializeError(error),
   };
 }

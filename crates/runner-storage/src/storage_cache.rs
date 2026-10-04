@@ -990,6 +990,9 @@ async fn run_background_fill_work(
     http: Client,
 ) -> BackgroundFillWorkerResult {
     let started_at = Instant::now();
+    let r2 = work.group.targets.first().and_then(|target| {
+        guest_contracts::r2_download::R2DownloadIdentity::from_url(&target.archive_url)
+    });
     let outcome = async {
         if let BackgroundFillAction::RetireArchive(cache) = &work.action {
             return cache
@@ -1017,13 +1020,22 @@ async fn run_background_fill_work(
         Ok::<_, RunnerError>(outcome)
     }
     .await;
-    let report = match outcome {
+    let mut report = match outcome {
         Ok(outcome) => BackgroundFillReport::from_outcome(outcome, started_at.elapsed()),
         Err(error) => {
-            warn!(%error, "storage_cache: background fill failed");
+            warn!(
+                r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+                r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
+                %error,
+                "storage_cache: background fill failed"
+            );
             BackgroundFillReport::failed(started_at.elapsed())
         }
     };
+    report.outcome.r2_object = r2.clone();
+    if let Some(record) = &mut report.size_bucket {
+        record.r2_object = r2;
+    }
     BackgroundFillWorkerResult {
         key: work.key,
         report,
@@ -1113,20 +1125,29 @@ struct FreshArchivePhaseGuard {
     started_at: Instant,
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
     connection_attempt_observer: Option<ConnectionAttemptObserver>,
+    r2_object: Option<guest_contracts::r2_download::R2DownloadIdentity>,
 }
 
 impl FreshArchivePhaseGuard {
-    fn new(records: &FreshArchivePhaseRecords, action_type: &'static str) -> Self {
+    fn new(
+        records: &FreshArchivePhaseRecords,
+        action_type: &'static str,
+        archive_url: &str,
+    ) -> Self {
         Self {
             records: records.clone(),
             action_type: Some(action_type),
             started_at: Instant::now(),
             archive_size_mismatch: None,
             connection_attempt_observer: None,
+            r2_object: guest_contracts::r2_download::R2DownloadIdentity::from_url(archive_url),
         }
     }
 
-    fn new_headers(records: &FreshArchivePhaseRecords) -> (Self, ConnectionAttemptObserver) {
+    fn new_headers(
+        records: &FreshArchivePhaseRecords,
+        archive_url: &str,
+    ) -> (Self, ConnectionAttemptObserver) {
         let observer = ConnectionAttemptObserver::default();
         (
             Self {
@@ -1135,6 +1156,7 @@ impl FreshArchivePhaseGuard {
                 started_at: Instant::now(),
                 archive_size_mismatch: None,
                 connection_attempt_observer: Some(observer.clone()),
+                r2_object: guest_contracts::r2_download::R2DownloadIdentity::from_url(archive_url),
             },
             observer,
         )
@@ -1164,7 +1186,7 @@ impl FreshArchivePhaseGuard {
             .connection_attempt_observer
             .as_ref()
             .map(ConnectionAttemptObserver::freeze);
-        let record = FreshArchivePhaseRecord {
+        let mut record = FreshArchivePhaseRecord {
             operation: SandboxOpRecord::new(
                 action_type,
                 self.started_at.elapsed(),
@@ -1175,6 +1197,7 @@ impl FreshArchivePhaseGuard {
             archive_size_mismatch: self.archive_size_mismatch,
             archive_connection_attempt,
         };
+        record.operation.r2_object = self.r2_object.clone();
         self.records
             .records
             .lock()
@@ -1466,12 +1489,14 @@ impl FreshArchiveDelivery {
                         RunnerError::Internal("empty runner-owned archive target group".to_string())
                     })?;
                     let cache_dir = home.storage_cache_dir(&target.name, &target.version);
+                    let archive_url = target.archive_url.clone();
                     let phase_records = self.phase_records.clone();
                     self.publications.spawn(async move {
                         let _writer = writer;
                         let phase = FreshArchivePhaseGuard::new(
                             &phase_records,
                             STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+                            &archive_url,
                         );
                         let result = write_to_cache(&cache_dir, &bytes)
                             .await
@@ -3019,6 +3044,7 @@ impl FreshArchiveRequests {
             let phase = FreshArchivePhaseGuard::new(
                 &phase_records,
                 STORAGE_CACHE_FRESH_DELIVERY_APPLY_WAIT,
+                &archive_url,
             );
             let result = tokio::select! {
                 biased;
@@ -3063,6 +3089,7 @@ async fn fetch_fresh_archive(
     phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
     let deadline = tokio::time::Instant::now() + OBJECT_DOWNLOAD_BUDGET;
+    let r2 = guest_contracts::r2_download::R2DownloadIdentity::from_url(archive_url);
     tokio::time::timeout_at(deadline, async {
         let mut attempt = 1usize;
         loop {
@@ -3098,6 +3125,8 @@ async fn fetch_fresh_archive(
                     }
                     info!(
                         action = "storage_cache_fresh_delivery_retry",
+                        r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+                        r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
                         attempt,
                         max_attempts = OBJECT_DOWNLOAD_MAX_ATTEMPTS,
                         reason = error.reason,
@@ -3124,7 +3153,8 @@ async fn fetch_fresh_archive_once(
     representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
-    let (phase, connection_attempt_observer) = FreshArchivePhaseGuard::new_headers(phase_records);
+    let (phase, connection_attempt_observer) =
+        FreshArchivePhaseGuard::new_headers(phase_records, archive_url);
     let mut mismatch = None;
     let headers = connection_attempt_observer
         .scope(async {
@@ -3199,7 +3229,11 @@ async fn fetch_fresh_archive_once(
     );
     let (mut response, response_size, exact_size, size_source) = headers?;
 
-    let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_BODY);
+    let phase = FreshArchivePhaseGuard::new(
+        phase_records,
+        STORAGE_CACHE_FRESH_DELIVERY_BODY,
+        archive_url,
+    );
     let body = async {
         let mut bytes = Vec::with_capacity(initial_body_capacity(
             response_size,
@@ -3341,6 +3375,7 @@ async fn fetch_cache_target(
     archive_size: Option<u64>,
     http: &Client,
 ) -> RunnerResult<CacheFetchOutcome> {
+    let r2 = guest_contracts::r2_download::R2DownloadIdentity::from_url(&target.archive_url);
     let size = match archive_size {
         Some(size) => size,
         None => {
@@ -3354,6 +3389,8 @@ async fn fetch_cache_target(
                         name = %target.name,
                         version = %target.version,
                         reason,
+                        r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+                        r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
                         "storage_cache: probe returned no usable size header, passthrough"
                     );
                     return Ok(CacheFetchOutcome::Unavailable);
@@ -3364,6 +3401,8 @@ async fn fetch_cache_target(
                         name = %target.name,
                         version = %target.version,
                         error = %reason,
+                        r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+                        r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
                         "storage_cache: probe failed, passthrough"
                     );
                     return Ok(CacheFetchOutcome::Unavailable);
@@ -3376,6 +3415,8 @@ async fn fetch_cache_target(
             name = %target.name,
             version = %target.version,
             size,
+            r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+            r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
             "storage_cache: entry over size limit, passthrough"
         );
         return Ok(CacheFetchOutcome::Skipped);
@@ -3392,6 +3433,8 @@ async fn fetch_cache_target(
                         name = %target.name,
                         version = %target.version,
                         error = %reason,
+                        r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+                        r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
                         "storage_cache: full download failed, passthrough"
                     );
                     return Ok(CacheFetchOutcome::Unavailable);
@@ -3406,6 +3449,8 @@ async fn fetch_cache_target(
             warn!(
                 name = %target.name,
                 version = %target.version,
+                r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+                r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
                 "storage_cache: full download returned empty archive, passthrough"
             );
             return Ok(CacheFetchOutcome::Unavailable);
@@ -3417,6 +3462,8 @@ async fn fetch_cache_target(
                 expected_size = size,
                 observed_size,
                 limit = CACHE_MAX_SIZE,
+                r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+                r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
                 "storage_cache: full download exceeded expected size limit, failing closed"
             );
             return Err(RunnerError::Internal(format!(
@@ -3433,6 +3480,8 @@ async fn fetch_cache_target(
             version = %target.version,
             expected_size = size,
             observed_size,
+            r2_bucket = r2.as_ref().map(|identity| identity.r2_bucket.as_str()),
+            r2_key = r2.as_ref().map(|identity| identity.r2_key.as_str()),
             "storage_cache: full download size differed from expectation, passthrough"
         );
         return Ok(CacheFetchOutcome::Unavailable);
@@ -6358,6 +6407,7 @@ mod tests {
             let phase = FreshArchivePhaseGuard::new(
                 &phase_records,
                 STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+                &group.targets[0].archive_url,
             );
             entered_tx.send(()).unwrap();
             release_rx.await.unwrap();

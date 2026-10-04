@@ -244,8 +244,17 @@ fn format_entry_label(kind: ManifestEntryKind, index: usize, entry: EntryLabel<'
         String::new()
     };
 
+    let r2 = guest_contracts::r2_download::R2DownloadIdentity::from_url(entry.archive_url)
+        .map(|identity| {
+            format!(
+                " r2_bucket={:?} r2_key={:?}",
+                identity.r2_bucket, identity.r2_key
+            )
+        })
+        .unwrap_or_default();
+
     format!(
-        "{} {} mountPath={} vasStorageName={} vasVersionId={} urlScheme={} cached={}{}",
+        "{} {} mountPath={} vasStorageName={} vasVersionId={} urlScheme={} cached={}{}{}",
         kind.label_prefix(),
         index,
         entry.mount_path,
@@ -253,7 +262,8 @@ fn format_entry_label(kind: ManifestEntryKind, index: usize, entry: EntryLabel<'
         version_id,
         url_scheme,
         entry.cached,
-        missing_root_policy
+        missing_root_policy,
+        r2
     )
 }
 
@@ -261,6 +271,31 @@ fn format_entry_label(kind: ManifestEntryKind, index: usize, entry: EntryLabel<'
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn native_r2_task_labels_add_only_quoted_object_identity() {
+        let url = "https://example-bucket.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/prefix/a%20b%0A/archive.tar.gz?X-Amz-Signature=signature-secret#fragment-secret";
+        for kind in [ManifestEntryKind::Storage, ManifestEntryKind::Artifact] {
+            let label = format_entry_label(
+                kind,
+                1,
+                EntryLabel {
+                    mount_path: "/data",
+                    storage_name: Some("memory"),
+                    version_id: Some("version"),
+                    cached: false,
+                    missing_root_policy: None,
+                    archive_url: url,
+                },
+            );
+            assert!(label.contains("r2_bucket=\"example-bucket\""));
+            assert!(label.contains("r2_key=\"prefix/a b\\n/archive.tar.gz\""));
+            assert!(!label.contains('\n'));
+            for forbidden in [url, "X-Amz", "signature-secret", "fragment-secret"] {
+                assert!(!label.contains(forbidden));
+            }
+        }
+    }
 
     #[test]
     fn is_valid_url_none() {

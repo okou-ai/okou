@@ -587,6 +587,8 @@ const networkLogEntrySchema = z.object({
   port: z.number().optional(),
   method: z.string().optional(),
   url: z.string().optional(),
+  r2_bucket: z.string().max(63).optional(),
+  r2_key: z.string().max(1024).optional(),
   url_truncated: z.boolean().optional(),
   url_original_char_count: z
     .number()

@@ -8,12 +8,13 @@ use chrono::{DateTime, Utc};
 use crate::ArchiveConnectionAttempt;
 pub(crate) use crate::ArchiveSizeMismatch;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SandboxOpRecord {
     pub action_type: &'static str,
     pub duration: Duration,
     pub success: bool,
     pub error: Option<&'static str>,
+    pub r2_object: Option<guest_contracts::r2_download::R2DownloadIdentity>,
 }
 
 impl SandboxOpRecord {
@@ -28,7 +29,13 @@ impl SandboxOpRecord {
             duration,
             success,
             error,
+            r2_object: None,
         }
+    }
+
+    pub fn with_r2_url(mut self, url: &str) -> Self {
+        self.r2_object = guest_contracts::r2_download::R2DownloadIdentity::from_url(url);
+        self
     }
 }
 

@@ -283,6 +283,8 @@ describe("createApp", () => {
       expect(fields).toMatchObject({
         errorCode: "ECONNRESET",
         x_client_request_id: "download-request-id",
+        r2_bucket: "private-bucket",
+        r2_key: "private/path.zip",
         download: {
           stage,
           stageDurationMs: expect.any(Number),
@@ -304,8 +306,8 @@ describe("createApp", () => {
         },
       });
       const serialized = JSON.stringify(fields);
-      expect(serialized).not.toContain("private-bucket");
-      expect(serialized).not.toContain("private/path.zip");
+      expect(serialized).not.toContain("X-Amz-Signature");
+      expect(serialized).not.toContain("X-Amz-Credential");
 
       await accept(client.boom(), [500]);
       const unrelatedFields =

@@ -65,6 +65,8 @@ interface SandboxOperationDimensionInput {
   readonly error?: string;
   readonly outcome?: string;
   readonly reason?: string;
+  readonly r2_bucket?: string;
+  readonly r2_key?: string;
   readonly archive_size_mismatch?: ArchiveSizeMismatch;
   readonly archive_connection_attempt?: ArchiveConnectionAttempt;
   readonly dns_readiness_attempt?: number;
@@ -199,6 +201,15 @@ function archiveConnectionAttemptDimensions(
   };
 }
 
+function r2DownloadLogAttributes(
+  op: SandboxOperationDimensionInput,
+): Record<string, string> {
+  return {
+    ...(op.r2_bucket ? { r2_bucket: op.r2_bucket } : {}),
+    ...(op.r2_key ? { r2_key: op.r2_key } : {}),
+  };
+}
+
 function sandboxOperationDimensions(
   op: SandboxOperationDimensionInput,
   runner: SandboxRunnerDimensionInput,
@@ -212,6 +223,7 @@ function sandboxOperationDimensions(
     ...(op.error ? { error: op.error } : {}),
     ...(op.outcome ? { outcome: op.outcome } : {}),
     ...(op.reason ? { reason: op.reason } : {}),
+    ...r2DownloadLogAttributes(op),
     ...(op.archive_size_mismatch
       ? {
           archive_size_mismatch_expected_bytes:

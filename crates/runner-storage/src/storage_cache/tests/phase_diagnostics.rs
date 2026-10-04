@@ -111,6 +111,28 @@ impl GatedResponse {
     }
 }
 
+#[test]
+fn r2_identity_survives_buffered_header_completion_without_a_new_event() {
+    let records = FreshArchivePhaseRecords::default();
+    let url = "https://example-bucket.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/version/archive.tar.gz?X-Amz-Signature=signature-secret";
+    let (phase, _observer) = FreshArchivePhaseGuard::new_headers(&records, url);
+    phase.finish(Ok(()));
+    let mut telemetry = new_telemetry();
+    records.record_to(&mut telemetry);
+    records.record_to(&mut telemetry);
+    let payloads = telemetry.pending_archive_connection_attempt_payloads();
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(
+        payloads[0]["action_type"],
+        STORAGE_CACHE_FRESH_DELIVERY_HEADERS
+    );
+    assert_eq!(payloads[0]["success"], true);
+    assert_eq!(payloads[0]["r2_bucket"], "example-bucket");
+    assert_eq!(payloads[0]["r2_key"], "version/archive.tar.gz");
+    assert!(!payloads[0].to_string().contains("X-Amz"));
+    assert!(!payloads[0].to_string().contains("signature-secret"));
+}
+
 #[tokio::test]
 async fn phase_records_follow_http_and_apply_boundaries_once() {
     let temp = tempfile::tempdir().unwrap();
@@ -240,7 +262,7 @@ async fn delayed_collection_preserves_the_measured_header_phase() {
                 .unwrap()
                 .iter()
                 .find(|record| record.operation.action_type == PHASES[0])
-                .map(|record| (record.operation, record.completed_at));
+                .map(|record| (record.operation.clone(), record.completed_at));
             if let Some(header) = header {
                 return header;
             }

@@ -962,6 +962,9 @@ const sandboxOperationSchema = z.object({
   error: z.string().optional(),
   outcome: z.string().max(64).optional(),
   reason: z.string().max(64).optional(),
+  // Object identity is a log attribute, not a bounded outcome or reason.
+  r2_bucket: z.string().max(63).optional(),
+  r2_key: z.string().max(1024).optional(),
   archive_size_mismatch: archiveSizeMismatchSchema.optional(),
   archive_connection_attempt: archiveConnectionAttemptSchema.optional(),
   dns_readiness_attempt: z.number().int().min(1).max(3).optional(),

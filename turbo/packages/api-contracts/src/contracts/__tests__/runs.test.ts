@@ -130,6 +130,35 @@ describe("unified run request contract", () => {
   });
 });
 
+describe("R2 download log identity", () => {
+  it("preserves optional object fields and accepts older entries", () => {
+    const base = {
+      timestamp: "2026-10-04T00:00:00.000Z",
+      type: "http",
+      method: "GET",
+    };
+    expect(networkLogEntrySchema.parse(base)).toStrictEqual(base);
+    const entry = {
+      ...base,
+      r2_bucket: "example-bucket",
+      r2_key: "prefix/archive.tar.gz",
+    };
+    expect(networkLogEntrySchema.parse(entry)).toStrictEqual(entry);
+  });
+
+  it("rejects unbounded identity fields", () => {
+    const base = { timestamp: "2026-10-04T00:00:00.000Z" };
+    expect(
+      networkLogEntrySchema.safeParse({ ...base, r2_bucket: "b".repeat(64) })
+        .success,
+    ).toBe(false);
+    expect(
+      networkLogEntrySchema.safeParse({ ...base, r2_key: "k".repeat(1025) })
+        .success,
+    ).toBe(false);
+  });
+});
+
 describe("network log capture completeness", () => {
   const baseEntry = {
     timestamp: "2026-08-13T12:00:00.000Z",

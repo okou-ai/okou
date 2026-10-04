@@ -60,6 +60,26 @@ open for incident request-level attribution and serving-version verification;
 synthetic coverage does not establish Notion old-token invalidation or resolve
 its reported 401s.
 
+## Optional R2 download log attributes
+
+Existing download records may include `r2_bucket` and `r2_key`; event names,
+levels and counts are unchanged. Keys are bounded log attributes, not metric
+labels, outcomes or reasons. GET presigning emits no download event. Native R2
+URLs contribute only decoded object identity, never signing parameters; unknown
+CDN/proxy URLs contribute no inferred identity. Runner logs retain upstream
+identity when delivery uses a local cache; a Guest `file://` label does not infer
+it from the local path.
+
+New API accepts records from old Runner/addon versions without these optional
+fields. Old API accepts new records but strips unknown attributes, so remote
+queries gain these fields only after API and producer updates; local logs do not
+require API deployment. New Platform accepts old records and does not render the
+new attributes as additional detail rows. Old Platform ignores additional
+response attributes. SDK error associations preserve error identity and HTTP
+responses without creating an SDK download event. No migration, Web floor,
+production activation or deployment is included; rollback removes the optional
+attributes without changing download behavior.
+
 ## File transcription and Seedream 5 retirement
 
 - Remove `okou video transcribe` and `/api/voice-io/stt`; old CLIs receive
