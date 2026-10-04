@@ -627,7 +627,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
   it("ignores stale stored connectors that are absent from the catalog", async () => {
     const actor = bdd.user();
     const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithManualConnector("removed-connector", "api");
+    const available = catalogWithManualConnector({
+      connectorSlug: "removed-connector",
+      authMethodId: "api",
+    });
     await catalog.publish(available);
     await connectorsApi.connectManualGrant(actor, "removed-connector", "api", {
       credential: "removed-connector-secret",

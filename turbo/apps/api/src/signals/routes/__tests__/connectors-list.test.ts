@@ -253,9 +253,12 @@ describe("GET /api/connectors", () => {
     const actor = createBddApi(context).user(fixture);
     const connectors = createConnectorBddApi(context);
     const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithAuthMethod("openai", "api-token", (method) => {
-      return { ...method, id: "unavailable-method" };
-    });
+    const available = catalogWithAuthMethod(
+      { connectorSlug: "openai", authMethodId: "api-token" },
+      (method) => {
+        return { ...method, id: "unavailable-method" };
+      },
+    );
     await catalog.publish(available);
     await connectGitlab(fixture);
     catalog.onCleanup(async () => {

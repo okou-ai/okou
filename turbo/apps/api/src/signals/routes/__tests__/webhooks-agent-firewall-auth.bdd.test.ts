@@ -856,8 +856,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const connectors = createConnectorBddApi(context);
     const catalog = createPublicConnectorCatalog(context);
     const versionTwo = catalogWithAuthMethod(
-      "test-oauth",
-      "oauth",
+      { connectorSlug: "test-oauth", authMethodId: "oauth" },
       (method) => {
         return { ...method, storage: { ...method.storage, version: 2 } };
       },

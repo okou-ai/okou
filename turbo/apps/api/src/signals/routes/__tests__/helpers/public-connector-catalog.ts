@@ -144,9 +144,12 @@ export function createPublicConnectorCatalog(context: TestContext) {
   };
 }
 
+/** Select public descriptor identities, not stored account credentials. */
 export function catalogWithAuthMethod(
-  connectorSlug: string,
-  authMethodId: string,
+  {
+    connectorSlug,
+    authMethodId,
+  }: { connectorSlug: string; authMethodId: string },
   update: (method: ConnectorCatalogAuthMethod) => ConnectorCatalogAuthMethod,
 ): ConnectorCatalogArtifact {
   let found = false;
@@ -173,13 +176,16 @@ export function catalogWithAuthMethod(
   return { ...API_TEST_CONNECTOR_CATALOG, connectors };
 }
 
-export function catalogWithManualConnector(
-  connectorSlug: string,
-  authMethodId: string,
-): ConnectorCatalogArtifact {
-  const icon = API_TEST_CONNECTOR_CATALOG.connectors[0]?.icon;
-  if (!icon) {
-    throw new Error("Expected a catalog icon");
+export function catalogWithManualConnector({
+  connectorSlug,
+  authMethodId,
+}: {
+  connectorSlug: string;
+  authMethodId: string;
+}): ConnectorCatalogArtifact {
+  const existingConnector = API_TEST_CONNECTOR_CATALOG.connectors[0];
+  if (!existingConnector) {
+    throw new Error("Expected an existing catalog connector");
   }
   const privateName = `${connectorSlug.replaceAll("-", "_").toUpperCase()}_TOKEN`;
   return {
@@ -190,10 +196,10 @@ export function catalogWithManualConnector(
         slug: connectorSlug,
         label: "Temporary connector",
         description: "Exercises a publicly removed catalog target",
-        category: "testing",
+        category: existingConnector.category,
         generation: [],
         tags: [],
-        icon,
+        icon: existingConnector.icon,
         skill: { kind: "none" },
         firewall: { kind: "none" },
         authMethods: [

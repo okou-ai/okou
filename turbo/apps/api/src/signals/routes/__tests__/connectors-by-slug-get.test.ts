@@ -198,9 +198,12 @@ describe("GET /api/connectors/:connectorSlug", () => {
     const actor = createBddApi(context).user(fixture);
     const connectors = createConnectorBddApi(context);
     const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithAuthMethod("openai", "api-token", (method) => {
-      return { ...method, id: "unavailable-method" };
-    });
+    const available = catalogWithAuthMethod(
+      { connectorSlug: "openai", authMethodId: "api-token" },
+      (method) => {
+        return { ...method, id: "unavailable-method" };
+      },
+    );
     await catalog.publish(available);
     await connectors.connectManualGrant(actor, "openai", "unavailable-method", {
       apiKey: "unavailable-method-secret",

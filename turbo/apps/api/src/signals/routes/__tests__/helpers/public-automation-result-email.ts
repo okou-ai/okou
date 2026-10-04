@@ -320,6 +320,55 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
     });
     // The existing api-catalog project serializes this singleton operator fixture.
     await cleanupCatalog();
+    if (options.morningBrief) {
+      // The deployed release retires connector-doctor. Establish its accepted
+      // predecessor through the same producer as syncDeployedCatalog's fixture.
+      const previous = await accept(
+        setupApp({
+          context,
+          routes: createCronOfficialWorkflowCatalogRoutes({
+            schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+            definitions: [
+              {
+                name: "connector-doctor",
+                lifecycle: "active",
+                workflow: {
+                  displayName: "Display connector-doctor",
+                  description: "Description for connector-doctor",
+                  instruction: "Execute only the accepted Definition content.",
+                  files: [
+                    { path: "references/context.md", content: "accepted\n" },
+                  ],
+                },
+                blueprints: [
+                  {
+                    key: "weekly-check",
+                    parameters: [],
+                    desiredState: {
+                      kind: "schedule",
+                      schedule: { type: "cron", cronExpression: "0 9 * * 1" },
+                    },
+                    runtime: { resultEmail: false },
+                  },
+                ],
+                presentation: {
+                  category: "productivity",
+                  order: 1,
+                  marketingCopy: "Official catalog entry.",
+                },
+              },
+            ],
+          }),
+        })(cronOfficialWorkflowCatalogContract).sync({
+          headers: { authorization: "Bearer public-result-email-cron" },
+        }),
+        [200],
+      );
+      expect(previous.body).toMatchObject({
+        outcome: "accepted",
+        diagnostics: [],
+      });
+    }
     const definitionName = options.morningBrief
       ? "morning-brief"
       : `api-test-result-email-${randomUUID().slice(0, 8)}`;
@@ -360,7 +409,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
       }),
       [200],
     );
-    expect(synced.body.outcome).toBe("accepted");
+    expect(synced.body).toMatchObject({ outcome: "accepted", diagnostics: [] });
     const { actor } = await workflows.setupWorkflowOrg({
       timezone: "Asia/Shanghai",
       tier: "team",

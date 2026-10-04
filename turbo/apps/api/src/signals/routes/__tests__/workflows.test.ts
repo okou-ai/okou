@@ -1422,6 +1422,8 @@ describe("workflows", () => {
       throw new Error("Expected workflow copy actor to belong to an org");
     }
     await api.grantProEntitlement(actor, { tier: "team" });
+    // Event Automation creation pins its shared thread model immediately.
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const sourceAgent = await createAgent(actor, {
       displayName: "Copy Source Agent",
       visibility: "private",
@@ -1461,7 +1463,6 @@ describe("workflows", () => {
       kind: "event",
       eventType: "webhook-received",
     });
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const runnerGroup = api.configureRunnerGroup();
     api.acceptTelemetryIngest();
     publicResults.configureDelivery(actor);

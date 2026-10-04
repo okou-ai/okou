@@ -2076,7 +2076,24 @@ describe("Morning Brief preference", () => {
     onTestFinished(async () => {
       installCatalogStorageFixture();
       await publicResults.cleanup(actor);
-      await createBddApi(context).deleteAgent(actor, defaultAgentId);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      for (const installation of await listMorningBriefInstallations(actor)) {
+        if (installation.agentId === defaultAgentId) {
+          await accept(
+            installationClient().uninstall({
+              headers: authHeaders(actor),
+              params: { workflowId: installation.id },
+            }),
+            [204],
+          );
+        }
+      }
       await cleanupCatalog();
     });
     await connectBriefSource(actor);

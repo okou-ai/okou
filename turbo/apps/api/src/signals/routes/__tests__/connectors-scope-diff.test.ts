@@ -124,9 +124,12 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
       throw new Error("Expected test actor organization");
     }
     const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithAuthMethod("openai", "api-token", (method) => {
-      return { ...method, id: "unavailable-method" };
-    });
+    const available = catalogWithAuthMethod(
+      { connectorSlug: "openai", authMethodId: "api-token" },
+      (method) => {
+        return { ...method, id: "unavailable-method" };
+      },
+    );
     await catalog.publish(available);
     await connectorsApi.connectManualGrant(
       actor,

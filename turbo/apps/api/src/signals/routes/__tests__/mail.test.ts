@@ -1643,9 +1643,12 @@ describe("POST /api/mail/drafts/link", () => {
 
   it("does not refresh a known mismatched Gmail storage version", async () => {
     const catalog = createPublicConnectorCatalog(context);
-    const versionTwo = catalogWithAuthMethod("gmail", "oauth", (method) => {
-      return { ...method, storage: { ...method.storage, version: 2 } };
-    });
+    const versionTwo = catalogWithAuthMethod(
+      { connectorSlug: "gmail", authMethodId: "oauth" },
+      (method) => {
+        return { ...method, storage: { ...method.storage, version: 2 } };
+      },
+    );
     await catalog.publish(versionTwo);
     const fixture = await seedGmailMailCardFixture(catalog.onCleanup);
     catalog.onCleanup(async () => {

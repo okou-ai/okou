@@ -257,12 +257,15 @@ describe("connector account lifecycle routes", () => {
     const actor = createBddApi(context).user(fixture);
     const connectors = createConnectorBddApi(context);
     const catalog = createPublicConnectorCatalog(context);
-    const staleCatalog = catalogWithAuthMethod("github", "oauth", (method) => {
-      if (method.grant.kind !== "auth-code") {
-        throw new Error("Expected the GitHub authorization-code method");
-      }
-      return { ...method, grant: { ...method.grant, scopes: ["repo"] } };
-    });
+    const staleCatalog = catalogWithAuthMethod(
+      { connectorSlug: "github", authMethodId: "oauth" },
+      (method) => {
+        if (method.grant.kind !== "auth-code") {
+          throw new Error("Expected the GitHub authorization-code method");
+        }
+        return { ...method, grant: { ...method.grant, scopes: ["repo"] } };
+      },
+    );
     const accountIds: string[] = [];
     catalog.onCleanup(async () => {
       const accounts = await connectors.listBuiltinConnectorAccounts(
@@ -1192,10 +1195,10 @@ describe("connector account lifecycle routes", () => {
     const actor = createBddApi(context).user(fixture);
     const connectors = createConnectorBddApi(context);
     const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithManualConnector(
-      "retired-connector",
-      "api-token",
-    );
+    const available = catalogWithManualConnector({
+      connectorSlug: "retired-connector",
+      authMethodId: "api-token",
+    });
     await catalog.publish(available);
     const account = await connectors.connectManualGrant(
       actor,
