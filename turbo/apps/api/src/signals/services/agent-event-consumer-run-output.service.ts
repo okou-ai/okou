@@ -22,7 +22,7 @@ import {
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
 import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-assistant-event-metric.service";
-import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
+import { runMetadataWritePlan } from "./agent-run-metadata-write.service";
 import {
   assertRunOutputOwner,
   prepareRunOutputOwnership,
@@ -365,10 +365,18 @@ async function claimFirstAssistantAcknowledgement(
   }
   const [firstAssistantClaim] =
     (await auxiliary("first_assistant_metric", () => {
-      return writeRunMetadataInTransaction(args.db, {
+      const plan = runMetadataWritePlan({
         patch: { firstAssistantEventAcknowledgedAt: acknowledgedAt },
         where: firstAssistantClaimWhere,
       });
+      return args.db
+        .update(agentRuns)
+        .set({
+          firstAssistantEventAcknowledgedAt:
+            plan.patch.firstAssistantEventAcknowledgedAt,
+        })
+        .where(plan.where)
+        .returning(plan.returning);
     })) ?? [];
   return firstAssistantClaim?.apiStartedAt
     ? {

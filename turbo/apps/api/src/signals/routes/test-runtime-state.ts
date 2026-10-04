@@ -39,8 +39,8 @@ import {
   type BuiltInModelRuntimeRoute,
 } from "../services/built-in-model-runtime-route.service";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
-import { writeRunMetadata } from "../services/agent-run-metadata-write.service";
-import { saveRunSummary } from "../services/run-summary.service";
+import { writeRunMetadata$ } from "../services/agent-run-metadata-write.service";
+import { saveRunSummary$ } from "../services/run-summary.service";
 import { resolveRunnerWssTarget$ } from "../services/runner-wss-target.service";
 import { queueArtifactCatalogFile } from "../services/artifact-catalog.service";
 import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
@@ -83,24 +83,22 @@ function isRunSummaryFixtureAction(
   return body.action === "save-run-summary";
 }
 
-async function runSummaryFixtureActionResponse(
-  db: Db,
-  body: RunSummaryFixtureAction,
-  signal: AbortSignal,
-) {
-  await saveRunSummary(
-    db,
-    {
-      runId: body.run_id,
-      triggerSource: body.trigger_source,
-      prompt: body.prompt,
-      resultText: body.result_text,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  return { status: 200 as const, body: { ok: true as const } };
-}
+const runSummaryFixtureActionResponse$ = command(
+  async ({ set }, body: RunSummaryFixtureAction, signal: AbortSignal) => {
+    await set(
+      saveRunSummary$,
+      {
+        runId: body.run_id,
+        triggerSource: body.trigger_source,
+        prompt: body.prompt,
+        resultText: body.result_text,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { ok: true as const } };
+  },
+);
 
 async function seedBuiltInDefaultModelKey(
   catalogSnapshot: ModelCatalog,
@@ -353,20 +351,36 @@ async function builtInModelActionResponse(
   }
 }
 
-async function clearRunApiStart(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const [cleared] = await writeRunMetadata(db, {
-    patch: { apiStartedAt: null },
-    where: eq(agentRuns.id, runId),
-  });
-  signal.throwIfAborted();
-  if (!cleared) {
-    throw new Error("Expected an agent run timing row");
-  }
-}
+const runMetadataFixtureAction$ = command(
+  async (
+    { set },
+    body: Extract<
+      TestRuntimeStateActionBody,
+      { action: "clear-run-api-start" | "set-run-autonomy-budget" }
+    >,
+    signal: AbortSignal,
+  ) => {
+    const rows = await set(
+      writeRunMetadata$,
+      {
+        patch:
+          body.action === "clear-run-api-start"
+            ? { apiStartedAt: null }
+            : { autonomyBudget: body.autonomy_budget },
+        where: eq(agentRuns.id, body.run_id),
+      },
+      signal,
+    );
+    if (rows.length === 0) {
+      throw new Error(
+        body.action === "clear-run-api-start"
+          ? "Expected an agent run timing row"
+          : "Expected the autonomy-budget run fixture",
+      );
+    }
+    return { status: 200 as const, body: { ok: true as const } };
+  },
+);
 
 async function readRunApiStart(
   db: Db,
@@ -411,7 +425,6 @@ type AutonomyBudgetFixtureAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
-      | "set-run-autonomy-budget"
       | "read-run-autonomy-budget"
       | "set-workflow-automation-autonomy-budget"
       | "read-workflow-automation-autonomy-state"
@@ -423,7 +436,6 @@ function isAutonomyBudgetFixtureAction(
   body: TestRuntimeStateActionBody,
 ): body is AutonomyBudgetFixtureAction {
   return [
-    "set-run-autonomy-budget",
     "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
@@ -437,17 +449,6 @@ async function autonomyBudgetFixtureActionResponse(
   signal: AbortSignal,
 ) {
   switch (body.action) {
-    case "set-run-autonomy-budget": {
-      const rows = await writeRunMetadata(db, {
-        patch: { autonomyBudget: body.autonomy_budget },
-        where: eq(agentRuns.id, body.run_id),
-      });
-      signal.throwIfAborted();
-      if (rows.length === 0) {
-        throw new Error("Expected the autonomy-budget run fixture");
-      }
-      return { status: 200 as const, body: { ok: true as const } };
-    }
     case "read-run-autonomy-budget": {
       const [run] = await db
         .select({ autonomyBudget: agentRuns.autonomyBudget })
@@ -622,10 +623,7 @@ async function readRunLaunchSnapshotActionResponse(
 type TimingStateAction = Extract<
   TestRuntimeStateActionBody,
   {
-    action:
-      | "clear-run-api-start"
-      | "read-run-api-start"
-      | "steer-run-time-budget";
+    action: "read-run-api-start" | "steer-run-time-budget";
   }
 >;
 
@@ -633,7 +631,6 @@ function isTimingStateAction(
   body: TestRuntimeStateActionBody,
 ): body is TimingStateAction {
   return (
-    body.action === "clear-run-api-start" ||
     body.action === "read-run-api-start" ||
     body.action === "steer-run-time-budget"
   );
@@ -645,10 +642,6 @@ async function timingStateActionResponse(
   signal: AbortSignal,
 ) {
   switch (body.action) {
-    case "clear-run-api-start": {
-      await clearRunApiStart(db, body.run_id, signal);
-      return { status: 200 as const, body: { ok: true as const } };
-    }
     case "read-run-api-start": {
       return {
         status: 200 as const,
@@ -954,7 +947,6 @@ function isCompatibilityFixtureAction(
   body: TestRuntimeStateActionBody,
 ): body is CompatibilityFixtureAction {
   return [
-    "set-run-autonomy-budget",
     "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
@@ -1229,6 +1221,12 @@ const postRuntimeStateAction$ = command(
     }
 
     const body = bodyResult.data;
+    if (
+      body.action === "clear-run-api-start" ||
+      body.action === "set-run-autonomy-budget"
+    ) {
+      return await set(runMetadataFixtureAction$, body, signal);
+    }
     const db = set(writeDb$);
     if (isReadRunLaunchSnapshotAction(body)) {
       return await readRunLaunchSnapshotActionResponse(db, body, signal);
@@ -1254,7 +1252,7 @@ const postRuntimeStateAction$ = command(
       return await chatEventFixtureActionResponse(db, body, signal);
     }
     if (isRunSummaryFixtureAction(body)) {
-      return await runSummaryFixtureActionResponse(db, body, signal);
+      return await set(runSummaryFixtureActionResponse$, body, signal);
     }
     if (isCompatibilityFixtureAction(body)) {
       return await compatibilityFixtureActionResponse(db, body, signal);

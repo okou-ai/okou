@@ -40,7 +40,7 @@ import {
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import {
   normalizeRunMetadata,
-  writeRunMetadata,
+  writeRunMetadata$,
 } from "../services/agent-run-metadata-write.service";
 import {
   isTestEndpointAllowed,
@@ -281,24 +281,27 @@ async function seedAgentRunCallbackForAction(
   return actionOk({ callback_id: row?.id ?? null });
 }
 
-async function updateRunForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readActionString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  await writeRunMetadata(db, {
-    patch: {
-      selectedModel: readActionNullableString(body, "selected_model") ?? null,
-    },
-    where: eq(agentRuns.id, runId),
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
+const updateRunForAction$ = command(
+  async ({ set }, body: Record<string, unknown>, signal: AbortSignal) => {
+    const runId = readActionString(body, "run_id");
+    if (!runId) {
+      return actionBadRequest("run_id is required");
+    }
+    await set(
+      writeRunMetadata$,
+      {
+        patch: {
+          selectedModel:
+            readActionNullableString(body, "selected_model") ?? null,
+        },
+        where: eq(agentRuns.id, runId),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return actionOk();
+  },
+);
 
 async function getRunForAction(
   db: Db,
@@ -979,12 +982,14 @@ const telegramStateActionHandlers = {
   "seed-model-policies": seedModelPoliciesForAction,
   "get-selected-model": getSelectedModelForAction,
   "update-run-callback": updateRunCallbackForAction,
-  "update-run": updateRunForAction,
   "get-run": getRunForAction,
   "find-chat-thread-route": findChatThreadRouteForAction,
   "delete-fixture": deleteTelegramFixtureForAction,
 } satisfies Record<
-  Exclude<TestTelegramStateActionBody["action"], "seed-post-fixture">,
+  Exclude<
+    TestTelegramStateActionBody["action"],
+    "seed-post-fixture" | "update-run"
+  >,
   TelegramStateActionHandler
 >;
 
@@ -992,7 +997,7 @@ async function mutateTestTelegramStateAction(
   catalogSnapshot: ModelCatalog,
   db: Db,
   body: Record<string, unknown>,
-  action: TestTelegramStateActionBody["action"],
+  action: Exclude<TestTelegramStateActionBody["action"], "update-run">,
   signal: AbortSignal,
 ) {
   if (action === "seed-post-fixture") {
@@ -1019,6 +1024,9 @@ const mutateTestTelegramState$ = command(
     }
 
     const body = bodyResult.data as Record<string, unknown>;
+    if (bodyResult.data.action === "update-run") {
+      return await set(updateRunForAction$, body, signal);
+    }
     return await mutateTestTelegramStateAction(
       await get(modelCatalog$),
       set(writeDb$),
