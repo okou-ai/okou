@@ -53,6 +53,7 @@ interface ChatThreadEventAppend {
   readonly eventId?: string;
   readonly title?: string | null;
   readonly pinOrder?: string | null;
+  readonly muted?: boolean;
   readonly selectedModel?: string | null;
   readonly modelSettings?: ModelSettings;
   readonly modelSettingsPatch?: ModelSettingsPatch;
@@ -86,9 +87,9 @@ export function chatThreadEventInsertSql(
   // The scalar lookup executes as part of the owning statement, not in a
   // handle-taking helper. A missing authority fails the non-null org insert.
   const orgId =
-    args.orgId === null || args.orgId === undefined
-      ? sql`(SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = ${agentId}::uuid)`
-      : sql`${args.orgId}`;
+    typeof args.orgId === "string"
+      ? sql`${args.orgId}`
+      : sql`(SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = ${agentId}::uuid)`;
   const beforeReservation = source ? sql`${source.cte},` : sql.empty();
   const reservationInput = source
     ? sql`SELECT ${args.userId}, ${orgId}, 1 WHERE ${source.gate}`
@@ -103,13 +104,13 @@ export function chatThreadEventInsertSql(
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
       id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
       reassigned_agent_id, title,
-      pin_order, selected_model, model_settings, model_settings_patch,
+      pin_order, muted, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     ) SELECT
       ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
       ${args.chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
       ${agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
-      ${args.title ?? null}, ${args.pinOrder ?? null},
+      ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
       ${args.modelSettingsPatch === undefined ? null : JSON.stringify(args.modelSettingsPatch)}::jsonb,
@@ -181,6 +182,7 @@ type ChatThreadEventRow = {
   readonly reassignedAgentId: string | null;
   readonly title: string | null;
   readonly pinOrder: string | null;
+  readonly muted: boolean | null;
   readonly selectedModel: string | null;
   readonly modelSettings: ModelSettings | null;
   readonly modelSettingsPatch: ModelSettingsPatch | null;
@@ -199,6 +201,7 @@ const chatThreadEventSelection = Object.freeze({
   reassignedAgentId: chatThreadEvents.reassignedAgentId,
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
+  muted: chatThreadEvents.muted,
   selectedModel: chatThreadEvents.selectedModel,
   modelSettings: chatThreadEvents.modelSettings,
   modelSettingsPatch: chatThreadEvents.modelSettingsPatch,
@@ -217,6 +220,7 @@ const pageChatThreadEventSelection = Object.freeze({
   reassignedAgentId: pageChatThreadEvent.reassignedAgentId,
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
+  muted: pageChatThreadEvent.muted,
   selectedModel: pageChatThreadEvent.selectedModel,
   modelSettings: pageChatThreadEvent.modelSettings,
   modelSettingsPatch: pageChatThreadEvent.modelSettingsPatch,
@@ -256,6 +260,7 @@ function toApiChatThreadEvent(
       : { reassignedAgentId: row.reassignedAgentId }),
     title: row.title,
     pinOrder: row.pinOrder,
+    ...(row.muted === null ? {} : { muted: row.muted }),
     selectedModel: row.selectedModel,
     ...(row.modelSettings === null
       ? {}

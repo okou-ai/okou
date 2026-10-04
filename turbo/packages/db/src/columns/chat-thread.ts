@@ -100,6 +100,8 @@ export function chatThreadColumns() {
      * the default sidebar list; archiving never changes the title.
      */
     archived: boolean("archived").default(false).notNull(),
+    /** Suppress unread indicators and user push notifications, not execution. */
+    muted: boolean("muted").default(false).notNull(),
     /**
      * Timestamp at which the user manually renamed this thread.
      * NULL means the thread has never been renamed.

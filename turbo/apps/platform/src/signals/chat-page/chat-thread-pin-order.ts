@@ -8,6 +8,7 @@ import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
+import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
 import {
   eventDrivenChatThreads$,
   registerOptimisticChatThreadEvent$,
@@ -17,7 +18,9 @@ export const pinnedThreadReorderEnabled$ = computed((get) => {
   const archivedOnly =
     get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true &&
     get(chatThreadOnlyArchived$);
-  return !get(chatThreadOnlyUnread$) && !archivedOnly;
+  return (
+    !get(chatThreadOnlyUnread$) && !archivedOnly && !get(chatThreadOnlyMuted$)
+  );
 });
 
 interface PinMove {

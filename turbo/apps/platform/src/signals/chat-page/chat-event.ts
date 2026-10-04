@@ -6,6 +6,7 @@ import { navigateToChat$ } from "../okou-page/nav.ts";
 import { currentChatThreadId$, chatThreads$ } from "../agent-chat.ts";
 import {
   chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadByIdContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
@@ -321,6 +322,42 @@ export const setChatThreadArchived$ = command(
       archived ? client.archive(request) : client.unarchive(request),
       [204],
     );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Mute / unmute thread
+// ---------------------------------------------------------------------------
+
+export const setChatThreadMuted$ = command(
+  async (
+    { get, set },
+    { threadId, muted }: { readonly threadId: string; readonly muted: boolean },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const eventId = crypto.randomUUID();
+    const thread = get(eventDrivenChatThreads$).find((item) => {
+      return item.id === threadId;
+    });
+    if (thread) {
+      set(registerOptimisticChatThreadEvent$, {
+        id: eventId,
+        kind: "sort_touched",
+        chatThreadId: threadId,
+        agentId: thread.agentId,
+        muted,
+        createdAt: thread.sortAt,
+      });
+    }
+    const client = get(apiClient$)(chatThreadMuteContract);
+    const request = {
+      params: { id: threadId },
+      query: { eventId },
+      fetchOptions: { signal },
+    };
+    await accept(muted ? client.mute(request) : client.unmute(request), [204]);
+    signal.throwIfAborted();
   },
 );
 

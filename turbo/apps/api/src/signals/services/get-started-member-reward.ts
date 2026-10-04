@@ -130,6 +130,9 @@ export function completedGetStartedQuestSql(
   const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
   const rewardSlot = args.questKey === "imessage" ? 1 : null;
   const expiresAt = new Date(at.getTime() + GET_STARTED_REWARD_TTL_MS);
+  // Concurrent duplicates can collide on the source, reward key, or reward slot.
+  // Arbitrate every unique index: targeting only the source can still raise a
+  // uniqueness error on another index instead of returning the existing award.
   return sql`WITH claim AS (
     INSERT INTO ${getStartedClaims} (id, org_id, actor_user_id, beneficiary_user_id, quest_key, source_key,
       reward_amount, reward_target, status, reward_key, reward_slot, member_credit_grant_id,
@@ -139,7 +142,7 @@ export function completedGetStartedQuestSql(
       ${sql.param(at, getStartedClaims.completedAt)}, ${sql.param(at, getStartedClaims.grantedAt)},
       ${sql.param(expiresAt, getStartedClaims.expiresAt)}, ${sql.param(at, getStartedClaims.nextAttemptAt)},
       ${sql.param(at, getStartedClaims.createdAt)}, ${sql.param(at, getStartedClaims.updatedAt)})
-    ON CONFLICT (actor_user_id, quest_key, source_key) DO NOTHING RETURNING id
+    ON CONFLICT DO NOTHING RETURNING id
   ) INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
     SELECT ${grantId}::uuid, ${args.orgId}, ${args.userId}, 'bonus', ${`get-started:${claimId}`}, ${reward.amount}, ${reward.amount},
       ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)} FROM claim`;

@@ -320,6 +320,7 @@ const chatThreadSnapshotProjectionSchema = z.object({
   // Optional for existing snapshots and browser caches without manual ordering.
   pinOrder: z.string().nullable().optional(),
   archived: z.boolean(),
+  muted: z.boolean().optional(),
   renamedAt: z.string().nullable(),
   selectedModel: z.string().nullable().default(null),
   modelSettings: modelSettingsSchema.optional(),
@@ -358,6 +359,8 @@ const chatThreadEventSchema = z.object({
   title: z.string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: z.string().nullable().optional(),
+  /** On sort_touched, a metadata-only mute change, not an activity touch. */
+  muted: z.boolean().optional(),
   selectedModel: z.string().nullable().default(null),
   /** Full map is present on created events. */
   modelSettings: modelSettingsSchema.optional(),
@@ -984,6 +987,7 @@ const chatThreadMetadataSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable(),
   pinnedAt: z.string().nullable(),
   archived: z.boolean(),
+  muted: z.boolean().optional(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
 });
@@ -1472,6 +1476,42 @@ export const chatThreadUnpinContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Remove the pin from a chat thread",
+  },
+});
+
+/** Mute changes preserve read cursors, archiving and activity ordering. */
+export const chatThreadMuteContract = c.router({
+  mute: {
+    method: "POST",
+    path: "/api/chat-threads/:id/mute",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    query: z.object({ eventId: chatThreadEventIdSchema.optional() }).optional(),
+    body: c.noBody(),
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Mute a chat thread",
+  },
+  unmute: {
+    method: "POST",
+    path: "/api/chat-threads/:id/unmute",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    query: z.object({ eventId: chatThreadEventIdSchema.optional() }).optional(),
+    body: c.noBody(),
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Unmute a chat thread",
   },
 });
 

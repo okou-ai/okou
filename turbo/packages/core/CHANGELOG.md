@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.728.0](https://github.com/okou-ai/okou/compare/core-v8.727.2...core-v8.728.0) (2026-10-04)
+
+
+### Features
+
+* add organization-gated thread muting ([#37681](https://github.com/okou-ai/okou/issues/37681)) ([267fa71](https://github.com/okou-ai/okou/commit/267fa71b3cf85592fcbb7b644cdfefc1f5d642ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.0
+
 ## [8.727.2](https://github.com/okou-ai/okou/compare/core-v8.727.1...core-v8.727.2) (2026-10-04)
 
 

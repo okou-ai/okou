@@ -95,3 +95,30 @@ allocation failed`; this is incomplete, not a pass. No local Vitest/devserver.
 Exact-head eight API shard/four required gate results must be recorded on the PR
 before stopping for independent coordinator review; this slice has no merge,
 pr-auto, release or deployment authorization.
+
+## Main integration and retained failure history
+
+The original D1 head `c8af6348b498d104fba239e2d32d4b50d1fee576` failed
+run `37182434671`: API shard 4 reported a concurrent get-started check-in
+500 / PostgreSQL `23505` on `uq_get_started_reward_key`; the Turbo gate failed
+and API shard 1 was cancelled, not passed. That run is not rerun or reclassified
+as acceptance. Passing callback suites alone do not close the blocker.
+
+Ordinary main integration uses `cf155ac9e19c1ce08a1a55fa43f97ff5da358d7f`,
+which contains the separately reviewed and merged reward conflict fix #37683
+at `1261224f046ba759c162f5e35b9aebdc65334023`. D1 does not modify that fix,
+reward tests, or D2 cleanup. The callback service remains byte-identical to the
+original D1 head. Relative to integrated main, the slice still contains only
+this acceptance document and internal callback bookkeeping ownership.
+
+Prior environment-only failures (missing worktree, non-project `lost+found`
+permission denial, and missing Git committer identity / exit 128) remain
+failures; they are not product failures or passing checks. Normal project setup
+restored the existing branch and hooks, and the authorized repository-local
+identity was verified without rewriting published history.
+
+New-head static/type results, all eight API shards, four required gates and
+public callback/lifecycle coverage must be verified independently on the PR.
+Neither main integration nor the reward fix establishes exhaustive corruption
+boundary coverage or authorizes queue admission/merge. No local Vitest or
+devserver, blind old-run rerun, new lock/retry/timeout, or suppression is used.
