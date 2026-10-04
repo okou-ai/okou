@@ -44,9 +44,14 @@ import {
   loadAcceptedConnectorCatalogSnapshot,
   loadAcceptedConnectorCatalogSnapshotOnce,
   type AcceptedConnectorCatalogSnapshot,
-  type ExternalCatalogIdentity,
 } from "./connector-catalog-external-reader.service";
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
+import type {
+  ConnectorCatalogLookup,
+  ConnectorCatalogRuntimeView,
+  ConnectorCatalogView,
+  ExternalCatalogIdentity,
+} from "./connector-catalog-view";
 import {
   ConnectorCatalogLoadTiming,
   type ConnectorRuntimeProjectionCacheObservation,
@@ -94,10 +99,14 @@ export interface ConnectorRuntimeSelection {
   readonly serverFirewallMetadata: ConnectorServerFirewallMetadataCatalog;
 }
 
-export interface ConnectorRuntimeSnapshot extends ConnectorRuntimeSelection {
-  readonly acceptedSnapshot: AcceptedConnectorCatalogSnapshot;
+/** Full firewall iteration/host ownership, without the accepted storage snapshot. */
+export interface ConnectorRuntimeCatalogView extends ConnectorRuntimeSelection {
   readonly serverFirewalls: ConnectorServerFirewallCatalog;
   readonly serverFirewallMetadata: ConnectorServerFirewallCatalog;
+}
+
+export interface ConnectorRuntimeSnapshot extends ConnectorRuntimeCatalogView {
+  readonly acceptedSnapshot: AcceptedConnectorCatalogSnapshot;
 }
 
 function methodKey(connectorSlug: string, authMethodId: string): string {
@@ -566,7 +575,7 @@ function runtimeCatalogKey(identity: ExternalCatalogIdentity): string {
 }
 
 interface ConnectorRuntimeState {
-  readonly acceptedSnapshot: AcceptedConnectorCatalogSnapshot;
+  readonly acceptedSnapshot: ConnectorCatalogView;
   readonly connectors: Map<ConnectorSlug, ConnectorRuntimeConnector>;
   readonly serverFirewalls: ConnectorServerFirewallCatalog;
   snapshot: ConnectorRuntimeSnapshot | undefined;
@@ -582,7 +591,7 @@ const runtimeCatalogCache = singleton((): RuntimeCatalogCache => {
 });
 
 function materializeConnectorRuntimeEntry(
-  acceptedSnapshot: AcceptedConnectorCatalogSnapshot,
+  acceptedSnapshot: ConnectorCatalogLookup,
   connectors: Map<ConnectorSlug, ConnectorRuntimeConnector>,
   connectorSlug: ConnectorSlug,
 ): ConnectorRuntimeConnector {
@@ -603,7 +612,7 @@ function materializeConnectorRuntimeEntry(
 }
 
 function connectorRuntimeState(
-  acceptedSnapshot: AcceptedConnectorCatalogSnapshot,
+  acceptedSnapshot: ConnectorCatalogView,
   timing: ConnectorCatalogLoadTiming | undefined,
 ): { readonly state: ConnectorRuntimeState; readonly created: boolean } {
   const key = runtimeCatalogKey(acceptedSnapshot.identity);
@@ -647,7 +656,7 @@ function connectorRuntimeState(
 }
 
 function acceptedRequestedConnectorSlugs(
-  acceptedSnapshot: AcceptedConnectorCatalogSnapshot,
+  acceptedSnapshot: ConnectorCatalogLookup,
   requestedConnectorSlugs: readonly ConnectorSlug[],
 ): readonly ConnectorSlug[] {
   return [...new Set(requestedConnectorSlugs)].filter((connectorSlug) => {
@@ -826,16 +835,19 @@ async function loadCompleteRuntimeSelection(args: {
       ...(args.identity === undefined ? {} : { identity: args.identity }),
     },
   );
-  return runtimeSelectionFromAcceptedSnapshot({ ...args, acceptedSnapshot });
+  return runtimeSelectionFromCatalogView({
+    ...args,
+    catalog: acceptedSnapshot,
+  });
 }
 
-export function runtimeSelectionFromAcceptedSnapshot(args: {
-  readonly acceptedSnapshot: AcceptedConnectorCatalogSnapshot;
+export function runtimeSelectionFromCatalogView(args: {
+  readonly catalog: ConnectorCatalogRuntimeView;
   readonly timing?: ConnectorCatalogLoadTiming;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): ConnectorRuntimeSelection {
-  const { acceptedSnapshot } = args;
+  const acceptedSnapshot = args.catalog;
   const connectorSlugs = acceptedRequestedConnectorSlugs(
     acceptedSnapshot,
     args.runtimeConnectorSlugs,
@@ -1320,6 +1332,13 @@ export async function loadConnectorRuntimeSnapshot(
   };
   state.snapshot = snapshot;
   return snapshot;
+}
+
+/** Type-only adapter: retain the same promise, full load and cached result. */
+export function loadConnectorRuntimeView(
+  db: ReadonlyDb,
+): Promise<ConnectorRuntimeCatalogView> {
+  return loadConnectorRuntimeSnapshot(db);
 }
 
 export function getConnectorRuntimeConnector(

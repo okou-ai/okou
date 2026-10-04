@@ -4,7 +4,7 @@ import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dc
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorCatalogActiveSnapshot } from "@okouai/db/schema/connector-catalog";
-import type { ExternalCatalogIdentity } from "./connector-catalog-external-reader.service";
+import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {

@@ -33,7 +33,6 @@ import type { ReadonlyDb } from "../external/db";
 import { onRejection, settle } from "../utils";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  type ConnectorCatalogArtifact,
   type ConnectorCatalogArtifactConnector,
   type ConnectorCatalogAuthMethod,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
@@ -72,34 +71,20 @@ import {
   isInternalConnector,
 } from "./connector-popularity";
 import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
+import type {
+  ConnectorCatalogRuntimeView,
+  ExternalCatalogIdentity,
+} from "./connector-catalog-view";
 
 const log = logger("connector-catalog:reader");
 const CONNECTOR_CATALOG_ICON_BASE_URL = "https://static.vm0.io/";
-
-export interface ExternalCatalogIdentity {
-  readonly sourceId: string;
-  readonly schemaVersion: number;
-  readonly catalogVersion: string;
-  readonly catalogDigest: string;
-  readonly capabilityDigest: string;
-}
 
 interface PrivateAuthMethodFacts {
   readonly requestedScopes: readonly string[];
   readonly supportsRefresh: boolean;
 }
 
-export interface AcceptedConnectorCatalogSnapshot {
-  readonly identity: ExternalCatalogIdentity;
-  readonly catalogRawSize: number;
-  readonly catalogCompressedSize: number;
-  readonly artifact: ConnectorCatalogArtifact;
-  readonly connectorBySlug: ReadonlyMap<
-    string,
-    ConnectorCatalogArtifactConnector
-  >;
-  readonly filteredMethodKeys: ReadonlySet<string>;
-}
+export type AcceptedConnectorCatalogSnapshot = ConnectorCatalogRuntimeView;
 
 /**
  * A subset of accepted connectors, together with the compatibility filter that

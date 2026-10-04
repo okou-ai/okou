@@ -62,7 +62,7 @@ import {
 import {
   requestedProjectionConnectorSlugs,
   materializeProjectedRuntimeSelection,
-  runtimeSelectionFromAcceptedSnapshot,
+  runtimeSelectionFromCatalogView,
   takeCachedProjectedConnectors,
   rememberProjectedConnectors,
   type ConnectorRuntimeSelection,
@@ -802,8 +802,8 @@ async function bootstrapCatalogSelection(
   if (!accepted.ok) {
     throw accepted.error;
   }
-  return runtimeSelectionFromAcceptedSnapshot({
-    acceptedSnapshot: accepted.value,
+  return runtimeSelectionFromCatalogView({
+    catalog: accepted.value,
     ...input.requested,
   });
 }

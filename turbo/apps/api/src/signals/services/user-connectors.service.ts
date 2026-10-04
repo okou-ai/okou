@@ -15,8 +15,8 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import type { Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSnapshot,
+  loadConnectorRuntimeView,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
@@ -369,7 +369,7 @@ function normalizeCustomConnectorGrantRequest(args: {
 }
 
 async function validateExplicitPermissionNames(args: {
-  readonly snapshot: ConnectorRuntimeSnapshot | null;
+  readonly snapshot: ConnectorRuntimeSelection | null;
   readonly connectorId: string;
   readonly permissionNames: readonly string[];
   readonly permissionBundleRef: string | null;
@@ -434,7 +434,7 @@ async function resolveCustomConnectorPermissionSelection(args: {
     readonly string[]
   >;
   readonly permissionBundleRefs: ReadonlyMap<string, string | null>;
-  readonly snapshot: ConnectorRuntimeSnapshot | null;
+  readonly snapshot: ConnectorRuntimeSelection | null;
 }): Promise<
   | {
       readonly ok: true;
@@ -591,7 +591,7 @@ async function persistUserCustomConnectorTransaction(args: {
   readonly grants: readonly AgentCustomConnectorGrant[];
   readonly grantByConnectorId: ReadonlyMap<string, readonly string[]>;
   readonly operation: UserCustomConnectorUpdateOperation;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot | null;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection | null;
 }): Promise<UserCustomConnectorTransactionResult> {
   const agentLocked = await lockUserCustomConnectorGrantScope(
     args.tx,
@@ -705,7 +705,7 @@ export async function updateUserCustomConnectors(
     grants.some((grant) => {
       return grant.permissionNames.length > 0;
     })
-      ? await loadConnectorRuntimeSnapshot(db)
+      ? await loadConnectorRuntimeView(db)
       : null;
 
   const committed = await db.transaction(async (tx) => {

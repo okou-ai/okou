@@ -7,10 +7,10 @@ import type { Firewall } from "@okouai/connectors/firewall-types";
 
 import { singleton } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
+import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 import {
   loadAcceptedConnectorCatalogSnapshot,
   type AcceptedConnectorCatalogSnapshot,
-  type ExternalCatalogIdentity,
 } from "./connector-catalog-external-reader.service";
 import { connectorCatalogFirewallConfig } from "@okouai/connectors/connector-catalog/artifacts/relationships";
 

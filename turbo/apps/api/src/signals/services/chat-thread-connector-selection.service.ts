@@ -25,7 +25,7 @@ import { listConnectorAccountsByIds } from "./connector-account-lifecycle.servic
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
+  loadConnectorRuntimeView,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
@@ -109,7 +109,7 @@ async function loadSnapshotForBuiltinTargets(
   return selections.some((selection) => {
     return selection.target.kind === "builtin";
   })
-    ? await loadConnectorRuntimeSnapshot(db)
+    ? await loadConnectorRuntimeView(db)
     : undefined;
 }
 

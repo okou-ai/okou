@@ -779,7 +779,7 @@ function storedBuiltinConnector(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorSlug: string;
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
   readonly selection: StoredBuiltinConnectorSelection;
 }): Computed<Promise<BuiltinConnectorWithRuntimeMethod | null>> {
   return computed(
@@ -836,7 +836,7 @@ export function builtinConnectorBySlug(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorSlug: string;
-  readonly snapshot?: ConnectorRuntimeSnapshot;
+  readonly snapshot?: ConnectorRuntimeSelection;
 }): Computed<Promise<BuiltinConnectorResponse | null>> {
   return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
     const snapshot =
@@ -861,7 +861,7 @@ export function builtinConnectorById(args: {
   readonly userId: string;
   readonly connectorSlug: string;
   readonly connectorId: string;
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
 }): Computed<Promise<BuiltinConnectorResponse | null>> {
   return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
     const connector = await get(
