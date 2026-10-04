@@ -394,6 +394,117 @@ async fn cancellation_while_kdc_reply_is_pending_kills_waits_cleans_and_releases
 
 #[tokio::test]
 #[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
+async fn expensive_unauthenticated_preauth_is_cpu_bounded_and_reaped_before_new_admission() {
+    use kerberos_worker::{KdcExchange, Password};
+    use zeroize::Zeroizing;
+    struct ExpensiveKdc {
+        observed: Option<tokio::sync::oneshot::Sender<()>>,
+        response: Zeroizing<Vec<u8>>,
+    }
+    impl KdcExchange for ExpensiveKdc {
+        async fn authorize(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+        async fn exchange(&mut self, realm: &str, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
+            assert_eq!(realm, "ISSUE37612.INVALID");
+            if let Some(observed) = self.observed.take() {
+                observed.send(()).unwrap();
+            }
+            Ok(Zeroizing::new(self.response.to_vec()))
+        }
+    }
+    let root = root();
+    let path = root.path().canonicalize().unwrap();
+    let before = actual_children();
+    let (observed_tx, observed) = tokio::sync::oneshot::channel();
+    // Maintained MIT encoded this public PREAUTH_REQUIRED/ETYPE_INFO2 error.
+    // AES256 S2K uses 0x00ffffff iterations, just below MIT's rejection limit.
+    let response = include_str!("fixtures/expensive-preauth-error.hex")
+        .split_whitespace()
+        .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+        .collect::<Vec<_>>();
+    let mut caller = ExpensiveKdc {
+        observed: Some(observed_tx),
+        response: Zeroizing::new(response),
+    };
+    let source = Credentials::new(
+        principal(&["probe"]),
+        principal(&["vnc", "fixture"]),
+        Source::Password(Password::new(Zeroizing::new("synthetic-cpu-only".into())).unwrap()),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut opening = Box::pin(kerberos_worker::open(
+        &path,
+        source,
+        policy(),
+        deadline,
+        &mut caller,
+    ));
+    tokio::select! { result = &mut opening => panic!("unexpected premature result {result:?}"), result = observed => result.unwrap() }
+    let ids = actual_children()
+        .into_iter()
+        .filter(|id| !before.contains(id))
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), 1);
+    let id = ids[0];
+    let limits = fs::read_to_string(format!("/proc/{id}/limits")).unwrap();
+    assert!(
+        limits
+            .lines()
+            .any(|line| line.split_whitespace().collect::<Vec<_>>()
+                == ["Max", "cpu", "time", "12", "12", "seconds"])
+    );
+    let ticks = std::process::Command::new("getconf")
+        .arg("CLK_TCK")
+        .output()
+        .unwrap();
+    assert!(ticks.status.success());
+    let ticks = std::str::from_utf8(&ticks.stdout)
+        .unwrap()
+        .trim()
+        .parse::<u64>()
+        .unwrap();
+    let mut max_cpu_ticks = 0;
+    let mut sampling = tokio::time::interval(Duration::from_millis(20));
+    let result = loop {
+        tokio::select! {
+            result = &mut opening => break result,
+            _ = sampling.tick() => {
+                if let Ok(stat) = fs::read_to_string(format!("/proc/{id}/stat")) {
+                    let (_, fields) = stat.rsplit_once(") ").unwrap();
+                    let cpu = fields.split_whitespace().nth(11).unwrap().parse::<u64>().unwrap();
+                    max_cpu_ticks = max_cpu_ticks.max(cpu);
+                }
+            }
+        }
+    };
+    drop(opening);
+    let until = Instant::now() + Duration::from_secs(2);
+    while Path::new(&format!("/proc/{id}")).exists() && Instant::now() < until {
+        tokio::task::yield_now().await;
+    }
+    assert!(!Path::new(&format!("/proc/{id}")).exists());
+    let (replacement, _) = kerberos_worker::open(
+        &path,
+        credentials("fixture"),
+        policy(),
+        Instant::now() + Duration::from_secs(10),
+        &mut NoKdc,
+    )
+    .await
+    .unwrap();
+    replacement.close().await.unwrap();
+    assert_eq!(fs::read_dir(path).unwrap().count(), 0);
+    assert!(matches!(result, Err(Error::Unavailable)), "{result:?}");
+    assert!(
+        max_cpu_ticks >= 10 * ticks,
+        "control did not actually consume the bounded CPU work: {max_cpu_ticks}/{ticks}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
 async fn ready_kdc_callback_after_deadline_sends_nothing_and_reaps_before_new_admission() {
     use kerberos_worker::{KdcExchange, Password};
     use std::{
