@@ -96,8 +96,8 @@ fn tailscale_handoff_has_independent_protected_network_and_ssh_credentials() {
 }
 
 #[test]
-fn legacy_carrier_guards_stay_absent_and_lease_has_only_identifiers() {
-    use api_contracts::generated::types::runners::ssh::{LeaseRequest, LeaseResponse, PinRequest};
+fn pin_preserves_legacy_requests_and_serializes_the_tailscale_guard() {
+    use api_contracts::generated::types::runners::ssh::PinRequest;
     let body = json!({"connectionId":"00000000-0000-4000-8000-000000000001", "runnerIdentity":{"runnerId":"00000000-0000-4000-8000-000000000002","heartbeatGeneration":3}, "expectedGeneration":4,"observedHostKey":{"algorithm":"ssh-ed25519","fingerprint":"SHA256:pin"}});
     let legacy: PinRequest = serde_json::from_value(body.clone()).unwrap();
     assert!(legacy.expected_tailscale_config.is_none());
@@ -107,20 +107,12 @@ fn legacy_carrier_guards_stay_absent_and_lease_has_only_identifiers() {
             .get("expectedTailscaleConfig")
             .is_none()
     );
-    let mut lease = body;
-    lease.as_object_mut().unwrap().remove("observedHostKey");
-    lease["expectedTailscaleConfig"] =
-        json!({"configId":"00000000-0000-4000-8000-000000000003","generation":2});
-    let request: LeaseRequest = serde_json::from_value(lease).unwrap();
-    assert_eq!(request.expected_tailscale_config.generation, 2);
-    let response: LeaseResponse =
-        serde_json::from_value(json!({"outcome":"permitted","validForMs":60000})).unwrap();
-    assert!(matches!(
-        response,
-        LeaseResponse::Permitted {
-            valid_for_ms: 60000
-        }
-    ));
+    let mut tailscale = body;
+    let guard = json!({"configId":"00000000-0000-4000-8000-000000000003","generation":2});
+    tailscale["expectedTailscaleConfig"] = guard.clone();
+    let request: PinRequest = serde_json::from_value(tailscale).unwrap();
+    let serialized = serde_json::to_value(request).unwrap();
+    assert_eq!(serialized["expectedTailscaleConfig"], guard);
 }
 
 #[test]

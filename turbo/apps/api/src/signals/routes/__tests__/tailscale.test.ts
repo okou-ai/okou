@@ -501,18 +501,14 @@ describe("Tailscale configuration and saved-host authority", () => {
       });
     },
   );
-  it("uses current winning process/host/chat/config authority for JIT and identifier-only leases without a backend rollout flag", async () => {
+  it("uses current winning process/host/chat/config authority for JIT and composite fences without a backend rollout flag", async () => {
     const o = owner();
     const c = await config();
     const h = await host(c.id);
     const r = await ordinary.runtime(o);
     const params = { runId: r.runId };
     const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
-    const lease = {
-      ...body,
-      expectedGeneration: h.generation,
-      expectedTailscaleConfig: { configId: c.id, generation: c.generation },
-    };
+    const configGuard = { configId: c.id, generation: c.generation };
     let probe = useSecretKmsProbe();
     expect(
       (
@@ -549,50 +545,64 @@ describe("Tailscale configuration and saved-host authority", () => {
       },
     });
     probe = useSecretKmsProbe();
-    expect(
-      (
-        await accept(
-          runner().lease({ headers: runnerHeaders, params, body: lease }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "permitted", validForMs: 60_000 });
     for (const stale of [
-      { ...lease, connectionId: randomUUID() },
+      { ...body, connectionId: randomUUID() },
       {
-        ...lease,
+        ...body,
         runnerIdentity: { ...r.runnerIdentity, runnerId: randomUUID() },
       },
       {
-        ...lease,
+        ...body,
         runnerIdentity: {
           ...r.runnerIdentity,
           heartbeatGeneration: r.runnerIdentity.heartbeatGeneration + 1,
         },
       },
-      { ...lease, expectedGeneration: lease.expectedGeneration + 1 },
-      {
-        ...lease,
-        expectedTailscaleConfig: { configId: randomUUID(), generation: 1 },
-      },
-      { ...lease, expectedTailscaleConfig: { configId: c.id, generation: 2 } },
     ]) {
       expect(
         (
           await accept(
-            runner().lease({ headers: runnerHeaders, params, body: stale }),
+            runner().resolve({ headers: runnerHeaders, params, body: stale }),
             [200],
           )
         ).body,
       ).toStrictEqual({ outcome: "unavailable" });
     }
-    await accept(runner().lease({ headers, params, body: lease }), [401]);
+    await accept(runner().resolve({ headers, params, body }), [401]);
     expect(probe.decryptCalls).toBe(0);
     const missingGuard = {
       ...body,
       expectedGeneration: h.generation,
       observedHostKey: key,
     };
+    for (const stale of [
+      {
+        expectedGeneration: h.generation + 1,
+        expectedTailscaleConfig: configGuard,
+      },
+      {
+        expectedGeneration: h.generation,
+        expectedTailscaleConfig: { configId: randomUUID(), generation: 1 },
+      },
+      {
+        expectedGeneration: h.generation,
+        expectedTailscaleConfig: { configId: c.id, generation: 2 },
+      },
+    ]) {
+      expect(
+        (
+          await accept(
+            runner().pin({
+              headers: runnerHeaders,
+              params,
+              body: { ...missingGuard, ...stale },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ outcome: "configuration_changed" });
+    }
+    expect(probe.decryptCalls).toBe(0);
     expect(
       (
         await accept(
@@ -609,16 +619,17 @@ describe("Tailscale configuration and saved-host authority", () => {
             params,
             body: {
               ...missingGuard,
-              expectedTailscaleConfig: lease.expectedTailscaleConfig,
+              expectedTailscaleConfig: configGuard,
             },
           }),
           [200],
         )
       ).body,
     ).toStrictEqual({ outcome: "pinned", generation: h.generation + 1 });
-    const currentLease = { ...lease, expectedGeneration: h.generation + 1 };
     const obs = {
-      ...currentLease,
+      ...body,
+      expectedGeneration: h.generation + 1,
+      expectedTailscaleConfig: configGuard,
       observedAt: nowDate().toISOString(),
       failureReason: null,
     };
@@ -653,24 +664,13 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect(
       (
         await accept(
-          runner().lease({
-            headers: runnerHeaders,
-            params,
-            body: currentLease,
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
-    expect(
-      (
-        await accept(
           runner().pin({
             headers: runnerHeaders,
             params,
             body: {
               ...missingGuard,
-              expectedTailscaleConfig: lease.expectedTailscaleConfig,
+              expectedGeneration: h.generation + 1,
+              expectedTailscaleConfig: configGuard,
             },
           }),
           [200],
@@ -685,18 +685,19 @@ describe("Tailscale configuration and saved-host authority", () => {
         )
       ).body,
     ).toStrictEqual({ outcome: "ignored" });
-    const renewed = {
-      ...currentLease,
-      expectedTailscaleConfig: { configId: c.id, generation: 2 },
-    };
     expect(
       (
         await accept(
-          runner().lease({ headers: runnerHeaders, params, body: renewed }),
+          runner().resolve({ headers: runnerHeaders, params, body }),
           [200],
         )
-      ).body.outcome,
-    ).toBe("permitted");
+      ).body,
+    ).toMatchObject({
+      outcome: "resolved_tailscale",
+      generation: h.generation + 1,
+      learnedHostKey: key,
+      tailscale: { configId: c.id, generation: 2, tags: ["tag:next"] },
+    });
     await accept(
       remote().setThreadOverride({
         headers,
@@ -706,14 +707,6 @@ describe("Tailscale configuration and saved-host authority", () => {
       [200],
     );
     probe = useSecretKmsProbe();
-    expect(
-      (
-        await accept(
-          runner().lease({ headers: runnerHeaders, params, body: renewed }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("unavailable");
     expect(
       (
         await accept(
@@ -739,14 +732,6 @@ describe("Tailscale configuration and saved-host authority", () => {
       [200],
     );
     probe = useSecretKmsProbe();
-    expect(
-      (
-        await accept(
-          runner().lease({ headers: runnerHeaders, params, body: renewed }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("unavailable");
     expect(
       (
         await accept(
@@ -899,7 +884,7 @@ describe("Tailscale configuration and saved-host authority", () => {
           expect(
             (
               await accept(
-                runner().lease({
+                runner().pin({
                   headers: runnerHeaders,
                   params,
                   body: {
@@ -909,12 +894,13 @@ describe("Tailscale configuration and saved-host authority", () => {
                       configId: c.id,
                       generation: c.generation,
                     },
+                    observedHostKey: key,
                   },
                 }),
                 [200],
               )
             ).body,
-          ).toStrictEqual({ outcome: "unavailable" });
+          ).toStrictEqual({ outcome: "configuration_changed" });
           expect(currentProbe.decryptCalls).toBe(0);
           expect(
             (

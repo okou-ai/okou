@@ -7,8 +7,6 @@ import {
   runnerSshAccessResolvedSchema,
   type RunnerSshResolveResponse,
   type RunnerSshObservationRequest,
-  type RunnerSshLeaseRequest,
-  type RunnerSshLeaseResponse,
   runnerSshTailscaleResolvedSchema,
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
@@ -585,22 +583,4 @@ async function tailscaleHandoff(
     outcome: "resolved_tailscale",
     ...handoff,
   });
-}
-
-/** A finite authority handoff, not a connection/credential or provider request. */
-export async function leaseRunnerSsh(
-  db: Pick<Db, "select">,
-  input: RunnerSshLeaseRequest & { readonly runId: string },
-  signal: AbortSignal,
-): Promise<RunnerSshLeaseResponse> {
-  const row = await currentConnection(db, input, false, signal);
-  if (
-    !row ||
-    row.tailscaleId === null ||
-    row.generation !== input.expectedGeneration ||
-    !matchesTailscaleGuard(row, input.expectedTailscaleConfig)
-  ) {
-    return unavailable;
-  }
-  return { outcome: "permitted", validForMs: 60_000 };
 }

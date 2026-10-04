@@ -18,12 +18,6 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/runners/runs/:runId/ssh/lease",
-    rustModulePath: ["runners", "runs", "by_run_id", "ssh", "lease"],
-    rustConstName: "LEASE",
-  },
-  {
-    method: "POST",
     path: "/api/runners/runs/:runId/ssh/observations",
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "observations"],
     rustConstName: "OBSERVE",

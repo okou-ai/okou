@@ -628,55 +628,6 @@ pub mod runners {
         /// Immutable winning official Runner process.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
-        pub struct LeaseRequestRunnerIdentity {
-            /// Runner UUID.
-            pub runner_id: String,
-            /// Winning process generation.
-            pub heartbeat_generation: i64,
-        }
-
-        /// Exact effective Tailscale network authority, independent of SSH host generation.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct LeaseRequestExpectedTailscaleConfig {
-            /// Selected configuration UUID.
-            pub config_id: String,
-            /// Effective credential, tag and enabled-state generation.
-            pub generation: i64,
-        }
-
-        /// Identifier-only Tailscale authority; no credentials or provider operation.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct LeaseRequest {
-            /// Exact host UUID.
-            pub connection_id: String,
-            /// Winning process.
-            pub runner_identity: LeaseRequestRunnerIdentity,
-            /// Exact host generation.
-            pub expected_generation: i64,
-            /// Required exact current network tuple.
-            pub expected_tailscale_config: LeaseRequestExpectedTailscaleConfig,
-        }
-
-        /// Finite current authority; anchor monotonic deadline before request, renew every 30 seconds.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
-        pub enum LeaseResponse {
-            /// Deny and stop exact host use.
-            #[serde(rename = "unavailable")]
-            Unavailable,
-            /// Finite authority, not SSH/node readiness.
-            #[serde(rename = "permitted")]
-            Permitted {
-                /// At most 60000 milliseconds. Never extends deadline by response delay.
-                valid_for_ms: i64,
-            },
-        }
-
-        /// Immutable winning official Runner process.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
         pub struct ObservationRequestRunnerIdentity {
             /// Runner UUID.
             pub runner_id: String,

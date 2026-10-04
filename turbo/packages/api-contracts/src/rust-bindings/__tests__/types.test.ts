@@ -42,16 +42,6 @@ const expectedBindings = [
   }),
   {
     rustModulePath: ["runners", "ssh"],
-    rustTypeName: "LeaseRequest",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["runners", "ssh"],
-    rustTypeName: "LeaseResponse",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "ssh"],
     rustTypeName: "ObservationRequest",
     direction: "request",
   },

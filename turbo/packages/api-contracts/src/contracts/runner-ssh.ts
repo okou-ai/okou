@@ -137,35 +137,6 @@ const pinResponseSchema = z.discriminatedUnion("outcome", [
 ]);
 
 export const runnerSshContract = c.router({
-  lease: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/ssh/lease",
-    pathParams: z.object({ runId: z.uuid() }).strict(),
-    headers: authHeadersSchema,
-    body: resolveRequestSchema
-      .extend({
-        expectedGeneration: generationSchema,
-        expectedTailscaleConfig: tailscaleConfigGuardSchema,
-      })
-      .strict(),
-    responses: {
-      200: z.discriminatedUnion("outcome", [
-        unavailableSchema,
-        z
-          .object({
-            outcome: z.literal("permitted"),
-            validForMs: z.int().positive().max(60_000),
-          })
-          .strict(),
-      ]),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary:
-      "Renew identifier-only current Tailscale host authority without decrypting credentials",
-  },
   observe: {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/observations",
@@ -223,12 +194,6 @@ export const runnerSshContract = c.router({
   },
 });
 
-export type RunnerSshLeaseRequest = z.infer<
-  typeof runnerSshContract.lease.body
->;
-export type RunnerSshLeaseResponse = z.infer<
-  (typeof runnerSshContract.lease.responses)[200]
->;
 export type RunnerSshResolveRequest = z.infer<typeof resolveRequestSchema>;
 export type RunnerSshResolveResponse = z.infer<typeof resolveResponseSchema>;
 export type RunnerSshPinRequest = z.infer<typeof pinRequestSchema>;

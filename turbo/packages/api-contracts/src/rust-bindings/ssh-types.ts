@@ -62,51 +62,6 @@ function configGuardDocs(name: string): RustTypeDeclarationDoc {
 
 export const sshTypeBindings = [
   {
-    schema: runnerSshContract.lease.body,
-    rustModulePath: ["runners", "ssh"],
-    rustTypeName: "LeaseRequest",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "LeaseRequest",
-        rustDoc: [
-          "Identifier-only Tailscale authority; no credentials or provider operation.",
-        ],
-        fields: {
-          connectionId: ["Exact host UUID."],
-          runnerIdentity: ["Winning process."],
-          expectedGeneration: ["Exact host generation."],
-          expectedTailscaleConfig: ["Required exact current network tuple."],
-        },
-      },
-      identityDocs("LeaseRequestRunnerIdentity"),
-      configGuardDocs("LeaseRequestExpectedTailscaleConfig"),
-    ],
-  },
-  {
-    schema: runnerSshContract.lease.responses[200],
-    rustModulePath: ["runners", "ssh"],
-    rustTypeName: "LeaseResponse",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "LeaseResponse",
-        rustDoc: [
-          "Finite current authority; anchor monotonic deadline before request, renew every 30 seconds.",
-        ],
-        fields: {
-          validForMs: [
-            "At most 60000 milliseconds. Never extends deadline by response delay.",
-          ],
-        },
-        variants: {
-          unavailable: ["Deny and stop exact host use."],
-          permitted: ["Finite authority, not SSH/node readiness."],
-        },
-      },
-    ],
-  },
-  {
     schema: runnerSshContract.observe.body,
     rustModulePath: ["runners", "ssh"],
     rustTypeName: "ObservationRequest",
