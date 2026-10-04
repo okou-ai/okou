@@ -120,6 +120,7 @@ async function createClaimedBuiltInRun(
   await runs.claimRunnerJob(run.runId, { runnerIdentity });
   onTestFinished(async () => {
     await runs.requestCancelRun(actor, run.runId, [200, 400]);
+    await flushWaitUntilForTest();
   });
   return {
     actor,
@@ -185,6 +186,7 @@ describe("POST /api/test/runtime-state/action", () => {
       });
       onTestFinished(async () => {
         await runs.requestCancelRun(actor, runId, [200]);
+        await flushWaitUntilForTest();
       });
       const detail = await reads.requestReadLogById(actor, runId, [200]);
       expect(detail.body).toMatchObject({
@@ -1134,6 +1136,7 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       });
       onTestFinished(async () => {
         await runs.requestCancelRun(claimed.actor, byokRun.runId, [200, 400]);
+        await flushWaitUntilForTest();
       });
       await expect(
         runs.reportRunnerModelProviderFailure(byokRun.runId, {

@@ -77,3 +77,26 @@ index predicate, or result decoder changes are proposed.
 No local Vitest or dev server is run. Local and exact-head CI results are
 recorded in the PR body; incomplete checks are not passes. Independent review
 and protected merge remain the coordinator's responsibility.
+
+## Bounded cancellation-cleanup follow-up
+
+Merge-group run `37173803361` passed all 51 files / 741 tests in API shard 7,
+but failed on one pending `onUserConsoleLog` RPC rejection during worker teardown.
+Source and logs establish a pre-existing cleanup gap: Vitest 5.0.2 runs
+`onTestFinished` after shared `afterEach` drains, while the cancel API returns
+before its `waitUntil` side effects finish. Existing cleanup callbacks created
+new background work without awaiting it; logs show callbacks using a closed DB
+pool. Successful same-head, independent-PR and main jobs exhibit this gap too.
+
+The follow-up adds only `await flushWaitUntilForTest()` after the existing cancel
+request in the three cancellation `onTestFinished` callbacks in
+`test-runtime-state.test.ts`. Status lists, business assertions, imports and all
+production code remain unchanged. No global hook, fixture or toolchain change
+is made. Each cleanup now waits for the background work it creates.
+
+This lifecycle gap is a strong candidate for the RPC failure, not a uniquely
+proven cause: the failed RPC's payload and creating task are not recorded.
+Green new-head CI cannot establish permanent elimination of that failure.
+The original head's independent LGTM and merge permission do not cover this
+follow-up. New-head review and protected-queue authorization remain required;
+static and normal PR-pipeline acceptance evidence is recorded in the PR body.
