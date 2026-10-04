@@ -15,6 +15,7 @@ import type { ConnectorCatalogCompatibilityEvaluationPayload } from "@okouai/db/
 import { and, asc, eq } from "drizzle-orm";
 
 import { mockOptionalEnv } from "../lib/env";
+import type { Tx } from "../lib/db-types";
 import { writeDb$, type Db } from "../signals/external/db";
 import { nowDate } from "../lib/time";
 import {
@@ -94,6 +95,67 @@ export function mockApiTestConnectorProviderConfiguration(): void {
   }
 }
 
+async function prepareSharedCatalogRows(args: {
+  readonly tx: Tx;
+  readonly syncState: typeof connectorCatalogSyncState.$inferInsert;
+  readonly catalog: ConnectorCatalogArtifact;
+  readonly hash: string;
+  readonly activatedAt: Date;
+}): Promise<boolean> {
+  // The winning INSERT and all fixture rows commit together. Concurrent
+  // workers wait on that conflict instead of replacing shared authority.
+  const inserted = await args.tx
+    .insert(connectorCatalogSyncState)
+    .values(args.syncState)
+    .onConflictDoNothing()
+    .returning();
+  if (inserted.length === 0) {
+    const [snapshot] = await args.tx
+      .select({ hash: connectorCatalogActiveSnapshot.catalogDigest })
+      .from(connectorCatalogActiveSnapshot)
+      .where(
+        and(
+          eq(connectorCatalogActiveSnapshot.sourceId, args.syncState.sourceId),
+          eq(
+            connectorCatalogActiveSnapshot.schemaVersion,
+            args.syncState.schemaVersion,
+          ),
+        ),
+      );
+    if (snapshot?.hash !== args.hash) {
+      throw new Error(
+        "Shared test catalog identity does not match the fixed fixture",
+      );
+    }
+    return false;
+  }
+  const { connectors, ...catalogHeader } = args.catalog;
+  await args.tx
+    .insert(connectorCatalogEntries)
+    .values(
+      connectors.map((connector) => {
+        return { hash: args.hash, slug: connector.slug, payload: connector };
+      }),
+    )
+    .onConflictDoNothing();
+  await args.tx
+    .insert(connectorCatalog)
+    .values({
+      schemaVersion: args.catalog.artifactSchemaVersion,
+      hash: args.hash,
+      catalogVersion: args.catalog.catalogVersion,
+      activatedAt: args.activatedAt,
+      catalogHeader,
+      entrySlugs: connectors
+        .map((connector) => {
+          return connector.slug;
+        })
+        .sort(),
+    })
+    .onConflictDoNothing();
+  return true;
+}
+
 export async function installApiTestConnectorCatalog(
   options: {
     readonly catalogVersion?: string;
@@ -160,71 +222,33 @@ export async function installApiTestConnectorCatalog(
   };
 
   await db.transaction(async (tx) => {
-    const syncStateInsert = tx.insert(connectorCatalogSyncState).values({
+    const syncState = {
       sourceId,
       schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
       ...syncStateValues,
-    });
+    };
     if (options.ifAbsent) {
-      // The winning INSERT and all fixture rows commit together. Concurrent
-      // workers wait on that conflict instead of replacing shared authority.
-      const inserted = await syncStateInsert.onConflictDoNothing().returning();
-      if (inserted.length === 0) {
-        const [snapshot] = await tx
-          .select({ hash: connectorCatalogActiveSnapshot.catalogDigest })
-          .from(connectorCatalogActiveSnapshot)
-          .where(
-            and(
-              eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-              eq(
-                connectorCatalogActiveSnapshot.schemaVersion,
-                SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-              ),
-            ),
-          );
-        if (snapshot?.hash !== catalogDigest) {
-          throw new Error(
-            "Shared test catalog identity does not match the fixed fixture",
-          );
-        }
+      const installed = await prepareSharedCatalogRows({
+        tx,
+        syncState,
+        catalog,
+        hash: catalogDigest,
+        activatedAt,
+      });
+      if (!installed) {
         return;
       }
-      const { connectors, ...catalogHeader } = catalog;
-      await tx
-        .insert(connectorCatalogEntries)
-        .values(
-          connectors.map((connector) => {
-            return {
-              hash: catalogDigest,
-              slug: connector.slug,
-              payload: connector,
-            };
-          }),
-        )
-        .onConflictDoNothing();
-      await tx
-        .insert(connectorCatalog)
-        .values({
-          schemaVersion: catalog.artifactSchemaVersion,
-          hash: catalogDigest,
-          catalogVersion,
-          activatedAt,
-          catalogHeader,
-          entrySlugs: connectors
-            .map((connector) => {
-              return connector.slug;
-            })
-            .sort(),
-        })
-        .onConflictDoNothing();
     } else {
-      await syncStateInsert.onConflictDoUpdate({
-        target: [
-          connectorCatalogSyncState.sourceId,
-          connectorCatalogSyncState.schemaVersion,
-        ],
-        set: syncStateValues,
-      });
+      await tx
+        .insert(connectorCatalogSyncState)
+        .values(syncState)
+        .onConflictDoUpdate({
+          target: [
+            connectorCatalogSyncState.sourceId,
+            connectorCatalogSyncState.schemaVersion,
+          ],
+          set: syncStateValues,
+        });
     }
     await tx
       .insert(connectorCatalogActiveSnapshot)
