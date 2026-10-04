@@ -154,7 +154,7 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
 
 fn assert_segment_partition(operations: &[Value]) -> TestResult {
     let startup = operations_named(operations, PI_STARTUP_ACTION);
-    let total = startup[0]["duration_ms"]
+    let total = startup.first().ok_or("missing startup operation")?["duration_ms"]
         .as_u64()
         .ok_or("missing startup duration")?;
     let segments: Vec<_> = operations
