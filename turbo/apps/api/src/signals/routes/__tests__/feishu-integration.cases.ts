@@ -518,11 +518,25 @@ function uploadedSkillVersion(firstCall: number): string {
   return version;
 }
 
-function ownFeishuRun(actor: ApiTestUser, runId: string) {
+function ownFeishuRun(
+  actor: ApiTestUser,
+  runId: string,
+  claimedSandboxToken?: () => string | undefined,
+) {
   let cancelled = false;
   const cancel = async () => {
     if (!cancelled) {
       await runsApi.requestCancelRun(actor, runId, [200]);
+      const sandboxToken = claimedSandboxToken?.();
+      if (sandboxToken !== undefined) {
+        // A claimed Run keeps its slot and thread recovery until the Runner
+        // acknowledges completion, even after public cancellation succeeds.
+        await webhooksApi.requestAgentComplete(
+          { runId, exitCode: 1 },
+          { authorization: `Bearer ${sandboxToken}` },
+          [200],
+        );
+      }
       await flushWaitUntilForTest();
       cancelled = true;
     }
@@ -1231,9 +1245,13 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     expect(response.status).toBe(200);
     await flushWaitUntilForTest();
     const run = await findRun(fixture.actor, prompt);
-    const cancel = ownFeishuRun(fixture.actor, run.id);
+    const claimedRun: { sandboxToken?: string } = {};
+    const cancel = ownFeishuRun(fixture.actor, run.id, () => {
+      return claimedRun.sandboxToken;
+    });
     await runsApi.heartbeatRunner(fixture.runnerGroup);
     const claim = await runsApi.claimRunnerJob(run.id);
+    claimedRun.sandboxToken = claim.sandboxToken;
     const source = requireValue(
       claim.connectorRuntimeTargets?.find((target) => {
         return (

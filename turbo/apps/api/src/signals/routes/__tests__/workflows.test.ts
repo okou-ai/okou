@@ -2621,6 +2621,13 @@ describe("workflows", () => {
         throw new Error("Expected the selected workflow archive mount");
       }
       await api.requestCancelRun(actor, run.runId, [200]);
+      // A claimed Run keeps the thread slot until its Runner acknowledges
+      // cancellation; finish that protocol before launching this Workflow again.
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
       await flushWaitUntilForTest();
       activeRuns.delete(run.runId);
       return mount;
