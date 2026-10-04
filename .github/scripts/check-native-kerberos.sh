@@ -37,7 +37,7 @@ done
   done
 } > "$receipt/platform.txt"
 cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
-  -p kerberos-worker --lib --test process --test cleanup_unknown --no-run \
+  -p kerberos-worker --lib --test process --test parent_death --test cleanup_unknown --no-run \
   --message-format=json-render-diagnostics > "$receipt/compiler.json"
 python3 - "$receipt" "$arch" "$runtime_profile" "$uid" <<'PY'
 import hashlib,json,subprocess,sys
@@ -47,12 +47,12 @@ for line in (receipt/'compiler.json').read_text().splitlines():
     event=json.loads(line)
     if event.get('reason')=='compiler-artifact' and event.get('executable') and event.get('profile',{}).get('test'):
         name=event['target']['name']
-        if name in ('kerberos_worker','process','cleanup_unknown'):
+        if name in ('kerberos_worker','process','parent_death','cleanup_unknown'):
             assert name not in executables
             executables[name]=event['executable']
     if event.get('reason')=='build-script-executed' and 'KERBEROS_WORKER_SHA256' in dict(event.get('env',[])):
         builds.append(event)
-assert set(executables)=={'kerberos_worker','process','cleanup_unknown'} and len(builds)==1
+assert set(executables)=={'kerberos_worker','process','parent_death','cleanup_unknown'} and len(builds)==1
 build=builds[0];env=dict(build['env']);binary=Path(build['out_dir'])/'native/kerberos-worker'
 assert env['KERBEROS_WORKER_TARGET']==f'{arch}-unknown-linux-musl'
 sha=hashlib.sha256(binary.read_bytes()).hexdigest();assert sha==env['KERBEROS_WORKER_SHA256']
@@ -66,7 +66,7 @@ assert 'INTERP' not in headers and '(NEEDED)' not in headers
 machine='AArch64' if arch=='aarch64' else 'Advanced Micro Devices X86-64';assert machine in headers
 (receipt/'elf.txt').write_text(headers)
 (receipt/'package.json').write_text(json.dumps({'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'worktreeDirty':bool(subprocess.check_output(['git','status','--porcelain'],text=True).strip()),'runtimeVerified':False,'runtimeProfile':runtime_profile,'runtimeUid':0 if runtime_profile=='privileged-synthetic' else uid,'ownerUid':uid,'ownerBootstrap':'not-checked','nativeTarget':env['KERBEROS_WORKER_TARGET'],'binarySha256':sha,'noticesSha256':notice_sha,'mitVersion':'1.22.2','mitSourceSha256':'3243ffbc8ea4d4ac22ddc7dd2a1dc54c57874c40648b60ff97009763554eaf13'},indent=2)+'\n')
-(receipt/'executables.txt').write_text('\n'.join(executables[name] for name in ('kerberos_worker','process','cleanup_unknown'))+'\n')
+(receipt/'executables.txt').write_text('\n'.join(executables[name] for name in ('kerberos_worker','process','parent_death','cleanup_unknown'))+'\n')
 PY
 # Always exercise the ORIGINAL owner's availability/refusal boundary, without
 # capabilities. Restricted Ubuntu/AppArmor may refuse before Ready; the test
