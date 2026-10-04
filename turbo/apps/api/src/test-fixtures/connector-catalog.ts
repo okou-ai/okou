@@ -156,6 +156,14 @@ async function prepareSharedCatalogRows(args: {
   return true;
 }
 
+function requireOwnedLegacyCatalogSource(sourceId: string): void {
+  if (sourceId === API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId) {
+    throw new Error(
+      "Legacy catalog mutation must own a separate source; the shared test catalog is immutable",
+    );
+  }
+}
+
 export async function installApiTestConnectorCatalog(
   options: {
     readonly catalogVersion?: string;
@@ -182,13 +190,8 @@ export async function installApiTestConnectorCatalog(
   const catalogDigest = sha256Digest(rawBytes);
   const catalogGzip = encodeConnectorCatalogSnapshot(rawBytes);
   const sourceId = options.sourceId ?? connectorCatalogSource().sourceId;
-  if (
-    !options.ifAbsent &&
-    sourceId === API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId
-  ) {
-    throw new Error(
-      "Legacy catalog mutation must own a separate source; the shared test catalog is immutable",
-    );
+  if (!options.ifAbsent) {
+    requireOwnedLegacyCatalogSource(sourceId);
   }
   const capability = connectorCatalogExecutableCapabilityState();
   const activatedAt = nowDate();
