@@ -3,9 +3,8 @@ import { command } from "ccstate";
 
 import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
-import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { readRunCancellationState } from "../services/run-cancellation-state.service";
+import { readRunCancellationState$ } from "../services/run-cancellation-state.service";
 import {
   getSandboxAuthForRun,
   unauthorizedRunMismatch,
@@ -18,8 +17,8 @@ const readCancellation$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!auth) {
     return unauthorizedRunMismatch;
   }
-  const body = await readRunCancellationState(
-    get(db$),
+  const body = await set(
+    readRunCancellationState$,
     auth,
     get(queryOf(runnersCancellationContract.get)),
     signal,

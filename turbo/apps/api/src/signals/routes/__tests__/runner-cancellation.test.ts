@@ -144,6 +144,60 @@ describe("Run cancellation reconciliation", () => {
     ]);
   });
 
+  it("reads a historical claim with both Runner identity attributes absent", async () => {
+    // Official claims now require a Runner identity. The existing historical
+    // fixture endpoint represents older rows that production can still read.
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    const runnerGroup = runs.configureRunnerGroup();
+    const state = setupApp({
+      context,
+      routes: testCronCleanupSandboxesStateRoutes,
+    })(testCronCleanupSandboxesStateContract);
+    const seeded = await accept(
+      state.action({
+        body: {
+          action: "seed-run",
+          status: "completed",
+          user_id: actor.userId,
+          org_id: actor.orgId,
+          runner_group: runnerGroup,
+        },
+      }),
+      [200],
+    );
+    const runId = String(seeded.body.run_id);
+    onTestFinished(async () => {
+      bdd.acceptAgentStorageWrites();
+      await bdd.requestDeleteAgent(
+        actor,
+        String(seeded.body.compose_id),
+        [204, 404],
+      );
+    });
+    const response = await accept(
+      client().get({
+        params: { runId },
+        headers: {
+          authorization: `Bearer ${runs.sandboxTokenForRun(actor, runId)}`,
+        },
+        query: {
+          runnerGroup,
+          runnerId: randomUUID(),
+          heartbeatGeneration: 5_000_000_000,
+        },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({
+      protocolVersion: 1,
+      runId,
+      state: "present",
+      mode: null,
+    });
+  });
+
   it("recovers committed cooperative cancellation after publication fails", async () => {
     const f = await fixture();
     const healthy = await read(f);
@@ -198,6 +252,35 @@ describe("Run cancellation reconciliation", () => {
       });
     }
     expect((await read(f)).body).toMatchObject({
+      state: "present",
+      mode: null,
+    });
+  });
+
+  it("keeps a present Run unavailable to another signed user or organization", async () => {
+    const f = await fixture();
+    for (const actor of [
+      f.bdd.user({ orgId: f.actor.orgId }),
+      f.bdd.user({ userId: f.actor.userId }),
+    ]) {
+      const token = f.runs.sandboxTokenForRun(actor, f.runId);
+      const response = await accept(
+        client().get({
+          params: { runId: f.runId },
+          headers: { authorization: `Bearer ${token}` },
+          query: f.query,
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({
+        protocolVersion: 1,
+        runId: f.runId,
+        state: "unavailable",
+      });
+    }
+    expect((await read(f)).body).toStrictEqual({
+      protocolVersion: 1,
+      runId: f.runId,
       state: "present",
       mode: null,
     });
