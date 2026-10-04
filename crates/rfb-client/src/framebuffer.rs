@@ -119,6 +119,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Authenticated<S> {
         sharing_mode: SharingMode,
         deadline: Instant,
     ) -> Result<FramebufferConnection<S>, Error> {
+        let deadline = self
+            .stream
+            .authentication_expires_at()
+            .map_or(deadline, |bound| bound.min(deadline));
         bounded(deadline, initialize(self.into_stream(), sharing_mode)).await
     }
 }
@@ -134,6 +138,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> FramebufferConnection<S> {
     /// successful result is rechecked against that deadline. Dropping this future
     /// drops the connection and all buffers, including in-progress decoder scratch.
     pub async fn update(self, incremental: bool, deadline: Instant) -> Result<Self, Error> {
+        let deadline = self
+            .stream
+            .authentication_expires_at()
+            .map_or(deadline, |bound| bound.min(deadline));
         bounded(deadline, self.update_inner(incremental)).await
     }
 

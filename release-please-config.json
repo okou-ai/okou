@@ -1,222 +1,224 @@
 {
-    "changelog-sections": [
-        {"type": "feat", "section": "Features"},
-        {"type": "fix", "section": "Bug Fixes"},
-        {"type": "deps", "section": "Dependencies"},
-        {"type": "ci", "section": "CI"},
-        {"type": "chore", "hidden": true},
-        {"type": "docs", "section": "Documentation"},
-        {"type": "style", "hidden": true},
-        {"type": "refactor", "section": "Refactoring"},
-        {"type": "perf", "section": "Performance Improvements"},
-        {"type": "test", "hidden": true},
-        {"type": "build", "hidden": true},
-        {"type": "revert", "hidden": true}
-    ],
-    "commit-batch-size": 100,
-    "packages": {
-        "ios": {
-            "release-type": "simple",
-            "component": "ios",
-            "initial-version": "0.1.1",
-            "extra-files": [
-                {"type": "generic", "path": "Config/Shared.xcconfig"}
-            ]
-        },
-        "turbo/packages/core": {
-            "release-type": "node"
-        },
-        "turbo/apps/cli": {
-            "release-type": "node",
-            "component": "cli"
-        },
-        "turbo/apps/api": {
-            "release-type": "node"
-        },
-        "turbo/apps/platform": {
-            "release-type": "node"
-        },
-        "turbo/apps/app-worker": {
-            "release-type": "node"
-        },
-        "turbo/apps/desktop": {
-            "release-type": "node",
-            "component": "desktop"
-        },
-        "turbo/apps/host-worker": {
-            "release-type": "node"
-        },
-        "turbo/packages/api-contracts": {
-            "release-type": "node",
-            "skip-changelog": true
-        },
-        "turbo/packages/connectors": {
-            "release-type": "node",
-            "skip-changelog": true
-        },
-        "turbo/packages/db": {
-            "release-type": "node",
-            "skip-changelog": true
-        },
-        "turbo/packages/pi-agent-runtime": {
-            "release-type": "node",
-            "skip-changelog": true
-        },
-        "turbo/packages/ui": {
-            "release-type": "node",
-            "skip-changelog": true
-        },
-        "crates/ably-subscriber": {
-            "release-type": "rust"
-        },
-        "crates/api-contracts": {
-            "release-type": "rust",
-            "component": "api-contracts-rs",
-            "skip-changelog": true
-        },
-        "crates/nbd-cow": {
-            "release-type": "rust"
-        },
-        "crates/process-control-ipc": {
-            "release-type": "rust"
-        },
-        "crates/process-launch": {
-            "release-type": "rust"
-        },
-        "crates/guest-agent": {
-            "release-type": "rust"
-        },
-        "crates/guest-contracts": {
-            "release-type": "rust"
-        },
-        "crates/session-history-selector": {
-            "release-type": "rust"
-        },
-        "crates/guest-tool-exec": {
-            "release-type": "rust"
-        },
-        "crates/runner-rpc-client": {
-            "release-type": "rust"
-        },
-        "crates/runner-rpc-proto": {
-            "release-type": "rust"
-        },
-        "crates/rfb-client": {
-            "release-type": "rust",
-            "skip-changelog": true
-        },
-        "crates/guest-telemetry": {
-            "release-type": "rust"
-        },
-        "crates/guest-storage-apply": {
-            "release-type": "rust"
-        },
-        "crates/guest-init": {
-            "release-type": "rust"
-        },
-        "crates/claude-mock": {
-            "release-type": "rust"
-        },
-        "crates/codex-mock": {
-            "release-type": "rust"
-        },
-        "crates/guest-state-restore": {
-            "release-type": "rust"
-        },
-        "crates/guest-write-file": {
-            "release-type": "rust"
-        },
-        "crates/guest-workspace-mount": {
-            "release-type": "rust"
-        },
-        "crates/runner": {
-            "release-type": "rust",
-            "component": "runner-rs"
-        },
-        "crates/runner-executor": {
-            "release-type": "rust"
-        },
-        "crates/runner-host": {
-            "release-type": "rust"
-        },
-        "crates/runner-lifecycle": {
-            "release-type": "rust"
-        },
-        "crates/runner-network": {
-            "release-type": "rust"
-        },
-        "crates/runner-provider": {
-            "release-type": "rust"
-        },
-        "crates/runner-remote": {
-            "release-type": "rust"
-        },
-        "crates/runner-storage": {
-            "release-type": "rust"
-        },
-        "crates/runner-supervisor": {
-            "release-type": "rust"
-        },
-        "crates/runner-types": {
-            "release-type": "rust"
-        },
-        "crates/sandbox": {
-            "release-type": "rust"
-        },
-        "crates/sandbox-firecracker": {
-            "release-type": "rust"
-        },
-        "crates/sandbox-mock": {
-            "release-type": "rust",
-            "skip-changelog": true
-        },
-        "crates/shell-quote": {
-            "release-type": "rust",
-            "skip-changelog": true
-        },
-        "crates/kerberos-credentials": {
-            "release-type": "rust",
-            "skip-changelog": true
-        },
-        "crates/linux-mountinfo": {
-            "release-type": "rust",
-            "skip-changelog": true
-        },
-        "crates/tracing-test-support": {
-            "release-type": "rust",
-            "skip-changelog": true
-        },
-        "crates/guest-control-server": {
-            "release-type": "rust"
-        },
-        "crates/guest-control-client": {
-            "release-type": "rust"
-        },
-        "crates/guest-control-proto": {
-            "release-type": "rust"
-        },
-        "crates/guest-control-tests": {
-            "release-type": "rust"
-        }
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "deps", "section": "Dependencies" },
+    { "type": "ci", "section": "CI" },
+    { "type": "chore", "hidden": true },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "style", "hidden": true },
+    { "type": "refactor", "section": "Refactoring" },
+    { "type": "perf", "section": "Performance Improvements" },
+    { "type": "test", "hidden": true },
+    { "type": "build", "hidden": true },
+    { "type": "revert", "hidden": true }
+  ],
+  "commit-batch-size": 100,
+  "packages": {
+    "ios": {
+      "release-type": "simple",
+      "component": "ios",
+      "initial-version": "0.1.1",
+      "extra-files": [{ "type": "generic", "path": "Config/Shared.xcconfig" }]
     },
-    "plugins": [
+    "turbo/packages/core": {
+      "release-type": "node"
+    },
+    "turbo/apps/cli": {
+      "release-type": "node",
+      "component": "cli"
+    },
+    "turbo/apps/api": {
+      "release-type": "node"
+    },
+    "turbo/apps/platform": {
+      "release-type": "node"
+    },
+    "turbo/apps/app-worker": {
+      "release-type": "node"
+    },
+    "turbo/apps/desktop": {
+      "release-type": "node",
+      "component": "desktop"
+    },
+    "turbo/apps/host-worker": {
+      "release-type": "node"
+    },
+    "turbo/packages/api-contracts": {
+      "release-type": "node",
+      "skip-changelog": true
+    },
+    "turbo/packages/connectors": {
+      "release-type": "node",
+      "skip-changelog": true
+    },
+    "turbo/packages/db": {
+      "release-type": "node",
+      "skip-changelog": true
+    },
+    "turbo/packages/pi-agent-runtime": {
+      "release-type": "node",
+      "skip-changelog": true
+    },
+    "turbo/packages/ui": {
+      "release-type": "node",
+      "skip-changelog": true
+    },
+    "crates/ably-subscriber": {
+      "release-type": "rust"
+    },
+    "crates/api-contracts": {
+      "release-type": "rust",
+      "component": "api-contracts-rs",
+      "skip-changelog": true
+    },
+    "crates/nbd-cow": {
+      "release-type": "rust"
+    },
+    "crates/process-control-ipc": {
+      "release-type": "rust"
+    },
+    "crates/process-launch": {
+      "release-type": "rust"
+    },
+    "crates/guest-agent": {
+      "release-type": "rust"
+    },
+    "crates/guest-contracts": {
+      "release-type": "rust"
+    },
+    "crates/session-history-selector": {
+      "release-type": "rust"
+    },
+    "crates/guest-tool-exec": {
+      "release-type": "rust"
+    },
+    "crates/runner-rpc-client": {
+      "release-type": "rust"
+    },
+    "crates/runner-rpc-proto": {
+      "release-type": "rust"
+    },
+    "crates/rfb-client": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/guest-telemetry": {
+      "release-type": "rust"
+    },
+    "crates/guest-storage-apply": {
+      "release-type": "rust"
+    },
+    "crates/guest-init": {
+      "release-type": "rust"
+    },
+    "crates/claude-mock": {
+      "release-type": "rust"
+    },
+    "crates/codex-mock": {
+      "release-type": "rust"
+    },
+    "crates/guest-state-restore": {
+      "release-type": "rust"
+    },
+    "crates/guest-write-file": {
+      "release-type": "rust"
+    },
+    "crates/guest-workspace-mount": {
+      "release-type": "rust"
+    },
+    "crates/runner": {
+      "release-type": "rust",
+      "component": "runner-rs"
+    },
+    "crates/runner-executor": {
+      "release-type": "rust"
+    },
+    "crates/runner-host": {
+      "release-type": "rust"
+    },
+    "crates/runner-lifecycle": {
+      "release-type": "rust"
+    },
+    "crates/runner-network": {
+      "release-type": "rust"
+    },
+    "crates/runner-provider": {
+      "release-type": "rust"
+    },
+    "crates/runner-remote": {
+      "release-type": "rust"
+    },
+    "crates/runner-storage": {
+      "release-type": "rust"
+    },
+    "crates/runner-supervisor": {
+      "release-type": "rust"
+    },
+    "crates/runner-types": {
+      "release-type": "rust"
+    },
+    "crates/sandbox": {
+      "release-type": "rust"
+    },
+    "crates/sandbox-firecracker": {
+      "release-type": "rust"
+    },
+    "crates/sandbox-mock": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/shell-quote": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/kerberos-credentials": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/kerberos-worker": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/linux-mountinfo": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/tracing-test-support": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
+    "crates/guest-control-server": {
+      "release-type": "rust"
+    },
+    "crates/guest-control-client": {
+      "release-type": "rust"
+    },
+    "crates/guest-control-proto": {
+      "release-type": "rust"
+    },
+    "crates/guest-control-tests": {
+      "release-type": "rust"
+    }
+  },
+  "plugins": [
+    {
+      "type": "node-workspace",
+      "alwaysLinkLocal": true
+    },
+    {
+      "type": "cargo-workspace",
+      "cargoWorkspacePath": "crates"
+    },
+    {
+      "type": "release-dependencies",
+      "rules": [
         {
-            "type": "node-workspace",
-            "alwaysLinkLocal": true
-        },
-        {
-            "type": "cargo-workspace",
-            "cargoWorkspacePath": "crates"
-        },
-        {
-            "type": "release-dependencies",
-            "rules": [
-                {
-                    "source": "turbo/apps/cli",
-                    "dependent": "crates/runner",
-                    "minimumBump": "patch"
-                }
-            ]
+          "source": "turbo/apps/cli",
+          "dependent": "crates/runner",
+          "minimumBump": "patch"
         }
-    ]
+      ]
+    }
+  ]
 }
