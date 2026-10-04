@@ -12129,7 +12129,7 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const callbackUrl = "https://callback.example/cancellation-recovery";
-    const callbackSecret = "bdd-http-callback-secret";
+    const callbackSecret = randomUUID();
     mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "bdd-http-bypass");
     const callbackRequests: Request[] = [];
     server.use(

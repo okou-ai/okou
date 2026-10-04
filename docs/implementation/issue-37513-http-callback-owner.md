@@ -138,3 +138,16 @@ passes affected formatting/ESLint, normal API Oxlint including import-cycle and
 Knip. The real executable commit-msg hook accepts the Conventional message;
 full pre-commit hooks and exact-head natural CI remain required. No local
 Vitest/devserver or D2 heavy-check deferral was used.
+
+The first PR head `4ee4a42a33aec5992d215724e34c12533817beb1` subsequently
+failed natural Semgrep run `37206705310`, job `111449292684`: one new blocking
+`javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key` finding
+from the synthetic literal test key passed to Node `createHmac`. This is a
+security CI regression, not evidence of a production credential leak or an
+infra flake; the earlier GraphQL HTTP 502 remains an observation failure.
+The bounded repair generates a fresh test-owned key with `randomUUID()` and
+passes the same value to the existing fixture and independent HMAC assertion.
+All provider headers/payload/count/cancellation assertions remain, and no
+production owner or scanner rule/config/baseline is modified. The repaired
+head requires its own natural CI and independent review; the old run is not
+rerun or reclassified as a pass.
