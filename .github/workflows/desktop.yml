@@ -254,7 +254,7 @@ jobs:
           name: okou-desktop-macos-arm64-default-unsigned
           path: turbo/${{ steps.build-prod.outputs.path }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       # The shipping configuration: the same product selected explicitly,
       # through the runtime config that the release build bakes in.
@@ -404,7 +404,7 @@ jobs:
           name: okou-desktop-macos-arm64-unsigned
           path: turbo/${{ steps.build-okou-prod.outputs.path }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       - name: Build unsigned PR preview macOS artifact
         id: build-preview
@@ -570,7 +570,7 @@ jobs:
           name: okou-desktop-macos-arm64-preview-unsigned
           path: turbo/${{ steps.build-preview.outputs.path }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       - name: Upload Desktop smoke verification evidence
         continue-on-error: true
