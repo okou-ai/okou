@@ -316,6 +316,26 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     ).resolves.toStrictEqual([stale]);
   });
 
+  it("requires an organization and leaves foreign-user, cross-org and unknown-Agent requests without effects", async () => {
+    const fixture = await createUnreadAgentThreads(1);
+    const before = await readCursors(fixture);
+    const peer = bdd.user({ orgId: fixture.orgId });
+    const crossOrg = bdd.user({ userId: fixture.actor.userId });
+    const orgless = bdd.user({ userId: fixture.actor.userId, orgId: null });
+    clearPublishedNotifications();
+
+    await chat.requestMarkAgentThreadsRead(orgless, fixture.agentId, [401]);
+    await chat.requestMarkAgentThreadsRead(peer, fixture.agentId, [204]);
+    await chat.requestMarkAgentThreadsRead(crossOrg, fixture.agentId, [204]);
+    await chat.requestMarkAgentThreadsRead(fixture.actor, randomUUID(), [204]);
+
+    await expect(readCursors(fixture)).resolves.toStrictEqual(before);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(fixture.threadIds),
+    );
+    expect(publishedReadCursorPayloads()).toStrictEqual([]);
+  });
+
   it("leaves another Agent's unread threads untouched", async () => {
     const fixture = await createUnreadAgentThreads(1);
     const other = await createUnreadAgentThreads(1);
