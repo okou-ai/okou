@@ -267,14 +267,25 @@ describe("registry resource download", () => {
     });
   });
 
-  it("rejects a reverse-template digest that was never published", () => {
-    expect(
-      resolvePrivateRegistryResourceArchive(
-        "skill:presentation-reverse-template",
-        "0".repeat(64),
-        "4b2bb4ee2a041d57a2fe9ba07b796a690c6dbe130c6e232fa98364b6ed6aeb11",
-      ),
-    ).toBeUndefined();
+  it("rejects a reverse-template digest that was never published", async () => {
+    const response = await accept(
+      client().download({
+        headers: authHeaders(),
+        query: {
+          id: "skill:presentation-reverse-template",
+          expectedSha256: "0".repeat(64),
+        },
+      }),
+      [404],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "NOT_FOUND",
+        message:
+          'Registry resource "skill:presentation-reverse-template" is not private-pullable',
+      },
+    });
   });
 
   it("downloads current website template archives", async () => {
