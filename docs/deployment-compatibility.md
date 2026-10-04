@@ -72,8 +72,10 @@ parameters, fragments or userinfo. Unknown CDN/Worker/custom endpoints and local
 paths contribute no inferred key. Template keys use the SDK's key construction.
 
 Runner Start's existing formatter tees INFO to stderr and the local rolling
-Runner file (seven daily files retained); other Runner commands use stderr.
-These events do not match the existing Axiom ingest filter. No new key fields
+Runner file, configured for daily rotation and seven-file retention per release
+prefix. This does not impose a global seven-day retention limit on earlier-release
+files or journal entries; other Runner commands use stderr. These events do not
+match the existing Axiom ingest filter. No new key fields
 are added to WARN/ERROR, Guest logs, addon network logs, sandbox-operation
 telemetry, API logs/contracts, Platform responses or metric labels. Existing URL
 and error-text policies are unchanged; this is not universal redaction.
@@ -81,9 +83,10 @@ and error-text policies are unchanged; this is not universal redaction.
 Keys can contain sensitive tenant identifiers or paths. Local file and journal
 access and retention remain relevant; omitting credentials does not make keys
 public. Missing fields do not imply no R2 download, and existing log-free paths
-remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration,
-Web floor, production activation or deployment is required or included. Runner
-rollback removes the local attributes only, without changing download behavior.
+remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration or
+Web floor is needed. A normal Runner rollout is needed to observe these fields;
+production activation or deployment is not included in this PR. Runner rollback
+removes the local attributes only, without changing download behavior.
 
 ## File transcription and Seedream 5 retirement
 
