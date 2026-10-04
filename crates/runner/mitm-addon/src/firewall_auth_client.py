@@ -271,6 +271,7 @@ class FirewallAuthSuccess:
     expires_at: int | float | None = None
     refreshed_connectors: list[str] = field(default_factory=list)
     refreshed_secrets: list[str] = field(default_factory=list)
+    cache_expires_at: int | float | None = None
 
 
 def reset_transport_state_for_tests() -> None:
@@ -865,6 +866,15 @@ def _parse_expires_at(decoded: dict[object, object]) -> int | float | None:
     return value
 
 
+def _parse_cache_expires_at(decoded: dict[object, object]) -> int | float | None:
+    value = decoded.get("cacheExpiresAt")
+    if value is None:
+        return None
+    if not is_supported_expiry(value):
+        raise _malformed_firewall_auth_success("cacheExpiresAt must be a finite number or null")
+    return value
+
+
 def _parse_optional_aws_sigv4_credentials(
     decoded: dict[object, object],
 ) -> AwsSigV4Credentials | None:
@@ -901,6 +911,7 @@ def _parse_firewall_auth_success(
 
     headers = _parse_string_map(decoded_map["headers"], "headers")
     expires_at = _parse_expires_at(decoded_map)
+    cache_expires_at = _parse_cache_expires_at(decoded_map)
     resolved_secrets = _parse_required_string_list(decoded_map, "resolvedSecrets")
     refreshed_connectors = _parse_required_string_list(decoded_map, "refreshedConnectors")
     refreshed_secrets = _parse_required_string_list(decoded_map, "refreshedSecrets")
@@ -942,6 +953,7 @@ def _parse_firewall_auth_success(
         expires_at=expires_at,
         refreshed_connectors=refreshed_connectors,
         refreshed_secrets=refreshed_secrets,
+        cache_expires_at=cache_expires_at,
     )
 
 

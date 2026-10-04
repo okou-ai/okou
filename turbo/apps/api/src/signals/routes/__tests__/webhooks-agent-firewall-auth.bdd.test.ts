@@ -696,6 +696,12 @@ describe("FW-3: billable firewall lease", () => {
     expect(leaseBound.body.expiresAt ?? 0).toBeLessThanOrEqual(
       leaseBefore + 35,
     );
+    expect(leaseBound.body.cacheExpiresAt).toBeGreaterThanOrEqual(
+      leaseBefore + 3535,
+    );
+    expect(leaseBound.body.cacheExpiresAt).toBeLessThanOrEqual(
+      leaseBefore + 3545,
+    );
 
     // A short-lived refreshed token undercuts the lease and becomes the
     // effective expiry.
@@ -731,6 +737,10 @@ describe("FW-3: billable firewall lease", () => {
     expect(tokenBound.body.expiresAt ?? 0).toBeLessThanOrEqual(
       tokenBefore + 10,
     );
+    expect(tokenBound.body.cacheExpiresAt).toBe(
+      (tokenBound.body.expiresAt ?? 0) - 60,
+    );
+    expect(tokenBound.body.cacheExpiresAt).toBeLessThan(tokenBefore);
   });
 
   it("continues billable firewall auth after subscription deletion when credits remain", async () => {
@@ -931,6 +941,9 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     expect(refreshed.body.headers.Authorization).toBe("Bearer fresh-no-expiry");
     expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 800);
     expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 1000);
+    expect(refreshed.body.cacheExpiresAt).toBe(
+      (refreshed.body.expiresAt ?? 0) - 60,
+    );
   });
 
   it("re-runs refresh for a current connector when forceRefresh is set", async () => {
@@ -969,6 +982,9 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(refreshed.body.headers.Authorization).toBe("Bearer forced-access");
     expect(refreshed.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
+    expect(refreshed.body.cacheExpiresAt).toBe(
+      (refreshed.body.expiresAt ?? 0) - 60,
+    );
   });
 
   it.each([
@@ -1299,6 +1315,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(synced.body.headers.Authorization).toBe("Bearer db-access");
     expect(synced.body.refreshedConnectors).toStrictEqual([]);
+    expect(synced.body.cacheExpiresAt).toBe((synced.body.expiresAt ?? 0) - 60);
   });
 
   it("keeps multi-secret connector auth on one replacement snapshot", async () => {

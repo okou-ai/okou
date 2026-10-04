@@ -546,6 +546,9 @@ const firewallAuthResponseSchema = z.object({
   // normal source; billable firewall auth can shorten it to force credit
   // re-authorization. Null means non-expiring only for non-billable auth.
   expiresAt: z.number().nullable(),
+  // Optional earlier cache-reuse deadline from the API's proactive token
+  // refresh policy. A past deadline does not invalidate a fresh response.
+  cacheExpiresAt: z.number().nullable().optional(),
   resolvedSecrets: z.array(z.string()),
   refreshedConnectors: z.array(z.string()),
   refreshedSecrets: z.array(z.string()),

@@ -1,5 +1,33 @@
 # Deployment Compatibility
 
+## Firewall auth proactive cache deadline (#37670)
+
+Firewall auth success may include `cacheExpiresAt`, an earlier Unix-second
+cache-reuse cutoff derived from the API's existing OAuth refresh buffer.
+`expiresAt` retains its credential and billable credit-authorization bound.
+The addon checks both for cache reuse, but validates a freshly resolved billable
+response against `expiresAt`. A valid short-lived token whose cache cutoff is
+already past can serve its initiating and coalesced callers without enabling a
+later cache hit. Malformed supplied cutoffs fail closed; a null/absent cutoff
+adds no bound. Non-refreshable/custom/automatic paths need no new hint.
+
+New API/new Runner stops cache reuse at the proactive refresh boundary. New
+API/old Runner ignores the additive field and retains the prior full-expiry
+cache window. Old API/new Runner uses the existing `expiresAt` contract and
+retains that window. API and Runner deploy independently, so the full correction
+requires both serving components; source/CI acceptance is not deployment
+verification. Optional-field support must remain while supported API writers or
+rollback targets can omit it, and because current no-hint auth paths legitimately
+omit it. No persisted state, Run snapshot or database migration is involved.
+
+Rollback restores the prior cache timing without changing stored credentials
+or authorization. This correction does not invalidate other Runs on arbitrary
+forced rotation, serialize concurrent refreshes, replay provider requests, or
+change the accepted rare rotating-token reconnect tradeoff. Parent #37668 stays
+open for incident request-level attribution and serving-version verification;
+synthetic cache coverage does not establish Notion old-token invalidation or
+resolve its reported 401s.
+
 ## File transcription and Seedream 5 retirement
 
 - Remove `okou video transcribe` and `/api/voice-io/stt`; old CLIs receive
