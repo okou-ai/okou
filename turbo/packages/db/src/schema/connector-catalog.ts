@@ -37,7 +37,9 @@ export const connectorCatalogEntries = pgTable(
     slug: text("slug").notNull(),
     payload: jsonb("payload").$type<JsonObject>().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.hash, table.slug] })],
+  (table) => {
+    return [primaryKey({ columns: [table.hash, table.slug] })];
+  },
 );
 
 export const CONNECTOR_CATALOG_ATTEMPT_OUTCOMES = [

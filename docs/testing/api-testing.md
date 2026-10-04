@@ -171,13 +171,26 @@ sockets/streams, detached work, and temporary files. Such cleanup bounds
 residue and resource lifetime; it must not delete, overwrite, or restore
 pre-existing shared state to make an assertion pass.
 
-Connector catalog state is not part of the default API test environment. Files
-that exercise built-in connectors, connector-backed workflows, catalog reads,
-or firewall authorization opt in with
-`testContext({ connectorCatalog: true })`. This installs the complete accepted
-test catalog once for that file and restores provider configuration before each
-test. Do not enable it for unrelated route tests or create a smaller implicit
-global catalog.
+API test startup idempotently installs one complete fixed connector catalog.
+`src/__tests__/setup.ts` selects its fixed legacy source and restores provider
+configuration before each case. Ordinary business tests use `testContext()`;
+they must not install, rotate, mutate, or delete catalog authority. Users,
+organizations, accounts, credential storage and encrypted values remain
+case-owned. Concurrent workers share the same committed fixture: a losing
+initialization INSERT never replaces it.
+
+Legacy catalog corruption, compatibility-evaluation and identity-rotation cases
+remain while those production mechanisms are active (#26/#28). Those cases own
+an explicitly separate legacy source, never the shared fixture. The legacy
+source module is not removed by the additive schema PR.
+
+`connector-catalog-immutable.test.ts` is the sole PGlite catalog lifecycle entry.
+Its `api-immutable-catalog` Vitest project does not run shared real-DB setup;
+each implemented case will own a fresh in-process database and close it at
+teardown. File-level lint exceptions are confined to that mechanism file.
+N1–N5 are currently TODO, not passing acceptance tests. Subsequent sync/reader
+PRs must implement them through their real entry points. All ordinary API tests
+continue using real PostgreSQL. The new tables have no production reader yet.
 
 Do not hold advisory locks, inspect `pg_locks`, or install internal admission
 gates to construct or assert an API scenario. Exercise concurrent requests and
