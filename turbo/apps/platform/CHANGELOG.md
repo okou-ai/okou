@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.991.5](https://github.com/okou-ai/okou/compare/app-v0.991.4...app-v0.991.5) (2026-10-04)
+
+
+### Bug Fixes
+
+* **app:** normalize slack icon size in onboarding ([#37676](https://github.com/okou-ai/okou/issues/37676)) ([0ffd6a2](https://github.com/okou-ai/okou/commit/0ffd6a2ee15480bfecbd7b4777a3556464733d7a))
+
 ## [0.991.4](https://github.com/okou-ai/okou/compare/app-v0.991.3...app-v0.991.4) (2026-10-03)
 
 

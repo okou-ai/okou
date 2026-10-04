@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.103.4"
+version = "0.104.0"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.219.17"
+version = "0.219.18"
 dependencies = [
  "api-contracts",
  "async-trait",

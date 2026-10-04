@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.104.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.4...guest-agent-v0.104.0) (2026-10-04)
+
+
+### Features
+
+* **cli:** observe pi startup without changing launch behavior ([#37663](https://github.com/okou-ai/okou/issues/37663)) ([8d86ffc](https://github.com/okou-ai/okou/commit/8d86ffcc10b0af36c5bf6452ada0fd8ffe60f1ce))
+
 ## [0.103.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.3...guest-agent-v0.103.4) (2026-10-03)
 
 

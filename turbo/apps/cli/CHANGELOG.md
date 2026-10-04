@@ -1,5 +1,19 @@
 # Changelog
 
+## [9.378.0](https://github.com/okou-ai/okou/compare/cli-v9.377.0...cli-v9.378.0) (2026-10-04)
+
+
+### Features
+
+* **cli:** observe pi startup without changing launch behavior ([#37663](https://github.com/okou-ai/okou/issues/37663)) ([8d86ffc](https://github.com/okou-ai/okou/commit/8d86ffcc10b0af36c5bf6452ada0fd8ffe60f1ce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/pi-agent-runtime bumped to 1.46.0
+
 ## [9.377.0](https://github.com/okou-ai/okou/compare/cli-v9.376.2...cli-v9.377.0) (2026-10-03)
 
 
