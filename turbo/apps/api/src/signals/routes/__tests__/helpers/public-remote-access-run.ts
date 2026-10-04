@@ -129,7 +129,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
           body: {
             kind: "event",
             eventType: "webhook-received",
-            enabled: false,
+            enabled: true,
           },
         }),
         [201],
