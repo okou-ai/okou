@@ -8,6 +8,7 @@ import { activeRoute$ } from "./active-route.ts";
 import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyArchived$ } from "./chat-page/chat-thread-only-archived.ts";
+import { chatThreadOnlyMuted$ } from "./chat-page/chat-thread-only-muted.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
   chatThreadMetaMap$,
@@ -100,6 +101,7 @@ export interface ChatThreadListSignals {
 interface ChatThreadListFilter {
   readonly archiveEnabled: boolean;
   readonly onlyArchived: boolean;
+  readonly onlyMuted: boolean;
 }
 
 function sortChatThreads(threads: EventDrivenChatThread[]) {
@@ -135,6 +137,9 @@ function createChatThreadListSignals(
   });
   const threads$ = computed((get): EventDrivenChatThread[] => {
     return get(allThreads$).filter((thread) => {
+      if (filter.onlyMuted) {
+        return thread.muted;
+      }
       if (!filter.archiveEnabled) {
         return true;
       }
@@ -159,7 +164,7 @@ function createChatThreadListSignals(
       return threadId ? get(threadIds$).includes(threadId) : false;
     }),
     hasHiddenArchivedThreads$: computed((get): boolean => {
-      if (!filter.archiveEnabled || filter.onlyArchived) {
+      if (!filter.archiveEnabled || filter.onlyArchived || filter.onlyMuted) {
         return false;
       }
       return get(allThreads$).some((thread) => {
@@ -182,6 +187,7 @@ export const currentChatThreadListSignals$ = computed(
     return createChatThreadListSignals(agentId, {
       archiveEnabled,
       onlyArchived,
+      onlyMuted: get(chatThreadOnlyMuted$),
     });
   },
 );

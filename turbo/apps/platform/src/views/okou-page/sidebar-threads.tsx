@@ -80,6 +80,7 @@ import {
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
+import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
 import {
   selectChatThreadFilter$,
@@ -933,12 +934,25 @@ function ChatThreads({
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
+  const mutedOnly = useGet(chatThreadOnlyMuted$);
   const threadCount = useGet(listSignals.count$);
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
 
   if (threadCount === 0) {
+    if (mutedOnly) {
+      return (
+        <div className="w-full">
+          <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
+            {t(($) => {
+              return $.chat.sidebar.noMuted;
+            })}
+          </p>
+          <ShowAllChatsRow />
+        </div>
+      );
+    }
     if (archiveEnabled && archivedOnly) {
       return (
         <div className="w-full">
@@ -1063,6 +1077,9 @@ function ChatThreadFilterMenuItems() {
   const { t } = useTranslation();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
+  const mutedOnly = useGet(chatThreadOnlyMuted$);
+  const muteEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
   const selectFilter = useSelectChatThreadFilter();
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
@@ -1076,7 +1093,7 @@ function ChatThreadFilterMenuItems() {
       >
         <Check
           size={16}
-          className={`mr-2 ${unreadOnly || archivedOnly ? "invisible" : ""}`}
+          className={`mr-2 ${unreadOnly || archivedOnly || mutedOnly ? "invisible" : ""}`}
         />
         {t(($) => {
           return $.chat.sidebar.allChats;
@@ -1110,6 +1127,18 @@ function ChatThreadFilterMenuItems() {
           />
           {t(($) => {
             return $.chat.sidebar.archived;
+          })}
+        </DropdownMenuItem>
+      ) : null}
+      {muteEnabled ? (
+        <DropdownMenuItem
+          onClick={() => {
+            selectFilter("muted");
+          }}
+        >
+          <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
+          {t(($) => {
+            return $.chat.sidebar.muted;
           })}
         </DropdownMenuItem>
       ) : null}

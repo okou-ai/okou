@@ -2214,6 +2214,7 @@
       "muted": "En sourdine",
       "newChatWith": "Nouvelle discussion avec {{agentName}}",
       "noArchived": "Aucune discussion archivée",
+      "noMuted": "Aucune discussion en sourdine",
       "noUnread": "Aucune discussion non lue",
       "openChatMenu": "Ouvrir le menu de discussion",
       "openListMenu": "Ouvrir le menu de la liste de discussion",

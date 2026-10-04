@@ -2158,6 +2158,7 @@
       "muted": "ミュート中",
       "newChatWith": "{{agentName}} との新しいチャット",
       "noArchived": "アーカイブ済みのチャットはありません",
+      "noMuted": "ミュート中のチャットはありません",
       "noUnread": "未読のチャットはありません",
       "openChatMenu": "チャットメニューを開く",
       "openListMenu": "チャットリストメニューを開く",
