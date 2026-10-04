@@ -95,7 +95,6 @@ export async function undeliveredChatCallbackIdForRun(
 }
 
 interface DispatchInternalRunCallbackInput {
-  readonly db: Db;
   readonly callback: CallbackRecord;
   readonly runId: string;
   readonly status: TerminalCallbackStatus;
@@ -191,13 +190,61 @@ function resolveCallbackUrl(url: string): string {
     : url;
 }
 
+type InternalCallbackDeliveryStage =
+  | { readonly stage: "attempt-started" }
+  | { readonly stage: "delivered" }
+  | { readonly stage: "failed"; readonly error: string };
+
+/** Own only internal delivery bookkeeping, not callback dispatch or recovery. */
+const recordInternalCallbackDelivery$ = command(
+  async (
+    { set },
+    callbackId: string,
+    delivery: InternalCallbackDeliveryStage,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    switch (delivery.stage) {
+      case "attempt-started": {
+        await db
+          .update(agentRunCallbacks)
+          .set({ attempts: 1, lastAttemptAt: nowDate() })
+          .where(eq(agentRunCallbacks.id, callbackId));
+        signal.throwIfAborted();
+        break;
+      }
+      case "delivered": {
+        await db
+          .update(agentRunCallbacks)
+          .set({ status: "delivered", deliveredAt: nowDate() })
+          .where(eq(agentRunCallbacks.id, callbackId));
+        signal.throwIfAborted();
+        break;
+      }
+      case "failed": {
+        await db
+          .update(agentRunCallbacks)
+          .set({ status: "failed", lastError: delivery.error })
+          .where(eq(agentRunCallbacks.id, callbackId));
+        signal.throwIfAborted();
+        break;
+      }
+    }
+  },
+);
+
 const dispatchSingleInternalCallback$ = command(
   async (
     { set },
     input: DispatchInternalRunCallbackInput,
     signal: AbortSignal,
   ): Promise<DispatchResult> => {
-    await markCallbackAttemptStarted(input.db, input.callback.id);
+    await set(
+      recordInternalCallbackDelivery$,
+      input.callback.id,
+      { stage: "attempt-started" },
+      signal,
+    );
     signal.throwIfAborted();
     const callbackId = input.callback.id;
     const responseResult = await settle(
@@ -217,7 +264,12 @@ const dispatchSingleInternalCallback$ = command(
         responseResult.error instanceof Error
           ? responseResult.error.message
           : "Unknown error";
-      await markCallbackFailed(input.db, callbackId, errorMessage);
+      await set(
+        recordInternalCallbackDelivery$,
+        callbackId,
+        { stage: "failed", error: errorMessage },
+        signal,
+      );
       signal.throwIfAborted();
       L.error("Internal callback dispatch threw", {
         callbackId,
@@ -228,10 +280,11 @@ const dispatchSingleInternalCallback$ = command(
     }
 
     if (!responseResult.value.success) {
-      await markCallbackFailed(
-        input.db,
+      await set(
+        recordInternalCallbackDelivery$,
         callbackId,
-        responseResult.value.error,
+        { stage: "failed", error: responseResult.value.error },
+        signal,
       );
       signal.throwIfAborted();
       L.warn("Internal callback dispatch failed", {
@@ -246,7 +299,12 @@ const dispatchSingleInternalCallback$ = command(
       };
     }
 
-    await markCallbackDelivered(input.db, callbackId);
+    await set(
+      recordInternalCallbackDelivery$,
+      callbackId,
+      { stage: "delivered" },
+      signal,
+    );
     signal.throwIfAborted();
     return { callbackId, success: true };
   },
@@ -349,7 +407,6 @@ export const dispatchRunCallbacks$ = command(
         ? await set(
             dispatchSingleInternalCallback$,
             {
-              db,
               callback,
               runId,
               status,
