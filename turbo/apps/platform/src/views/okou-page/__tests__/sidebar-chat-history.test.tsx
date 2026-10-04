@@ -308,6 +308,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
 
   openChatListMenu();
   expect(menuItemByText("All chats")).toBeInTheDocument();
+  expect(queryMenuItemByText("Inbox")).not.toBeInTheDocument();
   expect(queryMenuItemByText("Archived")).not.toBeInTheDocument();
   fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
 
@@ -326,7 +327,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
   ).not.toBeInTheDocument();
 });
 
-test("Filter chats by All chats, Unread, or Archived", async () => {
+test("Filter chats by Inbox, Unread, or Archived", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   // A check-mark icon is an ordinary emoji; only the archived flag archives.
@@ -375,6 +376,8 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
   });
 
   openChatListMenu();
+  expect(menuItemByText("Inbox")).toBeInTheDocument();
+  expect(queryMenuItemByText("All chats")).not.toBeInTheDocument();
   expect(menuItemByText("Archived")).toBeInTheDocument();
   expect(
     screen
@@ -404,7 +407,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
   expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
 
   openChatListMenu();
-  click(menuItemByText("All chats"));
+  click(menuItemByText("Inbox"));
 
   await waitFor(() => {
     expect(visibleThreadTitles(titles)).toStrictEqual([

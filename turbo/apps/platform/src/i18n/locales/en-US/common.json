@@ -2160,6 +2160,7 @@
       "deleteTitle": "Delete chat?",
       "draft": "Draft",
       "empty": "Start a conversation and it'll show up here",
+      "inbox": "Inbox",
       "markUnread": "Mark unread",
       "movePinDown": "Move down",
       "movePinUp": "Move up",
