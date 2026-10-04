@@ -629,7 +629,7 @@ describe("CHAT-02: model-first provider policies", () => {
       success: true,
       versionId: preparedMemory.body.versionId,
       storageName: "memory",
-      size: 1024,
+      size: Buffer.byteLength(adHocNote),
       fileCount: 1,
     });
     expect(
