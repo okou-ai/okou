@@ -15,7 +15,7 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import type { Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
-  loadConnectorRuntimeView,
+  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
@@ -705,7 +705,7 @@ export async function updateUserCustomConnectors(
     grants.some((grant) => {
       return grant.permissionNames.length > 0;
     })
-      ? await loadConnectorRuntimeView(db)
+      ? await loadConnectorRuntimeSnapshot(db)
       : null;
 
   const committed = await db.transaction(async (tx) => {

@@ -36,7 +36,7 @@ import {
   networkPolicyForFirewallPolicy,
 } from "./firewall-network-policy.service";
 import {
-  loadConnectorRuntimeView,
+  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import type {
@@ -309,7 +309,8 @@ export async function resolveActiveNetworkPolicyRefreshes(
     return [];
   }
 
-  const snapshot = preloadedSnapshot ?? (await loadConnectorRuntimeView(db));
+  const snapshot =
+    preloadedSnapshot ?? (await loadConnectorRuntimeSnapshot(db));
   const uniqueConnectorSlugs = networkPolicyRefreshConnectorSlugs(
     snapshot.serverFirewalls,
     connectorSlugs,
@@ -978,7 +979,7 @@ export const listUserPermissionGrants$ = command(
     const grants = await loadActiveUserPermissionGrants(db, scope);
     signal.throwIfAborted();
     const snapshot =
-      grants.length === 0 ? undefined : await loadConnectorRuntimeView(db);
+      grants.length === 0 ? undefined : await loadConnectorRuntimeSnapshot(db);
     signal.throwIfAborted();
     const responseScope = permissionGrantResponseScope(scope);
 
@@ -1000,7 +1001,7 @@ export const applyUserPermissionGrants$ = command(
     signal: AbortSignal,
   ): Promise<ApplyUserPermissionGrantsResult> => {
     const writeDb = set(writeDb$);
-    const snapshot = await loadConnectorRuntimeView(writeDb);
+    const snapshot = await loadConnectorRuntimeSnapshot(writeDb);
     signal.throwIfAborted();
     const validation = await validateApplyUserPermissionGrants(
       args.apply,

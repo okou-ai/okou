@@ -1334,13 +1334,6 @@ export async function loadConnectorRuntimeSnapshot(
   return snapshot;
 }
 
-/** Type-only adapter: retain the same promise, full load and cached result. */
-export function loadConnectorRuntimeView(
-  db: ReadonlyDb,
-): Promise<ConnectorRuntimeCatalogView> {
-  return loadConnectorRuntimeSnapshot(db);
-}
-
 export function getConnectorRuntimeConnector(
   snapshot: ConnectorRuntimeSelection,
   connectorSlug: string,
