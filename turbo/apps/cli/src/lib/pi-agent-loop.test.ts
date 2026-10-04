@@ -423,6 +423,7 @@ async function startSandboxHost(args: {
     | "luna"
     | "codex-luna";
   readonly serviceTier?: "priority" | "fast";
+  readonly reportPreparationTiming?: boolean;
 }): Promise<RpcHost> {
   const agentDir = join(args.root, ".pi", "agent");
   const sessionDir = join(agentDir, "sessions", "--test--");
@@ -504,6 +505,9 @@ async function startSandboxHost(args: {
                 : "DEEPSEEK_API_KEY",
           },
     ),
+    ...(args.reportPreparationTiming
+      ? { OKOU_PI_PREPARATION_TIMING: "1" }
+      : {}),
     OPENAI_API_KEY: "pi-ownership-transfer-test-key",
     CHATGPT_ACCESS_TOKEN: "opaque-access-token-placeholder",
     CHATGPT_ACCOUNT_ID: "opaque-account-id-placeholder",
@@ -516,6 +520,7 @@ describe("sandbox Pi agent loop", () => {
     const host = await startSandboxHost({
       root: launchPayloadDirectory,
       providerBaseUrl: "http://127.0.0.1:1",
+      reportPreparationTiming: true,
     });
     try {
       const state = await host.state("startup-observation-state");
