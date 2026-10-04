@@ -45,7 +45,6 @@ export const tailscaleConfigSchema = z
     name: z.string(),
     scope: z.enum(["personal", "organization"]),
     tags: tailscaleTagsSchema,
-    enabled: z.boolean(),
     revision,
     generation: revision,
     createdAt: z.string().datetime(),
@@ -61,7 +60,6 @@ const updateBody = z
     name: name.optional(),
     credentials: tailscaleCredentialsSchema.optional(),
     tags: tailscaleTagsSchema.optional(),
-    enabled: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -69,8 +67,7 @@ const updateBody = z
       return (
         body.name !== undefined ||
         body.credentials !== undefined ||
-        body.tags !== undefined ||
-        body.enabled !== undefined
+        body.tags !== undefined
       );
     },
     { message: "At least one Tailscale field must be updated" },

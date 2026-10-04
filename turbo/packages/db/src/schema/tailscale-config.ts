@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean,
   check,
   index,
   integer,
@@ -25,7 +24,6 @@ export const tailscaleConfigs = pgTable(
     encryptedClientId: text("encrypted_client_id").notNull(),
     encryptedClientSecret: text("encrypted_client_secret").notNull(),
     tags: text("tags").array().notNull(),
-    enabled: boolean("enabled").default(true).notNull(),
     revision: integer("revision").default(1).notNull(),
     generation: integer("generation").default(1).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

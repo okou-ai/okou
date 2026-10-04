@@ -641,7 +641,7 @@ pub mod runners {
         pub struct ObservationRequestExpectedTailscaleConfig {
             /// Selected configuration UUID.
             pub config_id: String,
-            /// Effective credential, tag and enabled-state generation.
+            /// Effective credential and tag generation.
             pub generation: i64,
         }
 
@@ -754,7 +754,7 @@ pub mod runners {
         pub struct PinRequestExpectedTailscaleConfig {
             /// Selected configuration UUID.
             pub config_id: String,
-            /// Effective credential, tag and enabled-state generation.
+            /// Effective credential and tag generation.
             pub generation: i64,
         }
 

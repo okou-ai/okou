@@ -55,7 +55,7 @@ function configGuardDocs(name: string): RustTypeDeclarationDoc {
     ],
     fields: {
       configId: ["Selected configuration UUID."],
-      generation: ["Effective credential, tag and enabled-state generation."],
+      generation: ["Effective credential and tag generation."],
     },
   };
 }

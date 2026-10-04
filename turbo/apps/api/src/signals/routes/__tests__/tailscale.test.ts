@@ -162,7 +162,6 @@ describe("Tailscale configuration and saved-host authority", () => {
       revision: 1,
       generation: 1,
       scope: "personal",
-      enabled: true,
       sshHosts: [],
     });
     await accept(
@@ -201,7 +200,7 @@ describe("Tailscale configuration and saved-host authority", () => {
       configs().update({
         headers,
         params: { configId: created.id },
-        body: { expectedRevision: 2, enabled: false },
+        body: { expectedRevision: 2, name: "Stale rename" },
       }),
       [409],
     );
@@ -232,7 +231,7 @@ describe("Tailscale configuration and saved-host authority", () => {
       configs().update({
         headers,
         params: { configId: shared.id },
-        body: { expectedRevision: 1, enabled: false },
+        body: { expectedRevision: 1, name: "Forbidden rename" },
       }),
       [403],
     );
@@ -723,24 +722,21 @@ describe("Tailscale configuration and saved-host authority", () => {
       }),
       [200],
     );
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: c.id },
-        body: { expectedRevision: rotated.revision, enabled: false },
-      }),
-      [200],
-    );
-    probe = useSecretKmsProbe();
     expect(
       (
         await accept(
           runner().resolve({ headers: runnerHeaders, params, body }),
           [200],
         )
-      ).body.outcome,
-    ).toBe("unavailable");
-    expect(probe.decryptCalls).toBe(0);
+      ).body,
+    ).toMatchObject({
+      outcome: "resolved_tailscale",
+      tailscale: {
+        configId: c.id,
+        generation: rotated.generation,
+        tags: ["tag:next"],
+      },
+    });
     await flushWaitUntilForTest();
   });
   it.each(["create", "rebind"] as const)(
@@ -1056,7 +1052,7 @@ describe("Tailscale configuration and saved-host authority", () => {
           configs().update({
             headers,
             params: { configId: c.id },
-            body: { expectedRevision: 1, enabled: false },
+            body: { expectedRevision: 1, tags: ["tag:rotated"] },
           }),
           [200],
         );

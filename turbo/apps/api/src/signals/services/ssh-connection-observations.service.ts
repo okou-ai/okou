@@ -49,7 +49,6 @@ export const listSshConnectionObservations$ = command(
               isNull(sshConnectionObservations.tailscaleConfigId),
             ),
             and(
-              eq(tailscaleConfigs.enabled, true),
               eq(
                 sshConnectionObservations.tailscaleConfigId,
                 tailscaleConfigs.id,

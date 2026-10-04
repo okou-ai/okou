@@ -171,7 +171,7 @@ try {
     [configId],
   );
   await client.query(
-    "UPDATE tailscale_configs SET enabled=false,generation=generation+1,revision=revision+1 WHERE id=$1",
+    "UPDATE tailscale_configs SET tags=ARRAY['tag:next'],generation=generation+1,revision=revision+1 WHERE id=$1",
     [configId],
   );
   assert.deepEqual(

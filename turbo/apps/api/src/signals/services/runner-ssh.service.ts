@@ -57,7 +57,6 @@ function currentConnectionQuery(
       tailscale: {
         id: tailscaleConfigs.id,
         generation: tailscaleConfigs.generation,
-        enabled: tailscaleConfigs.enabled,
         tags: tailscaleConfigs.tags,
         encryptedClientId: tailscaleConfigs.encryptedClientId,
         encryptedClientSecret: tailscaleConfigs.encryptedClientSecret,
@@ -165,7 +164,7 @@ async function currentConnection(
     return null;
   }
   if (row.tailscaleId !== null) {
-    if (row.tailscale === null || !row.tailscale.enabled) {
+    if (row.tailscale === null) {
       return null;
     }
     if (lockAuthority) {
@@ -177,7 +176,6 @@ async function currentConnection(
             eq(tailscaleConfigs.id, row.tailscaleId),
             eq(tailscaleConfigs.orgId, row.orgId),
             eq(tailscaleConfigs.generation, row.tailscale.generation),
-            eq(tailscaleConfigs.enabled, true),
           ),
         )
         .for("share");

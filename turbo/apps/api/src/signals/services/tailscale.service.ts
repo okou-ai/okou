@@ -32,7 +32,6 @@ const metadata = Object.freeze({
   name: tailscaleConfigs.name,
   scope: tailscaleConfigs.scope,
   tags: tailscaleConfigs.tags,
-  enabled: tailscaleConfigs.enabled,
   revision: tailscaleConfigs.revision,
   generation: tailscaleConfigs.generation,
   createdAt: tailscaleConfigs.createdAt,
@@ -342,8 +341,6 @@ export const updateTailscaleConfig$ = command(
       }
       const effective =
         encrypted !== undefined ||
-        (args.body.enabled !== undefined &&
-          args.body.enabled !== row.enabled) ||
         (args.body.tags !== undefined &&
           JSON.stringify(args.body.tags) !== JSON.stringify(row.tags));
       if (
@@ -357,7 +354,6 @@ export const updateTailscaleConfig$ = command(
         .set({
           name: args.body.name,
           tags: args.body.tags,
-          enabled: args.body.enabled,
           ...encrypted,
           revision: row.revision + 1,
           generation: row.generation + (effective ? 1 : 0),
