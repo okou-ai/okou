@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-const realDatabaseSetupFiles = [
+export const realDatabaseSetupFiles = [
   "./src/__tests__/env-stub.ts",
   "./src/__tests__/setup.ts",
 ];
