@@ -12,6 +12,18 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.993.0](https://github.com/okou-ai/okou/compare/app-v0.992.0...app-v0.993.0) (2026-10-04)
+
+
+### Features
+
+* **platform:** add muted chat list filter ([#37691](https://github.com/okou-ai/okou/issues/37691)) ([cf155ac](https://github.com/okou-ai/okou/commit/cf155ac9e19c1ce08a1a55fa43f97ff5da358d7f))
+
+
+### Bug Fixes
+
+* **platform:** show inbox filter when chat archiving is enabled ([#37692](https://github.com/okou-ai/okou/issues/37692)) ([fcc16bd](https://github.com/okou-ai/okou/commit/fcc16bd06b002909610f6e4319795f14e9ce7280))
+
 ## [0.992.0](https://github.com/okou-ai/okou/compare/app-v0.991.6...app-v0.992.0) (2026-10-04)
 
 
