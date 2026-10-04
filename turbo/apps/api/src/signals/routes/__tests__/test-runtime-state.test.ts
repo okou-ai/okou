@@ -173,6 +173,9 @@ async function createObservedBuiltInRun(
     readAdmission: async () => {
       return await fixture.readAdmission(claimed.selectedModel);
     },
+    readAdmissionRejection: async () => {
+      return await fixture.readAdmissionRejection(claimed.selectedModel);
+    },
     readUnrelatedAdmission: async () => {
       return await fixture.readAdmission("deepseek-v4-flash");
     },
@@ -498,9 +501,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         await expect(
           runs.readRun(claimed.actor, claimed.runId),
         ).resolves.toMatchObject({ status: "running" });
-        await expect(claimed.readAdmission()).resolves.not.toMatchObject({
-          modelRuntimeProvider: primary.modelRuntimeProvider,
-          modelRuntimeModel: primary.modelRuntimeModel,
+        await expect(claimed.readAdmissionRejection()).resolves.toMatchObject({
+          eventType: "input.rejected",
+          error: "model_provider_unavailable",
         });
 
         await seedBuiltInModelCandidateKeys(context, "deepseek-v4-flash");
@@ -511,9 +514,11 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         await withMockNowForTest(
           startedAt + cooldownSeconds * 1000 - 1,
           async () => {
-            await expect(claimed.readAdmission()).resolves.not.toMatchObject({
-              modelRuntimeProvider: primary.modelRuntimeProvider,
-              modelRuntimeModel: primary.modelRuntimeModel,
+            await expect(
+              claimed.readAdmissionRejection(),
+            ).resolves.toMatchObject({
+              eventType: "input.rejected",
+              error: "model_provider_unavailable",
             });
           },
         );
@@ -557,9 +562,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       ]);
     });
     await withMockNowForTest(startedAt + 30 * 60_000 - 1, async () => {
-      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
-        modelRuntimeProvider: primary.modelRuntimeProvider,
-        modelRuntimeModel: primary.modelRuntimeModel,
+      await expect(claimed.readAdmissionRejection()).resolves.toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
       });
     });
     await withMockNowForTest(startedAt + 30 * 60_000, async () => {
@@ -602,9 +607,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
           connectionSource: "upstream_transport",
         }),
       ).resolves.toStrictEqual({ outcome: "recorded" });
-      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
-        modelRuntimeProvider: primary.modelRuntimeProvider,
-        modelRuntimeModel: primary.modelRuntimeModel,
+      await expect(claimed.readAdmissionRejection()).resolves.toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
       });
     });
     await expect(
@@ -744,9 +749,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     });
 
     await withMockNowForTest(startedAt + 8 * 60_000, async () => {
-      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
-        modelRuntimeProvider: primary.modelRuntimeProvider,
-        modelRuntimeModel: primary.modelRuntimeModel,
+      await expect(claimed.readAdmissionRejection()).resolves.toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
       });
     });
     await withMockNowForTest(startedAt + 30 * 60_000, async () => {
@@ -760,7 +765,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
   it("merges connected receipts when body processing is reversed", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 35, 0);
     const claimed = await createObservedBuiltInRun(startedAt);
-    const primary = claimed.log;
     const earlier = await withMockNowForTest(startedAt, async () => {
       return await runs.startRunnerModelProviderFailureWithDelayedBody(
         claimed.runId,
@@ -788,9 +792,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       body: { outcome: "recorded" },
     });
     await withMockNowForTest(startedAt + 60_000, async () => {
-      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
-        modelRuntimeProvider: primary.modelRuntimeProvider,
-        modelRuntimeModel: primary.modelRuntimeModel,
+      await expect(claimed.readAdmissionRejection()).resolves.toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
       });
     });
   });
@@ -944,9 +948,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       });
 
       await withMockNowForTest(startedAt + 350_000, async () => {
-        await expect(claimed.readAdmission()).resolves.not.toMatchObject({
-          modelRuntimeProvider: primary.modelRuntimeProvider,
-          modelRuntimeModel: primary.modelRuntimeModel,
+        await expect(claimed.readAdmissionRejection()).resolves.toMatchObject({
+          eventType: "input.rejected",
+          error: "model_provider_unavailable",
         });
       });
       await withMockNowForTest(startedAt + 401_000, async () => {

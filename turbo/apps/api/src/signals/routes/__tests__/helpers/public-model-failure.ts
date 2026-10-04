@@ -10,6 +10,7 @@ import { now, withMockNowForTest } from "../../../../lib/time";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
+import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunReadsApi } from "./api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { deleteBuiltInCandidateCooldownFixture } from "./runtime-state";
@@ -68,6 +69,10 @@ export async function createPublicModelFailureFixture(
     string,
     { sandboxToken?: string; finished: boolean; admittedAt: number }
   >();
+  const rejectionInputs = new Map<
+    string,
+    { clientEventId: string; admittedAt: number }
+  >();
   const observedRoutes = new Map<
     string,
     { selectedModel: string; provider_type: string; upstream_model: string }
@@ -107,6 +112,26 @@ export async function createPublicModelFailureFixture(
 
   onTestFinished(async () => {
     restoreExternalSetup();
+    // Own even an unexpectedly admitted rejection probe before asserting its
+    // public result, so a regression cannot leak a pending Run into teardown.
+    for (const [threadId, input] of rejectionInputs) {
+      const { events } = await createChatFilesBddApi(context).listThreadEvents(
+        actor,
+        threadId,
+      );
+      const launched = events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === input.clientEventId
+        );
+      });
+      if (launched?.runId) {
+        owned.set(launched.runId, {
+          finished: false,
+          admittedAt: input.admittedAt,
+        });
+      }
+    }
     for (const runId of owned.keys()) {
       await finish(runId);
     }
@@ -189,6 +214,34 @@ export async function createPublicModelFailureFixture(
         runId: run.runId,
         log,
       };
+    },
+    async readAdmissionRejection(selectedModel: string) {
+      const chat = createChatFilesBddApi(context);
+      const thread = await chat.createThread(actor, {
+        agentId: agent.agentId,
+        model: selectedModel,
+      });
+      const clientEventId = randomUUID();
+      rejectionInputs.set(thread.id, { clientEventId, admittedAt: now() });
+      await chat.requestSendEvent(
+        actor,
+        {
+          agentId: agent.agentId,
+          threadId: thread.id,
+          model: selectedModel,
+          clientEventId,
+          prompt: `Observe unavailable route ${randomUUID()}`,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const { events } = await chat.listThreadEvents(actor, thread.id);
+      return events.find((event) => {
+        return (
+          event.eventType === "input.rejected" &&
+          event.revokesEventId === clientEventId
+        );
+      });
     },
     async readAdmission(selectedModel: string) {
       const { run, log } = await admit(selectedModel);
