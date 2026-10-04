@@ -6,10 +6,8 @@ import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
-import {
-  dispatchCompleteSideEffects$,
-  scheduleReleasedSlotPicks$,
-} from "../services/agent-run-lifecycle.service";
+import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
 import {
   completeAgentRun$,
   dispatchRequiredTerminalChatCallback$,

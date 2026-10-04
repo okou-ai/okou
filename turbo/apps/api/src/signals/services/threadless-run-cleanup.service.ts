@@ -24,7 +24,8 @@ import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread } from "./agent-run-callback.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
-import { cancelRun$, dispatchCancelSideEffects$ } from "./run-cancel.service";
+import { cancelRun$ } from "./agent-run-terminal-transition.service";
+import { dispatchCancelSideEffects$ } from "./run-cancel.service";
 import { lockDeletionProtection } from "./threadless-run-protection.service";
 import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 

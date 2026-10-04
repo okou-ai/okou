@@ -31,10 +31,8 @@ import {
 import { deleteS3Objects } from "../external/s3";
 import { settle, settleIncludingAbort, tapError } from "../utils";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
-import {
-  dispatchCompleteSideEffects$,
-  scheduleReleasedSlotPicks$,
-} from "./agent-run-lifecycle.service";
+import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import {
   releaseRunSlots,
   transitionAgentRunsToTerminal,

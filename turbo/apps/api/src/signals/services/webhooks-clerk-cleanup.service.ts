@@ -66,7 +66,7 @@ import {
   listAllStripeSubscriptions,
 } from "../external/stripe-client";
 import { settle, tapError } from "../utils";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import {
   releaseNeverStartedRunSlots,
   transitionAgentRunsToTerminal,
