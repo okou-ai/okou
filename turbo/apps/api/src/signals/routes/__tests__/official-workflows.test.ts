@@ -6479,9 +6479,19 @@ describe("Official Workflow installations", () => {
         throw new Error("Expected historical Official Automation Run");
       }
       await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
+      // Cancellation acknowledges the transition before its callback settles.
+      await flushWaitUntilForTest();
 
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      await runOfficialWorkflowReconciliationWorker();
+      await expect(
+        runOfficialWorkflowReconciliationWorker(),
+      ).resolves.toStrictEqual({
+        claimed: 1,
+        completed: 1,
+        advanced: 0,
+        retried: 0,
+        installations: 1,
+      });
       const removed = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
