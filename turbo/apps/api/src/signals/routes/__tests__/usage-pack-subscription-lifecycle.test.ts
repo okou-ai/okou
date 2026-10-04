@@ -286,6 +286,9 @@ async function usagePackStateAction(
   return response.body;
 }
 
+// #37440 key21 approves the enumerated ledger/history observations below:
+// public credits filter expired/empty grants, and management omits inactive or
+// failed history. This does not except ordinary subscription construction.
 async function readUsagePackState(fixture: UsagePackLifecycleFixture) {
   const response = await usagePackStateAction({
     action: "read",
@@ -370,15 +373,35 @@ async function seedUsagePackLifecycle(
   };
 }
 
+function checkoutSubscriptionId(input: unknown): string {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("metadata" in input) ||
+    typeof input.metadata !== "object" ||
+    input.metadata === null ||
+    !("usagePackSubscriptionId" in input.metadata) ||
+    typeof input.metadata.usagePackSubscriptionId !== "string"
+  ) {
+    throw new Error("Checkout did not identify its usage pack subscription");
+  }
+  return input.metadata.usagePackSubscriptionId;
+}
+
 async function checkoutUsagePackLifecycle(
   userId: string,
   usagePackUsd: UsagePackUsd,
   tier: "pro" | "team" = "pro",
+  credits?: number,
 ): Promise<UsagePackLifecycleFixture> {
   const orgId = `org_usage_pack_${randomUUID()}`;
   const customerId = `cus_${randomUUID()}`;
   const subscriptionId = `sub_${randomUUID()}`;
   const checkoutSessionId = `cs_${randomUUID()}`;
+  if (credits !== undefined) {
+    // Initial credit/debt configuration is the existing seedOrgMetadata exception.
+    await seedOrgMetadata({ orgId, tier: "limited-free-1", credits });
+  }
   routeMocks.clerk.session(userId, orgId, "org:admin");
   context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
     id: orgId,
@@ -404,10 +427,24 @@ async function checkoutUsagePackLifecycle(
   context.mocks.stripe.customers.create.mockResolvedValueOnce({
     id: customerId,
   });
-  context.mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
-    id: checkoutSessionId,
-    url: `https://checkout.stripe.test/${checkoutSessionId}`,
-  });
+  context.mocks.stripe.checkout.sessions.create.mockImplementationOnce(
+    (input) => {
+      const usagePackSubscriptionId = checkoutSubscriptionId(input);
+      onTestFinished(async () => {
+        await usagePackStateAction({
+          action: "cleanup",
+          orgId,
+          usagePackSubscriptionId,
+          deleteGrants: true,
+          deleteOrgMetadata: true,
+        });
+      });
+      return Promise.resolve({
+        id: checkoutSessionId,
+        url: `https://checkout.stripe.test/${checkoutSessionId}`,
+      });
+    },
+  );
   context.mocks.stripe.prices.retrieve.mockImplementation((priceId) => {
     if (typeof priceId !== "string") {
       throw new Error("Expected a Stripe Price ID");
@@ -448,38 +485,19 @@ async function checkoutUsagePackLifecycle(
   expect(response.body).toStrictEqual({
     url: `https://checkout.stripe.test/${checkoutSessionId}`,
   });
-  const input =
-    context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0];
-  if (
-    typeof input !== "object" ||
-    input === null ||
-    !("metadata" in input) ||
-    typeof input.metadata !== "object" ||
-    input.metadata === null ||
-    !("usagePackSubscriptionId" in input.metadata) ||
-    typeof input.metadata.usagePackSubscriptionId !== "string"
-  ) {
-    throw new Error("Checkout did not identify its usage pack subscription");
-  }
+  const usagePackSubscriptionId = checkoutSubscriptionId(
+    context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0],
+  );
   const fixture: UsagePackLifecycleFixture = {
     orgId,
     tier,
     customerId,
     subscriptionId,
     checkoutSessionId,
-    usagePackSubscriptionId: input.metadata.usagePackSubscriptionId,
+    usagePackSubscriptionId,
     userId,
     invitationId: null,
   };
-  onTestFinished(async () => {
-    await usagePackStateAction({
-      action: "cleanup",
-      orgId,
-      usagePackSubscriptionId: fixture.usagePackSubscriptionId,
-      deleteGrants: true,
-      deleteOrgMetadata: true,
-    });
-  });
   const metadata = usagePackMetadata(fixture);
   expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -748,9 +766,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("grants fully discounted renewal credits without a refundable amount", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", 0);
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const paidPeriod = period(0);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
@@ -1274,9 +1290,11 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("retries a one-time Atom usage-pack grant after the old Team subscription is deleted", async () => {
     const grantedUserId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle(
-      [{ userId: grantedUserId, usagePackUsd: 20 }],
+    const fixture = await checkoutUsagePackLifecycle(
+      grantedUserId,
+      20,
       "team",
+      0,
     );
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const paidPeriod = period(0);
@@ -1395,9 +1413,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("rejects an invoice line that extends beyond the current Stripe period", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", 0);
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const paidPeriod = period(0);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
@@ -1440,9 +1456,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("fulfills an older paid invoice without rewinding the current period", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", 0);
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const olderPeriod = period(0);
     const currentPeriod = period(30);
@@ -1485,9 +1499,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("keeps paid grants through scheduled cancellation and uses the existing terminal fallback", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", 0);
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const paidPeriod = period(0);
     let currentSubscription = stripeSubscription(
@@ -1550,9 +1562,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("settles a paid invoice delivered after deletion without reactivating the subscription", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", 0);
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const paidPeriod = period(0);
     let currentSubscription = stripeSubscription(
@@ -1623,9 +1633,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
   });
 
   it("clears debt for a new organization that only received free onboarding credits", async () => {
-    const fixture = await seedUsagePackLifecycle([
-      { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(
+      `user_${randomUUID()}`,
+      20,
+      "pro",
+      0,
+    );
     const authOrgApi = createAuthOrgAgentsBddApi(context);
     const actor = authOrgApi.user({
       userId: fixture.userId,
@@ -1658,8 +1671,9 @@ describe("usage pack subscription Stripe lifecycle", () => {
   it.each([0, 5000])(
     "preserves a first-upgrade balance of %i and does not waive later renewal debt",
     async (credits) => {
-      const fixture = await seedUsagePackLifecycle(
-        [{ userId: `user_${randomUUID()}`, usagePackUsd: 20 }],
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
         "pro",
         credits,
       );
@@ -1699,8 +1713,9 @@ describe("usage pack subscription Stripe lifecycle", () => {
   );
 
   it("fulfills concurrent first invoices once and preserves new debt when the invoice is replayed", async () => {
-    const fixture = await seedUsagePackLifecycle(
-      [{ userId: `user_${randomUUID()}`, usagePackUsd: 20 }],
+    const fixture = await checkoutUsagePackLifecycle(
+      `user_${randomUUID()}`,
+      20,
       "pro",
       -5000,
     );
@@ -1746,8 +1761,9 @@ describe("usage pack subscription Stripe lifecycle", () => {
   });
 
   it("rolls back debt forgiveness and grants when the subscription cannot be persisted", async () => {
-    const fixture = await seedUsagePackLifecycle(
-      [{ userId: `user_${randomUUID()}`, usagePackUsd: 20 }],
+    const fixture = await checkoutUsagePackLifecycle(
+      `user_${randomUUID()}`,
+      20,
       "pro",
       -5000,
     );
@@ -1787,9 +1803,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
   it.each(["credit_purchase", "auto_recharge"])(
     "preserves debt after a previous %s even when the organization is free again",
     async (source) => {
-      const fixture = await seedUsagePackLifecycle([
-        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-      ]);
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
+        "pro",
+        0,
+      );
       await postStripeEvent(
         stripeEvent("invoice.paid", {
           id: `in_${randomUUID()}`,
@@ -1975,9 +1994,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
     }
 
     it("grants a Plan once and refunds the later usage pack payment once", async () => {
-      const fixture = await seedUsagePackLifecycle([
-        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-      ]);
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
+        "pro",
+        0,
+      );
       const plan = legacyPlanPurchase(fixture);
       const pack = usagePackPurchase(fixture);
       mockDuplicateStripe([plan, pack]);
@@ -1993,9 +2015,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
     });
 
     it("grants a usage pack once and refunds the later Plan payment once", async () => {
-      const fixture = await seedUsagePackLifecycle([
-        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-      ]);
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
+        "pro",
+        0,
+      );
       const plan = legacyPlanPurchase(fixture);
       const pack = usagePackPurchase(fixture);
       mockDuplicateStripe([plan, pack]);
@@ -2011,9 +2036,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
     });
 
     it("grants one of two concurrently paid initial purchases and refunds the other once", async () => {
-      const fixture = await seedUsagePackLifecycle([
-        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-      ]);
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
+        "pro",
+        0,
+      );
       const plan = legacyPlanPurchase(fixture);
       const pack = usagePackPurchase(fixture);
       mockDuplicateStripe([plan, pack]);
@@ -2043,9 +2071,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
     ] as const)(
       "keeps the first effective Plan of duplicate initial purchases with the %s",
       async (_order, firstTier, secondTier) => {
-        const fixture = await seedUsagePackLifecycle([
-          { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-        ]);
+        const fixture = await checkoutUsagePackLifecycle(
+          `user_${randomUUID()}`,
+          20,
+          "pro",
+          0,
+        );
         const first = legacyPlanPurchase(fixture, firstTier);
         const second = legacyPlanPurchase(fixture, secondTier);
         mockDuplicateStripe([first, second]);
@@ -2063,9 +2094,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
     );
 
     it("grants one of two concurrently paid initial Plans and refunds the other once", async () => {
-      const fixture = await seedUsagePackLifecycle([
-        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-      ]);
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
+        "pro",
+        0,
+      );
       const first = legacyPlanPurchase(fixture, "team");
       const second = legacyPlanPurchase(fixture, "team");
       mockDuplicateStripe([first, second]);
@@ -2125,9 +2159,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
   it.each(["pro", "custom"])(
     "preserves debt for a returning legacy %s subscriber after its old billing period",
     async (tier) => {
-      const fixture = await seedUsagePackLifecycle([
-        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-      ]);
+      const fixture = await checkoutUsagePackLifecycle(
+        `user_${randomUUID()}`,
+        20,
+        "pro",
+        0,
+      );
       const legacyPriceId =
         tier === "pro" ? TEST_PRICE_PRO : `price_custom_${randomUUID()}`;
       mockEnv("OKOU_PRICE_CUSTOM", legacyPriceId);
@@ -2188,9 +2225,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
   );
 
   it("preserves debt after a one-time credit purchase has expired", async () => {
-    const fixture = await seedUsagePackLifecycle([
-      { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(
+      `user_${randomUUID()}`,
+      20,
+      "pro",
+      0,
+    );
     const purchasedAt = now();
     mockEnv(
       "OKOU_ONE_TIME_CAMPAIGN",
@@ -2231,11 +2271,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
       clearMockNow();
     });
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle(
-      [{ userId, usagePackUsd: 20 }],
-      "pro",
-      -5000,
-    );
+    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", -5000);
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const paidPeriod = period(-32);
     let currentSubscription = stripeSubscription(
@@ -2394,9 +2430,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("rolls back invalid Product metadata and succeeds when Stripe retries", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 20 },
-    ]);
+    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", 0);
     const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
     const paidPeriod = period(0);
     const invoice = paidInvoice(fixture, {
