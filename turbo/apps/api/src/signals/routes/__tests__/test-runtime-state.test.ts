@@ -3,20 +3,31 @@ import { randomUUID } from "node:crypto";
 import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { modelProvidersRoutes } from "../model-providers";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  updateFeatureSwitchesForUser,
+  deleteFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { withMockNowForTest } from "../../../lib/time";
 import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createPublicModelFailureFixture } from "./helpers/public-model-failure";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
   setRunModelProviderFixture,
   setRunModelRuntimeRouteFixture,
 } from "../../../test-fixtures/agent-runs";
 import {
-  deleteBuiltInCandidateCooldownFixture,
   resolveBuiltInModelRouteFixture,
   registerBuiltInCandidateCooldownCleanup,
   seedBuiltInModelCandidateKeys,
@@ -130,6 +141,44 @@ async function createClaimedBuiltInRun(
   };
 }
 
+async function createObservedBuiltInRun(
+  startedAt: number,
+  existingModel?: string,
+) {
+  let selectedModel = existingModel;
+  if (selectedModel === undefined) {
+    const mirror = await insertBuiltInModelMirrorFixture(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
+    onTestFinished(mirror.restore);
+    selectedModel = mirror.model;
+  }
+  await seedBuiltInModelCandidateKeys(context, selectedModel);
+  const { fixture, claimed } = await withMockNowForTest(
+    startedAt - 60_000,
+    async () => {
+      const fixture = await createPublicModelFailureFixture(context, [
+        selectedModel,
+        "deepseek-v4-flash",
+      ]);
+      const claimed = await fixture.claim(selectedModel);
+      return { fixture, claimed };
+    },
+  );
+  return {
+    ...claimed,
+    finish: async () => {
+      await fixture.finish(claimed.runId);
+    },
+    readAdmission: async () => {
+      return await fixture.readAdmission(claimed.selectedModel);
+    },
+    readUnrelatedAdmission: async () => {
+      return await fixture.readAdmission("deepseek-v4-flash");
+    },
+  };
+}
+
 describe("POST /api/test/runtime-state/action", () => {
   it("keeps overlapping built-in model-key fixtures independently releasable", async () => {
     const first = await seedBuiltInModelKey(context, "gpt-6-luna");
@@ -151,60 +200,34 @@ describe("POST /api/test/runtime-state/action", () => {
       await seedBuiltInModelCandidateKeys(context, selectedModel);
       const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
       const cooldownUntil = new Date(startedAt + 5 * 60 * 1000);
-      const route = await withMockNowForTest(startedAt, async () => {
-        return await resolveBuiltInModelRouteFixture(context, selectedModel);
+      const fixture = await withMockNowForTest(startedAt - 60_000, async () => {
+        return await createPublicModelFailureFixture(context, [selectedModel]);
       });
-      if (!route) {
-        throw new Error(`Expected a route for ${selectedModel}`);
-      }
-      expect(route.provider_type).toBe("openrouter-codex");
-
-      const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      runs.configureRunnerGroup();
-      await runs.grantProEntitlement(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: `BDD ${sourceModel} route catalog agent`,
+      const claimed = await withMockNowForTest(startedAt, async () => {
+        return await fixture.claim(selectedModel);
       });
-      await runs.updateOrgModelPolicies(actor, [
-        {
-          model: selectedModel,
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
-      const { runId } = await withMockNowForTest(startedAt, async () => {
-        return await chat.sendAndLaunch(actor, {
-          agentId: agent.agentId,
-          prompt: `use the ${sourceModel} OpenRouter route`,
-          model: selectedModel,
-        });
-      });
-      onTestFinished(async () => {
-        await runs.requestCancelRun(actor, runId, [200]);
-        await flushWaitUntilForTest();
-      });
+      const route = claimed.log;
+      expect(route.modelRuntimeProvider).toBe("openrouter-codex");
+      const expectedUpstreamModel = `deepseek/${sourceModel}`;
+      expect(route.modelRuntimeModel).toBe(expectedUpstreamModel);
+      const { actor, agentId, runId } = claimed;
       const detail = await reads.requestReadLogById(actor, runId, [200]);
       expect(detail.body).toMatchObject({
         modelProvider: "built-in",
         selectedModel,
-        modelRuntimeProvider: route.provider_type,
-        modelRuntimeModel: route.upstream_model,
+        modelRuntimeProvider: route.modelRuntimeProvider,
+        modelRuntimeModel: expectedUpstreamModel,
       });
-
-      await setBuiltInCandidateCooldownFixture(
-        context,
-        selectedModel,
-        route,
-        cooldownUntil,
-      );
+      await withMockNowForTest(startedAt, async () => {
+        await expect(
+          runs.reportRunnerModelProviderFailure(runId, {
+            failureKind: "rate_limit",
+          }),
+        ).resolves.toStrictEqual({ outcome: "recorded" });
+      });
       const unavailable = await withMockNowForTest(startedAt, async () => {
         return await sendRejectedByUnavailableModel(actor, {
-          agentId: agent.agentId,
+          agentId,
           prompt: "reject while the built-in OpenRouter route is cooling down",
           model: selectedModel,
         });
@@ -215,13 +238,12 @@ describe("POST /api/test/runtime-state/action", () => {
       expect(unavailable.guidance).toMatchObject({
         error: "model_provider_unavailable",
       });
-
       await withMockNowForTest(cooldownUntil.getTime(), async () => {
         await expect(
-          resolveBuiltInModelRouteFixture(context, selectedModel),
+          fixture.readAdmission(selectedModel),
         ).resolves.toMatchObject({
-          provider_type: route.provider_type,
-          upstream_model: route.upstream_model,
+          modelRuntimeProvider: route.modelRuntimeProvider,
+          modelRuntimeModel: expectedUpstreamModel,
         });
       });
     },
@@ -368,37 +390,66 @@ describe("POST /api/test/runtime-state/action", () => {
   });
 
   it("reads and deletes a built-in candidate cooldown", async () => {
-    const selectedModel = "gpt-6-luna";
+    const mirror = await insertBuiltInModelMirrorFixture("gpt-6-luna");
+    onTestFinished(mirror.restore);
+    const selectedModel = mirror.model;
     const startedAt = Date.UTC(2026, 7, 20, 2, 0, 0);
     await seedBuiltInModelCandidateKeys(context, selectedModel);
+    const fixture = await withMockNowForTest(startedAt - 60_000, async () => {
+      return await createPublicModelFailureFixture(context, [selectedModel]);
+    });
     const primary = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, selectedModel);
+      const claimed = await fixture.claim(selectedModel);
+      await expect(
+        runs.reportRunnerModelProviderFailure(claimed.runId, {
+          failureKind: "rate_limit",
+          retryAfterSeconds: 60,
+        }),
+      ).resolves.toStrictEqual({ outcome: "recorded" });
+      return claimed.log;
     });
-    if (!primary) {
-      throw new Error("Expected a primary GPT Luna route");
+    await withMockNowForTest(startedAt, async () => {
+      await expect(fixture.readAdmission(selectedModel)).resolves.toMatchObject(
+        {
+          modelRuntimeProvider: "openrouter-codex",
+        },
+      );
+    });
+    const staffOrgId = createUniqueStaffOrgIdFixture();
+    const staff = bdd.user({ orgId: staffOrgId });
+    const featureActor = { orgId: staffOrgId, userId: staff.userId };
+    await updateFeatureSwitchesForUser(context, featureActor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
+    onTestFinished(async () => {
+      await deleteFeatureSwitchesForUser(context, featureActor);
+    });
+    createRouteMocks(context).clerk.session(
+      staff.userId,
+      staff.orgId,
+      staff.orgRole,
+    );
+    const diagnostics = setupApp({ context, routes: modelProvidersRoutes })(
+      modelProviderCooldownDiagnosticsContract,
+    );
+    if (!primary.modelRuntimeProvider || !primary.modelRuntimeModel) {
+      throw new Error("Expected the actual primary runtime tuple");
     }
-
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      selectedModel,
-      primary,
-      new Date(startedAt + 60_000),
+    await accept(
+      diagnostics.cancel({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          selectedModel,
+          providerType: primary.modelRuntimeProvider,
+          upstreamModel: primary.modelRuntimeModel,
+        },
+      }),
+      [204],
     );
     await withMockNowForTest(startedAt, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, selectedModel),
-      ).resolves.toMatchObject({ provider_type: "openrouter-codex" });
-    });
-
-    await deleteBuiltInCandidateCooldownFixture(
-      context,
-      selectedModel,
-      primary,
-    );
-    await withMockNowForTest(startedAt, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, selectedModel),
-      ).resolves.toMatchObject({ provider_type: "openai-api-key" });
+      await expect(fixture.readAdmission(selectedModel)).resolves.toMatchObject(
+        { modelRuntimeProvider: "openai-api-key" },
+      );
     });
   });
 });
@@ -438,19 +489,8 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     async ({ body, cooldownSeconds }) => {
       const startedAt = Date.UTC(2026, 7, 21, 0, 0, 0);
       await withMockNowForTest(startedAt, async () => {
-        const claimed = await createClaimedBuiltInRun();
-        const primary = await resolveBuiltInModelRouteFixture(
-          context,
-          claimed.selectedModel,
-        );
-        if (!primary) {
-          throw new Error("Expected a built-in model primary route");
-        }
-        registerBuiltInCandidateCooldownCleanup(
-          context,
-          claimed.selectedModel,
-          primary,
-        );
+        const claimed = await createObservedBuiltInRun(startedAt);
+        const primary = claimed.log;
 
         await expect(
           runs.reportRunnerModelProviderFailure(claimed.runId, body),
@@ -458,37 +498,31 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         await expect(
           runs.readRun(claimed.actor, claimed.runId),
         ).resolves.toMatchObject({ status: "running" });
-        await expect(
-          resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-        ).resolves.not.toMatchObject({
-          provider_type: primary.provider_type,
-          upstream_model: primary.upstream_model,
+        await expect(claimed.readAdmission()).resolves.not.toMatchObject({
+          modelRuntimeProvider: primary.modelRuntimeProvider,
+          modelRuntimeModel: primary.modelRuntimeModel,
         });
 
         await seedBuiltInModelCandidateKeys(context, "deepseek-v4-flash");
-        await expect(
-          resolveBuiltInModelRouteFixture(context, "deepseek-v4-flash"),
-        ).resolves.toMatchObject({ provider_type: "openrouter-codex" });
+        await expect(claimed.readUnrelatedAdmission()).resolves.toMatchObject({
+          modelRuntimeProvider: "openrouter-codex",
+        });
 
         await withMockNowForTest(
           startedAt + cooldownSeconds * 1000 - 1,
           async () => {
-            await expect(
-              resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-            ).resolves.not.toMatchObject({
-              provider_type: primary.provider_type,
-              upstream_model: primary.upstream_model,
+            await expect(claimed.readAdmission()).resolves.not.toMatchObject({
+              modelRuntimeProvider: primary.modelRuntimeProvider,
+              modelRuntimeModel: primary.modelRuntimeModel,
             });
           },
         );
         await withMockNowForTest(
           startedAt + cooldownSeconds * 1000,
           async () => {
-            await expect(
-              resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-            ).resolves.toMatchObject({
-              provider_type: primary.provider_type,
-              upstream_model: primary.upstream_model,
+            await expect(claimed.readAdmission()).resolves.toMatchObject({
+              modelRuntimeProvider: primary.modelRuntimeProvider,
+              modelRuntimeModel: primary.modelRuntimeModel,
             });
           },
         );
@@ -502,22 +536,11 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       SEEDED_SYSTEM_DEFAULT_MODEL,
     );
     onTestFinished(mirror.restore);
-    const claimed = await createClaimedBuiltInRun(mirror.model);
+    const claimed = await createObservedBuiltInRun(startedAt, mirror.model);
     await expect(
       runs.readRun(claimed.actor, claimed.runId),
     ).resolves.toMatchObject({ source: { model: mirror.model } });
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      claimed.selectedModel,
-    );
-    if (!primary) {
-      throw new Error("Expected a built-in model primary route");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      claimed.selectedModel,
-      primary,
-    );
+    const primary = claimed.log;
     await withMockNowForTest(startedAt, async () => {
       const outcomes = await Promise.all([
         runs.reportRunnerModelProviderFailure(claimed.runId, {
@@ -534,39 +557,31 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       ]);
     });
     await withMockNowForTest(startedAt + 30 * 60_000 - 1, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.not.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
     await withMockNowForTest(startedAt + 30 * 60_000, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
   });
 
   it("requires an inclusive 60-second upstream transport streak", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 15, 0);
-    const claimed = await createClaimedBuiltInRun();
-    const secondClaimed = await createClaimedBuiltInRun();
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
+    const claimed = await createObservedBuiltInRun(startedAt);
+    const secondClaimed = await createObservedBuiltInRun(
+      startedAt,
       claimed.selectedModel,
     );
-    if (!primary) {
-      throw new Error("Expected a built-in model primary route");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      claimed.selectedModel,
-      primary,
-    );
+    onTestFinished(async () => {
+      await secondClaimed.finish();
+      await claimed.finish();
+    });
+    const primary = claimed.log;
     await withMockNowForTest(startedAt, async () => {
       await expect(
         runs.reportRunnerModelProviderFailure(secondClaimed.runId, {
@@ -574,11 +589,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
           connectionSource: "upstream_transport",
         }),
       ).resolves.toStrictEqual({ outcome: "observed" });
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
 
@@ -589,11 +602,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
           connectionSource: "upstream_transport",
         }),
       ).resolves.toStrictEqual({ outcome: "recorded" });
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.not.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
     await expect(
@@ -603,19 +614,8 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
 
   it("keeps an observation-only route selectable to an in-flight resolver", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 16, 0);
-    const claimed = await createClaimedBuiltInRun();
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      claimed.selectedModel,
-    );
-    if (!primary) {
-      throw new Error("Expected a built-in model primary route");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      claimed.selectedModel,
-      primary,
-    );
+    const claimed = await createObservedBuiltInRun(startedAt);
+    const primary = claimed.log;
 
     await withMockNowForTest(startedAt, async () => {
       await expect(
@@ -628,30 +628,17 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
 
     // A resolver can capture time before the observation transaction commits.
     await withMockNowForTest(startedAt - 1, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
   });
 
   it("does not extend an active cooldown for one transport observation", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 17, 0);
-    const claimed = await createClaimedBuiltInRun();
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      claimed.selectedModel,
-    );
-    if (!primary) {
-      throw new Error("Expected a built-in model primary route");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      claimed.selectedModel,
-      primary,
-    );
+    const claimed = await createObservedBuiltInRun(startedAt);
+    const primary = claimed.log;
 
     await withMockNowForTest(startedAt, async () => {
       await runs.reportRunnerModelProviderFailure(claimed.runId, {
@@ -667,11 +654,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     });
 
     await withMockNowForTest(startedAt + 60_000, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
   });
@@ -713,19 +698,8 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
 
   it("keeps an active longer cooldown and clears transport evidence silently", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 25, 0);
-    const claimed = await createClaimedBuiltInRun();
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      claimed.selectedModel,
-    );
-    if (!primary) {
-      throw new Error("Expected a built-in model primary route");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      claimed.selectedModel,
-      primary,
-    );
+    const claimed = await createObservedBuiltInRun(startedAt);
+    const primary = claimed.log;
     await withMockNowForTest(startedAt, async () => {
       await runs.reportRunnerModelProviderFailure(claimed.runId, {
         failureKind: "authentication",
@@ -770,38 +744,23 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     });
 
     await withMockNowForTest(startedAt + 8 * 60_000, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.not.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
     await withMockNowForTest(startedAt + 30 * 60_000, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
   });
 
   it("merges connected receipts when body processing is reversed", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 35, 0);
-    const claimed = await createClaimedBuiltInRun();
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      claimed.selectedModel,
-    );
-    if (!primary) {
-      throw new Error("Expected a built-in model primary route");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      claimed.selectedModel,
-      primary,
-    );
+    const claimed = await createObservedBuiltInRun(startedAt);
+    const primary = claimed.log;
     const earlier = await withMockNowForTest(startedAt, async () => {
       return await runs.startRunnerModelProviderFailureWithDelayedBody(
         claimed.runId,
@@ -829,11 +788,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       body: { outcome: "recorded" },
     });
     await withMockNowForTest(startedAt + 60_000, async () => {
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.not.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.not.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
   });
@@ -958,19 +915,8 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
   it("monotonically extends concurrent bounded reports from receipt time", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 1, 0, 0);
     await withMockNowForTest(startedAt, async () => {
-      const claimed = await createClaimedBuiltInRun();
-      const primary = await resolveBuiltInModelRouteFixture(
-        context,
-        claimed.selectedModel,
-      );
-      if (!primary) {
-        throw new Error("Expected a built-in model primary route");
-      }
-      registerBuiltInCandidateCooldownCleanup(
-        context,
-        claimed.selectedModel,
-        primary,
-      );
+      const claimed = await createObservedBuiltInRun(startedAt);
+      const primary = claimed.log;
 
       await expect(
         runs.reportRunnerModelProviderFailure(claimed.runId, {
@@ -998,19 +944,15 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       });
 
       await withMockNowForTest(startedAt + 350_000, async () => {
-        await expect(
-          resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-        ).resolves.not.toMatchObject({
-          provider_type: primary.provider_type,
-          upstream_model: primary.upstream_model,
+        await expect(claimed.readAdmission()).resolves.not.toMatchObject({
+          modelRuntimeProvider: primary.modelRuntimeProvider,
+          modelRuntimeModel: primary.modelRuntimeModel,
         });
       });
       await withMockNowForTest(startedAt + 401_000, async () => {
-        await expect(
-          resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-        ).resolves.toMatchObject({
-          provider_type: primary.provider_type,
-          upstream_model: primary.upstream_model,
+        await expect(claimed.readAdmission()).resolves.toMatchObject({
+          modelRuntimeProvider: primary.modelRuntimeProvider,
+          modelRuntimeModel: primary.modelRuntimeModel,
         });
       });
     });
@@ -1019,19 +961,8 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
   it("rejects untrusted or invalid reports and ignores ineligible runs", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 2, 0, 0);
     await withMockNowForTest(startedAt, async () => {
-      const claimed = await createClaimedBuiltInRun();
-      const primary = await resolveBuiltInModelRouteFixture(
-        context,
-        claimed.selectedModel,
-      );
-      if (!primary) {
-        throw new Error("Expected a built-in model primary route");
-      }
-      registerBuiltInCandidateCooldownCleanup(
-        context,
-        claimed.selectedModel,
-        primary,
-      );
+      const claimed = await createObservedBuiltInRun(startedAt);
+      const primary = claimed.log;
 
       const missingAuth = await runs.requestRunnerModelProviderFailureAs(
         undefined,
@@ -1127,28 +1058,57 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         prompt: "ignore a BYOK model provider failure",
         model: "claude-sonnet-5",
       });
+      const ownedByok: { sandboxToken?: string } = {};
+      onTestFinished(async () => {
+        await withMockNowForTest(startedAt, async () => {
+          const cleanupRuns = createRunsApi(context);
+          const current = await cleanupRuns.readRun(
+            claimed.actor,
+            byokRun.runId,
+          );
+          if (current.status === "pending" || current.status === "running") {
+            await cleanupRuns.requestCancelRun(
+              claimed.actor,
+              byokRun.runId,
+              [200],
+            );
+          }
+          if (
+            ownedByok.sandboxToken &&
+            (current.status === "pending" ||
+              current.status === "running" ||
+              current.status === "cancelled")
+          ) {
+            await createWebhookCallbackApi(context).requestAgentComplete(
+              {
+                runId: byokRun.runId,
+                exitCode: 1,
+                error: "Cancelled ineligible report Run",
+              },
+              { authorization: `Bearer ${ownedByok.sandboxToken}` },
+              [200],
+            );
+          }
+          await flushWaitUntilForTest();
+        });
+      });
       const byokRunnerIdentity = {
         runnerId: randomUUID(),
         heartbeatGeneration: 8,
       };
-      await runs.claimRunnerJob(byokRun.runId, {
+      const byokClaim = await runs.claimRunnerJob(byokRun.runId, {
         runnerIdentity: byokRunnerIdentity,
       });
-      onTestFinished(async () => {
-        await runs.requestCancelRun(claimed.actor, byokRun.runId, [200, 400]);
-        await flushWaitUntilForTest();
-      });
+      ownedByok.sandboxToken = byokClaim.sandboxToken;
       await expect(
         runs.reportRunnerModelProviderFailure(byokRun.runId, {
           failureKind: "billing",
         }),
       ).resolves.toStrictEqual({ outcome: "ignored" });
 
-      await expect(
-        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
-      ).resolves.toMatchObject({
-        provider_type: primary.provider_type,
-        upstream_model: primary.upstream_model,
+      await expect(claimed.readAdmission()).resolves.toMatchObject({
+        modelRuntimeProvider: primary.modelRuntimeProvider,
+        modelRuntimeModel: primary.modelRuntimeModel,
       });
     });
   });

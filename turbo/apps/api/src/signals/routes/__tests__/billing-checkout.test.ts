@@ -8238,7 +8238,7 @@ describe("usage pack allocation management", () => {
 
   it("routes a concurrency-only invoice on the Plan subscription", async () => {
     const actor = createOrgFixture();
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId: actor.userId, usagePackUsd: 20 }],
       "team",
       actor,
@@ -8289,6 +8289,8 @@ describe("usage pack allocation management", () => {
         ).toISOString(),
       }),
     ]);
+    // Only the exact fulfillment invoice exclusion remains a key21 ledger exception.
+    // Approved scope: https://github.com/okou-ai/okou/issues/37440#issuecomment-5979740695
     const usagePackState = await readUsagePackState(
       fixture.orgId,
       fixture.usagePackSubscriptionId,
@@ -8298,7 +8300,7 @@ describe("usage pack allocation management", () => {
 
   it("idempotently processes usage pack and concurrency from one renewal invoice", async () => {
     const actor = createOrgFixture();
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId: actor.userId, usagePackUsd: 20 }],
       "team",
       actor,
@@ -8345,6 +8347,8 @@ describe("usage pack allocation management", () => {
 
     await postManagedUsagePackEvent("invoice.paid", invoice);
 
+    // Only the exact renewal ledger, allocation period and replayed grants remain key21 exceptions.
+    // Approved scope: https://github.com/okou-ai/okou/issues/37440#issuecomment-5979740695
     const firstUsagePackState = await readUsagePackState(
       fixture.orgId,
       fixture.usagePackSubscriptionId,
@@ -8574,7 +8578,7 @@ describe("usage pack allocation management", () => {
 
   it("deactivates usage packs when a shared subscription becomes Custom-only", async () => {
     const actor = createOrgFixture();
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId: actor.userId, usagePackUsd: 20 }],
       "team",
       actor,
@@ -8624,6 +8628,8 @@ describe("usage pack allocation management", () => {
       customSubscription,
     );
 
+    // Only the canceled subscription and retained inactive allocations remain key21 history exceptions.
+    // Approved scope: https://github.com/okou-ai/okou/issues/37440#issuecomment-5979740695
     const usagePackState = await readUsagePackState(
       fixture.orgId,
       fixture.usagePackSubscriptionId,
@@ -9195,7 +9201,7 @@ describe("usage pack allocation management", () => {
 
   it("rejects an allocation downgrade when the Plan starts ending after preview", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId, usagePackUsd: 50 }],
       "team",
     );
@@ -9235,6 +9241,8 @@ describe("usage pack allocation management", () => {
     expect(confirmed.body.error.message).toBe(
       "Your Plan is scheduled to end before this usage pack change can take effect. Restore your Plan first, then try again.",
     );
+    // Only the exact failed downgrade row remains a key21 history exception.
+    // Approved scope: https://github.com/okou-ai/okou/issues/37440#issuecomment-5979740695
     expect(
       (await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId))
         .changes,
@@ -9248,7 +9256,7 @@ describe("usage pack allocation management", () => {
 
   it("rejects a grouped downgrade when the Plan starts ending after preview", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId, usagePackUsd: 50 }],
       "team",
     );
@@ -9295,6 +9303,8 @@ describe("usage pack allocation management", () => {
     expect(confirmed.body.error.message).toBe(
       "Your Plan is scheduled to end before this usage pack change can take effect. Restore your Plan first, then try again.",
     );
+    // Only the exact failed grouped downgrade row remains a key21 history exception.
+    // Approved scope: https://github.com/okou-ai/okou/issues/37440#issuecomment-5979740695
     expect(
       (await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId))
         .changes,
@@ -13151,7 +13161,7 @@ describe("usage pack allocation management", () => {
   it("serializes concurrent package previews across an organization", async () => {
     const firstUserId = `user_${randomUUID()}`;
     const secondUserId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([
+    const fixture = await purchaseManagedUsagePack([
       { userId: firstUserId, usagePackUsd: 20 },
       { userId: secondUserId, usagePackUsd: 20 },
     ]);
@@ -13179,6 +13189,8 @@ describe("usage pack allocation management", () => {
         return response.status;
       }),
     ).toStrictEqual(expect.arrayContaining([200, 409]));
+    // Only the exact previewed change cardinality remains a key21 ledger exception.
+    // Approved scope: https://github.com/okou-ai/okou/issues/37440#issuecomment-5979740695
     const state = await readUsagePackState(
       fixture.orgId,
       fixture.usagePackSubscriptionId,

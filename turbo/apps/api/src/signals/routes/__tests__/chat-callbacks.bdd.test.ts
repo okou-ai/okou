@@ -44,13 +44,13 @@ import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fix
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
-  coolDownBuiltInCandidatesFixture,
   registerBuiltInCandidateCooldownCleanup,
   resolveBuiltInModelRouteFixture,
   seedBuiltInModelCandidateKeys,
@@ -81,10 +81,10 @@ const misc = createMiscRoutesApi(context);
 const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
 // Built-in candidates of claude-fable-5-1 in the global model catalog.
 const CLAUDE_FABLE_5_1_CANDIDATES = [
-  { provider_type: "anthropic-api-key", upstream_model: "claude-fable-5-1" },
+  { providerType: "anthropic-api-key", upstreamModel: "claude-fable-5-1" },
   {
-    provider_type: "openrouter-api-key",
-    upstream_model: "anthropic/claude-fable-5.1",
+    providerType: "openrouter-api-key",
+    upstreamModel: "anthropic/claude-fable-5.1",
   },
 ] as const;
 type UserMessage = Extract<
@@ -3361,6 +3361,10 @@ describe("CHAT-02: drain-time admission failure", () => {
 
   it("terminalizes a queued Web message with neutral copy when every built-in route is unavailable", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    onTestFinished(async () => {
+      await createBddApi(context).deleteAgent(actor, agentId);
+      await flushWaitUntilForTest();
+    });
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
     // isolated from concurrent tests that route the real model.
@@ -3373,7 +3377,43 @@ describe("CHAT-02: drain-time admission failure", () => {
       agentId,
       prompt: "finish before queued built-in model admission",
     });
+    const ownedAnchor: {
+      headers?: { readonly authorization: string };
+      finished: boolean;
+    } = { finished: false };
+    async function cleanupAnchor(): Promise<void> {
+      if (ownedAnchor.finished) {
+        return;
+      }
+      const cleanupRuns = createRunsApi(context);
+      cleanupRuns.acceptTelemetryIngest();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      const current = await cleanupRuns.readRun(actor, anchor.runId);
+      if (current.status === "pending" || current.status === "running") {
+        await cleanupRuns.requestCancelRun(actor, anchor.runId, [200]);
+      }
+      if (
+        ownedAnchor.headers &&
+        (current.status === "pending" ||
+          current.status === "running" ||
+          current.status === "cancelled")
+      ) {
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          {
+            runId: anchor.runId,
+            exitCode: 1,
+            error: "Cancelled queued admission anchor",
+          },
+          ownedAnchor.headers,
+          [200],
+        );
+      }
+      await flushWaitUntilForTest();
+      ownedAnchor.finished = true;
+    }
+    onTestFinished(cleanupAnchor);
     const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
+    ownedAnchor.headers = anchorHeaders;
     await api.updateOrgModelPolicies(actor, [
       {
         model,
@@ -3393,11 +3433,14 @@ describe("CHAT-02: drain-time admission failure", () => {
     });
     chatCallbacks.mockChatOutputEvents([]);
     // Provider failures cool down every Built-in candidate of the model.
-    await coolDownBuiltInCandidatesFixture(
-      context,
+    await coolDownBuiltInRoutesThroughReports(context, {
+      actor,
+      agentId,
+      runnerGroup,
       model,
-      CLAUDE_FABLE_5_1_CANDIDATES,
-    );
+      routes: CLAUDE_FABLE_5_1_CANDIDATES,
+      beforeCooldownCleanup: cleanupAnchor,
+    });
 
     await completeChatRunOk(anchor.runId, anchorHeaders);
     await flushWaitUntilForTest();
@@ -3443,8 +3486,24 @@ describe("CHAT-02: drain-time admission failure", () => {
     expect(errors[0]?.content).toBe(
       "Oops, something went wrong. Please try again later.",
     );
+    const reads = createRunReadsApi(context);
+    const pending = await reads.requestListLogs(
+      actor,
+      { status: "pending", limit: 20 },
+      [200],
+    );
+    const running = await reads.requestListLogs(
+      actor,
+      { status: "running", limit: 20 },
+      [200],
+    );
+    const active = [...pending.body.data, ...running.body.data]
+      .sort((left, right) => {
+        return right.createdAt.localeCompare(left.createdAt);
+      })
+      .slice(0, 20);
     expect(
-      (await api.listAgentRuns(actor, { limit: 20 })).runs.filter((run) => {
+      active.filter((run) => {
         return run.prompt === queuedPrompt;
       }),
     ).toHaveLength(0);
