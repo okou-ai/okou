@@ -494,6 +494,84 @@ async fn ready_kdc_callback_after_deadline_sends_nothing_and_reaps_before_new_ad
 
 #[tokio::test]
 #[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
+async fn ready_authority_after_ticket_expiry_sends_nothing_and_reaps_the_actual_process() {
+    use kerberos_worker::KdcExchange;
+    use std::{
+        io::{Read, Write},
+        os::unix::net::UnixStream,
+    };
+    use zeroize::Zeroizing;
+    struct GatedAuthority {
+        observed: Option<tokio::sync::oneshot::Sender<()>>,
+        release: Option<tokio::sync::oneshot::Receiver<()>>,
+        output: Option<UnixStream>,
+    }
+    impl KdcExchange for GatedAuthority {
+        async fn authorize(&mut self) -> Result<(), Error> {
+            self.observed.take().unwrap().send(()).unwrap();
+            self.release.take().unwrap().await.unwrap();
+            // Public authority IO canary, never a credential or GSS token.
+            self.output.take().unwrap().write_all(&[1]).unwrap();
+            Ok(())
+        }
+        async fn exchange(&mut self, _: &str, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
+            panic!("offline import must not request KDC transport")
+        }
+    }
+    let root = root();
+    let path = root.path().canonicalize().unwrap();
+    let now = common::now_seconds();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let (mut context, status) = kerberos_worker::open(
+        &path,
+        common::credentials_until(ticket("fixture"), now, now + 3),
+        policy(),
+        deadline,
+        &mut NoKdc,
+    )
+    .await
+    .unwrap();
+    let id = context.process_id();
+    let (observed_tx, observed) = tokio::sync::oneshot::channel();
+    let (released, release) = tokio::sync::oneshot::channel();
+    let (output, mut peer) = UnixStream::pair().unwrap();
+    let mut caller = GatedAuthority {
+        observed: Some(observed_tx),
+        release: Some(release),
+        output: Some(output),
+    };
+    let mut stepping = Box::pin(context.step(None, &mut caller));
+    tokio::select! { result = &mut stepping => panic!("unexpected premature result {result:?}"), result = observed => result.unwrap() }
+    // Use the actual public source expiry, not the longer operation deadline.
+    tokio::time::sleep_until(status.expires_at).await;
+    assert!(Instant::now() < deadline);
+    released.send(()).unwrap();
+    let result = stepping.as_mut().await;
+    drop(stepping);
+    drop(caller);
+    context.close().await.unwrap();
+    assert!(!Path::new(&format!("/proc/{id}")).exists());
+    let (replacement, _) = kerberos_worker::open(
+        &path,
+        credentials("fixture"),
+        policy(),
+        Instant::now() + Duration::from_secs(10),
+        &mut NoKdc,
+    )
+    .await
+    .unwrap();
+    replacement.close().await.unwrap();
+    assert_eq!(fs::read_dir(path).unwrap().count(), 0);
+    assert_eq!(
+        peer.read(&mut [0]).unwrap(),
+        0,
+        "expired ticket authority must not resume IO before refusal"
+    );
+    assert!(matches!(result, Err(Error::Expired)), "{result:?}");
+}
+
+#[tokio::test]
+#[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
 async fn metadata_expiry_is_not_rounded_up_and_standard_long_lived_tickets_remain_admitted() {
     let root = root();
     let path = root.path().canonicalize().unwrap();

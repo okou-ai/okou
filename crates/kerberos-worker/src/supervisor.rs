@@ -326,6 +326,7 @@ pub struct Context {
     bytes: usize,
     deadline: Instant,
     ticket_expiry: Option<Instant>,
+    gss_expiry: Option<Instant>,
     imported_expiry: Option<Instant>,
     operation_started: Instant,
     id: u32,
@@ -448,6 +449,7 @@ pub(crate) async fn start(
         bytes: 0,
         deadline,
         ticket_expiry,
+        gss_expiry: None,
         imported_expiry: ticket_expiry,
         operation_started: Instant::now(),
         id,
@@ -488,7 +490,7 @@ impl Context {
         caller: &mut K,
     ) -> Result<Reply, Error> {
         let mut abort = AbortOnDrop::new(self.aborted.clone());
-        let result = crate::before_deadline(self.deadline, async {
+        let result = crate::before_deadline(self.deadline, Error::Deadline, async {
             caller.authorize().await?;
             self.sequence = self.sequence.checked_add(1).ok_or(Error::Protocol)?;
             self.operation_started = Instant::now();
@@ -555,6 +557,20 @@ impl Context {
         }
         result
     }
+    async fn authentication_command<K: KdcExchange>(
+        &mut self,
+        kind: u8,
+        payload: Zeroizing<Vec<u8>>,
+        caller: &mut K,
+    ) -> Result<Reply, Error> {
+        let ticket_expiry = self.ticket_expiry.ok_or(Error::Expired)?;
+        let expiry = self
+            .gss_expiry
+            .map_or(ticket_expiry, |bound| bound.min(ticket_expiry));
+        // Source/completed-GSS expiry bounds every resumed authority/native poll,
+        // not just entry. Explicit renew/reacquire retain the operation deadline.
+        crate::before_deadline(expiry, Error::Expired, self.command(kind, payload, caller)).await
+    }
     fn status(&mut self, reply: Reply) -> Result<TicketStatus, Error> {
         let mut abort = AbortOnDrop::new(self.aborted.clone());
         if reply.kind != 16 || reply.payload.len() != 13 {
@@ -616,6 +632,7 @@ impl Context {
         if self
             .ticket_expiry
             .is_some_and(|bound| bound <= Instant::now())
+            || self.gss_expiry.is_some_and(|bound| bound <= Instant::now())
         {
             return Err(Error::Expired);
         }
@@ -623,7 +640,7 @@ impl Context {
         if payload.len() > 16384 {
             return Err(Error::Protocol);
         }
-        let reply = self.command(kind, payload, caller).await?;
+        let reply = self.authentication_command(kind, payload, caller).await?;
         if reply.kind != 17 || !(6..=16390).contains(&reply.payload.len()) {
             return Err(Error::Protocol);
         }
@@ -644,6 +661,9 @@ impl Context {
         };
         if complete == 1 && expiry <= Instant::now() {
             return Err(Error::Expired);
+        }
+        if complete == 1 {
+            self.gss_expiry = Some(expiry);
         }
         let bytes = reply.payload.get(6..).ok_or(Error::Protocol)?;
         let token = match reply.payload.get(5) {
@@ -668,13 +688,14 @@ impl Context {
         if self
             .ticket_expiry
             .is_some_and(|bound| bound <= Instant::now())
+            || self.gss_expiry.is_some_and(|bound| bound <= Instant::now())
         {
             return Err(Error::Expired);
         }
         if !(1..=16384).contains(&offer.len()) {
             return Err(Error::Protocol);
         }
-        let reply = self.command(4, offer, caller).await?;
+        let reply = self.authentication_command(4, offer, caller).await?;
         if reply.kind != 18 || !(1..=16384).contains(&reply.payload.len()) {
             return Err(Error::Protocol);
         }
