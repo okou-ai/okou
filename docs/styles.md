@@ -983,8 +983,8 @@ Changing the prop updates the phase relative to the existing timeline origin,
 not the mount or re-render time.
 
 With `chatRunningIndicatorWave` enabled, the chat sidebar supplies its complete
-filtered-list row index divided by 12: the existing 2.4-second cycle reaches
-each lower row 200ms later and repeats spatially every 12 rows. Virtual scrolling
+filtered-list row index divided by 6: the existing 2.4-second cycle reaches
+each lower row 400ms later and repeats spatially every 6 rows. Virtual scrolling
 must not substitute the window-local offset. Reordering adopts the new row
 position immediately; unread dots remain static, and search/command results
 keep the default zero offset. With the switch off, sidebar dots remain in phase.
