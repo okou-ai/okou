@@ -1,6 +1,6 @@
 //! Controlled TLS/RFB finality controls backed by the independent MIT acceptor.
 //! These are not a replacement for the source-pinned QEMU positive fixtures.
-use super::{credentials, fixture, mit_peer, peer_frame};
+use super::{Relay, credentials, fixture, mit_peer, peer_frame};
 use kerberos_worker::{NoKdc, TicketPolicy};
 use rfb_client::{Error, QemuGssapiAuthentication, TrustRoots, authenticate_qemu_gssapi};
 use rustls::{ServerConfig, pki_types::PrivatePkcs8KeyDer};
@@ -69,6 +69,20 @@ async fn server_blob<S: tokio::io::AsyncWrite + Unpin>(
     stream.flush().await.unwrap();
 }
 
+async fn await_expired_stream_closure<S: tokio::io::AsyncRead + Unpin>(stream: &mut S) {
+    // This guard is earlier than the ten-second handshake deadline, but later
+    // than the real four-second ticket (and conservative completed GSS bound).
+    let mut next = [0];
+    let result = tokio::time::timeout(Duration::from_secs(6), stream.read(&mut next))
+        .await
+        .expect("acquired authentication expiry did not close the stalled original stream");
+    assert!(
+        matches!(result, Ok(0))
+            || matches!(result, Err(error) if matches!(error.kind(), std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset)),
+        "unexpected bytes after the peer deliberately stopped authentication"
+    );
+}
+
 async fn serve(
     mut stream: DuplexStream,
     acceptor: TlsAcceptor,
@@ -106,6 +120,10 @@ async fn serve(
         .unwrap();
     input.write_all(&ap_req).await.unwrap();
     let ap_rep = peer_frame(&mut output).await.unwrap();
+    if mode == "pending_ap_rep" {
+        await_expired_stream_closure(&mut stream).await;
+        return;
+    }
     match mode {
         "null_token" => server_blob(&mut stream, None, 0).await,
         "empty_token" => server_blob(&mut stream, Some(&[]), 0).await,
@@ -133,6 +151,10 @@ async fn serve(
             );
             input.write_u8(1).await.unwrap();
             let offer = peer_frame(&mut output).await.unwrap();
+            if mode == "pending_layer" {
+                await_expired_stream_closure(&mut stream).await;
+                return;
+            }
             server_blob(&mut stream, Some(&offer), 0).await;
             let selected = client_blob(&mut stream).await.unwrap();
             input
@@ -155,6 +177,10 @@ async fn serve(
                         1,
                     )
                     .await;
+                    if mode == "pending_security_result" {
+                        await_expired_stream_closure(&mut stream).await;
+                        return;
+                    }
                     stream
                         .write_u32(u32::from(mode == "rejected_result"))
                         .await
@@ -190,6 +216,62 @@ fn children() -> Vec<u32> {
         }
     }
     ids
+}
+
+#[tokio::test]
+#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+async fn pinned_rfb_finality_stalled_peer_closes_at_acquired_ticket_and_gss_expiry() {
+    let root = fixture(0);
+    for mode in ["pending_ap_rep", "pending_layer", "pending_security_result"] {
+        let before = children();
+        let mut peer = mit_peer(&root, "valid");
+        let (roots, acceptor) = tls();
+        let (client, server) = tokio::io::duplex(32768);
+        let input = peer.stdin.take().unwrap();
+        let output = peer.stdout.take().unwrap();
+        let task = tokio::spawn(serve(server, acceptor, input, output, mode));
+        let mut relay = Relay::new(&root);
+        let selected = QemuGssapiAuthentication {
+            credentials: credentials(&root, "keytab"),
+            ticket_policy: TicketPolicy::new(Duration::from_secs(4), Duration::ZERO).unwrap(),
+            private_root: root.join("private"),
+            expires_at: Instant::now() + Duration::from_secs(60),
+        };
+        let result = authenticate_qemu_gssapi(
+            client,
+            "localhost",
+            roots,
+            selected,
+            &mut relay,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+        let deadline_refused = matches!(
+            result,
+            Err(Error::AuthenticationDeadlineExceeded {
+                stage: rfb_client::AuthenticationStage::QemuGssapiAuthentication
+            })
+        );
+        // Cleanup runs before checking the regression outcome, including red runs.
+        drop(result);
+        let peer_result = task.await;
+        if peer.try_wait().unwrap().is_none() {
+            peer.start_kill().unwrap();
+        }
+        peer.wait().await.unwrap();
+        let until = Instant::now() + Duration::from_secs(2);
+        while children().into_iter().any(|id| !before.contains(&id)) && Instant::now() < until {
+            tokio::task::yield_now().await;
+        }
+        assert!(children().into_iter().all(|id| before.contains(&id)));
+        assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+        peer_result.unwrap();
+        assert!(
+            deadline_refused,
+            "stalled {mode} must terminate at acquired authentication expiry"
+        );
+        assert!(relay.requests > 0);
+    }
 }
 
 #[tokio::test]

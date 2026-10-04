@@ -71,7 +71,19 @@ where
             )
             .await
             .map_err(native_error)?;
-            let first = native.step(None, caller).await.map_err(native_error)?;
+            let mut expires_at = selected
+                .expires_at
+                .min(status.expires_at)
+                .min(Instant::now() + Duration::from_secs(7200));
+            // The acquired ticket can expire before the original handshake/Run
+            // deadline. Bound every subsequent wait, authority check and send;
+            // an unresponsive peer must not keep that authentication alive.
+            let first = authentication::phase(
+                AuthenticationStage::QemuGssapiAuthentication,
+                deadline.min(expires_at),
+                async { native.step(None, caller).await.map_err(native_error) },
+            )
+            .await?;
             if first.complete || first.token.as_ref().is_none_or(|token| token.is_empty()) {
                 return Err(Error::InvalidKerberosExchange);
             }
@@ -79,32 +91,49 @@ where
                 .checked_add(first.token.as_ref().map_or(0, |token| token.len() + 1))
                 .filter(|total| *total <= 128 * 1024)
                 .ok_or(Error::InvalidKerberosExchange)?;
-            caller.authorize().await.map_err(native_error)?;
-            stream.write_u32(6).await?;
-            stream.write_all(b"GSSAPI").await?;
-            // Mechanism serialization can await and is not a reusable token.
-            // Recheck current authority at the first AP-REQ send boundary.
-            caller.authorize().await.map_err(native_error)?;
-            qemu_sasl::write_blob(&mut stream, first.token.as_deref().map(Vec::as_slice))
-                .await
-                .map_err(wire_error)?;
+            authentication::phase(
+                AuthenticationStage::QemuGssapiAuthentication,
+                deadline.min(expires_at),
+                async {
+                    caller.authorize().await.map_err(native_error)?;
+                    stream.write_u32(6).await?;
+                    stream.write_all(b"GSSAPI").await?;
+                    // Mechanism serialization can await and is not a reusable token.
+                    // Recheck current authority at the first AP-REQ send boundary.
+                    caller.authorize().await.map_err(native_error)?;
+                    qemu_sasl::write_blob(&mut stream, first.token.as_deref().map(Vec::as_slice))
+                        .await
+                        .map_err(wire_error)
+                },
+            )
+            .await?;
             let mut context_complete = false;
             let mut selected_layer = false;
-            let mut expires_at = selected
-                .expires_at
-                .min(status.expires_at)
-                .min(Instant::now() + Duration::from_secs(7200));
             for _ in 0..16 {
-                let (token, complete) = qemu_sasl::read_blob(&mut stream, &mut total)
-                    .await
-                    .map_err(wire_error)?;
+                let (token, complete) = authentication::phase(
+                    AuthenticationStage::QemuGssapiAuthentication,
+                    deadline.min(expires_at),
+                    async {
+                        qemu_sasl::read_blob(&mut stream, &mut total)
+                            .await
+                            .map_err(wire_error)
+                    },
+                )
+                .await?;
                 if complete {
                     if !selected_layer || token.as_ref().is_some_and(|bytes| !bytes.is_empty()) {
                         return Err(Error::InvalidKerberosExchange);
                     }
-                    caller.authorize().await.map_err(native_error)?;
-                    authentication::read_security_result(&mut stream).await?;
-                    native.close().await.map_err(native_error)?;
+                    authentication::phase(
+                        AuthenticationStage::QemuGssapiAuthentication,
+                        deadline.min(expires_at),
+                        async {
+                            caller.authorize().await.map_err(native_error)?;
+                            authentication::read_security_result(&mut stream).await?;
+                            native.close().await.map_err(native_error)
+                        },
+                    )
+                    .await?;
                     return Ok(expires_at);
                 }
                 if selected_layer {
@@ -113,33 +142,47 @@ where
                 let token = token
                     .filter(|bytes| !bytes.is_empty())
                     .ok_or(Error::InvalidKerberosExchange)?;
-                let answer = if !context_complete {
-                    let step = native
-                        .step(Some(token), caller)
-                        .await
-                        .map_err(native_error)?;
-                    if step.complete {
-                        context_complete = true;
-                        expires_at = expires_at.min(step.expires_at);
-                    }
-                    step.token
-                } else {
-                    let answer = native
-                        .select_no_layer(token, caller)
-                        .await
-                        .map_err(native_error)?;
-                    selected_layer = true;
-                    Some(answer)
-                };
+                let answer = authentication::phase(
+                    AuthenticationStage::QemuGssapiAuthentication,
+                    deadline.min(expires_at),
+                    async {
+                        if !context_complete {
+                            let step = native
+                                .step(Some(token), caller)
+                                .await
+                                .map_err(native_error)?;
+                            if step.complete {
+                                context_complete = true;
+                                expires_at = expires_at.min(step.expires_at);
+                            }
+                            Ok(step.token)
+                        } else {
+                            let answer = native
+                                .select_no_layer(token, caller)
+                                .await
+                                .map_err(native_error)?;
+                            selected_layer = true;
+                            Ok(Some(answer))
+                        }
+                    },
+                )
+                .await?;
                 let bytes = answer.as_ref().map_or(0, |bytes| bytes.len() + 1);
                 total = total
                     .checked_add(bytes)
                     .filter(|n| *n <= 128 * 1024)
                     .ok_or(Error::InvalidKerberosExchange)?;
-                caller.authorize().await.map_err(native_error)?;
-                qemu_sasl::write_blob(&mut stream, answer.as_deref().map(Vec::as_slice))
-                    .await
-                    .map_err(wire_error)?;
+                authentication::phase(
+                    AuthenticationStage::QemuGssapiAuthentication,
+                    deadline.min(expires_at),
+                    async {
+                        caller.authorize().await.map_err(native_error)?;
+                        qemu_sasl::write_blob(&mut stream, answer.as_deref().map(Vec::as_slice))
+                            .await
+                            .map_err(wire_error)
+                    },
+                )
+                .await?;
             }
             Err(Error::InvalidKerberosExchange)
         },
