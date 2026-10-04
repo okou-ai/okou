@@ -270,7 +270,11 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
         : topic === "threadListChanged"
           ? { kind: "chat-thread-event" }
           : null;
-    if (dataKey?.kind === "chat-event") {
+    if (
+      dataKey?.kind === "chat-event" ||
+      dataKey?.kind === "chat-thread-event"
+    ) {
+      // Metadata changes (including mute) also affect unread aggregation.
       // Coalesce indicator refreshes without delaying the thread invalidation.
       set(startChatThreadIndicatorsRefresh$);
     }

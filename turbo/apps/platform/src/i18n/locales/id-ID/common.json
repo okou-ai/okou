@@ -2154,6 +2154,8 @@
       "markUnread": "Tandai belum dibaca",
       "movePinDown": "Pindahkan ke bawah",
       "movePinUp": "Pindahkan ke atas",
+      "mute": "Bisukan chat",
+      "muted": "Dibisukan",
       "newChatWith": "Chat baru dengan {{agentName}}",
       "noArchived": "Tidak ada chat yang diarsipkan",
       "noUnread": "Tidak ada chat belum dibaca",
@@ -2167,6 +2169,7 @@
       "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
       "unarchive": "Batalkan pengarsipan",
+      "unmute": "Aktifkan notifikasi chat",
       "unpin": "Lepas sematan chat",
       "unread": "Belum dibaca",
       "unreadOnly": "Belum dibaca"

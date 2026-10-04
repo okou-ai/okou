@@ -43,6 +43,7 @@ export const updateOwnedChatThreadWithEvent$ = command(
         id: chatThreads.id,
         agentId: chatThreads.agentId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+        lastMessageAt: chatThreads.lastMessageAt,
       });
     signal.throwIfAborted();
     if (!thread?.agentId) {
@@ -51,6 +52,11 @@ export const updateOwnedChatThreadWithEvent$ = command(
     await database.execute(
       chatThreadEventInsertSql({
         ...args.event,
+        // Old readers understand sort_touched but ignore its mute payload.
+        // Preserve activity time so they do not move a muted thread to the top.
+        ...(args.event.muted === undefined
+          ? {}
+          : { createdAt: thread.lastMessageAt }),
         ...(args.event.kind === "computer_use_host_updated"
           ? { cloudBrowserEnabled: thread.cloudBrowserEnabled }
           : {}),

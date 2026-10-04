@@ -2163,6 +2163,8 @@
       "markUnread": "Mark unread",
       "movePinDown": "Move down",
       "movePinUp": "Move up",
+      "mute": "Mute chat",
+      "muted": "Muted",
       "newChatWith": "New chat with {{agentName}}",
       "noArchived": "No archived chats",
       "noUnread": "No unread chats",
@@ -2176,6 +2178,7 @@
       "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
       "unarchive": "Unarchive chat",
+      "unmute": "Unmute chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
       "unreadOnly": "Unread"

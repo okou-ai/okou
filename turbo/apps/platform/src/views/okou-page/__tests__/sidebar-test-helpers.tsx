@@ -5,6 +5,7 @@ import { expect, vi } from "vitest";
 import {
   chatThreadByIdContract,
   chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadPinContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
@@ -46,6 +47,7 @@ export interface SidebarThread {
   readonly updatedAt: string;
   readonly pinnedAt?: string | null;
   readonly archived?: boolean;
+  readonly muted?: boolean;
   readonly renamedAt?: string | null;
   /** Overrides the ordering-derived `sortAt` when a test asserts on its age. */
   readonly sortAt?: string;
@@ -221,6 +223,7 @@ function sidebarThreadSnapshot(
         updatedAt: thread.updatedAt,
         pinnedAt: thread.pinnedAt ?? null,
         archived: thread.archived ?? false,
+        muted: thread.muted ?? false,
         renamedAt: thread.renamedAt ?? null,
         selectedModel: null,
         serviceTier: null,
@@ -705,6 +708,24 @@ export function mockSidebarThreadStory(
     ({ params, respond }) => {
       threads = threads.map((thread) => {
         return thread.id === params.id ? { ...thread, pinnedAt: null } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadMuteContract.mute,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, muted: true } : thread;
+      });
+      return respond(204);
+    },
+  );
+  targetContext.mocks.api(
+    chatThreadMuteContract.unmute,
+    ({ params, respond }) => {
+      threads = threads.map((thread) => {
+        return thread.id === params.id ? { ...thread, muted: false } : thread;
       });
       return respond(204);
     },

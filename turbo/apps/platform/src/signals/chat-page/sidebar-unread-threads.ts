@@ -3,6 +3,7 @@ import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/contracts
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { chatThreadIndicatorsFromWorker$ } from "../shared-database.ts";
+import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 import { optimisticReadMarks$ } from "./optimistic-chat-thread-read-marks.ts";
 
 /**
@@ -30,10 +31,22 @@ export const sidebarUnreadThreadIds$ = computed(
   async (get): Promise<ReadonlySet<string>> => {
     const { unreadAt } = await get(chatThreadIndicatorsFromWorker$);
     const marks = get(optimisticReadMarks$);
+    const mutedIds = new Set(
+      get(eventDrivenChatThreads$)
+        .filter((thread) => {
+          return thread.muted;
+        })
+        .map((thread) => {
+          return thread.id;
+        }),
+    );
     const ids = new Set<string>();
     for (const [threadId, timestamp] of Object.entries(unreadAt)) {
       const markedAt = marks.get(threadId);
-      if (markedAt === undefined || Date.parse(timestamp) > markedAt) {
+      if (
+        !mutedIds.has(threadId) &&
+        (markedAt === undefined || Date.parse(timestamp) > markedAt)
+      ) {
         ids.add(threadId);
       }
     }

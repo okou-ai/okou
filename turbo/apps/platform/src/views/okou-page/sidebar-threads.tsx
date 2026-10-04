@@ -19,6 +19,8 @@ import {
   PinOff,
   Archive,
   ArchiveRestore,
+  BellOff,
+  Bell,
 } from "lucide-react";
 import {
   ChatThreadStateText,
@@ -151,6 +153,9 @@ function SessionStateIndicator({
   if (state === "running") {
     return <RunningIndicator />;
   }
+  if (state === "muted") {
+    return <BellOff size={16} className="opacity-35" />;
+  }
   if (state === "unread") {
     return <span className="h-2 w-2 rounded-full bg-sky-600" />;
   }
@@ -241,6 +246,44 @@ function ChatThreadArchiveMenuItem({
       <ChatThreadMenuShortcut
         shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.binding}
       />
+    </DropdownMenuItem>
+  );
+}
+
+function ChatThreadMuteMenuItem({
+  signals,
+}: {
+  signals: SidebarChatThreadItemSignals;
+}) {
+  const { t } = useTranslation();
+  const muted = useGet(signals.muted$);
+  const toggleMuted = useSet(signals.toggleMuted$);
+  const pageSignal = useGet(pageSignal$);
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
+  if (!enabled) {
+    return null;
+  }
+  const label = muted
+    ? t(($) => {
+        return $.chat.sidebar.unmute;
+      })
+    : t(($) => {
+        return $.chat.sidebar.mute;
+      });
+  return (
+    <DropdownMenuItem
+      aria-label={label}
+      onClick={() => {
+        detach(toggleMuted(pageSignal), Reason.DomCallback);
+      }}
+    >
+      {muted ? (
+        <Bell size={16} className="mr-2" />
+      ) : (
+        <BellOff size={16} className="mr-2" />
+      )}
+      {label}
     </DropdownMenuItem>
   );
 }
@@ -401,6 +444,7 @@ function ChatThreadMenu({
         >
           <ChatThreadPinMenuItems signals={signals} />
           <ChatThreadMarkUnreadMenuItem signals={signals} />
+          <ChatThreadMuteMenuItem signals={signals} />
           <ChatThreadArchiveMenuSection signals={signals} />
           <DropdownMenuItem
             aria-label={renameLabel}

@@ -54,6 +54,8 @@ export async function advanceChatThreadReadCursor(
     readonly threadId: string;
     readonly userId: string;
     readonly watermark: Date;
+    /** Bulk unread actions must not consume a concurrently muted thread. */
+    readonly unmutedOnly?: boolean;
   },
 ): Promise<boolean> {
   const updated = await db
@@ -63,6 +65,7 @@ export async function advanceChatThreadReadCursor(
       and(
         eq(chatThreads.id, args.threadId),
         eq(chatThreads.userId, args.userId),
+        args.unmutedOnly ? eq(chatThreads.muted, false) : undefined,
         or(
           isNull(chatThreads.lastReadAt),
           lt(chatThreads.lastReadAt, args.watermark),

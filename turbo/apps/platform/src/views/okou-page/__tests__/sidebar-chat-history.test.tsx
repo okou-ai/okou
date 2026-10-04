@@ -447,6 +447,56 @@ test("Selecting a filter skips the chat open in the right pane", async () => {
   });
 });
 
+test("Mute and unmute a chat without hiding or reordering it", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Quiet task"),
+  ]);
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
+  });
+  await within(sidebar()).findByText("Quiet task");
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Mute chat"));
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Muted")).toBeInTheDocument();
+    expect(visibleThreadTitles(["Release plan", "Quiet task"])).toStrictEqual([
+      "Release plan",
+      "Quiet task",
+    ]);
+  });
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Unmute chat"));
+  await waitFor(() => {
+    expect(within(sidebar()).queryByText("Muted")).not.toBeInTheDocument();
+  });
+});
+
+test("Running indicators take precedence over the muted icon", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory(
+    [
+      createThread(EXISTING_THREAD_ID, "Release plan"),
+      createThread(INCIDENT_THREAD_ID, "Running muted task", { muted: true }),
+    ],
+    [],
+    [INCIDENT_THREAD_ID],
+  );
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
+  });
+  await within(sidebar()).findByText("Running muted task");
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Running")).toBeInTheDocument();
+  });
+  expect(within(sidebar()).queryByText("Muted")).not.toBeInTheDocument();
+});
+
 test("Hide the current chat after archiving it without changing its title", async () => {
   prepareDefaultAgent();
   const untitledThread: SidebarThread = {

@@ -4,6 +4,7 @@ import {
   chatEventsContract,
   chatSearchContract,
   chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadArtifactsContract,
   chatThreadByIdContract,
   chatThreadComputerUseHostContract,
@@ -86,6 +87,7 @@ import { chatThreadRenameRoutes } from "../../chat-threads-rename";
 import { chatThreadRoutes } from "../../chat-threads";
 import { chatThreadUnpinRoutes } from "../../chat-threads-unpin";
 import { chatThreadArchiveRoutes } from "../../chat-threads-archive";
+import { chatThreadMuteRoutes } from "../../chat-threads-mute";
 import { chatThreadsArtifactsSyncRoutes } from "../../chat-threads-artifacts-sync";
 import { hostRoutes } from "../../host";
 import { modelPoliciesRoutes } from "../../model-policies";
@@ -227,6 +229,7 @@ const chatFilesRoutes = [
   ...chatThreadPinOrderRoutes,
   ...chatThreadUnpinRoutes,
   ...chatThreadArchiveRoutes,
+  ...chatThreadMuteRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadModelSelectionRoutes,
   ...chatThreadComputerUseHostRoutes,
@@ -980,6 +983,25 @@ export function createChatFilesBddApi(context: TestContext) {
           params: { id: threadId },
           query: unpinQuery(query),
         }),
+        statuses,
+      );
+    },
+
+    async requestSetThreadMuted(
+      actor: ApiTestUser | null,
+      threadId: string,
+      muted: boolean,
+      statuses: readonly (204 | 401 | 403 | 404)[],
+      query: EventIdQuery = {},
+    ) {
+      const client = chatFilesApp(context)(chatThreadMuteContract);
+      const request = {
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+        query: unpinQuery(query),
+      };
+      return await accept(
+        muted ? client.mute(request) : client.unmute(request),
         statuses,
       );
     },

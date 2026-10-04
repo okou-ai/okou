@@ -2163,6 +2163,8 @@
       "markUnread": "अपठित के रूप में चिह्नित करें",
       "movePinDown": "नीचे ले जाएँ",
       "movePinUp": "ऊपर ले जाएँ",
+      "mute": "चैट म्यूट करें",
+      "muted": "म्यूट किया गया",
       "newChatWith": "{{agentName}} के साथ नई चैट",
       "noArchived": "कोई आर्काइव की गई चैट नहीं",
       "noUnread": "कोई अपठित चैट नहीं",
@@ -2176,6 +2178,7 @@
       "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
       "unarchive": "आर्काइव से निकालें",
+      "unmute": "चैट अनम्यूट करें",
       "unpin": "चैट अनपिन करें",
       "unread": "अपठित",
       "unreadOnly": "अपठित"

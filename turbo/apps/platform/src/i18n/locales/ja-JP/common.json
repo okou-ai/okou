@@ -2154,6 +2154,8 @@
       "markUnread": "未読にする",
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",
+      "mute": "チャットをミュート",
+      "muted": "ミュート中",
       "newChatWith": "{{agentName}} との新しいチャット",
       "noArchived": "アーカイブ済みのチャットはありません",
       "noUnread": "未読のチャットはありません",
@@ -2167,6 +2169,7 @@
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
       "unarchive": "アーカイブを解除",
+      "unmute": "ミュートを解除",
       "unpin": "チャットの固定を解除する",
       "unread": "未読",
       "unreadOnly": "未読"

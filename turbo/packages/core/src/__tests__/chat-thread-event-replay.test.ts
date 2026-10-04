@@ -59,6 +59,27 @@ describe("model settings event replay", () => {
   });
 });
 
+describe("mute event replay", () => {
+  it("replays mute payloads without touching ordering or archive and preserves snapshots", () => {
+    const initial = replayChatThreadEvents([], [created]);
+    const muted = {
+      ...created,
+      kind: "sort_touched" as const,
+      muted: true,
+      createdAt: "2026-09-09T01:00:00.000Z",
+    };
+    const projection = replayChatThreadEvents(initial, [muted]);
+    expect(projection[0]).toEqual({ ...initial[0], muted: true });
+    expect(replayChatThreadEvents(projection, [])[0]).toEqual(projection[0]);
+    expect(
+      replayChatThreadEvents(projection, [{ ...muted, muted: false }])[0],
+    ).toEqual(initial[0]);
+    const { muted: omitted, ...legacySnapshot } = projection[0];
+    expect(omitted).toBe(true);
+    expect(replayChatThreadEvents([legacySnapshot], [])[0]).toEqual(initial[0]);
+  });
+});
+
 describe("archive event replay", () => {
   const archived = {
     ...created,

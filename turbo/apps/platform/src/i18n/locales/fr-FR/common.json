@@ -2210,6 +2210,8 @@
       "markUnread": "Marquer comme non lu",
       "movePinDown": "Déplacer vers le bas",
       "movePinUp": "Déplacer vers le haut",
+      "mute": "Mettre la discussion en sourdine",
+      "muted": "En sourdine",
       "newChatWith": "Nouvelle discussion avec {{agentName}}",
       "noArchived": "Aucune discussion archivée",
       "noUnread": "Aucune discussion non lue",
@@ -2223,6 +2225,7 @@
       "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
       "unarchive": "Désarchiver la discussion",
+      "unmute": "Réactiver les notifications",
       "unpin": "Détacher la discussion",
       "unread": "Non lu",
       "unreadOnly": "Non lu"

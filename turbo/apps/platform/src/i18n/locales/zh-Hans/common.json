@@ -2154,6 +2154,8 @@
       "markUnread": "标为未读",
       "movePinDown": "下移",
       "movePinUp": "上移",
+      "mute": "静音聊天",
+      "muted": "已静音",
       "newChatWith": "与{{agentName}}新建聊天",
       "noArchived": "没有已归档的聊天",
       "noUnread": "没有未读聊天",
@@ -2167,6 +2169,7 @@
       "showArchivedChats": "显示已归档的聊天",
       "titlePlaceholder": "聊天标题",
       "unarchive": "取消归档",
+      "unmute": "取消静音",
       "unpin": "取消置顶",
       "unread": "未读",
       "unreadOnly": "未读"

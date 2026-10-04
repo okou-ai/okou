@@ -1,5 +1,6 @@
 import webpush, { WebPushError } from "web-push";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { pushSubscriptions } from "@okouai/db/schema/push-subscription";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
@@ -32,11 +33,27 @@ function notificationUrl(pathOrUrl: string) {
 export async function sendUserPushNotifications(args: {
   readonly db: Db;
   readonly userId: string;
+  readonly threadId: string;
   readonly notification: PushNotification;
 }): Promise<void> {
   const publicKey = optionalEnv("VAPID_PUBLIC_KEY");
   const privateKey = optionalEnv("VAPID_PRIVATE_KEY");
   if (!publicKey || !privateKey) {
+    return;
+  }
+
+  // Read at delivery time, not Run admission: the user may mute a running chat.
+  const [thread] = await args.db
+    .select({ muted: chatThreads.muted })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, args.threadId),
+        eq(chatThreads.userId, args.userId),
+      ),
+    )
+    .limit(1);
+  if (!thread || thread.muted) {
     return;
   }
 

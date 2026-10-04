@@ -408,6 +408,7 @@ function createIndicatorRows(args: IndicatorOwner) {
           and(
             eq(chatThreads.userId, args.userId),
             inArray(chatThreads.agentId, agentIds),
+            eq(chatThreads.muted, false),
             gte(chatThreads.lastMessageAt, unreadCutoff),
             or(
               isNull(chatThreads.lastReadAt),

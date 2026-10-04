@@ -70,6 +70,7 @@ const markAgentReadInner$ = command(
         and(
           eq(chatThreads.userId, auth.userId),
           eq(chatThreads.agentId, agentId),
+          eq(chatThreads.muted, false),
           gte(
             chatThreads.lastMessageAt,
             new Date(nowDate().getTime() - INDICATOR_UNREAD_LOOKBACK_MS),
@@ -105,6 +106,7 @@ const markAgentReadInner$ = command(
         threadId: candidate.id,
         userId: auth.userId,
         watermark,
+        unmutedOnly: true,
       });
       signal.throwIfAborted();
       if (advanced) {

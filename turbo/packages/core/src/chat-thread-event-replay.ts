@@ -10,6 +10,7 @@ export type ReplayChatThreadEvent = Omit<ChatThreadEvent, "seqId">;
 export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly sortAt: string;
   readonly archived: boolean;
+  readonly muted: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly modelSettings: ModelSettings;
 }
@@ -90,6 +91,25 @@ function updatedThreadFields(
   return null;
 }
 
+function metadataTouchFields(
+  event: ReplayChatThreadEvent,
+  thread: EventDrivenChatThread,
+): Partial<EventDrivenChatThread> | null {
+  if (event.kind !== "sort_touched") {
+    return null;
+  }
+  if (event.muted !== undefined) {
+    return { muted: event.muted };
+  }
+  if (event.pinOrder != null) {
+    return {
+      agentId: event.reassignedAgentId ?? thread.agentId,
+      ...(thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {}),
+    };
+  }
+  return null;
+}
+
 function applyEvent(
   threads: Map<string, EventDrivenChatThread>,
   event: ReplayChatThreadEvent,
@@ -105,6 +125,7 @@ function applyEvent(
       updatedAt: event.createdAt,
       pinnedAt: null,
       archived: false,
+      muted: false,
       renamedAt: null,
       selectedModel: event.selectedModel,
       modelSettings: event.modelSettings ?? {},
@@ -136,14 +157,11 @@ function applyEvent(
     return;
   }
 
-  // Additive payload on the existing ordering event keeps older readers able
-  // to parse the stream. Manual moves do not change pin time or activity time.
-  if (event.kind === "sort_touched" && event.pinOrder != null) {
-    threads.set(event.chatThreadId, {
-      ...thread,
-      agentId: event.reassignedAgentId ?? thread.agentId,
-      ...(thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {}),
-    });
+  // Additive metadata payloads keep old readers able to parse the stream.
+  // Mute and manual pin moves do not change activity or metadata timestamps.
+  const metadataFields = metadataTouchFields(event, thread);
+  if (metadataFields !== null) {
+    threads.set(event.chatThreadId, { ...thread, ...metadataFields });
     return;
   }
 
@@ -177,6 +195,7 @@ export function replayChatThreadEvents(
   for (const thread of snapshot) {
     threads.set(thread.id, {
       ...thread,
+      muted: thread.muted ?? false,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},
       serviceTier: thread.serviceTier ?? null,
