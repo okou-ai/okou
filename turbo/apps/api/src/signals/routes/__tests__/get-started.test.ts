@@ -183,6 +183,93 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
   expect((await status()).checkinStreak).toBe(2);
 });
 
+test("concurrent check-ins across organizations return one personal award and publish credits only in the winning organization", async () => {
+  const userId = `user_${randomUUID()}`;
+  const orgIds = [`org_${randomUUID()}`, `org_${randomUUID()}`];
+  const orgHeaders = orgIds.map((orgId) => {
+    return { authorization: `Bearer ${orgId}` };
+  });
+  context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
+    if (!(request instanceof Request)) {
+      throw new Error("Expected a Clerk authentication request");
+    }
+    const orgId = request.headers.get("authorization")?.slice(7);
+    if (!orgId || !orgIds.includes(orgId)) {
+      throw new Error("Expected a check-in organization token");
+    }
+    return Promise.resolve({
+      isAuthenticated: true,
+      toAuth: () => {
+        return { userId, orgId, orgRole: "org:admin" };
+      },
+    });
+  });
+  mockNow(new Date("2026-09-15T08:00:00.000Z"));
+
+  const results = await Promise.all(
+    orgHeaders.flatMap((requestHeaders) => {
+      return Array.from({ length: 5 }, () => {
+        return accept(client().checkin({ headers: requestHeaders }), [200]);
+      });
+    }),
+  );
+  const award = results[0]?.body;
+  expect(award).toMatchObject({
+    status: "granted",
+    rewardAmount: 100,
+    rewardTarget: "user",
+    grantedAt: "2026-09-15T08:00:00.000Z",
+    expiresAt: "2026-09-22T08:00:00.000Z",
+  });
+  for (const result of results) {
+    expect(result.body).toStrictEqual(award);
+  }
+  for (const requestHeaders of orgHeaders) {
+    const current = await accept(
+      client().status({ headers: requestHeaders }),
+      [200],
+    );
+    expect(current.body.claimedToday).toBeTruthy();
+    expect(
+      current.body.quests.find((quest) => {
+        return quest.key === "checkin";
+      }),
+    ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
+  }
+
+  const balances = await Promise.all(
+    orgHeaders.map((requestHeaders) => {
+      return accept(
+        setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+          billingUsagePackCreditsContract,
+        ).get({ headers: requestHeaders }),
+        [200],
+      );
+    }),
+  );
+  expect(
+    balances
+      .map((balance) => {
+        return balance.body.bonusCredits;
+      })
+      .sort((a, b) => {
+        return a - b;
+      }),
+  ).toStrictEqual([0, 100]);
+  expect(
+    balances.flatMap((balance) => {
+      return balance.body.creditGrants;
+    }),
+  ).toStrictEqual([
+    expect.objectContaining({
+      grantType: "bonus",
+      amount: 100,
+      remaining: 100,
+      expiresAt: "2026-09-22T08:00:00.000Z",
+    }),
+  ]);
+});
+
 test("x submission returns persisted pending state without calling SocialKit; review starts the 7-day lifetime", async () => {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
