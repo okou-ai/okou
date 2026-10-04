@@ -16,10 +16,6 @@ import {
 } from "@aws-sdk/client-s3";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  testSystemStoragePresignedUrlCacheStateContract,
-  type TestSystemStoragePresignedUrlCacheStateActionBody,
-} from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
-import {
   workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
@@ -29,10 +25,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
-import {
-  getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 
@@ -43,7 +36,6 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import {
@@ -59,7 +51,11 @@ import {
   mockStripeConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { extractFilesFromTarGz } from "../../../lib/tar";
 import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
@@ -182,72 +178,6 @@ async function runWorkflowAndLaunch(
     throw new Error("Expected the workflow run to launch");
   }
   return { chatThreadId: sent.body.chatThreadId, runId };
-}
-
-function storageStateClient() {
-  return setupApp({
-    context,
-    routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  })(testSystemStoragePresignedUrlCacheStateContract);
-}
-
-async function storageStateAction(
-  body: TestSystemStoragePresignedUrlCacheStateActionBody,
-) {
-  return await accept(storageStateClient().action({ body }), [200]);
-}
-
-async function readWorkflowStorageState(
-  actor: ApiTestUser,
-  workflowId: string,
-) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped workflow actor");
-  }
-  const response = await storageStateAction({
-    action: "read-storage-state",
-    org_id: actor.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: getCustomSkillStorageName(workflowId),
-  });
-  return response.body.storage_state ?? null;
-}
-
-async function readWorkflowStorageVersion(
-  actor: ApiTestUser,
-  workflowId: string,
-  versionId: string,
-) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped workflow actor");
-  }
-  const response = await storageStateAction({
-    action: "read-storage-version",
-    org_id: actor.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: getCustomSkillStorageName(workflowId),
-    version_id: versionId,
-  });
-  return response.body.storage_version ?? null;
-}
-
-async function setWorkflowStorageVersionArchiveSize(
-  actor: ApiTestUser,
-  workflowId: string,
-  versionId: string,
-  archiveSize: number,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped workflow actor");
-  }
-  await storageStateAction({
-    action: "set-storage-version-archive-size",
-    org_id: actor.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: getCustomSkillStorageName(workflowId),
-    version_id: versionId,
-    archive_size: archiveSize,
-  });
 }
 
 function s3BodyBuffer(body: unknown): Buffer {
@@ -2574,11 +2504,29 @@ describe("workflows", () => {
 
   it("reuses registered workflow volumes without uploading or reconciling archive size", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
+    await api.grantProEntitlement(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const runnerGroup = api.configureRunnerGroup();
+    api.acceptStorageDownloads();
+    api.acceptTelemetryIngest();
+    const s3 = installVolumeS3Fixture();
+    const agent = await bdd.createAgent(actor, {
       displayName: "Immutable Volume Agent",
       visibility: "private",
     });
-    const s3 = installVolumeS3Fixture();
+    const activeRuns = new Set<string>();
+    const ownedWorkflows = new Set<string>();
+    onTestFinished(async () => {
+      for (const runId of activeRuns) {
+        await api.requestCancelRun(actor, runId, [200]);
+        await flushWaitUntilForTest();
+      }
+      for (const workflowId of ownedWorkflows) {
+        await miscApi.deleteWorkflow(actor, workflowId, [204]);
+      }
+      await bdd.deleteAgent(actor, agent.agentId);
+    });
+    s3.clearWrites();
     const name = `immutable-volume-${randomUUID().slice(0, 8)}`;
     const description = "Exercises immutable workflow volume publication.";
     const firstInstruction = "# immutable volume one";
@@ -2593,48 +2541,60 @@ describe("workflows", () => {
       instruction: firstInstruction,
       files: firstFiles,
     });
+    ownedWorkflows.add(workflow.body.id);
 
-    const firstState = await readWorkflowStorageState(actor, workflow.body.id);
-    if (!firstState?.head_version_id) {
-      throw new Error("Expected the first workflow volume version");
-    }
-    const firstVersionId = firstState.head_version_id;
-    const firstArchiveKey = `${firstState.s3_prefix}/${firstVersionId}/archive.tar.gz`;
+    const firstArchiveWrites = s3.writes.filter(({ key }) => {
+      return key.endsWith("/archive.tar.gz");
+    });
+    expect(firstArchiveWrites).toHaveLength(1);
+    const firstArchiveKey = firstArchiveWrites[0]!.key;
+    const firstVersionId = firstArchiveKey.split("/").at(-2);
+    expect(firstVersionId).toMatch(/^[0-9a-f]{64}$/u);
     const firstArchive = s3.objects.get(firstArchiveKey);
     if (!firstArchive) {
       throw new Error("Expected the first workflow archive");
     }
-    const firstVersion = await readWorkflowStorageVersion(
-      actor,
-      workflow.body.id,
-      firstVersionId,
-    );
     const firstSkillMd = synthesizeWorkflowSkillMd({
       name,
       description,
       instruction: firstInstruction,
     });
-    const firstSize = [
-      firstSkillMd,
-      ...firstFiles.map((file) => {
-        return file.content;
-      }),
-    ]
-      .map((content) => {
-        return Buffer.byteLength(content, "utf8");
-      })
-      .reduce((sum, size) => {
-        return sum + size;
-      }, 0);
-    expect(firstVersion).toStrictEqual({
-      version_id: firstVersionId,
-      s3_key: `${firstState.s3_prefix}/${firstVersionId}`,
-      size: firstSize,
-      archive_size: firstArchive.length,
-      file_count: 3,
-      message: null,
-      created_by: "user",
+    const firstArchiveFiles = [
+      { path: "SKILL.md", content: firstSkillMd },
+      ...firstFiles,
+    ].sort((left, right) => {
+      return left.path.localeCompare(right.path);
     });
+    const firstSize = firstArchiveFiles.reduce((sum, file) => {
+      return sum + Buffer.byteLength(file.content, "utf8");
+    }, 0);
+    const firstManifestKey = firstArchiveKey.replace(
+      /archive\.tar\.gz$/u,
+      "manifest.json",
+    );
+    const firstManifest = s3.objects.get(firstManifestKey);
+    if (!firstManifest) {
+      throw new Error("Expected the first workflow manifest");
+    }
+    expect(JSON.parse(firstManifest.toString("utf8"))).toMatchObject({
+      version: firstVersionId,
+      totalSize: firstSize,
+      fileCount: 3,
+      files: expect.arrayContaining(
+        firstArchiveFiles.map((file) => {
+          return {
+            path: file.path,
+            size: Buffer.byteLength(file.content, "utf8"),
+            hash: createHash("sha256").update(file.content).digest("hex"),
+          };
+        }),
+      ),
+    });
+    expect(
+      [...extractFilesFromTarGz(firstArchive)].sort((left, right) => {
+        return left.path.localeCompare(right.path);
+      }),
+    ).toStrictEqual(firstArchiveFiles);
 
     const tar = gunzipSync(firstArchive);
     const encodedMtime = tar
@@ -2644,21 +2604,80 @@ describe("workflows", () => {
       .trim();
     expect(Number.parseInt(encodedMtime, 8)).toBe(0);
 
+    const claimCurrentArchive = async () => {
+      const run = await runWorkflowAndLaunch(actor, workflow.body.id);
+      activeRuns.add(run.runId);
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const mount = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts.find((candidate) => {
+        return candidate.name === getCustomSkillStorageName(workflow.body.id);
+      });
+      if (!mount?.archiveUrl) {
+        throw new Error("Expected the selected workflow archive mount");
+      }
+      await api.requestCancelRun(actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      activeRuns.delete(run.runId);
+      return mount;
+    };
+    await expect(claimCurrentArchive()).resolves.toMatchObject({
+      versionId: firstVersionId,
+      archiveSize: firstArchive.length,
+    });
+
+    const readCurrentArchive = async (
+      instruction: string,
+      files: readonly { readonly path: string; readonly content: string }[],
+      archiveKey: string,
+    ) => {
+      const firstCall = context.mocks.s3.send.mock.calls.length;
+      const detail = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      );
+      expect(detail.body.instruction).toBe(instruction);
+      expect(detail.body.fileContents).toStrictEqual(
+        [...files].sort((left, right) => {
+          return left.path.localeCompare(right.path);
+        }),
+      );
+      expect(
+        context.mocks.s3.send.mock.calls
+          .slice(firstCall)
+          .flatMap(([command]) => {
+            return command instanceof GetObjectCommand &&
+              command.input.Key?.endsWith("/archive.tar.gz")
+              ? [command.input.Key]
+              : [];
+          }),
+      ).toStrictEqual([archiveKey]);
+    };
+
     const secondInstruction = "# immutable volume two";
     const secondFiles = [
       { path: "alpha.txt", content: "alpha two" },
       { path: "zeta.txt", content: "zeta two" },
     ];
+    s3.clearWrites();
     await updateWorkflow(actor, workflow.body.id, {
       instruction: secondInstruction,
       files: secondFiles,
     });
-    const secondState = await readWorkflowStorageState(actor, workflow.body.id);
-    if (!secondState?.head_version_id) {
-      throw new Error("Expected the second workflow volume version");
-    }
-    const secondVersionId = secondState.head_version_id;
+    const secondArchiveWrites = s3.writes.filter(({ key }) => {
+      return key.endsWith("/archive.tar.gz");
+    });
+    expect(secondArchiveWrites).toHaveLength(1);
+    const secondArchiveKey = secondArchiveWrites[0]!.key;
+    const secondVersionId = secondArchiveKey.split("/").at(-2);
     expect(secondVersionId).not.toBe(firstVersionId);
+    await expect(claimCurrentArchive()).resolves.toMatchObject({
+      versionId: secondVersionId,
+    });
 
     s3.clearWrites();
     await updateWorkflow(actor, workflow.body.id, {
@@ -2666,27 +2685,18 @@ describe("workflows", () => {
       files: [...firstFiles].reverse(),
     });
     expect(s3.writes).toHaveLength(0);
-    expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(firstVersionId);
+    await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
 
     await updateWorkflow(actor, workflow.body.id, {
       instruction: secondInstruction,
       files: secondFiles,
     });
     expect(s3.writes).toHaveLength(0);
-    expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(secondVersionId);
+    await readCurrentArchive(secondInstruction, secondFiles, secondArchiveKey);
 
-    await setWorkflowStorageVersionArchiveSize(
-      actor,
-      workflow.body.id,
-      firstVersionId,
-      firstArchive.length + 1,
-    );
+    // The synthetic archive_size corruption branch was explicitly retired in
+    // #37440. Reuse still exercises immutable metadata validation through the
+    // public update and reads the exact selected archive through public detail.
     s3.clearWrites();
     context.mocks.s3.send.mockClear();
     await updateWorkflow(actor, workflow.body.id, {
@@ -2694,19 +2704,10 @@ describe("workflows", () => {
       files: firstFiles,
     });
     expect(s3.writes).toHaveLength(0);
-    expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(firstVersionId);
-    await expect(
-      readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
-    ).resolves.toMatchObject({ archive_size: firstArchive.length + 1 });
+    await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
     // Detail reads may GET the manifest on a cache miss. Registered-version
     // reuse must not probe or PUT the archive/manifest again.
-    const registeredKeys = new Set([
-      firstArchiveKey,
-      `${firstState.s3_prefix}/${firstVersionId}/manifest.json`,
-    ]);
+    const registeredKeys = new Set([firstArchiveKey, firstManifestKey]);
     expect(
       context.mocks.s3.send.mock.calls.filter(([command]) => {
         return (

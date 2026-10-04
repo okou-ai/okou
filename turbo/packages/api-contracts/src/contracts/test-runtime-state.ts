@@ -116,10 +116,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("read-run-uploaded-file-sources"),
-    run_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("read-chat-event-snapshot-head"),
     thread_id: z.uuid(),
   }),
@@ -232,7 +228,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
     })
     .nullable()
     .optional(),
-  uploaded_file_sources: z.array(z.string()).optional(),
   chat_event_snapshot_head: z
     .object({
       archive_schema_version: z.int().positive(),

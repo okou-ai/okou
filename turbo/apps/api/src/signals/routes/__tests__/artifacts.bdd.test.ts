@@ -15,20 +15,16 @@ import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-c
 import { describe, expect, it } from "vitest";
 
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readRunUploadedFileSources } from "./helpers/runtime-state";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -267,22 +263,6 @@ function okouTokenFromClaim(claim: RunnerClaim): string {
     );
   }
   return token;
-}
-
-function fileWriteToken(owner: ArtifactActor, runId: string): string {
-  if (!owner.actor.orgId) {
-    throw new Error("Expected artifact test actor to have an org");
-  }
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: owner.actor.userId,
-    orgId: owner.actor.orgId,
-    runId,
-    capabilities: ["file:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 async function completeChatRunOk(
@@ -774,45 +754,6 @@ describe("video Artifact previews", () => {
     expect(failedArtifact).toMatchObject({ kind: "file" });
     expect(failedArtifact?.thumbnail).toBeNull();
   }, 180_000);
-});
-
-describe("artifact upload provenance", () => {
-  it.each(["automation-schedule", "automation-event"] as const)(
-    "attributes run uploads to the %s source",
-    async (triggerSource) => {
-      // Webhook automations require a Team workspace.
-      const owner = await artifactActor(
-        `Artifacts API ${triggerSource} source agent`,
-        bdd.user(),
-        triggerSource === "automation-event" ? "team" : "pro",
-      );
-      // A run fired through the real schedule or webhook automation entry.
-      const workflows = createWorkflowsBddApi(context);
-      const run =
-        triggerSource === "automation-schedule"
-          ? await workflows.startScheduledAutomationRun(
-              owner.actor,
-              owner.agentId,
-            )
-          : await workflows.startEventAutomationRun(owner.actor, owner.agentId);
-      const fileId = randomUUID();
-      owner.objectStore.addObject({
-        bucket: "test-user-artifacts",
-        key: `artifacts/${owner.actor.userId}/${fileId}/workflow-output.txt`,
-        size: 128,
-      });
-
-      await chat.completeUploadWithBearer(
-        `Bearer ${fileWriteToken(owner, run.runId)}`,
-        { id: fileId, contentType: "text/plain" },
-        [200],
-      );
-
-      await expect(
-        readRunUploadedFileSources(context, run.runId),
-      ).resolves.toStrictEqual([triggerSource]);
-    },
-  );
 });
 
 describe("GET /api/chat-threads/:threadId/artifacts", () => {

@@ -1734,6 +1734,35 @@ function configureResultEmailRecipient(actor: ApiTestUser): void {
   ]);
 }
 
+function configureResultEmailDelivery(): void {
+  mockEnv("RESEND_API_KEY", "official-result-delivery-test-key");
+  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+  context.mocks.resend.send.mockReset();
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `official-result-${randomUUID()}` },
+    error: null,
+  });
+}
+
+async function drainResultEmails(
+  sourceRunId: string,
+  sourceWorkflowAutomationId: string,
+): Promise<void> {
+  // The approved outbox lookup only addresses this test's delivery work.
+  // Observe delivery through Resend, including every matching owned item.
+  const { items } = await outbox.findSourceState({
+    sourceRunId,
+    sourceWorkflowAutomationId,
+  });
+  if (items.length > 0) {
+    await outbox.drainItems(
+      items.map((item) => {
+        return item.id;
+      }),
+    );
+  }
+}
+
 async function completeSuccessfulRun(
   runnerGroup: string,
   runId: string,
@@ -7884,9 +7913,11 @@ describe("Official Workflow Run admission", () => {
           onceAutomation,
           webhookAutomation,
         } = prepared;
+        configureResultEmailDelivery();
         const producerRuns: {
           readonly runId: string;
           readonly automationId: string;
+          readonly output: string;
         }[] = [];
         if (producerKind === "explicit and scheduled") {
           const explicit = await accept(
@@ -7907,6 +7938,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: explicitRunId,
             automationId: loopAutomation.id,
+            output: "Explicit Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -7937,6 +7969,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: scheduledRunId,
             automationId: loopAutomation.id,
+            output: "Scheduled Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -7961,6 +7994,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: onceRunId,
             automationId: onceAutomation.id,
+            output: "Once Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -7999,6 +8033,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: webhookRunId,
             automationId: webhookAutomation.id,
+            output: "Event Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -8007,24 +8042,33 @@ describe("Official Workflow Run admission", () => {
           );
         }
 
-        for (const producer of producerRuns) {
-          const source = await outbox.findSourceState({
-            sourceRunId: producer.runId,
-            sourceWorkflowAutomationId: producer.automationId,
-          });
-          expect(source.claim).not.toBeNull();
-          expect(source.items).toStrictEqual([
+        for (const [index, producer] of producerRuns.entries()) {
+          await drainResultEmails(producer.runId, producer.automationId);
+          expect(context.mocks.resend.send).toHaveBeenNthCalledWith(
+            index + 1,
             expect.objectContaining({
+              from: "Okou <okou@mail.example.com>",
+              to: actor.email,
               subject: `Display ${definitionName}`,
-              source_run_id: producer.runId,
-              source_workflow_automation_id: producer.automationId,
-              status: "pending",
-              template: expect.objectContaining({
-                template: "official-automation-result",
-              }),
+              text: expect.stringContaining(producer.output),
+              html: expect.stringContaining(
+                `https://app.okou.ai/activities/${producer.runId}`,
+              ),
             }),
-          ]);
+            expect.anything(),
+          );
+          expect(
+            context.mocks.resend.send.mock.calls[index]?.[0],
+          ).toMatchObject({
+            text: expect.stringContaining(
+              `https://app.okou.ai/workflows/${prepared.installed.body.workflow.id}/automations?automationId=${producer.automationId}`,
+            ),
+          });
+          await drainResultEmails(producer.runId, producer.automationId);
         }
+        expect(context.mocks.resend.send).toHaveBeenCalledTimes(
+          producerRuns.length,
+        );
       });
     },
   );
@@ -8034,6 +8078,7 @@ describe("Official Workflow Run admission", () => {
       "api-test-result-brand",
       true,
     );
+    configureResultEmailDelivery();
     const sessionRun = await accept(
       automationClient().run({
         headers: scenario.headers,
@@ -8054,15 +8099,19 @@ describe("Official Workflow Run admission", () => {
       sessionRunId,
       "Session-brand result",
     );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: sessionRunId,
-        sourceWorkflowAutomationId: scenario.automation.id,
+    await drainResultEmails(sessionRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        from: "Okou <okou@mail.example.com>",
+        to: scenario.actor.email,
+        subject: `Display ${scenario.definitionName}`,
+        text: expect.stringContaining("Session-brand result"),
+        html: expect.stringContaining(
+          `https://app.okou.ai/activities/${sessionRunId}`,
+        ),
       }),
-    ).resolves.toMatchObject({
-      items: [{ source_run_id: sessionRunId }],
-      claim: { source_run_id: sessionRunId },
-    });
+      expect.anything(),
+    );
 
     const agentToken = runs.okouTokenForRunWithCapabilities(
       scenario.actor,
@@ -8094,12 +8143,8 @@ describe("Official Workflow Run admission", () => {
     expect((await runs.readRun(scenario.actor, agentRunId)).status).toBe(
       "completed",
     );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: agentRunId,
-        sourceWorkflowAutomationId: scenario.automation.id,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
+    await drainResultEmails(agentRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
 
     mockEnv("RESEND_FROM_DOMAIN", "mail.example.com");
     const redrive = await accept(
@@ -8113,17 +8158,30 @@ describe("Official Workflow Run admission", () => {
       [200],
     );
     expect(redrive.body.successful_callbacks).toBeGreaterThan(0);
-    const source = await outbox.findSourceState({
-      sourceRunId: agentRunId,
-      sourceWorkflowAutomationId: scenario.automation.id,
-    });
-    expect(source.claim).not.toBeNull();
-    expect(source.items).toStrictEqual([
+    await drainResultEmails(agentRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
-        source_run_id: agentRunId,
-        source_workflow_automation_id: scenario.automation.id,
+        from: "Okou <okou@mail.example.com>",
+        to: scenario.actor.email,
+        subject: `Display ${scenario.definitionName}`,
+        text: expect.stringContaining("Agent-token retry result"),
+        html: expect.stringContaining(
+          `https://app.okou.ai/activities/${agentRunId}`,
+        ),
       }),
-    ]);
+      expect.anything(),
+    );
+    await drainResultEmails(sessionRunId, scenario.automation.id);
+    await drainResultEmails(agentRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    for (const [message] of context.mocks.resend.send.mock.calls) {
+      expect(message).toMatchObject({
+        text: expect.stringContaining(
+          `https://app.okou.ai/workflows/${scenario.installed.body.workflow.id}/automations?automationId=${scenario.automation.id}`,
+        ),
+      });
+    }
   });
 
   it("uses the immutable launch snapshot across Official result-email reconfiguration", async () => {
@@ -8131,6 +8189,7 @@ describe("Official Workflow Run admission", () => {
       "api-test-result-reconfigure",
       true,
     );
+    configureResultEmailDelivery();
     const enabledRun = await accept(
       automationClient().run({
         headers: scenario.headers,
@@ -8162,24 +8221,27 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, scenario.automation.id),
-    ).resolves.toMatchObject({ officialResultEmailEnabled: false });
     await completeSuccessfulRun(
       scenario.runnerGroup,
       enabledRunId,
       "Enabled launch survives disablement",
     );
-    const enabledSource = await outbox.findSourceState({
-      sourceRunId: enabledRunId,
-      sourceWorkflowAutomationId: scenario.automation.id,
-    });
-    expect(enabledSource.claim).not.toBeNull();
-    expect(enabledSource.items).toStrictEqual([
+    expect((await runs.readRun(scenario.actor, enabledRunId)).status).toBe(
+      "completed",
+    );
+    await drainResultEmails(enabledRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        source_workflow_automation_id: scenario.automation.id,
+        from: "Okou <okou@mail.example.com>",
+        to: scenario.actor.email,
+        subject: `Display ${scenario.definitionName}`,
+        text: expect.stringContaining("Enabled launch survives disablement"),
+        html: expect.stringContaining(
+          `https://app.okou.ai/activities/${enabledRunId}`,
+        ),
       }),
-    ]);
+      expect.anything(),
+    );
 
     const disabledRun = await accept(
       automationClient().run({
@@ -8210,20 +8272,17 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, scenario.automation.id),
-    ).resolves.toMatchObject({ officialResultEmailEnabled: true });
     await completeSuccessfulRun(
       scenario.runnerGroup,
       disabledRunId,
       "Disabled launch stays ineligible",
     );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: disabledRunId,
-        sourceWorkflowAutomationId: scenario.automation.id,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
+    expect((await runs.readRun(scenario.actor, disabledRunId)).status).toBe(
+      "completed",
+    );
+    await drainResultEmails(enabledRunId, scenario.automation.id);
+    await drainResultEmails(disabledRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
   });
 
   it("retains the Official result source through uninstall, TTL cleanup, and concurrent redrive", async () => {
@@ -8708,8 +8767,27 @@ describe("Official Workflow Run admission", () => {
       });
       const { agentId } = await workflowBdd.createAgent(actor);
       installCatalogStorageFixture();
+      context.mocks.s3.send.mockClear();
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      const accepted = await readAcceptedDefinitionFixture(definitionName);
+      const publishedArchives = context.mocks.s3.send.mock.calls.flatMap(
+        ([command]) => {
+          return command instanceof PutObjectCommand &&
+            command.input.Key?.endsWith("/archive.tar.gz")
+            ? [command.input.Key]
+            : [];
+        },
+      );
+      expect(publishedArchives).toHaveLength(1);
+      const published = publishedArchives[0]?.match(
+        /^[^/]+\/([^/]+)\/([^/]+)\/archive\.tar\.gz$/,
+      );
+      const storageId = published?.[1];
+      const versionId = published?.[2];
+      if (!storageId || !versionId) {
+        throw new Error(
+          "Expected the accepted Official definition's published archive identity",
+        );
+      }
       const headers = authHeaders(actor);
       await setOfficialWorkflowsEnabled(actor, true);
       const installation = await accept(
@@ -8722,12 +8800,19 @@ describe("Official Workflow Run admission", () => {
       );
       onTestFinished(async () => {
         installCatalogStorageFixture();
-        const createdRuns = await runs.listAgentRuns(actor, {
-          agent: agentId,
-          limit: 100,
-        });
-        for (const run of createdRuns.runs) {
-          await runs.requestCancelRun(actor, run.id, [200, 400]);
+        const createdRuns = await runReadsApi.requestListLogs(
+          actor,
+          { agentId, limit: 100 },
+          [200],
+        );
+        for (const run of createdRuns.body.data) {
+          if (
+            run.status === "queued" ||
+            run.status === "pending" ||
+            run.status === "running"
+          ) {
+            await runs.requestCancelRun(actor, run.id, [200, 400]);
+          }
         }
         await flushWaitUntilForTest();
         await bdd.deleteAgent(actor, agentId);
@@ -8834,10 +8919,18 @@ describe("Official Workflow Run admission", () => {
       }
       expect(resumedClaim.storageManifest.storageMounts).toContainEqual(
         expect.objectContaining({
-          storageId: accepted.definition.artifact.storageId,
-          versionId: accepted.definition.artifact.storageVersion,
+          storageId,
+          versionId,
         }),
       );
+      const duplicateClaim = await runs.requestClaimRunnerJob(
+        true,
+        resumedRunId,
+        [404],
+      );
+      expect(duplicateClaim.body).toStrictEqual({
+        error: { message: "Job not found in queue", code: "NOT_FOUND" },
+      });
       if (queueCase.origin === "agent_run") {
         expect(resumedClaim.appendSystemPrompt).toContain(
           `SOURCE_RUN_ID: ${firstRunId}`,

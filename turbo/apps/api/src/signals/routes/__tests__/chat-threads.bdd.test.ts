@@ -43,7 +43,6 @@ import {
   insertChatThreadEventTransactionFixture,
   readChatThreadEventIdsFixture,
   setChatThreadSnapshotBoundaryFixture,
-  setChatThreadSnapshotObjectKeyFixture,
 } from "../../../test-fixtures/chat-thread-events";
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
 import {
@@ -931,12 +930,9 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const client = setupApp({ context, routes: chatThreadRoutes })(
       chatThreadsContract,
     );
-    await setChatThreadSnapshotObjectKeyFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      latestSeqId: materialized.latestSeqId,
-      body: Buffer.from("{}"),
-    });
+    // This callback owns the only published snapshot in the external fake.
+    // Losing that object must not stop either request from presigning its URL.
+    threadSnapshotObjects.clear();
 
     // The API must not read or materialize the R2 object for either request.
     const headerlessResponse = await accept(

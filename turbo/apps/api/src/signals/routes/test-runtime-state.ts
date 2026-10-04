@@ -1224,23 +1224,6 @@ const postRuntimeStateAction$ = command(
         await setRunnerJobPiContextAsVersionedWriter(db, body, signal);
         return { status: 200 as const, body: { ok: true as const } };
       }
-      case "read-run-uploaded-file-sources": {
-        const rows = await db
-          .select({ source: runUploadedFiles.source })
-          .from(runUploadedFiles)
-          .where(eq(runUploadedFiles.runId, body.run_id))
-          .orderBy(runUploadedFiles.source);
-        signal.throwIfAborted();
-        return {
-          status: 200 as const,
-          body: {
-            ok: true as const,
-            uploaded_file_sources: rows.map((row) => {
-              return row.source;
-            }),
-          },
-        };
-      }
     }
   },
 );

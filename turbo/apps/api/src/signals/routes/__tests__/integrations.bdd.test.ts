@@ -1963,6 +1963,28 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 });
 
 describe("INT-01: Slack app deep webhook flows", () => {
+  function cleanUpCanonicalSlackScenario(actor: ApiTestUser): void {
+    onTestFinished(async () => {
+      const response = await runReads.requestListLogs(
+        actor,
+        { limit: 50 },
+        [200],
+      );
+      for (const run of response.body.data) {
+        if (
+          run.status === "queued" ||
+          run.status === "pending" ||
+          run.status === "running"
+        ) {
+          await runs.requestCancelRun(actor, run.id, [200, 400]);
+        }
+      }
+      await flushWaitUntilForTest();
+      await integrations.requestSlackDisconnect(actor, "uninstall", [200]);
+      await flushWaitUntilForTest();
+    });
+  }
+
   async function prepareCanonicalSlackContextFailureScenario() {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
@@ -1992,7 +2014,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         channel_type: "mpim",
       },
     });
-    return { teamId, eventBody };
+    return { actor, teamId, eventBody };
   }
 
   async function postCanonicalSlackScenario(
@@ -2016,28 +2038,23 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("processes the current Slack message without unauthorized optional context", async () => {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
+    cleanUpCanonicalSlackScenario(scenario.actor);
     context.mocks.slack.conversations.replies.mockRejectedValueOnce(
       slackPlatformError("missing_scope"),
     );
 
     await postCanonicalSlackScenario(scenario);
 
-    const state = await integrations.readSlackTestState(scenario.teamId);
-    expect(state.chat_ingress).toHaveLength(1);
-    expect(state.chat_ingress[0]).toMatchObject({
-      status: "processed",
-      processingAttemptCount: 1,
-      retryAt: null,
-      lastErrorClass: null,
-      lastError: null,
-    });
-    expect(state.recent_runs).toStrictEqual(
+    const response = await runReads.requestListLogs(
+      scenario.actor,
+      { limit: 50 },
+      [200],
+    );
+    expect(response.body.data).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
           triggerSource: "slack",
-          promptPreview: expect.stringContaining(
-            "preserve this current message",
-          ),
+          prompt: expect.stringContaining("preserve this current message"),
         }),
       ]),
     );
@@ -2046,23 +2063,26 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   async function expectPermanentSlackFailureTerminal(): Promise<void> {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
+    cleanUpCanonicalSlackScenario(scenario.actor);
     context.mocks.slack.conversations.replies.mockRejectedValue(
       slackPlatformError("invalid_auth"),
     );
 
     await postCanonicalSlackScenario(scenario);
+    const first = await runReads.requestListLogs(
+      scenario.actor,
+      { limit: 50 },
+      [200],
+    );
+    expect(first.body.data).toStrictEqual([]);
     await postCanonicalSlackScenario(scenario, 1);
 
-    const state = await integrations.readSlackTestState(scenario.teamId);
-    expect(state.chat_ingress).toHaveLength(1);
-    expect(state.chat_ingress[0]).toMatchObject({
-      status: "terminal",
-      retryCount: 1,
-      processingAttemptCount: 1,
-      retryAt: null,
-      lastErrorClass: "slack:invalid_auth",
-      lastError: "Slack platform error: invalid_auth",
-    });
+    const retried = await runReads.requestListLogs(
+      scenario.actor,
+      { limit: 50 },
+      [200],
+    );
+    expect(retried.body.data).toStrictEqual([]);
     expect(context.mocks.slack.conversations.replies).toHaveBeenCalledOnce();
   }
 
@@ -3396,6 +3416,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
     });
+    cleanUpCanonicalSlackScenario(actor);
     const threadTs = "2900.000300";
     const channelId = "C_BDD_RETRY_INGRESS";
     const retryEventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
@@ -3422,20 +3443,33 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     await flushWaitUntilForTest();
 
-    const state = await integrations.readSlackTestState(teamId);
-    expect(state.chat_thread_routes).toHaveLength(1);
-    expect(state.chat_thread_routes[0]).toMatchObject({
-      channelId,
-      threadTs,
-      chatThreadId: expect.any(String),
+    const { chatThreadId } = await ownedThreadWhere(actor, hasSlackSource);
+    const { events } = await chat.listThreadEvents(actor, chatThreadId);
+    const input = events.find((event) => {
+      return event.eventType === "input.prompt" && hasSlackSource(event);
     });
-    expect(state.chat_ingress).toStrictEqual([
-      expect.objectContaining({
-        eventId: retryEventId,
-        status: "processed",
-        retryCount: 1,
-      }),
-    ]);
+    expect(input).toMatchObject({
+      eventType: "input.prompt",
+      runId: expect.any(String),
+      userMessage: {
+        parts: expect.arrayContaining([
+          expect.objectContaining({
+            type: "source",
+            kind: "slack",
+            href: "https://vm0.slack.com/archives/C_BDD_RETRY_INGRESS/p2900000300",
+          }),
+        ]),
+      },
+    });
+    if (!input?.runId) {
+      throw new Error("Expected the retry-only Slack input to launch a Run");
+    }
+    await expect(readRunLog(actor, input.runId)).resolves.toMatchObject({
+      triggerSource: "slack",
+      prompt: expect.stringContaining(
+        "retry this route through canonical ingress",
+      ),
+    });
     expect(
       context.mocks.slack.assistant.threads.setStatus,
     ).toHaveBeenCalledWith({
