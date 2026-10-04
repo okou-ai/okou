@@ -18,15 +18,16 @@ export function automaticMcpCatalogFixture(
   if (!connector?.mcp) {
     throw new Error("Expected the shared automatic MCP connector");
   }
+  const firewallAuthHeaders: Record<string, string> =
+    firewallAuth === "none"
+      ? {}
+      : { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE };
   return {
     bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     slug,
     methodId: "smart-connect",
     endpoint: connector.mcp.endpoint,
-    firewallAuthHeaders:
-      firewallAuth === "none"
-        ? {}
-        : { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
+    firewallAuthHeaders,
     target: { kind: "builtin" as const, connectorSlug: slug },
   };
 }

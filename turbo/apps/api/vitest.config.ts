@@ -38,12 +38,16 @@ export default defineConfig({
     // scheduling; no database session or production lock is a test resource.
     projects: [
       {
-        extends: true,
+        // Do not inherit setupFiles: Vitest merges inherited arrays rather than
+        // replacing them with [], which would open the shared real database.
         test: {
           name: "api-immutable-catalog",
+          globals: true,
+          environment: "node",
+          env: { TZ: "UTC" },
           include: immutableCatalogTests,
           setupFiles: [],
-          benchmark: { enabled: false },
+          benchmark: { enabled: false, include: [], exclude: ["**/*"] },
         },
       },
       {
