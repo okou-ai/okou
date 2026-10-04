@@ -64,6 +64,7 @@ mod proxy_registry;
 mod registry_observation;
 mod reuse;
 mod ssh;
+mod storage_preparation;
 mod workspace_cache;
 
 fn storage_archive(content: &[u8]) -> Vec<u8> {

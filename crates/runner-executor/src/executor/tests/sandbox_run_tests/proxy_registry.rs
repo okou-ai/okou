@@ -334,15 +334,11 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
         overrides.start_agent_process_calls().is_empty(),
         "reused sandbox must not start an agent when proxy registration fails"
     );
+    // The concurrent staging owner completes and joins delivery before the
+    // failed registration returns the sandbox; no live transfer is abandoned.
     assert_telemetry_action(
         &telemetry,
-        "storage_cache_fresh_delivery_cancelled",
-        true,
-        None,
-    );
-    assert_telemetry_action(
-        &telemetry,
-        "storage_cache_fresh_delivery_drained",
+        "storage_cache_fresh_delivery_complete",
         true,
         None,
     );

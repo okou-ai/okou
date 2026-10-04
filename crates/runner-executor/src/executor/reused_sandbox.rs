@@ -48,13 +48,86 @@ pub(super) async fn execute_reused_sandbox(
         telemetry,
     )
     .await;
+    let mut prepared_guest_runtime = None;
+    let mut proxy_completion = None;
     let network_log_session = match prepared_storage {
         Ok(storage) => {
             inputs.controls.prepared_storage = storage;
-            register_proxy(config, context, &run.source_ip).await
+            let overlap_started = Instant::now();
+            let mut staging_telemetry = telemetry.fork_concurrent_phase();
+            // Join both owners even on failure: a Guest write must not outlive
+            // the sandbox handed back to the caller. Registration retains error
+            // precedence, as it did when these phases were serial.
+            let ((registration, elapsed, completed_at), runtime) = tokio::join!(
+                async {
+                    let started = Instant::now();
+                    let result = register_proxy(config, context, &run.source_ip).await;
+                    telemetry.record(
+                        "runner_reused_sandbox_proxy_register",
+                        started.elapsed(),
+                        result.is_ok(),
+                        result.is_err().then_some("sandbox_proxy_register_failed"),
+                    );
+                    (result, prepare_started.elapsed(), chrono::Utc::now())
+                },
+                async {
+                    let started = Instant::now();
+                    let runtime = inputs
+                        .controls
+                        .prepare_reused_storage_staging(
+                            run.sandbox.as_ref(),
+                            context,
+                            config,
+                            &start,
+                            &mut staging_telemetry,
+                        )
+                        .await;
+                    let success = runtime.is_none()
+                        && inputs
+                            .controls
+                            .prepared_storage
+                            .as_ref()
+                            .and_then(|storage| storage.population.as_ref())
+                            .is_none_or(|population| population.result.is_ok());
+                    staging_telemetry.record(
+                        "runner_reused_storage_staging",
+                        started.elapsed(),
+                        success,
+                        (!success).then_some("storage_staging_failed"),
+                    );
+                    runtime
+                },
+            );
+            telemetry.merge_concurrent_phase(staging_telemetry);
+            let staging_success = runtime.is_none()
+                && inputs
+                    .controls
+                    .prepared_storage
+                    .as_ref()
+                    .and_then(|storage| storage.population.as_ref())
+                    .is_none_or(|population| population.result.is_ok());
+            telemetry.record(
+                "runner_reused_sandbox_storage_proxy_prepare",
+                overlap_started.elapsed(),
+                registration.is_ok() && staging_success,
+                None,
+            );
+            prepared_guest_runtime = runtime;
+            proxy_completion = Some((elapsed, completed_at));
+            registration
         }
         Err(error) => Err(error),
     };
+    let (prepare_elapsed, prepare_completed_at) =
+        proxy_completion.unwrap_or_else(|| (prepare_started.elapsed(), chrono::Utc::now()));
+    let prepare_error = network_log_session.as_ref().err().map(ToString::to_string);
+    telemetry.record_at(
+        "runner_reused_sandbox_prepare",
+        prepare_elapsed,
+        network_log_session.is_ok(),
+        prepare_error.as_deref(),
+        prepare_completed_at,
+    );
     let network_log_session = match network_log_session {
         Ok(session) => session,
         Err(error) => {
@@ -64,12 +137,6 @@ pub(super) async fn execute_reused_sandbox(
                 .session_history_restore_plan
                 .cancel_and_drain()
                 .await;
-            telemetry.record(
-                "runner_reused_sandbox_prepare",
-                prepare_started.elapsed(),
-                false,
-                Some(&error.to_string()),
-            );
             return ExecuteOutcome::reused_sandbox_failure(
                 ExecutionFailure::from_error(error.to_string()),
                 run.sandbox,
@@ -78,16 +145,11 @@ pub(super) async fn execute_reused_sandbox(
             );
         }
     };
-    telemetry.record(
-        "runner_reused_sandbox_prepare",
-        prepare_started.elapsed(),
-        true,
-        None,
-    );
-
     // Exact reuse does not prefetch. For blanks, inspect the existing preparation
     // result while inputs and sandbox ownership are still available for recovery.
-    let prepared_guest_runtime = if run.kind == IdleSandboxKind::Blank {
+    let prepared_guest_runtime = if prepared_guest_runtime.is_some() {
+        prepared_guest_runtime
+    } else if run.kind == IdleSandboxKind::Blank {
         inputs
             .controls
             .prepare_codex_model_catalog_prefetch(run.sandbox.as_ref(), context, &start, telemetry)

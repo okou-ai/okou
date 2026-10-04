@@ -479,7 +479,11 @@ pub(super) async fn prepare_storage(
             Some(&config.decoded_cache),
         )
         .await?;
-        Ok(Some(PreparedStorage { plan, delivery }))
+        Ok(Some(PreparedStorage {
+            plan,
+            delivery,
+            population: None,
+        }))
     }
     .await;
     if let Err(error) = &result {

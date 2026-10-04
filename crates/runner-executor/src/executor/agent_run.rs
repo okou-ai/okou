@@ -1361,6 +1361,57 @@ impl PreparedGuestRuntime {
 }
 
 impl RunControls {
+    /// Only stages Runner-resolved bytes over Guest RPC. No Guest archive
+    /// application or network fetch, model prefetch or user process starts here.
+    pub(super) async fn prepare_reused_storage_staging(
+        &mut self,
+        sandbox: &dyn Sandbox,
+        context: &ExecutionContext,
+        config: &ExecutorConfig,
+        start: &RunStart<'_>,
+        telemetry: &mut JobTelemetry,
+    ) -> Option<PreparedGuestRuntime> {
+        let prepared = self.prepared_storage.as_mut()?;
+        if !prepared.plan.requires_guest_work() {
+            return None;
+        }
+        if !self.guest_state_prepared {
+            match PreparedGuestRuntime::prepare_without_codex_model_catalog_prefetch(
+                sandbox,
+                context,
+                start.restore_guest_state,
+                &self.cancel,
+                telemetry,
+            )
+            .await
+            {
+                PreparedGuestRuntime::Ready(_) => self.guest_state_prepared = true,
+                failure => return Some(failure),
+            }
+        }
+        if self.cancel.is_cancelled() {
+            return Some(PreparedGuestRuntime::Cancelled);
+        }
+        let started = Instant::now();
+        // Once admitted, finish the bounded Guest RPC rather than dropping its
+        // future on cancellation. A remote write must not outlive this owner.
+        let result = populate_storage_plan(
+            &mut prepared.plan,
+            Some(&mut prepared.delivery),
+            sandbox,
+            config,
+            telemetry,
+        )
+        .await;
+        prepared.population = Some(crate::storage_cache::PreparedStoragePopulation {
+            result,
+            elapsed: started.elapsed(),
+        });
+        self.cancel
+            .is_cancelled()
+            .then_some(PreparedGuestRuntime::Cancelled)
+    }
+
     pub(super) async fn prepare_codex_model_catalog_prefetch(
         &mut self,
         sandbox: &dyn Sandbox,
@@ -1932,7 +1983,7 @@ async fn populate_storage_plan(
     sandbox: &dyn Sandbox,
     config: &ExecutorConfig,
     telemetry: &mut JobTelemetry,
-) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
+) -> runner_storage::StorageResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     let cache_started = Instant::now();
     let result = crate::storage_cache::populate_cache_with_fresh_delivery(
         plan,
@@ -1949,7 +2000,7 @@ async fn populate_storage_plan(
         result.is_ok(),
         result.is_err().then_some(STORAGE_CACHE_POPULATE_FAILED),
     );
-    result.map_err(Into::into)
+    result
 }
 
 enum GuestRuntimeStatePreparation {
@@ -2016,6 +2067,10 @@ async fn prepare_guest_storage(
     };
     let apply_started = Instant::now();
     let planning_started = Instant::now();
+    let staged_elapsed = prepared_storage
+        .as_ref()
+        .and_then(|prepared| prepared.population.as_ref())
+        .map_or(Duration::ZERO, |population| population.elapsed);
 
     let result: RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> = async {
         if let Some(prepared) = prepared_storage.as_mut() {
@@ -2038,14 +2093,19 @@ async fn prepare_guest_storage(
                 let _ = prepared_storage.take();
                 Ok(None)
             } else {
-                let deferred = populate_storage_plan(
-                    &mut prepared.plan,
-                    Some(&mut prepared.delivery),
-                    sandbox,
-                    config,
-                    telemetry,
-                )
-                .await?;
+                let deferred = match prepared.population.take() {
+                    Some(population) => population.result?,
+                    None => {
+                        populate_storage_plan(
+                            &mut prepared.plan,
+                            Some(&mut prepared.delivery),
+                            sandbox,
+                            config,
+                            telemetry,
+                        )
+                        .await?
+                    }
+                };
                 let mut prepared = prepared_storage.take().ok_or_else(|| {
                     RunnerError::Internal(
                         "prepared storage disappeared after cache population".into(),
@@ -2126,7 +2186,7 @@ async fn prepare_guest_storage(
     let error = result.as_ref().err().map(ToString::to_string);
     telemetry.record(
         "runner_storage_manifest_apply",
-        apply_started.elapsed(),
+        apply_started.elapsed() + staged_elapsed,
         result.is_ok(),
         error.as_deref(),
     );

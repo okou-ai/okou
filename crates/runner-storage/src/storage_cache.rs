@@ -1312,6 +1312,16 @@ struct FreshArchiveClassification {
 pub struct PreparedStorage {
     pub plan: StoragePlan,
     pub delivery: FreshArchiveDelivery,
+    /// Population is owned by this exact plan and sandbox. It may be completed
+    /// before proxy registration, but Guest apply still waits for registration.
+    pub population: Option<PreparedStoragePopulation>,
+}
+
+pub struct PreparedStoragePopulation {
+    pub result: RunnerResult<Option<DeferredBackgroundFill>>,
+    /// Preserve the serial storage-work metric when population overlaps proxy
+    /// registration. The overlap wall time is recorded separately by the owner.
+    pub elapsed: Duration,
 }
 
 impl Drop for FreshArchiveDelivery {
