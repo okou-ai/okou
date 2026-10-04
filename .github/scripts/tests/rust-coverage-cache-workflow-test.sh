@@ -42,7 +42,7 @@ jq -e '
   ) and
   any($coverage.steps[];
     .name == "Install cargo-llvm-cov" and
-    .uses == "taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5" and
+    .uses == "taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0" and
     .with.tool == "cargo-llvm-cov@0.9.1"
   ) and
   any($coverage.steps[];
