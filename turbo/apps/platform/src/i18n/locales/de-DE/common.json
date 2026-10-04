@@ -2168,6 +2168,7 @@
       "muted": "Stummgeschaltet",
       "newChatWith": "Neuer Chat mit {{agentName}}",
       "noArchived": "Keine archivierten Chats",
+      "noMuted": "Keine stummgeschalteten Chats",
       "noUnread": "Keine ungelesenen Chats",
       "openChatMenu": "Chat-Menü öffnen",
       "openListMenu": "Chatlisten-Menü öffnen",

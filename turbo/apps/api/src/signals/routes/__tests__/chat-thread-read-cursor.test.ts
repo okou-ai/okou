@@ -135,6 +135,71 @@ describe("chat thread read cursor", () => {
     await expect(readCursor(fixture)).resolves.toBe(first.lastReadAt);
   });
 
+  it("accepts competing marks and publishes only the committed cursor advance", async () => {
+    const fixture = await createUnreadCursorFixture();
+    const before = await readCursor(fixture);
+    context.mocks.ably.publish.mockClear();
+
+    const responses = await Promise.all([
+      chat.markThreadRead(fixture.actor, fixture.threadId),
+      chat.markThreadRead(fixture.actor, fixture.threadId),
+    ]);
+    const stored = await readCursor(fixture);
+    expect(stored).not.toBe(before);
+    expect(responses).toContainEqual({ lastReadAt: stored });
+    // A loser may return its pre-read cursor; do not require a race refresh.
+    for (const response of responses) {
+      expect([before, stored]).toContain(response.lastReadAt);
+    }
+    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+      [
+        "chatThreadReadCursorUpdated",
+        {
+          threadId: fixture.threadId,
+          agentId: fixture.agentId,
+          lastReadAt: stored,
+        },
+      ],
+    ]);
+    await expect(unreadThreadIds(fixture)).resolves.not.toContain(
+      fixture.threadId,
+    );
+  });
+
+  it("advances without an organization and uses the Agent organization despite a different active org", async () => {
+    const fixture = await createUnreadCursorFixture();
+    const before = await readCursor(fixture);
+    const orgless = bdd.user({ userId: fixture.actor.userId, orgId: null });
+    const otherOrg = bdd.user({ userId: fixture.actor.userId });
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
+
+    const first = await chat.markThreadRead(orgless, fixture.threadId);
+    expect(first.lastReadAt).not.toBe(before);
+    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+      [`user-org:${fixture.actor.userId}:${fixture.orgId}`],
+    ]);
+    await expect(readCursor(fixture)).resolves.toBe(first.lastReadAt);
+
+    await chat.markThreadUnread(fixture.actor, fixture.threadId);
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
+    await expect(
+      chat.markThreadRead(otherOrg, fixture.threadId),
+    ).resolves.toStrictEqual(first);
+    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+      [`user-org:${fixture.actor.userId}:${fixture.orgId}`],
+    ]);
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "chatThreadReadCursorUpdated",
+      {
+        threadId: fixture.threadId,
+        agentId: fixture.agentId,
+        lastReadAt: first.lastReadAt,
+      },
+    );
+  });
+
   it("keeps user-only authorization and publishes to the Agent organization", async () => {
     const fixture = await createCursorFixture();
     const orgless = bdd.user({

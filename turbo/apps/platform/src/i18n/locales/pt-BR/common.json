@@ -2215,6 +2215,7 @@
       "muted": "Silenciada",
       "newChatWith": "Nova conversa com {{agentName}}",
       "noArchived": "Nenhuma conversa arquivada",
+      "noMuted": "Nenhuma conversa silenciada",
       "noUnread": "Nenhuma conversa não lida",
       "openChatMenu": "Abrir menu da conversa",
       "openListMenu": "Abrir menu da lista de conversas",

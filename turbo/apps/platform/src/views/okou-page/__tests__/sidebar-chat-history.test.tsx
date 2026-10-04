@@ -478,6 +478,135 @@ test("Mute and unmute a chat without hiding or reordering it", async () => {
   });
 });
 
+test("The muted filter is hidden when chat muting is disabled", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
+  ]);
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: false },
+  });
+  await within(sidebar()).findByText("Quiet task");
+  openChatListMenu();
+  expect(queryMenuItemByText("Muted")).not.toBeInTheDocument();
+  expect(menuItemByText("All chats")).toBeInTheDocument();
+});
+
+test("Filter muted chats including archived chats and switch between filters", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(RESEARCH_THREAD_ID, "Quiet task", { muted: true }),
+    createThread(ARCHIVED_THREAD_ID, "Archived quiet task", {
+      archived: true,
+      muted: true,
+    }),
+    createThread(INCIDENT_THREAD_ID, "Archived task", { archived: true }),
+  ]);
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatThreadMuting]: true,
+      [FeatureSwitchKey.ChatThreadArchiving]: true,
+    },
+  });
+  const titles = [
+    "Release plan",
+    "Quiet task",
+    "Archived quiet task",
+    "Archived task",
+  ];
+  await within(sidebar()).findByText("Quiet task");
+  openChatListMenu();
+  click(menuItemByText("Muted"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual([
+      "Quiet task",
+      "Archived quiet task",
+    ]);
+    expect(pathname()).toBe(`/chats/${RESEARCH_THREAD_ID}`);
+  });
+  expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
+
+  openChatListMenu();
+  click(menuItemByText("Archived"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual([
+      "Archived quiet task",
+      "Archived task",
+    ]);
+  });
+
+  openChatListMenu();
+  click(menuItemByText("Muted"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual([
+      "Quiet task",
+      "Archived quiet task",
+    ]);
+  });
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Unmute chat"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual(["Archived quiet task"]);
+  });
+
+  openChatListMenu();
+  click(menuItemByText("Unread"));
+  await within(sidebar()).findByText("No unread chats");
+  openChatListMenu();
+  click(menuItemByText("Inbox"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual([
+      "Release plan",
+      "Quiet task",
+    ]);
+  });
+  expect(
+    within(sidebar()).queryByText("Show all chats"),
+  ).not.toBeInTheDocument();
+});
+
+test("The muted filter works without archiving and shows an empty state after unmuting", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
+  ]);
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatThreadMuting]: true,
+      [FeatureSwitchKey.ChatThreadArchiving]: false,
+    },
+  });
+  await within(sidebar()).findByText("Quiet task");
+  openChatListMenu();
+  click(menuItemByText("Muted"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(["Release plan", "Quiet task"])).toStrictEqual([
+      "Quiet task",
+    ]);
+    expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
+  });
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Unmute chat"));
+  await within(sidebar()).findByText("No muted chats");
+  expect(visibleThreadTitles(["Release plan", "Quiet task"])).toStrictEqual([]);
+  click(buttonByText("Show all chats", sidebar()));
+  await waitFor(() => {
+    expect(visibleThreadTitles(["Release plan", "Quiet task"])).toStrictEqual([
+      "Release plan",
+      "Quiet task",
+    ]);
+  });
+});
+
 test("Running indicators take precedence over the muted icon", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory(

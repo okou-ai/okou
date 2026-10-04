@@ -12,11 +12,12 @@ import { loadLeftThread$ } from "../chat-page/chat-thread-panes.ts";
 import { resetSignal } from "../utils.ts";
 import {
   setChatThreadArchivedFilter$,
+  setChatThreadMutedFilter$,
   setChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
 import { shouldHandleShortcutPress } from "./nav.ts";
 
-export type ChatThreadFilter = "all" | "unread" | "archived";
+export type ChatThreadFilter = "all" | "unread" | "archived" | "muted";
 
 const resetChatThreadFilterSelection$ = resetSignal();
 
@@ -28,6 +29,8 @@ export const selectChatThreadFilter$ = command(
     const signal = set(resetChatThreadFilterSelection$, parentSignal);
     if (filter === "archived") {
       set(setChatThreadArchivedFilter$);
+    } else if (filter === "muted") {
+      set(setChatThreadMutedFilter$);
     } else {
       set(setChatThreadUnreadFilter$, filter === "unread");
     }

@@ -18,6 +18,7 @@ import {
   type SidebarChatThreadItemSignals,
 } from "./sidebar-chat-thread-item.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
+import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
 
 const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
@@ -346,7 +347,8 @@ function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals 
   // The async boundary selects the shared list context. Each viewport only
   // adds its own synchronous virtual window over that list.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
-    const showAllChatsRow = get(chatThreadOnlyArchived$);
+    const showAllChatsRow =
+      get(chatThreadOnlyArchived$) || get(chatThreadOnlyMuted$);
     const list = await get(currentChatThreadListSignals$);
     return createSidebarChatThreadViewportSignals(
       domSignals,

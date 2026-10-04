@@ -2159,6 +2159,7 @@
       "muted": "Dibisukan",
       "newChatWith": "Chat baru dengan {{agentName}}",
       "noArchived": "Tidak ada chat yang diarsipkan",
+      "noMuted": "Tidak ada chat yang dibisukan",
       "noUnread": "Tidak ada chat belum dibaca",
       "openChatMenu": "Buka menu chat",
       "openListMenu": "Buka menu daftar chat",

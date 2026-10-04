@@ -2159,6 +2159,7 @@
       "muted": "已静音",
       "newChatWith": "与{{agentName}}新建聊天",
       "noArchived": "没有已归档的聊天",
+      "noMuted": "没有已静音的聊天",
       "noUnread": "没有未读聊天",
       "openChatMenu": "打开聊天菜单",
       "openListMenu": "打开聊天列表菜单",
