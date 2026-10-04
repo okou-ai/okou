@@ -35,7 +35,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...featureSwitchesRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 interface AuthenticatedFixture {

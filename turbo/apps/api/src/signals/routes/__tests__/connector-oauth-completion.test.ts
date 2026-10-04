@@ -9,7 +9,6 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now, withMockNowForTest } from "../../../lib/time";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -23,7 +22,7 @@ import {
   testCronDeleteCleanupsStateRoutes,
 } from "../test-cron-delete-cleanups-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
@@ -80,7 +79,6 @@ async function createGithubAccount(actor: ApiTestUser) {
 }
 
 test("exposes a receipt only to its owner and exact current connector target", async () => {
-  await installApiTestConnectorCatalog();
   const actor = bdd.user();
   const { start, connectionId } = await createGithubAccount(actor);
   const id = start.oauthAttemptId;
@@ -111,7 +109,6 @@ test("exposes a receipt only to its owner and exact current connector target", a
 });
 
 test("does not complete a denied reconnect after rename or default-account changes and allows retry", async () => {
-  await installApiTestConnectorCatalog();
   const actor = bdd.user();
   const { connectionId } = await createGithubAccount(actor);
   const account = { intent: "reconnect", connectionId } as const;
@@ -167,7 +164,6 @@ test("does not complete a denied reconnect after rename or default-account chang
 });
 
 test("retains independent receipts for overlapping GitHub adds that reuse the same account", async () => {
-  await installApiTestConnectorCatalog();
   const actor = bdd.user();
   const { connectionId } = await createGithubAccount(actor);
   const first = await connectors.startOauth(actor, "github", "oauth");
@@ -190,7 +186,6 @@ test("retains independent receipts for overlapping GitHub adds that reuse the sa
 });
 
 test("expires completed attempts without expiring their connector account", async () => {
-  await installApiTestConnectorCatalog();
   const actor = bdd.user();
   const { start, connectionId } = await createGithubAccount(actor);
   await withMockNowForTest(now() + 16 * 60 * 1000, async () => {
@@ -208,7 +203,6 @@ test("expires completed attempts without expiring their connector account", asyn
 });
 
 test("cleans expired receipts in bounded batches without deleting current receipts or accounts", async () => {
-  await installApiTestConnectorCatalog();
   const marker = `oauth-completion-cleanup-${randomUUID()}`;
   const actor = bdd.user({ userId: marker, orgId: marker });
   const expired = await withMockNowForTest(now() - 20 * 60 * 1000, async () => {

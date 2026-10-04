@@ -1688,6 +1688,13 @@
       "when": 1791088990644,
       "tag": "1318_calm_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 1319,
+      "version": "7",
+      "when": 1791118744492,
+      "tag": "1319_fair_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }

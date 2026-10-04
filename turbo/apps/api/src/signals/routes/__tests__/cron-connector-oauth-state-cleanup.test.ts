@@ -17,7 +17,7 @@ import {
 } from "../test-cron-delete-cleanups-state";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const API_ORIGIN = "https://api.okou.ai";
 

@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { createStore } from "ccstate";
 import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
 import {
+  connectorCatalog,
+  connectorCatalogEntries,
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
   connectorCatalogRuntimeProjections,
@@ -53,6 +55,16 @@ export const API_TEST_CONNECTOR_FIREWALL_CONFIGS =
     return firewall === null ? [] : [firewall];
   });
 
+export const API_TEST_CONNECTOR_CATALOG_SOURCE = connectorCatalogSource();
+
+export async function installSharedApiTestConnectorCatalog(): Promise<void> {
+  await installApiTestConnectorCatalog({
+    sourceId: API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId,
+    runtimeProjection: true,
+    ifAbsent: true,
+  });
+}
+
 const DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION =
   API_TEST_CONNECTOR_CATALOG.catalogVersion;
 
@@ -88,6 +100,7 @@ export async function installApiTestConnectorCatalog(
     readonly runtimeProjection?: boolean;
     readonly sourceId?: string;
     readonly catalog?: ConnectorCatalogArtifact;
+    readonly ifAbsent?: boolean;
   } = {},
 ): Promise<void> {
   const catalogVersion =
@@ -107,6 +120,14 @@ export async function installApiTestConnectorCatalog(
   const catalogDigest = sha256Digest(rawBytes);
   const catalogGzip = encodeConnectorCatalogSnapshot(rawBytes);
   const sourceId = options.sourceId ?? connectorCatalogSource().sourceId;
+  if (
+    !options.ifAbsent &&
+    sourceId === API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId
+  ) {
+    throw new Error(
+      "Legacy catalog mutation must own a separate source; the shared test catalog is immutable",
+    );
+  }
   const capability = connectorCatalogExecutableCapabilityState();
   const activatedAt = nowDate();
   const db = store.set(writeDb$);
@@ -139,20 +160,72 @@ export async function installApiTestConnectorCatalog(
   };
 
   await db.transaction(async (tx) => {
-    await tx
-      .insert(connectorCatalogSyncState)
-      .values({
-        sourceId,
-        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ...syncStateValues,
-      })
-      .onConflictDoUpdate({
+    const syncStateInsert = tx.insert(connectorCatalogSyncState).values({
+      sourceId,
+      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+      ...syncStateValues,
+    });
+    if (options.ifAbsent) {
+      // The winning INSERT and all fixture rows commit together. Concurrent
+      // workers wait on that conflict instead of replacing shared authority.
+      const inserted = await syncStateInsert.onConflictDoNothing().returning();
+      if (inserted.length === 0) {
+        const [snapshot] = await tx
+          .select({ hash: connectorCatalogActiveSnapshot.catalogDigest })
+          .from(connectorCatalogActiveSnapshot)
+          .where(
+            and(
+              eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+              eq(
+                connectorCatalogActiveSnapshot.schemaVersion,
+                SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+              ),
+            ),
+          );
+        if (snapshot?.hash !== catalogDigest) {
+          throw new Error(
+            "Shared test catalog identity does not match the fixed fixture",
+          );
+        }
+        return;
+      }
+      const { connectors, ...catalogHeader } = catalog;
+      await tx
+        .insert(connectorCatalogEntries)
+        .values(
+          connectors.map((connector) => {
+            return {
+              hash: catalogDigest,
+              slug: connector.slug,
+              payload: connector,
+            };
+          }),
+        )
+        .onConflictDoNothing();
+      await tx
+        .insert(connectorCatalog)
+        .values({
+          schemaVersion: catalog.artifactSchemaVersion,
+          hash: catalogDigest,
+          catalogVersion,
+          activatedAt,
+          catalogHeader,
+          entrySlugs: connectors
+            .map((connector) => {
+              return connector.slug;
+            })
+            .sort(),
+        })
+        .onConflictDoNothing();
+    } else {
+      await syncStateInsert.onConflictDoUpdate({
         target: [
           connectorCatalogSyncState.sourceId,
           connectorCatalogSyncState.schemaVersion,
         ],
         set: syncStateValues,
       });
+    }
     await tx
       .insert(connectorCatalogActiveSnapshot)
       .values({
@@ -225,6 +298,9 @@ export async function readApiTestConnectorCatalogSnapshot(
 
 export function captureApiTestConnectorCatalogCleanup(): () => Promise<void> {
   const { sourceId } = connectorCatalogSource();
+  if (sourceId === API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId) {
+    throw new Error("The shared test catalog must not be deleted by a test");
+  }
   return async () => {
     await deleteApiTestConnectorCatalogSource(sourceId);
   };

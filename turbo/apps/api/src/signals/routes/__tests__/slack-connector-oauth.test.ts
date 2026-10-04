@@ -23,7 +23,7 @@ import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
 import { readGetStartedStatus } from "./helpers/get-started";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const API_ORIGIN = "https://api.okou.ai";
 const headers = { authorization: "Bearer clerk-session" } as const;

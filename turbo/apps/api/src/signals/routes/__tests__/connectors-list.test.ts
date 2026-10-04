@@ -11,7 +11,7 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   invalidateApiTestConnectorCatalogCompatibility,
   installApiTestConnectorCatalog,
@@ -25,7 +25,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 interface AuthenticatedFixture {
@@ -187,13 +187,13 @@ describe("GET /api/connectors", () => {
     expect(listed.body.connectorProvidedBindings).toStrictEqual([
       expect.objectContaining({
         connectorSlug: "gitlab",
-        namespace: "secrets",
-        name: "GITLAB_TOKEN",
+        namespace: "vars",
+        name: "GITLAB_HOST",
       }),
       expect.objectContaining({
         connectorSlug: "gitlab",
-        namespace: "vars",
-        name: "GITLAB_HOST",
+        namespace: "secrets",
+        name: "GITLAB_TOKEN",
       }),
     ]);
   });
@@ -271,6 +271,12 @@ describe("GET /api/connectors", () => {
   });
 
   it("keeps stored connector reads empty or unavailable when the external catalog is unavailable", async () => {
+    // Preserve the legacy corruption contract without changing shared authority.
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `legacy-list-unavailable-${randomUUID()}`,
+    );
+    await installApiTestConnectorCatalog();
     const fixture = seedAuthenticatedFixture();
     seededFixtures.push(fixture);
     await connectGitlab(fixture);

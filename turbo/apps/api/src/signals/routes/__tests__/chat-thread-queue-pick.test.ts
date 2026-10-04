@@ -28,7 +28,7 @@ import { postConcurrencyEntitlementsInvoicePaid } from "./helpers/stripe-billing
  * organization's waiting threads oldest first, with no priority for the ending
  * run's thread) or after a concurrency entitlement changes.
  */
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   bdd,

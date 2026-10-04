@@ -14,7 +14,7 @@ import {
   seedUsageStateFixture$,
 } from "./helpers/usage-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 
 describe("usage state test state", () => {

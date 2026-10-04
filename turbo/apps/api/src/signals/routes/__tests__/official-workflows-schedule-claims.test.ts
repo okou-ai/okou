@@ -29,7 +29,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { acknowledgeDetachedForTest, createDeferredPromise } from "../../utils";
 import {
@@ -51,7 +50,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
 const runs = createRunsApi(context);
@@ -415,13 +414,6 @@ async function listMorningBriefInstallations(actor: ApiTestUser) {
 
 beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
-  // testContext seeds the default source; this hook also seeds the source
-  // derived from the unique bucket used by this test.
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `official-workflow-installation-test-${randomUUID()}`,
-  );
-  await installApiTestConnectorCatalog();
   await cleanupCatalog();
 });
 

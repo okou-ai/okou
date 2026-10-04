@@ -78,6 +78,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@hono/node-server-v1": "npm:@hono/node-server@1.19.14",
     "@hono/vite-build": "^1.11.1",
     "@opentelemetry/context-async-hooks": "2.11.0",

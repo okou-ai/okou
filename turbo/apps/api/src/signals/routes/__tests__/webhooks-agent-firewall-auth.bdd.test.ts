@@ -14,7 +14,6 @@ import {
   type SecretKmsGenerateDataKeyRequest,
 } from "../../../lib/secret-kms-client";
 import { now } from "../../../lib/time";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { testContext } from "../../../__tests__/test-context";
@@ -74,7 +73,7 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  *   org's credits below the threshold while keeping the tier active.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const publicConnections = createPublicFirewallConnections(context);
 const TERMINAL_RUN_STATUSES = [
   "completed",
@@ -3272,7 +3271,6 @@ describe("FW-10: platform connector secrets", () => {
       refreshToken: "google-ads-refresh",
     });
     mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
-    await installApiTestConnectorCatalog();
 
     const missing = await fw.requestFirewallAuth(
       headers,
@@ -3374,7 +3372,6 @@ describe("FW-10: platform connector secrets", () => {
     const fw = createFirewallApi(context);
     const { headers } = await firewallRun();
     mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
-    await installApiTestConnectorCatalog();
 
     const resolved = await fw.requestFirewallAuth(
       headers,

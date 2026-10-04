@@ -31,7 +31,7 @@ import {
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const connectors = createConnectorBddApi(context);

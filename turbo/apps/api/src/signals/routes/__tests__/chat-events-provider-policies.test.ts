@@ -41,7 +41,7 @@ import {
 } from "./helpers/chat-events-fixture";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,

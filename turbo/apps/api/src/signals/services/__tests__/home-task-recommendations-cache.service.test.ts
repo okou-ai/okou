@@ -24,7 +24,7 @@ import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/fea
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const fixture = createChatEventsFixture(context);
 
 // No production endpoint writes arbitrary cache JSONB or holds a refresh claim.

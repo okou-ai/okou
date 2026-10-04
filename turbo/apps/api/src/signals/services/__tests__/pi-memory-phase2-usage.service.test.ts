@@ -65,7 +65,7 @@ import {
 // Private maintenance has no public launch/control/ledger API. Seed only its
 // infrastructure-owned cron input and terminal faults; the real dispatcher
 // persists the binding, and the real proxy HTTP ingress owns all usage writes.
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 
 async function dispatchMaintenance(
   type?: Phase2ProviderType,

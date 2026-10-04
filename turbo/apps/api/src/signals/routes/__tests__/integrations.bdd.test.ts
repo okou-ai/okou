@@ -16,7 +16,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
@@ -52,7 +51,7 @@ helper gap:
   can be covered without diagnostic fixture routes.
 */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
@@ -5411,7 +5410,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     integrations.clearGithubAppProvider();
-    await installApiTestConnectorCatalog();
 
     const unconfiguredInstall = await integrations.requestGithubOauthInstall(
       {},
@@ -5545,7 +5543,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     integrations.clearGithubAppProvider();
     mockOptionalEnv("GH_OAUTH_CLIENT_ID", "bdd-github-client-id");
     mockOptionalEnv("GH_OAUTH_CLIENT_SECRET", "bdd-github-client-secret");
-    await installApiTestConnectorCatalog();
 
     const actor = integrations.user();
     const response = await integrations.requestGithubOauthConnect(

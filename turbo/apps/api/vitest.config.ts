@@ -1,5 +1,9 @@
 import { defineConfig } from "vitest/config";
 
+const immutableCatalogTests = [
+  "src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
+];
+
 const catalogTests = [
   "src/signals/routes/__tests__/official-workflows.test.ts",
   "src/signals/routes/__tests__/official-workflows-schedule-claims.test.ts",
@@ -36,8 +40,21 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "api-immutable-catalog",
+          include: immutableCatalogTests,
+          setupFiles: [],
+          benchmark: { enabled: false },
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "api",
-          exclude: [...catalogTests, ...bootstrapFailureTests],
+          exclude: [
+            ...catalogTests,
+            ...bootstrapFailureTests,
+            ...immutableCatalogTests,
+          ],
         },
       },
       {

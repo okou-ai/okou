@@ -112,7 +112,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...userPermissionGrantsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const routeMocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);

@@ -32,7 +32,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
  *   without running valid global sweeps from the wrong owner file.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 
 function resendSendCallsTo(recipient: string): number {
   return context.mocks.resend.send.mock.calls.filter((call) => {

@@ -29,7 +29,7 @@ import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const trackCleanup = createFixtureTracker<() => Promise<void>>(
   async (action) => {
     await action();

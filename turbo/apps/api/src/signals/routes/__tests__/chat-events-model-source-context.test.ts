@@ -14,7 +14,7 @@ import {
 } from "./helpers/chat-events-fixture";
 import type { ApiTestUser } from "./helpers/api-bdd";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   bdd,

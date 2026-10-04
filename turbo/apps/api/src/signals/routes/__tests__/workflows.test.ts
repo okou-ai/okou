@@ -72,7 +72,7 @@ import {
   setWorkflowAutomationAutonomyBudgetFixture,
 } from "./helpers/runtime-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const miscApi = createMiscRoutesApi(context);

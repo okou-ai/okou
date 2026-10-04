@@ -30,7 +30,7 @@ import {
   type EntitledChatActor,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,
@@ -74,17 +74,19 @@ interface SelectedThreadConnectorFixture extends EntitledChatActor {
 
 async function selectedThreadConnectorFixture(
   title: string,
+  legacyProjectionMutation = false,
 ): Promise<SelectedThreadConnectorFixture> {
-  // A unique version still shares the active source with other test files.
-  // Own the source so their catalog setup cannot invalidate this projection.
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `test-thread-runtime-context-${randomUUID()}`,
-  );
-  await installApiTestConnectorCatalog({
-    catalogVersion: `api-test-thread-runtime-overlap-${randomUUID()}`,
-    runtimeProjection: true,
-  });
+  if (legacyProjectionMutation) {
+    // Preserve the live legacy fallback contract without mutating the shared fixture.
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `test-thread-runtime-context-${randomUUID()}`,
+    );
+    await installApiTestConnectorCatalog({
+      catalogVersion: `api-test-thread-runtime-overlap-${randomUUID()}`,
+      runtimeProjection: true,
+    });
+  }
   const entitled = await entitledChatActor();
   const connection = await connectors.connectManualGrant(
     entitled.actor,
@@ -354,6 +356,7 @@ describe("CHAT-02: thread connector account selection", () => {
     async (projectionState) => {
       const fixture = await selectedThreadConnectorFixture(
         "Thread catalog projection fallback",
+        true,
       );
       // Advance authority so setup's cached selection cannot hide a missing row.
       await installApiTestConnectorCatalog({

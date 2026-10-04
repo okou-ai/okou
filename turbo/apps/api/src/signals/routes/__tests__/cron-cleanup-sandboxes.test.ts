@@ -41,7 +41,7 @@ import { createFixtureTracker } from "./helpers/route-test";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { runnersRoutes } from "../runners";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const webhooks = createWebhookCallbackApi(context);
 const {
   api,

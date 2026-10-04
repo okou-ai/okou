@@ -17,7 +17,7 @@ import { userPermissionGrantsRoutes } from "../user-permission-grants";
 
 const TEST_APP_ROUTES = Object.freeze([...userPermissionGrantsRoutes]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
 

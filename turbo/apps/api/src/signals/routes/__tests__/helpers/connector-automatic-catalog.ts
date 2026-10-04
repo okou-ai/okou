@@ -8,6 +8,30 @@ import {
   installApiTestConnectorCatalog,
 } from "../../../../test-fixtures/connector-catalog";
 
+export function automaticMcpCatalogFixture(
+  firewallAuth: "none" | "oauth" = "oauth",
+) {
+  const slug = `automatic-mcp-${firewallAuth}`;
+  const connector = API_TEST_CONNECTOR_CATALOG.connectors.find((entry) => {
+    return entry.slug === slug;
+  });
+  if (!connector?.mcp) {
+    throw new Error("Expected the shared automatic MCP connector");
+  }
+  return {
+    bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    slug,
+    methodId: "smart-connect",
+    endpoint: connector.mcp.endpoint,
+    firewallAuthHeaders:
+      firewallAuth === "none"
+        ? {}
+        : { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
+    target: { kind: "builtin" as const, connectorSlug: slug },
+  };
+}
+
+// Legacy identity-rotation coverage remains until its production mechanism retires.
 export async function installAutomaticMcpCatalog(
   args: {
     readonly slug?: string;
@@ -59,7 +83,10 @@ export async function installAutomaticMcpCatalog(
     catalogVersion: `automatic-${randomUUID()}`,
     connectors: [
       ...API_TEST_CONNECTOR_CATALOG.connectors.filter((connector) => {
-        return connector.slug !== slug;
+        return (
+          connector.slug !== slug &&
+          !connector.slug.startsWith("automatic-mcp-")
+        );
       }),
       {
         ...template,
