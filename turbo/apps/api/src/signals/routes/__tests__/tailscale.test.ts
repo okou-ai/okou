@@ -17,6 +17,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, joinAll } from "../../utils";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -757,6 +758,189 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect(probe.decryptCalls).toBe(0);
     await flushWaitUntilForTest();
   });
+  it.each(["create", "rebind"] as const)(
+    "fences a first credential binding via %s during rotation before post-KMS handoff",
+    async (binding) => {
+      const o = owner();
+      const c = await config();
+      const r = await ordinary.runtime(o);
+      const existingHost = binding === "rebind" ? await host(c.id) : null;
+      const l = (
+        await accept(
+          credentials().create({
+            headers,
+            body: { id: randomUUID(), ...login },
+          }),
+          [201],
+        )
+      ).body;
+      const rotationEntered = createDeferredPromise<void>(context.signal);
+      const releaseRotation = createDeferredPromise<void>(context.signal);
+      const handoffEntered = createDeferredPromise<void>(context.signal);
+      const releaseHandoff = createDeferredPromise<void>(context.signal);
+      useSecretKmsProbe(async (request) => {
+        rotationEntered.resolve();
+        await releaseRotation.promise;
+        return {
+          keyId: request.keyId,
+          plaintext: Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
+          encryptedDataKey: Buffer.from("test-wrapped-key", "utf8"),
+        };
+      });
+      const rotation = accept(
+        credentials().update({
+          headers,
+          params: { credentialId: l.id },
+          body: {
+            expectedRevision: l.revision,
+            username: "rotated-user",
+            authentication: { method: "password", password: "rotated-canary" },
+          },
+        }),
+        [200],
+      );
+      await joinAll([
+        (async () => {
+          await rotationEntered.promise;
+          const h =
+            existingHost === null
+              ? (
+                  await accept(
+                    hosts().create({
+                      headers,
+                      body: {
+                        id: randomUUID(),
+                        displayName: "First binding during login rotation",
+                        host: "peer",
+                        credential: { id: l.id },
+                        transport: { type: "tailscale", configId: c.id },
+                      },
+                    }),
+                    [201],
+                  )
+                ).body
+              : (
+                  await accept(
+                    hosts().update({
+                      headers,
+                      params: { connectionId: existingHost.id },
+                      body: {
+                        expectedGeneration: existingHost.generation,
+                        credential: { id: l.id },
+                      },
+                    }),
+                    [200],
+                  )
+                ).body;
+          await accept(
+            remote().updateHostDefault({
+              headers,
+              params: { protocol: "ssh", connectionId: h.id },
+              body: { enabled: true },
+            }),
+            [200],
+          );
+          const params = { runId: r.runId };
+          const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
+          const probe = useSecretKmsProbe();
+          const initial = await accept(
+            runner().resolve({ headers: runnerHeaders, params, body }),
+            [200],
+          );
+          expect(initial.body).toMatchObject({
+            outcome: "resolved_tailscale",
+            username: login.username,
+            authentication: login.authentication,
+          });
+          const decryptsBeforeHandoff = probe.decryptCalls;
+          expect(decryptsBeforeHandoff).toBeGreaterThan(0);
+          useSecretKmsProbe(undefined, async (_request, call) => {
+            if (call === decryptsBeforeHandoff) {
+              handoffEntered.resolve();
+              await releaseHandoff.promise;
+            }
+            return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
+          });
+          const handoff = accept(
+            runner().resolve({ headers: runnerHeaders, params, body }),
+            [200],
+          );
+          await joinAll([
+            (async () => {
+              await handoffEntered.promise;
+              releaseRotation.resolve();
+              await rotation;
+            })().finally(() => {
+              if (!releaseRotation.settled()) {
+                releaseRotation.resolve();
+              }
+              if (!releaseHandoff.settled()) {
+                releaseHandoff.resolve();
+              }
+            }),
+            handoff,
+          ]);
+          expect((await handoff).body).toStrictEqual({
+            outcome: "unavailable",
+          });
+          expect((await rotation).body).toMatchObject({
+            revision: l.revision + 1,
+            username: "rotated-user",
+            hosts: [{ id: h.id, displayName: h.displayName }],
+          });
+          expect((await resources()).hosts).toMatchObject([
+            {
+              id: h.id,
+              generation: h.generation + 1,
+              username: "rotated-user",
+            },
+          ]);
+          const currentProbe = useSecretKmsProbe();
+          expect(
+            (
+              await accept(
+                runner().lease({
+                  headers: runnerHeaders,
+                  params,
+                  body: {
+                    ...body,
+                    expectedGeneration: h.generation,
+                    expectedTailscaleConfig: {
+                      configId: c.id,
+                      generation: c.generation,
+                    },
+                  },
+                }),
+                [200],
+              )
+            ).body,
+          ).toStrictEqual({ outcome: "unavailable" });
+          expect(currentProbe.decryptCalls).toBe(0);
+          expect(
+            (
+              await accept(
+                runner().resolve({ headers: runnerHeaders, params, body }),
+                [200],
+              )
+            ).body,
+          ).toMatchObject({
+            outcome: "resolved_tailscale",
+            generation: h.generation + 1,
+            username: "rotated-user",
+            authentication: { method: "password", password: "rotated-canary" },
+          });
+        })().finally(() => {
+          if (!releaseRotation.settled()) {
+            releaseRotation.resolve();
+          }
+          if (!releaseHandoff.settled()) {
+            releaseHandoff.resolve();
+          }
+        }),
+        rotation,
+      ]);
+    },
+  );
   it.each([null, " private-passphrase-canary\n"])(
     "protects private-key JIT with passphrase %j and rechecks chat authority after decryption",
     async (passphrase) => {
