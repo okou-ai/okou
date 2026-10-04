@@ -47,7 +47,7 @@ data={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip
       'testExecutableSha256':hashlib.sha256(executable.read_bytes()).hexdigest(),
       'fixtureProviderSha256':hashlib.sha256(provider).hexdigest(),
       'fixtureMitVersion':'1.20.1-6ubuntu2',
-      'scope':'independent timed acquisition and mutual-GSS/RFC4752/verified-TLS RFB finality controls; not QEMU PNG or product acceptance'}
+      'scope':'independent acquisition/renewal/reacquisition and mutual-GSS/RFC4752/verified-TLS RFB finality controls; not QEMU PNG or product acceptance'}
 (receipt/'package.json').write_text(json.dumps(data,indent=2)+'\n')
 PY
 executable=$(< "$receipt/executable.txt")
@@ -59,12 +59,15 @@ sudo unshare --mount --pid --fork --kill-child --mount-proc --propagation privat
 cargo --version > "$receipt/toolchain.txt"
 rustc --version >> "$receipt/toolchain.txt"
 python3 - "$receipt" <<'PY'
-import json,sys
+import json,re,sys
 from pathlib import Path
 receipt=Path(sys.argv[1]);tests=(receipt/'tests.txt').read_text()
 assert tests.count('test result: ok. 1 passed; 0 failed; 0 ignored;')==1
-assert tests.count('test result: ok. 2 passed; 0 failed; 0 ignored;')==2
-assert 'test pinned_native_acquisition_preserves_valid_short_ticket_after_kdc_latency ... ok' in tests
+assert tests.count('test result: ok. 2 passed; 0 failed; 0 ignored;')==3
+for name in ('pinned_native_acquisition_preserves_valid_short_ticket_after_kdc_latency',
+             'pinned_native_renew_expired_ticket_has_live_renew_till',
+             'pinned_native_renew_nonrenewable_same_source_reacquisition'):
+    assert re.search(r'^test '+re.escape(name)+r' \.\.\. (?:[^\n]*\n)?ok$', tests, re.MULTILINE)
 assert 'cleanup verified:' in tests
 path=receipt/'package.json';data=json.loads(path.read_text());data['runtimeVerified']=True
 path.write_text(json.dumps(data,indent=2)+'\n')

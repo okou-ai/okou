@@ -684,112 +684,127 @@ async fn pinned_tls_authority_password_uncertain_delivery_and_established_expiry
 }
 
 #[tokio::test]
-#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+#[ignore = "requires independent signed MIT KDC and actual native worker"]
 async fn pinned_native_renew_expired_ticket_has_live_renew_till() {
     let root = fixture(0);
-    let mut relay = Relay::new(&root);
-    // An expired initial ticket is distinct from exhaustion of renew-till.
-    // Refusal must not issue KDC traffic or silently reacquire the same source.
-    let (mut context, status) = kerberos_worker::open(
-        &root.join("private"),
-        credentials(&root, "keytab"),
-        TicketPolicy::new(Duration::from_secs(2), Duration::from_secs(60)).unwrap(),
-        Instant::now() + Duration::from_secs(10),
-        &mut relay,
-    )
-    .await
-    .unwrap();
-    assert!(status.renewable);
-    tokio::time::sleep_until(status.expires_at + Duration::from_secs(1)).await;
-    assert!(
-        UNIX_EPOCH + Duration::from_secs(u64::from(status.declared_renew_till)) > SystemTime::now()
-    );
-    let requests = relay.requests;
-    assert_eq!(
-        context.renew(&mut relay).await.unwrap_err(),
-        kerberos_worker::Error::Expired
-    );
-    assert_eq!(relay.requests, requests);
-    context.close().await.unwrap();
-    assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+    for mode in ["keytab", "password"] {
+        let mut relay = Relay::new(&root);
+        // An expired initial ticket is distinct from exhaustion of renew-till.
+        // Refusal must not issue KDC traffic or silently reacquire the same source.
+        let (mut context, status) = kerberos_worker::open(
+            &root.join("private"),
+            credentials(&root, mode),
+            TicketPolicy::new(Duration::from_secs(2), Duration::from_secs(60)).unwrap(),
+            Instant::now() + Duration::from_secs(10),
+            &mut relay,
+        )
+        .await
+        .unwrap();
+        let id = context.process_id();
+        assert!(status.renewable);
+        tokio::time::sleep_until(status.expires_at + Duration::from_secs(1)).await;
+        assert!(
+            UNIX_EPOCH + Duration::from_secs(u64::from(status.declared_renew_till))
+                > SystemTime::now()
+        );
+        let requests = relay.requests;
+        assert_eq!(
+            context.renew(&mut relay).await.unwrap_err(),
+            kerberos_worker::Error::Expired
+        );
+        assert_eq!(relay.requests, requests);
+        context.close().await.unwrap();
+        assert!(!Path::new(&format!("/proc/{id}")).exists());
+        assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+    }
 }
 
 #[tokio::test]
-#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+#[ignore = "requires independent signed MIT KDC and actual native worker"]
 async fn pinned_native_renew_nonrenewable_same_source_reacquisition() {
     let root = fixture(0);
-    let deadline = Instant::now() + Duration::from_secs(15);
-    let mut relay = Relay::new(&root);
-    let (mut context, initial) = kerberos_worker::open(
-        &root.join("private"),
-        credentials(&root, "keytab"),
-        TicketPolicy::new(Duration::from_secs(10), Duration::from_secs(60)).unwrap(),
-        deadline,
-        &mut relay,
-    )
-    .await
-    .unwrap();
-    assert!(initial.renewable);
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    let renewed = context.renew(&mut relay).await.unwrap();
-    assert!(renewed.expires_at > initial.expires_at);
-    let next = context.reacquire(&mut relay).await.unwrap();
-    assert!(next.expires_at > Instant::now());
-    context.close().await.unwrap();
-    let (mut context, status) = kerberos_worker::open(
-        &root.join("private"),
-        credentials(&root, "keytab"),
-        TicketPolicy::new(Duration::from_secs(10), Duration::ZERO).unwrap(),
-        deadline,
-        &mut relay,
-    )
-    .await
-    .unwrap();
-    assert!(!status.renewable);
-    assert_eq!(
-        context.renew(&mut relay).await.unwrap_err(),
-        kerberos_worker::Error::NonRenewable
-    );
-    context.close().await.unwrap();
-    let policy = TicketPolicy::new(Duration::from_secs(2), Duration::from_secs(4)).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(12);
-    let mut first = Relay::new(&root);
-    let mut second = Relay::new(&root);
-    let (mut expired, before) = kerberos_worker::open(
-        &root.join("private"),
-        credentials(&root, "keytab"),
-        policy,
-        deadline,
-        &mut first,
-    )
-    .await
-    .unwrap();
-    let (mut reacquired, prior) = kerberos_worker::open(
-        &root.join("private"),
-        credentials(&root, "keytab"),
-        policy,
-        deadline,
-        &mut second,
-    )
-    .await
-    .unwrap();
-    let renew_till = before.declared_renew_till.max(prior.declared_renew_till);
-    assert!(before.renewable && prior.renewable);
-    let until = UNIX_EPOCH + Duration::from_secs(u64::from(renew_till));
-    tokio::time::sleep(until.duration_since(SystemTime::now()).unwrap_or_default()).await;
-    assert!(SystemTime::now() >= until);
-    let requests = first.requests;
-    assert_eq!(
-        expired.renew(&mut first).await.unwrap_err(),
-        kerberos_worker::Error::RenewalExhausted
-    );
-    assert_eq!(first.requests, requests); // No automatic reacquisition/fallback.
-    expired.close().await.unwrap();
-    let next = reacquired.reacquire(&mut second).await.unwrap();
-    assert!(next.expires_at > prior.expires_at && next.expires_at > Instant::now());
-    reacquired.close().await.unwrap();
-    assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+    for mode in ["keytab", "password"] {
+        let mut ids = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut relay = Relay::new(&root);
+        let (mut context, initial) = kerberos_worker::open(
+            &root.join("private"),
+            credentials(&root, mode),
+            TicketPolicy::new(Duration::from_secs(10), Duration::from_secs(60)).unwrap(),
+            deadline,
+            &mut relay,
+        )
+        .await
+        .unwrap();
+        ids.push(context.process_id());
+        assert!(initial.renewable);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let renewed = context.renew(&mut relay).await.unwrap();
+        assert!(renewed.expires_at > initial.expires_at);
+        let next = context.reacquire(&mut relay).await.unwrap();
+        assert!(next.expires_at > Instant::now());
+        context.close().await.unwrap();
+        let (mut context, status) = kerberos_worker::open(
+            &root.join("private"),
+            credentials(&root, mode),
+            TicketPolicy::new(Duration::from_secs(10), Duration::ZERO).unwrap(),
+            deadline,
+            &mut relay,
+        )
+        .await
+        .unwrap();
+        ids.push(context.process_id());
+        assert!(!status.renewable);
+        assert_eq!(
+            context.renew(&mut relay).await.unwrap_err(),
+            kerberos_worker::Error::NonRenewable
+        );
+        context.close().await.unwrap();
+        let policy = TicketPolicy::new(Duration::from_secs(2), Duration::from_secs(4)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(12);
+        let mut first = Relay::new(&root);
+        let mut second = Relay::new(&root);
+        let (mut expired, before) = kerberos_worker::open(
+            &root.join("private"),
+            credentials(&root, mode),
+            policy,
+            deadline,
+            &mut first,
+        )
+        .await
+        .unwrap();
+        let (mut reacquired, prior) = kerberos_worker::open(
+            &root.join("private"),
+            credentials(&root, mode),
+            policy,
+            deadline,
+            &mut second,
+        )
+        .await
+        .unwrap();
+        ids.extend([expired.process_id(), reacquired.process_id()]);
+        let renew_till = before.declared_renew_till.max(prior.declared_renew_till);
+        assert!(before.renewable && prior.renewable);
+        let until = UNIX_EPOCH + Duration::from_secs(u64::from(renew_till));
+        tokio::time::sleep(until.duration_since(SystemTime::now()).unwrap_or_default()).await;
+        assert!(SystemTime::now() >= until);
+        let requests = first.requests;
+        assert_eq!(
+            expired.renew(&mut first).await.unwrap_err(),
+            kerberos_worker::Error::RenewalExhausted
+        );
+        assert_eq!(first.requests, requests); // No automatic reacquisition/fallback.
+        expired.close().await.unwrap();
+        let next = reacquired.reacquire(&mut second).await.unwrap();
+        assert!(next.expires_at > prior.expires_at && next.expires_at > Instant::now());
+        reacquired.close().await.unwrap();
+        assert!(
+            ids.into_iter()
+                .all(|id| !Path::new(&format!("/proc/{id}")).exists())
+        );
+        assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+    }
     println!(
-        "real AS/TGS renewal, nonrenewable and exhausted renew-till refusals; explicit same-source reacquisition after expiry, without fallback or active RFB extension"
+        "real keytab/password AS/TGS renewal, nonrenewable and exhausted renew-till refusals; explicit same-source reacquisition after expiry, without fallback or active RFB extension"
     );
 }
