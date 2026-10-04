@@ -1,3 +1,4 @@
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
@@ -74,6 +75,7 @@ const chat = createChatFilesBddApi(context);
 const miscApi = createMiscRoutesApi(context);
 const mocks = createRouteMocks(context);
 const api = createRunsApi(context);
+const publicResults = createPublicAutomationResultEmailApi(context);
 const connectorApi = createConnectorBddApi(context);
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 
@@ -1444,17 +1446,6 @@ describe("workflows", () => {
       }),
       [201],
     );
-    await setWorkflowAutomationAutonomyBudgetFixture(
-      context,
-      automation.body.id,
-      4,
-    );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, automation.body.id),
-    ).resolves.toMatchObject({
-      officialBlueprintKey: null,
-      officialResultEmailEnabled: null,
-    });
     const webhookAutomation = await accept(
       automationsClient().create({
         headers: authHeaders(actor),
@@ -1470,6 +1461,27 @@ describe("workflows", () => {
       kind: "event",
       eventType: "webhook-received",
     });
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const runnerGroup = api.configureRunnerGroup();
+    api.acceptTelemetryIngest();
+    publicResults.configureDelivery(actor);
+    onTestFinished(async () => {
+      await publicResults.cleanup(actor);
+      const cleanupBdd = createBddApi(context);
+      cleanupBdd.acceptAgentStorageWrites();
+      await cleanupBdd.deleteAgent(actor, sourceAgent.agentId);
+      await cleanupBdd.deleteAgent(actor, targetAgent.agentId);
+    });
+    const sourceRun = await publicResults.start(
+      actor,
+      automation.body.id,
+      runnerGroup,
+    );
+    await publicResults.complete(actor, sourceRun.runId, runnerGroup, {
+      output: "Ordinary source result",
+    });
+    await publicResults.drain(sourceRun.runId, automation.body.id);
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
     const copied = await accept(
       detailClient().copy({
         headers: authHeaders(actor),
@@ -1505,13 +1517,6 @@ describe("workflows", () => {
     if (!copiedSchedule) {
       throw new Error("Expected the copied schedule automation");
     }
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, copiedSchedule.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      officialBlueprintKey: null,
-      officialResultEmailEnabled: null,
-    });
     expect(
       copiedAutomations.body.some((copiedAutomation) => {
         return (
@@ -1520,6 +1525,16 @@ describe("workflows", () => {
         );
       }),
     ).toBeTruthy();
+    const copiedRun = await publicResults.start(
+      actor,
+      copiedSchedule.id,
+      runnerGroup,
+    );
+    await publicResults.complete(actor, copiedRun.runId, runnerGroup, {
+      output: "Ordinary copied result",
+    });
+    await publicResults.drain(copiedRun.runId, copiedSchedule.id);
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
   });
 
   it("copies schedule-only workflows without binding a chat thread", async () => {

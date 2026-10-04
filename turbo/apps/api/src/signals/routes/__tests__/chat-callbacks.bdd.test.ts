@@ -28,10 +28,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import {
-  readRunModelRuntimeRouteFixture,
-  setRunModelRuntimeRouteFixture,
-} from "../../../test-fixtures/agent-runs";
+import { setRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
 import { insertQueuedSlackMissingContextFixture } from "../../../test-fixtures/chat-events";
 import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 
@@ -4350,7 +4347,21 @@ describe("CHAT-02: failed chat callbacks", () => {
     const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
     // A run admitted before claude-opus-4-8 was retired keeps that model;
     // current admission cannot construct it, so rewrite the persisted row.
-    const route = await readRunModelRuntimeRouteFixture(run.runId);
+    const route = (
+      await createRunReadsApi(context).requestReadLogById(
+        actor,
+        run.runId,
+        [200],
+      )
+    ).body;
+    if (
+      route.modelRuntimeProvider === undefined ||
+      route.modelRuntimeModel === undefined
+    ) {
+      throw new Error(
+        "Expected the owner log to include the Run runtime route",
+      );
+    }
     await setRunModelRuntimeRouteFixture({
       runId: run.runId,
       selectedModel: "claude-opus-4-8",

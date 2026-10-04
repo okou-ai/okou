@@ -159,22 +159,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       storage_version: z.number().int().positive(),
     }),
     z.object({
-      action: z.literal("seed-custom-runtime-connectors"),
-      org_id: z.string(),
-      user_id: z.string(),
-      agent_id: z.uuid().optional(),
-      custom_connectors: z
-        .array(
-          z.object({
-            id: z.uuid(),
-            slug: z.string(),
-            display_name: z.string(),
-            prefix_template: z.string(),
-          }),
-        )
-        .min(1),
-    }),
-    z.object({
       action: z.literal("set-connector-state"),
       org_id: z.string(),
       user_id: z.string(),

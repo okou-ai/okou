@@ -15,7 +15,11 @@ import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { seedConnectorStorageRow } from "./helpers/connector-credential-storage-state";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext({ connectorCatalog: true });
@@ -119,13 +123,24 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     if (actor.orgId === null) {
       throw new Error("Expected test actor organization");
     }
-    await seedConnectorStorageRow(context, {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      connectorSlug: "openai",
-      authMethod: "unavailable-method",
-      storageVersion: 1,
+    const catalog = createPublicConnectorCatalog(context);
+    const available = catalogWithAuthMethod("openai", "api-token", (method) => {
+      return { ...method, id: "unavailable-method" };
     });
+    await catalog.publish(available);
+    await connectorsApi.connectManualGrant(
+      actor,
+      "openai",
+      "unavailable-method",
+      {
+        apiKey: "unavailable-method-secret",
+      },
+    );
+    catalog.onCleanup(async () => {
+      await catalog.publish(available);
+      await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "openai");
+    });
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
     const response = await connectorsApi.requestScopeDiff(
       actor,
@@ -135,7 +150,7 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
 
     expectApiError(response.body);
     expect(response.body.error.code).toBe("NOT_FOUND");
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "openai");
+    await catalog.cleanup();
   });
 
   it("returns an empty diff when stored scopes match current scopes exactly", async () => {

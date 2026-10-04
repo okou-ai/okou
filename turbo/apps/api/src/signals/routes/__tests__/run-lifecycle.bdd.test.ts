@@ -53,7 +53,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { v5 as uuidv5 } from "uuid";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -129,7 +129,6 @@ import {
 } from "./helpers/integrations-slack";
 import {
   deleteCustomConnectorCredentialValues,
-  seedCustomConnectorRuntimeConnectors,
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
 import {
@@ -7925,26 +7924,79 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await fixture.api.requestCancelRun(fixture.actor, codex.runId, [200]);
   });
 
-  it("reads a seeded canonical connector through runtime auth", async () => {
+  it("reads a publicly configured canonical connector through runtime auth", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     if (!actor.orgId) {
       throw new Error("Expected a custom connector actor with an organization");
     }
+    const storage = context.mocks.s3.send.getMockImplementation();
+    const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+    const owned: {
+      connectorId?: string;
+      runId?: string;
+      sandboxToken?: string;
+    } = {};
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) {
+        return;
+      }
+      if (!storage) {
+        throw new Error("Expected the owned Agent's storage implementation");
+      }
+      context.mocks.s3.send.mockImplementation(storage);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      const { runId, sandboxToken, connectorId } = owned;
+      if (runId) {
+        const current = await api.readRun(actor, runId);
+        if (current.status === "pending" || current.status === "running") {
+          await api.requestCancelRun(actor, runId, [200]);
+        }
+        if (sandboxToken) {
+          await finishCancelledRun(runId, sandboxToken);
+        }
+        await flushWaitUntilForTest();
+      }
+      if (connectorId) {
+        await connectors.deleteCustomConnector(actor, connectorId);
+      }
+      await createBddApi(context).deleteAgent(actor, agentId);
+      cleaned = true;
+    };
+    onTestFinished(cleanup);
     const suffix = randomUUID().slice(0, 8);
-    const runtimeConnector = {
-      id: randomUUID(),
+    const prefixTemplate = `https://canonical-${suffix}.example.test/api/`;
+    const runtimeConnector = await connectors.createCustomConnector(actor, {
       slug: `_bdd-canonical-${suffix}`,
       displayName: "BDD Canonical Runtime",
-      prefixTemplate: `https://canonical-${suffix}.example.test/api/`,
-    };
-    await seedCustomConnectorRuntimeConnectors(context, {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      customConnectors: [runtimeConnector],
+      prefixTemplates: [prefixTemplate],
+      fields: [
+        {
+          key: "optional_secret",
+          label: "Optional secret",
+          kind: "secret",
+          required: false,
+        },
+      ],
+      headerInjections: [
+        {
+          name: "X-Connector",
+          valueTemplate: "runtime-batch {{secrets.optional_secret}}",
+        },
+      ],
+      queryInjections: [],
+      authMode: "manual",
     });
+    owned.connectorId = runtimeConnector.id;
+    await connectors.setCustomConnectorValues(actor, runtimeConnector.id, []);
     const runtimeConnectionId = await defaultCustomConnectorAccountId(
       connectors,
       actor,
@@ -7957,7 +8009,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         return connector.id === runtimeConnector.id;
       }),
     ).toMatchObject({
-      prefixTemplates: [runtimeConnector.prefixTemplate],
+      prefixTemplates: [prefixTemplate],
       headerInjections: [
         {
           name: "X-Connector",
@@ -7985,8 +8037,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       agentId,
       prompt: "use the seeded canonical connector",
     });
+    owned.runId = run.runId;
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    owned.sandboxToken = claim.sandboxToken;
     const runtimeTarget = customConnectorRuntimeRegistration(
       claim,
       runtimeConnector.id,
@@ -8010,7 +8064,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
     });
 
-    await api.requestCancelRun(actor, run.runId, [200]);
+    await cleanup();
   });
 
   it("keeps a granted custom skill independent from runtime admission", async () => {

@@ -1,3 +1,5 @@
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
@@ -14,12 +16,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { completeRunWithoutCallbacksFixture } from "../../../test-fixtures/chat-events";
-import {
-  completeResultEmailRunWithoutCallbacksFixture,
-  markWorkflowAsMorningBriefResultEmailFixture,
-} from "../../../test-fixtures/official-automation-result-email";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -34,7 +31,7 @@ import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automati
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);
@@ -42,6 +39,7 @@ const webhooks = createWebhookCallbackApi(context);
 const workflows = createWorkflowsBddApi(context);
 const outbox = createEmailOutboxStateApi(context);
 const misc = createMiscRoutesApi(context);
+const publicResults = createPublicAutomationResultEmailApi(context);
 
 const WORKFLOW_NAME = "official-result-email-fixture";
 const RESULT_CALLBACK_KIND = "workflow-automation:result-email";
@@ -282,72 +280,83 @@ describe("Official Automation result email callbacks", () => {
   it("delivers a stored callback payload that still carries a public brand", async () => {
     const scenario = await setupScenario();
     const runId = await startRun(scenario, "https://app.okou.ai");
+    publicResults.track(scenario.actor, runId, scenario.runnerGroup);
+    onTestFinished(async () => {
+      await publicResults.cleanup(scenario.actor);
+      const cleanupBdd = createBddApi(context);
+      cleanupBdd.acceptAgentStorageWrites();
+      await cleanupBdd.deleteAgent(scenario.actor, scenario.agentId);
+    });
     await seedResultCallback({
       runId,
       automationId: scenario.automationId,
       storedPublicBrand: "vm0",
     });
-    await completeResultEmailRunWithoutCallbacksFixture(runId);
-    await accept(
-      executionClient().interruptResultEmailCallback({
-        body: { run_id: runId },
+    await publicResults.complete(scenario.actor, runId, scenario.runnerGroup);
+    await expect(
+      publicResults.drain(runId, scenario.automationId),
+    ).resolves.toBe(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "Okou <okou@mail.example.com>",
+        to: scenario.actor.email,
+        subject: WORKFLOW_NAME,
+        text: expect.stringContaining(
+          "This run completed without a text result.",
+        ),
+        headers: {
+          "List-Unsubscribe": `<https://api.okou.ai/api/email/unsubscribe?token=${unsubscribeToken(scenario.actor.userId)}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
       }),
-      [200],
+      expect.any(Object),
     );
-    const source = await outbox.findSourceState({
-      sourceRunId: runId,
-      sourceWorkflowAutomationId: scenario.automationId,
+    expect(context.mocks.resend.send.mock.calls[0]?.[0]).toMatchObject({
+      text: expect.stringContaining(`https://app.okou.ai/activities/${runId}`),
     });
-    expect(source.items).toHaveLength(1);
-    expect(source.items[0]).toMatchObject({
-      status: "pending",
-      source_run_id: runId,
-      template: { template: "official-automation-result" },
+    expect(context.mocks.resend.send.mock.calls[0]?.[0]).toMatchObject({
+      text: expect.stringContaining(
+        `https://app.okou.ai/workflows/${scenario.workflowId}/automations?automationId=${scenario.automationId}`,
+      ),
     });
+    await expect(
+      publicResults.drain(runId, scenario.automationId),
+    ).resolves.toBe(0);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
   });
 
   it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
-    const scenario = await setupScenario();
-    const runId = await startRun(scenario, "https://app.okou.ai");
-    await seedResultCallback({
-      runId,
-      automationId: scenario.automationId,
-      workflowName: "Morning Brief",
-    });
-    await completeResultEmailRunWithoutCallbacksFixture(runId);
-    await markWorkflowAsMorningBriefResultEmailFixture(scenario.workflowId);
-    await accept(
-      executionClient().interruptResultEmailCallback({
-        body: { run_id: runId },
-      }),
-      [200],
+    const scenario = await publicResults.setupOfficial({ morningBrief: true });
+    const { runId } = await publicResults.start(
+      scenario.actor,
+      scenario.automationId,
+      scenario.runnerGroup,
     );
-    const source = await outbox.findSourceState({
-      sourceRunId: runId,
-      sourceWorkflowAutomationId: scenario.automationId,
-    });
-    const item = source.items[0];
-    if (!item) {
-      throw new Error("Expected a Morning Brief result email");
-    }
-    expect(item.subject).toBe("Morning Brief");
+    await publicResults.complete(scenario.actor, runId, scenario.runnerGroup);
+    await expect(
+      publicResults.drain(runId, scenario.automationId),
+    ).resolves.toBe(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    const sent = context.mocks.resend.send.mock.calls[0]?.[0];
+    expect(sent).toMatchObject({ subject: "Morning Brief" });
     const manageUrl =
       "https://app.okou.ai/agents?settings=preference&focus=morning-brief";
     const accountUnsubscribeUrl = `https://app.okou.ai/email/unsubscribe?token=${unsubscribeToken(
       scenario.actor.userId,
     )}`;
-    expect(item.template).toMatchObject({
-      template: "official-automation-result",
-      props: { manageUrl },
-    });
-    expect(item.headers).toStrictEqual({
+    expect(sent).toMatchObject({ text: expect.stringContaining(manageUrl) });
+    const sentHeaders =
+      typeof sent === "object" && sent !== null && "headers" in sent
+        ? sent.headers
+        : undefined;
+    expect(sentHeaders).toStrictEqual({
       "List-Unsubscribe": `<https://api.okou.ai/api/email/unsubscribe?token=${unsubscribeToken(
         scenario.actor.userId,
       )}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
     const send = context.mocks.resend.send.mock.calls[0]?.[0];
     const html =
       typeof send === "object" &&
@@ -603,42 +612,27 @@ describe("Official Automation result email callbacks", () => {
   });
 
   it("falls back after pathological Markdown expansion and sends one bounded multipart email", async () => {
-    const scenario = await setupScenario();
-    const runId = await startRun(scenario, "https://app.okou.ai");
-    await seedResultCallback({
-      runId,
-      automationId: scenario.automationId,
-    });
+    const scenario = await publicResults.setupOfficial();
+    const { runId } = await publicResults.start(
+      scenario.actor,
+      scenario.automationId,
+      scenario.runnerGroup,
+    );
     const pathologicalOutput = Array.from({ length: 2000 }, () => {
       return "- x";
     }).join("\n");
     expect(Array.from(pathologicalOutput)).toHaveLength(7999);
 
-    await completeRun(scenario, runId, {
+    await publicResults.complete(scenario.actor, runId, scenario.runnerGroup, {
       exitCode: 0,
       output: pathologicalOutput,
     });
     expect((await runs.readRun(scenario.actor, runId)).status).toBe(
       "completed",
     );
-    await expect(resultCallbackState(scenario, runId)).resolves.toMatchObject([
-      { status: "delivered", attempts: 1 },
-    ]);
-
-    const source = await outbox.findSourceState({
-      sourceRunId: runId,
-      sourceWorkflowAutomationId: scenario.automationId,
-    });
-    const item = source.items[0];
-    if (!item) {
-      throw new Error("Expected pathological output to enqueue one email");
-    }
-    expect(item.template).toMatchObject({
-      template: "official-automation-result",
-      props: { resultText: pathologicalOutput },
-    });
-
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      publicResults.drain(runId, scenario.automationId),
+    ).resolves.toBe(1);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     const send = context.mocks.resend.send.mock.calls[0]?.[0];
     const html =
@@ -655,6 +649,7 @@ describe("Official Automation result email callbacks", () => {
       typeof send.text === "string"
         ? send.text
         : "";
+    expect(html).toContain(pathologicalOutput);
     expect(html).toContain("white-space:pre-wrap");
     expect(html).not.toContain("<li");
     expect(html).toContain("- x\n- x");
@@ -662,10 +657,10 @@ describe("Official Automation result email callbacks", () => {
     expect(text).toContain("- x\n- x");
     expect(text).toContain(`https://app.okou.ai/activities/${runId}`);
     expect(text).toContain("https://app.okou.ai/email/unsubscribe");
-    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
-      status: "sent",
-      attempts: 1,
-    });
+    await expect(
+      publicResults.drain(runId, scenario.automationId),
+    ).resolves.toBe(0);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the existing automation switch separate from account-level unsubscribe", async () => {
@@ -711,28 +706,13 @@ describe("Official Automation result email callbacks", () => {
   });
 
   it("keeps suppression at send and leaves a successful Run unchanged", async () => {
-    const scenario = await setupScenario();
-    const runId = await startRun(scenario);
-    await seedResultCallback({
-      runId,
-      automationId: scenario.automationId,
-    });
-    await completeRun(scenario, runId, { exitCode: 0 });
-    const source = await outbox.findSourceState({
-      sourceRunId: runId,
-      sourceWorkflowAutomationId: scenario.automationId,
-    });
-    const item = source.items[0];
-    if (!item) {
-      throw new Error("Expected the successful Run to enqueue one email");
-    }
-    expect(item.template).toMatchObject({
-      template: "official-automation-result",
-      props: {
-        resultText: "This run completed without a text result.",
-      },
-    });
-
+    const scenario = await publicResults.setupOfficial();
+    const { runId } = await publicResults.start(
+      scenario.actor,
+      scenario.automationId,
+      scenario.runnerGroup,
+    );
+    await publicResults.complete(scenario.actor, runId, scenario.runnerGroup);
     const bounced = {
       type: "email.bounced",
       data: {
@@ -745,12 +725,10 @@ describe("Official Automation result email callbacks", () => {
       webhooks.signedResendWebhookHeaders(bounced),
       [200],
     );
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      publicResults.drain(runId, scenario.automationId),
+    ).resolves.toBe(1);
     expect(context.mocks.resend.send).not.toHaveBeenCalled();
-    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
-      status: "failed",
-      last_error: expect.stringContaining("suppressed"),
-    });
     expect((await runs.readRun(scenario.actor, runId)).status).toBe(
       "completed",
     );
@@ -818,65 +796,49 @@ describe("Official Automation result email callbacks", () => {
     });
   });
 
-  describe("with a seeded failure callback", () => {
-    async function prepareScenario() {
-      const failedScenario = await setupScenario();
-      const failedRunId = await startRun(failedScenario);
-      await seedResultCallback({
-        runId: failedRunId,
-        automationId: failedScenario.automationId,
-      });
-      return { failedScenario, failedRunId };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
-    it("delivers terminal-failure callbacks without an outbox retry loop", async () => {
-      const { failedScenario, failedRunId } = preparedScenario;
-      await completeRun(failedScenario, failedRunId, { exitCode: 1 });
-      await expect(
-        resultCallbackState(failedScenario, failedRunId),
-      ).resolves.toMatchObject([{ status: "delivered", attempts: 1 }]);
-      await expect(
-        outbox.findSourceState({
-          sourceRunId: failedRunId,
-          sourceWorkflowAutomationId: failedScenario.automationId,
-        }),
-      ).resolves.toStrictEqual({ items: [], claim: null });
+  describe("with a real failed Official Run", () => {
+    it("keeps terminal-failure Runs ineligible for result email", async () => {
+      const scenario = await publicResults.setupOfficial();
+      const { runId } = await publicResults.start(
+        scenario.actor,
+        scenario.automationId,
+        scenario.runnerGroup,
+      );
+      await publicResults.complete(
+        scenario.actor,
+        runId,
+        scenario.runnerGroup,
+        { exitCode: 1 },
+      );
+      await publicResults.drain(runId, scenario.automationId);
+      expect((await runs.readRun(scenario.actor, runId)).status).toBe("failed");
+      expect(context.mocks.resend.send).not.toHaveBeenCalled();
     });
   });
 
-  describe("with a seeded successful callback", () => {
-    async function prepareScenario() {
-      const unsubscribedScenario = await setupScenario();
-      const unsubscribedRunId = await startRun(unsubscribedScenario);
-      await seedResultCallback({
-        runId: unsubscribedRunId,
-        automationId: unsubscribedScenario.automationId,
-      });
-      return { unsubscribedScenario, unsubscribedRunId };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
+  describe("with a real successful Official Run", () => {
     it("honors account unsubscribe for successful result callbacks", async () => {
-      const { unsubscribedScenario, unsubscribedRunId } = preparedScenario;
+      const scenario = await publicResults.setupOfficial();
+      const { runId } = await publicResults.start(
+        scenario.actor,
+        scenario.automationId,
+        scenario.runnerGroup,
+      );
       await misc.requestEmailUnsubscribe(
-        unsubscribeToken(unsubscribedScenario.actor.userId),
+        unsubscribeToken(scenario.actor.userId),
         [200],
       );
-      await completeRun(unsubscribedScenario, unsubscribedRunId, {
-        exitCode: 0,
-        output: "Unsubscribed result",
-      });
-      await expect(
-        outbox.findSourceState({
-          sourceRunId: unsubscribedRunId,
-          sourceWorkflowAutomationId: unsubscribedScenario.automationId,
-        }),
-      ).resolves.toStrictEqual({ items: [], claim: null });
+      await publicResults.complete(
+        scenario.actor,
+        runId,
+        scenario.runnerGroup,
+        { output: "Unsubscribed result" },
+      );
+      await publicResults.drain(runId, scenario.automationId);
+      expect((await runs.readRun(scenario.actor, runId)).status).toBe(
+        "completed",
+      );
+      expect(context.mocks.resend.send).not.toHaveBeenCalled();
     });
   });
 

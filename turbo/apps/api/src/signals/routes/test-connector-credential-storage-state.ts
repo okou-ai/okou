@@ -12,7 +12,6 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { secrets } from "@okouai/db/schema/secret";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { variables } from "@okouai/db/schema/variable";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
@@ -578,71 +577,6 @@ async function seedConnector(
   return actionOk({ connector_id: connector.id });
 }
 
-async function seedCustomRuntimeConnectors(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"seed-custom-runtime-connectors">,
-  signal: AbortSignal,
-) {
-  await db.transaction(async (tx) => {
-    await tx.insert(orgCustomConnectors).values(
-      body.custom_connectors.map((connector) => {
-        return {
-          id: connector.id,
-          orgId: body.org_id,
-          slug: connector.slug,
-          displayName: connector.display_name,
-          prefixTemplates: [connector.prefix_template],
-          fields: [
-            {
-              key: "optional_secret",
-              label: "Optional secret",
-              kind: "secret" as const,
-              required: false,
-            },
-          ],
-          headerInjections: [
-            {
-              name: "X-Connector",
-              valueTemplate: "runtime-batch {{secrets.optional_secret}}",
-            },
-          ],
-          queryInjections: [],
-          authMode: "manual" as const,
-          storageVersion: 1,
-          createdBy: body.user_id,
-        };
-      }),
-    );
-    await tx.insert(connectors).values(
-      body.custom_connectors.map((connector) => {
-        return {
-          orgId: body.org_id,
-          userId: body.user_id,
-          customConnectorId: connector.id,
-          authMethod: "manual",
-          storageVersion: 1,
-        };
-      }),
-    );
-    const agentId = body.agent_id;
-    if (agentId) {
-      await tx.insert(userCustomConnectors).values(
-        body.custom_connectors.map((connector) => {
-          return {
-            orgId: body.org_id,
-            userId: body.user_id,
-            agentId,
-            customConnectorId: connector.id,
-            permissionNames: [] as string[],
-          };
-        }),
-      );
-    }
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function setConnectorState(
   db: Db,
   body: ConnectorCredentialStorageAction<"set-connector-state">,
@@ -1034,9 +968,6 @@ const mutateConnectorCredentialStorageState$ = command(
       }
       case "seed-connector": {
         return await seedConnector(db, body, signal);
-      }
-      case "seed-custom-runtime-connectors": {
-        return await seedCustomRuntimeConnectors(db, body, signal);
       }
       case "set-connector-state": {
         return await setConnectorState(db, body, signal);

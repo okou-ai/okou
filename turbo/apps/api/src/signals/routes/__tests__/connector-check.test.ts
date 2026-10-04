@@ -39,6 +39,11 @@ import {
   type OrgMembershipFixture,
 } from "./helpers/org-membership";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithManualConnector,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { connectorCheckRoutes } from "../connector-check";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 
@@ -621,16 +626,20 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
   it("ignores stale stored connectors that are absent from the catalog", async () => {
     const actor = bdd.user();
-    await seedConnectorStorageRow(context, {
-      authMethod: "api",
-      connectorSlug: "removed-connector",
-      orgId: requireOrgId(actor),
-      storageVersion: 1,
-      userId: actor.userId,
+    const catalog = createPublicConnectorCatalog(context);
+    const available = catalogWithManualConnector("removed-connector", "api");
+    await catalog.publish(available);
+    await connectorsApi.connectManualGrant(actor, "removed-connector", "api", {
+      credential: "removed-connector-secret",
     });
-    await trackConnectedFixture(
-      Promise.resolve({ actor, connectorSlug: "removed-connector" }),
-    );
+    catalog.onCleanup(async () => {
+      await catalog.publish(available);
+      await connectorsApi.deleteDefaultBuiltinConnectorAccount(
+        actor,
+        "removed-connector",
+      );
+    });
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
     const response = await checkWithSession(actor, {
       mode: "url",
@@ -642,6 +651,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       connector: { connectorSlug: "github" },
     });
+    await catalog.cleanup();
   });
 
   it("supports a real PAT and resolves hidden server-authored metadata without private refs", async () => {

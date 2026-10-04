@@ -1,3 +1,4 @@
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -120,6 +121,7 @@ const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const outbox = createEmailOutboxStateApi(context);
+const publicResults = createPublicAutomationResultEmailApi(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
 const GMAIL_TOPIC_NAME =
   "projects/vm0-ai-488909/topics/official-workflow-gmail-events";
@@ -1763,6 +1765,39 @@ async function drainResultEmails(
   }
 }
 
+async function observeInstalledResultEmail(
+  actor: ApiTestUser,
+  automationId: string,
+  expected: boolean,
+  subject?: string,
+): Promise<void> {
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  const runnerGroup = runs.configureRunnerGroup();
+  runs.acceptTelemetryIngest();
+  publicResults.configureDelivery(actor);
+  const { runId } = await publicResults.start(actor, automationId, runnerGroup);
+  await publicResults.complete(actor, runId, runnerGroup, {
+    output: "Public result email eligibility",
+  });
+  await publicResults.drain(runId, automationId);
+  if (expected) {
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "Okou <okou@mail.example.com>",
+        to: actor.email,
+        ...(subject === undefined ? {} : { subject }),
+        text: expect.stringContaining("Public result email eligibility"),
+      }),
+      expect.any(Object),
+    );
+    await publicResults.drain(runId, automationId);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+  } else {
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
+  }
+}
+
 async function completeSuccessfulRun(
   runnerGroup: string,
   runId: string,
@@ -1885,6 +1920,7 @@ async function installOfficialWorkflowLifecycleScenario() {
   const { agentId } = await workflowBdd.createAgent(actor);
   onTestFinished(async () => {
     installCatalogStorageFixture();
+    await publicResults.cleanup(actor);
     await bdd.deleteAgent(actor, agentId);
     await cleanupCatalog();
   });
@@ -2036,8 +2072,11 @@ describe("Morning Brief preference", () => {
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected a default Agent");
     }
+    const defaultAgentId = onboarding.defaultAgentId;
     onTestFinished(async () => {
       installCatalogStorageFixture();
+      await publicResults.cleanup(actor);
+      await createBddApi(context).deleteAgent(actor, defaultAgentId);
       await cleanupCatalog();
     });
     await connectBriefSource(actor);
@@ -2122,26 +2161,26 @@ describe("Morning Brief preference", () => {
       automationId: automation.id,
       chatThreadId: automation.chatThreadId,
     };
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, automation.id),
-    ).resolves.toMatchObject({
-      officialBlueprintKey: "daily-delivery",
-      officialResultEmailEnabled: true,
-    });
     return { actor, headers, identities, morningBrief };
   }
 
   it("installs idempotently without the Official Workflows feature", async () => {
-    const { identities } = await setupEnabledMorningBrief();
+    const { actor, identities } = await setupEnabledMorningBrief();
     expect(identities).toStrictEqual({
       workflowId: expect.any(String),
       automationId: expect.any(String),
       chatThreadId: null,
     });
+    await observeInstalledResultEmail(
+      actor,
+      identities.automationId,
+      true,
+      "Morning Brief",
+    );
   });
 
   it("preserves Morning Brief identities across disable and re-enable", async () => {
-    const { headers, identities, morningBrief } =
+    const { actor, headers, identities, morningBrief } =
       await setupEnabledMorningBrief();
     const disabled = await accept(
       morningBriefPreferenceClient().update({
@@ -2183,6 +2222,12 @@ describe("Morning Brief preference", () => {
       },
     ]);
     expect(after.body.workflow.id).toBe(identities.workflowId);
+    await observeInstalledResultEmail(
+      actor,
+      identities.automationId,
+      true,
+      "Morning Brief",
+    );
   });
 
   it("preserves enable intent while timezone or default Agent is unavailable", async () => {
@@ -3461,6 +3506,7 @@ describe("Official Workflow installations", () => {
     const { agentId } = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
       installCatalogStorageFixture();
+      await publicResults.cleanup(actor);
       await bdd.deleteAgent(actor, agentId);
       await cleanupCatalog();
     });
@@ -3528,14 +3574,6 @@ describe("Official Workflow installations", () => {
     if (!morningBriefAutomation) {
       throw new Error("Expected the Morning Brief Automation");
     }
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, morningBriefAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 10,
-      enabled: true,
-      officialBlueprintKey: "daily-delivery",
-      officialResultEmailEnabled: true,
-    });
 
     const retiredConnectorDoctor = await accept(
       officialClient().install({
@@ -3547,6 +3585,12 @@ describe("Official Workflow installations", () => {
     );
     expect(retiredConnectorDoctor.body.error.message).toBe(
       "Official Workflow is retired: connector-doctor",
+    );
+    await observeInstalledResultEmail(
+      actor,
+      morningBriefAutomation.id,
+      true,
+      "Morning Brief",
     );
   });
 
@@ -4354,7 +4398,7 @@ describe("Official Workflow installations", () => {
   });
 
   it("preserves automation identity and pause state when reconfiguring an Official installation", async () => {
-    const { dailyAutomation, headers, installed } =
+    const { actor, dailyAutomation, headers, installed } =
       await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
     const automationIds = installed.body.workflow.automations.map(
@@ -4386,13 +4430,6 @@ describe("Official Workflow installations", () => {
       enabled: false,
       nextRunAt: null,
       official: { intendedEnabled: false },
-    });
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, dailyAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      enabled: false,
-      officialResultEmailEnabled: true,
     });
 
     const reconfigured = await accept(
@@ -4455,13 +4492,7 @@ describe("Official Workflow installations", () => {
       }),
       [200],
     );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, dailyAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      enabled: true,
-      officialResultEmailEnabled: true,
-    });
+    await observeInstalledResultEmail(actor, dailyAutomation.id, true);
   });
 
   it("copies active installations and compensates rejected storage writes", async () => {
@@ -4496,6 +4527,7 @@ describe("Official Workflow installations", () => {
     onTestFinished(async () => {
       if (!activeCopyAgentDeleted) {
         installCatalogStorageFixture();
+        await publicResults.cleanup(actor);
         await bdd.deleteAgent(actor, activeCopyAgentId);
       }
     });
@@ -4549,13 +4581,15 @@ describe("Official Workflow installations", () => {
     if (!activeCopiedDaily) {
       throw new Error("Expected an ordinary copied daily automation");
     }
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, activeCopiedDaily.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      officialBlueprintKey: null,
-      officialResultEmailEnabled: null,
-    });
+    await accept(
+      automationClient().enable({
+        headers,
+        params: { id: activeCopiedDaily.id },
+      }),
+      [200],
+    );
+    await observeInstalledResultEmail(actor, activeCopiedDaily.id, false);
+    await publicResults.cleanup(actor);
     await bdd.deleteAgent(actor, activeCopyAgentId);
     activeCopyAgentDeleted = true;
 

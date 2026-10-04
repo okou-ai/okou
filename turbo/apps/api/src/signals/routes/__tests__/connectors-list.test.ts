@@ -18,9 +18,15 @@ import {
 } from "../../../test-fixtures/connector-catalog";
 import {
   readConnectorCredentialStorageState,
-  seedConnectorStorageRow,
   setConnectorDefaultState,
 } from "./helpers/connector-credential-storage-state";
+import { createBddApi } from "./helpers/api-bdd";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -244,15 +250,25 @@ describe("GET /api/connectors", () => {
 
   it("skips stored connectors whose runtime method is unavailable", async () => {
     const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await connectGitlab(fixture);
-    await seedConnectorStorageRow(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorSlug: "openai",
-      authMethod: "unavailable-method",
-      storageVersion: 1,
+    const actor = createBddApi(context).user(fixture);
+    const connectors = createConnectorBddApi(context);
+    const catalog = createPublicConnectorCatalog(context);
+    const available = catalogWithAuthMethod("openai", "api-token", (method) => {
+      return { ...method, id: "unavailable-method" };
     });
+    await catalog.publish(available);
+    await connectGitlab(fixture);
+    catalog.onCleanup(async () => {
+      await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gitlab");
+    });
+    await connectors.connectManualGrant(actor, "openai", "unavailable-method", {
+      apiKey: "unavailable-method-secret",
+    });
+    catalog.onCleanup(async () => {
+      await catalog.publish(available);
+      await connectors.deleteDefaultBuiltinConnectorAccount(actor, "openai");
+    });
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
@@ -268,6 +284,7 @@ describe("GET /api/connectors", () => {
     expect(response.body.connectorProvidedBindings).not.toContainEqual(
       expect.objectContaining({ connectorSlug: "openai" }),
     );
+    await catalog.cleanup();
   });
 
   it("keeps stored connector reads empty or unavailable when the external catalog is unavailable", async () => {

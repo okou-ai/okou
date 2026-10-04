@@ -17,7 +17,13 @@ import {
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { seedConnectorStorageRow } from "./helpers/connector-credential-storage-state";
+import { createBddApi } from "./helpers/api-bdd";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -189,14 +195,21 @@ describe("GET /api/connectors/:connectorSlug", () => {
 
   it("returns 404 when the stored connector runtime method is unavailable", async () => {
     const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await seedConnectorStorageRow(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorSlug: "openai",
-      authMethod: "unavailable-method",
-      storageVersion: 1,
+    const actor = createBddApi(context).user(fixture);
+    const connectors = createConnectorBddApi(context);
+    const catalog = createPublicConnectorCatalog(context);
+    const available = catalogWithAuthMethod("openai", "api-token", (method) => {
+      return { ...method, id: "unavailable-method" };
     });
+    await catalog.publish(available);
+    await connectors.connectManualGrant(actor, "openai", "unavailable-method", {
+      apiKey: "unavailable-method-secret",
+    });
+    catalog.onCleanup(async () => {
+      await catalog.publish(available);
+      await connectors.deleteDefaultBuiltinConnectorAccount(actor, "openai");
+    });
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
@@ -211,6 +224,7 @@ describe("GET /api/connectors/:connectorSlug", () => {
     );
 
     expect(response.body.error.code).toBe("NOT_FOUND");
+    await catalog.cleanup();
   });
 
   it("returns 404 when the external catalog is unavailable", async () => {
