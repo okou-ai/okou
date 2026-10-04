@@ -575,6 +575,154 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
+  it("reports strict storage readiness through cold and rejected-source staff diagnostics", async () => {
+    const features = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+      }),
+      [200],
+    );
+    const healthy = {
+      missingConnectorVersions: 0,
+      unownedConnectorSecrets: 0,
+      unownedConnectorVariables: 0,
+      unresolvedBridgeCredentials: 0,
+    };
+    context.mocks.s3.send.mockClear();
+    const cold = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(cold.body.state).toBe("never-synced");
+    expect(cold.body.credentialStorage).toStrictEqual(healthy);
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+
+    serveObjects(new Map());
+    const rejected = await sync();
+    expect(rejected.body).toMatchObject({
+      outcome: "rejected",
+      lastAttempt: { failureCode: "source-unavailable" },
+    });
+    expect(rejected.body.credentialStorage).toStrictEqual(healthy);
+    context.mocks.s3.send.mockClear();
+    const after = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(after.body.credentialStorage).toStrictEqual(healthy);
+    expect(after.body).not.toHaveProperty("sourceId");
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps staff and cron storage readiness healthy across owned secret and variable account creation and deletion", async () => {
+    const actor = bdd.user();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const features = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+      }),
+      [200],
+    );
+    const slug = `readiness-${randomUUID()}`;
+    const descriptor = httpConnector(slug, "Owned credentials");
+    const candidate = release({
+      mutate(catalog) {
+        catalog.connectors = [
+          {
+            ...descriptor,
+            authMethods: descriptor.authMethods.map((method) => {
+              return {
+                ...method,
+                storage: { ...method.storage, variables: ["FIXTURE_REGION"] },
+                grant: {
+                  ...method.grant,
+                  fields: [
+                    ...method.grant.fields,
+                    {
+                      privateName: "FIXTURE_REGION",
+                      publicId: "region",
+                      label: "Region",
+                      required: true,
+                      placeholder: null,
+                      storage: "variable",
+                    },
+                  ],
+                },
+                access: {
+                  ...method.access,
+                  envBindings: {
+                    ...method.access.envBindings,
+                    FIXTURE_REGION: "$vars.FIXTURE_REGION",
+                  },
+                },
+              };
+            }),
+          },
+        ];
+      },
+    });
+    serveObjects(candidate.objects);
+    const healthy = {
+      missingConnectorVersions: 0,
+      unownedConnectorSecrets: 0,
+      unownedConnectorVariables: 0,
+      unresolvedBridgeCredentials: 0,
+    };
+    const accepted = await sync();
+    expect(accepted.body.outcome).toBe("accepted");
+    expect(accepted.body.credentialStorage).toStrictEqual(healthy);
+    const connected = await connectorsApi.connectManualGrant(
+      actor,
+      slug,
+      "api-token",
+      { credential: "readiness-token", region: "readiness-region" },
+    );
+    const outcome = await settle(
+      (async () => {
+        await expect(
+          connectorsApi.listBuiltinConnectorAccounts(actor, slug),
+        ).resolves.toContainEqual(
+          expect.objectContaining({ id: connected.id }),
+        );
+        context.mocks.s3.send.mockClear();
+        const staff = await accept(
+          catalogClient().diagnostics({ headers: sessionHeaders }),
+          [200],
+        );
+        expect(staff.body.credentialStorage).toStrictEqual(healthy);
+        expect(JSON.stringify(staff.body)).not.toContain("readiness-token");
+        expect(JSON.stringify(staff.body)).not.toContain("readiness-region");
+        expect(context.mocks.s3.send).not.toHaveBeenCalled();
+        expect((await sync()).body.credentialStorage).toStrictEqual(healthy);
+      })(),
+    );
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      actor,
+      slug,
+      connected.id,
+    );
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, slug),
+    ).resolves.toStrictEqual([]);
+    const removed = await accept(
+      catalogClient().diagnostics({ headers: sessionHeaders }),
+      [200],
+    );
+    expect(removed.body.credentialStorage).toStrictEqual(healthy);
+    expect((await sync()).body.credentialStorage).toStrictEqual(healthy);
+  });
+
   it("reports strict cold filtering through staff diagnostics before and after a rejected sync", async () => {
     const features = setupApp({ context, routes: featureSwitchesRoutes })(
       featureSwitchesContract,
