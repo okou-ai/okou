@@ -1,28 +1,34 @@
 import { runnersCancellationContract } from "@okouai/api-contracts/contracts/runners";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { readRunCancellationState$ } from "../services/run-cancellation-state.service";
+import { createRunCancellationState } from "../services/run-cancellation-state.service";
 import {
   getSandboxAuthForRun,
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 
-const readCancellation$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
+const runCancellationState$ = computed((get) => {
   const { runId } = get(pathParamsOf(runnersCancellationContract.get));
   const auth = getSandboxAuthForRun(runId, get(authorization$));
-  if (!auth) {
+  return auth
+    ? createRunCancellationState(
+        auth,
+        get(queryOf(runnersCancellationContract.get)),
+      )
+    : null;
+});
+
+const readCancellation$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  signal.throwIfAborted();
+  const cancellationState$ = get(runCancellationState$);
+  if (!cancellationState$) {
     return unauthorizedRunMismatch;
   }
-  const body = await set(
-    readRunCancellationState$,
-    auth,
-    get(queryOf(runnersCancellationContract.get)),
-    signal,
-  );
+  const body = await get(cancellationState$);
   signal.throwIfAborted();
   return { status: 200 as const, body };
 });

@@ -1,24 +1,21 @@
 import type { RunnerCancellationResponse } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { command } from "ccstate";
+import { computed } from "ccstate";
 import { eq } from "drizzle-orm";
 
 import type { SandboxAuth } from "../../types/auth";
 import { db$ } from "../external/db";
 
 /** The signed Run identity remains verifiable after its history has been erased. */
-export const readRunCancellationState$ = command(
-  async (
-    { get },
-    auth: SandboxAuth,
-    expected: {
-      readonly runnerGroup: string;
-      readonly runnerId: string;
-      readonly heartbeatGeneration: number;
-    },
-    signal: AbortSignal,
-  ): Promise<RunnerCancellationResponse> => {
-    signal.throwIfAborted();
+export function createRunCancellationState(
+  auth: SandboxAuth,
+  expected: {
+    readonly runnerGroup: string;
+    readonly runnerId: string;
+    readonly heartbeatGeneration: number;
+  },
+) {
+  return computed(async (get): Promise<RunnerCancellationResponse> => {
     // Do not filter by owner or claim: a mismatch is not physical absence.
     const [run] = await get(db$)
       .select({
@@ -31,7 +28,6 @@ export const readRunCancellationState$ = command(
       })
       .from(agentRuns)
       .where(eq(agentRuns.id, auth.runId));
-    signal.throwIfAborted();
 
     const identity = { protocolVersion: 1 as const, runId: auth.runId };
     if (!run) {
@@ -50,5 +46,5 @@ export const readRunCancellationState$ = command(
       return { ...identity, state: "unavailable" };
     }
     return { ...identity, state: "present", mode: run.mode };
-  },
-);
+  });
+}
