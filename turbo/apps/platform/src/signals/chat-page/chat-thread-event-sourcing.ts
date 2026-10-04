@@ -337,7 +337,7 @@ const canonicalThreadMetaMap$ = computed((get) => {
       title: thread.title,
       pinnedAt: thread.pinnedAt,
       archived: thread.archived,
-      muted: thread.muted ?? false,
+      muted: thread.muted,
       selectedModel: thread.selectedModel,
       modelSettings: thread.modelSettings,
       serviceTier: thread.serviceTier,
@@ -372,6 +372,8 @@ function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
     archived: metadata.archived,
+    // Shared metadata from an outgoing API can omit the additive mute field.
+    // Remove after serving and retained rollback APIs require it.
     muted: metadata.muted ?? false,
     selectedModel: metadata.selectedModel,
     modelSettings: metadata.modelSettings,

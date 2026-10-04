@@ -1259,6 +1259,7 @@ describe("POST /api/chat-threads", () => {
       title: "Deep dive on P2",
       pinnedAt: null,
       archived: false,
+      muted: false,
       selectedModel: OTHER_WORKSPACE_MODEL,
       modelSettings: {},
       serviceTier: null,

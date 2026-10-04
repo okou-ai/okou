@@ -195,6 +195,8 @@ export function replayChatThreadEvents(
   for (const thread of snapshot) {
     threads.set(thread.id, {
       ...thread,
+      // Retained shared snapshots can omit mute; absence is the initial state.
+      // Remove only after rewriting those snapshots and requiring the wire field.
       muted: thread.muted ?? false,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},

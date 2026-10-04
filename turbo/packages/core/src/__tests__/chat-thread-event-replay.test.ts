@@ -74,7 +74,11 @@ describe("mute event replay", () => {
     expect(
       replayChatThreadEvents(projection, [{ ...muted, muted: false }])[0],
     ).toEqual(initial[0]);
-    const { muted: omitted, ...legacySnapshot } = projection[0];
+    const projectedThread = projection[0];
+    if (!projectedThread) {
+      throw new Error("Expected the created thread in the mute projection");
+    }
+    const { muted: omitted, ...legacySnapshot } = projectedThread;
     expect(omitted).toBe(true);
     expect(replayChatThreadEvents([legacySnapshot], [])[0]).toEqual(initial[0]);
   });
