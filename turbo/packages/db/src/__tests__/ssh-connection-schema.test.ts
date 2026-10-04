@@ -32,6 +32,7 @@ describe("SSH connection schema", () => {
       "cloudflare_access_id",
       "tailscale_config_id",
       "needs_rebind",
+      "rebind_transport",
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
       "generation",
@@ -63,12 +64,21 @@ describe("SSH connection schema", () => {
       "chk_ssh_connections_tailscale_exclusive",
       "chk_ssh_connections_cloudflare_access_destination",
       "chk_ssh_connections_needs_rebind_unbound",
+      "chk_ssh_connections_rebind_transport",
       "chk_ssh_connections_display_name",
       "chk_ssh_connections_host",
       "chk_ssh_connections_port",
       "chk_ssh_connections_generation",
       "chk_ssh_connections_learned_host_key_pair",
     ]);
+    expect(sshConnections.rebindTransport.notNull).toBe(true);
+    expect(sshConnections.rebindTransport.default).toBe("cloudflare_access");
+    expect(checks.chk_ssh_connections_rebind_transport).toContain(
+      "IN ('cloudflare_access', 'tailscale')",
+    );
+    expect(checks.chk_ssh_connections_needs_rebind_unbound).toContain(
+      '"tailscale_config_id" IS NULL',
+    );
     expect(checks.chk_ssh_connections_port).toContain("BETWEEN 1 AND 65535");
     expect(checks.chk_ssh_connections_generation).toContain("> 0");
     expect(checks.chk_ssh_connections_learned_host_key_pair).toContain(

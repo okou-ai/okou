@@ -135,6 +135,11 @@ export const sshConnectionResponseSchema = z.union([
   }),
   sshConnectionMetadataSchema.extend({
     transport: z
+      .object({ type: z.literal("tailscale"), needsRebind: z.literal(true) })
+      .strict(),
+  }),
+  sshConnectionMetadataSchema.extend({
+    transport: z
       .object({
         type: z.literal("cloudflare_access"),
         needsRebind: z.literal(true),

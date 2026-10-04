@@ -29,6 +29,12 @@ export const sshConnections = pgTable(
     cloudflareAccessId: uuid("cloudflare_access_id"),
     tailscaleConfigId: uuid("tailscale_config_id"),
     needsRebind: boolean("needs_rebind").default(false).notNull(),
+    // Retain the protected carrier after its restrictive configuration FK is cleared.
+    rebindTransport: text("rebind_transport", {
+      enum: ["cloudflare_access", "tailscale"],
+    })
+      .default("cloudflare_access")
+      .notNull(),
     learnedHostKeyAlgorithm: varchar("learned_host_key_algorithm", {
       length: 64,
     }),
@@ -76,11 +82,15 @@ export const sshConnections = pgTable(
       ),
       check(
         "chk_ssh_connections_cloudflare_access_destination",
-        sql`(${table.cloudflareAccessId} IS NULL AND NOT ${table.needsRebind}) OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
+        sql`(${table.cloudflareAccessId} IS NULL AND (NOT ${table.needsRebind} OR ${table.rebindTransport} = 'tailscale')) OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
       ),
       check(
         "chk_ssh_connections_needs_rebind_unbound",
-        sql`NOT ${table.needsRebind} OR ${table.cloudflareAccessId} IS NULL`,
+        sql`NOT ${table.needsRebind} OR (${table.cloudflareAccessId} IS NULL AND ${table.tailscaleConfigId} IS NULL)`,
+      ),
+      check(
+        "chk_ssh_connections_rebind_transport",
+        sql`${table.rebindTransport} IN ('cloudflare_access', 'tailscale')`,
       ),
       foreignKey({
         name: "ssh_connections_credential_owner_fk",

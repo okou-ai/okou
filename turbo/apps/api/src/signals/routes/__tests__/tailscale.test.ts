@@ -248,10 +248,11 @@ describe("Tailscale configuration and saved-host authority", () => {
       }),
       [403],
     );
-    await accept(
-      configs().get({ headers, params: { configId: personal.id } }),
-      [404],
-    );
+    expect(
+      (await resources()).configs.map((value) => {
+        return value.id;
+      }),
+    ).not.toContain(personal.id);
     await accept(
       hosts().create({
         headers,
@@ -268,12 +269,9 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect((await resources()).logins).toHaveLength(1);
     authenticate(admin, "org:admin");
     expect(
-      (
-        await accept(
-          configs().get({ headers, params: { configId: shared.id } }),
-          [200],
-        )
-      ).body.sshHosts,
+      (await resources()).configs.find((value) => {
+        return value.id === shared.id;
+      })?.sshHosts,
     ).toStrictEqual([]);
     const inUse = await accept(
       configs().delete({
@@ -285,10 +283,7 @@ describe("Tailscale configuration and saved-host authority", () => {
     );
     expect(JSON.stringify(inUse.body)).not.toContain(saved.id);
     owner();
-    await accept(
-      configs().get({ headers, params: { configId: shared.id } }),
-      [404],
-    );
+    expect((await resources()).configs).toStrictEqual([]);
     authenticate(member);
     await accept(
       hosts().delete({ headers, params: { connectionId: saved.id } }),
@@ -317,7 +312,6 @@ describe("Tailscale configuration and saved-host authority", () => {
             ? {
                 type: "tailscale" as const,
                 create: {
-                  id: randomUUID(),
                   name: "Inline network",
                   credentials: oauth,
                   tags: ["tag:okou"],
@@ -382,7 +376,6 @@ describe("Tailscale configuration and saved-host authority", () => {
             transport: {
               type: "tailscale",
               create: {
-                id: randomUUID(),
                 name: "Should rollback",
                 credentials: oauth,
                 tags: ["tag:okou"],
@@ -405,7 +398,6 @@ describe("Tailscale configuration and saved-host authority", () => {
       transport: {
         type: "tailscale" as const,
         create: {
-          id: randomUUID(),
           name: "Inline",
           credentials: oauth,
           tags: ["tag:okou"],
@@ -418,14 +410,16 @@ describe("Tailscale configuration and saved-host authority", () => {
     await expect(resources()).resolves.toStrictEqual(before);
     await accept(
       hosts().create({ headers, body: { ...body, id: randomUUID() } }),
-      [409],
+      [201],
     );
-    await expect(resources()).resolves.toStrictEqual(before);
+    expect((await resources()).configs).toHaveLength(before.configs.length + 1);
     owner({ orgId: first.orgId });
-    await accept(
-      configs().create({ headers, body: { ...body.transport.create } }),
-      [409],
-    );
+    await accept(hosts().create({ headers, body }), [409]);
+    await expect(resources()).resolves.toStrictEqual({
+      configs: [],
+      hosts: [],
+      logins: [],
+    });
   });
   it.each([
     "10.0.0.1",
@@ -457,7 +451,6 @@ describe("Tailscale configuration and saved-host authority", () => {
             transport: {
               type: "tailscale",
               create: {
-                id: randomUUID(),
                 name: "No side effects",
                 credentials: oauth,
                 tags: ["tag:okou"],
@@ -500,14 +493,13 @@ describe("Tailscale configuration and saved-host authority", () => {
       });
     },
   );
-  it("uses current winning process/host/chat/config authority for JIT and composite fences without a backend rollout flag", async () => {
+  it("uses current winning process/host/chat/config authority and the shared host generation fence without a backend rollout flag", async () => {
     const o = owner();
     const c = await config();
     const h = await host(c.id);
     const r = await ordinary.runtime(o);
     const params = { runId: r.runId };
     const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
-    const configGuard = { configId: c.id, generation: c.generation };
     let probe = useSecretKmsProbe();
     expect(
       (
@@ -569,32 +561,19 @@ describe("Tailscale configuration and saved-host authority", () => {
     }
     await accept(runner().resolve({ headers, params, body }), [401]);
     expect(probe.decryptCalls).toBe(0);
-    const missingGuard = {
+    const pinInput = {
       ...body,
       expectedGeneration: h.generation,
       observedHostKey: key,
     };
-    for (const stale of [
-      {
-        expectedGeneration: h.generation + 1,
-        expectedTailscaleConfig: configGuard,
-      },
-      {
-        expectedGeneration: h.generation,
-        expectedTailscaleConfig: { configId: randomUUID(), generation: 1 },
-      },
-      {
-        expectedGeneration: h.generation,
-        expectedTailscaleConfig: { configId: c.id, generation: 2 },
-      },
-    ]) {
+    for (const expectedGeneration of [h.generation + 1, h.generation + 2]) {
       expect(
         (
           await accept(
             runner().pin({
               headers: runnerHeaders,
               params,
-              body: { ...missingGuard, ...stale },
+              body: { ...pinInput, expectedGeneration },
             }),
             [200],
           )
@@ -605,22 +584,7 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect(
       (
         await accept(
-          runner().pin({ headers: runnerHeaders, params, body: missingGuard }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ outcome: "configuration_changed" });
-    expect(
-      (
-        await accept(
-          runner().pin({
-            headers: runnerHeaders,
-            params,
-            body: {
-              ...missingGuard,
-              expectedTailscaleConfig: configGuard,
-            },
-          }),
+          runner().pin({ headers: runnerHeaders, params, body: pinInput }),
           [200],
         )
       ).body,
@@ -628,7 +592,6 @@ describe("Tailscale configuration and saved-host authority", () => {
     const obs = {
       ...body,
       expectedGeneration: h.generation + 1,
-      expectedTailscaleConfig: configGuard,
       observedAt: nowDate().toISOString(),
       failureReason: null,
     };
@@ -656,7 +619,7 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect(rotated.generation).toBe(2);
     expect(
       (await accept(hosts().list({ headers }), [200])).body.connections[0],
-    ).toMatchObject({ generation: h.generation + 1, learnedHostKey: key });
+    ).toMatchObject({ generation: h.generation + 2, learnedHostKey: key });
     expect(
       (await accept(observations().list({ headers }), [200])).body.observations,
     ).toStrictEqual([]);
@@ -667,9 +630,7 @@ describe("Tailscale configuration and saved-host authority", () => {
             headers: runnerHeaders,
             params,
             body: {
-              ...missingGuard,
-              expectedGeneration: h.generation + 1,
-              expectedTailscaleConfig: configGuard,
+              ...pinInput,
             },
           }),
           [200],
@@ -693,7 +654,7 @@ describe("Tailscale configuration and saved-host authority", () => {
       ).body,
     ).toMatchObject({
       outcome: "resolved_tailscale",
-      generation: h.generation + 1,
+      generation: h.generation + 2,
       learnedHostKey: key,
       tailscale: { configId: c.id, generation: 2, tags: ["tag:next"] },
     });
@@ -740,7 +701,7 @@ describe("Tailscale configuration and saved-host authority", () => {
     await flushWaitUntilForTest();
   });
   it.each(["create", "rebind"] as const)(
-    "fences a first credential binding via %s during rotation before post-KMS handoff",
+    "fences a first credential binding via %s during rotation and keeps the admitted handoff snapshot",
     async (binding) => {
       const o = owner();
       const c = await config();
@@ -861,8 +822,11 @@ describe("Tailscale configuration and saved-host authority", () => {
             }),
             handoff,
           ]);
-          expect((await handoff).body).toStrictEqual({
-            outcome: "unavailable",
+          expect((await handoff).body).toMatchObject({
+            outcome: "resolved_tailscale",
+            generation: h.generation,
+            username: l.username,
+            authentication: login.authentication,
           });
           expect((await rotation).body).toMatchObject({
             revision: l.revision + 1,
@@ -886,10 +850,6 @@ describe("Tailscale configuration and saved-host authority", () => {
                   body: {
                     ...body,
                     expectedGeneration: h.generation,
-                    expectedTailscaleConfig: {
-                      configId: c.id,
-                      generation: c.generation,
-                    },
                     observedHostKey: key,
                   },
                 }),
@@ -924,7 +884,7 @@ describe("Tailscale configuration and saved-host authority", () => {
     },
   );
   it.each([null, " private-passphrase-canary\n"])(
-    "protects private-key JIT with passphrase %j and rechecks chat authority after decryption",
+    "protects private-key JIT with passphrase %j using the admitted snapshot, then denies fresh resolution after revocation",
     async (passphrase) => {
       const o = owner();
       const c = await config();
@@ -1020,7 +980,7 @@ describe("Tailscale configuration and saved-host authority", () => {
         [200],
       );
       expect(revoked.decryptCalls).toBe(decryptsBeforeHandoff);
-      expect(denied.body).toStrictEqual({ outcome: "unavailable" });
+      expect(denied.body).toStrictEqual(resolved.body);
       const unauthorized = useSecretKmsProbe();
       expect(
         (
@@ -1033,7 +993,7 @@ describe("Tailscale configuration and saved-host authority", () => {
       expect(unauthorized.decryptCalls).toBe(0);
     },
   );
-  it("rechecks current network authority after KMS without holding DB locks across decryption", async () => {
+  it("completes the admitted network snapshot during rotation without holding DB locks across decryption", async () => {
     const o = owner();
     const c = await config();
     const h = await host(c.id);
@@ -1068,8 +1028,30 @@ describe("Tailscale configuration and saved-host authority", () => {
       [200],
     );
     expect(probe.decryptCalls).toBeGreaterThan(0);
-    expect(result.body).toStrictEqual({ outcome: "unavailable" });
-    expect(JSON.stringify(result.body)).not.toContain(oauth.clientSecret);
+    expect(result.body).toMatchObject({
+      outcome: "resolved_tailscale",
+      generation: h.generation,
+      tailscale: {
+        ...oauth,
+        configId: c.id,
+        generation: c.generation,
+        tags: c.tags,
+      },
+    });
+    useSecretKmsProbe();
+    const fresh = await accept(
+      runner().resolve({
+        headers: runnerHeaders,
+        params: { runId: r.runId },
+        body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
+      }),
+      [200],
+    );
+    expect(fresh.body).toMatchObject({
+      outcome: "resolved_tailscale",
+      generation: h.generation + 1,
+      tailscale: { generation: c.generation + 1, tags: ["tag:rotated"] },
+    });
   });
   it("serializes shared config CAS and host CAS without orphan inline resources", async () => {
     owner();
@@ -1095,6 +1077,11 @@ describe("Tailscale configuration and saved-host authority", () => {
         .sort(),
     ).toStrictEqual([200, 409]);
     const before = await resources();
+    const [current] = before.hosts;
+    if (!current) {
+      throw new Error("Owned host is missing after configuration rotation");
+    }
+    expect(current.generation).toBe(h.generation + 1);
     const hostRace = await Promise.all(
       ["first", "second"].map((name) => {
         return accept(
@@ -1102,12 +1089,11 @@ describe("Tailscale configuration and saved-host authority", () => {
             headers,
             params: { connectionId: h.id },
             body: {
-              expectedGeneration: h.generation,
+              expectedGeneration: current.generation,
               credential: { create: { ...login, name } },
               transport: {
                 type: "tailscale",
                 create: {
-                  id: randomUUID(),
                   name,
                   credentials: oauth,
                   tags: ["tag:okou"],
@@ -1168,7 +1154,7 @@ describe("Tailscale configuration and saved-host authority", () => {
       expect(saved).toStrictEqual({ configs: [], hosts: [], logins: [] });
     }
   });
-  it("strictly rejects scope conversion and invalid tags/credentials through real request validation", async () => {
+  it("requires reviewed scope conversion and rejects invalid tags/credentials through real request validation", async () => {
     owner();
     const c = await config();
     const request = setupRawAppRequest({ context, routes: tailscaleRoutes });

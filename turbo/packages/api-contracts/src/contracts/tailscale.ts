@@ -30,13 +30,13 @@ const revision = z.int().positive().max(2_147_483_647);
 const name = z.string().trim().min(1).max(128);
 export const createTailscaleRequestSchema = z
   .object({
-    id: z.uuid(),
     name,
     credentials: tailscaleCredentialsSchema,
     tags: tailscaleTagsSchema,
   })
   .strict();
 const createBody = createTailscaleRequestSchema.extend({
+  id: z.uuid(),
   scope: z.enum(["personal", "organization"]).optional(),
 });
 export const tailscaleConfigSchema = z
@@ -72,6 +72,32 @@ const updateBody = z
     },
     { message: "At least one Tailscale field must be updated" },
   );
+const impactSnapshot = z.string().regex(/^[a-f0-9]{64}$/u);
+const deleteBody = z
+  .object({
+    expectedRevision: revision,
+    impactSnapshot: impactSnapshot.optional(),
+  })
+  .strict();
+const conversionBody = z
+  .object({ expectedRevision: revision, impactSnapshot })
+  .strict();
+const impactPreviewSchema = z
+  .object({
+    expectedRevision: revision,
+    ownHostCount: z.int().nonnegative(),
+    otherHostCount: z.int().nonnegative(),
+    affectedOwners: z.array(
+      z
+        .object({
+          userId: z.string().min(1),
+          displayName: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    impactSnapshot,
+  })
+  .strict();
 const c = initContract();
 const pathParams = z.object({ configId: z.uuid() }).strict();
 const errors = {
@@ -91,13 +117,6 @@ export const tailscaleContract = c.router({
       200: z.object({ configs: z.array(tailscaleConfigSchema) }).strict(),
       ...errors,
     },
-  },
-  get: {
-    method: "GET",
-    path: "/api/tailscale/configs/:configId",
-    headers: authHeadersSchema,
-    pathParams,
-    responses: { 200: tailscaleConfigSchema, ...errors },
   },
   create: {
     method: "POST",
@@ -119,8 +138,32 @@ export const tailscaleContract = c.router({
     path: "/api/tailscale/configs/:configId",
     headers: authHeadersSchema,
     pathParams,
-    body: z.object({ expectedRevision: revision }).strict(),
+    body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
+  },
+  convertToOrganization: {
+    method: "POST",
+    path: "/api/tailscale/configs/:configId/convert-to-organization",
+    headers: authHeadersSchema,
+    pathParams,
+    body: z.object({ expectedRevision: revision }).strict(),
+    responses: { 200: tailscaleConfigSchema, ...errors },
+  },
+  impactPreview: {
+    method: "GET",
+    path: "/api/tailscale/configs/:configId/impact-preview",
+    headers: authHeadersSchema,
+    pathParams,
+    query: z.object({ operation: z.enum(["convert", "delete"]) }).strict(),
+    responses: { 200: impactPreviewSchema, ...errors },
+  },
+  convertToPersonal: {
+    method: "POST",
+    path: "/api/tailscale/configs/:configId/convert-to-personal",
+    headers: authHeadersSchema,
+    pathParams,
+    body: conversionBody,
+    responses: { 200: tailscaleConfigSchema, ...errors },
   },
 });
 export type TailscaleConfig = z.infer<typeof tailscaleConfigSchema>;
@@ -129,3 +172,5 @@ export type CreateTailscaleRequest = z.infer<
 >;
 export type CreateTailscaleConfigRequest = z.infer<typeof createBody>;
 export type UpdateTailscaleRequest = z.infer<typeof updateBody>;
+export type DeleteTailscaleRequest = z.infer<typeof deleteBody>;
+export type ConvertTailscaleRequest = z.infer<typeof conversionBody>;

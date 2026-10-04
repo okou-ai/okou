@@ -92,9 +92,6 @@ export const runnerSshTailscaleResolvedSchema = z
     }),
   })
   .strict();
-export const tailscaleConfigGuardSchema = z
-  .object({ configId: z.uuid(), generation: generationSchema })
-  .strict();
 const resolveResponseSchema = z.discriminatedUnion("outcome", [
   unavailableSchema,
   z
@@ -120,7 +117,6 @@ const pinRequestSchema = resolveRequestSchema
   .extend({
     expectedGeneration: generationSchema,
     observedHostKey: sshHostKeySchema,
-    expectedTailscaleConfig: tailscaleConfigGuardSchema.optional(),
   })
   .strict();
 
@@ -145,7 +141,6 @@ export const runnerSshContract = c.router({
     body: resolveRequestSchema
       .extend({
         expectedGeneration: generationSchema,
-        expectedTailscaleConfig: tailscaleConfigGuardSchema.optional(),
         observedAt: z.string().datetime(),
         failureReason: sshConnectionFailureReasonSchema.nullable(),
       })

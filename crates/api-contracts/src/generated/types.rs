@@ -635,16 +635,6 @@ pub mod runners {
             pub heartbeat_generation: i64,
         }
 
-        /// Exact effective Tailscale network authority, independent of SSH host generation.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct ObservationRequestExpectedTailscaleConfig {
-            /// Selected configuration UUID.
-            pub config_id: String,
-            /// Effective credential and tag generation.
-            pub generation: i64,
-        }
-
         /// Allow-listed connection failures, excluding command and authority failures.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum ObservationRequestFailureReason {
@@ -699,9 +689,6 @@ pub mod runners {
             pub runner_identity: ObservationRequestRunnerIdentity,
             /// Configuration used, including successful TOFU advancement.
             pub expected_generation: i64,
-            /// Required exact network tuple for Tailscale; absent for existing carriers.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub expected_tailscale_config: Option<ObservationRequestExpectedTailscaleConfig>,
             /// UTC observation time, ordered independently of report delivery.
             pub observed_at: String,
             /// Connection failure; null means verified host and authenticated user.
@@ -748,16 +735,6 @@ pub mod runners {
             pub fingerprint: String,
         }
 
-        /// Exact effective Tailscale network authority, independent of SSH host generation.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PinRequestExpectedTailscaleConfig {
-            /// Selected configuration UUID.
-            pub config_id: String,
-            /// Effective credential and tag generation.
-            pub generation: i64,
-        }
-
         /// Learn the first key only under current authority and generation.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -770,9 +747,6 @@ pub mod runners {
             pub expected_generation: i64,
             /// Identity after KEX proof verification.
             pub observed_host_key: PinRequestObservedHostKey,
-            /// Required exact network tuple for Tailscale; absent for existing carriers.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub expected_tailscale_config: Option<PinRequestExpectedTailscaleConfig>,
         }
 
         /// Atomic first-use trust outcome.

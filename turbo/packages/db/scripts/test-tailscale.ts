@@ -68,7 +68,7 @@ try {
   assert.deepEqual(
     (
       await client.query(
-        "SELECT to_jsonb(ssh_connections) - 'tailscale_config_id' AS value FROM ssh_connections ORDER BY id",
+        "SELECT to_jsonb(ssh_connections) - 'tailscale_config_id' - 'rebind_transport' AS value FROM ssh_connections ORDER BY id",
       )
     ).rows,
     beforeHosts.rows,
@@ -76,7 +76,7 @@ try {
   assert.deepEqual(
     (
       await client.query(
-        "SELECT to_jsonb(ssh_connection_observations) - 'tailscale_config_id' - 'tailscale_config_generation' AS value FROM ssh_connection_observations",
+        "SELECT to_jsonb(ssh_connection_observations) AS value FROM ssh_connection_observations",
       )
     ).rows,
     beforeObservations.rows,
@@ -146,7 +146,7 @@ try {
   );
   await rejects(
     `UPDATE ssh_connections SET needs_rebind=true,host='peer.tail-test.ts.net',port=443 WHERE id='${directId}'`,
-    "chk_ssh_connections_tailscale_exclusive",
+    "chk_ssh_connections_needs_rebind_unbound",
   );
   await client.query("SAVEPOINT referenced_delete");
   await assert.rejects(
@@ -154,24 +154,13 @@ try {
     { code: /^(23503|23001)$/, constraint: "ssh_connections_tailscale_org_fk" },
   );
   await client.query("ROLLBACK TO SAVEPOINT referenced_delete");
-  await rejects(
-    `UPDATE ssh_connection_observations SET tailscale_config_id='${configId}'`,
-    "chk_ssh_connection_observation_tailscale_pair",
-  );
-  await rejects(
-    "UPDATE ssh_connection_observations SET tailscale_config_generation=1",
-    "chk_ssh_connection_observation_tailscale_pair",
-  );
-  await rejects(
-    `UPDATE ssh_connection_observations SET tailscale_config_id='${configId}',tailscale_config_generation=0`,
-    "chk_ssh_connection_observation_tailscale_pair",
-  );
-  await client.query(
-    "UPDATE ssh_connection_observations SET tailscale_config_id=$1,tailscale_config_generation=1",
-    [configId],
-  );
   await client.query(
     "UPDATE tailscale_configs SET tags=ARRAY['tag:next'],generation=generation+1,revision=revision+1 WHERE id=$1",
+    [configId],
+  );
+  // The API writer advances referencing hosts atomically; no hidden DB trigger.
+  await client.query(
+    "UPDATE ssh_connections SET generation=generation+1 WHERE tailscale_config_id=$1",
     [configId],
   );
   assert.deepEqual(
@@ -183,25 +172,42 @@ try {
     ).rows,
     [
       {
-        generation: 7,
+        generation: 8,
         learned_host_key_fingerprint: "SHA256:pin",
         credential_id: credentialId,
       },
     ],
   );
   await client.query(
-    "UPDATE ssh_connections SET tailscale_config_id=NULL WHERE id=$1",
+    "UPDATE ssh_connections SET tailscale_config_id=NULL,needs_rebind=true,rebind_transport='tailscale' WHERE id=$1",
     [directId],
   );
   await client.query("DELETE FROM tailscale_configs WHERE id=$1", [configId]);
-  // Historical snapshot is evidence, not a cascading config FK or fresh authority.
   assert.deepEqual(
     (
       await client.query(
-        "SELECT tailscale_config_id,tailscale_config_generation FROM ssh_connection_observations",
+        "SELECT needs_rebind,rebind_transport,port,learned_host_key_fingerprint FROM ssh_connections WHERE id=$1",
+        [directId],
       )
     ).rows,
-    [{ tailscale_config_id: configId, tailscale_config_generation: 1 }],
+    [
+      {
+        needs_rebind: true,
+        rebind_transport: "tailscale",
+        port: 65535,
+        learned_host_key_fingerprint: "SHA256:pin",
+      },
+    ],
+  );
+  // Historical host-generation evidence is retained, not configuration authority.
+  assert.deepEqual(
+    (await client.query("SELECT generation FROM ssh_connection_observations"))
+      .rows,
+    [{ generation: 7 }],
+  );
+  await rejects(
+    `UPDATE ssh_connections SET rebind_transport='direct',host='access.example.com',port=443 WHERE id='${directId}'`,
+    "chk_ssh_connections_rebind_transport",
   );
   console.log(
     "Tailscale additive migration and permanent schema constraints passed",

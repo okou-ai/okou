@@ -5,6 +5,7 @@ import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
+import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
@@ -722,6 +723,13 @@ async function deleteClerkSshResources(
         scope.kind === "organization"
           ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
           : eq(cloudflareAccessConfigs.userId, scope.userId),
+      );
+    await tx
+      .delete(tailscaleConfigs)
+      .where(
+        scope.kind === "organization"
+          ? eq(tailscaleConfigs.orgId, scope.orgId)
+          : eq(tailscaleConfigs.userId, scope.userId),
       );
   });
 }

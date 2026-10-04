@@ -47,19 +47,6 @@ function hostKeyDocs(name: string): RustTypeDeclarationDoc[] {
   ];
 }
 
-function configGuardDocs(name: string): RustTypeDeclarationDoc {
-  return {
-    rustTypeName: name,
-    rustDoc: [
-      "Exact effective Tailscale network authority, independent of SSH host generation.",
-    ],
-    fields: {
-      configId: ["Selected configuration UUID."],
-      generation: ["Effective credential and tag generation."],
-    },
-  };
-}
-
 export const sshTypeBindings = [
   {
     schema: runnerSshContract.observe.body,
@@ -78,9 +65,6 @@ export const sshTypeBindings = [
           expectedGeneration: [
             "Configuration used, including successful TOFU advancement.",
           ],
-          expectedTailscaleConfig: [
-            "Required exact network tuple for Tailscale; absent for existing carriers.",
-          ],
           observedAt: [
             "UTC observation time, ordered independently of report delivery.",
           ],
@@ -90,7 +74,6 @@ export const sshTypeBindings = [
         },
       },
       identityDocs("ObservationRequestRunnerIdentity"),
-      configGuardDocs("ObservationRequestExpectedTailscaleConfig"),
       {
         rustTypeName: "ObservationRequestFailureReason",
         rustDoc: [
@@ -183,13 +166,9 @@ export const sshTypeBindings = [
           runnerIdentity: ["Host-owned process identity."],
           expectedGeneration: ["Generation delivered by JIT."],
           observedHostKey: ["Identity after KEX proof verification."],
-          expectedTailscaleConfig: [
-            "Required exact network tuple for Tailscale; absent for existing carriers.",
-          ],
         },
       },
       identityDocs("PinRequestRunnerIdentity"),
-      configGuardDocs("PinRequestExpectedTailscaleConfig"),
       ...hostKeyDocs("PinRequestObservedHostKey"),
     ],
   },

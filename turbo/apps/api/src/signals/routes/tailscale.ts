@@ -7,7 +7,10 @@ import { command } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { writeDb$ } from "../external/db";
+import { clerk$, createClerkReadContext } from "../external/clerk";
+import { loadUserDisplayNames } from "../services/user-profile-directory.service";
 import type { RouteEntry } from "../route-entry";
 import {
   createTailscaleConfig$,
@@ -15,6 +18,9 @@ import {
   listTailscaleConfigs$,
   tailscaleFailure,
   updateTailscaleConfig$,
+  convertTailscaleToOrganization$,
+  convertTailscaleToPersonal$,
+  previewTailscaleImpact$,
 } from "../services/tailscale.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 
@@ -50,19 +56,6 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   return { status: 200 as const, body: { configs } };
-});
-const detail$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const { configId } = get(pathParamsOf(tailscaleContract.get));
-  const [config] = await set(
-    listTailscaleConfigs$,
-    get(organizationAuthContext$),
-    configId,
-  );
-  signal.throwIfAborted();
-  return config
-    ? { status: 200 as const, body: config }
-    : errorResponse(tailscaleFailure("notFound"));
 });
 const createConfig$ = command(
   async (
@@ -136,17 +129,98 @@ const delete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const result = await set(deleteTailscaleConfig$, {
     owner: get(organizationAuthContext$),
     configId,
-    expectedRevision: body.data.expectedRevision,
+    body: body.data,
   });
   signal.throwIfAborted();
   return result.ok
     ? { status: 204 as const, body: undefined }
     : errorResponse(result);
 });
+const promote$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const body = await get(bodyResultOf(tailscaleContract.convertToOrganization));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const { configId } = get(
+    pathParamsOf(tailscaleContract.convertToOrganization),
+  );
+  const result = await set(convertTailscaleToOrganization$, {
+    owner: get(organizationAuthContext$),
+    configId,
+    expectedRevision: body.data.expectedRevision,
+  });
+  signal.throwIfAborted();
+  return result.ok
+    ? { status: 200 as const, body: result.value }
+    : errorResponse(result);
+});
+const convert$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const body = await get(bodyResultOf(tailscaleContract.convertToPersonal));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const { configId } = get(pathParamsOf(tailscaleContract.convertToPersonal));
+  const result = await set(convertTailscaleToPersonal$, {
+    owner: get(organizationAuthContext$),
+    configId,
+    body: body.data,
+  });
+  signal.throwIfAborted();
+  return result.ok
+    ? { status: 200 as const, body: result.value }
+    : errorResponse(result);
+});
+const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const { configId } = get(pathParamsOf(tailscaleContract.impactPreview));
+  const { operation } = get(queryOf(tailscaleContract.impactPreview));
+  const result = await set(previewTailscaleImpact$, {
+    owner: get(organizationAuthContext$),
+    configId,
+    operation,
+  });
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return errorResponse(result);
+  }
+  const names = await loadUserDisplayNames(
+    set(writeDb$),
+    get(clerk$),
+    result.value.affectedOwnerIds,
+    createClerkReadContext(),
+    signal,
+  );
+  signal.throwIfAborted();
+  const { affectedOwnerIds, ...value } = result.value;
+  return {
+    status: 200 as const,
+    body: {
+      ...value,
+      affectedOwners: affectedOwnerIds.map((userId) => {
+        return { userId, displayName: names.get(userId) ?? null };
+      }),
+    },
+  };
+});
 export const tailscaleRoutes: readonly RouteEntry[] = [
   { route: tailscaleContract.list, handler: authRoute(ownerAuth, list$) },
-  { route: tailscaleContract.get, handler: authRoute(ownerAuth, detail$) },
   { route: tailscaleContract.create, handler: authRoute(ownerAuth, create$) },
   { route: tailscaleContract.update, handler: authRoute(ownerAuth, update$) },
   { route: tailscaleContract.delete, handler: authRoute(ownerAuth, delete$) },
+  {
+    route: tailscaleContract.convertToOrganization,
+    handler: authRoute(ownerAuth, promote$),
+  },
+  {
+    route: tailscaleContract.impactPreview,
+    handler: authRoute(ownerAuth, impactPreview$),
+  },
+  {
+    route: tailscaleContract.convertToPersonal,
+    handler: authRoute(ownerAuth, convert$),
+  },
 ];
