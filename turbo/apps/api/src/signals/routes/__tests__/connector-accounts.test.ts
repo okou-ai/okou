@@ -48,7 +48,6 @@ import {
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createBddApi } from "./helpers/api-bdd";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
