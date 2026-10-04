@@ -87,9 +87,9 @@ export function chatThreadEventInsertSql(
   // The scalar lookup executes as part of the owning statement, not in a
   // handle-taking helper. A missing authority fails the non-null org insert.
   const orgId =
-    args.orgId === null || args.orgId === undefined
-      ? sql`(SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = ${agentId}::uuid)`
-      : sql`${args.orgId}`;
+    typeof args.orgId === "string"
+      ? sql`${args.orgId}`
+      : sql`(SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = ${agentId}::uuid)`;
   const beforeReservation = source ? sql`${source.cte},` : sql.empty();
   const reservationInput = source
     ? sql`SELECT ${args.userId}, ${orgId}, 1 WHERE ${source.gate}`
