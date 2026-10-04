@@ -16,6 +16,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { settle } from "../../utils";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -943,6 +944,197 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
     }
   });
+
+  it.each(["user", "organization"] as const)(
+    "keeps stored credential snapshots isolated across %s boundaries through reconnect and deletion",
+    async (boundary) => {
+      const owner = bdd.user();
+      const foreign =
+        boundary === "user"
+          ? bdd.user({ orgId: requireOrgId(owner) })
+          : bdd.user({ userId: owner.userId });
+      const ownerBase = `https://${randomUUID()}.reap.example.test/v1`;
+      const foreignBase = `https://${randomUUID()}.reap.example.test/v1`;
+      const changedBase = `https://${randomUUID()}.reap.example.test/v1`;
+      const ownerSecret = `owner-token-${randomUUID()}`;
+      const foreignSecret = `foreign-token-${randomUUID()}`;
+      const changedSecret = `changed-token-${randomUUID()}`;
+      const request = {
+        mode: "url" as const,
+        method: "GET",
+        url: `${ownerBase}/users`,
+        connectorSlug: "reap",
+      };
+      const foreignRequest = { ...request, url: `${foreignBase}/users` };
+      const cold = await checkWithSession(owner, request);
+      const foreignCold = await checkWithSession(foreign, foreignRequest);
+      expect(cold.body).toMatchObject({
+        outcome: "unresolved-dynamic-base",
+        connector: { connectorSlug: "reap" },
+      });
+      expect(foreignCold.body).toStrictEqual(cold.body);
+      const accounts: {
+        readonly actor: ApiTestUser;
+        readonly connectionId: string;
+      }[] = [];
+
+      const checks = await settle(
+        (async () => {
+          const foreignAccount = await connectorsApi.connectManualGrant(
+            foreign,
+            "reap",
+            "api-token",
+            { apiKey: foreignSecret, apiBaseUrl: foreignBase },
+          );
+          accounts.push({ actor: foreign, connectionId: foreignAccount.id });
+          await expect(
+            connectorsApi.listBuiltinConnectorAccounts(owner, "reap"),
+          ).resolves.toStrictEqual([]);
+          const ownerStillCold = await checkWithSession(owner, request);
+          expect(ownerStillCold.body).toStrictEqual(cold.body);
+          const foreignOnly = await checkWithSession(owner, foreignRequest);
+          expect(foreignOnly.body).toStrictEqual(cold.body);
+          await expect(
+            connectorsApi.listBuiltinConnectorAccounts(foreign, "reap"),
+          ).resolves.toStrictEqual([
+            expect.objectContaining({ id: foreignAccount.id, isDefault: true }),
+          ]);
+
+          const ownerAccount = await connectorsApi.connectManualGrant(
+            owner,
+            "reap",
+            "api-token",
+            { apiKey: ownerSecret, apiBaseUrl: ownerBase },
+          );
+          accounts.push({ actor: owner, connectionId: ownerAccount.id });
+          await expect(
+            connectorsApi.listBuiltinConnectorAccounts(owner, "reap"),
+          ).resolves.toStrictEqual([
+            expect.objectContaining({ id: ownerAccount.id, isDefault: true }),
+          ]);
+          const ownerResolved = await checkWithSession(owner, request);
+          expect(ownerResolved.body).toMatchObject({
+            outcome: "resolved",
+            connector: { connectorSlug: "reap" },
+            base: ownerBase,
+            relativePath: "/users",
+            run: { status: "not-scoped" },
+          });
+          const foreignResolved = await checkWithSession(
+            foreign,
+            foreignRequest,
+          );
+          expect(foreignResolved.body).toMatchObject({
+            outcome: "resolved",
+            connector: { connectorSlug: "reap" },
+            base: foreignBase,
+            relativePath: "/users",
+            run: { status: "not-scoped" },
+          });
+          for (const [actor, body] of [
+            [owner, foreignRequest],
+            [foreign, request],
+          ] as const) {
+            const rejected = await checkWithSession(actor, body);
+            expect(rejected.body).toStrictEqual({
+              outcome: "no-match",
+              scope: "catalog",
+            });
+          }
+
+          const reconnected = await connectorsApi.connectManualGrant(
+            owner,
+            "reap",
+            "api-token",
+            { apiKey: changedSecret, apiBaseUrl: changedBase },
+            undefined,
+            { intent: "reconnect", connectionId: ownerAccount.id },
+          );
+          if (reconnected.id !== ownerAccount.id) {
+            accounts.push({ actor: owner, connectionId: reconnected.id });
+          }
+          expect(reconnected.id).toBe(ownerAccount.id);
+          const fresh = await checkWithSession(owner, {
+            ...request,
+            url: `${changedBase}/users`,
+          });
+          expect(fresh.body).toMatchObject({
+            outcome: "resolved",
+            connector: { connectorSlug: "reap" },
+            base: changedBase,
+            relativePath: "/users",
+            run: { status: "not-scoped" },
+          });
+          const old = await checkWithSession(owner, request);
+          expect(old.body).toStrictEqual({
+            outcome: "no-match",
+            scope: "catalog",
+          });
+          const foreignUnchanged = await checkWithSession(
+            foreign,
+            foreignRequest,
+          );
+          expect(foreignUnchanged.body).toStrictEqual(foreignResolved.body);
+          await expect(
+            connectorsApi.listBuiltinConnectorAccounts(owner, "reap"),
+          ).resolves.toStrictEqual([
+            expect.objectContaining({ id: ownerAccount.id, isDefault: true }),
+          ]);
+          for (const response of [
+            ownerResolved,
+            foreignResolved,
+            fresh,
+            foreignUnchanged,
+          ]) {
+            const serialized = JSON.stringify(response.body);
+            for (const privateValue of [
+              ownerSecret,
+              foreignSecret,
+              changedSecret,
+              ownerAccount.id,
+              foreignAccount.id,
+              "REAP_API_BASE_URL",
+              '"storageVersion"',
+              '"baseUrlVars"',
+            ]) {
+              expect(serialized).not.toContain(privateValue);
+            }
+          }
+        })(),
+      );
+      const cleanupErrors: unknown[] = [];
+      for (const account of [...accounts].reverse()) {
+        const deleted = await settle(
+          connectorsApi.deleteBuiltinConnectorAccount(
+            account.actor,
+            "reap",
+            account.connectionId,
+          ),
+        );
+        if (!deleted.ok) {
+          cleanupErrors.push(deleted.error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [...(checks.ok ? [] : [checks.error]), ...cleanupErrors],
+          "Stored snapshot fixture cleanup failed",
+        );
+      }
+      if (!checks.ok) {
+        throw checks.error;
+      }
+      for (const actor of [owner, foreign]) {
+        await expect(
+          connectorsApi.listBuiltinConnectorAccounts(actor, "reap"),
+        ).resolves.toStrictEqual([]);
+      }
+      const deletedOwner = await checkWithSession(owner, request);
+      const deletedForeign = await checkWithSession(foreign, foreignRequest);
+      expect(deletedOwner.body).toStrictEqual(cold.body);
+      expect(deletedForeign.body).toStrictEqual(foreignCold.body);
+    },
+  );
 
   it("keeps builtin registration pinned while permission and account authority change", async () => {
     const owner = bdd.user();
