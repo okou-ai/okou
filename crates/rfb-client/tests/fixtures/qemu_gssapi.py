@@ -10,6 +10,8 @@ import ctypes
 import hashlib
 import os
 import pathlib
+import platform
+import json
 import secrets
 import shutil
 import signal
@@ -61,7 +63,7 @@ def run(argv, env, data=None):
     return result.stdout
 
 
-def fixture(parent, index, runtime, qemu, ports, children, files):
+def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86_64-linux-gnu"):
     work = parent / str(index)
     work.mkdir(mode=0o700)
     realm = f"ISSUE37612{index}.INVALID"
@@ -72,15 +74,16 @@ def fixture(parent, index, runtime, qemu, ports, children, files):
     ports.extend([kdcp, vncp])
     for name, value in (("realm", realm), ("hostname", host), ("kdc-port", str(kdcp)), ("vnc-port", str(vncp))):
         (work / name).write_text(value)
+    (work / "peer-provider").write_text("signed-private" if qemu is None else "pinned-host")
     password = " fixture-37612-" + secrets.token_hex(24) + " "
     (work / "password").write_text(password)
     env = {"PATH": os.environ["PATH"], "LANG": "C.UTF-8", "HOME": str(work),
-           "LD_LIBRARY_PATH": f"{runtime}/usr/lib/x86_64-linux-gnu:{runtime}/lib/x86_64-linux-gnu",
+           "LD_LIBRARY_PATH": f"{runtime}/usr/lib/{multiarch}:{runtime}/lib/{multiarch}",
            "KRB5_CONFIG": str(work / "krb5.conf"), "KRB5_KDC_PROFILE": str(work / "kdc.conf"),
            "KRB5_KTNAME": "FILE:" + str(work / "server.keytab"), "KRB5RCACHEDIR": str(work),
            "KRB5_CLIENT_KTNAME": "FILE:" + str(work / "absent.keytab"),
-           "SASL_PATH": str(runtime / "usr/lib/x86_64-linux-gnu/sasl2"), "SASL_CONF_PATH": str(work / "sasl"),
-           "QEMU_MODULE_DIR": str(runtime / "usr/lib/x86_64-linux-gnu/qemu")}
+           "SASL_PATH": str(runtime / f"usr/lib/{multiarch}/sasl2"), "SASL_CONF_PATH": str(work / "sasl"),
+           "QEMU_MODULE_DIR": str(runtime / f"usr/lib/{multiarch}/qemu")}
     (work / "krb5.conf").write_text(f"""[libdefaults]
  default_realm = {realm}
  dns_lookup_kdc = false
@@ -107,7 +110,7 @@ def fixture(parent, index, runtime, qemu, ports, children, files):
   supported_enctypes = aes256-cts-hmac-sha1-96:normal aes128-cts-hmac-sha1-96:normal
  }}
 [dbmodules]
- db_module_dir = {runtime}/usr/lib/x86_64-linux-gnu/krb5/plugins/kdb
+ db_module_dir = {runtime}/usr/lib/{multiarch}/krb5/plugins/kdb
 """)
     master = secrets.token_hex(32).encode()
     run([runtime / "usr/sbin/kdb5_util", "create", "-s"], env, master + b"\n" + master + b"\n")
@@ -126,6 +129,14 @@ def fixture(parent, index, runtime, qemu, ports, children, files):
     listing = run([runtime / "usr/bin/klist.mit", "-c", "FILE:" + str(work / "service.ccache")], env)
     assert b"krbtgt/" not in listing
     (work / "sasl").mkdir(mode=0o700);(work / "tls").mkdir(mode=0o700);(work / "private").mkdir(mode=0o700)
+    if qemu is None:
+        # Explicit independent-acceptor mode, never a substituted QEMU server.
+        (work / "peer-libdir").write_text(str(runtime / f"usr/lib/{multiarch}"))
+        for path in work.rglob("*"):
+            if path.is_file(): path.chmod(0o600)
+        inventory = subprocess.check_output(["ss", "-ltn"], text=True)
+        assert f"127.0.0.1:{kdcp}" in inventory and f"0.0.0.0:{kdcp}" not in inventory and f"[::]:{kdcp}" not in inventory
+        return kdc
     (work / "sasl/qemu.conf").write_text(f"mech_list: GSSAPI\nkeytab: {work}/server.keytab\n")
     run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-noenc", "-days", "1", "-subj", "/CN=Issue37612Fixture", "-keyout", work / "ca.key", "-out", work / "tls/ca-cert.pem"], env)
     run(["openssl", "req", "-newkey", "rsa:2048", "-noenc", "-subj", "/CN=localhost", "-keyout", work / "tls/server-key.pem", "-out", work / "server.csr"], env)
@@ -203,32 +214,65 @@ def run_tests(argv, *, env=None, timeout):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-dir", type=pathlib.Path, required=True)
-    parser.add_argument("--qemu", type=pathlib.Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--qemu", type=pathlib.Path)
+    mode.add_argument("--controlled-peer-only", action="store_true")
+    parser.add_argument("--test-executable", type=pathlib.Path)
     args = parser.parse_args()
-    runtime, qemu = args.runtime_dir.resolve(strict=True), args.qemu.resolve(strict=True)
-    assert hashlib.sha256(qemu.read_bytes()).hexdigest() == QEMU_SHA256
-    # MIT core acceptor libraries are supplied by this exact first-party Ubuntu
-    # baseline, not by an unverified runtime replacement or generic version label.
-    versions = subprocess.check_output(["dpkg-query", "-W", "-f=${Package} ${Version}\\n", "libgssapi-krb5-2", "libkrb5-3", "libk5crypto3"], text=True)
-    assert set(versions.splitlines()) == {name + " 1.20.1-6ubuntu2" for name in ("libgssapi-krb5-2", "libkrb5-3", "libk5crypto3")}
+    runtime = args.runtime_dir.resolve(strict=True)
+    multiarch = {"x86_64": "x86_64-linux-gnu", "aarch64": "aarch64-linux-gnu"}[platform.machine()]
+    qemu = None
+    if args.controlled_peer_only:
+        # The CI recipe obtains these exact packages through signed Ubuntu Noble
+        # indexes and verifies archive hashes before extraction. No ambient GSS.
+        baseline = json.loads((runtime / "provider.json").read_text())
+        assert baseline["multiarch"] == multiarch and baseline["mitVersion"] == "1.20.1-6ubuntu2"
+        for name in ("libgssapi-krb5-2", "libkrb5-3", "libk5crypto3", "libkrb5support0"):
+            assert baseline["packages"][name]["version"] == "1.20.1-6ubuntu2"
+        for name, digest in baseline["files"].items():
+            path = runtime / name
+            assert path.resolve(strict=True).is_relative_to(runtime) and not path.is_symlink()
+            assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+        for name in ("libgssapi_krb5.so.2", "libkrb5.so.3", "libk5crypto.so.3", "libkrb5support.so.0"):
+            library = (runtime / f"usr/lib/{multiarch}" / name).resolve(strict=True)
+            assert library.is_relative_to(runtime) and str(library.relative_to(runtime)) in baseline["files"]
+    else:
+        qemu = args.qemu.resolve(strict=True)
+        assert multiarch == "x86_64-linux-gnu" and hashlib.sha256(qemu.read_bytes()).hexdigest() == QEMU_SHA256
+        versions = subprocess.check_output(["dpkg-query", "-W", "-f=${Package} ${Version}\\n", "libgssapi-krb5-2", "libkrb5-3", "libk5crypto3"], text=True)
+        assert set(versions.splitlines()) == {name + " 1.20.1-6ubuntu2" for name in ("libgssapi-krb5-2", "libkrb5-3", "libk5crypto3")}
     work_root = REPO / "codex-work/tmp/issue-37612-native-fixture"
-    assert not (REPO / "codex-work").is_symlink()
-    work_root.mkdir(parents=True, exist_ok=True)
-    assert work_root.resolve().is_relative_to(REPO / "codex-work") and not work_root.is_symlink()
+    if "KERBEROS_NATIVE_TEST_ROOT" in os.environ:
+        assert args.controlled_peer_only and os.geteuid() == 0
+        work_root = pathlib.Path(os.environ["KERBEROS_NATIVE_TEST_ROOT"])
+        assert work_root == pathlib.Path("/run/kerberos-native-fixture") and work_root.is_dir() and not work_root.is_symlink()
+    else:
+        assert not (REPO / "codex-work").is_symlink()
+        work_root.mkdir(parents=True, exist_ok=True)
+        assert work_root.resolve().is_relative_to(REPO / "codex-work") and not work_root.is_symlink()
     own_test_descendants()
     cargo = ["cargo", "test", "--manifest-path", str(REPO / "crates/Cargo.toml"), "--profile", "local", "--locked", "-j", "1", "-p", "rfb-client", "--test", "qemu_gssapi"]
-    run_tests(cargo + ["--no-run"], timeout=500)
+    separator = ["--"]
+    if args.test_executable:
+        assert args.controlled_peer_only and not args.test_executable.is_symlink()
+        executable = args.test_executable.resolve(strict=True)
+        assert executable.parent == REPO / "crates/target/local/deps" and executable.name.startswith("qemu_gssapi-")
+        cargo, separator = [str(executable)], []
+    else:
+        run_tests(cargo + ["--no-run"], timeout=500)
     parent = pathlib.Path(tempfile.mkdtemp(prefix="native-", dir=work_root));parent.chmod(0o700)
     children, ports, files = [], [], []
     try:
-        kdcs = [fixture(parent, index, runtime, qemu, ports, children, files) for index in range(2)]
+        kdcs = [fixture(parent, index, runtime, qemu, ports, children, files, multiarch) for index in range(2)]
         env = os.environ.copy();env["QEMU_GSSAPI_FIXTURE"] = str(parent)
         # Only public fixture paths are environment inputs to tests, never secrets.
-        for name in ("pinned_online_password", "pinned_tls_authority", "pinned_native_renew", "pinned_completed_gss", "pinned_rfb_finality"):
-            run_tests(cargo + [name, "--", "--ignored", "--nocapture", "--test-threads=1"], env=env, timeout=90)
+        targets = ("pinned_completed_gss", "pinned_rfb_finality") if args.controlled_peer_only else ("pinned_online_password", "pinned_tls_authority", "pinned_native_renew", "pinned_completed_gss", "pinned_rfb_finality")
+        for name in targets:
+            run_tests(cargo + [name] + separator + ["--ignored", "--nocapture", "--test-threads=1"], env=env, timeout=90)
         for process in kdcs: stop(process)
-        env["QEMU_GSSAPI_KDC_STOPPED"] = "1"
-        run_tests(cargo + ["pinned_offline_import", "--", "--ignored", "--nocapture", "--test-threads=1"], env=env, timeout=30)
+        if not args.controlled_peer_only:
+            env["QEMU_GSSAPI_KDC_STOPPED"] = "1"
+            run_tests(cargo + ["pinned_offline_import"] + separator + ["--ignored", "--nocapture", "--test-threads=1"], env=env, timeout=30)
     finally:
         for process in reversed(children): stop(process)
         for stream in files: stream.close()

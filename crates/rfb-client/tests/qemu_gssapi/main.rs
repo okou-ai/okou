@@ -234,7 +234,8 @@ async fn framebuffer(root: &Path, mode: &str, relay: &mut Relay) {
 }
 
 fn mit_peer(root: &Path, mode: &str) -> tokio::process::Child {
-    tokio::process::Command::new("python3")
+    let mut command = tokio::process::Command::new("python3");
+    command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mit_gss_peer.py"))
         .args(["--fixture", root.to_str().unwrap(), "--mode", mode])
         .env_clear()
@@ -252,9 +253,17 @@ fn mit_peer(root: &Path, mode: &str) -> tokio::process::Child {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap()
+        .kill_on_drop(true);
+    match public(root, "peer-provider").as_str() {
+        "pinned-host" => {}
+        "signed-private" => {
+            // Only the independent acceptor receives this exact fixture directory.
+            // Missing metadata refuses; there is no ambient-library fallback.
+            command.env("LD_LIBRARY_PATH", public(root, "peer-libdir"));
+        }
+        _ => panic!("unsupported independent fixture provider"),
+    }
+    command.spawn().unwrap()
 }
 
 async fn peer_frame<S: tokio::io::AsyncRead + Unpin>(
@@ -270,7 +279,7 @@ async fn peer_frame<S: tokio::io::AsyncRead + Unpin>(
 }
 
 #[tokio::test]
-#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+#[ignore = "requires generated local-only pinned MIT/KDC fixture"]
 async fn pinned_completed_gss_rfc4752_authentic_mic_layers_and_sequence_controls() {
     use kerberos_worker::{Error as NativeError, NoKdc};
     let root = fixture(0);
@@ -359,7 +368,7 @@ async fn pinned_completed_gss_rfc4752_authentic_mic_layers_and_sequence_controls
 }
 
 #[tokio::test]
-#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+#[ignore = "requires generated local-only pinned MIT/KDC fixture"]
 async fn pinned_completed_gss_expiry_is_retained_before_no_layer_output() {
     use kerberos_worker::Error as NativeError;
     let root = fixture(0);

@@ -219,7 +219,7 @@ fn children() -> Vec<u32> {
 }
 
 #[tokio::test]
-#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+#[ignore = "requires generated local-only pinned MIT/KDC fixture"]
 async fn pinned_rfb_finality_stalled_peer_closes_at_acquired_ticket_and_gss_expiry() {
     let root = fixture(0);
     for mode in ["pending_ap_rep", "pending_layer", "pending_security_result"] {
@@ -275,7 +275,7 @@ async fn pinned_rfb_finality_stalled_peer_closes_at_acquired_ticket_and_gss_expi
 }
 
 #[tokio::test]
-#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+#[ignore = "requires generated local-only pinned MIT/KDC fixture"]
 async fn pinned_rfb_finality_padding_and_security_result_use_actual_mutual_gss() {
     let root = fixture(0);
     for mode in [
