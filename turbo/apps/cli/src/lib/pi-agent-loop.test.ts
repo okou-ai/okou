@@ -1,6 +1,6 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { http, HttpResponse } from "msw";
-import { promises as fs } from "node:fs";
+import fsSync, { promises as fs } from "node:fs";
 import { server } from "../mocks/server";
 import terminalFixtures from "../../../../../fixtures/pi-memory-phase2-terminal.json";
 import nativePiFixtures from "../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
@@ -311,6 +311,20 @@ class RpcHost {
     this.#iterator = this.#lines[Symbol.asyncIterator]();
   }
 
+  preparationRecords(): Array<Record<string, unknown>> {
+    return this.#stderr
+      .split("\n")
+      .filter((line) => {
+        return line.startsWith("{");
+      })
+      .map((line) => {
+        return JSON.parse(line) as Record<string, unknown>;
+      })
+      .filter((record) => {
+        return record.type === "pi_preparation_timing";
+      });
+  }
+
   send(command: Record<string, unknown>): void {
     this.#child.stdin.write(`${JSON.stringify(command)}\n`);
   }
@@ -409,6 +423,7 @@ async function startSandboxHost(args: {
     | "luna"
     | "codex-luna";
   readonly serviceTier?: "priority" | "fast";
+  readonly reportPreparationTiming?: boolean;
 }): Promise<RpcHost> {
   const agentDir = join(args.root, ".pi", "agent");
   const sessionDir = join(agentDir, "sessions", "--test--");
@@ -490,6 +505,9 @@ async function startSandboxHost(args: {
                 : "DEEPSEEK_API_KEY",
           },
     ),
+    ...(args.reportPreparationTiming
+      ? { OKOU_PI_PREPARATION_TIMING: "1" }
+      : {}),
     OPENAI_API_KEY: "pi-ownership-transfer-test-key",
     CHATGPT_ACCESS_TOKEN: "opaque-access-token-placeholder",
     CHATGPT_ACCOUNT_ID: "opaque-account-id-placeholder",
@@ -498,6 +516,71 @@ async function startSandboxHost(args: {
 }
 
 describe("sandbox Pi agent loop", () => {
+  it("serves RPC state with complete configuration and session startup observations", async () => {
+    const host = await startSandboxHost({
+      root: launchPayloadDirectory,
+      providerBaseUrl: "http://127.0.0.1:1",
+      reportPreparationTiming: true,
+    });
+    try {
+      const state = await host.state("startup-observation-state");
+      expect(state.sessionId).toBe(SESSION_ID);
+      await host.terminate();
+      const records = host.preparationRecords();
+      expect(
+        records.map((record) => {
+          return record.phase;
+        }),
+      ).toEqual(
+        expect.arrayContaining([
+          "cli_config",
+          "cli_launch_payload",
+          "cli_credentials",
+          "cli_session_file",
+          "session_manager",
+          "runtime_initialize",
+          "resources_prompt",
+          "model_runtime",
+          "session_services",
+          "resource_loader",
+          "session_create",
+          "session_finalize",
+        ]),
+      );
+      for (const record of records) {
+        expect(record).toMatchObject({
+          type: "pi_preparation_timing",
+          runId: RUN_ID,
+          outcome: "success",
+        });
+        expect(record.durationMs).toBeGreaterThanOrEqual(0);
+        expect(record.startedAt).toEqual(expect.any(Number));
+        expect(record.finishedAt).toEqual(expect.any(Number));
+      }
+    } finally {
+      await host.terminate();
+    }
+  });
+
+  it("keeps preparation reporting best effort when the diagnostic fd is closed", async () => {
+    const helper = fileURLToPath(
+      new URL("./pi-startup-timing.ts", import.meta.url),
+    );
+    const script = `import fs from 'node:fs'; const {writePiPreparationTiming} = await import(${JSON.stringify(helper)}); fs.closeSync(2); writePiPreparationTiming('run', {phase:'cli_config',startedAt:0,finishedAt:1,durationMs:1,outcome:'error'}); process.stdout.write('still-alive');`;
+    const child = spawn(
+      process.execPath,
+      ["--import", TSX_IMPORT, "--input-type=module", "-e", script],
+      { stdio: "pipe" },
+    );
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    const [code] = await once(child, "exit");
+    expect(code).toBe(0);
+    expect(stdout).toBe("still-alive");
+  });
   it("writes the private maintenance attestation only after mounted validation", async () => {
     const errors = vi.spyOn(console, "error");
     const exitCode = process.exitCode;
@@ -830,10 +913,10 @@ describe("sandbox Pi agent loop", () => {
   it("reports each sandbox preparation phase as a bounded stderr envelope", () => {
     const writes: string[] = [];
     const write = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation((chunk) => {
+      .spyOn(fsSync, "writeSync")
+      .mockImplementation((_fd, chunk) => {
         writes.push(String(chunk));
-        return true;
+        return Buffer.byteLength(String(chunk));
       });
     try {
       recordPiPreparationTiming(RUN_ID, {
@@ -850,12 +933,13 @@ describe("sandbox Pi agent loop", () => {
     expect(writes).toHaveLength(1);
     expect(writes[0]?.endsWith("\n")).toBe(true);
     // guest-agent parses this envelope into `pi_prepare_session_services`;
-    // wall-clock boundaries stay out of it because the guest owns the
-    // timestamp it records.
+    // the child carries wall boundaries for correlation; Guest still owns _time.
     expect(JSON.parse(writes[0] ?? "{}") as unknown).toStrictEqual({
       type: "pi_preparation_timing",
       runId: RUN_ID,
       phase: "session_services",
+      startedAt: 1_700_000_000_000,
+      finishedAt: 1_700_000_000_042,
       durationMs: 41.6,
       outcome: "success",
     });

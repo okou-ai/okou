@@ -9,7 +9,7 @@ use guest_contracts::cli_stderr_diagnostics::{
 use std::collections::VecDeque;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use super::pi_preparation_timing;
+use super::{pi_preparation_timing, pi_startup::PiStartupSegments};
 
 const STDERR_READ_BUFFER_BYTES: usize = 8 * 1024;
 
@@ -27,11 +27,11 @@ pub(super) enum CliStderrLineObserver {
 }
 
 impl CliStderrLineObserver {
-    fn observe(self, line: &[u8]) {
+    fn observe(self, line: &[u8], startup: Option<&PiStartupSegments>) {
         match self {
             Self::None => {}
             Self::PiPreparationTiming => {
-                pi_preparation_timing::record_pi_preparation_timing_line(line);
+                pi_preparation_timing::record_pi_preparation_timing_line(line, startup);
             }
         }
     }
@@ -59,6 +59,7 @@ fn finish_stderr_result_line(
     line_omitted: &mut bool,
     strip_trailing_cr: bool,
     observer: CliStderrLineObserver,
+    startup: Option<&PiStartupSegments>,
 ) {
     if *line_omitted {
         push_stderr_result_line(lines, CLI_STDERR_OMITTED_LONG_LINE.to_string());
@@ -69,7 +70,7 @@ fn finish_stderr_result_line(
         if line.len() > CLI_STDERR_RESULT_MAX_LINE_BYTES {
             push_stderr_result_line(lines, CLI_STDERR_OMITTED_LONG_LINE.to_string());
         } else {
-            observer.observe(line);
+            observer.observe(line, startup);
             push_decoded_stderr_result_line(lines, line);
         }
     }
@@ -82,12 +83,13 @@ pub(super) async fn collect_stderr_result_tail<R>(stderr: R) -> Vec<String>
 where
     R: AsyncRead + Unpin,
 {
-    collect_stderr_result_tail_observed(stderr, CliStderrLineObserver::None).await
+    collect_stderr_result_tail_observed(stderr, CliStderrLineObserver::None, None).await
 }
 
 pub(super) async fn collect_stderr_result_tail_observed<R>(
     mut stderr: R,
     observer: CliStderrLineObserver,
+    startup: Option<PiStartupSegments>,
 ) -> Vec<String>
 where
     R: AsyncRead + Unpin,
@@ -106,7 +108,14 @@ where
 
         for &byte in buffer.iter().take(read) {
             if byte == b'\n' {
-                finish_stderr_result_line(&mut lines, &mut line, &mut line_omitted, true, observer);
+                finish_stderr_result_line(
+                    &mut lines,
+                    &mut line,
+                    &mut line_omitted,
+                    true,
+                    observer,
+                    startup.as_ref(),
+                );
                 continue;
             }
 
@@ -126,7 +135,14 @@ where
     }
 
     if !line.is_empty() || line_omitted {
-        finish_stderr_result_line(&mut lines, &mut line, &mut line_omitted, false, observer);
+        finish_stderr_result_line(
+            &mut lines,
+            &mut line,
+            &mut line_omitted,
+            false,
+            observer,
+            startup.as_ref(),
+        );
     }
 
     lines.into_iter().collect()
