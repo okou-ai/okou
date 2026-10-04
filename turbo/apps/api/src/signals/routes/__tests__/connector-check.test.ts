@@ -19,6 +19,7 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { settle } from "../../utils";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import {
   awsVerificationCode,
   createConnectorBddApi,
@@ -1348,6 +1349,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
             { mode: "environment", environmentName: "GH_TOKEN" },
           ];
           for (const body of requests) {
+            mockClerkMembership(context, owner, "org:admin");
             const original = await checkWithToken(ownerToken, body);
             if (body.mode === "url") {
               expect(original.body).toStrictEqual({
@@ -1364,6 +1366,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
                 permission: null,
               });
             }
+            mockClerkMembership(context, foreign, "org:admin");
             const rejected = await accept(
               client().check({
                 headers: { authorization: `Bearer ${foreignToken}` },
@@ -1382,6 +1385,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
               error: { code: "NOT_FOUND", message: "Agent run not found" },
             });
             expect(missing.body).toStrictEqual(rejected.body);
+            mockClerkMembership(context, owner, "org:admin");
             const unchanged = await checkWithToken(ownerToken, body);
             expect(unchanged.body).toStrictEqual(original.body);
           }
