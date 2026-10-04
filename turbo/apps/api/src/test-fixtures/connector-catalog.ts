@@ -16,6 +16,8 @@ import { and, asc, eq } from "drizzle-orm";
 
 import { mockOptionalEnv } from "../lib/env";
 import type { Tx } from "../lib/db-types";
+import { closeDbPool } from "../lib/db";
+import { settleIncludingAbort } from "../signals/utils";
 import { writeDb$, type Db } from "../signals/external/db";
 import { nowDate } from "../lib/time";
 import {
@@ -59,11 +61,22 @@ export const API_TEST_CONNECTOR_FIREWALL_CONFIGS =
 export const API_TEST_CONNECTOR_CATALOG_SOURCE = connectorCatalogSource();
 
 export async function installSharedApiTestConnectorCatalog(): Promise<void> {
-  await installApiTestConnectorCatalog({
-    sourceId: API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId,
-    runtimeProjection: true,
-    ifAbsent: true,
-  });
+  const installation = await settleIncludingAbort(
+    installApiTestConnectorCatalog({
+      sourceId: API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId,
+      runtimeProjection: true,
+      ifAbsent: true,
+    }),
+  );
+  // Startup owns this connection, not the case's database authority. Cases
+  // may deliberately choose an unavailable endpoint before their first read.
+  const shutdown = await settleIncludingAbort(closeDbPool());
+  if (!installation.ok) {
+    throw installation.error;
+  }
+  if (!shutdown.ok) {
+    throw shutdown.error;
+  }
 }
 
 const DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION =
