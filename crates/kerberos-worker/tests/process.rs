@@ -399,7 +399,8 @@ async fn expensive_unauthenticated_preauth_is_cpu_bounded_and_reaped_before_new_
     use zeroize::Zeroizing;
     struct ExpensiveKdc {
         observed: Option<tokio::sync::oneshot::Sender<()>>,
-        response: Zeroizing<Vec<u8>>,
+        challenge: Zeroizing<Vec<u8>>,
+        reply: Zeroizing<Vec<u8>>,
     }
     impl KdcExchange for ExpensiveKdc {
         async fn authorize(&mut self) -> Result<(), Error> {
@@ -407,25 +408,37 @@ async fn expensive_unauthenticated_preauth_is_cpu_bounded_and_reaped_before_new_
         }
         async fn exchange(&mut self, realm: &str, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
             assert_eq!(realm, "ISSUE37612.INVALID");
-            if let Some(observed) = self.observed.take() {
+            let response = if let Some(observed) = self.observed.take() {
                 observed.send(()).unwrap();
-            }
-            Ok(Zeroizing::new(self.response.to_vec()))
+                &self.challenge
+            } else {
+                &self.reply
+            };
+            Ok(Zeroizing::new(response.to_vec()))
         }
     }
     let root = root();
     let path = root.path().canonicalize().unwrap();
     let before = actual_children();
     let (observed_tx, observed) = tokio::sync::oneshot::channel();
-    // Maintained MIT encoded this public PREAUTH_REQUIRED/ETYPE_INFO2 error.
-    // AES256 S2K uses 0x00ffffff iterations, just below MIT's rejection limit.
-    let response = include_str!("fixtures/expensive-preauth-error.hex")
-        .split_whitespace()
-        .map(|byte| u8::from_str_radix(byte, 16).unwrap())
-        .collect::<Vec<_>>();
+    // Maintained MIT encoded both PUBLIC NON-AUTHENTIC controls. AES256
+    // preauth uses 0x00ffffff iterations, just below MIT's rejection limit.
+    // If that one derivation completes under 12 CPU seconds, the admitted AES128
+    // AS-REP forces MIT's password callback to derive again before rejecting its
+    // bogus ciphertext. Repeating PREAUTH_REQUIRED would reuse the cached key
+    // and refuse without exercising the CPU cap on faster native hosts.
+    let decode = |value: &str| {
+        Zeroizing::new(
+            value
+                .split_whitespace()
+                .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+                .collect::<Vec<_>>(),
+        )
+    };
     let mut caller = ExpensiveKdc {
         observed: Some(observed_tx),
-        response: Zeroizing::new(response),
+        challenge: decode(include_str!("fixtures/expensive-preauth-error.hex")),
+        reply: decode(include_str!("fixtures/expensive-as-rep.hex")),
     };
     let source = Credentials::new(
         principal(&["probe"]),
