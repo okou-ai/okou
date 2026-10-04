@@ -1,32 +1,33 @@
 # Deployment Compatibility
 
-## Firewall auth proactive cache deadline (#37670)
+## Firewall auth effective expiry (#37670)
 
-Firewall auth success may include `cacheExpiresAt`, an earlier Unix-second
-cache-reuse cutoff derived from the API's existing OAuth refresh buffer.
-`expiresAt` retains its credential and billable credit-authorization bound.
-The addon checks both for cache reuse, but validates a freshly resolved billable
-response against `expiresAt`. A valid short-lived token whose cache cutoff is
-already past can serve its initiating and coalesced callers without enabling a
-later cache hit. Malformed supplied cutoffs fail closed; a null/absent cutoff
-adds no bound. Non-refreshable/custom/automatic paths need no new hint.
+Firewall auth keeps the existing `expiresAt` response shape. For refreshable
+sources, the API subtracts its existing OAuth refresh buffer from the earliest
+source expiry, then takes the minimum with other authorization deadlines such
+as the billable credit lease. Stored provider expiry remains accurate; credit
+leases are not reduced by the token buffer. A finite effective deadline needs
+positive remaining lifetime (`expiresAt - now > 0`). Sources at that boundary
+refresh normally; if the bounded refresh still produces no positive horizon,
+auth fails closed while keeping any persisted credential rotation. No expiry
+clamp, repeated refresh loop or past-deadline success exception is added.
 
-New API/new Runner stops cache reuse at the proactive refresh boundary. New
-API/old Runner ignores the additive field and retains the prior full-expiry
-cache window. Old API/new Runner uses the existing `expiresAt` contract and
-retains that window. API and Runner deploy independently, so the full correction
-requires both serving components; source/CI acceptance is not deployment
-verification. Optional-field support must remain while supported API writers or
-rollback targets can omit it, and because current no-hint auth paths legitimately
-omit it. No persisted state, Run snapshot or database migration is involved.
+Existing Runner versions already honor `expiresAt`, so new API/old Runner and
+new API/new Runner use the corrected cutoff without a Runner upgrade. Any
+Runner resolving auth from old API retains the old timing; an existing cached
+entry keeps its old deadline until normal expiry or invalidation. API serving
+and retained rollback revisions must be verified separately from source/CI
+acceptance. Null still means non-expiring only for non-billable auth; unrelated
+custom/automatic/non-refreshable paths keep their existing behavior. No new
+protocol field, persisted state, Run snapshot or database migration is involved.
 
 Rollback restores the prior cache timing without changing stored credentials
 or authorization. This correction does not invalidate other Runs on arbitrary
 forced rotation, serialize concurrent refreshes, replay provider requests, or
 change the accepted rare rotating-token reconnect tradeoff. Parent #37668 stays
 open for incident request-level attribution and serving-version verification;
-synthetic cache coverage does not establish Notion old-token invalidation or
-resolve its reported 401s.
+synthetic coverage does not establish Notion old-token invalidation or resolve
+its reported 401s.
 
 ## File transcription and Seedream 5 retirement
 

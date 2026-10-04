@@ -198,7 +198,6 @@ interface FirewallAwsSigv4AuthConfig {
 
 interface RefreshResult {
   readonly expiresAt: number | null;
-  readonly cacheExpiresAt: number | null;
   readonly refreshedConnectors: readonly string[];
   readonly refreshedSecrets: readonly string[];
   readonly failedConnectors: readonly string[];
@@ -296,7 +295,6 @@ interface ResolvedFirewallAuthMaterial {
   readonly secrets: Record<string, string>;
   readonly vars: Record<string, string>;
   readonly expiresAt: number | null;
-  readonly cacheExpiresAt?: number | null;
   readonly refreshedConnectors: readonly string[];
   readonly refreshedSecrets: readonly string[];
   readonly missingSecretFailure: MissingResolvedSecretFailure;
@@ -318,7 +316,6 @@ interface ResolveResult {
     readonly query?: Record<string, string>;
     readonly awsSigv4?: FirewallAwsSigv4AuthConfig;
     readonly expiresAt: number | null;
-    readonly cacheExpiresAt?: number | null;
     readonly resolvedSecrets: readonly string[];
     readonly refreshedConnectors: readonly string[];
     readonly refreshedSecrets: readonly string[];
@@ -2962,7 +2959,6 @@ function hasForbiddenModelProviderOwner(
 
 const emptyRefreshResult = Object.freeze({
   expiresAt: null,
-  cacheExpiresAt: null,
   refreshedConnectors: [],
   refreshedSecrets: [],
   failedConnectors: [],
@@ -4841,6 +4837,38 @@ function earliestAccessSourceExpiry(
   return earliestExpiry;
 }
 
+function unusableRefreshLifetimeResults(
+  accessSourceKeys: readonly string[],
+  sourceStateMap: Map<string, RefreshSourceState>,
+  refreshResults: readonly RefreshExecutionResult[],
+): readonly RefreshExecutionResult[] {
+  const results: RefreshExecutionResult[] = [];
+  const nowSeconds = currentSecond();
+  for (const accessSourceKey of accessSourceKeys) {
+    const expiry = sourceStateMap.get(accessSourceKey)?.tokenExpiresAt;
+    if (
+      expiry !== undefined &&
+      expiry !== null &&
+      expiry <= nowSeconds + REFRESH_BUFFER_SECS &&
+      !refreshResults.some((result) => {
+        return (
+          result.accessSourceKey === accessSourceKey &&
+          (result.status === "failed" || result.status === "source-missing")
+        );
+      })
+    ) {
+      // Rotation is already persisted. Fail closed if this bounded refresh
+      // still cannot provide a positive effective lifetime; do not loop.
+      results.push({
+        accessSourceKey,
+        status: "failed",
+        failureReason: "upstream_provider",
+      });
+    }
+  }
+  return results;
+}
+
 async function refreshExpiredTokens(
   args: RefreshExpiredTokensArgs,
 ): Promise<RefreshResult> {
@@ -4922,10 +4950,6 @@ async function refreshExpiredTokens(
   );
   const refreshResults = [...selectedRefreshResults, ...skippedResults];
 
-  const summary = summarizeRefreshResults(
-    refreshResults,
-    envVarsByAccessSource,
-  );
   const hasCurrentOrRefreshed = refreshResults.some((result) => {
     return result.status === "current" || result.status === "refreshed";
   });
@@ -4961,11 +4985,19 @@ async function refreshExpiredTokens(
     finalSourceStateMap,
   );
   return {
-    expiresAt,
-    // Another Run may refresh at this boundary. Stop reusing cached headers
-    // then, without shortening the validity of a freshly resolved token.
-    cacheExpiresAt: expiresAt === null ? null : expiresAt - REFRESH_BUFFER_SECS,
-    ...summary,
+    // Stop every Run's cache at the same boundary that triggers refresh.
+    expiresAt: expiresAt === null ? null : expiresAt - REFRESH_BUFFER_SECS,
+    ...summarizeRefreshResults(
+      [
+        ...refreshResults,
+        ...unusableRefreshLifetimeResults(
+          accessSourceKeys,
+          finalSourceStateMap,
+          refreshResults,
+        ),
+      ],
+      envVarsByAccessSource,
+    ),
   };
 }
 
@@ -5794,7 +5826,6 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
 }): Promise<FirewallAuthMaterialResolution> {
   const { connectorAccessBySlug, referenced } = args.prepared.context;
   let expiresAt = args.prepared.builtinMcpExpiresAt;
-  let cacheExpiresAt: number | null = null;
   let refreshedConnectors: readonly string[] = [];
   let refreshedSecrets: readonly string[] = [];
   let failedConnectors: readonly string[] = [];
@@ -5817,7 +5848,6 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       forceRefresh: args.body.forceRefresh ?? false,
     });
     expiresAt = mergeExpiresAt(expiresAt, result.expiresAt ?? undefined);
-    cacheExpiresAt = result.cacheExpiresAt;
     refreshedConnectors = result.refreshedConnectors;
     refreshedSecrets = result.refreshedSecrets;
     failedConnectors = result.failedConnectors;
@@ -5873,7 +5903,6 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       secrets: args.prepared.secrets,
       vars,
       expiresAt,
-      cacheExpiresAt,
       refreshedConnectors,
       refreshedSecrets,
       missingSecretFailure: {
@@ -6037,9 +6066,6 @@ function finalizeFirewallAuth(args: {
         args.material.expiresAt,
         args.billableExpiresAt,
       ),
-      ...(typeof args.material.cacheExpiresAt === "number"
-        ? { cacheExpiresAt: args.material.cacheExpiresAt }
-        : {}),
       resolvedSecrets: resolved.resolvedSecrets,
       refreshedConnectors: args.material.refreshedConnectors,
       refreshedSecrets: args.material.refreshedSecrets,

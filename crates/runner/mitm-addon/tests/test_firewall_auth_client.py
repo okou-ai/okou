@@ -8,7 +8,6 @@ import json
 import os
 import socket
 import ssl
-import threading
 import time
 import urllib.error
 import uuid
@@ -1404,26 +1403,25 @@ class TestFetchFirewallHeaders:
         assert endpoint.requests[0].path == "/api/webhooks/agent/firewall/auth"
 
 
-class TestFirewallAuthCacheDeadlines:
-    async def test_two_runs_refetch_at_proactive_deadline_before_token_expiry(self, mitm_ctx):
+class TestFirewallAuthEffectiveExpiry:
+    @pytest.mark.parametrize("billable", [False, True])
+    async def test_two_runs_refetch_and_coalesce_at_effective_expiry(self, mitm_ctx, billable):
         now = 1_800_000_000.0
-        token_expiry = now + 900
-        cache_deadline = token_expiry - 60
+        provider_expiry = now + 900
+        effective_expiry = provider_expiry - 60
         old_headers = {"Authorization": "Bearer old-synthetic-token"}
         new_headers = {"Authorization": "Bearer rotated-synthetic-token"}
         endpoint = FakeAuthEndpoint()
         for headers, expiry in [
-            (old_headers, token_expiry),
-            (old_headers, token_expiry),
-            (new_headers, token_expiry + 840),
-            (new_headers, token_expiry + 840),
+            (old_headers, effective_expiry),
+            (old_headers, effective_expiry),
+            (new_headers, effective_expiry + 840),
+            (new_headers, effective_expiry + 840),
         ]:
-            endpoint.queue_json_response(
-                firewall_auth_success_response(headers, expires_at=expiry)
-                | {"cacheExpiresAt": expiry - 60}
-            )
+            endpoint.queue_json_response(firewall_auth_success_response(headers, expires_at=expiry))
         request = firewall_auth_request(
-            auth_headers={"Authorization": "Bearer ${{ secrets.TOKEN }}"}
+            auth_headers={"Authorization": "Bearer ${{ secrets.TOKEN }}"},
+            firewall_billable=billable,
         )
         keys = [auth_cache_key(run_id="run-one"), auth_cache_key(run_id="run-two")]
 
@@ -1437,168 +1435,22 @@ class TestFirewallAuthCacheDeadlines:
                 first = await auth_cache.get_firewall_headers(key, request)
                 assert first["headers"] == old_headers
                 assert first["cache_hit"] is False
-            clock.return_value = cache_deadline - 1
+            clock.return_value = effective_expiry - 1
             for key in keys:
                 cached = await auth_cache.get_firewall_headers(key, request)
                 assert cached["headers"] == old_headers
                 assert cached["cache_hit"] is True
-            clock.return_value = cache_deadline
+            clock.return_value = effective_expiry
+            assert clock.return_value < provider_expiry
             for key in reversed(keys):
-                refreshed = await auth_cache.get_firewall_headers(key, request)
-                assert refreshed["headers"] == new_headers
-                assert refreshed["cache_hit"] is False
+                results = await asyncio.gather(
+                    *(auth_cache.get_firewall_headers(key, request) for _ in range(4))
+                )
+                assert all(result["headers"] == new_headers for result in results)
+                assert sum(not result["cache_hit"] for result in results) == 1
 
         assert endpoint.request_count == 4
         assert all("forceRefresh" not in item.json_body() for item in endpoint.requests)
-
-    @pytest.mark.parametrize(
-        ("cache_fields", "cutoff"),
-        [
-            pytest.param({}, 1200.0, id="old-api-missing-hint"),
-            pytest.param({"cacheExpiresAt": None}, 1200.0, id="null-hint"),
-            pytest.param({"cacheExpiresAt": 1100.0}, 1100.0, id="earlier-cache-deadline"),
-            pytest.param({"cacheExpiresAt": 1300.0}, 1200.0, id="cannot-extend-original-expiry"),
-        ],
-    )
-    async def test_cache_reuse_honors_both_deadlines(self, mitm_ctx, cache_fields, cutoff):
-        endpoint = FakeAuthEndpoint()
-        endpoint.queue_json_response(
-            firewall_auth_success_response({"Auth": "initial"}, expires_at=1200.0) | cache_fields
-        )
-        endpoint.queue_json_response(
-            firewall_auth_success_response({"Auth": "refetched"}, expires_at=1500.0)
-        )
-        request = firewall_auth_request(auth_headers={"Auth": "${{ secrets.TOKEN }}"})
-        key = auth_cache_key()
-
-        with (
-            endpoint.run(),
-            mitm_ctx(api_url=endpoint.api_url),
-            patch.object(platform_api, "VERCEL_BYPASS", ""),
-            patch.object(auth_cache.time, "time", return_value=1000.0) as clock,
-        ):
-            first = await auth_cache.get_firewall_headers(key, request)
-            assert first["headers"] == {"Auth": "initial"}
-            clock.return_value = cutoff - 1
-            cached = await auth_cache.get_firewall_headers(key, request)
-            assert cached["cache_hit"] is True
-            clock.return_value = cutoff
-            refetched = await auth_cache.get_firewall_headers(key, request)
-            assert refetched["headers"] == {"Auth": "refetched"}
-            assert refetched["cache_hit"] is False
-        assert endpoint.request_count == 2
-
-    @pytest.mark.parametrize("billable", [False, True])
-    async def test_valid_short_token_coalesces_without_later_cache_reuse(self, mitm_ctx, billable):
-        endpoint = FakeAuthEndpoint()
-        endpoint.queue_json_response(
-            firewall_auth_success_response({"Auth": "short-lived"}, expires_at=1005.0)
-            | {"cacheExpiresAt": 945.0}
-        )
-        request = firewall_auth_request(
-            auth_headers={"Auth": "${{ secrets.TOKEN }}"}, firewall_billable=billable
-        )
-        key = auth_cache_key()
-
-        with (
-            endpoint.run(),
-            mitm_ctx(api_url=endpoint.api_url),
-            patch.object(platform_api, "VERCEL_BYPASS", ""),
-            patch.object(auth_cache.time, "time", return_value=1000.0),
-        ):
-            results = await asyncio.gather(
-                *(auth_cache.get_firewall_headers(key, request) for _ in range(4))
-            )
-            assert all(result["headers"] == {"Auth": "short-lived"} for result in results)
-            assert all(result["cache_hit"] is False for result in results)
-            assert endpoint.request_count == 1
-            endpoint.queue_json_response(
-                firewall_auth_success_response({"Auth": "new-fetch"}, expires_at=1005.0)
-                | {"cacheExpiresAt": 945.0}
-            )
-            later = await auth_cache.get_firewall_headers(key, request)
-            assert later["headers"] == {"Auth": "new-fetch"}
-            assert later["cache_hit"] is False
-        assert endpoint.request_count == 2
-
-    async def test_in_flight_401_wins_over_short_token_coalescing(self, mitm_ctx):
-        endpoint = FakeAuthEndpoint()
-        release = threading.Event()
-        endpoint.queue_json_response(
-            firewall_auth_success_response({"Auth": "old"}, expires_at=1200.0)
-            | {"cacheExpiresAt": 1100.0}
-        )
-        endpoint.queue_json_response(
-            firewall_auth_success_response({"Auth": "maybe-stale"}, expires_at=1105.0)
-            | {"cacheExpiresAt": 1045.0},
-            release_event=release,
-        )
-        endpoint.queue_json_response(
-            firewall_auth_success_response({"Auth": "forced"}, expires_at=1500.0)
-            | {"cacheExpiresAt": 1440.0}
-        )
-        request = firewall_auth_request(
-            auth_headers={"Auth": "${{ secrets.TOKEN }}"}, firewall_billable=True
-        )
-        key = auth_cache_key()
-        follower_started = asyncio.Event()
-
-        async def follow_fetch():
-            follower_started.set()
-            return await auth_cache.get_firewall_headers(key, request)
-
-        with (
-            endpoint.run(),
-            mitm_ctx(api_url=endpoint.api_url),
-            patch.object(platform_api, "VERCEL_BYPASS", ""),
-            patch.object(auth_cache.time, "time", return_value=1000.0) as clock,
-        ):
-            old = await auth_cache.get_firewall_headers(key, request)
-            clock.return_value = 1100.0
-            leader = asyncio.create_task(auth_cache.get_firewall_headers(key, request))
-            follower = None
-            try:
-                assert await asyncio.to_thread(endpoint.wait_for_request_count, 2)
-                auth_cache.invalidate_cached_firewall_headers(key, old["cache_entry_identity"])
-                follower = asyncio.create_task(follow_fetch())
-                await asyncio.wait_for(follower_started.wait(), timeout=2.0)
-                release.set()
-                leader_result, follower_result = await asyncio.gather(leader, follower)
-                assert leader_result["headers"] == {"Auth": "maybe-stale"}
-                assert follower_result["headers"] == {"Auth": "forced"}
-                cached = await auth_cache.get_firewall_headers(key, request)
-                assert cached["headers"] == {"Auth": "forced"}
-                assert cached["cache_hit"] is True
-            finally:
-                release.set()
-                for task in (leader, follower):
-                    if task is not None:
-                        task.cancel()
-                        with suppress(asyncio.CancelledError):
-                            await task
-        assert endpoint.request_count == 3
-        assert [item.json_body().get("forceRefresh", False) for item in endpoint.requests] == [
-            False,
-            False,
-            True,
-        ]
-
-    @pytest.mark.parametrize(
-        "deadline",
-        [True, False, "123", [], {}, float("inf"), float("nan"), 10**400],
-    )
-    async def test_malformed_cache_deadline_fails_closed(self, mitm_ctx, deadline):
-        endpoint = FakeAuthEndpoint()
-        endpoint.queue_json_response(
-            firewall_auth_success_response({}, expires_at=1200.0) | {"cacheExpiresAt": deadline}
-        )
-        with (
-            endpoint.run(),
-            mitm_ctx(api_url=endpoint.api_url),
-            patch.object(platform_api, "VERCEL_BYPASS", ""),
-            pytest.raises(ValueError, match=_MALFORMED_SUCCESS_PREFIX),
-        ):
-            await auth_client.fetch_firewall_headers(firewall_auth_request())
 
 
 class TestFirewallAuthSuccessParser:

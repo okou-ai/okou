@@ -73,7 +73,6 @@ class _FirewallHeaderCacheEntry:
     payload: FirewallAuthPayload
     identity: FirewallAuthCacheEntryIdentity = field(default_factory=FirewallAuthCacheEntryIdentity)
     expires_at: object = None
-    cache_expires_at: int | float | None = None
 
 
 @dataclass
@@ -398,8 +397,6 @@ def _build_cache_hit(
             return None
     elif not _has_valid_expiry(expires_at, now):
         return None
-    if cached.cache_expires_at is not None and not _has_valid_expiry(cached.cache_expires_at, now):
-        return None
     return _build_token_meta(cached, cache_hit=True)
 
 
@@ -429,7 +426,6 @@ async def _fetch_and_cache_firewall_headers(
         cache_entry = _FirewallHeaderCacheEntry(
             payload=result.payload,
             expires_at=result.expires_at,
-            cache_expires_at=result.cache_expires_at,
         )
 
         # A 401 can request a forced refresh while this non-forced fetch is
@@ -465,11 +461,10 @@ async def get_firewall_headers(
     - A 401 response is received (see response handler; refresh lifecycle state
       is preserved)
 
-    TTL expiry is different: once expiresAt or an optional earlier
-    cacheExpiresAt from the auth endpoint has passed, the entry is a cache
-    miss. A successful refetch replaces it; a failed refetch leaves it stored
-    for a later retry. A fresh response with a past cacheExpiresAt can still
-    serve its already-waiting callers while its actual authorization is valid.
+    TTL expiry is different: once the expiresAt timestamp from the auth
+    endpoint has passed, the entry is treated as a cache miss and its headers
+    are never served. A successful refetch replaces the expired entry, while a
+    failed refetch leaves the expired entry stored for a later retry.
     """
     state = _get_auth_state(cache_key)
 
@@ -514,21 +509,6 @@ async def get_firewall_headers(
 
         result = await asyncio.shield(fetch_task)
         if created_fetch:
-            return result
-
-        cached = state.cache
-        if (
-            cached is not None
-            and cached.identity is result["cache_entry_identity"]
-            and cached.cache_expires_at is not None
-            and not _has_valid_expiry(cached.cache_expires_at)
-            and (
-                (cached.expires_at is None and not request.firewall_billable)
-                or _has_valid_expiry(cached.expires_at)
-            )
-        ):
-            # These callers shared a fresh resolution, not a later cache hit.
-            # A 401-invalidated or superseded entry cannot take this path.
             return result
 
         # Followers observe an ordinary completion through the cache. If the
