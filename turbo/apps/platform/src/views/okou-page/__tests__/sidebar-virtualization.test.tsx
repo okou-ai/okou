@@ -292,7 +292,7 @@ test.each([true, false])(
     await waitFor(() => {
       expect(rows()).toHaveLength(13);
       expect(runningIndicatorPhase(rows()[2])).toBeCloseTo(
-        waveEnabled ? -10 / 12 : 0,
+        waveEnabled ? -4 / 6 : 0,
         10,
       );
     });
@@ -312,7 +312,7 @@ test.each([true, false])(
     await waitFor(() => {
       for (const row of rows()) {
         const index = Number(row.dataset.index);
-        const expectedPhase = index % 12 === 0 ? 0 : (index % 12) / 12 - 1;
+        const expectedPhase = index % 6 === 0 ? 0 : (index % 6) / 6 - 1;
         expect(runningIndicatorPhase(row)).toBeCloseTo(
           waveEnabled ? expectedPhase : 0,
           10,
@@ -326,7 +326,7 @@ test.each([true, false])(
     await waitFor(() => {
       expect(runningIndicatorPhase(rows()[0])).toBe(0);
       expect(runningIndicatorPhase(rows()[2])).toBeCloseTo(
-        waveEnabled ? -10 / 12 : 0,
+        waveEnabled ? -4 / 6 : 0,
         10,
       );
     });
@@ -347,7 +347,7 @@ test.each([true, false])(
       expect(within(rows()[0]).getByText("History 3")).toBeInTheDocument();
       expect(runningIndicatorPhase(rows()[0])).toBe(0);
       expect(runningIndicatorPhase(rows()[1])).toBeCloseTo(
-        waveEnabled ? -11 / 12 : 0,
+        waveEnabled ? -5 / 6 : 0,
         10,
       );
     });
