@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.219.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.219.18...runner-rs-v0.219.19) (2026-10-04)
+
+
+### Bug Fixes
+
+* bound firewall auth caching by the refresh deadline ([#37674](https://github.com/okou-ai/okou/issues/37674)) ([0914700](https://github.com/okou-ai/okou/commit/0914700abff4b3ecbac7a4015655355a28bf7216))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.219.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.219.17...runner-rs-v0.219.18) (2026-10-04)
 
 ### Release Dependencies
