@@ -4,7 +4,7 @@ import type { TestContext } from "../../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createFirewallApi } from "./api-bdd-firewall";
-import { createRunsApi } from "./api-bdd-runs";
+import { createRunsApi, type OrgPolicyModel } from "./api-bdd-runs";
 
 type RunClaim = Awaited<
   ReturnType<ReturnType<typeof createRunsApi>["claimRunnerJob"]>
@@ -49,6 +49,7 @@ export async function withConnectorRuntime(
       body: ConnectorRuntimeAuthBody,
     ) => ReturnType<typeof resolveClaimedAuth>;
   }) => Promise<void> | void,
+  options: { readonly model?: OrgPolicyModel } = {},
 ): Promise<void> {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
@@ -58,7 +59,7 @@ export async function withConnectorRuntime(
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensureOrgModelProvider(actor, options);
   const agent = await bdd.createAgent(actor, {
     displayName: "Connector credential consumer",
     visibility: "private",
@@ -85,6 +86,7 @@ export async function withConnectorRuntime(
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Use the connected account",
+    ...(options.model === undefined ? {} : { model: options.model }),
   });
   const runId = run.runId;
   owned.runId = runId;

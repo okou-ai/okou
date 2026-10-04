@@ -2510,6 +2510,7 @@ describe("workflows", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const s3 = installVolumeS3Fixture();
+    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
     const agent = await bdd.createAgent(actor, {
       displayName: "Immutable Volume Agent",
       visibility: "private",
@@ -2517,6 +2518,8 @@ describe("workflows", () => {
     const activeRuns = new Set<string>();
     const ownedWorkflows = new Set<string>();
     onTestFinished(async () => {
+      // Global teardown resets external mocks before this owned cleanup.
+      context.mocks.s3.send.mockImplementation(sendS3);
       for (const runId of activeRuns) {
         await api.requestCancelRun(actor, runId, [200]);
         await flushWaitUntilForTest();

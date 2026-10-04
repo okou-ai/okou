@@ -683,6 +683,7 @@ describe("POST /api/user-templates", () => {
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const fixture = installS3Fixture(context);
+    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
     const agent = await bdd.createAgent(actor, {
       displayName: "Template package consumer",
       visibility: "private",
@@ -691,6 +692,8 @@ describe("POST /api/user-templates", () => {
     const ownedTemplates = new Set<string>();
     const client = templateClient();
     onTestFinished(async () => {
+      // Global teardown resets external mocks before this owned cleanup.
+      context.mocks.s3.send.mockImplementation(sendS3);
       for (const runId of activeRuns) {
         await runs.requestCancelRun(actor, runId, [200]);
         await flushWaitUntilForTest();
@@ -698,7 +701,8 @@ describe("POST /api/user-templates", () => {
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
       for (const templateId of ownedTemplates) {
         await accept(
-          client.delete({
+          // A fresh client uses the current, un-aborted context signal.
+          templateClient().delete({
             headers: webHeaders(),
             params: { templateId },
             body: undefined,

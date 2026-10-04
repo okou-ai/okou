@@ -2401,7 +2401,10 @@ describe("connector catalog valid lifecycle", () => {
         recordValue(
           recordValue(method.access, "access").envBindings,
           "envBindings",
-        ).OPTIONAL_SERVICE_TOKEN = `$secrets.${optionalSecretName}`;
+        ).OPTIONAL_SERVICE_TOKEN = {
+          valueRef: `$secrets.${optionalSecretName}`,
+          optional: true,
+        };
       },
     });
     serveObjects(catalogObjects([release], release));
@@ -4139,6 +4142,9 @@ describe("connector catalog valid lifecycle", () => {
           "aws-login-refresh-token",
         );
       },
+      // AWS connector aliases are valid on the vendor Runner harness; Pi
+      // deliberately rejects them as ambient model-provider authentication.
+      { model: "claude-fable-5-1" },
     );
   });
 

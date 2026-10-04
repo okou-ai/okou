@@ -1965,6 +1965,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 describe("INT-01: Slack app deep webhook flows", () => {
   function cleanUpCanonicalSlackScenario(actor: ApiTestUser): void {
     onTestFinished(async () => {
+      integrations.configureSlackAppMocks();
       const response = await runReads.requestListLogs(
         actor,
         { limit: 50 },
@@ -3446,7 +3447,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const { chatThreadId } = await ownedThreadWhere(actor, hasSlackSource);
     const { events } = await chat.listThreadEvents(actor, chatThreadId);
     const input = events.find((event) => {
-      return event.eventType === "input.prompt" && hasSlackSource(event);
+      return (
+        event.eventType === "input.prompt" &&
+        typeof event.runId === "string" &&
+        hasSlackSource(event)
+      );
     });
     expect(input).toMatchObject({
       eventType: "input.prompt",
