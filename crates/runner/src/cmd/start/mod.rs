@@ -96,6 +96,7 @@ mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
 mod prune_idle;
+mod runner_wss;
 mod signals;
 
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
@@ -679,6 +680,19 @@ async fn run_start_with_home(
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
+    // Only official Runners carry an API credential eligible to consume WSS
+    // tickets. Local-development jobs have no public WSS attribution.
+    let wss = (!args.local).then(|| WssConfig {
+        socket_dir: PathBuf::from(runner_host::runner_wss_socket::HOST_SOCKET_DIR),
+        hostname: hostname.clone(),
+        consumer: Arc::new(runner_wss::ApiTicketConsumer::new(
+            http.clone(),
+            server.token.clone(),
+        )),
+        guest: Arc::new(runner_wss::UnavailableGuest), // #37026 integration pending
+        #[cfg(test)]
+        fail_accept: None,
+    });
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -1050,6 +1064,7 @@ async fn run_start_with_home(
         },
         usage_flush_tx,
         usage_flush_rx,
+        wss,
         signals: SignalState {
             signal_source: SignalSource::Real(signals),
         },
@@ -1124,10 +1139,20 @@ struct RunConfig {
     shutdown: ShutdownHandles,
     usage_flush_tx: mpsc::Sender<()>,
     usage_flush_rx: mpsc::Receiver<()>,
+    wss: Option<WssConfig>,
     signals: SignalState,
     orphan_reap: OrphanReapState,
     #[cfg(test)]
     test_hooks: RunTestHooks,
+}
+
+struct WssConfig {
+    socket_dir: PathBuf,
+    hostname: Option<String>,
+    consumer: Arc<dyn runner_wss::TicketConsumer>,
+    guest: Arc<dyn runner_wss::GuestAttach>,
+    #[cfg(test)]
+    fail_accept: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 struct RunnerInfo {
@@ -1797,6 +1822,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         shutdown,
         usage_flush_tx,
         mut usage_flush_rx,
+        wss,
         signals,
         orphan_reap,
         #[cfg(test)]
@@ -1881,8 +1907,146 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         }
     };
     let prune_admission = Arc::new(tokio::sync::Semaphore::new(1));
+    // Binding is synchronous and before provider readiness, factories, status
+    // Running or any claim. Never allow a socket failure to degrade WSS to an
+    // optional feature on an official Runner.
+    let (mut wss_task, mut wss_rx, mut wss_admission, wss_failed, wss_started) = match wss {
+        Some(config) => match runner_host::runner_wss_socket::RunnerWssSocket::bind(
+            &config.socket_dir,
+            runner.identity.runner_id(),
+        ) {
+            Ok(socket) => {
+                #[cfg(test)]
+                let mut fail_accept = config.fail_accept;
+                // Start accepting before readiness. During startup the bounded
+                // channel rejects excess unauthenticated peers; the reactor
+                // owns admission after initialization finishes.
+                let (tx, rx) = mpsc::channel(32);
+                let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+                let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let failed_in_task = Arc::clone(&failed);
+                let failure_cancel = provider_state.cancel.clone();
+                let failure_tokens = provider_state.cancel_tokens.clone();
+                let failure_lifecycle = lifecycle.clone();
+                let task = tokio::spawn(async move {
+                    let _ = started_tx.send(());
+                    loop {
+                        #[cfg(not(test))]
+                        let result = socket.accept().await;
+                        #[cfg(test)]
+                        let result = if let Some(fail) = fail_accept.as_mut() {
+                            tokio::select! {
+                                result = socket.accept() => result,
+                                _ = fail => Err(std::io::Error::other("injected WSS accept failure")),
+                            }
+                        } else {
+                            socket.accept().await
+                        };
+                        let stream = match result {
+                            Ok(stream) => stream,
+                            Err(error) => {
+                                failed_in_task.store(true, std::sync::atomic::Ordering::SeqCst);
+                                handle_stopping_signal(
+                                    "wss-accept-failure",
+                                    &failure_cancel,
+                                    &failure_tokens,
+                                    &failure_lifecycle,
+                                )
+                                .await;
+                                return Err(error);
+                            }
+                        };
+                        let _ = tx.try_send(stream);
+                    }
+                });
+                (
+                    Some(runner_wss::AcceptTask::new(task)),
+                    Some(rx),
+                    Some(runner_wss::Admission::new(
+                        runner.identity.runner_id(),
+                        config.hostname.as_deref(),
+                        config.consumer,
+                        config.guest,
+                        shared.active_runs.clone(),
+                        Arc::clone(&shared.status),
+                    )),
+                    Some(failed),
+                    Some(started_rx),
+                )
+            }
+            Err(error) => {
+                shutdown_startup_resources_after_startup_failure(
+                    StartupFailureResources {
+                        provider: provider_state.provider.as_ref(),
+                        runtime: Some(runtime.as_mut()),
+                        mitm: &mut mitm,
+                        kmsg_handle,
+                        dns_handle,
+                        memory_prefetch: &mut memory_prefetch,
+                        status: shared.status.as_ref(),
+                    },
+                    "wss_socket_startup_failure",
+                )
+                .await;
+                if let Some(task) = signal_handler_task.take() {
+                    abort_signal_handler_task(task, "wss_socket_startup_failure").await;
+                }
+                return Err(RunnerError::Internal(format!(
+                    "bind required Runner WSS listener: {error}"
+                )));
+            }
+        },
+        None => (None, None, None, None, None),
+    };
+    if let Some(started) = wss_started
+        && started.await.is_err()
+    {
+        if let Some(task) = wss_task.take() {
+            task.stop().await;
+        }
+        shutdown_startup_resources_after_startup_failure(
+            StartupFailureResources {
+                provider: provider_state.provider.as_ref(),
+                runtime: Some(runtime.as_mut()),
+                mitm: &mut mitm,
+                kmsg_handle,
+                dns_handle,
+                memory_prefetch: &mut memory_prefetch,
+                status: shared.status.as_ref(),
+            },
+            "wss_accept_startup_failure",
+        )
+        .await;
+        if let Some(task) = signal_handler_task.take() {
+            abort_signal_handler_task(task, "wss_accept_startup_failure").await;
+        }
+        return Err(RunnerError::Internal(
+            "required Runner WSS accept loop failed to start".into(),
+        ));
+    }
 
-    if let Err(e) = provider_state.provider.prepare_startup_readiness().await {
+    let readiness: RunnerResult<()> = if let Some(task) = wss_task.as_mut() {
+        tokio::select! {
+            result = provider_state.provider.prepare_startup_readiness() => result.map_err(Into::into),
+            result = task.wait() => Err(RunnerError::Internal(format!("required Runner WSS accept loop stopped during startup: {result:?}"))),
+        }
+    } else {
+        provider_state
+            .provider
+            .prepare_startup_readiness()
+            .await
+            .map_err(Into::into)
+    };
+    if let Err(e) = readiness {
+        let listener_failed = wss_failed
+            .as_ref()
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+            || wss_task
+                .as_ref()
+                .is_some_and(runner_wss::AcceptTask::is_finished);
+        if let Some(task) = wss_task.take() {
+            task.stop().await;
+        }
         let startup_readiness_cancelled = provider_state.cancel.is_cancelled();
         let cleanup_reason = if startup_readiness_cancelled {
             "provider_startup_readiness_cancelled"
@@ -1905,23 +2069,33 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         if let Some(handler_task) = signal_handler_task.take() {
             abort_signal_handler_task(handler_task, cleanup_reason).await;
         }
-        if startup_readiness_cancelled {
+        if startup_readiness_cancelled && !listener_failed {
             return Ok(());
         }
-        return Err(e.into());
+        return Err(e);
     }
 
-    let mut factories = match start_factories(
-        &runner.profiles,
-        &firecracker,
-        &paths.base_dir,
-        &paths.home,
-        runtime.as_mut(),
-    )
-    .await
-    {
+    let factory_result = if let Some(task) = wss_task.as_mut() {
+        tokio::select! {
+            result = start_factories(&runner.profiles, &firecracker, &paths.base_dir, &paths.home, runtime.as_mut()) => result,
+            result = task.wait() => Err(RunnerError::Internal(format!("required Runner WSS accept loop stopped during factory startup: {result:?}"))),
+        }
+    } else {
+        start_factories(
+            &runner.profiles,
+            &firecracker,
+            &paths.base_dir,
+            &paths.home,
+            runtime.as_mut(),
+        )
+        .await
+    };
+    let mut factories = match factory_result {
         Ok(factories) => factories,
         Err(e) => {
+            if let Some(task) = wss_task.take() {
+                task.stop().await;
+            }
             shutdown_startup_resources_after_startup_failure(
                 StartupFailureResources {
                     provider: provider_state.provider.as_ref(),
@@ -1941,8 +2115,43 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             return Err(e);
         }
     };
+    // A listener that terminated during startup must not be followed by a
+    // healthy status, heartbeat, or new claim.
+    if wss_failed
+        .as_ref()
+        .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+        || wss_task
+            .as_ref()
+            .is_some_and(runner_wss::AcceptTask::is_finished)
+    {
+        if let Some(task) = wss_task.take() {
+            task.stop().await;
+        }
+        shutdown_startup_resources_after_startup_failure(
+            StartupFailureResources {
+                provider: provider_state.provider.as_ref(),
+                runtime: Some(runtime.as_mut()),
+                mitm: &mut mitm,
+                kmsg_handle,
+                dns_handle,
+                memory_prefetch: &mut memory_prefetch,
+                status: shared.status.as_ref(),
+            },
+            "wss_accept_startup_failure",
+        )
+        .await;
+        if let Some(task) = signal_handler_task.take() {
+            abort_signal_handler_task(task, "wss_accept_startup_failure").await;
+        }
+        return Err(RunnerError::Internal(
+            "required Runner WSS accept loop exited during startup".into(),
+        ));
+    }
     let startup_mode = lifecycle.mark_startup_ready();
     if let Err(error) = shared.status.set_mode(startup_mode).await {
+        if let Some(task) = wss_task.take() {
+            task.stop().await;
+        }
         handle_stopping_signal(
             "startup status persistence failure",
             &provider_state.cancel,
@@ -2189,6 +2398,15 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
     let mut terminal_error = None;
     loop {
+        if wss_failed
+            .as_ref()
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+        {
+            terminal_error = Some(RunnerError::Internal(
+                "required Runner WSS accept loop failed".into(),
+            ));
+            break;
+        }
         let mode = *mode_rx.borrow_and_update();
         if mode != current_mode {
             current_mode = mode;
@@ -2282,6 +2500,50 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         let heartbeat_sending = heartbeat.is_sending();
         let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
         tokio::select! {
+            connection = async {
+                match wss_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            }, if wss_rx.is_some() => {
+                if let Some(stream) = connection {
+                    if let Some(admission) = wss_admission.as_mut() {
+                        admission.accept(stream);
+                    } else {
+                        terminal_error = Some(RunnerError::Internal("required Runner WSS admission missing".into()));
+                        break;
+                    }
+                } else {
+                    handle_stopping_signal("wss-accept-closed", &provider_state.cancel,
+                        &provider_state.cancel_tokens, &lifecycle).await;
+                    terminal_error = Some(RunnerError::Internal("required Runner WSS accept loop closed".into()));
+                    break;
+                }
+            }
+            result = async {
+                match wss_task.as_mut() {
+                    Some(task) => task.wait().await,
+                    None => std::future::pending().await,
+                }
+            }, if wss_task.is_some() => {
+                handle_stopping_signal("wss-accept-failure", &provider_state.cancel,
+                    &provider_state.cancel_tokens, &lifecycle).await;
+                terminal_error = Some(RunnerError::Internal(format!("required Runner WSS accept loop stopped: {result:?}")));
+                break;
+            }
+            result = async {
+                match wss_admission.as_mut() {
+                    Some(admission) => admission.reap().await,
+                    None => std::future::pending().await,
+                }
+            }, if wss_admission.as_ref().is_some_and(runner_wss::Admission::has_tasks) => {
+                if let Err(error) = result {
+                    handle_stopping_signal("wss-connection-task-failure", &provider_state.cancel,
+                        &provider_state.cancel_tokens, &lifecycle).await;
+                    terminal_error = Some(RunnerError::Internal(format!("Runner WSS task failed: {error}")));
+                    break;
+                }
+            }
             connection = prune_listener.accept() => {
                 match connection {
                     Ok(stream) => {
@@ -2324,6 +2586,10 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             // The future is pinned outside the loop so other reactor branches
             // do not cancel and restart its internal wait timer. See #8747.
             discovered = &mut discover_fut, if can_discover => {
+                if wss_failed.as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst)) {
+                    terminal_error = Some(RunnerError::Internal("required Runner WSS accept loop failed".into()));
+                    break;
+                }
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
@@ -2655,11 +2921,28 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         }
     }
 
+    // Discovery may have ended on the accept task's cancellation before its
+    // JoinHandle won select. That is still a fatal listener failure.
+    if wss_failed
+        .as_ref()
+        .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+    {
+        terminal_error.get_or_insert_with(|| {
+            RunnerError::Internal("required Runner WSS accept loop failed".into())
+        });
+    }
     // -----------------------------------------------------------------------
     // Shutdown — drain idle pool, release discovery resources, then drain running jobs
     // -----------------------------------------------------------------------
     let teardown = TeardownTimer::start();
     drop(prune_listener);
+    if let Some(mut admission) = wss_admission.take() {
+        admission.stop();
+    }
+    if let Some(task) = wss_task.take() {
+        task.stop().await;
+    }
+    drop(wss_rx.take());
     memory_prefetch.cancel();
     teardown.event("memory_prefetch_cancelled");
 

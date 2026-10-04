@@ -3,6 +3,7 @@ mod drain_resume;
 mod exact_reuse_speculation;
 mod heartbeat;
 mod job_flow;
+mod runner_wss;
 mod shared_resource_progress;
 mod shutdown;
 mod startup;
