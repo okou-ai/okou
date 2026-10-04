@@ -277,13 +277,13 @@ async function lockCurrentCredentialBindings(
   owner: Owner,
   credentialId: string,
 ) {
-  // Lock current hosts before their credential, after external preparation.
+  // Serialize host edits without blocking RESTRICT's FK key-share check.
   const lockedHosts = await tx
     .select({ id: sshConnections.id })
     .from(sshConnections)
     .where(ownerHostsUsingCredential(owner, credentialId))
     .orderBy(asc(sshConnections.id))
-    .for("update");
+    .for("no key update");
   const [credential] = await tx
     .select(sshCredentialMetadata)
     .from(sshCredentials)
@@ -475,17 +475,40 @@ export const deleteSshCredential$ = command(
     if (current.revision !== args.expectedRevision) {
       return sshCredentialFailure("conflict");
     }
-    // The RESTRICT credential FK rejects deleting a credential used by a host.
+    // Fence new bindings, then reject references without acquiring host locks.
     const deletion = await settle(
-      db
-        .delete(sshCredentials)
-        .where(ownedSshCredential(args.owner, args.credentialId)),
+      db.transaction<SshResult<undefined>>(async (tx) => {
+        const [locked] = await tx
+          .select({ id: sshCredentials.id })
+          .from(sshCredentials)
+          .where(ownedSshCredential(args.owner, args.credentialId))
+          .for("update");
+        if (!locked) {
+          // Preserve success when another delete removed the early-seen row.
+          return { ok: true, value: undefined };
+        }
+        const [reference] = await tx
+          .select({ id: sshConnections.id })
+          .from(sshConnections)
+          .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+          .limit(1);
+        if (reference) {
+          return sshCredentialFailure("inUse");
+        }
+        await tx
+          .delete(sshCredentials)
+          .where(ownedSshCredential(args.owner, args.credentialId));
+        return { ok: true, value: undefined };
+      }),
     );
     if (!deletion.ok) {
       if (isSshCredentialReferenceViolation(deletion.error)) {
         return sshCredentialFailure("inUse");
       }
       throw deletion.error;
+    }
+    if (!deletion.value.ok) {
+      return deletion.value;
     }
     await publishSshClientInvalidation(args.owner);
     return { ok: true, value: undefined };
