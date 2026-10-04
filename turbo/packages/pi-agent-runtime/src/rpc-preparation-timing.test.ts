@@ -69,6 +69,8 @@ describe("Pi sandbox RPC preparation observability", () => {
       }),
     ).toEqual(
       expect.arrayContaining([
+        "session_manager",
+        "runtime_initialize",
         "resources_prompt",
         "model_runtime",
         "session_services",
@@ -80,6 +82,8 @@ describe("Pi sandbox RPC preparation observability", () => {
     for (const observation of observed) {
       expect(observation.outcome).toBe("success");
       expect(observation.durationMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(observation.startedAt)).toBe(true);
+      expect(Number.isFinite(observation.finishedAt)).toBe(true);
     }
   });
 });

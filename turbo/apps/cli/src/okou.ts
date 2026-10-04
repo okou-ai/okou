@@ -11,6 +11,12 @@ import {
 import { getOkouToken } from "./lib/okou-env.js";
 import { artifactCommand } from "./commands/artifact/index.js";
 import { installPaidToolPolicy } from "./lib/command/paid-tools.js";
+import {
+  observePiCliEntryImports,
+  startPiCliObservation,
+} from "./lib/pi-startup-timing.js";
+
+observePiCliEntryImports();
 
 interface CommandDefinition {
   name: string;
@@ -533,7 +539,15 @@ export async function registerRequestedCommand(
   argv: string[] = process.argv,
 ): Promise<void> {
   const requestedCommandName = getRequestedCommandName(argv);
-  const requestedCommand = await loadRequestedCommand(requestedCommandName);
+  const finishImport = startPiCliObservation("cli_command_import");
+  let importOutcome: "success" | "error" = "error";
+  let requestedCommand: Command | undefined;
+  try {
+    requestedCommand = await loadRequestedCommand(requestedCommandName);
+    importOutcome = "success";
+  } finally {
+    finishImport(importOutcome);
+  }
   registerCommands(prog, requestedCommand ? [requestedCommand] : undefined);
 
   if (
@@ -735,7 +749,14 @@ if (
   process.argv[1]?.endsWith("okou.ts") ||
   process.argv[1]?.endsWith("okou")
 ) {
-  await configureGlobalProxyFromEnv();
+  const finishProxy = startPiCliObservation("cli_proxy");
+  let proxyOutcome: "success" | "error" = "error";
+  try {
+    await configureGlobalProxyFromEnv();
+    proxyOutcome = "success";
+  } finally {
+    finishProxy(proxyOutcome);
+  }
   await registerRequestedCommand(program);
   program.parse();
 }

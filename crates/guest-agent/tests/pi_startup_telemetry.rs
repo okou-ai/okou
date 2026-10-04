@@ -26,13 +26,25 @@ type TestError = Box<dyn std::error::Error>;
 type TestResult = Result<(), TestError>;
 
 /// Phases `createPiAgentSession` reports from the sandbox, with their outcomes.
-const OBSERVED_PHASES: [(&str, &str); 6] = [
+const OBSERVED_PHASES: [(&str, &str); 18] = [
+    ("cli_node_bootstrap", "success"),
+    ("cli_initial_imports", "success"),
+    ("cli_instrument", "success"),
+    ("cli_entry_imports", "success"),
+    ("cli_proxy", "success"),
+    ("cli_command_import", "success"),
+    ("cli_config", "success"),
+    ("cli_launch_payload", "success"),
+    ("cli_credentials", "success"),
+    ("cli_session_file", "success"),
+    ("session_manager", "success"),
     ("resources_prompt", "success"),
     ("model_runtime", "success"),
     ("session_services", "success"),
     ("resource_loader", "success"),
     ("session_create", "success"),
     ("session_finalize", "error"),
+    ("runtime_initialize", "success"),
 ];
 
 #[tokio::test]
@@ -48,6 +60,7 @@ async fn pi_records_startup_success_at_first_projected_record() -> TestResult {
     assert_guest_success(&output);
     let operations = read_sandbox_operations(&runtime_dir)?;
     assert_one_startup(&operations, PI_STARTUP_ACTION, true)?;
+    assert_segment_partition(&operations)?;
     assert!(
         operations.iter().all(|operation| {
             operation.get("action_type").and_then(Value::as_str) != Some(CODEX_STARTUP_ACTION)
@@ -74,6 +87,7 @@ async fn pi_records_startup_failure_when_the_host_never_serves() -> TestResult {
     );
     let operations = read_sandbox_operations(&runtime_dir)?;
     assert_one_startup(&operations, PI_STARTUP_ACTION, false)?;
+    assert_segment_partition(&operations)?;
 
     Ok(())
 }
@@ -98,6 +112,10 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
         let operation = recorded
             .first()
             .ok_or_else(|| std::io::Error::other(format!("missing {action} operation")))?;
+        assert!(
+            operation.get("ts").and_then(Value::as_str).is_some(),
+            "missing observation timestamp: {operation}"
+        );
         assert_eq!(
             operation.get("success").and_then(Value::as_bool),
             Some(outcome == "success"),
@@ -131,6 +149,41 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
         "the guest-owned launch payload write must be measured: {operations:?}"
     );
 
+    Ok(())
+}
+
+fn assert_segment_partition(operations: &[Value]) -> TestResult {
+    let startup = operations_named(operations, PI_STARTUP_ACTION);
+    let total = startup[0]["duration_ms"]
+        .as_u64()
+        .ok_or("missing startup duration")?;
+    let segments: Vec<_> = operations
+        .iter()
+        .filter(|op| {
+            op["action_type"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("pi_startup_"))
+        })
+        .collect();
+    assert!(!segments.is_empty(), "startup segments must be recorded");
+    let mut sum = 0;
+    let mut names = std::collections::HashSet::new();
+    for segment in &segments {
+        assert!(
+            names.insert(segment["action_type"].as_str()),
+            "segment recorded twice: {segments:?}"
+        );
+        assert!(segment["ts"].as_str().is_some());
+        assert!(segment["success"].as_bool().is_some());
+        sum += segment["duration_ms"]
+            .as_u64()
+            .ok_or("missing segment duration")?;
+    }
+    // Each nanosecond duration is independently truncated to whole milliseconds.
+    assert!(
+        sum <= total && total - sum < segments.len() as u64,
+        "segments must conserve the unchanged startup interval: total={total}, sum={sum}, segments={segments:?}"
+    );
     Ok(())
 }
 

@@ -1240,7 +1240,13 @@ async fn execute_cli_inner(
     // fail an otherwise healthy run because this sink is unavailable.
     let mut agent_log = BestEffortAgentLog::open(runtime.agent_log_file.as_ref());
 
+    if let Some(timing) = pi_startup {
+        timing.before_spawn();
+    }
     let mut child = cmd.spawn()?;
+    if let Some(timing) = pi_startup {
+        timing.after_spawn();
+    }
 
     let Some(cli_stdin) = child.stdin.take() else {
         let _ = child.start_kill();
@@ -1266,8 +1272,10 @@ async fn execute_cli_inner(
     } else {
         diagnostics::CliStderrLineObserver::None
     };
+    let startup_segments = pi_startup.map(PiStartupTiming::segment_observer);
     let mut stderr_handle = tokio::spawn(async move {
-        diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer).await
+        diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer, startup_segments)
+            .await
     });
 
     let pi_rpc_execution = pi_execution && !maintenance_execution;

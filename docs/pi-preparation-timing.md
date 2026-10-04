@@ -38,6 +38,78 @@ resource identifier enters a phase observation.
 | `session_create`   | Official AgentSession construction with captured thinking level and tools.                     |
 | `session_finalize` | Persisting the effective configured thinking level.                                            |
 
+## S4 startup decomposition
+
+The Guest keeps the original `pi_startup` monotonic start and first projected
+`system/init` completion (the official host's `get_state` response). It records
+these additive, mutually exclusive `pi_startup_*` segments on the same clock:
+
+| Operation                       | Boundary                                                                |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `pi_startup_guest_setup`        | Original startup start to immediately before process spawn.             |
+| `pi_startup_process_spawn`      | Process spawn call to successful return.                                |
+| `pi_startup_spawn_to_cli_entry` | Spawn return to receipt of the first CLI bootstrap observation.         |
+| `pi_startup_cli_initialize`     | CLI entry receipt to receipt of SessionManager completion.              |
+| `pi_startup_session_prepare`    | SessionManager receipt to official runtime initialization receipt.      |
+| `pi_startup_runtime_ready`      | Runtime initialization receipt to the unchanged first projected record. |
+
+Checkpoints are bounded and flushed at the existing completion boundary. Late
+stderr checkpoints beyond that boundary are ignored, so stdout/stderr scheduling
+cannot move the root endpoint or inflate the partition. Independently truncated
+integer milliseconds can leave less than one millisecond per emitted segment.
+If a CLI milestone is missing (old CLI, observation failure, or early process
+failure), the currently open segment ends at startup completion instead. Missing
+later segments are **not zero**; detailed attribution is unavailable in that
+case. The original root success/failure and exactly-once contract are unchanged.
+
+The CLI adds `pi_prepare_` observations for `cli_node_bootstrap`,
+`cli_initial_imports`, `cli_instrument`, `cli_entry_imports`, `cli_proxy`,
+`cli_command_import`, `cli_config`, `cli_launch_payload`, `cli_credentials`,
+`cli_session_file`, `session_manager`, and `runtime_initialize`.
+`cli_node_bootstrap` uses Node's native `bootstrapComplete` timestamp;
+`cli_initial_imports` covers bootstrap completion through the start of the
+existing instrumentation module, including initial ESM graph loading/evaluation.
+`cli_entry_imports` covers the remainder through the original main-module body;
+`cli_command_import` observes the existing requested-command dynamic import.
+No bootstrap loader, imports, credentials, session validation or readiness
+checks are bypassed or reordered.
+
+`cli_config` contains `cli_launch_payload` and `cli_credentials`;
+`runtime_initialize` contains the existing session-preparation phases;
+`session_services` contains `resource_loader`. Only sum the Guest partition,
+or select exclusive child intervals. Do not add either set to its parent.
+The child carries bounded wall-clock correlation fields, while the Guest still
+owns the stored observation timestamp. Node process-relative durations cannot
+be subtracted from Guest instants: receipt-time parent boundaries include IPC
+and scheduling, and Node initialization can overlap the parent's spawn return.
+Any detailed-child residual must be shown rather than clamped or called CPU time.
+
+Timing envelopes use a bounded, synchronous diagnostic-FD write with exceptions
+silently ignored; they do not invoke the CLI's stderr EPIPE/exit handler.
+There is no new network call, awaited I/O, retry, timer, startup loader or cache.
+Only the opted-in private `__agent-loop` process emits CLI-entry observations;
+ordinary CLI tool processes stay silent. Runtime observer exceptions retain the
+existing best-effort behavior. Test coverage enters through a real CLI process,
+a real SDK RPC host, and the Guest process-to-operation-log boundary.
+
+### Version and rollout ownership
+
+Preview CLI artifacts are immutable **commit-SHA** packages, and the Preview
+runner image installs that exact package. They do not publish a versioned CLI
+release. This instrumentation does not change session-construction semantics or
+compatibility floors. New CLI/old Guest keeps existing phases; unknown additive
+phases are ignored by the closed parser. Old CLI/new Guest keeps the original
+root and reports only the available checkpoint partition.
+
+Use a visible conventional `feat(cli)` commit for the CLI, Runtime and Guest
+source changes. Release-please owns their package/Cargo versions and workspace
+propagation; do not manually desynchronize package versions from its manifest.
+Before any separately authorized release, the generated release must advance the
+CLI version beyond the currently published version and also include Runtime and
+Guest version updates. The immutable versioned-artifact publisher still rejects
+same-version/different-content bundles. A green SHA Preview is not evidence that
+a versioned release was published or that all runners have updated.
+
 Reconstruct serial boundaries instead of summing parents and children. Use the
 union of concurrent signing intervals. Leave observation overhead and gaps
 visible; wall-time differences are not SDK CPU time.

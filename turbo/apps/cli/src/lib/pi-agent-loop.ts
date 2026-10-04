@@ -22,12 +22,16 @@ import {
   type PiPreparationObservation,
 } from "@okouai/pi-agent-runtime/node";
 import { piLangfuseTracesContract } from "@okouai/api-contracts/contracts/pi-langfuse";
+import {
+  PI_PREPARATION_TIMING_ENV,
+  startPiCliObservation,
+  writePiPreparationTiming,
+} from "./pi-startup-timing";
 
 const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
-const PI_PREPARATION_TIMING_ENV = "OKOU_PI_PREPARATION_TIMING";
 const PI_MEMORY_PHASE2_VALIDATION_FILENAME = "maintenance-validation.json";
 
 function recordPiMemoryRecallOutcome(
@@ -66,15 +70,7 @@ export function recordPiPreparationTiming(
   runId: string,
   observation: PiPreparationObservation,
 ): void {
-  process.stderr.write(
-    `${JSON.stringify({
-      type: "pi_preparation_timing",
-      runId,
-      phase: observation.phase,
-      durationMs: observation.durationMs,
-      outcome: observation.outcome,
-    })}\n`,
-  );
+  writePiPreparationTiming(runId, observation);
 }
 
 export interface PiSandboxAgentConfig {
@@ -107,9 +103,17 @@ function parseJsonEnv(env: NodeJS.ProcessEnv, name: string): unknown {
 async function readLaunchPayload(
   env: NodeJS.ProcessEnv,
 ): Promise<PiLaunchPayload> {
-  const path = requiredEnv(env, PI_LAUNCH_PAYLOAD_FILE_ENV);
-  const raw = await readFile(path, "utf8");
-  return piLaunchPayloadSchema.parse(JSON.parse(raw) as unknown);
+  const finish = startPiCliObservation("cli_launch_payload");
+  let outcome: "success" | "error" = "error";
+  try {
+    const path = requiredEnv(env, PI_LAUNCH_PAYLOAD_FILE_ENV);
+    const raw = await readFile(path, "utf8");
+    const payload = piLaunchPayloadSchema.parse(JSON.parse(raw) as unknown);
+    outcome = "success";
+    return payload;
+  } finally {
+    finish(outcome);
+  }
 }
 
 function isPiSessionFileName(name: string, sessionId: string): boolean {
@@ -137,45 +141,53 @@ async function resolvePiSessionFile(args: {
   readonly sessionId: string;
   readonly cwd: string;
 }): Promise<string> {
-  const names = await readdir(args.sessionDir).catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") {
-        return [];
-      }
-      throw error;
-    },
-  );
-  let latest: { readonly path: string; readonly modifiedAt: number } | null =
-    null;
-  for (const name of names) {
-    if (!isPiSessionFileName(name, args.sessionId)) {
-      continue;
-    }
-    const path = join(args.sessionDir, name);
-    const { mtimeMs } = await stat(path);
-    if (latest === null || mtimeMs > latest.modifiedAt) {
-      latest = { path, modifiedAt: mtimeMs };
-    }
-  }
-  if (latest !== null) {
-    return latest.path;
-  }
-  const sessionFile = join(args.sessionDir, `${args.sessionId}.jsonl`);
-  await mkdir(args.sessionDir, { recursive: true });
-  const file = await open(sessionFile, "wx", 0o600);
+  const finish = startPiCliObservation("cli_session_file");
+  let outcome: "success" | "error" = "error";
   try {
-    await file.writeFile(
-      createPiSessionJsonl({
-        cwd: args.cwd,
-        sessionId: args.sessionId,
-        timestamp: new Date().toISOString(),
-      }),
-      "utf8",
+    const names = await readdir(args.sessionDir).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") {
+          return [];
+        }
+        throw error;
+      },
     );
+    let latest: { readonly path: string; readonly modifiedAt: number } | null =
+      null;
+    for (const name of names) {
+      if (!isPiSessionFileName(name, args.sessionId)) {
+        continue;
+      }
+      const path = join(args.sessionDir, name);
+      const { mtimeMs } = await stat(path);
+      if (latest === null || mtimeMs > latest.modifiedAt) {
+        latest = { path, modifiedAt: mtimeMs };
+      }
+    }
+    if (latest !== null) {
+      outcome = "success";
+      return latest.path;
+    }
+    const sessionFile = join(args.sessionDir, `${args.sessionId}.jsonl`);
+    await mkdir(args.sessionDir, { recursive: true });
+    const file = await open(sessionFile, "wx", 0o600);
+    try {
+      await file.writeFile(
+        createPiSessionJsonl({
+          cwd: args.cwd,
+          sessionId: args.sessionId,
+          timestamp: new Date().toISOString(),
+        }),
+        "utf8",
+      );
+    } finally {
+      await file.close();
+    }
+    outcome = "success";
+    return sessionFile;
   } finally {
-    await file.close();
+    finish(outcome);
   }
-  return sessionFile;
 }
 
 /**
@@ -187,25 +199,48 @@ async function resolvePiSessionFile(args: {
 export async function piSandboxAgentConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<PiSandboxAgentConfig> {
-  const runId = requiredEnv(env, RUN_ID_ENV);
-  const langfuseConfig = piLangfuseRelayConfig(env, runId);
-  const parsedModel = piModelConfigSchema.parse(
-    parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
-  );
-  return {
-    runId,
-    sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
-    launchPayload: await readLaunchPayload(env),
-    reportPreparationTiming: env[PI_PREPARATION_TIMING_ENV] === "1",
-    model: await materializePiAgentModelConfig({
-      config: parsedModel,
+  const finishConfig = startPiCliObservation("cli_config");
+  let configOutcome: "success" | "error" = "error";
+  try {
+    const runId = requiredEnv(env, RUN_ID_ENV);
+    const langfuseConfig = piLangfuseRelayConfig(env, runId);
+    const parsedModel = piModelConfigSchema.parse(
+      parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
+    );
+    const config = {
+      runId,
+      sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
+      launchPayload: await readLaunchPayload(env),
+      reportPreparationTiming: env[PI_PREPARATION_TIMING_ENV] === "1",
+      model: await materializeSandboxModel(parsedModel, env),
+      ...(langfuseConfig ? { langfuseConfig } : {}),
+    };
+    configOutcome = "success";
+    return config;
+  } finally {
+    finishConfig(configOutcome);
+  }
+}
+
+async function materializeSandboxModel(
+  config: ReturnType<typeof piModelConfigSchema.parse>,
+  env: NodeJS.ProcessEnv,
+): Promise<PiAgentModelConfig> {
+  const finish = startPiCliObservation("cli_credentials");
+  let outcome: "success" | "error" = "error";
+  try {
+    const model = await materializePiAgentModelConfig({
+      config,
       target: "sandbox-firewall",
       resolveCredential(binding) {
         return requiredEnv(env, binding.environment);
       },
-    }),
-    ...(langfuseConfig ? { langfuseConfig } : {}),
-  };
+    });
+    outcome = "success";
+    return model;
+  } finally {
+    finish(outcome);
+  }
 }
 
 function piLangfuseRelayConfig(

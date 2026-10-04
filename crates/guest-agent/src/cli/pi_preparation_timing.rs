@@ -12,9 +12,8 @@
 //! The guest stays the only writer of the sandbox operation log, so these
 //! records interleave safely with every other guest operation and reach Axiom
 //! through the ordinary telemetry upload, where the ingestion boundary stamps
-//! `source: sandbox`. The API-side observer stamps `source: api` on the
-//! identical `op_type`, so `source` is the field that separates the two
-//! populations.
+//! `source: sandbox`. CLI entry and official session preparation use the same
+//! bounded envelope; neither introduces an API-side provider owner.
 //!
 //! `phase` is validated against the closed set the Pi session runtime can
 //! report. An unrecognized phase is dropped rather than forwarded, so a CLI
@@ -32,11 +31,23 @@ use serde::Deserialize;
 /// failure output.
 const PI_PREPARATION_TIMING_TYPE: &str = "pi_preparation_timing";
 
-/// Preparation phases `createPiAgentSession` can report from the sandbox.
+/// Preparation phases the CLI entry and official session can report.
 ///
 /// Keeping this list closed bounds `op_type` cardinality. A phase added
 /// upstream is ignored until it is added here deliberately.
-const OBSERVED_PHASES: [&str; 6] = [
+const OBSERVED_PHASES: [&str; 18] = [
+    "cli_node_bootstrap",
+    "cli_initial_imports",
+    "cli_instrument",
+    "cli_entry_imports",
+    "cli_proxy",
+    "cli_command_import",
+    "cli_config",
+    "cli_launch_payload",
+    "cli_credentials",
+    "cli_session_file",
+    "session_manager",
+    "runtime_initialize",
     "resources_prompt",
     "model_runtime",
     "session_services",
@@ -62,10 +73,16 @@ struct PiPreparationTimingEnvelope {
 ///
 /// Best-effort by construction: a line that is not a well-formed observation
 /// envelope is left alone for the ordinary stderr diagnostic path.
-pub(super) fn record_pi_preparation_timing_line(line: &[u8]) {
+pub(super) fn record_pi_preparation_timing_line(
+    line: &[u8],
+    startup: Option<&super::pi_startup::PiStartupSegments>,
+) {
     let Some(observation) = parse_observation(line) else {
         return;
     };
+    if let Some(startup) = startup {
+        startup.observe_child_phase(&observation.op_type, observation.success);
+    }
     record_sandbox_op_with_dimensions(
         &observation.op_type,
         observation.duration,
@@ -164,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn every_observed_phase_maps_to_the_api_side_op_name() {
+    fn every_observed_phase_maps_to_the_sandbox_op_name() {
         for phase in OBSERVED_PHASES {
             let line = format!(
                 r#"{{"type":"pi_preparation_timing","phase":"{phase}","durationMs":1,"outcome":"success"}}"#

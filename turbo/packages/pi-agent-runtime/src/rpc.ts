@@ -19,7 +19,11 @@ import type {
   PiMemoryRecallSelection,
   PiMemoryToolSourceUse,
 } from "./api-types";
-import type { PiPreparationObserver } from "./preparation-timing";
+import {
+  measurePiPreparation,
+  measurePiPreparationSync,
+  type PiPreparationObserver,
+} from "./preparation-timing";
 import type { PiAgentModelConfig } from "./types";
 
 export interface PiLangfuseRuntimeConfig {
@@ -185,12 +189,24 @@ export async function runPiOfficialRpcMode(args: {
       ...args,
       enableLangfuseObservability,
     });
-    const sessionManager = resolveSessionManager(args);
-    const runtime = await createAgentSessionRuntime(createRuntime, {
-      cwd: args.cwd,
-      agentDir: args.agentDir,
-      sessionManager,
-    });
+    const sessionManager = measurePiPreparationSync(
+      args.onPreparationTiming,
+      "session_manager",
+      () => {
+        return resolveSessionManager(args);
+      },
+    );
+    const runtime = await measurePiPreparation(
+      args.onPreparationTiming,
+      "runtime_initialize",
+      () => {
+        return createAgentSessionRuntime(createRuntime, {
+          cwd: args.cwd,
+          agentDir: args.agentDir,
+          sessionManager,
+        });
+      },
+    );
     let firstTool = true;
     const unsubscribe = runtime.session.subscribe((event) => {
       if (firstTool && event.type === "tool_execution_start") {
