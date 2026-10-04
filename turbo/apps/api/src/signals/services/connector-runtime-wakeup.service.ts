@@ -25,7 +25,7 @@ interface ConnectorRuntimeWakeupScope {
 }
 
 interface ConnectorRuntimeWakeupArgs {
-  readonly db: ReadonlyDb;
+  readonly db: Pick<ReadonlyDb, "select">;
   readonly scope: ConnectorRuntimeWakeupScope;
   readonly targets: readonly ConnectorRuntimeTarget[];
 }

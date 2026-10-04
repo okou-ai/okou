@@ -21,7 +21,7 @@ import {
   RESOURCE_ARCHIVE_MAX_BYTES,
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db, type SqlMutationDb } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -85,7 +85,7 @@ function repairedVersionHeadCondition(
 }
 
 async function invalidateRepairedVersionHeads(
-  db: Pick<Db, "select" | "update">,
+  db: Pick<SqlMutationDb, "select" | "update">,
   changedVersionIds: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {
@@ -132,7 +132,7 @@ async function invalidateRepairedVersionHeads(
 }
 
 export async function enqueuePiResourceVersionIndexes(
-  db: Pick<Db, "insert" | "select" | "update">,
+  db: SqlMutationDb,
   versionIds: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {

@@ -1,10 +1,9 @@
 import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db, SqlMutationDb } from "../external/db";
 import { settle } from "../utils";
 import type {
   ConnectorCatalogArtifact,
@@ -160,7 +159,7 @@ function preparedStorageVersion(
 }
 
 async function readExistingVersions(
-  db: ReadonlyDb,
+  db: Pick<Db, "select">,
   versionIds: readonly string[],
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, ExistingStorageVersion>> {
@@ -195,7 +194,7 @@ async function readExistingVersions(
 
 export async function prepareConnectorCatalogSkills(
   args: {
-    readonly db: ReadonlyDb;
+    readonly db: Pick<Db, "select">;
     readonly artifact: ConnectorCatalogArtifact;
   },
   signal: AbortSignal,
@@ -224,7 +223,7 @@ export async function prepareConnectorCatalogSkills(
 }
 
 async function missingRegistrations(
-  db: Db,
+  db: Pick<Db, "select">,
   registrations: readonly PreparedConnectorSkillRegistration[],
   signal: AbortSignal,
 ): Promise<readonly PreparedConnectorSkillRegistration[]> {
@@ -253,7 +252,7 @@ async function missingRegistrations(
 }
 
 async function createAndReadCanonicalStorages(
-  db: Db,
+  db: Pick<SqlMutationDb, "select" | "insert">,
   registrations: readonly PreparedConnectorSkillRegistration[],
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, CanonicalStorage>> {
@@ -312,7 +311,7 @@ async function createAndReadCanonicalStorages(
 }
 
 async function registerMissingStorageVersions(
-  db: Db,
+  db: Pick<SqlMutationDb, "select" | "insert">,
   registrations: readonly PreparedConnectorSkillRegistration[],
   storageByName: ReadonlyMap<string, CanonicalStorage>,
   signal: AbortSignal,
@@ -337,47 +336,8 @@ async function registerMissingStorageVersions(
   throw result.error;
 }
 
-async function updateNewStorageHeads(
-  db: Db,
-  registrations: readonly PreparedConnectorSkillRegistration[],
-  signal: AbortSignal,
-): Promise<void> {
-  const updatedAt = nowDate();
-  const updated = await db
-    .insert(storages)
-    .values(
-      registrations.map((registration) => {
-        return {
-          orgId: SYSTEM_ORG_ID,
-          userId: VOLUME_ORG_USER_ID,
-          name: registration.storageName,
-          s3Prefix: registration.s3Prefix,
-          size: registration.size,
-          fileCount: registration.fileCount,
-          headVersionId: registration.versionId,
-          updatedAt,
-        };
-      }),
-    )
-    .onConflictDoUpdate({
-      target: [storages.orgId, storages.userId, storages.name],
-      set: {
-        headVersionId: sql`excluded.head_version_id`,
-        size: sql`excluded.size`,
-        fileCount: sql`excluded.file_count`,
-        updatedAt: sql`excluded.updated_at`,
-      },
-      setWhere: eq(storages.s3Prefix, sql`excluded.s3_prefix`),
-    })
-    .returning({ name: storages.name });
-  signal.throwIfAborted();
-  if (updated.length !== registrations.length) {
-    fail("invalid-reference", false);
-  }
-}
-
 async function registerConnectorCatalogSkills(
-  db: Db,
+  db: Pick<SqlMutationDb, "select" | "insert">,
   registrations: readonly PreparedConnectorSkillRegistration[],
   signal: AbortSignal,
 ): Promise<void> {
@@ -390,24 +350,12 @@ async function registerConnectorCatalogSkills(
     missing,
     signal,
   );
-  const insertedVersionIds = await registerMissingStorageVersions(
-    db,
-    missing,
-    storageByName,
-    signal,
-  );
-  const newHeads = missing.filter((registration) => {
-    return insertedVersionIds.has(registration.versionId);
-  });
-  if (newHeads.length === 0) {
-    return;
-  }
-  await updateNewStorageHeads(db, newHeads, signal);
+  await registerMissingStorageVersions(db, missing, storageByName, signal);
 }
 
 export async function registerPreparedConnectorCatalogSkills(
   args: {
-    readonly db: Db;
+    readonly db: SqlMutationDb;
     readonly registrations: readonly PreparedConnectorSkillRegistration[];
   },
   signal: AbortSignal,

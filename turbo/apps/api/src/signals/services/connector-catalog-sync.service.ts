@@ -1,7 +1,9 @@
 import {
-  invalidatePiStableContextsForCatalogSourceSql,
-  invalidateAllPiStableContextsSql,
-} from "./pi-stable-context-generation.service";
+  activateImmutableCatalog,
+  ImmutableCatalogActivationConflict,
+  prepareImmutableCatalogEntries,
+  readImmutableCatalogHash,
+} from "./connector-catalog-immutable.service";
 import { isDeepStrictEqual } from "node:util";
 
 import type {
@@ -133,6 +135,7 @@ interface RejectedCandidate {
 
 type CandidateCommitResult =
   | "accepted"
+  | "accepted-without-switch"
   | "retry"
   | {
       readonly kind: "rejected";
@@ -166,7 +169,7 @@ function customConnectorPermissionBundleFingerprint(
 }
 
 async function publishCatalogPermissionBundleWakeupsInner(args: {
-  readonly db: Db;
+  readonly db: Pick<ReadonlyDb, "select" | "selectDistinct">;
   readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
@@ -279,7 +282,7 @@ function builtinRuntimeConfig(
 }
 
 async function publishBuiltinCatalogWakeups(args: {
-  readonly db: Db;
+  readonly db: Pick<ReadonlyDb, "select" | "selectDistinct">;
   readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
@@ -345,11 +348,13 @@ async function publishBuiltinCatalogWakeups(args: {
   );
 }
 
-async function publishCatalogRuntimeWakeups(args: {
-  readonly db: Db;
+export async function publishCatalogRuntimeWakeups(args: {
+  readonly db: Pick<ReadonlyDb, "select" | "selectDistinct">;
+  readonly switched: boolean;
   readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
+  if (!args.switched) {return;}
   const results = await Promise.all([
     settle(publishCatalogPermissionBundleWakeupsInner(args)),
     settle(publishBuiltinCatalogWakeups(args)),
@@ -882,6 +887,7 @@ async function commitCandidate(
     readonly baseline: SyncStateSnapshot | undefined;
     readonly candidate: ValidatedConnectorCatalogCandidate;
     readonly catalogGzip: Buffer;
+    readonly baselineHash: string | null;
     readonly skillRegistrations: readonly PreparedConnectorSkillRegistration[];
     readonly pointerObservation: PointerObservation;
     readonly attemptedAt: Date;
@@ -891,47 +897,62 @@ async function commitCandidate(
   signal: AbortSignal,
 ): Promise<CandidateCommitResult> {
   const result = await settle(
-    args.db.transaction(async (tx) => {
+    (async () => {
       await registerPreparedConnectorCatalogSkills(
+        { db: args.db, registrations: args.skillRegistrations },
+        signal,
+      );
+      await prepareImmutableCatalogEntries(
         {
-          db: tx,
-          registrations: args.skillRegistrations,
+          db: args.db,
+          artifact: args.candidate.artifact,
+          hash: args.candidate.identity.catalogDigest.slice(7),
         },
         signal,
       );
-      await activateCandidate({ ...args, db: tx });
-      await persistConnectorCatalogCompatibility({
-        db: tx,
-        sourceId: args.sourceId,
-        identity: args.candidate.identity,
-        artifact: args.candidate.artifact,
-        capability: args.capability,
-        validator: args.validator,
-      });
-      await persistConnectorCatalogRuntimeProjection({
-        db: tx,
-        sourceId: args.sourceId,
-        identity: args.candidate.identity,
-        artifact: args.candidate.artifact,
-        validator: args.validator,
-      });
-      if (connectorCatalogSourceIsTestScoped()) {
-        await tx.execute(
-          invalidatePiStableContextsForCatalogSourceSql(
-            args.sourceId,
-            nowDate(),
-          ),
+      return await args.db.transaction(async (tx) => {
+        await activateCandidate({ ...args, db: tx });
+        await persistConnectorCatalogCompatibility({
+          db: tx,
+          sourceId: args.sourceId,
+          identity: args.candidate.identity,
+          artifact: args.candidate.artifact,
+          capability: args.capability,
+          validator: args.validator,
+        });
+        await persistConnectorCatalogRuntimeProjection({
+          db: tx,
+          sourceId: args.sourceId,
+          identity: args.candidate.identity,
+          artifact: args.candidate.artifact,
+          validator: args.validator,
+        });
+        const switched = await activateImmutableCatalog(
+          {
+            db: tx,
+            artifact: args.candidate.artifact,
+            hash: args.candidate.identity.catalogDigest.slice(7),
+            baselineHash: args.baselineHash,
+            activatedAt: args.attemptedAt,
+            catalogSourceId: connectorCatalogSourceIsTestScoped()
+              ? args.sourceId
+              : null,
+          },
+          signal,
         );
-      } else {
-        await tx.execute(invalidateAllPiStableContextsSql(nowDate()));
-      }
-      return "accepted" as const;
-    }),
+        return switched
+          ? ("accepted" as const)
+          : ("accepted-without-switch" as const);
+      });
+    })(),
   );
   if (result.ok) {
     return result.value;
   }
-  if (result.error instanceof CandidateCommitRetry) {
+  if (
+    result.error instanceof CandidateCommitRetry ||
+    result.error instanceof ImmutableCatalogActivationConflict
+  ) {
     return "retry";
   }
   const skillFailure = connectorCatalogSkillFailure(result.error);
@@ -1225,6 +1246,11 @@ async function commitValidatedCandidate(
       error: previousSnapshotResult.error,
     });
   }
+  const baselineHash = await readImmutableCatalogHash(
+    runtime.db,
+    args.candidate.artifact.artifactSchemaVersion,
+  );
+  signal.throwIfAborted();
   const catalogGzip = encodeConnectorCatalogSnapshot(args.candidate.rawBytes);
   const outcome = await commitCandidate(
     {
@@ -1233,6 +1259,7 @@ async function commitValidatedCandidate(
       baseline: args.baseline,
       candidate: args.candidate,
       catalogGzip,
+      baselineHash,
       capability: runtime.capability,
       validator: runtime.validator,
       skillRegistrations: args.skillRegistrations,
@@ -1269,6 +1296,7 @@ async function commitValidatedCandidate(
   });
   await publishCatalogRuntimeWakeups({
     db: runtime.db,
+    switched: outcome === "accepted",
     currentArtifact: args.candidate.artifact,
     previousSnapshot: previousSnapshotResult.ok
       ? previousSnapshotResult.value
@@ -1278,7 +1306,7 @@ async function commitValidatedCandidate(
   const response = await responseFromState({
     db: runtime.db,
     sourceId: runtime.source.sourceId,
-    outcome,
+    outcome: "accepted",
   });
   signal.throwIfAborted();
   return { kind: "complete", response };

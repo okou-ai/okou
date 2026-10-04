@@ -50,7 +50,7 @@ export default defineConfig({
           environment: "node",
           env: { TZ: "UTC" },
           include: immutableCatalogTests,
-          setupFiles: [],
+          setupFiles: ["./src/__tests__/env-stub.ts"],
           benchmark: { enabled: false, include: [], exclude: ["**/*"] },
         },
       },

@@ -90,7 +90,7 @@ function requestedVersionCacheKeySql() {
 
 /** Shared fixed-shape loader for Agent prefetch and thread/request-owned mounts. */
 export async function readStorageBaseIndex(
-  db: ReadonlyDb,
+  db: Pick<ReadonlyDb, "select">,
   requests: readonly StorageRequest[],
 ): Promise<StorageIndex> {
   const unique = uniqueStorageRequests(requests);
