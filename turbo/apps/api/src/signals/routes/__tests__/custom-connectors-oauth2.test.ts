@@ -2,19 +2,17 @@ import { readGetStartedStatus } from "./helpers/get-started";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   createConnectorBddApi,
   mockCustomConnectorOAuth2Provider,
 } from "./helpers/api-bdd-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import {
-  readCustomConnectorOAuthStorageState,
-  seedCustomConnectorOAuthStateContext,
-} from "./helpers/connector-credential-storage-state";
+import { seedCustomConnectorOAuthStateContext } from "./helpers/connector-credential-storage-state";
 
 const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
@@ -110,6 +108,21 @@ async function readConnectorQuest(actor: ApiTestUser) {
 }
 
 describe("Custom connector OAuth callbacks", () => {
+  const ownedConnectors: {
+    readonly actor: ApiTestUser;
+    readonly connectorId: string;
+  }[] = [];
+
+  afterEach(async () => {
+    for (const { actor, connectorId } of ownedConnectors.splice(0)) {
+      await createConnectorBddApi(context).deleteCustomConnector(
+        actor,
+        connectorId,
+      );
+      await flushWaitUntilForTest();
+    }
+  });
+
   it("uses the configured Okou App callback for authorization and token exchange", async () => {
     const apiOrigin = "https://api.okou.ai";
     const appOrigin = "https://app.okou.ai";
@@ -119,6 +132,7 @@ describe("Custom connector OAuth callbacks", () => {
     });
     const actor = createBddApi(context).user({ orgRole: "org:admin" });
     const connector = await createCustomOAuthConnector(actor, provider);
+    ownedConnectors.push({ actor, connectorId: connector.id });
     const callbackUri = `${appOrigin}/connectors/custom/callback`;
 
     const authorizationUrl = new URL(
@@ -131,15 +145,6 @@ describe("Custom connector OAuth callbacks", () => {
     expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(callbackUri);
     const state = authorizationState(authorizationUrl);
     expect(state).toMatch(/^[0-9a-f]{64}$/u);
-    await expect(
-      readCustomConnectorOAuthStorageState(context, state),
-    ).resolves.toMatchObject({
-      custom_oauth_state: {
-        auth_mode: "oauth",
-        context_valid: true,
-      },
-    });
-
     const callback = await connectors.completeCustomConnectorOAuth2Callback(
       { code: `${actor.userId}-code`, state },
       { baseUrl: apiOrigin },
@@ -153,13 +158,14 @@ describe("Custom connector OAuth callbacks", () => {
       connectors.listCustomConnectorAccounts(actor, connector.id),
     ).resolves.toMatchObject([
       {
+        target: { kind: "custom", customConnectorId: connector.id },
+        authMethod: "oauth",
+        connectionStatus: "connected",
         externalId: null,
         externalUsername: null,
         externalEmail: null,
       },
     ]);
-
-    await connectors.deleteCustomConnector(actor, connector.id);
   });
 
   it("persists verified OIDC identity for a static custom OAuth grant", async () => {

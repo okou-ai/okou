@@ -168,16 +168,6 @@ export async function readAutomaticOAuthBindingState(
   return response.automatic_oauth_binding;
 }
 
-export async function readConnectorOAuthAccountMutation(
-  context: TestContext,
-  state: string,
-): Promise<TestConnectorCredentialStorageStateActionResponse> {
-  return await postAction(context, {
-    action: "read-oauth-state-account-mutation",
-    state,
-  });
-}
-
 export async function deleteCustomConnectorCredentialValues(
   context: TestContext,
   args: {

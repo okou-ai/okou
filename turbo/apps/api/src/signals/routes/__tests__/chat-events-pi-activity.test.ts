@@ -2,21 +2,33 @@ import { expectThreadModelTokens } from "./helpers/public-thread-usage";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createHash, randomUUID } from "node:crypto";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  getSecretKmsClient,
+  setSecretKmsClientForTests,
+} from "../../../lib/secret-kms-client";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { commitMemoryVersion } from "./helpers/memory";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import {
   createChatEventsFixture,
   openRouterBodySchema,
@@ -32,7 +44,6 @@ const {
   chat,
   webhooks,
   entitledChatActor,
-  configureBuiltInPiModelOnOpenRouter,
   sendChatRunAfterPick,
   claimChatRun,
   waitForRunStatus,
@@ -174,10 +185,133 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
-    const model = await configureBuiltInPiModelOnOpenRouter(
+    const mirror = await insertBuiltInModelMirrorFixture("gpt-6-luna");
+    onTestFinished(mirror.restore);
+    const model = mirror.model;
+    await seedBuiltInModelCandidateKeys(context, model);
+    const ownedRuns = new Map<string, { sandboxToken?: string }>();
+    const ownedInputs: { threadId: string; clientEventId: string }[] = [];
+    let cleanupFinished = false;
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    const kms = getSecretKmsClient();
+
+    async function cleanupOwnedRuns(): Promise<void> {
+      if (cleanupFinished) {
+        return;
+      }
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      mockOptionalEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      setSecretKmsClientForTests(kms);
+      const cleanupRuns = createRunsApi(context);
+      const cleanupChat = createChatFilesBddApi(context);
+      const cleanupWebhooks = createWebhookCallbackApi(context);
+      cleanupRuns.acceptTelemetryIngest();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      await flushWaitUntilForTest();
+      for (const input of ownedInputs) {
+        const { events } = await cleanupChat.listThreadEvents(
+          actor,
+          input.threadId,
+        );
+        const launched = events.find((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            event.revokesEventId === input.clientEventId
+          );
+        });
+        if (launched?.runId && !ownedRuns.has(launched.runId)) {
+          ownedRuns.set(launched.runId, {});
+        }
+      }
+      for (const [runId, credentials] of ownedRuns) {
+        const current = await cleanupRuns.readRun(actor, runId);
+        if (current.status === "pending" || current.status === "running") {
+          await cleanupRuns.requestCancelRun(
+            actor,
+            runId,
+            [200],
+            usagePricingResolution,
+          );
+        }
+        if (
+          credentials.sandboxToken &&
+          (current.status === "pending" ||
+            current.status === "running" ||
+            current.status === "cancelled")
+        ) {
+          await cleanupWebhooks.requestAgentComplete(
+            { runId, exitCode: 1, error: "Cancelled Pi activity test Run" },
+            { authorization: `Bearer ${credentials.sandboxToken}` },
+            [200],
+            undefined,
+            usagePricingResolution,
+          );
+        }
+        await flushWaitUntilForTest();
+      }
+      await createBddApi(context).deleteAgent(actor, agentId);
+      await flushWaitUntilForTest();
+      cleanupFinished = true;
+    }
+    onTestFinished(cleanupOwnedRuns);
+
+    async function sendOwnedRun(
+      ...args: Parameters<typeof sendChatRunAfterPick>
+    ) {
+      const body = args[1];
+      const threadId =
+        body.threadId ??
+        (
+          await chat.createThread(actor, {
+            agentId,
+            model: body.model,
+          })
+        ).id;
+      const clientEventId = body.clientEventId ?? randomUUID();
+      ownedInputs.push({ threadId, clientEventId });
+      const run = await sendChatRunAfterPick(
+        args[0],
+        {
+          ...body,
+          threadId,
+          clientEventId,
+        },
+        args[2],
+      );
+      ownedRuns.set(run.runId, {});
+      return run;
+    }
+
+    async function claimOwnedRun(...args: Parameters<typeof claimChatRun>) {
+      const claimed = await claimChatRun(...args);
+      const owned = ownedRuns.get(args[1]);
+      if (!owned) {
+        throw new Error("Expected an owned Pi activity Run");
+      }
+      owned.sandboxToken = claimed.claim.sandboxToken;
+      return claimed;
+    }
+
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    await coolDownBuiltInRoutesThroughReports(context, {
       actor,
-      "gpt-6-luna",
-    );
+      agentId,
+      runnerGroup,
+      model,
+      routes: [{ providerType: "openai-api-key", upstreamModel: "gpt-6-luna" }],
+      beforeCooldownCleanup: cleanupOwnedRuns,
+    });
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -192,7 +326,7 @@ describe("CHAT-02: model-first provider policies", () => {
       "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
-    const run = await sendChatRunAfterPick(
+    const run = await sendOwnedRun(
       actor,
       {
         agentId,
@@ -202,7 +336,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       usagePricingResolution,
     );
-    const claimed = await claimChatRun(runnerGroup, run.runId);
+    const claimed = await claimOwnedRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
     // The first turn has no stored history, so the Sandbox starts fresh.
@@ -453,13 +587,60 @@ describe("CHAT-02: model-first provider policies", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
       Buffer.from(h2, "utf8"),
     );
-    const checkpointedMemory = await commitMemoryVersion(context, actor, [
+    const memoryPath = `extensions/ad_hoc/notes/${adHocNoteFilename}`;
+    const memoryFiles = [
       {
-        path: `extensions/ad_hoc/notes/${adHocNoteFilename}`,
-        content: adHocNote,
+        path: memoryPath,
+        hash: createHash("sha256").update(adHocNote).digest("hex"),
+        size: Buffer.byteLength(adHocNote),
       },
-    ]);
-    expect(checkpointedMemory.storageId).toBe(lunaMemoryMount.storageId);
+    ];
+    const preparedMemory = await webhooks.requestAgentStoragePrepare(
+      {
+        runId: run.runId,
+        storageId: lunaMemoryMount.storageId,
+        baseVersion: lunaMemoryMount.versionId,
+        changes: { added: [memoryPath], modified: [], deleted: [] },
+        files: memoryFiles,
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    if (preparedMemory.status !== 200 || !preparedMemory.body.uploads) {
+      throw new Error("Expected a new sandbox memory archive upload");
+    }
+    const memoryUpload = preparedMemory.body.uploads.archive;
+    context.mocks.s3.send.mockResolvedValueOnce({ ContentLength: 1024 });
+    context.mocks.s3.send.mockResolvedValueOnce({ ContentLength: 1024 });
+    const committedMemory = await webhooks.requestAgentStorageCommit(
+      {
+        runId: run.runId,
+        storageId: lunaMemoryMount.storageId,
+        versionId: preparedMemory.body.versionId,
+        files: memoryFiles,
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    if (committedMemory.status !== 200) {
+      throw new Error("Expected the sandbox memory commit to succeed");
+    }
+    expect(committedMemory.body).toMatchObject({
+      success: true,
+      versionId: preparedMemory.body.versionId,
+      storageName: "memory",
+      size: 1024,
+      fileCount: 1,
+    });
+    expect(
+      context.mocks.s3.send.mock.calls.flatMap(([command]) => {
+        return command instanceof HeadObjectCommand ? [command.input] : [];
+      }),
+    ).toContainEqual({
+      Bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      Key: memoryUpload.key,
+    });
+    const checkpointedMemory = { versionId: committedMemory.body.versionId };
     const memoryArtifactSnapshots = [
       {
         name: lunaMemoryMount.name,
@@ -585,12 +766,12 @@ describe("CHAT-02: model-first provider policies", () => {
       "[PI_H2_ALREADY_COMMITTED]",
     );
 
-    const failedRun = await sendChatRunAfterPick(actor, {
+    const failedRun = await sendOwnedRun(actor, {
       agentId,
       threadId: run.threadId,
       prompt: "reject a non-native Sandbox H2",
     });
-    const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
+    const failedClaim = await claimOwnedRun(runnerGroup, failedRun.runId);
     const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
     const invalidH2Hash = createHash("sha256").update(invalidH2).digest("hex");
     await webhooks.requestAgentCheckpointPrepareHistory(
@@ -663,13 +844,13 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(spoofedFailedH2.body)).toContain(
       "[PI_H2_TYPE_MISMATCH]",
     );
-    const cancelledRun = await sendChatRunAfterPick(actor, {
+    const cancelledRun = await sendOwnedRun(actor, {
       agentId,
       threadId: run.threadId,
       model,
       prompt: "reject H2 after an explicit Pi run is cancelled",
     });
-    const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
+    const cancelledClaim = await claimOwnedRun(runnerGroup, cancelledRun.runId);
     await cancelChatRun(
       actor,
       cancelledRun.runId,
@@ -692,12 +873,21 @@ describe("CHAT-02: model-first provider policies", () => {
       "[PI_H2_RUN_TERMINAL]",
     );
 
-    const retry = await sendChatRunAfterPick(actor, {
+    const retry = await sendOwnedRun(actor, {
       agentId,
       threadId: run.threadId,
       prompt: "resume only the last completed Pi checkpoint",
     });
-    const retryClaim = await claimChatRun(runnerGroup, retry.runId);
+    const retryClaim = await claimOwnedRun(runnerGroup, retry.runId);
+    const retryMemoryMount = expectCanonicalStorageManifest(
+      retryClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory" && mount.mountPath === PI_MEMORY_ROOT;
+    });
+    expect(retryMemoryMount).toMatchObject({
+      storageId: lunaMemoryMount.storageId,
+      versionId: checkpointedMemory.versionId,
+    });
     expect(retryClaim.claim.resumeSession).toMatchObject({
       sessionId: run.threadId,
       historyRef: { kind: "blob", hash: h2Hash },
@@ -730,12 +920,12 @@ describe("CHAT-02: model-first provider policies", () => {
       "[PI_H2_RUN_TERMINAL]",
     );
 
-    const reportedFailureRun = await sendChatRunAfterPick(actor, {
+    const reportedFailureRun = await sendOwnedRun(actor, {
       agentId,
       threadId: run.threadId,
       prompt: "retry one atomically reported Pi failure",
     });
-    const reportedFailureClaim = await claimChatRun(
+    const reportedFailureClaim = await claimOwnedRun(
       runnerGroup,
       reportedFailureRun.runId,
     );
@@ -782,12 +972,12 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
     await expectThreadModelTokens(context, actor, run.threadId, 2);
-    const probe = await sendChatRunAfterPick(actor, {
+    const probe = await sendOwnedRun(actor, {
       agentId,
       threadId: run.threadId,
       prompt: "verify the canonical completed checkpoint after rejected writes",
     });
-    const probeClaim = await claimChatRun(runnerGroup, probe.runId);
+    const probeClaim = await claimOwnedRun(runnerGroup, probe.runId);
     expect(probeClaim.claim.resumeSession).toMatchObject({
       sessionId: run.threadId,
       historyRef: { kind: "blob", hash: h2Hash },
@@ -821,7 +1011,10 @@ describe("CHAT-02: model-first provider policies", () => {
       prompt: "keep an incompatible run off the Pi checkpoint",
       model: "claude-fable-5-1",
     });
+    const explicitResumeOwner: { sandboxToken?: string } = {};
+    ownedRuns.set(explicitResume.runId, explicitResumeOwner);
     const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
+    explicitResumeOwner.sandboxToken = explicitResumeClaim.sandboxToken;
     expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
     expect(explicitResumeClaim.resumeSession).toBeNull();
     await cancelChatRun(actor, explicitResume.runId, {

@@ -347,23 +347,6 @@ async function readAutomaticOAuthBinding(
   });
 }
 
-async function readOAuthStateAccountMutation(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"read-oauth-state-account-mutation">,
-  signal: AbortSignal,
-) {
-  const [state] = await db
-    .select({ accountMutation: connectorOauthStates.accountMutation })
-    .from(connectorOauthStates)
-    .where(eq(connectorOauthStates.state, body.state))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!state) {
-    throw new Error("Expected connector OAuth state");
-  }
-  return actionOk({ account_mutation: state.accountMutation });
-}
-
 async function deleteCustomCredentialValues(
   db: Db,
   body: ConnectorCredentialStorageAction<"delete-custom-credential-values">,
@@ -953,9 +936,6 @@ const mutateConnectorCredentialStorageState$ = command(
       }
       case "read-custom-oauth-state": {
         return await readCustomOAuthState(db, body, signal);
-      }
-      case "read-oauth-state-account-mutation": {
-        return await readOAuthStateAccountMutation(db, body, signal);
       }
       case "delete-custom-credential-values": {
         return await deleteCustomCredentialValues(db, body, signal);

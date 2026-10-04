@@ -11,7 +11,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
@@ -40,7 +40,6 @@ import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 /*
 helper gap:
@@ -5445,6 +5444,25 @@ describe("INT-02: Telegram integration", () => {
 });
 
 describe("INT-03: GitHub and AgentPhone integrations", () => {
+  const ownedGithubOAuthActors: ApiTestUser[] = [];
+
+  afterEach(async () => {
+    const cleanup = createConnectorBddApi(context);
+    for (const actor of ownedGithubOAuthActors.splice(0)) {
+      for (const account of await cleanup.listBuiltinConnectorAccounts(
+        actor,
+        "github",
+      )) {
+        await cleanup.deleteBuiltinConnectorAccount(
+          actor,
+          "github",
+          account.id,
+        );
+      }
+      await flushWaitUntilForTest();
+    }
+  });
+
   it("keeps GitHub OAuth install and connect-start errors visible through redirects", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -5587,6 +5605,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     await installApiTestConnectorCatalog();
 
     const actor = integrations.user();
+    ownedGithubOAuthActors.push(actor);
     const response = await integrations.requestGithubOauthConnect(
       actor,
       {},
@@ -5612,10 +5631,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       throw new Error("Expected GitHub authorization state");
     }
     await expect(
-      readConnectorOAuthAccountMutation(context, state),
-    ).resolves.toMatchObject({
-      account_mutation: { intent: "add" },
-    });
+      connectors.listBuiltinConnectorAccounts(actor, "github"),
+    ).resolves.toStrictEqual([]);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const callback = await connectors.completeOauthCallback(
       "github",
@@ -5629,6 +5646,18 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
 
     expect(tokenRedirectUris).toStrictEqual([
       "https://api.okou.ai/api/connectors/github/callback",
+    ]);
+    await expect(
+      connectors.listBuiltinConnectorAccounts(actor, "github"),
+    ).resolves.toMatchObject([
+      {
+        target: { kind: "builtin", connectorSlug: "github" },
+        authMethod: "oauth",
+        connectionStatus: "connected",
+        externalId: "4242",
+        externalUsername: "bdd-github-user",
+        externalEmail: null,
+      },
     ]);
   });
 

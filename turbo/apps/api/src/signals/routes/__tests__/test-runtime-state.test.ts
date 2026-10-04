@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
@@ -253,96 +252,84 @@ describe("POST /api/test/runtime-state/action", () => {
   );
 
   it("isolates expiry-based cooldowns to exact built-in model routes", async () => {
-    await seedBuiltInModelCandidateKeys(context, "claude-fable-5-1");
-    await seedBuiltInModelCandidateKeys(context, "gpt-5.6-sol");
     const startedAt = Date.UTC(2026, 7, 20, 0, 0, 0);
     const routeCooldownUntil = new Date(startedAt + 60 * 1000);
-
-    const gptPrimary = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, "gpt-5.6-sol");
-    });
-    expect(gptPrimary).toMatchObject({
-      provider_type: "openai-api-key",
-      upstream_model: "gpt-5.6-sol",
-    });
-    if (!gptPrimary) {
-      throw new Error("Expected a primary GPT route");
+    const gptMirror = await insertBuiltInModelMirrorFixture("gpt-5.6-sol");
+    onTestFinished(gptMirror.restore);
+    const lunaMirror = await insertBuiltInModelMirrorFixture("gpt-6-luna");
+    onTestFinished(lunaMirror.restore);
+    const claudeMirror =
+      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
+    onTestFinished(claudeMirror.restore);
+    const selectedModels = [
+      gptMirror.model,
+      lunaMirror.model,
+      claudeMirror.model,
+    ];
+    for (const model of selectedModels) {
+      await seedBuiltInModelCandidateKeys(context, model);
     }
-
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      "gpt-5.6-sol",
-      gptPrimary,
-      routeCooldownUntil,
-    );
-    const gptFallback = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, "gpt-5.6-sol");
+    // Keep reporting Runs in a different owner/org from the empty population
+    // checked below. Each producer finishes before admitting the next one.
+    const fixture = await withMockNowForTest(startedAt - 60_000, async () => {
+      return await createPublicModelFailureFixture(context, selectedModels);
     });
-    expect(gptFallback?.provider_type).toBe("openrouter-codex");
-    if (!gptFallback) {
-      throw new Error("Expected a fallback GPT route");
-    }
-
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      "gpt-5.6-sol",
-      gptFallback,
-      routeCooldownUntil,
-    );
+    const reportCooldown = async (runId: string) => {
+      await expect(
+        createRunsApi(context).reportRunnerModelProviderFailure(runId, {
+          failureKind: "rate_limit",
+          retryAfterSeconds: 60,
+        }),
+      ).resolves.toStrictEqual({ outcome: "recorded" });
+      await fixture.finish(runId);
+    };
 
     await withMockNowForTest(startedAt, async () => {
+      const gptPrimary = await fixture.claim(gptMirror.model);
+      expect(gptPrimary.log).toMatchObject({
+        modelRuntimeProvider: "openai-api-key",
+        modelRuntimeModel: "gpt-5.6-sol",
+      });
+      await reportCooldown(gptPrimary.runId);
+      const gptFallback = await fixture.claim(gptMirror.model);
+      expect(gptFallback.log).toMatchObject({
+        modelRuntimeProvider: "openrouter-codex",
+        modelRuntimeModel: "openai/gpt-5.6-sol",
+      });
+      await reportCooldown(gptFallback.runId);
       await expect(
-        resolveBuiltInModelRouteFixture(context, "gpt-5.6-sol"),
-      ).resolves.toBeNull();
-      await expect(
-        resolveBuiltInModelRouteFixture(context, "gpt-6-luna"),
-      ).resolves.toMatchObject({ provider_type: "openai-api-key" });
-    });
+        fixture.readAdmissionRejection(gptMirror.model),
+      ).resolves.toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
+      });
 
-    const gptLunaPrimary = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, "gpt-6-luna");
-    });
-    if (!gptLunaPrimary) {
-      throw new Error("Expected a primary GPT Luna route");
-    }
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      "gpt-6-luna",
-      gptLunaPrimary,
-      routeCooldownUntil,
-    );
-    await withMockNowForTest(startedAt, async () => {
+      const gptLunaPrimary = await fixture.claim(lunaMirror.model);
+      expect(gptLunaPrimary.log).toMatchObject({
+        modelRuntimeProvider: "openai-api-key",
+        modelRuntimeModel: "gpt-6-luna",
+      });
+      await reportCooldown(gptLunaPrimary.runId);
       await expect(
-        resolveBuiltInModelRouteFixture(context, "gpt-6-luna"),
-      ).resolves.toMatchObject({ provider_type: "openrouter-codex" });
-    });
+        fixture.readAdmission(lunaMirror.model),
+      ).resolves.toMatchObject({
+        modelRuntimeProvider: "openrouter-codex",
+        modelRuntimeModel: "openai/gpt-6-luna",
+      });
 
-    const claudePrimary = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, "claude-fable-5-1");
+      const claudePrimary = await fixture.claim(claudeMirror.model);
+      expect(claudePrimary.log).toMatchObject({
+        modelRuntimeProvider: "anthropic-api-key",
+        modelRuntimeModel: "claude-fable-5-1",
+      });
+      await reportCooldown(claudePrimary.runId);
+      const claudeFallback = await fixture.claim(claudeMirror.model);
+      expect(claudeFallback.log).toMatchObject({
+        modelRuntimeProvider: "openrouter-api-key",
+        modelRuntimeModel: "anthropic/claude-fable-5.1",
+      });
+      await reportCooldown(claudeFallback.runId);
     });
-    expect(claudePrimary?.provider_type).toBe("anthropic-api-key");
-    if (!claudePrimary) {
-      throw new Error("Expected a primary Claude route");
-    }
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      "claude-fable-5-1",
-      claudePrimary,
-      routeCooldownUntil,
-    );
-    const claudeFallback = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, "claude-fable-5-1");
-    });
-    expect(claudeFallback?.provider_type).toBe("openrouter-api-key");
-    if (!claudeFallback) {
-      throw new Error("Expected a fallback Claude route");
-    }
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      "claude-fable-5-1",
-      claudeFallback,
-      routeCooldownUntil,
-    );
 
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
@@ -350,9 +337,38 @@ describe("POST /api/test/runtime-state/action", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD built-in fallback unavailable agent",
     });
+    const clientEventId = randomUUID();
+    let rejectedThreadId: string | undefined;
+    onTestFinished(async () => {
+      await withMockNowForTest(startedAt, async () => {
+        const currentRuns = createRunsApi(context);
+        currentRuns.acceptTelemetryIngest();
+        context.mocks.ably.publish.mockResolvedValue(undefined);
+        if (rejectedThreadId) {
+          const { events } = await createChatFilesBddApi(
+            context,
+          ).listThreadEvents(actor, rejectedThreadId);
+          const launched = events.find((event) => {
+            return (
+              event.eventType === "input.prompt" &&
+              event.revokesEventId === clientEventId
+            );
+          });
+          if (launched?.runId) {
+            const run = await currentRuns.readRun(actor, launched.runId);
+            if (run.status === "pending" || run.status === "running") {
+              await currentRuns.requestCancelRun(actor, launched.runId, [200]);
+            }
+            await flushWaitUntilForTest();
+          }
+        }
+        await createBddApi(context).deleteAgent(actor, agent.agentId);
+        await flushWaitUntilForTest();
+      });
+    });
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-sol",
+        model: gptMirror.model,
         preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -363,11 +379,36 @@ describe("POST /api/test/runtime-state/action", () => {
       throw new Error("Expected built-in fallback actor to have an org");
     }
     const unavailable = await withMockNowForTest(startedAt, async () => {
-      return await sendRejectedByUnavailableModel(actor, {
+      const currentChat = createChatFilesBddApi(context);
+      const thread = await currentChat.createThread(actor, {
         agentId: agent.agentId,
-        prompt: "reject before constructing a built-in-model run",
-        model: "gpt-5.6-sol",
+        model: gptMirror.model,
       });
+      rejectedThreadId = thread.id;
+      await currentChat.requestSendEvent(
+        actor,
+        {
+          agentId: agent.agentId,
+          threadId: thread.id,
+          clientEventId,
+          prompt: "reject before constructing a built-in-model run",
+          model: gptMirror.model,
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const { events } = await currentChat.listThreadEvents(actor, thread.id);
+      return {
+        rejected: events.find((event) => {
+          return (
+            event.eventType === "input.rejected" &&
+            event.revokesEventId === clientEventId
+          );
+        }),
+        guidance: events.find((event) => {
+          return event.eventType === "output.error";
+        }),
+      };
     });
     expect(unavailable.rejected).toMatchObject({
       error: "model_provider_unavailable",
@@ -375,20 +416,29 @@ describe("POST /api/test/runtime-state/action", () => {
     expect(unavailable.guidance).toMatchObject({
       error: "model_provider_unavailable",
     });
-    await expect(
-      runs.listAgentRuns(actor, {
-        status: ALL_RUN_STATUSES.join(","),
+    const logs = await createRunReadsApi(context).requestListLogs(
+      actor,
+      {
+        // Omit status so Logs includes the same seven-status population.
         limit: 20,
-      }),
-    ).resolves.toStrictEqual({ runs: [] });
+      },
+      [200],
+    );
+    expect(logs.body.data).toStrictEqual([]);
 
     await withMockNowForTest(routeCooldownUntil.getTime(), async () => {
       await expect(
-        resolveBuiltInModelRouteFixture(context, "gpt-5.6-sol"),
-      ).resolves.toMatchObject({ provider_type: "openai-api-key" });
+        fixture.readAdmission(gptMirror.model),
+      ).resolves.toMatchObject({
+        modelRuntimeProvider: "openai-api-key",
+        modelRuntimeModel: "gpt-5.6-sol",
+      });
       await expect(
-        resolveBuiltInModelRouteFixture(context, "claude-fable-5-1"),
-      ).resolves.toMatchObject({ provider_type: "anthropic-api-key" });
+        fixture.readAdmission(claudeMirror.model),
+      ).resolves.toMatchObject({
+        modelRuntimeProvider: "anthropic-api-key",
+        modelRuntimeModel: "claude-fable-5-1",
+      });
     });
   });
 

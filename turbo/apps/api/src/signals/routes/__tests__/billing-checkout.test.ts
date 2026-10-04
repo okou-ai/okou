@@ -8393,7 +8393,7 @@ describe("usage pack allocation management", () => {
 
   it("fulfills usage packs on a shared Custom subscription without replacing the main plan", async () => {
     const actor = createOrgFixture();
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId: actor.userId, usagePackUsd: 100 }],
       "team",
       actor,
@@ -8866,7 +8866,7 @@ describe("usage pack allocation management", () => {
 
   it("rejects a deferred usage pack change when the Plan cancellation webhook arrives during preview", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId, usagePackUsd: 50 }],
       "team",
     );
@@ -9584,7 +9584,9 @@ describe("usage pack allocation management", () => {
 
   it("upgrades the base plan in place without replacing the member package", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 20 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 20 },
+    ]);
     const quantities = new Map([[TEST_PRICE_USAGE_PACK_20, 1]]);
     const proSubscription = managedUsagePackSubscription(fixture, quantities);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
@@ -9701,7 +9703,9 @@ describe("usage pack allocation management", () => {
 
   it("activates a pending plan upgrade from the paid invoice webhook", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 20 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 20 },
+    ]);
     const quantities = new Map([[TEST_PRICE_USAGE_PACK_20, 1]]);
     const proSubscription = managedUsagePackSubscription(fixture, quantities);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
@@ -9914,7 +9918,9 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 20 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 20 },
+    ]);
     const paymentMethodId = `pm_${randomUUID()}`;
     const oldSubscription = {
       ...managedUsagePackSubscription(
@@ -10286,7 +10292,9 @@ describe("usage pack allocation management", () => {
 
   it("restores a scheduled package downgrade with billing-only phase metadata", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 50 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 50 },
+    ]);
     const currentSubscription = managedUsagePackSubscription(
       fixture,
       new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
@@ -10549,7 +10557,9 @@ describe("usage pack allocation management", () => {
 
   it("restores a usage pack change without removing the Plan cancellation", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 50 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 50 },
+    ]);
     const currentSubscription = managedUsagePackSubscription(
       fixture,
       new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
@@ -10753,7 +10763,7 @@ describe("usage pack allocation management", () => {
 
   it("clears scheduled package changes when restoring a plan downgrade", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
+    const fixture = await purchaseManagedUsagePack(
       [{ userId, usagePackUsd: 100 }],
       "team",
     );
@@ -10859,7 +10869,9 @@ describe("usage pack allocation management", () => {
 
   it("clears scheduled package changes when Stripe releases their schedule", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 50 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 50 },
+    ]);
     const currentSubscription = managedUsagePackSubscription(
       fixture,
       new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
@@ -10938,7 +10950,9 @@ describe("usage pack allocation management", () => {
 
   it("keeps scheduled package changes when Stripe releases after their effective time", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 50 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 50 },
+    ]);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       managedUsagePackSubscription(
         fixture,
@@ -11585,7 +11599,9 @@ describe("usage pack allocation management", () => {
 
   it("replaces a scheduled package downgrade on the existing schedule", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 200 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 200 },
+    ]);
     const currentSubscription = managedUsagePackSubscription(
       fixture,
       new Map([[TEST_PRICE_USAGE_PACK_200, 1]]),
@@ -11822,7 +11838,9 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 20 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 20 },
+    ]);
     const sourceSubscription = managedUsagePackSubscription(
       fixture,
       new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
@@ -13747,7 +13765,9 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 20 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 20 },
+    ]);
     const paymentMethodId = `pm_${randomUUID()}`;
     const oldSubscription = {
       ...managedUsagePackSubscription(
@@ -13850,7 +13870,9 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 20 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 20 },
+    ]);
     const paymentMethodId = `pm_${randomUUID()}`;
     const oldSubscription = {
       ...managedUsagePackSubscription(
@@ -13964,7 +13986,9 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 20 }]);
+    const fixture = await purchaseManagedUsagePack([
+      { userId, usagePackUsd: 20 },
+    ]);
     const quantities = new Map([[TEST_PRICE_USAGE_PACK_20, 1]]);
     const subscription = managedUsagePackSubscription(fixture, quantities);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
@@ -15031,7 +15055,7 @@ describe("usage pack allocation management", () => {
     const adminUserId = `user_${randomUUID()}`;
     const firstUserId = `user_${randomUUID()}`;
     const secondUserId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([
+    const fixture = await purchaseManagedUsagePack([
       { userId: adminUserId, usagePackUsd: 20 },
       { userId: firstUserId, usagePackUsd: 20 },
       { userId: secondUserId, usagePackUsd: 50 },
@@ -17052,7 +17076,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("returns a retryable 503 before starting payment on the first Clerk rate limit", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
@@ -17101,7 +17128,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("preserves non-rate-limit Clerk invitation purchase failures", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
       new Error("Clerk membership read failed"),
@@ -17188,7 +17218,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("resumes invitation creation on a later request after a post-payment Clerk rate limit", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     const paymentIntentId = mockSavedCardInvitationPayment(purchase);
     const invitationId = `inv_resumed_${randomUUID()}`;
     const existingMember = {
@@ -17283,7 +17316,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("does not reclassify a Clerk invitation mutation rate limit as a retryable read", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     mockSavedCardInvitationPayment(purchase);
     const existingMember = {
       publicUserData: {
@@ -17413,7 +17449,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("ignores invitation PaymentIntents from another preview job", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     mockEnv("ENV", "preview");
     mockOptionalEnv("OKOU_PREVIEW_JOB_REF", "pr-current");
 
@@ -18400,7 +18439,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("repairs a late stale usage pack quantity from the accepted local allocations", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     const invitationId = `inv_stale_quantity_${randomUUID()}`;
     const acceptedUserId = `user_stale_quantity_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);
@@ -18446,7 +18488,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("revokes and refunds a paid pending invitation exactly once", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     const invitationId = `inv_refund_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);
     context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
@@ -18656,7 +18701,10 @@ describe("usage pack allocation management", () => {
   });
 
   it("honors acceptance just before expiration when reconciliation races the boundary", async () => {
-    const purchase = await beginInvitationPurchase();
+    const purchase = await beginInvitationPurchase(
+      createOrgFixture(),
+      purchaseManagedUsagePack,
+    );
     const invitationId = `inv_near_expiry_${randomUUID()}`;
     const acceptedUserId = `user_near_expiry_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);

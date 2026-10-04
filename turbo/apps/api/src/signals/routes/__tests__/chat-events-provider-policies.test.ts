@@ -22,10 +22,7 @@ import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
-import {
-  coolDownBuiltInCandidatesFixture,
-  seedBuiltInModelCandidateKeys,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -39,6 +36,8 @@ import {
   userMessages,
   modelProviderSecretPlaceholder,
 } from "./helpers/chat-events-fixture";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({ connectorCatalog: true });
@@ -113,21 +112,41 @@ async function preparePiResourceHandoff(
 }
 
 /**
- * A test-owned mirror of a managed DeepSeek model whose OpenRouter candidate
- * is cooling down while its direct DeepSeek candidate stays available.
+ * A claimed Run reports the test-owned model's OpenRouter route unavailable.
+ * The configured direct DeepSeek candidate remains ineligible for new Runs.
  */
 async function builtInModelWithOpenRouterCoolingDown(
+  actor: ApiTestUser,
+  agentId: string,
+  runnerGroup: string,
   selectedModel: "deepseek-v4.1-flash" | "deepseek-v4-flash",
 ): Promise<string> {
   const mirror = await insertBuiltInModelMirrorFixture(selectedModel);
   onTestFinished(mirror.restore);
   await seedBuiltInModelCandidateKeys(context, mirror.model);
-  await coolDownBuiltInCandidatesFixture(context, mirror.model, [
+  await api.updateOrgModelPolicies(actor, [
     {
-      provider_type: "openrouter-codex",
-      upstream_model: `deepseek/${selectedModel}`,
+      model: mirror.model,
+      preferred: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
     },
   ]);
+  mockPiResourceArchiveDownloads();
+  mockPiCheckpointObjectStore();
+  await coolDownBuiltInRoutesThroughReports(context, {
+    actor,
+    agentId,
+    runnerGroup,
+    model: mirror.model,
+    routes: [
+      {
+        providerType: "openrouter-codex",
+        upstreamModel: `deepseek/${selectedModel}`,
+      },
+    ],
+  });
   return mirror.model;
 }
 
@@ -1638,11 +1657,16 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "fails closed for built-in %s when its required OpenRouter route is unavailable",
     async (selectedModel) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       if (selectedModel === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
-      const model = await builtInModelWithOpenRouterCoolingDown(selectedModel);
+      const model = await builtInModelWithOpenRouterCoolingDown(
+        actor,
+        agentId,
+        runnerGroup,
+        selectedModel,
+      );
       await api.updateOrgModelPolicies(actor, [
         {
           model,
@@ -1652,8 +1676,16 @@ describe("CHAT-02: model-first provider policies", () => {
           modelProviderId: null,
         },
       ]);
+      const thread = await chat.createThread(actor, { agentId, model });
+      // Own even an unexpectedly admitted input before checking the rejection.
+      // The real thread deletion cancels its pending work before route cleanup.
+      onTestFinished(async () => {
+        await createChatFilesBddApi(context).deleteThread(actor, thread.id);
+        await flushWaitUntilForTest();
+      });
       const { picked } = await sendUntilPicked(actor, {
         agentId,
+        threadId: thread.id,
         prompt: "require the managed OpenRouter DeepSeek route",
         model,
       });
