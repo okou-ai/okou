@@ -1,5 +1,5 @@
 import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
@@ -12129,10 +12129,12 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const callbackUrl = "https://callback.example/cancellation-recovery";
-    let callbackRequests = 0;
+    const callbackSecret = "bdd-http-callback-secret";
+    mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "bdd-http-bypass");
+    const callbackRequests: Request[] = [];
     server.use(
-      http.post(callbackUrl, () => {
-        callbackRequests += 1;
+      http.post(callbackUrl, ({ request }) => {
+        callbackRequests.push(request);
         return HttpResponse.text("retry later", { status: 503 });
       }),
     );
@@ -12147,6 +12149,7 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
         runId: run.runId,
         url: callbackUrl,
         payload: {},
+        secret: callbackSecret,
       },
       context.signal,
     );
@@ -12155,7 +12158,29 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
 
     await api.requestCancelRun(actor, run.runId, [200]);
     await flushWaitUntilForTest();
-    expect(callbackRequests).toBe(1);
+    expect(callbackRequests).toHaveLength(1);
+    const request = callbackRequests[0];
+    if (!request) {
+      throw new Error("Expected an ordinary HTTP callback request");
+    }
+    const body = await request.text();
+    const timestamp = request.headers.get("X-Okou-Timestamp");
+    expect(timestamp).toMatch(/^\d+$/);
+    expect(request.headers.get("Content-Type")).toBe("application/json");
+    expect(request.headers.get("x-vercel-protection-bypass")).toBe(
+      "bdd-http-bypass",
+    );
+    expect(request.headers.get("X-Okou-Signature")).toBe(
+      createHmac("sha256", callbackSecret)
+        .update(`${timestamp}.${body}`)
+        .digest("hex"),
+    );
+    expect(JSON.parse(body)).toMatchObject({
+      callbackId: expect.any(String),
+      runId: run.runId,
+      status: "failed",
+      payload: {},
+    });
     expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
       runId: run.runId,
       mode: "cooperative",
@@ -12163,7 +12188,7 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
 
     await api.requestCancelRun(actor, run.runId, [200]);
     await flushWaitUntilForTest();
-    expect(callbackRequests).toBe(1);
+    expect(callbackRequests).toHaveLength(1);
   });
 
   it("serializes concurrent claim and cancellation without deadlock", async () => {

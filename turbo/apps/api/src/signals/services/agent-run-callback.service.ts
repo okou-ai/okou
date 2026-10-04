@@ -66,7 +66,6 @@ interface DispatchRunCallbacksInput {
 }
 
 interface DispatchSingleCallbackInput {
-  readonly db: Db;
   readonly callback: CallbackRecord;
   readonly runId: string;
   readonly status: TerminalCallbackStatus;
@@ -416,19 +415,22 @@ export const dispatchRunCallbacks$ = command(
             },
             signal,
           )
-        : await dispatchHttpCallback({
-            db,
-            callback,
-            runId,
-            status,
-            result,
-            error,
-            featureSwitchContext,
-            balanceContext: {
-              failureReason: run.failureReason,
-              modelProvider: run.modelProvider,
+        : await set(
+            dispatchHttpCallback$,
+            {
+              callback,
+              runId,
+              status,
+              result,
+              error,
+              featureSwitchContext,
+              balanceContext: {
+                failureReason: run.failureReason,
+                modelProvider: run.modelProvider,
+              },
             },
-          });
+            signal,
+          );
       signal.throwIfAborted();
       results.push(dispatchResult);
     }
@@ -459,124 +461,164 @@ function callbackEnvelope(
   };
 }
 
-async function dispatchHttpCallback(
-  input: DispatchSingleCallbackInput,
-): Promise<DispatchResult> {
-  const { db, callback, runId, status, result, error } = input;
-  if (!callback.url) {
-    const errorMessage = "Callback URL is missing";
-    await markCallbackFailed(db, callback.id, errorMessage);
-    return { callbackId: callback.id, success: false, error: errorMessage };
-  }
-  if (!callback.encryptedSecret) {
-    const errorMessage = "Callback secret is missing";
-    await markCallbackFailed(db, callback.id, errorMessage);
-    return { callbackId: callback.id, success: false, error: errorMessage };
-  }
-  const secret = await decryptPersistentSecretValue(
-    callback.encryptedSecret,
-    input.featureSwitchContext,
-  );
-  const body = JSON.stringify({
-    callbackId: callback.id,
-    runId,
-    status,
-    result,
-    error:
-      error === undefined
-        ? undefined
-        : (formatRunBalanceError(input.balanceContext) ?? error),
-    payload: callback.payload,
-  });
-  const timestamp = Math.floor(now() / 1000);
-  const signature = computeHmacSignature(body, secret, timestamp);
-
-  await markCallbackAttemptStarted(db, callback.id);
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-Okou-Signature": signature,
-    "X-Okou-Timestamp": timestamp.toString(),
-  };
-  const bypass = optionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET");
-  if (bypass) {
-    headers["x-vercel-protection-bypass"] = bypass;
-  }
-
-  const responseResult = await settle(
-    fetch(resolveCallbackUrl(callback.url), {
-      method: "POST",
-      headers,
-      body,
-    }),
-  );
-
-  if (!responseResult.ok) {
-    const errorMessage =
-      responseResult.error instanceof Error
-        ? responseResult.error.message
-        : "Unknown error";
-    await markCallbackFailed(db, callback.id, errorMessage);
-    L.error("Callback dispatch threw", {
+const dispatchHttpCallback$ = command(
+  async (
+    { set },
+    input: DispatchSingleCallbackInput,
+    signal: AbortSignal,
+  ): Promise<DispatchResult> => {
+    const { callback, runId, status, result, error } = input;
+    if (!callback.url) {
+      const errorMessage = "Callback URL is missing";
+      await set(
+        recordHttpCallbackDelivery$,
+        callback.id,
+        { stage: "failed", error: errorMessage },
+        signal,
+      );
+      return { callbackId: callback.id, success: false, error: errorMessage };
+    }
+    if (!callback.encryptedSecret) {
+      const errorMessage = "Callback secret is missing";
+      await set(
+        recordHttpCallbackDelivery$,
+        callback.id,
+        { stage: "failed", error: errorMessage },
+        signal,
+      );
+      return { callbackId: callback.id, success: false, error: errorMessage };
+    }
+    const secret = await decryptPersistentSecretValue(
+      callback.encryptedSecret,
+      input.featureSwitchContext,
+    );
+    signal.throwIfAborted();
+    const body = JSON.stringify({
       callbackId: callback.id,
       runId,
-      error: responseResult.error,
+      status,
+      result,
+      error:
+        error === undefined
+          ? undefined
+          : (formatRunBalanceError(input.balanceContext) ?? error),
+      payload: callback.payload,
+    });
+    const timestamp = Math.floor(now() / 1000);
+    const signature = computeHmacSignature(body, secret, timestamp);
+
+    await set(
+      recordHttpCallbackDelivery$,
+      callback.id,
+      { stage: "attempt-started" },
+      signal,
+    );
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Okou-Signature": signature,
+      "X-Okou-Timestamp": timestamp.toString(),
+    };
+    const bypass = optionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET");
+    if (bypass) {
+      headers["x-vercel-protection-bypass"] = bypass;
+    }
+
+    const responseResult = await settle(
+      fetch(resolveCallbackUrl(callback.url), {
+        method: "POST",
+        headers,
+        body,
+      }),
+    );
+    signal.throwIfAborted();
+
+    if (!responseResult.ok) {
+      const errorMessage =
+        responseResult.error instanceof Error
+          ? responseResult.error.message
+          : "Unknown error";
+      await set(
+        recordHttpCallbackDelivery$,
+        callback.id,
+        { stage: "failed", error: errorMessage },
+        signal,
+      );
+      L.error("Callback dispatch threw", {
+        callbackId: callback.id,
+        runId,
+        error: responseResult.error,
+      });
+      return { callbackId: callback.id, success: false, error: errorMessage };
+    }
+
+    const response = responseResult.value;
+    if (response.ok) {
+      await set(
+        recordHttpCallbackDelivery$,
+        callback.id,
+        { stage: "delivered" },
+        signal,
+      );
+      return { callbackId: callback.id, success: true };
+    }
+
+    const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+    await set(
+      recordHttpCallbackDelivery$,
+      callback.id,
+      { stage: "failed", error: errorMessage },
+      signal,
+    );
+    L.warn("Callback dispatch failed", {
+      callbackId: callback.id,
+      runId,
+      error: errorMessage,
     });
     return { callbackId: callback.id, success: false, error: errorMessage };
-  }
+  },
+);
 
-  const response = responseResult.value;
-  if (response.ok) {
-    await markCallbackDelivered(db, callback.id);
-    return { callbackId: callback.id, success: true };
-  }
+type HttpCallbackDeliveryStage =
+  | { readonly stage: "attempt-started" }
+  | { readonly stage: "delivered" }
+  | { readonly stage: "failed"; readonly error: string };
 
-  const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-  await markCallbackFailed(db, callback.id, errorMessage);
-  L.warn("Callback dispatch failed", {
-    callbackId: callback.id,
-    runId,
-    error: errorMessage,
-  });
-  return { callbackId: callback.id, success: false, error: errorMessage };
-}
-
-async function markCallbackAttemptStarted(
-  db: Db,
-  callbackId: string,
-): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({
-      attempts: 1,
-      lastAttemptAt: nowDate(),
-    })
-    .where(eq(agentRunCallbacks.id, callbackId));
-}
-
-async function markCallbackDelivered(
-  db: Db,
-  callbackId: string,
-): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({
-      status: "delivered",
-      deliveredAt: nowDate(),
-    })
-    .where(eq(agentRunCallbacks.id, callbackId));
-}
-
-async function markCallbackFailed(
-  db: Db,
-  callbackId: string,
-  error: string,
-): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({
-      status: "failed",
-      lastError: error,
-    })
-    .where(eq(agentRunCallbacks.id, callbackId));
-}
+// HTTP fetch remains non-interruptible; cancellation is observed after awaits.
+// A completed request can remain unrecorded and be delivered again on recovery.
+const recordHttpCallbackDelivery$ = command(
+  async (
+    { set },
+    callbackId: string,
+    delivery: HttpCallbackDeliveryStage,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    switch (delivery.stage) {
+      case "attempt-started": {
+        await db
+          .update(agentRunCallbacks)
+          .set({ attempts: 1, lastAttemptAt: nowDate() })
+          .where(eq(agentRunCallbacks.id, callbackId));
+        signal.throwIfAborted();
+        break;
+      }
+      case "delivered": {
+        await db
+          .update(agentRunCallbacks)
+          .set({ status: "delivered", deliveredAt: nowDate() })
+          .where(eq(agentRunCallbacks.id, callbackId));
+        signal.throwIfAborted();
+        break;
+      }
+      case "failed": {
+        await db
+          .update(agentRunCallbacks)
+          .set({ status: "failed", lastError: delivery.error })
+          .where(eq(agentRunCallbacks.id, callbackId));
+        signal.throwIfAborted();
+        break;
+      }
+    }
+  },
+);
