@@ -205,7 +205,7 @@ pub async fn open<K: KdcExchange>(
     caller: &mut K,
 ) -> Result<(Context, TicketStatus), Error> {
     let deadline = deadline.min(Instant::now() + Duration::from_secs(30));
-    before_deadline(deadline, async {
+    before_deadline(deadline, Error::Deadline, async {
         caller.authorize().await?;
         let mut context = supervisor::start(root, credentials, policy, deadline).await?;
         let status = context.initialize(caller).await?;
@@ -219,23 +219,24 @@ pub async fn open<K: KdcExchange>(
 // perform IO at expiry, even when the final result would subsequently refuse it.
 pub(crate) async fn before_deadline<T>(
     deadline: Instant,
+    expiry_error: Error,
     future: impl Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {
     if deadline <= Instant::now() {
-        return Err(Error::Deadline);
+        return Err(expiry_error);
     }
     let mut future = std::pin::pin!(future);
     let guarded = std::future::poll_fn(|cx| {
         if deadline <= Instant::now() {
-            return std::task::Poll::Ready(Err(Error::Deadline));
+            return std::task::Poll::Ready(Err(expiry_error));
         }
         future.as_mut().poll(cx)
     });
     let value = tokio::time::timeout_at(deadline, guarded)
         .await
-        .map_err(|_| Error::Deadline)??;
+        .map_err(|_| expiry_error)??;
     if deadline <= Instant::now() {
-        return Err(Error::Deadline);
+        return Err(expiry_error);
     }
     Ok(value)
 }

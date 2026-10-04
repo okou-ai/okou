@@ -360,6 +360,78 @@ async fn pinned_completed_gss_rfc4752_authentic_mic_layers_and_sequence_controls
 
 #[tokio::test]
 #[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
+async fn pinned_completed_gss_expiry_is_retained_before_no_layer_output() {
+    use kerberos_worker::Error as NativeError;
+    let root = fixture(0);
+    let mut relay = Relay::new(&root);
+    let (mut context, status) = kerberos_worker::open(
+        &root.join("private"),
+        credentials(&root, "keytab"),
+        TicketPolicy::new(Duration::from_secs(4), Duration::ZERO).unwrap(),
+        Instant::now() + Duration::from_secs(10),
+        &mut relay,
+    )
+    .await
+    .unwrap();
+    let id = context.process_id();
+    let mut peer = mit_peer(&root, "valid");
+    let mut input = peer.stdin.take().unwrap();
+    let mut output = peer.stdout.take().unwrap();
+    let first = context.step(None, &mut relay).await.unwrap();
+    let token = first.token.unwrap();
+    input
+        .write_u32(u32::try_from(token.len()).unwrap())
+        .await
+        .unwrap();
+    input.write_all(&token).await.unwrap();
+    drop(token);
+    let ap_rep = peer_frame(&mut output).await.unwrap();
+    let complete = context.step(Some(ap_rep), &mut relay).await.unwrap();
+    assert!(complete.complete);
+    assert!(complete.expires_at < status.expires_at);
+    input.write_u8(1).await.unwrap();
+    let offer = peer_frame(&mut output).await.unwrap();
+    // The rounded-down completed-GSS bound is earlier than the source ticket.
+    // Native/kernel work uses the real clock, and no ticket lifetime is changed.
+    tokio::time::sleep_until(complete.expires_at).await;
+    assert!(Instant::now() < status.expires_at);
+    let selected = context.select_no_layer(offer, &mut relay).await;
+    let accepted_after_expiry = if let Ok(token) = &selected {
+        input
+            .write_u32(u32::try_from(token.len()).unwrap())
+            .await
+            .unwrap();
+        input.write_all(token).await.unwrap();
+        assert_eq!(peer_frame(&mut output).await.unwrap().as_slice(), &[1]);
+        true
+    } else {
+        false
+    };
+    context.close().await.unwrap();
+    assert!(!Path::new(&format!("/proc/{id}")).exists());
+    drop(input);
+    if !accepted_after_expiry {
+        let end = tokio::time::timeout(Duration::from_secs(2), peer_frame(&mut output))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(end.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+    drop(output);
+    if peer.try_wait().unwrap().is_none() {
+        peer.start_kill().unwrap();
+    }
+    peer.wait().await.unwrap();
+    assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
+    assert!(
+        !accepted_after_expiry,
+        "the independent MIT acceptor verified a no-layer response after completed-GSS expiry"
+    );
+    assert!(matches!(selected, Err(NativeError::Expired)));
+}
+
+#[tokio::test]
+#[ignore = "requires generated local-only QEMU9.2/Cyrus/KDC fixture"]
 async fn pinned_online_password_keytab_and_concurrent_exact_realms() {
     let root = fixture(0);
     for mode in ["password", "keytab"] {
