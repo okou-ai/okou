@@ -394,6 +394,106 @@ async fn cancellation_while_kdc_reply_is_pending_kills_waits_cleans_and_releases
 
 #[tokio::test]
 #[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
+async fn ready_kdc_callback_after_deadline_sends_nothing_and_reaps_before_new_admission() {
+    use kerberos_worker::{KdcExchange, Password};
+    use std::{
+        io::{Read, Write},
+        os::unix::net::UnixStream,
+    };
+    use zeroize::Zeroizing;
+    struct GatedKdc {
+        observed: Option<tokio::sync::oneshot::Sender<()>>,
+        release: Option<tokio::sync::oneshot::Receiver<()>>,
+        output: Option<UnixStream>,
+    }
+    impl KdcExchange for GatedKdc {
+        async fn authorize(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+        async fn exchange(
+            &mut self,
+            realm: &str,
+            request: &[u8],
+        ) -> Result<Zeroizing<Vec<u8>>, Error> {
+            assert_eq!(realm, "ISSUE37612.INVALID");
+            assert!(!request.is_empty());
+            self.observed.take().unwrap().send(()).unwrap();
+            self.release.take().unwrap().await.unwrap();
+            // Public caller transport canary; no actual KDC or secret bytes.
+            let mut output = self.output.take().unwrap();
+            output.write_all(&[1]).unwrap();
+            Err(Error::KdcUnavailable)
+        }
+    }
+    let root = root();
+    let path = root.path().canonicalize().unwrap();
+    let before = actual_children();
+    let (observed_tx, observed) = tokio::sync::oneshot::channel();
+    let (released, release) = tokio::sync::oneshot::channel();
+    let (output, mut peer) = UnixStream::pair().unwrap();
+    let mut caller = GatedKdc {
+        observed: Some(observed_tx),
+        release: Some(release),
+        output: Some(output),
+    };
+    let source = Credentials::new(
+        principal(&["probe"]),
+        principal(&["vnc", "fixture"]),
+        Source::Password(Password::new(Zeroizing::new("synthetic-deadline-only".into())).unwrap()),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut opening = Box::pin(kerberos_worker::open(
+        &path,
+        source,
+        policy(),
+        deadline,
+        &mut caller,
+    ));
+    tokio::select! { result = &mut opening => panic!("unexpected premature result {result:?}"), result = observed => result.unwrap() }
+    let ids = actual_children()
+        .into_iter()
+        .filter(|id| !before.contains(id))
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), 1);
+    // Real process/clock boundary: do not pause Tokio around kernel/native IO.
+    tokio::time::sleep_until(deadline).await;
+    released.send(()).unwrap();
+    let result = opening.as_mut().await;
+    drop(opening);
+    drop(caller);
+    let until = Instant::now() + Duration::from_secs(2);
+    while ids
+        .iter()
+        .any(|id| Path::new(&format!("/proc/{id}")).exists())
+        && Instant::now() < until
+    {
+        tokio::task::yield_now().await;
+    }
+    for id in ids {
+        assert!(!Path::new(&format!("/proc/{id}")).exists());
+    }
+    let (replacement, _) = kerberos_worker::open(
+        &path,
+        credentials("fixture"),
+        policy(),
+        Instant::now() + Duration::from_secs(10),
+        &mut NoKdc,
+    )
+    .await
+    .unwrap();
+    replacement.close().await.unwrap();
+    assert_eq!(fs::read_dir(path).unwrap().count(), 0);
+    assert_eq!(
+        peer.read(&mut [0]).unwrap(),
+        0,
+        "expired caller transport must not emit a byte before refusal"
+    );
+    assert!(matches!(result, Err(Error::Deadline)), "{result:?}");
+}
+
+#[tokio::test]
+#[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
 async fn metadata_expiry_is_not_rounded_up_and_standard_long_lived_tickets_remain_admitted() {
     let root = root();
     let path = root.path().canonicalize().unwrap();

@@ -205,10 +205,37 @@ pub async fn open<K: KdcExchange>(
     caller: &mut K,
 ) -> Result<(Context, TicketStatus), Error> {
     let deadline = deadline.min(Instant::now() + Duration::from_secs(30));
-    tokio::time::timeout_at(deadline, caller.authorize())
+    before_deadline(deadline, async {
+        caller.authorize().await?;
+        let mut context = supervisor::start(root, credentials, policy, deadline).await?;
+        let status = context.initialize(caller).await?;
+        Ok((context, status))
+    })
+    .await
+}
+
+// timeout_at polls its future before its timer. Bound the entire owned operation
+// before EVERY poll so a pending caller/queue/bootstrap gate cannot resume and
+// perform IO at expiry, even when the final result would subsequently refuse it.
+pub(crate) async fn before_deadline<T>(
+    deadline: Instant,
+    future: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    if deadline <= Instant::now() {
+        return Err(Error::Deadline);
+    }
+    let mut future = std::pin::pin!(future);
+    let guarded = std::future::poll_fn(|cx| {
+        if deadline <= Instant::now() {
+            return std::task::Poll::Ready(Err(Error::Deadline));
+        }
+        future.as_mut().poll(cx)
+    });
+    let value = tokio::time::timeout_at(deadline, guarded)
         .await
         .map_err(|_| Error::Deadline)??;
-    let mut context = supervisor::start(root, credentials, policy, deadline).await?;
-    let status = context.initialize(caller).await?;
-    Ok((context, status))
+    if deadline <= Instant::now() {
+        return Err(Error::Deadline);
+    }
+    Ok(value)
 }
