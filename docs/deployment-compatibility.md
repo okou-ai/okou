@@ -31,6 +31,35 @@ not honor that state. Rollback therefore requires disabling access and accepting
 that enforcement is unavailable until a mute-aware API is restored. This PR does
 not activate production overrides, deploy or update the Web floor.
 
+## Firewall auth effective expiry (#37670)
+
+Firewall auth keeps the existing `expiresAt` response shape. For refreshable
+sources, the API subtracts its existing OAuth refresh buffer from the earliest
+source expiry, then takes the minimum with other authorization deadlines such
+as the billable credit lease. Stored provider expiry remains accurate; credit
+leases are not reduced by the token buffer. A finite effective deadline needs
+positive remaining lifetime (`expiresAt - now > 0`). Sources at that boundary
+refresh normally; if the bounded refresh still produces no positive horizon,
+auth fails closed while keeping any persisted credential rotation. No expiry
+clamp, repeated refresh loop or past-deadline success exception is added.
+
+Existing Runner versions already honor `expiresAt`, so new API/old Runner and
+new API/new Runner use the corrected cutoff without a Runner upgrade. Any
+Runner resolving auth from old API retains the old timing; an existing cached
+entry keeps its old deadline until normal expiry or invalidation. API serving
+and retained rollback revisions must be verified separately from source/CI
+acceptance. Null still means non-expiring only for non-billable auth; unrelated
+custom/automatic/non-refreshable paths keep their existing behavior. No new
+protocol field, persisted state, Run snapshot or database migration is involved.
+
+Rollback restores the prior cache timing without changing stored credentials
+or authorization. This correction does not invalidate other Runs on arbitrary
+forced rotation, serialize concurrent refreshes, replay provider requests, or
+change the accepted rare rotating-token reconnect tradeoff. Parent #37668 stays
+open for incident request-level attribution and serving-version verification;
+synthetic coverage does not establish Notion old-token invalidation or resolve
+its reported 401s.
+
 ## File transcription and Seedream 5 retirement
 
 - Remove `okou video transcribe` and `/api/voice-io/stt`; old CLIs receive

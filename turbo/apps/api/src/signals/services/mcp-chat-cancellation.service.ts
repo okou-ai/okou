@@ -7,8 +7,8 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { command } from "ccstate";
 import { handleSendChatEvent$ } from "./chat-events.command";
+import { cancelRun$ } from "./agent-run-terminal-transition.service";
 import {
-  cancelRun$,
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,
 } from "./run-cancel.service";

@@ -4837,6 +4837,38 @@ function earliestAccessSourceExpiry(
   return earliestExpiry;
 }
 
+function unusableRefreshLifetimeResults(
+  accessSourceKeys: readonly string[],
+  sourceStateMap: Map<string, RefreshSourceState>,
+  refreshResults: readonly RefreshExecutionResult[],
+): readonly RefreshExecutionResult[] {
+  const results: RefreshExecutionResult[] = [];
+  const nowSeconds = currentSecond();
+  for (const accessSourceKey of accessSourceKeys) {
+    const expiry = sourceStateMap.get(accessSourceKey)?.tokenExpiresAt;
+    if (
+      expiry !== undefined &&
+      expiry !== null &&
+      expiry <= nowSeconds + REFRESH_BUFFER_SECS &&
+      !refreshResults.some((result) => {
+        return (
+          result.accessSourceKey === accessSourceKey &&
+          (result.status === "failed" || result.status === "source-missing")
+        );
+      })
+    ) {
+      // Rotation is already persisted. Fail closed if this bounded refresh
+      // still cannot provide a positive effective lifetime; do not loop.
+      results.push({
+        accessSourceKey,
+        status: "failed",
+        failureReason: "upstream_provider",
+      });
+    }
+  }
+  return results;
+}
+
 async function refreshExpiredTokens(
   args: RefreshExpiredTokensArgs,
 ): Promise<RefreshResult> {
@@ -4918,10 +4950,6 @@ async function refreshExpiredTokens(
   );
   const refreshResults = [...selectedRefreshResults, ...skippedResults];
 
-  const summary = summarizeRefreshResults(
-    refreshResults,
-    envVarsByAccessSource,
-  );
   const hasCurrentOrRefreshed = refreshResults.some((result) => {
     return result.status === "current" || result.status === "refreshed";
   });
@@ -4952,12 +4980,24 @@ async function refreshExpiredTokens(
       })
     : new Map([...sourceStateMap, ...skippedStateSnapshot.sourceStateMap]);
 
+  const expiresAt = earliestAccessSourceExpiry(
+    accessSourceKeys,
+    finalSourceStateMap,
+  );
   return {
-    expiresAt: earliestAccessSourceExpiry(
-      accessSourceKeys,
-      finalSourceStateMap,
+    // Stop every Run's cache at the same boundary that triggers refresh.
+    expiresAt: expiresAt === null ? null : expiresAt - REFRESH_BUFFER_SECS,
+    ...summarizeRefreshResults(
+      [
+        ...refreshResults,
+        ...unusableRefreshLifetimeResults(
+          accessSourceKeys,
+          finalSourceStateMap,
+          refreshResults,
+        ),
+      ],
+      envVarsByAccessSource,
     ),
-    ...summary,
   };
 }
 

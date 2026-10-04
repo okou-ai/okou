@@ -542,9 +542,9 @@ const firewallAuthResponseSchema = z.object({
   base: z.string().optional(),
   query: z.record(z.string(), z.string()).optional(),
   awsSigv4: firewallAwsSigv4AuthSchema.optional(),
-  // Effective addon cache expiry as Unix seconds. Access token expiry is the
-  // normal source; billable firewall auth can shorten it to force credit
-  // re-authorization. Null means non-expiring only for non-billable auth.
+  // Effective expiry as Unix seconds: refreshable token expiry minus the API's
+  // refresh buffer, capped by other authorization limits such as credit leases.
+  // Remaining lifetime must be positive; null is non-expiring only for non-billable auth.
   expiresAt: z.number().nullable(),
   resolvedSecrets: z.array(z.string()),
   refreshedConnectors: z.array(z.string()),

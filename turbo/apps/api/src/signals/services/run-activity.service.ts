@@ -22,7 +22,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 import { settleIncludingAbort } from "../utils";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import { releaseRunSlots } from "./agent-run-terminal-transition.service";
 
 const log = logger("api:run-activity");

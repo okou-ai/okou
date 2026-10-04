@@ -697,12 +697,11 @@ describe("FW-3: billable firewall lease", () => {
       leaseBefore + 35,
     );
 
-    // A short-lived refreshed token undercuts the lease and becomes the
-    // effective expiry.
+    // A short positive lifetime after the refresh buffer undercuts the lease.
     fw.mockTestOauthTokenRefresh(() => {
       return fw.oauthTokenResponse({
         accessToken: "short-lived-access",
-        expiresIn: 5,
+        expiresIn: 65,
       });
     });
     const tokenBefore = Math.floor(now() / 1000);
@@ -929,8 +928,197 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       throw new Error("Expected refresh to succeed");
     }
     expect(refreshed.body.headers.Authorization).toBe("Bearer fresh-no-expiry");
-    expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 800);
-    expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 1000);
+    expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 835);
+    expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 845);
+  });
+
+  it.each([0, 60])(
+    "refreshes a stored token with %i seconds remaining at the effective boundary",
+    async (expiresIn) => {
+      const fw = createFirewallApi(context);
+      const { actor, headers } = await publicConnections.run();
+      await publicConnections.testOAuth(actor, {
+        accessToken: "boundary-access",
+        refreshToken: "refresh-1",
+        expiresIn,
+      });
+      let refreshCalls = 0;
+      fw.mockTestOauthTokenRefresh(() => {
+        refreshCalls += 1;
+        return fw.oauthTokenResponse({
+          accessToken: "positive-lifetime-access",
+          expiresIn: 3600,
+        });
+      });
+      const before = Math.floor(now() / 1000);
+      const refreshed = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            TEST_OAUTH_TOKEN: "boundary-access",
+          }),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
+          },
+          ...(await exactSecretConnectorSources(actor, {
+            TEST_OAUTH_TOKEN: "test-oauth",
+          })),
+        },
+        [200],
+      );
+      if (refreshed.status !== 200) {
+        throw new Error("Expected effective-boundary refresh to succeed");
+      }
+      expect(refreshed.body.headers.Authorization).toBe(
+        "Bearer positive-lifetime-access",
+      );
+      expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
+        before + 3535,
+      );
+      expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
+      expect(refreshed.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
+      expect(refreshCalls).toBe(1);
+    },
+  );
+
+  it.each([0, 5, 60])(
+    "fails closed after a %i-second refresh and retains rotation for later recovery",
+    async (expiresIn) => {
+      const fw = createFirewallApi(context);
+      const { actor, headers } = await publicConnections.run();
+      await publicConnections.testOAuth(actor, {
+        accessToken: "stale-access",
+        refreshToken: "refresh-1",
+        expiresIn: -60,
+      });
+      const refreshTokens: (string | null)[] = [];
+      fw.mockTestOauthTokenRefresh(async (request) => {
+        refreshTokens.push(
+          new URLSearchParams(await request.text()).get("refresh_token"),
+        );
+        return fw.oauthTokenResponse({
+          accessToken:
+            refreshTokens.length === 1 ? "unusable-access" : "recovered-access",
+          refreshToken: "rotated-refresh",
+          expiresIn: refreshTokens.length === 1 ? expiresIn : 3600,
+        });
+      });
+      const body = {
+        encryptedSecrets: fw.encryptedSecretsBody({
+          TEST_OAUTH_TOKEN: "stale-access",
+        }),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
+        },
+        ...(await exactSecretConnectorSources(actor, {
+          TEST_OAUTH_TOKEN: "test-oauth",
+        })),
+      };
+      const failed = await fw.requestFirewallAuth(headers, body, [502]);
+      if (failed.status !== 502) {
+        throw new Error("Expected non-positive lifetime refresh to fail");
+      }
+      expect(failed.body.error).toMatchObject({
+        code: "TOKEN_REFRESH_FAILED",
+        connectors: ["test-oauth"],
+        failureReason: "upstream_provider",
+      });
+      expect(refreshTokens).toStrictEqual(["refresh-1"]);
+
+      const before = Math.floor(now() / 1000);
+      const recovered = await fw.requestFirewallAuth(headers, body, [200]);
+      if (recovered.status !== 200) {
+        throw new Error("Expected persisted rotation to support recovery");
+      }
+      expect(recovered.body.headers.Authorization).toBe(
+        "Bearer recovered-access",
+      );
+      expect(recovered.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
+        before + 3535,
+      );
+      expect(recovered.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
+      expect(refreshTokens).toStrictEqual(["refresh-1", "rotated-refresh"]);
+    },
+  );
+
+  it("preserves mixed refresh failures and rotation when one refreshed lifetime is unusable", async () => {
+    const fw = createFirewallApi(context);
+    const { actor, headers } = await publicConnections.run();
+    await publicConnections.testOAuth(actor, {
+      accessToken: "stale-access",
+      refreshToken: "refresh-1",
+      expiresIn: -60,
+    });
+    await publicConnections.googleOAuth(actor, "gmail", {
+      accessToken: "stale-gmail-access",
+      refreshToken: "gmail-refresh-1",
+      expiresIn: -60,
+    });
+    const refreshTokens: (string | null)[] = [];
+    fw.mockTestOauthTokenRefresh(async (request) => {
+      refreshTokens.push(
+        new URLSearchParams(await request.text()).get("refresh_token"),
+      );
+      return fw.oauthTokenResponse({
+        accessToken:
+          refreshTokens.length === 1 ? "unusable-access" : "recovered-access",
+        refreshToken: "rotated-refresh",
+        expiresIn: refreshTokens.length === 1 ? 60 : 3600,
+      });
+    });
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
+      }),
+    );
+    const body = {
+      encryptedSecrets: fw.encryptedSecretsBody({
+        TEST_OAUTH_TOKEN: "stale-access",
+        GMAIL_TOKEN: "stale-gmail-access",
+      }),
+      authHeaders: {
+        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
+        "X-Gmail": `Bearer ${secretTemplate("GMAIL_TOKEN")}`,
+      },
+      ...(await exactSecretConnectorSources(actor, {
+        TEST_OAUTH_TOKEN: "test-oauth",
+        GMAIL_TOKEN: "gmail",
+      })),
+    };
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected both refresh failures to remain visible");
+    }
+    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
+    expect(failed.body.error.connectors?.slice().sort()).toStrictEqual([
+      "gmail",
+      "test-oauth",
+    ]);
+    // The unusable lifetime is upstream_provider; Gmail remains a distinct
+    // reconnect_required failure, so no single reason represents the batch.
+    expect(failed.body.error.failureReason).toBeUndefined();
+    expect(refreshTokens).toStrictEqual(["refresh-1"]);
+
+    const before = Math.floor(now() / 1000);
+    const recovered = await fw.requestFirewallAuth(
+      headers,
+      {
+        ...body,
+        authHeaders: { Authorization: body.authHeaders.Authorization },
+      },
+      [200],
+    );
+    if (recovered.status !== 200) {
+      throw new Error("Expected the unaffected rotated source to recover");
+    }
+    expect(recovered.body.headers.Authorization).toBe(
+      "Bearer recovered-access",
+    );
+    expect(recovered.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
+    expect(recovered.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3535);
+    expect(recovered.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
+    expect(refreshTokens).toStrictEqual(["refresh-1", "rotated-refresh"]);
   });
 
   it("re-runs refresh for a current connector when forceRefresh is set", async () => {
@@ -948,6 +1136,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       });
     });
 
+    const before = Math.floor(now() / 1000);
     const refreshed = await fw.requestFirewallAuth(
       headers,
       {
@@ -969,6 +1158,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(refreshed.body.headers.Authorization).toBe("Bearer forced-access");
     expect(refreshed.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
+    expect(refreshed.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3535);
+    expect(refreshed.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
   });
 
   it.each([
@@ -1281,6 +1472,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       expiresIn: 3600,
     });
 
+    const before = Math.floor(now() / 1000);
     const synced = await fw.requestFirewallAuth(
       headers,
       {
@@ -1299,6 +1491,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(synced.body.headers.Authorization).toBe("Bearer db-access");
     expect(synced.body.refreshedConnectors).toStrictEqual([]);
+    expect(synced.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3535);
+    expect(synced.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 3545);
   });
 
   it("keeps multi-secret connector auth on one replacement snapshot", async () => {

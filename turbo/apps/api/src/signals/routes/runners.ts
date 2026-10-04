@@ -99,10 +99,8 @@ import {
   declareSteeredInput,
   loadNextSteerableInput$,
 } from "../services/active-input-delivery.service";
-import {
-  dispatchCompleteSideEffects$,
-  scheduleReleasedSlotPicks$,
-} from "../services/agent-run-lifecycle.service";
+import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
 import {
   releaseNeverStartedRunSlots,
   transitionAgentRunsToTerminal,

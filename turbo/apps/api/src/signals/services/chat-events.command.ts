@@ -115,9 +115,11 @@ import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import {
   cancelRun$,
+  type CancelRunResult,
+} from "./agent-run-terminal-transition.service";
+import {
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,
-  type CancelRunResult,
 } from "./run-cancel.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import {
