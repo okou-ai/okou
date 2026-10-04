@@ -38,7 +38,7 @@ import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
-import { type Db, writeDb$ } from "../external/db";
+import { db$, type Db, writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   buildConnectorDiagnosticBaseCandidates,
@@ -540,50 +540,53 @@ type LoadRunDiagnosticRegistrationResult =
   | { readonly kind: "missing" }
   | { readonly kind: "not-found" };
 
-async function loadRunDiagnosticRegistration(
-  db: Db,
-  args: {
-    readonly runId: string;
-    readonly userId: string;
-    readonly orgId: string;
+const readRunDiagnosticRegistration$ = command(
+  async (
+    { get },
+    args: {
+      readonly runId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+  ): Promise<LoadRunDiagnosticRegistrationResult> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        agentId: agents.id,
+        registrationRunId: agentRunConnectorDiagnosticRegistrations.runId,
+        payload: agentRunConnectorDiagnosticRegistrations.payload,
+      })
+      .from(agentRuns)
+      .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+      .innerJoin(agents, eq(agents.id, agentSessions.agentId))
+      .leftJoin(
+        agentRunConnectorDiagnosticRegistrations,
+        eq(agentRunConnectorDiagnosticRegistrations.runId, agentRuns.id),
+      )
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.userId, args.userId),
+          eq(agentRuns.orgId, args.orgId),
+          inArray(agentRuns.status, ["pending", "running"]),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      return { kind: "not-found" };
+    }
+    if (row.registrationRunId === null) {
+      return { kind: "missing" };
+    }
+    const payload = agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
+      row.payload,
+    );
+    return {
+      kind: "available",
+      registration: { agentId: row.agentId, targets: payload.targets },
+    };
   },
-): Promise<LoadRunDiagnosticRegistrationResult> {
-  const [row] = await db
-    .select({
-      agentId: agents.id,
-      registrationRunId: agentRunConnectorDiagnosticRegistrations.runId,
-      payload: agentRunConnectorDiagnosticRegistrations.payload,
-    })
-    .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .innerJoin(agents, eq(agents.id, agentSessions.agentId))
-    .leftJoin(
-      agentRunConnectorDiagnosticRegistrations,
-      eq(agentRunConnectorDiagnosticRegistrations.runId, agentRuns.id),
-    )
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.userId, args.userId),
-        eq(agentRuns.orgId, args.orgId),
-        inArray(agentRuns.status, ["pending", "running"]),
-      ),
-    )
-    .limit(1);
-  if (!row) {
-    return { kind: "not-found" };
-  }
-  if (row.registrationRunId === null) {
-    return { kind: "missing" };
-  }
-  const payload = agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
-    row.payload,
-  );
-  return {
-    kind: "available",
-    registration: { agentId: row.agentId, targets: payload.targets },
-  };
-}
+);
 
 function targetAwareUrlRequest(
   request: ConnectorCheckRequestBody,
@@ -1663,7 +1666,7 @@ export const resolveConnectorCheck$ = command(
     const db = set(writeDb$);
     let runRegistration: RunDiagnosticRegistration | undefined;
     if (args.stateSource.kind === "run") {
-      const registration = await loadRunDiagnosticRegistration(db, {
+      const registration = await set(readRunDiagnosticRegistration$, {
         runId: args.stateSource.runId,
         userId: args.userId,
         orgId: args.orgId,
