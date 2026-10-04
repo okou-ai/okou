@@ -296,7 +296,7 @@ async function lockCurrentCredentialBindings(
     return sshCredentialFailure("exhausted");
   }
   // The credential lock also fences new FK bindings. If a host bound while
-  // acquiring it, reject rather than lock another host in reverse order.
+  // acquiring it, rescan without writes rather than reverse the lock order.
   const hosts = await tx
     .select({
       id: sshConnections.id,
@@ -316,7 +316,10 @@ async function lockCurrentCredentialBindings(
       return !lockedIds.has(id);
     })
   ) {
-    return sshCredentialFailure("conflict");
+    return {
+      ...sshCredentialFailure("conflict"),
+      retryBindings: true as const,
+    };
   }
   return { ok: true as const, value: { credential, hosts } };
 }
@@ -368,61 +371,68 @@ export const updateSshCredential$ = command(
             args.body.authentication,
             args.featureContext,
           );
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0252; new non-billing transactions are prohibited.
-    const updated = await db.transaction(async (tx) => {
-      const bindings = await lockCurrentCredentialBindings(
-        tx,
-        args.owner,
-        args.credentialId,
-      );
-      if (!bindings.ok) {
-        return bindings;
-      }
-      const { credential, hosts: currentHosts } = bindings.value;
-      const currentEffectiveChange =
-        args.body.authentication !== undefined ||
-        (args.body.username !== undefined &&
-          args.body.username !== credential.username);
-      if (
-        currentEffectiveChange &&
-        currentHosts.some(({ generation }) => {
-          return generation === MAX_SSH_REVISION;
-        })
-      ) {
-        return sshCredentialFailure("exhausted");
-      }
-      if (currentEffectiveChange) {
-        await tx
-          .update(sshConnections)
+    const commitPreparedChange = () => {
+      return db.transaction(async (tx) => {
+        const bindings = await lockCurrentCredentialBindings(
+          tx,
+          args.owner,
+          args.credentialId,
+        );
+        if (!bindings.ok) {
+          return bindings;
+        }
+        const { credential, hosts: currentHosts } = bindings.value;
+        const currentEffectiveChange =
+          args.body.authentication !== undefined ||
+          (args.body.username !== undefined &&
+            args.body.username !== credential.username);
+        if (
+          currentEffectiveChange &&
+          currentHosts.some(({ generation }) => {
+            return generation === MAX_SSH_REVISION;
+          })
+        ) {
+          return sshCredentialFailure("exhausted");
+        }
+        if (currentEffectiveChange) {
+          await tx
+            .update(sshConnections)
+            .set({
+              generation: sql`${sshConnections.generation} + 1`,
+              updatedAt: nowDate(),
+            })
+            .where(ownerHostsUsingCredential(args.owner, args.credentialId));
+        }
+        const [row] = await tx
+          .update(sshCredentials)
           .set({
-            generation: sql`${sshConnections.generation} + 1`,
+            name: args.body.name,
+            username: args.body.username,
+            ...encrypted,
+            revision: sql`${sshCredentials.revision} + 1`,
             updatedAt: nowDate(),
           })
-          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
-      }
-      const [row] = await tx
-        .update(sshCredentials)
-        .set({
-          name: args.body.name,
-          username: args.body.username,
-          ...encrypted,
-          revision: sql`${sshCredentials.revision} + 1`,
-          updatedAt: nowDate(),
-        })
-        .where(ownedSshCredential(args.owner, args.credentialId))
-        .returning(sshCredentialMetadata);
-      if (!row) {
-        throw new Error("Locked SSH credential update returned no row");
-      }
-      return {
-        ok: true as const,
-        value: {
-          row,
-          hosts: currentHosts,
-          invalidate: currentEffectiveChange && currentHosts.length > 0,
-        },
-      };
-    });
+          .where(ownedSshCredential(args.owner, args.credentialId))
+          .returning(sshCredentialMetadata);
+        if (!row) {
+          throw new Error("Locked SSH credential update returned no row");
+        }
+        return {
+          ok: true as const,
+          value: {
+            row,
+            hosts: currentHosts,
+            invalidate: currentEffectiveChange && currentHosts.length > 0,
+          },
+        };
+      });
+    };
+    let updated = await commitPreparedChange();
+    if (!updated.ok && "retryBindings" in updated) {
+      // The first transaction wrote nothing. Re-lock once from a fresh set;
+      // never repeat encryption or a successful/ambiguous mutation.
+      updated = await commitPreparedChange();
+    }
     if (!updated.ok) {
       return updated;
     }
