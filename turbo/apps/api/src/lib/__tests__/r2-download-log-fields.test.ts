@@ -6,6 +6,10 @@ import {
 } from "@okouai/core/log-utils";
 import { withR2DownloadLogFields } from "../r2-download-log-fields";
 
+// Logger-support exception: HTTP callers cannot construct or inspect SDK object
+// identity, frozen descriptors, reused errors, or hostile JavaScript arguments.
+// Exercise that boundary directly so optional diagnostics cannot change values,
+// error propagation, or error ownership.
 describe("R2 download log fields", () => {
   const fields = {
     r2_bucket: "example-bucket",
