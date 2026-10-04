@@ -488,12 +488,10 @@ impl Context {
         caller: &mut K,
     ) -> Result<Reply, Error> {
         let mut abort = AbortOnDrop::new(self.aborted.clone());
-        tokio::time::timeout_at(self.deadline, caller.authorize())
-            .await
-            .map_err(|_| Error::Deadline)??;
-        self.sequence = self.sequence.checked_add(1).ok_or(Error::Protocol)?;
-        self.operation_started = Instant::now();
-        let result = async {
+        let result = crate::before_deadline(self.deadline, async {
+            caller.authorize().await?;
+            self.sequence = self.sequence.checked_add(1).ok_or(Error::Protocol)?;
+            self.operation_started = Instant::now();
             let mut reply = self.raw(kind, payload).await?;
             while reply.kind == 32 {
                 if !self.online {
@@ -522,13 +520,8 @@ impl Context {
                 if self.bytes > 524288 {
                     return Err(Error::Protocol);
                 }
-                tokio::time::timeout_at(self.deadline, caller.authorize())
-                    .await
-                    .map_err(|_| Error::Deadline)??;
-                let response =
-                    tokio::time::timeout_at(self.deadline, caller.exchange(&self.realm, request))
-                        .await
-                        .map_err(|_| Error::Deadline)??;
+                caller.authorize().await?;
+                let response = caller.exchange(&self.realm, request).await?;
                 self.bytes = self
                     .bytes
                     .checked_add(response.len())
@@ -555,7 +548,7 @@ impl Context {
                 });
             }
             Ok(reply)
-        }
+        })
         .await;
         if result.is_ok() {
             abort.disarm();
