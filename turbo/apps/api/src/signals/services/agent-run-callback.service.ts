@@ -252,26 +252,27 @@ const dispatchSingleInternalCallback$ = command(
   },
 );
 
-export async function failPendingInlineOnlyDeliveryCallbacksForDeletedThread(
-  db: Db,
-  runId: string,
-): Promise<void> {
-  await db
-    .update(agentRunCallbacks)
-    .set({
-      status: "failed",
-      lastError: DELETED_THREAD_INLINE_CALLBACK_ERROR,
-    })
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.status, "pending"),
-        inArray(agentRunCallbacks.internalKind, [
-          ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
-        ]),
-      ),
-    );
-}
+export const failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ = command(
+  async ({ set }, runId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .update(agentRunCallbacks)
+      .set({
+        status: "failed",
+        lastError: DELETED_THREAD_INLINE_CALLBACK_ERROR,
+      })
+      .where(
+        and(
+          eq(agentRunCallbacks.runId, runId),
+          eq(agentRunCallbacks.status, "pending"),
+          inArray(agentRunCallbacks.internalKind, [
+            ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
+          ]),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
 
 export const dispatchRunCallbacks$ = command(
   async (
