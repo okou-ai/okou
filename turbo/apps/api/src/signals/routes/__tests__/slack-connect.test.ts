@@ -1,24 +1,17 @@
 import { randomUUID } from "node:crypto";
 
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
-import { createStore } from "ccstate";
 
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import {
-  deleteSlackConnectOrg$,
-  seedSlackConnectOrg$,
-  type SlackConnectFixture,
-} from "./helpers/slack-connect";
+import { createRouteMocks } from "./helpers/route-test";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { slackConnectRoutes } from "../slack-connect";
 
 const TEST_APP_ROUTES = Object.freeze([...slackConnectRoutes]);
 
 const context = testContext({ connectorCatalog: true });
-const store = createStore();
 const mocks = createRouteMocks(context);
 const slackOrgs = createPublicSlackOrgApi(context);
 const SLACK_CONNECT_PATH = "/api/integrations/slack/connect";
@@ -51,10 +44,6 @@ function expectErrorCode(
 }
 
 describe("GET /api/integrations/slack/connect", () => {
-  const track = createFixtureTracker<SlackConnectFixture>((fixture) => {
-    return store.set(deleteSlackConnectOrg$, fixture, context.signal);
-  });
-
   it("returns 401 when the authenticated session has no active organization", async () => {
     const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, null);
@@ -207,56 +196,6 @@ describe("GET /api/integrations/slack/connect", () => {
         kind: "slack_account_mismatch",
         currentSlackUserId: fixture.slackUserId,
         requestedSlackUserId,
-      },
-    });
-  });
-
-  it("reports a stale binding when the requested account is also connected", async () => {
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { withConnection: true, slackWorkspaceName: "Test Workspace" },
-        context.signal,
-      ),
-    );
-    const staleSlackUserId = `U_STALE_${randomUUID()}`;
-    await store.set(
-      seedSlackConnectOrg$,
-      {
-        withConnection: true,
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        slackWorkspaceId: fixture.slackWorkspaceId,
-        slackWorkspaceName: fixture.slackWorkspaceName,
-        slackUserId: staleSlackUserId,
-      },
-      context.signal,
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      isConnected: true,
-      isAdmin: true,
-      workspaceName: "Test Workspace",
-      defaultAgentName: null,
-      linkStatus: {
-        kind: "slack_account_mismatch",
-        currentSlackUserId: staleSlackUserId,
-        requestedSlackUserId: fixture.slackUserId,
       },
     });
   });

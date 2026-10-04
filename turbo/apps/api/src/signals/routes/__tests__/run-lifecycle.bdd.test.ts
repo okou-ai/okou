@@ -134,7 +134,6 @@ import {
 } from "./helpers/connector-credential-storage-state";
 import {
   clearRunApiStart,
-  readRunApiStart,
   readRunFailureReasonFixture,
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
@@ -1761,16 +1760,42 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   });
 
   it("preserves missing-volume and artifact resolution with exact candidates", async () => {
-    const storages = createStoragesBddApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor(
       {},
       NATIVE_RUNNER_ROUTE,
     );
+    // Replay the actual emitted records through the external store queried by
+    // Run context GET, instead of constructing a snapshot from the claim.
+    const contextSnapshots: unknown[] = [];
+    context.mocks.axiom.ingest.mockImplementation((dataset, records) => {
+      if (dataset === "run-context" && Array.isArray(records)) {
+        contextSnapshots.push(...records);
+      }
+      return true;
+    });
+    context.mocks.axiom.query.mockImplementation((apl: unknown) => {
+      const runId =
+        typeof apl === "string" && apl.includes("['run-context']")
+          ? /runId == "([^"]+)"/u.exec(apl)?.[1]
+          : undefined;
+      return Promise.resolve(
+        contextSnapshots.filter((snapshot) => {
+          return (
+            runId !== undefined &&
+            typeof snapshot === "object" &&
+            snapshot !== null &&
+            "runId" in snapshot &&
+            snapshot.runId === runId
+          );
+        }),
+      );
+    });
     // An Agent workflow is an exact Storage candidate; a seed system skill
     // resolved to a Storage that does not exist is a missing volume, which
     // production skips instead of failing the run.
     const workflowName = `exact-candidate-${randomUUID().slice(0, 8)}`;
-    const workflow = await createMiscRoutesApi(context).createWorkflow(
+    const misc = createMiscRoutesApi(context);
+    const workflow = await misc.createWorkflow(
       actor,
       agentId,
       workflowName,
@@ -1781,10 +1806,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected workflow creation to succeed");
     }
     const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
-    const workflowStorage = await storages.downloadStorage(actor, {
-      name: workflowStorageName,
-      owner: "organization",
-    });
+    const workflowStorage = await readWorkflowStorageObjects(
+      misc,
+      actor,
+      workflow.body.id,
+    );
     const missingStorageName = `bdd-missing-system-${randomUUID().slice(0, 8)}`;
     const api = createRunsApi(context, { gen: missingStorageName });
     await api.heartbeatRunner(runnerGroup);
@@ -1824,24 +1850,23 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected canonical memory mount");
     }
     expect(claim).not.toHaveProperty("runContextStorage");
-    expect(context.mocks.axiom.ingest).toHaveBeenCalledWith("run-context", [
-      expect.objectContaining({
-        runId: created.runId,
-        volumes: expect.arrayContaining([
-          {
-            name: workflowStorageName,
-            mountPath: workflowMountPath,
-            vasStorageName: workflowStorageName,
-            vasVersionId: workflowStorage.versionId,
-          },
-        ]),
-        artifact: {
-          mountPath: memoryMount.mountPath,
-          vasStorageName: memoryMount.name,
-          vasVersionId: memoryMount.versionId,
+    const runContext = await api.requestRunContext(actor, created.runId, [200]);
+    expect(runContext.body).toMatchObject({
+      runId: created.runId,
+      volumes: expect.arrayContaining([
+        {
+          name: workflowStorageName,
+          mountPath: workflowMountPath,
+          vasStorageName: workflowStorageName,
+          vasVersionId: workflowStorage.versionId,
         },
-      }),
-    ]);
+      ]),
+      artifact: {
+        mountPath: memoryMount.mountPath,
+        vasStorageName: memoryMount.name,
+        vasVersionId: memoryMount.versionId,
+      },
+    });
 
     await api.requestCancelRun(actor, created.runId, [200]);
   });
@@ -13034,13 +13059,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       agentId,
       prompt: "bdd assistant events",
     });
-    const apiStartedAtIso = await readRunApiStart(context, runId);
-    if (apiStartedAtIso === null) {
-      throw new Error("Expected chat run to have an API start time");
-    }
-    const apiStartedAt = Date.parse(apiStartedAtIso);
-    const acknowledgedAt = apiStartedAt + 4321;
-    mockNow(apiStartedAt);
+    const acknowledgedAt = requestedAt + 4321;
     await flushWaitUntilForTest();
 
     const pending = await api.readRun(actor, runId);
@@ -13048,6 +13067,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
 
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(runId);
+    expect(claim.apiStartTime).toBe(requestedAt);
     const sandboxHeaders = {
       authorization: `Bearer ${claim.sandboxToken}`,
     };
@@ -13292,15 +13312,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       agentId,
       prompt: "bdd concurrent assistant acknowledgements",
     });
-    const apiStartedAtIso = await readRunApiStart(context, runId);
-    if (apiStartedAtIso === null) {
-      throw new Error("Expected chat run to have an API start time");
-    }
-    const apiStartedAt = Date.parse(apiStartedAtIso);
-    const acknowledgedAt = apiStartedAt + 5000;
-    mockNow(apiStartedAt);
+    const acknowledgedAt = requestedAt + 5000;
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(runId);
+    expect(claim.apiStartTime).toBe(requestedAt);
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
 
@@ -13415,15 +13430,10 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       agentId,
       prompt: "bdd Codex first assistant output",
     });
-    const apiStartedAtIso = await readRunApiStart(context, runId);
-    if (apiStartedAtIso === null) {
-      throw new Error("Expected chat run to have an API start time");
-    }
-    const apiStartedAt = Date.parse(apiStartedAtIso);
-    const acknowledgedAt = apiStartedAt + 2468;
-    mockNow(apiStartedAt);
+    const acknowledgedAt = requestedAt + 2468;
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(runId);
+    expect(claim.apiStartTime).toBe(requestedAt);
     expect(claim.cliAgentType).toBe("codex");
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();

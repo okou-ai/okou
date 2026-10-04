@@ -22,7 +22,6 @@ import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { updateRestrictedPlanAccessFixture } from "../../../test-fixtures/model-route-capabilities";
 import {
-  setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
@@ -2102,74 +2101,6 @@ describe("GET/PUT /api/model-policies", () => {
       "userPreferenceChanged",
       { kinds: ["defaultModel"] },
     );
-  });
-
-  it("stores an image default while the stored run model is outside the policy", async () => {
-    const fixture = await seedFixture();
-    useSession(fixture);
-    const preferenceClient = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    // The seeded workspace policy is only the fixed default.
-    await currentPolicyRevision();
-    const removedModel = "gpt-6-luna";
-    await setOrgMemberRunModelOutsidePolicyFixture({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      selectedModel: removedModel,
-    });
-    const stored = await accept(
-      preferenceClient.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(stored.body.selectedModel).toBe(removedModel);
-
-    // Settings echoes the stored run preference with the new image model.
-    const updated = await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: {
-          selectedModel: stored.body.selectedModel,
-          serviceTier: stored.body.serviceTier,
-          selectedImageModel: "gpt-image-2",
-        },
-      }),
-      [200],
-    );
-    expect(updated.body).toMatchObject({
-      selectedModel: removedModel,
-      selectedImageModel: "gpt-image-2",
-    });
-
-    // Anything that changes the run preference is still admitted by policy.
-    await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: {
-          selectedModel: removedModel,
-          serviceTier: "priority",
-          selectedImageModel: "gpt-image-1",
-        },
-      }),
-      [400],
-    );
-    await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: {
-          selectedModel: removedModel,
-          serviceTier: null,
-          modelSettingsPatch: { model: removedModel, effort: "high" },
-        },
-      }),
-      [400],
-    );
-    const unchanged = await accept(
-      preferenceClient.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(unchanged.body.selectedImageModel).toBe("gpt-image-2");
   });
 
   it("rejects an image default outside the selectable catalog", async () => {

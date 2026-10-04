@@ -140,10 +140,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("read-run-api-start"),
-    run_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("steer-run-time-budget"),
     run_id: z.uuid(),
     elapsed_ms: z.int().nonnegative(),
@@ -249,7 +245,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
     })
     .nullable()
     .optional(),
-  api_started_at: z.string().nullable().optional(),
   run_time_budget: z
     .object({
       scanned: z.int().nonnegative(),

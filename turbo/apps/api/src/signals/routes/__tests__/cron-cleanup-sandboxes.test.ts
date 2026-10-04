@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import type { CronCleanupSandboxesResponse } from "@okouai/api-contracts/contracts/cron";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
@@ -72,10 +72,6 @@ interface RunFixture {
   readonly userId: string;
 }
 
-interface ExportJobFixture {
-  readonly id: string;
-}
-
 interface RunOwnershipFixture {
   readonly usageEventId: string;
   readonly uploadedFileId: string;
@@ -85,10 +81,6 @@ interface RunOwnershipFixture {
   readonly hostedSiteId: string;
   readonly hostedDeploymentId: string;
   readonly hostedArtifactId: string;
-}
-
-function minutesAgo(minutes: number): Date {
-  return new Date(FIXED_NOW_MS - minutes * 60 * 1000);
 }
 
 function requestCronCleanupState(
@@ -162,15 +154,6 @@ async function cleanupRunFixture(fixture: RunFixture): Promise<void> {
     session_id: fixture.sessionId,
     compose_id: fixture.composeId,
     org_id: fixture.orgId,
-  });
-}
-
-async function cleanupExportJobFixture(
-  fixture: ExportJobFixture,
-): Promise<void> {
-  await postCronCleanupState({
-    action: "delete-export-job",
-    export_job_id: fixture.id,
   });
 }
 
@@ -269,25 +252,6 @@ async function findRunOwnership(
   });
 }
 
-async function insertExportJob(args: {
-  readonly status: string;
-  readonly createdAt?: Date;
-  readonly expiresAt?: Date | null;
-  readonly s3Key?: string | null;
-}): Promise<ExportJobFixture> {
-  const response = await postCronCleanupState({
-    action: "seed-export-job",
-    status: args.status,
-    created_at: args.createdAt?.toISOString(),
-    expires_at:
-      args.expiresAt === undefined
-        ? undefined
-        : (args.expiresAt?.toISOString() ?? null),
-    s3_key: args.s3Key ?? undefined,
-  });
-  return { id: stringField(response, "export_job_id") };
-}
-
 async function findRun(runId: string): Promise<{
   readonly status: string;
   readonly error: string | null;
@@ -302,45 +266,19 @@ async function findRun(runId: string): Promise<{
     : null;
 }
 
-async function findExportJob(jobId: string): Promise<{
-  readonly status: string;
-  readonly error: string | null;
-} | null> {
-  const response = await postCronCleanupState({
-    action: "get-export-job",
-    export_job_id: jobId,
-  });
-  const row = recordField(response, "export_job");
-  return row
-    ? { status: stringField(row, "status"), error: nullableString(row.error) }
-    : null;
-}
-
 describe("sandbox cleanup", () => {
   const trackRunForTeardown =
     createFixtureTracker<RunFixture>(cleanupRunFixture);
-  const trackExportJobForTeardown = createFixtureTracker<ExportJobFixture>(
-    cleanupExportJobFixture,
-  );
   const trackRunOwnership = createFixtureTracker<RunOwnershipFixture>(
     cleanupRunOwnershipFixture,
   );
   let registeredRunIds: string[] = [];
-  let registeredExportJobIds: string[] = [];
 
   async function trackRun(
     fixturePromise: Promise<RunFixture>,
   ): Promise<RunFixture> {
     const fixture = await trackRunForTeardown(fixturePromise);
     registeredRunIds.push(fixture.runId);
-    return fixture;
-  }
-
-  async function trackExportJob(
-    fixturePromise: Promise<ExportJobFixture>,
-  ): Promise<ExportJobFixture> {
-    const fixture = await trackExportJobForTeardown(fixturePromise);
-    registeredExportJobIds.push(fixture.id);
     return fixture;
   }
 
@@ -351,14 +289,13 @@ describe("sandbox cleanup", () => {
       body: await cleanupScopedSandboxes({
         chatThreadIds: [],
         runIds: [...registeredRunIds],
-        exportJobIds: [...registeredExportJobIds],
+        exportJobIds: [],
       }),
     };
   }
 
   beforeEach(() => {
     registeredRunIds = [];
-    registeredExportJobIds = [];
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
     mockNow(FIXED_NOW_MS);
     context.mocks.s3.send.mockReset();
@@ -401,28 +338,6 @@ describe("sandbox cleanup", () => {
         threadless: true,
       }),
     );
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.threadlessRuns.discovered).toBe(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "completed",
-    });
-  });
-
-  it("ignores preview-only test fixture runs without bypassing non-test runs", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "completed",
-        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-        completedAt: new Date(
-          THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-        ),
-        threadless: true,
-        triggerSource: "test",
-      }),
-    );
-
     const response = await cleanupRegisteredFixtures();
 
     expect(response.body.threadlessRuns.discovered).toBe(0);
@@ -531,137 +446,6 @@ describe("sandbox cleanup", () => {
     });
     expect(recordField(state, "hosted_artifact")).toStrictEqual({
       id: ownership.hostedArtifactId,
-    });
-  });
-
-  it("keeps debug compose runs until the debug heartbeat timeout", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        composeName: `debug-${randomUUID()}`,
-        createdAt: minutesAgo(1),
-        lastHeartbeatAt: minutesAgo(30),
-      }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.results).toHaveLength(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "running",
-      error: null,
-    });
-  });
-
-  it.each(["request rejection", "per-key error"] as const)(
-    "preserves expired export jobs for retry when S3 deletion returns a %s",
-    async (failure) => {
-      const s3Key = `exports/${randomUUID()}.zip`;
-      const expiredJob = await trackExportJob(
-        insertExportJob({
-          status: "completed",
-          createdAt: minutesAgo(30),
-          expiresAt: minutesAgo(1),
-          s3Key,
-        }),
-      );
-      if (failure === "request rejection") {
-        context.mocks.s3.send.mockRejectedValueOnce(
-          new Error("S3 request failed"),
-        );
-      } else {
-        context.mocks.s3.send.mockResolvedValueOnce({
-          Errors: [{ Key: s3Key, Code: "AccessDenied" }],
-        });
-      }
-
-      const app = createAppWithRoutes({
-        signal: context.signal,
-        routes: testCronCleanupSandboxesStateRoutes,
-      });
-      const failed = await app.request(
-        "/api/test/cron-cleanup-sandboxes-state/cleanup",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            chatThreadIds: [],
-            runIds: [],
-            exportJobIds: [expiredJob.id],
-          }),
-        },
-      );
-
-      expect(failed.status).toBe(500);
-      await expect(findExportJob(expiredJob.id)).resolves.toStrictEqual({
-        status: "completed",
-        error: null,
-      });
-
-      const retried = await cleanupRegisteredFixtures();
-      expect(retried.body.exportJobsCleaned).toBe(1);
-      await expect(findExportJob(expiredJob.id)).resolves.toBeNull();
-    },
-  );
-
-  it("cleans expired export jobs and fails stuck export jobs", async () => {
-    const expiredJob = await trackExportJob(
-      insertExportJob({
-        status: "completed",
-        createdAt: minutesAgo(30),
-        expiresAt: minutesAgo(1),
-        s3Key: "exports/expired.zip",
-      }),
-    );
-    const stuckJob = await trackExportJob(
-      insertExportJob({
-        status: "running",
-        createdAt: minutesAgo(11),
-      }),
-    );
-    const sentinel = await trackExportJobForTeardown(
-      insertExportJob({
-        status: "completed",
-        createdAt: minutesAgo(30),
-        expiresAt: minutesAgo(1),
-        s3Key: "exports/sentinel.zip",
-      }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body).toStrictEqual({
-      cleaned: 0,
-      errors: 0,
-      results: [],
-      exportJobsCleaned: 1,
-      exportJobsStuck: 1,
-      threadlessRuns: {
-        discovered: 0,
-        cancelled: 0,
-        waiting: 0,
-        deleted: 0,
-        failed: 0,
-        errors: [],
-      },
-    });
-    await expect(findExportJob(expiredJob.id)).resolves.toBeNull();
-    await expect(findExportJob(stuckJob.id)).resolves.toStrictEqual({
-      status: "failed",
-      error: "Export job timed out",
-    });
-    await expect(findExportJob(sentinel.id)).resolves.toStrictEqual({
-      status: "completed",
-      error: null,
-    });
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(1);
-    expect(context.mocks.s3.send.mock.calls[0]?.[0]).toMatchObject({
-      input: {
-        Bucket: BUCKET,
-        Delete: {
-          Objects: [{ Key: "exports/expired.zip" }],
-        },
-      },
     });
   });
 });

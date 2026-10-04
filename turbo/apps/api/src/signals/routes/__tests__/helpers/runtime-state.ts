@@ -468,20 +468,6 @@ export async function clearRunApiStart(
   });
 }
 
-export async function readRunApiStart(
-  context: TestContext,
-  runId: string,
-): Promise<string | null> {
-  const response = await postAction(context, {
-    action: "read-run-api-start",
-    run_id: runId,
-  });
-  if (!("api_started_at" in response)) {
-    throw new Error("readRunApiStart missing api_started_at");
-  }
-  return response.api_started_at ?? null;
-}
-
 /**
  * Move one owned running run to an elapsed-time boundary and execute the
  * production steering flow without scanning rows owned by other test files.

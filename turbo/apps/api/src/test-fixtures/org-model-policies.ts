@@ -1,8 +1,6 @@
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { and, eq, sql } from "drizzle-orm";
-
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 /**
@@ -57,23 +55,4 @@ export async function setOrgModelPolicyProviderTypeFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one org model policy provider to update");
   }
-}
-
-/** The public GET cannot observe these states without repairing them first. */
-export async function setOrgMemberRunModelOutsidePolicyFixture(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly selectedModel: string;
-}): Promise<void> {
-  await db()
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      selectedModel: args.selectedModel,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: { selectedModel: args.selectedModel, updatedAt: sql`now()` },
-    });
 }

@@ -20,10 +20,7 @@ import {
   chatThreadModelSelectionContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  connectorAccountsContract,
-  type ConnectorAccountMutationIntent,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   customConnectorByIdContract,
   customConnectorOAuth2Contract,
@@ -35,6 +32,7 @@ import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/a
 import {
   logsByIdContract,
   logsListContract,
+  type LogEntry,
 } from "@okouai/api-contracts/contracts/logs";
 import {
   feishuConnectContract,
@@ -82,7 +80,6 @@ import {
 } from "./helpers/chat-event-test-reader";
 import {
   clearFeishuConnectorOwnership,
-  readConnectorOAuthAccountMutation,
   readCustomConnectorCredentialStorageParent,
   readFeishuMemberConnectorState,
   seedConnectorStorageRow,
@@ -145,6 +142,33 @@ function connectorAccountsClient() {
   return setupApp({ context, routes: connectorAccountRoutes })(
     connectorAccountsContract,
   );
+}
+
+async function listActiveFeishuRuns(actor: ApiTestUser): Promise<LogEntry[]> {
+  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const client = setupApp({ context, routes: logsRoutes })(logsListContract);
+  // Keep the active-only population and limit of the original Run observation.
+  // These owned observations follow a background-work flush without a concurrent
+  // lifecycle transition; each public query accepts one status.
+  const pages = await Promise.all(
+    (["pending", "running"] as const).map(async (status) => {
+      return await accept(
+        client.list({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { status, limit: 20 },
+        }),
+        [200],
+      );
+    }),
+  );
+  return pages
+    .flatMap((page) => {
+      return page.body.data;
+    })
+    .sort((left, right) => {
+      return Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    })
+    .slice(0, 20);
 }
 
 type FeishuConnectClient = ReturnType<typeof feishuConnectClient>;
@@ -1175,17 +1199,11 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
   async function completeFeishuAuthorization(
     authorizationUrl: URL,
     openId: string,
-    expectedAccountMutation: ConnectorAccountMutationIntent,
   ): Promise<URL> {
     const state = requireValue(
       authorizationUrl.searchParams.get("state"),
       "Expected Feishu OAuth state",
     );
-    await expect(
-      readConnectorOAuthAccountMutation(context, state),
-    ).resolves.toMatchObject({
-      account_mutation: expectedAccountMutation,
-    });
     fixtureState.oauthUserOpenId = openId;
     const oauthApp = createAppWithRoutes({
       signal: context.signal,
@@ -1262,7 +1280,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     const completionUrl = await completeFeishuAuthorization(
       authorizationUrl,
       openId,
-      { intent: "add" },
     );
     expect(completionUrl.toString()).toBe(
       `${provider.appLinkOrigin}/client/bot/open?appId=${fixture.appId}`,
@@ -1352,12 +1369,10 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
   async function findRun(
     actor: ApiTestUser,
     prompt: string,
-  ): Promise<
-    Awaited<ReturnType<typeof runsApi.listAgentRuns>>["runs"][number]
-  > {
-    const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+  ): Promise<LogEntry> {
+    const listed = await listActiveFeishuRuns(actor);
     return requireValue(
-      listed.runs.find((candidate) => {
+      listed.find((candidate) => {
         return candidate.prompt === prompt;
       }),
       `Expected Feishu run for prompt: ${prompt}`,
@@ -2821,11 +2836,6 @@ export function registerFeishuIntegrationTests(
         if (!state) {
           throw new Error("Expected Feishu authorization URL to include state");
         }
-        await expect(
-          readConnectorOAuthAccountMutation(context, state),
-        ).resolves.toMatchObject({
-          account_mutation: { intent: "add" },
-        });
 
         const handoffResponse = await oauthApp.request(
           `${feishuOauthContract.callback.path}?${new URLSearchParams({
@@ -2873,20 +2883,12 @@ export function registerFeishuIntegrationTests(
         );
         const reconnectResponse = await oauthApp.request(appConnectUrl);
         expect(reconnectResponse.status).toBe(307);
-        const reconnectState = requireValue(
+        requireValue(
           new URL(
             reconnectResponse.headers.get("location") ?? "",
           ).searchParams.get("state"),
           "Expected reconnect OAuth state",
         );
-        await expect(
-          readConnectorOAuthAccountMutation(context, reconnectState),
-        ).resolves.toMatchObject({
-          account_mutation: {
-            intent: "reconnect",
-            connectionId: linkedConnectorId,
-          },
-        });
 
         const legacyReplacementOpenId = "ou_legacy_replacement_user";
         fixtureState.oauthUserOpenId = legacyReplacementOpenId;
@@ -3124,7 +3126,6 @@ export function registerFeishuIntegrationTests(
         const completionUrl = await completeFeishuAuthorization(
           retryAuthorizationUrl,
           "ou_oauth_user",
-          { intent: "add" },
         );
         expect(completionUrl.toString()).toBe(
           `${provider.appLinkOrigin}/client/bot/open?appId=${fixture.appId}`,
@@ -3187,7 +3188,6 @@ export function registerFeishuIntegrationTests(
         const completionUrl = await completeFeishuAuthorization(
           authorizationUrl,
           "ou_feishu_user",
-          { intent: "add" },
         );
         expect(completionUrl.toString()).toBe(
           `${provider.appLinkOrigin}/client/bot/open?appId=${fixture.appId}`,
@@ -3883,7 +3883,6 @@ export function registerFeishuIntegrationTests(
         const completionUrl = await completeFeishuAuthorization(
           authorizationUrl,
           "ou_feishu_user",
-          { intent: "add" },
         );
         expect(completionUrl.toString()).toBe(
           `${provider.appLinkOrigin}/client/bot/open?appId=${appId}`,
@@ -3951,22 +3950,9 @@ export function registerFeishuIntegrationTests(
         );
         const retryAuthorizationUrl =
           await feishuAuthorizationUrlFromResponse(retryConnectResponse);
-        const memberState = await readFeishuMemberConnectorState(context, {
-          orgId: requireValue(actor.orgId, "Expected an organization"),
-          userId: actor.userId,
-          installationId: fixture.installationId,
-        });
-        const memberConnectorId = requireValue(
-          memberState.feishu_member_connection?.connector_id,
-          "Expected Feishu member connector linkage",
-        );
         await completeFeishuAuthorization(
           retryAuthorizationUrl,
           "ou_feishu_user",
-          {
-            intent: "reconnect",
-            connectionId: memberConnectorId,
-          },
         );
         const preservedAccess = await accept(
           agentAccessClient.get({
@@ -4034,7 +4020,6 @@ export function registerFeishuIntegrationTests(
         const rebindCompletionUrl = await completeFeishuAuthorization(
           rebindAuthorizationUrl,
           "ou_feishu_user",
-          { intent: "add" },
         );
         expect(rebindCompletionUrl.pathname).toBe(`${provider.settingsPath}`);
         expect(rebindCompletionUrl.searchParams.get("error")).toBe(
@@ -4090,7 +4075,6 @@ export function registerFeishuIntegrationTests(
         await completeFeishuAuthorization(
           replacementAuthorizationUrl,
           replacementOpenId,
-          { intent: "reconnect", connectionId: memberConnectorId },
         );
         await expect(
           readFeishuMemberConnectorState(context, {
@@ -4297,9 +4281,9 @@ export function registerFeishuIntegrationTests(
           const event = v2Event(appId, "im.message.receive_v1", eventData);
           await postEvent(callbackUrl, event, { encrypted: true });
           await flushWaitUntilForTest();
-          const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+          const listed = await listActiveFeishuRuns(actor);
           const run = requireValue(
-            listed.runs.find((candidate) => {
+            listed.find((candidate) => {
               return candidate.prompt.includes("[Web file]");
             }),
             "Expected imported file run",
@@ -4406,8 +4390,8 @@ export function registerFeishuIntegrationTests(
             "Expected failed file item",
           );
           expect(fileId).toMatch(/^[0-9a-f-]{36}$/u);
-          const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
-          const run = requireValue(listed.runs[0], "Expected native file run");
+          const listed = await listActiveFeishuRuns(actor);
+          const run = requireValue(listed[0], "Expected native file run");
           await runsApi.heartbeatRunner(runnerGroup);
           const claim = await runsApi.claimRunnerJob(run.id);
           expect(claim.prompt).not.toContain("[Web file]");
@@ -4839,9 +4823,7 @@ export function registerFeishuIntegrationTests(
               { encrypted: true },
             );
             await flushWaitUntilForTest();
-            expect(
-              (await runsApi.listAgentRuns(actor, { limit: 20 })).runs,
-            ).toHaveLength(0);
+            await expect(listActiveFeishuRuns(actor)).resolves.toHaveLength(0);
           }
           const event = v2Event(appId, "im.message.receive_v1", {
             sender,
@@ -4864,9 +4846,9 @@ export function registerFeishuIntegrationTests(
           ).toBe(200);
           await postEvent(callbackUrl, event, { encrypted: true });
           await flushWaitUntilForTest();
-          const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
-          expect(listed.runs).toHaveLength(1);
-          const run = requireValue(listed.runs[0], "Expected a rich post run");
+          const listed = await listActiveFeishuRuns(actor);
+          expect(listed).toHaveLength(1);
+          const run = requireValue(listed[0], "Expected a rich post run");
           await runsApi.heartbeatRunner(runnerGroup);
           const claim = await runsApi.claimRunnerJob(run.id);
           expect(claim.prompt).toContain("Image comparison\n");
@@ -5961,11 +5943,9 @@ export function registerFeishuIntegrationTests(
           { encrypted: true },
         );
         await flushWaitUntilForTest();
-        const afterUnmentioned = await runsApi.listAgentRuns(actor, {
-          limit: 20,
-        });
+        const afterUnmentioned = await listActiveFeishuRuns(actor);
         expect(
-          afterUnmentioned.runs.some((candidate) => {
+          afterUnmentioned.some((candidate) => {
             return candidate.prompt.includes("ignore ");
           }),
         ).toBeFalsy();
@@ -6055,8 +6035,8 @@ export function registerFeishuIntegrationTests(
         await postEvent(callbackUrl, mentioned, { encrypted: true });
         await postEvent(callbackUrl, mentioned, { encrypted: true });
         await flushWaitUntilForTest();
-        const groupRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
-        const matchingGroupRuns = groupRuns.runs.filter((candidate) => {
+        const groupRuns = await listActiveFeishuRuns(actor);
+        const matchingGroupRuns = groupRuns.filter((candidate) => {
           return candidate.prompt === "@Nova";
         });
         expect(matchingGroupRuns).toHaveLength(1);

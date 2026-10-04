@@ -382,23 +382,6 @@ const runMetadataFixtureAction$ = command(
   },
 );
 
-async function readRunApiStart(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const [run] = await db
-    .select({ apiStartedAt: agentRuns.apiStartedAt })
-    .from(agentRuns)
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    throw new Error("Expected an agent run timing row");
-  }
-  return run.apiStartedAt?.toISOString() ?? null;
-}
-
 /**
  * A running run cannot reach the time-budget boundary during an integration
  * test, so the test-only route moves exactly its owned run into that state.
@@ -618,40 +601,6 @@ async function readRunLaunchSnapshotActionResponse(
       },
     },
   };
-}
-
-type TimingStateAction = Extract<
-  TestRuntimeStateActionBody,
-  {
-    action: "read-run-api-start" | "steer-run-time-budget";
-  }
->;
-
-function isTimingStateAction(
-  body: TestRuntimeStateActionBody,
-): body is TimingStateAction {
-  return (
-    body.action === "read-run-api-start" ||
-    body.action === "steer-run-time-budget"
-  );
-}
-
-async function timingStateActionResponse(
-  db: Db,
-  body: Exclude<TimingStateAction, { action: "steer-run-time-budget" }>,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "read-run-api-start": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          api_started_at: await readRunApiStart(db, body.run_id, signal),
-        },
-      };
-    }
-  }
 }
 
 type PendingArtifactCatalogFileAction = Extract<
@@ -1244,9 +1193,6 @@ const postRuntimeStateAction$ = command(
           ),
         },
       };
-    }
-    if (isTimingStateAction(body)) {
-      return await timingStateActionResponse(db, body, signal);
     }
     if (isChatEventFixtureAction(body)) {
       return await chatEventFixtureActionResponse(db, body, signal);

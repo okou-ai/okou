@@ -16,7 +16,6 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { exportJobs } from "@okouai/db/schema/export-job";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
@@ -819,47 +818,6 @@ async function deleteRunThreadForAction(
   return actionOk();
 }
 
-async function seedExportJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const status = readString(body, "status");
-  if (!status) {
-    return actionBadRequest("status is required");
-  }
-  const [job] = await db
-    .insert(exportJobs)
-    .values({
-      userId: readOptionalString(body, "user_id") ?? `user-${randomUUID()}`,
-      orgId: readOptionalString(body, "org_id") ?? `org-${randomUUID()}`,
-      status,
-      createdAt: readDate(body, "created_at") ?? undefined,
-      expiresAt: readNullableDate(body, "expires_at"),
-      s3Key: readOptionalString(body, "s3_key") ?? null,
-    })
-    .returning({ id: exportJobs.id });
-  signal.throwIfAborted();
-  if (!job) {
-    return actionBadRequest("failed to seed export job");
-  }
-  return actionOk({ export_job_id: job.id });
-}
-
-async function deleteExportJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const jobId = readString(body, "export_job_id");
-  if (!jobId) {
-    return actionBadRequest("export_job_id is required");
-  }
-  await db.delete(exportJobs).where(eq(exportJobs.id, jobId));
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function getRunForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -876,24 +834,6 @@ async function getRunForAction(
     .limit(1);
   signal.throwIfAborted();
   return actionOk({ run: run ?? null });
-}
-
-async function getExportJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const jobId = readString(body, "export_job_id");
-  if (!jobId) {
-    return actionBadRequest("export_job_id is required");
-  }
-  const [job] = await db
-    .select({ status: exportJobs.status, error: exportJobs.error })
-    .from(exportJobs)
-    .where(eq(exportJobs.id, jobId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ export_job: job ?? null });
 }
 
 const TEST_TERMINAL_RUN_STATUSES = [
@@ -947,11 +887,8 @@ const cronCleanupSandboxesActionHandlers = {
   "delete-run": deleteRunForAction,
   "delete-run-ownership": deleteRunOwnershipForAction,
   "delete-run-thread": deleteRunThreadForAction,
-  "seed-export-job": seedExportJobForAction,
-  "delete-export-job": deleteExportJobForAction,
   "get-run": getRunForAction,
   "get-run-ownership": getRunOwnershipForAction,
-  "get-export-job": getExportJobForAction,
   "get-connector-diagnostic-registration":
     getConnectorDiagnosticRegistrationForAction,
   "corrupt-connector-diagnostic-registration":
