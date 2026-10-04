@@ -30,6 +30,25 @@ serving-generation selector or separate warm-up endpoint is needed. Existing
 scheduled syncs keep v4 current. MCP methods do not need to be executable for v4
 acceptance: filtered methods are expected.
 
+## Additive hash-addressed preparation (P3)
+
+The existing pointer and accepted-snapshot readers remain the only serving
+path; reader migration is separate. Sync now prepares connector skill storages
+and exact immutable versions outside the activation transaction, without
+changing connector skill HEADs. Other storage HEAD behavior is unchanged.
+It then inserts the original connector payloads into
+`connector_catalog_entries` under the captured content hash, ignores identical
+insert conflicts, rejects conflicting canonical bytes, and verifies the exact
+manifest slug set. Failed preparation leaves the serving snapshot unchanged;
+completed immutable work remains reusable on retry.
+
+The legacy acceptance writes and the new `connector_catalog` hash CAS share
+one transaction with Pi stable-context invalidation. Cold start inserts the
+current row explicitly. A lost hash CAS rolls back the transaction; the same
+hash does not repeat activation effects. Only a successful hash switch attempts
+the existing best-effort wakeups after commit. Wakeup failure does not undo the
+committed catalog, and a same-hash retry is not a delivery replay.
+
 ## Identity and failure behavior
 
 The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`.

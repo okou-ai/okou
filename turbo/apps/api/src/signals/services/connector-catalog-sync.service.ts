@@ -354,7 +354,9 @@ export async function publishCatalogRuntimeWakeups(args: {
   readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
-  if (!args.switched) {return;}
+  if (!args.switched) {
+    return;
+  }
   const results = await Promise.all([
     settle(publishCatalogPermissionBundleWakeupsInner(args)),
     settle(publishBuiltinCatalogWakeups(args)),
@@ -1420,12 +1422,22 @@ async function syncConnectorCatalogAttempt(
     if (!baseline) {
       throw new Error("Connector catalog active snapshot disappeared");
     }
-    return await completeUnchangedSync(
-      runtime,
-      baseline,
-      pointerObservation,
-      signal,
+    // An already-serving legacy catalog still needs the additive mirror on
+    // first deployment. Keep the unchanged shortcut only after that bridge is
+    // complete; otherwise validate and prepare this same captured pointer.
+    const mirroredHash = await readImmutableCatalogHash(
+      runtime.db,
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
     );
+    signal.throwIfAborted();
+    if (mirroredHash === pointer.catalogDigest.slice(7)) {
+      return await completeUnchangedSync(
+        runtime,
+        baseline,
+        pointerObservation,
+        signal,
+      );
+    }
   }
 
   const cachedFailure = cachedRejectionForPointer(
