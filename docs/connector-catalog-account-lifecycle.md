@@ -178,9 +178,9 @@ the live legacy runtime snapshot. Their exclusion/rejection does not authorize
 removing a valid account from the immutable public projection. No production
 selection policy or fallback is changed.
 
-| Existing case                                                 | Retired assertion                                                                                                | Replacement public coverage                                                                                                                                                                                                                                                | Preserved boundary                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CHAT-02 selected built-in omitted from the legacy Run catalog | Public selection GET omits an immutable-valid account solely because an owned legacy snapshot no longer lists it | Rename the same case to identify the legacy/immutable split; assert both exact account selections before and after the real Run claim, and both connected public account projections. After public clear, assert only Runtime remains before and after legacy restoration. | Real Run send/claim succeeds; OpenAI secret metadata, runtime registration and account-bound firewall remain absent; Runtime secret metadata retains its exact selected account ID. Both existing selection-update and thread-create400 checks remain, as do clear204, restoration and cancellation. All custom/builtin ownership/permission cases are unchanged. |
+| Existing case                                                 | Retired assertion                                                                                                | Replacement public coverage                                                                                                                                                                                                                                                                               | Preserved boundary                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CHAT-02 selected built-in omitted from the legacy Run catalog | Public selection GET omits an immutable-valid account solely because an owned legacy snapshot no longer lists it | Rename the same case to identify the legacy/immutable split; assert both exact account selections before and after the real Run claim; explicitly assert both connected public account projections only after claim. After public clear, assert only Runtime remains before and after legacy restoration. | Real Run send/claim succeeds; OpenAI secret metadata, runtime registration and account-bound firewall remain absent; Runtime secret metadata retains its exact selected account ID. Both existing selection-update and thread-create400 checks remain, as do clear204, restoration and cancellation. All custom/builtin ownership/permission cases are unchanged. |
 
 No case is deleted, moved or skipped. No mock, database fixture, catalog
 publisher, internal reader adapter or new install is added; the pre-existing
@@ -207,6 +207,72 @@ Node boundary regressions are part of that authorized type pipeline, not an
 API business/native Vitest replay. These static results remain separate from
 natural new-head CI, non-author delta review and pending Preview. The PR remains
 Draft with autoMerge off.
+
+## API4 Official delegation-chain lifecycle repair
+
+At exact account HEAD `c5e24bb89a5563aef3901cdbb5ec97d9dacc7026`, natural
+Turbo `37361272447`, API4 job
+[111936431813](https://github.com/okou-ai/okou/actions/runs/37361272447/job/111936431813)
+failed in `official-workflows.test.ts:8755`, "launches an idle Official agent-run
+input with the annotated source budget": timeout5000ms, case5051ms; one failed /
+980 passed tests and one failed / 51 passed files. The 31 case-tagged exitCode1
+warnings are intentional public parent completions, not 31 product failures.
+The log does not identify the timed-out await or establish a flake, an account
+regression, or a unique root cause. This historical result remains FAIL.
+
+Two source-backed redundancies are removed in the existing case/helper:
+
+- Every one of 31 loop hops explicitly drained waitUntil, then immediately
+  invoked `launchedAutomationRunId`, whose first operation drains the same
+  tracker. There is no intervening request. Retain the helper's drain before
+  reading the child; remove only the redundant outer call. The tracker drains
+  its pending and newly registered work to quiescence and acknowledges detached
+  ownership; its errors are not suppressed. An already-empty drain is cheap:
+  removing it does not prove any particular timing improvement.
+- All 31 child observations and the final idle launch previously reread from
+  seq0 and paged every historical event before choosing the newest input.
+  Workflow admission reuses the owned workflow/user automation thread. Supply
+  a case-local per-thread paired ID/seq cursor obtained only from actual public
+  event-row responses. The existing authenticated event-rows API validates that
+  paired cursor and returns ascending rows strictly after it. Pagination still
+  consumes every new page; an empty tail does not fall back to an old Run.
+  All other callers omit this optional cursor map and retain cold-start behavior.
+  The final rejection audit still reads the entire thread and asserts exactly
+  one `autonomy_budget_exhausted` rejection. No budget/counter/DB state is seeded.
+
+The retained helper drain owns workflow admission's background pick/notification
+and parent completion's released-slot pick and completion side effects. It is
+awaited after the public parent completion and before the child event lookup and
+real Runner claim. The standalone drain after the 31-hop chain remains before
+idle admission, as do the final completion/rejection drain and teardown's
+cancel-all/drain/delete-agent/catalog-cleanup sequence. No work is detached by
+the repair and no critical synchronization is removed.
+
+All 31 dependent real admission/completion/claim hops, final idle launch,
+source Run/thread annotations, slash prompt, statuses/bodies, distinct child,
+identity/permissions and exact budget-exhausted outcome remain. No case deletion,
+hop reduction/concurrency, larger timeout, sleep, retry, skip, product policy,
+production Official/claim/Pi/runtime/account code, global resource change,
+legacy fallback or environment repair. The improvement is avoiding repeated
+public history scans, not measured time saved or reproduction of the old timeout.
+
+L's exact-c5 non-author [source receipt](https://app.okou.ai/artifacts/wyb1xid8qc.md)
+closes the earlier 632/f31/c5 source chain, not CI/Preview or this new delta.
+Before-Run account GET asserts exactly two selections; only after claim does it
+explicitly assert both connected projections. No stronger pre-Run assertion is
+claimed. This new two-file test/ledger delta needs another non-author review and
+natural new-HEAD CI. Original632 typed N5 failure, f31 API1 FAIL/API8 cancellation
+and c5 API4 timeout remain separate historical failures; no old run is rerun.
+
+Repair static checks: scoped ESLint max-warnings0, Oxlint deny-warnings, CI-config
+test type-aware Oxlint, complete API aggregate types/boundary/acceptance,
+Prettier and diff-check passed. The initial type check correctly rejected a
+cursor type imported from the row module (TS2724); it was corrected to the
+existing public schema-version module and the complete pipeline passed. The
+initial failure is retained, not rewritten as PASS. Syntax-only comparison
+confirms the eight explicit assertions, failure guards and teardown unchanged;
+other directly named registration blocks are unchanged. This is preservation
+evidence, not business execution or author approval.
 
 ## Verification and remaining gates
 
