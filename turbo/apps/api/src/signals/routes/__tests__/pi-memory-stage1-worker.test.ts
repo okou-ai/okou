@@ -1235,14 +1235,6 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("bills built-in extraction at the served route's catalog long-context threshold", async () => {
-    // An operator sets a long-context band on the served OpenRouter route; the
-    // extraction must bill that band from the same catalog it routed with.
-    const restore = await setBuiltInRouteLongContextThresholdFixture({
-      model: "deepseek-v4.1-flash",
-      concreteProviderType: "openrouter-codex",
-      longContextMinTotalInputTokens: 272_001,
-    });
-    onTestFinished(restore);
     const below = await createPublicStorageFixture();
     const atBoundary = await createPublicStorageFixture();
     await below.seed({
@@ -1257,6 +1249,16 @@ describe("Pi memory Stage 1 worker", () => {
     });
     await below.prepareExecution();
     await atBoundary.prepareExecution();
+    // The pricing-only operator change belongs to extraction, after the
+    // ordinary native source/trigger Runs have used their normal priced routes.
+    // An operator sets a long-context band on the served OpenRouter route; the
+    // extraction must bill that band from the same catalog it routed with.
+    const restore = await setBuiltInRouteLongContextThresholdFixture({
+      model: "deepseek-v4.1-flash",
+      concreteProviderType: "openrouter-codex",
+      longContextMinTotalInputTokens: 272_001,
+    });
+    onTestFinished(restore);
     installProvider(({ request }) => {
       const boundary = JSON.stringify(request).includes("at the boundary");
       return {
