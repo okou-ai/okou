@@ -1,5 +1,25 @@
 # Deployment Compatibility
 
+## Organization model mode defaults to Auto
+
+Migration 1320 changes only the `org_metadata.model_mode` column default to
+`auto`; existing explicit Auto/Custom rows and personal subscription data are
+unchanged. The new API treats missing metadata as Auto in policy listing,
+model selection, queued claims, subscription disconnect cleanup and workspace
+configuration guards. New metadata needs no mode backfill. Explicit Custom
+rows and the Debug mode-switch API remain supported in this incremental fix.
+
+Apply the default migration before the new API so writers that omit the mode
+create Auto rows. A new API with the old database can still read existing
+modes, but omitted-mode inserts retain the old Custom default. An old API with
+the migrated database supports Auto rows, but still treats missing metadata as
+Custom; all serving API versions must drain before relying on that case.
+App, CLI and Runner contracts and persisted Run snapshots are unchanged.
+Rolling back the API does not undo the database default or rewrite saved modes;
+old missing-metadata behavior returns until an Auto-default API serves again.
+This PR does not delete policies, backfill organization modes, modify billing,
+remove Custom configuration APIs, or authorize a production deployment.
+
 ## Autonomous delegation budget expansion
 
 Migration 1319 widens the Run and workflow automation autonomy checks from
