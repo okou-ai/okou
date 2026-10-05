@@ -1,19 +1,19 @@
 import {
-BUILT_IN_MODEL_ROUTE_PROVIDERS,
-getSecretNameForType,
-hasAuthMethods,
-modelProviderTypeSchema,
+  BUILT_IN_MODEL_ROUTE_PROVIDERS,
+  getSecretNameForType,
+  hasAuthMethods,
+  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
-modelProviderAccounts,
-modelProviderAccountSecrets,
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { computed } from "ccstate";
-import { and,eq,inArray,isNull,notInArray,or } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { usagePricingByKey } from "./built-in-route-pricing";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
@@ -65,7 +65,13 @@ type ProviderRow = {
 };
 
 export function providerFacts(rows: readonly ProviderRow[]) {
-  return [...new Map(rows.map((row) => [row.provider.id, row.provider])).values()];
+  return [
+    ...new Map(
+      rows.map((row) => {
+        return [row.provider.id, row.provider];
+      }),
+    ).values(),
+  ];
 }
 
 /** Member providers, connected accounts and both credential kinds share a read. */
@@ -99,7 +105,14 @@ export function createMemberModelSources(orgId: string, userId: string) {
       )
       .leftJoin(secrets, providerSecretJoin)
       .where(
-        and(eq(modelProviders.orgId, orgId), eq(modelProviders.userId, userId), inArray(modelProviders.type, ["codex-oauth-token", "claude-code-oauth-token"])),
+        and(
+          eq(modelProviders.orgId, orgId),
+          eq(modelProviders.userId, userId),
+          inArray(modelProviders.type, [
+            "codex-oauth-token",
+            "claude-code-oauth-token",
+          ]),
+        ),
       );
     return memberModelSourcesFromRows(orgId, userId, joined);
   });

@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
 import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
@@ -19,7 +19,7 @@ import { agentInstructionsRoutes } from "../agent-instructions";
 import { agentsRoutes } from "../agents";
 import { billingStatusRoutes } from "../billing-status";
 import { onboardingStatusRoutes } from "../onboarding-status";
-import { modelPoliciesRoutes } from "../model-policies";
+import { runModelsRoutes } from "../run-models";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -50,7 +50,7 @@ function clients(
       ...agentsRoutes,
       ...agentInstructionsRoutes,
       ...billingStatusRoutes,
-      ...modelPoliciesRoutes,
+      ...runModelsRoutes,
     ],
   });
   return {
@@ -58,7 +58,7 @@ function clients(
     agents: app(agentsMainContract),
     instructions: app(agentInstructionsContract),
     billing: app(billingStatusContract),
-    policies: app(modelPoliciesMainContract),
+    models: app(runModelsMainContract),
   };
 }
 
@@ -207,9 +207,9 @@ describe("default Agent bootstrap", () => {
       [200],
     );
     expect(instructions.body.content).toBe(SEED_INSTRUCTIONS);
-    const policies = await accept(api.policies.list({ headers }), [200]);
-    expect(policies.body.modelMode).toBe("auto");
-    expect(policies.body.policies).toStrictEqual([
+    const policies = await accept(api.models.list({ headers }), [200]);
+    expect(policies.body.defaultModel).toBe("okou-1.0");
+    expect(policies.body.models).toStrictEqual([
       expect.objectContaining({
         model: SEEDED_SYSTEM_DEFAULT_MODEL,
         defaultProviderType: "built-in",
@@ -447,51 +447,6 @@ describe("default Agent bootstrap", () => {
     expect(upload.storage.hasObject(archiveKey)).toBeFalsy();
     const agentId = await readDefaultId(api);
     await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
-    await expectSingleOnboardingGrant(api);
-  });
-
-  it("preserves a configured Custom policy while concurrently bootstrapping", async () => {
-    const orgId = authenticateAdmin();
-    installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });
-    const api = clients();
-    const before = await accept(api.policies.list({ headers }), [200]);
-    const configured = await accept(
-      api.policies.update({
-        headers,
-        body: {
-          revision: before.body.revision,
-          policies: [
-            {
-              model: "gpt-6-luna",
-              defaultProviderType: "codex-oauth-token",
-              credentialScope: "member",
-              modelProviderId: null,
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    expect(configured.body.modelMode).toBe("custom");
-    const ids = await Promise.all([readDefaultId(api), readDefaultId(api)]);
-    expect(ids[0]).toBe(ids[1]);
-    const after = await accept(api.policies.list({ headers }), [200]);
-    expect(after.body.modelMode).toBe("custom");
-    // Runtime availability can change when bootstrap grants the free plan and
-    // creates the built-in provider; the admin's configured selections cannot.
-    expect(after.body.policies).toHaveLength(configured.body.policies.length);
-    for (const policy of configured.body.policies) {
-      expect(after.body.policies).toContainEqual(
-        expect.objectContaining({
-          id: policy.id,
-          model: policy.model,
-          defaultProviderType: policy.defaultProviderType,
-          credentialScope: policy.credentialScope,
-          modelProviderId: policy.modelProviderId,
-          modelProviderSurfaceId: policy.modelProviderSurfaceId,
-        }),
-      );
-    }
     await expectSingleOnboardingGrant(api);
   });
 

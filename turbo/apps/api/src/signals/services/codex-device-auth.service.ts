@@ -1,36 +1,36 @@
 import type {
-CodexDeviceAuthMode,
-CodexDeviceAuthScope,
+  CodexDeviceAuthMode,
+  CodexDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { command } from "ccstate";
-import { and,eq,inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
-detach,
-Mechanism,
-safeJsonParse,
-safeSync,
-settle,
-tapError,
+  detach,
+  Mechanism,
+  safeJsonParse,
+  safeSync,
+  settle,
+  tapError,
 } from "../utils";
 import { handleCodexAuthJsonPaste } from "./codex-auth-json-paste-handler";
 import {
-decryptPersistentSecretValue,
-decryptSecretValue,
-encryptPersistentSecretValue,
-encryptSecretValue,
+  decryptPersistentSecretValue,
+  decryptSecretValue,
+  encryptPersistentSecretValue,
+  encryptSecretValue,
 } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
-upsertPersonalModelProviderAccount$,
-type PersonalProviderAccountErrorResponse,
-type PersonalProviderAccountMutation,
+  upsertPersonalModelProviderAccount$,
+  type PersonalProviderAccountErrorResponse,
+  type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
 
 const CODEX_DEVICE_AUTH_ISSUER = "https://auth.openai.com";
@@ -890,14 +890,14 @@ const importCodexAuthJson$ = command(
     };
 
     const response = await handleCodexAuthJsonPaste(
-            {
-              scope: "personal",
-              orgId: args.orgId,
-              userId: args.userId,
-              ...common,
-            },
-            signal,
-          );
+      {
+        scope: "personal",
+        orgId: args.orgId,
+        userId: args.userId,
+        ...common,
+      },
+      signal,
+    );
 
     if (response.status === 400 || response.status === 404) {
       return {

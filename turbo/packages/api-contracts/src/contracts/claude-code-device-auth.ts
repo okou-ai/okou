@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { authHeadersSchema,initContract } from "./base";
+import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { modelProviderResponseSchema } from "./model-providers";
 

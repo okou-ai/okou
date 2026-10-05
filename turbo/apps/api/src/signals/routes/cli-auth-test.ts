@@ -55,7 +55,6 @@ import {
 } from "../services/codex-auth-json-parser";
 import { safeSync } from "../utils";
 
-
 const testTokenQuery$ = queryOf(cliAuthTestTokenContract.create);
 const testConnectorBody$ = bodyResultOf(cliAuthTestConnectorContract.create);
 const testConnectorQuery$ = queryOf(cliAuthTestConnectorContract.create);
@@ -524,7 +523,9 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     return stringError(400, "Test user has no org — run test-token first");
   }
 
-  const featureSwitchContext = await get(userFeatureSwitchContext(orgId, userId));
+  const featureSwitchContext = await get(
+    userFeatureSwitchContext(orgId, userId),
+  );
   signal.throwIfAborted();
   if ("authJson" in bodyResult.data) {
     const { authJson } = bodyResult.data;

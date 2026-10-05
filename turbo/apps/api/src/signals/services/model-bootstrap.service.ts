@@ -1,29 +1,70 @@
 import { computed } from "ccstate";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
-import { createModelCatalog,type ModelCatalog } from "./model-catalog.service";
+import { createModelCatalog, type ModelCatalog } from "./model-catalog.service";
 import { createMemberModelSources } from "./model-source-context.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-export type OrgModelBootstrap = Awaited<ReturnType<ReturnType<typeof createModelFacts>["read"]>>;
-export type MemberModelBootstrap = Awaited<ReturnType<ReturnType<typeof createMemberModelBootstrap>["read"]>>;
+export type OrgModelBootstrap = Awaited<
+  ReturnType<ReturnType<typeof createModelFacts>["read"]>
+>;
+export type MemberModelBootstrap = Awaited<
+  ReturnType<ReturnType<typeof createMemberModelBootstrap>["read"]>
+>;
 export interface RunOrgMetadata {
   readonly credits: number;
   readonly defaultAgentId: string | null;
 }
 
-export function createModelFacts(orgId: string, capabilities: OrgPlanCapabilities | null, org: RunOrgMetadata | null) {
+export function createModelFacts(
+  orgId: string,
+  capabilities: OrgPlanCapabilities | null,
+  org: RunOrgMetadata | null,
+) {
   const catalog$ = createModelCatalog();
-  return computed(async (get) => modelFactsFromSnapshot(orgId, capabilities, org, await get(catalog$)));
+  return computed(async (get) => {
+    return modelFactsFromSnapshot(
+      orgId,
+      capabilities,
+      org,
+      await get(catalog$),
+    );
+  });
 }
 export function createMemberModelBootstrap(orgId: string, userId: string) {
   const sources$ = createMemberModelSources(orgId, userId);
-  return computed(async (get) => memberModelBootstrapFromSources(await get(sources$)));
+  return computed(async (get) => {
+    return memberModelBootstrapFromSources(await get(sources$));
+  });
 }
-export function memberModelBootstrapFromSources({ orgId, userId, rows, providers }: Awaited<ReturnType<ReturnType<typeof createMemberModelSources>["read"]>>) {
-  const accounts = [...new Map(rows.map((row) => [row.account.id, row.account])).values()];
-  const member = memberModelRouteContextFromAccounts(userId, accounts.map((account) => ({ ...account, providerId: account.modelProviderId })));
+export function memberModelBootstrapFromSources({
+  orgId,
+  userId,
+  rows,
+  providers,
+}: Awaited<ReturnType<ReturnType<typeof createMemberModelSources>["read"]>>) {
+  const accounts = [
+    ...new Map(
+      rows.map((row) => {
+        return [row.account.id, row.account];
+      }),
+    ).values(),
+  ];
+  const member = memberModelRouteContextFromAccounts(
+    userId,
+    accounts.map((account) => {
+      return {
+        ...account,
+        providerId: account.modelProviderId,
+      };
+    }),
+  );
   return { orgId, userId, rows, accounts, member, providers };
 }
-export function modelFactsFromSnapshot(orgId: string, capabilities: OrgPlanCapabilities | null, org: RunOrgMetadata | null, catalog: ModelCatalog) {
+export function modelFactsFromSnapshot(
+  orgId: string,
+  capabilities: OrgPlanCapabilities | null,
+  org: RunOrgMetadata | null,
+  catalog: ModelCatalog,
+) {
   return { orgId, org, capabilities, catalog };
 }

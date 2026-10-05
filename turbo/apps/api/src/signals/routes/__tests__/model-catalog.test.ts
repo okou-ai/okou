@@ -25,8 +25,6 @@ import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelPoliciesRoutes } from "../model-policies";
 import { createRouteMocks } from "./helpers/route-test";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { modelCatalogRoutes } from "../model-catalog";
@@ -185,151 +183,31 @@ function signIn(): void {
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
 }
 
-function policiesApi() {
-  return setupApp({ context, routes: modelPoliciesRoutes })(
-    modelPoliciesMainContract,
-  );
-}
-
-// Tests that mutate the global catalog row live only in this file (its tests
-// run sequentially) and restore the row in the same test.
 describe("GET /api/model-catalog", () => {
-  it("returns the global catalog with replacements resolved", async () => {
-    signIn();
+  it("returns only fixed Auto without a personal subscription", async () => {
+    const actor = authOrgApi.user();
+    mocks.clerk.session(actor.userId, actor.orgId ?? null);
     const response = await accept(
-      apiClient().get({ headers: { authorization: "Bearer clerk-session" } }),
+      setupApp({ context, routes: modelCatalogRoutes })(
+        modelCatalogContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
     );
-
-    const { models, routes, systemDefaultModel } = response.body;
-    expect(systemDefaultModel).toBe("okou-1.0");
+    expect(response.body.systemDefaultModel).toBe("okou-1.0");
     expect(
-      models.filter((row) => {
-        return row.isSystemDefault;
+      response.body.models.map((entry) => {
+        return entry.model;
       }),
-    ).toStrictEqual([
-      {
-        model: "okou-1.0",
-        displayName: "Auto",
-        sortOrder: 10,
-        isSystemDefault: true,
-        replacedBy: null,
-        resolvedModel: "okou-1.0",
-        priceTier: "$",
-        builtInOnRestrictedPlans: true,
-        piRouteClass: "gpt-codex",
-      },
-    ]);
-    expect(
-      models.find((row) => {
-        return row.model === "claude-fable-5";
-      }),
-    ).toStrictEqual({
-      model: "claude-fable-5",
-      displayName: "Claude Fable 5",
-      sortOrder: 30,
-      isSystemDefault: false,
-      replacedBy: "claude-fable-5-1",
-      resolvedModel: "claude-fable-5-1",
-      priceTier: null,
-      builtInOnRestrictedPlans: false,
-      piRouteClass: null,
-    });
-    expect(
-      models.find((row) => {
-        return row.model === "claude-fable-5-1";
-      })?.resolvedModel,
-    ).toBe("claude-fable-5-1");
-    // Retired models keep their row and resolve to the approved replacement,
-    // including the cross-provider DeepSeek V4 Pro -> GPT 6 Luna and the
-    // former Okou 1.0 Pro and Max presets -> Auto.
-    expect(
-      models
-        .filter((row) => {
-          return row.replacedBy !== null;
-        })
-        .map((row) => {
-          return [row.model, row.resolvedModel];
-        }),
-    ).toStrictEqual([
-      ["claude-fable-5", "claude-fable-5-1"],
-      ["claude-opus-4-8", "claude-opus-5-5"],
-      ["claude-sonnet-4-6", "claude-sonnet-5-5"],
-      ["gpt-5.5", "gpt-6-luna"],
-      ["deepseek-v4-pro", "gpt-6-luna"],
-      ["gpt-5.6-terra", "gpt-6-luna"],
-      ["okou-1.0-pro", "okou-1.0"],
-      ["okou-1.0-max", "okou-1.0"],
-    ]);
-    const sortOrders = models.map((row) => {
-      return row.sortOrder;
-    });
-    expect(sortOrders).toStrictEqual(
-      [...sortOrders].sort((left, right) => {
-        return left - right;
-      }),
-    );
-
-    expect(
-      routes.filter((route) => {
-        return route.model === "okou-1.0";
-      }),
-    ).toStrictEqual([
-      {
+    ).toStrictEqual(["okou-1.0"]);
+    expect(response.body.routes).toStrictEqual([
+      expect.objectContaining({
         model: "okou-1.0",
         providerType: "built-in",
         concreteProviderType: "openrouter-codex",
-        subscriptionType: null,
         upstreamModel: "@preset/okou-1-0",
-        enabled: true,
-        priority: 0,
-        serviceTiers: [],
-        defaultServiceTier: null,
-        efforts: [],
-        defaultEffort: null,
-        priceTier: "$",
-      },
-    ]);
-    expect(
-      routes.filter((route) => {
-        return (
-          route.model === "gpt-6-astra" &&
-          route.providerType === "codex-oauth-token"
-        );
-      }),
-    ).toStrictEqual([
-      expect.objectContaining({ subscriptionType: null }),
-      expect.objectContaining({
-        subscriptionType: "codex-oauth-token",
-        serviceTiers: ["priority"],
+        priceTier: null,
       }),
     ]);
-  });
-
-  it("changes every organization's default when the database default changes", async () => {
-    signIn();
-    const restore = await setModelCatalogSystemDefaultFixture("gpt-6-luna");
-    onTestFinished(restore);
-
-    const catalog = await accept(
-      apiClient().get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(catalog.body.systemDefaultModel).toBe("gpt-6-luna");
-
-    const policies = (
-      await accept(
-        policiesApi().list({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      )
-    ).body;
-    expect(
-      policies.policies.map((policy) => {
-        return policy.model;
-      }),
-    ).toStrictEqual(["gpt-6-luna"]);
   });
 
   it("requires an authenticated organization session", async () => {
@@ -351,7 +229,7 @@ describe("stored selections of replaced models", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-fable-5-1",
+      model: "okou-1.0",
     });
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: thread.id,
@@ -361,7 +239,7 @@ describe("stored selections of replaced models", () => {
     const projected = await mcpThread(actor, thread.id);
     expect(projected.model).toStrictEqual({
       selectedModel: "claude-fable-5",
-      effectiveModel: "claude-fable-5-1",
+      effectiveModel: "okou-1.0",
       source: "thread",
       admission: "checked_on_send",
     });
@@ -372,23 +250,15 @@ describe("stored selections of replaced models", () => {
       prompt: "continue the legacy Fable thread",
     });
     const read = await api.readRun(actor, run.runId);
-    expect(read.source.model).toBe("claude-fable-5-1");
+    expect(read.source.model).toBe("okou-1.0");
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 
   it("shows a thread stored with gpt-5.6-terra as gpt-6-luna", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-luna",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "gpt-6-luna",
+      model: "okou-1.0",
     });
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: thread.id,
@@ -398,7 +268,7 @@ describe("stored selections of replaced models", () => {
     const projected = await mcpThread(actor, thread.id);
     expect(projected.model).toStrictEqual({
       selectedModel: "gpt-5.6-terra",
-      effectiveModel: "gpt-6-luna",
+      effectiveModel: "okou-1.0",
       source: "thread",
       admission: "checked_on_send",
     });
@@ -421,23 +291,11 @@ describe("stored selections of replaced models", () => {
     expect(preference.body.selectedModel).toBe("okou-1.0");
   }, 90_000);
 
-  it("runs a queued input with the replacement of a model replaced before pick", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.updateOrgModelPolicies(
-      actor,
-      (["claude-sonnet-5-5", "claude-opus-5-5"] as const).map((model) => {
-        return {
-          model,
-          preferred: model === "claude-sonnet-5-5",
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        };
-      }),
-    );
+  it("keeps queued Auto when the catalog default changes before pick", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
       agentId,
+      model: "okou-1.0",
       prompt: "keep the thread busy",
     });
     const clientEventId = randomUUID();
@@ -446,24 +304,17 @@ describe("stored selections of replaced models", () => {
       {
         agentId,
         threadId: active.threadId,
-        prompt: "run with the model captured at enqueue",
-        model: "claude-sonnet-5-5",
+        model: "okou-1.0",
+        prompt: "queued Auto",
         clientEventId,
       },
       [201],
     );
     await flushWaitUntilForTest();
-
-    const restore = await stageModelReplacementFixture(
-      "claude-sonnet-5-5",
-      "claude-opus-5-5",
-    );
-    onTestFinished(restore);
-
+    onTestFinished(await setModelCatalogSystemDefaultFixture("gpt-6-luna"));
     await cancelChatRun(actor, active.runId);
     const runId = await pickedRunId(actor, active.threadId, clientEventId);
-    const picked = await api.readRun(actor, runId);
-    expect(picked.source.model).toBe("claude-opus-5-5");
+    expect((await api.readRun(actor, runId)).source.model).toBe("okou-1.0");
     await cancelChatRun(actor, runId);
   }, 90_000);
 
@@ -485,55 +336,26 @@ describe("stored selections of replaced models", () => {
       },
     ]);
     onTestFinished(restore);
-    const { actor, agentId, providerId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-opus-5-5",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-    const headers = { authorization: "Bearer clerk-session" };
-    mocks.clerk.session(actor.userId, requireOrgId(actor), actor.orgRole);
-
-    const catalog = await accept(apiClient().get({ headers }), [200]);
-    expect(
-      catalog.body.models.find((row) => {
-        return row.model === "test-chain-hop-a";
-      }),
-    ).toStrictEqual({
-      model: "test-chain-hop-a",
-      displayName: "Test Chain Hop A",
-      sortOrder: 9001,
-      isSystemDefault: false,
-      replacedBy: "test-chain-hop-b",
-      resolvedModel: "claude-opus-5-5",
-      priceTier: null,
-      builtInOnRestrictedPlans: false,
-      piRouteClass: null,
+    const { actor, agentId } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "okou-1.0",
     });
-
-    const preference = await accept(
-      setupApp({ context, routes: userModelPreferenceRoutes })(
-        userModelPreferenceContract,
-      ).update({
-        headers,
-        body: { selectedModel: "test-chain-hop-a", serviceTier: null },
-      }),
-      [200],
-    );
-    expect(preference.body.selectedModel).toBe("claude-opus-5-5");
-
+    await stageLegacyChatThreadSelectedModelFixture({
+      threadId: thread.id,
+      model: "test-chain-hop-a",
+    });
+    const projected = await mcpThread(actor, thread.id);
+    expect(projected.model).toMatchObject({
+      selectedModel: "test-chain-hop-a",
+      effectiveModel: "okou-1.0",
+    });
     const run = await sendChatRun(actor, {
       agentId,
-      model: "test-chain-hop-a",
-      prompt: "run through the replacement chain",
+      threadId: thread.id,
+      prompt: "normalize stored retired choices",
     });
-    const read = await api.readRun(actor, run.runId);
-    expect(read.source.model).toBe("claude-opus-5-5");
+    expect((await api.readRun(actor, run.runId)).source.model).toBe("okou-1.0");
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 });

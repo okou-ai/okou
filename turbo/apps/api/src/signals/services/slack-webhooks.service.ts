@@ -5,60 +5,60 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { command,computed,type Computed } from "ccstate";
-import { and,eq,or } from "drizzle-orm";
-import { env,optionalEnv } from "../../lib/env";
+import { command, computed, type Computed } from "ccstate";
+import { and, eq, or } from "drizzle-orm";
+import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
-OFFICIAL_SLACK_APP_NAME,
-officialSlackBotMention,
+  OFFICIAL_SLACK_APP_NAME,
+  officialSlackBotMention,
 } from "../../lib/slack-official-app";
 import {
-getSlackSignatureHeaders,
-verifySlackSignature,
+  getSlackSignatureHeaders,
+  verifySlackSignature,
 } from "../../lib/slack-request-verification";
 import {
-MODEL_PICKER_ACTION_ID,
-MODEL_PICKER_BLOCK_ID,
-MODEL_PICKER_CALLBACK_ID,
-buildAppHomeView,
-buildErrorMessage,
-buildHelpMessage,
-buildLoginMessage,
-buildLoginPromptMessage,
-buildModelPickerModal,
-buildSuccessMessage,
-buildWelcomeMessage,
+  MODEL_PICKER_ACTION_ID,
+  MODEL_PICKER_BLOCK_ID,
+  MODEL_PICKER_CALLBACK_ID,
+  buildAppHomeView,
+  buildErrorMessage,
+  buildHelpMessage,
+  buildLoginMessage,
+  buildLoginPromptMessage,
+  buildModelPickerModal,
+  buildSuccessMessage,
+  buildWelcomeMessage,
 } from "../../lib/slack-webhook-blocks";
 import type { SlackFile } from "../../lib/slack-webhook-context";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$,type Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
 import {
-createSlackClient,
-type SlackClient,
+  createSlackClient,
+  type SlackClient,
 } from "../external/slack-message-client";
-import { onRejection,safeJsonParse,tapError } from "../utils";
+import { onRejection, safeJsonParse, tapError } from "../utils";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import {
-readIntegrationChatThreadModel$,
-updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import {
-listAvailableRunModels$,
-listAvailableRunModelsWithDefault$,
+  listAvailableRunModels$,
+  listAvailableRunModelsWithDefault$,
 } from "./run-models.service";
 import {
-admitCanonicalSlackChatEvent$,
-ensureCanonicalSlackChatThreadRoute$,
-findSlackChatThreadRoute$,
-findSlackDirectMessageChatThreadId$,
-slackSessionThreadTs,
+  admitCanonicalSlackChatEvent$,
+  ensureCanonicalSlackChatThreadRoute$,
+  findSlackChatThreadRoute$,
+  findSlackDirectMessageChatThreadId$,
+  slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 const L = logger("SlackWebhooks");

@@ -4,15 +4,10 @@ import {
   personalModelProvidersMainContract,
   personalModelProvidersByTypeContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import {
-  modelProviderConnectionsMainContract,
-  modelProviderConnectionsByIdContract,
-} from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
-import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -28,7 +23,7 @@ function identity(): { userId: string; orgId: string } {
   return { userId, orgId };
 }
 
-describe("model policy invalidation", () => {
+describe("personal subscription invalidation", () => {
   it("publishes account changes only to the owner without account details", async () => {
     const { userId, orgId } = identity();
     const client = setupApp({ context, routes: meModelProvidersUpsertRoutes })(
@@ -76,61 +71,5 @@ describe("model policy invalidation", () => {
       }),
       [404],
     );
-  });
-
-  it("publishes organization surface changes after successful mutations", async () => {
-    const { orgId } = identity();
-    const clients = setupApp({ context, routes: modelProviderGatewayRoutes });
-    const main = clients(modelProviderConnectionsMainContract);
-    const byId = clients(modelProviderConnectionsByIdContract);
-    const surfaces = [
-      {
-        protocol: "openai-responses" as const,
-        apiBaseUrl: "https://gateway.example.com/v1",
-        authHeaderName: "Authorization",
-        authHeaderTemplate: "Bearer {{secret}}",
-        modelMappings: { "gpt-5.6-sol": "enterprise-model" },
-      },
-    ];
-    const created = await accept(
-      main.create({
-        headers: authHeaders(),
-        body: {
-          displayName: "Company gateway",
-          secret: "synthetic-gateway-key",
-          surfaces,
-        },
-      }),
-      [201],
-    );
-    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(`org:${orgId}`);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "modelPoliciesChanged",
-      null,
-    );
-    await accept(
-      byId.update({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: { displayName: "Updated gateway", surfaces },
-      }),
-      [200],
-    );
-    const listed = await accept(main.list({ headers: authHeaders() }), [200]);
-    expect(listed.body.connections).toContainEqual(
-      expect.objectContaining({
-        id: created.body.id,
-        displayName: "Updated gateway",
-      }),
-    );
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("Realtime unavailable"),
-    );
-    await accept(
-      byId.delete({ headers: authHeaders(), params: { id: created.body.id } }),
-      [204],
-    );
-    const after = await accept(main.list({ headers: authHeaders() }), [200]);
-    expect(after.body.connections).toStrictEqual([]);
   });
 });

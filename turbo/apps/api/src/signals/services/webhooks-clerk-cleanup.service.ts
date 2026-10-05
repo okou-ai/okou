@@ -36,50 +36,50 @@ import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
 import {
-and,
-asc,
-count,
-eq,
-inArray,
-isNotNull,
-like,
-sql,
+  and,
+  asc,
+  count,
+  eq,
+  inArray,
+  isNotNull,
+  like,
+  sql,
 } from "drizzle-orm";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
-SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX,
-sharedThreadArtifactAuthorUserId,
+  SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX,
+  sharedThreadArtifactAuthorUserId,
 } from "../../lib/shared-thread-artifact";
 import { nowDate } from "../../lib/time";
-import { clerk$,createClerkReadContext } from "../external/clerk";
-import { writeDb$,type Db } from "../external/db";
+import { clerk$, createClerkReadContext } from "../external/clerk";
+import { writeDb$, type Db } from "../external/db";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
-getStripeClient,
-listAllStripeSubscriptions,
+  getStripeClient,
+  listAllStripeSubscriptions,
 } from "../external/stripe-client";
-import { settle,tapError } from "../utils";
+import { settle, tapError } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import {
-releaseNeverStartedRunSlots,
-transitionAgentRunsToTerminal,
-type ReleasedRunSlot,
+  releaseNeverStartedRunSlots,
+  transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import {
-deleteClerkAgentLifecycleData$,
-deleteStableContextLifecycleAfterAuthorityRemoval$,
+  deleteClerkAgentLifecycleData$,
+  deleteStableContextLifecycleAfterAuthorityRemoval$,
 } from "./clerk-agent-lifecycle.service";
 import {
-deleteBuiltinConnectorLocalState$,
-loadStoredBuiltinConnectorRuntimeSnapshot$,
+  deleteBuiltinConnectorLocalState$,
+  loadStoredBuiltinConnectorRuntimeSnapshot$,
 } from "./connector-data.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import {
-deleteDiscordOrgData,
-deleteDiscordUserData,
+  deleteDiscordOrgData,
+  deleteDiscordUserData,
 } from "./discord-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
@@ -90,8 +90,8 @@ import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.ser
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
 import {
-executeStorageObjectCleanupWork$,
-storageObjectCleanupJobValues,
+  executeStorageObjectCleanupWork$,
+  storageObjectCleanupJobValues,
 } from "./storage-object-cleanup.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";

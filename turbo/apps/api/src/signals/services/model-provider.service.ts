@@ -1,62 +1,82 @@
 import {
-getDefaultModel,
-getFrameworkForType,
-getModelProviderCodexCatalogForModel,
-getModelProviderCodexRuntimeCapabilities,
-getModelProviderCodexRuntimeConfig,
-getModelProviderEnvBindings,
-getModelProviderFirewall,
-getSecretNameForType,
-getSecretsForAuthMethod,
-hasAuthMethods,
-MODEL_PROVIDER_TYPES,
-type ModelProviderCodexRuntimeConfig,
-type ModelProviderEnvBindings,
-type ModelProviderType,
-modelProviderTypeSchema
+  getDefaultModel,
+  getFrameworkForType,
+  getModelProviderCodexCatalogForModel,
+  getModelProviderCodexRuntimeCapabilities,
+  getModelProviderCodexRuntimeConfig,
+  getModelProviderEnvBindings,
+  getModelProviderFirewall,
+  getSecretNameForType,
+  getSecretsForAuthMethod,
+  hasAuthMethods,
+  MODEL_PROVIDER_TYPES,
+  type ModelProviderCodexRuntimeConfig,
+  type ModelProviderEnvBindings,
+  type ModelProviderType,
+  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
-type FeatureSwitchContext,
-isFeatureEnabled,
+  type FeatureSwitchContext,
+  isFeatureEnabled,
 } from "@okouai/core/feature-switch";
 import { command } from "ccstate";
 import { notFound } from "../../lib/error";
-import {
-decryptStoredSecretValue
-} from "./crypto.utils";
+import { decryptStoredSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
 import {
-type BuiltInModelRuntimeRoute,
-isBuiltInModelRuntimeRoutePermitted,
+  type BuiltInModelRuntimeRoute,
+  isBuiltInModelRuntimeRoutePermitted,
 } from "./built-in-model-runtime-route.service";
 import {
-disconnectPersonalModelProviderAccounts$,
-isPersonalSubscriptionProviderType,
+  disconnectPersonalModelProviderAccounts$,
+  isPersonalSubscriptionProviderType,
 } from "./model-provider-account.service";
 
 import {
-getOpenRouterBaseUrl,
-OPENROUTER_US_ORIGIN,
+  getOpenRouterBaseUrl,
+  OPENROUTER_US_ORIGIN,
 } from "@okouai/api-contracts/contracts/openrouter-routing";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import {
-compileModelRuntime,
-type ModelCredentialValues,
+  compileModelRuntime,
+  type ModelCredentialValues,
 } from "./execution-model-runtime";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import {
-catalogProviderUpstreamModel,
-type ModelCatalog
+  catalogProviderUpstreamModel,
+  type ModelCatalog,
 } from "./model-catalog.service";
-export const deleteUserModelProvider$ = command(async ({ get, set }, args: { readonly orgId: string; readonly userId: string; readonly type: ModelProviderType }, signal: AbortSignal) => {
-  if (!isPersonalSubscriptionProviderType(args.type)) { return notFound("Resource not found"); }
-  const featureSwitchContext = await get(userFeatureSwitchContext(args.orgId, args.userId));
-  signal.throwIfAborted();
-  return await set(disconnectPersonalModelProviderAccounts$, { ...args, selection: { kind: "provider", type: args.type }, featureSwitchContext }, signal);
-});
+export const deleteUserModelProvider$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly type: ModelProviderType;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (!isPersonalSubscriptionProviderType(args.type)) {
+      return notFound("Resource not found");
+    }
+    const featureSwitchContext = await get(
+      userFeatureSwitchContext(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    return await set(
+      disconnectPersonalModelProviderAccounts$,
+      {
+        ...args,
+        selection: { kind: "provider", type: args.type },
+        featureSwitchContext,
+      },
+      signal,
+    );
+  },
+);
 
 function envBindingsRequireModel(
   envBindings: ModelProviderEnvBindings,
@@ -325,7 +345,13 @@ export async function prepareRegisteredModelEnvironment(
   const { catalog, userId, sourceId, piExecution } = options;
   const type = modelProviderTypeSchema.parse(source.configuration.providerType);
   const deferred = getModelProviderFirewall(type) !== undefined;
-  if (source.identity.kind !== "member" || source.credentialOwner !== "member" || !isPersonalSubscriptionProviderType(type)) { return null; }
+  if (
+    source.identity.kind !== "member" ||
+    source.credentialOwner !== "member" ||
+    !isPersonalSubscriptionProviderType(type)
+  ) {
+    return null;
+  }
   // As on main, a firewall-injected single-secret credential that Pi does not
   // capture stays encrypted: the runtime only sees its secret reference.
   const credentials =
@@ -344,7 +370,11 @@ export async function prepareRegisteredModelEnvironment(
   if (!modelCredentialsAreUsable(source, type, credentials)) {
     return null;
   }
-  const upstreamModel = catalogProviderUpstreamModel(catalog, selectedModel, type);
+  const upstreamModel = catalogProviderUpstreamModel(
+    catalog,
+    selectedModel,
+    type,
+  );
   if (!upstreamModel) {
     return null;
   }

@@ -54,4 +54,3 @@ export const modelProviderCooldownDiagnosticsContract = c.router({
 
 export type ModelProviderCooldownDiagnosticsContract =
   typeof modelProviderCooldownDiagnosticsContract;
-

@@ -3,50 +3,50 @@ import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { secrets } from "@okouai/db/schema/secret";
-import { command,computed,type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import {
-withPgPoolAcquisitionCapture,
-type PgPoolAcquisition,
-type PgPoolAcquisitionCapture,
+  withPgPoolAcquisitionCapture,
+  type PgPoolAcquisition,
+  type PgPoolAcquisitionCapture,
 } from "../../lib/db-instrumentation";
 import {
-nullableDriverValueDecoder,
-pgInt8ToBigIntDecoder,
-zodDriverValueDecoder,
+  nullableDriverValueDecoder,
+  pgInt8ToBigIntDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { mapConcurrent } from "../../lib/map-concurrent";
 import { waitUntil } from "../context/wait-until";
-import { safeSync,settle } from "../utils";
+import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
-agentStorageCacheSnapshot,
-agentStorageReadPlan,
-captureAgentStorageContext,
-type AgentStorageContext,
+  agentStorageCacheSnapshot,
+  agentStorageReadPlan,
+  captureAgentStorageContext,
+  type AgentStorageContext,
 } from "./agent-storage-context.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import {
-connectorSourceSnapshotsFromRows,
-type ConnectorSourceIdentity,
-type ConnectorSourceResult,
-type ConnectorSourceRow,
+  connectorSourceSnapshotsFromRows,
+  type ConnectorSourceIdentity,
+  type ConnectorSourceResult,
+  type ConnectorSourceRow,
 } from "./execution-connector-sources.service";
 import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
 import type {
-MemberModelBootstrap,
-OrgModelBootstrap,
-RunOrgMetadata,
+  MemberModelBootstrap,
+  OrgModelBootstrap,
+  RunOrgMetadata,
 } from "./model-bootstrap.service";
 import {
-createManagedModelKeys,
-createModelPricing,
+  createManagedModelKeys,
+  createModelPricing,
 } from "./model-source-context.service";
 import {
-createOfficialWorkflowCatalog,
-createOfficialWorkflowFacts,
-type OfficialWorkflowContextFacts,
+  createOfficialWorkflowCatalog,
+  createOfficialWorkflowFacts,
+  type OfficialWorkflowContextFacts,
 } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { readStorageBaseIndex } from "./storage-index.service";
@@ -54,29 +54,29 @@ import { readStorageBaseIndex } from "./storage-index.service";
 import type { ConnectorCatalogArtifactConnector } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { connectorCatalogRuntimeProjections } from "@okouai/db/schema/connector-catalog";
 import { variables } from "@okouai/db/schema/variable";
-import { and,count,eq,isNotNull,isNull,or,sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
 import {
-decodeAcceptedConnectorCatalogPayload,
-ExternalConnectorCatalogUnavailableError,
-readCachedConnectorCatalogSnapshot,
+  decodeAcceptedConnectorCatalogPayload,
+  ExternalConnectorCatalogUnavailableError,
+  readCachedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
 import {
-createAgentCatalogIdentity,
-createAgentCatalogProjectionRows,
-validateConnectorCatalogRuntimeProjectionRows,
-type CapturedAgentCatalog,
+  createAgentCatalogIdentity,
+  createAgentCatalogProjectionRows,
+  validateConnectorCatalogRuntimeProjectionRows,
+  type CapturedAgentCatalog,
 } from "./connector-catalog-runtime-projection.service";
 import {
-materializeProjectedRuntimeSelection,
-rememberProjectedConnectors,
-requestedProjectionConnectorSlugs,
-runtimeSelectionFromAcceptedSnapshot,
-takeCachedProjectedConnectors,
-type ConnectorRuntimeSelection,
+  materializeProjectedRuntimeSelection,
+  rememberProjectedConnectors,
+  requestedProjectionConnectorSlugs,
+  runtimeSelectionFromAcceptedSnapshot,
+  takeCachedProjectedConnectors,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
@@ -88,27 +88,27 @@ import { createGlobalModelContext } from "./execution-global-model-context.servi
 import { createExecutionMemberContext } from "./execution-member-context.service";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
-createExecutionOrgRows,
-executionExpiredCredits,
-executionOrgMetadata,
-executionOrgPlan,
-executionOrgSlots,
+  createExecutionOrgRows,
+  executionExpiredCredits,
+  executionOrgMetadata,
+  executionOrgPlan,
+  executionOrgSlots,
 } from "./execution-org-context.service";
 import { createProviderContext } from "./execution-provider-context.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import {
-createUsageAllowanceContext,
-type UsageAllowanceContext,
+  createUsageAllowanceContext,
+  type UsageAllowanceContext,
 } from "./usage-allowance-context.service";
 
 import { now } from "../../lib/time";
 import {
-executionCreditBalance,
-type ExecutionCreditBalance,
+  executionCreditBalance,
+  type ExecutionCreditBalance,
 } from "./execution-credit-balance.service";
 import {
-cappedBaseConcurrencyLimit,
-totalConcurrencyLimit,
+  cappedBaseConcurrencyLimit,
+  totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 
 export interface BootstrapFeatureSwitchContext {
@@ -327,8 +327,7 @@ function createModelSourceGroups(
 ) {
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  const providers =
-    sharedMember ?? createProviderContext(orgId, userId);
+  const providers = sharedMember ?? createProviderContext(orgId, userId);
   const globalReferences = supplied
     ? hasGlobalModelOwner(supplied)
       ? {
@@ -409,7 +408,11 @@ function createOrgContext(
   const modelFacts$ =
     sharedOrg?.modelFacts$ ??
     computed(async (get) => {
-      const [capabilities, org, catalog] = await Promise.all([get(plan$), get(orgMetadata$), get(modelCatalog$)]);
+      const [capabilities, org, catalog] = await Promise.all([
+        get(plan$),
+        get(orgMetadata$),
+        get(modelCatalog$),
+      ]);
       return { orgId, org, capabilities, catalog };
     });
   return {

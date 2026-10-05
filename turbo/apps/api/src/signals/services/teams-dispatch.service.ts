@@ -1,11 +1,11 @@
 import type {
-TeamsInboundActivity,
-TeamsInboundAttachment,
+  TeamsInboundActivity,
+  TeamsInboundAttachment,
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import type {
-ChatTeamsMessageFile,
-ChatTeamsMessageFiles,
+  ChatTeamsMessageFile,
+  ChatTeamsMessageFiles,
 } from "@okouai/db/jsonb-contracts/chat-teams-context";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -13,9 +13,9 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { command } from "ccstate";
-import { and,eq,or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { convert } from "html-to-text";
-import { createHash,randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
@@ -25,27 +25,27 @@ import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$,type Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
-publishChatThreadMessageCreatedSafely,
-publishThreadListChangedSafely,
+  publishChatThreadMessageCreatedSafely,
+  publishThreadListChangedSafely,
 } from "../external/realtime";
 import {
-fetchTeamsChannelMessage,
-fetchTeamsChannelMessageReplies,
-fetchTeamsChannelMessages,
-fetchTeamsFile,
-fetchTeamsPersonalChatMessages,
-fetchTeamsUsers,
-sendTeamsMessageReply,
-sendTeamsReaction,
-sendTeamsTypingActivity,
-type TeamsAdaptiveCard,
-type TeamsGraphAttachment,
-type TeamsGraphMessage,
-type TeamsGraphUserInfo,
+  fetchTeamsChannelMessage,
+  fetchTeamsChannelMessageReplies,
+  fetchTeamsChannelMessages,
+  fetchTeamsFile,
+  fetchTeamsPersonalChatMessages,
+  fetchTeamsUsers,
+  sendTeamsMessageReply,
+  sendTeamsReaction,
+  sendTeamsTypingActivity,
+  type TeamsAdaptiveCard,
+  type TeamsGraphAttachment,
+  type TeamsGraphMessage,
+  type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
-import { bestEffort,safeJsonParse,settle } from "../utils";
+import { bestEffort, safeJsonParse, settle } from "../utils";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { InputFileImportError } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
@@ -53,35 +53,35 @@ import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
-enqueuedChatQueueWaitReason$,
-notifyRunningChatRunOfPendingInput$,
-pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
-readIntegrationChatThreadModel$,
-updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import {
-integrationInputMessageFiles,
-materializeIntegrationInputAssets$,
-readyIntegrationInputAsset,
-type IntegrationInputAsset,
-type IntegrationInputFile,
+  integrationInputMessageFiles,
+  materializeIntegrationInputAssets$,
+  readyIntegrationInputAsset,
+  type IntegrationInputAsset,
+  type IntegrationInputFile,
 } from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
 import {
-ensureTeamsChatThreadRoute$,
-findTeamsRoutedChatThreadId$,
+  ensureTeamsChatThreadRoute$,
+  findTeamsRoutedChatThreadId$,
 } from "./teams-chat-ingress.service";
 import {
-buildTeamsConnectUrlForActivity,
-disconnectTeamsConnection$,
-publishTeamsChanged$,
+  buildTeamsConnectUrlForActivity,
+  disconnectTeamsConnection$,
+  publishTeamsChanged$,
 } from "./teams-connect.service";
 import type { TeamsFileTokenPayload } from "./teams-file-token";
 import { formatTeamsFileForContext } from "./teams-prompt";

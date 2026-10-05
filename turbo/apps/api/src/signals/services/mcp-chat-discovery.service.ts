@@ -1,24 +1,24 @@
 import type {
-McpDiscoveryResult,
-McpListAgentsInput,
-McpListAgentsOutput,
-McpListModelsOutput,
+  McpDiscoveryResult,
+  McpListAgentsInput,
+  McpListAgentsOutput,
+  McpListModelsOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and,asc,eq,gt,sql } from "drizzle-orm";
-import { createHmac,timingSafeEqual } from "node:crypto";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
-nullableDriverValueDecoder,
-pgBooleanDecoder,
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import { db$,writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { listAvailableRunModelsWithDefault$ } from "./run-models.service";

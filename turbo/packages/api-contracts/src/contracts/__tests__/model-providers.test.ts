@@ -24,7 +24,6 @@ import {
   modelProviderCredentialScopeSchema,
   modelProviderResponseSchema,
   availableRunModelSchema,
-  modelProviderWriteTypeSchema,
   upsertModelProviderRequestSchema,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
@@ -1094,9 +1093,9 @@ describe("built-in provider discriminator contract", () => {
     expect(modelProviderResponseSchema.parse(providerResponse).type).toBe(
       "built-in",
     );
-    expect(availableRunModelSchema.parse(policyResponse).defaultProviderType).toBe(
-      "built-in",
-    );
+    expect(
+      availableRunModelSchema.parse(policyResponse).defaultProviderType,
+    ).toBe("built-in");
   });
 
   it("exposes built-in exactly once without a firewall", () => {

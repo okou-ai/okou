@@ -1,12 +1,12 @@
 import {
-BUILT_IN_MODEL_ROUTE_PROVIDERS,
-getModelProviderEnvBindings,
-getModelProviderFirewall,
-getSecretNameForType,
-getSecretsForAuthMethod,
-hasAuthMethods,
-MODEL_PROVIDER_TYPES,
-modelProviderTypeSchema,
+  BUILT_IN_MODEL_ROUTE_PROVIDERS,
+  getModelProviderEnvBindings,
+  getModelProviderFirewall,
+  getSecretNameForType,
+  getSecretsForAuthMethod,
+  hasAuthMethods,
+  MODEL_PROVIDER_TYPES,
+  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 export type ModelCredentialValues = Readonly<Record<string, string>>;
@@ -331,9 +331,17 @@ export function compileModelRuntime(
   if (selection.kind === "built-in") {
     return compileManagedRuntime(input);
   }
-  if (source.identity.kind !== "member" || source.credentialOwner !== "member" ||
-    (config.providerType !== "codex-oauth-token" && config.providerType !== "claude-code-oauth-token")) {
-    throw new Error("Configured runtime requires a personal subscription account");
+  if (
+    source.identity.kind !== "member" ||
+    source.credentialOwner !== "member" ||
+    (config.providerType !== "codex-oauth-token" &&
+      config.providerType !== "claude-code-oauth-token")
+  ) {
+    throw new Error(
+      "Configured runtime requires a personal subscription account",
+    );
   }
-  return hasAuthMethods(modelProviderTypeSchema.parse(config.providerType)) ? compileMultiAuthRuntime(input) : compileRegisteredRuntime(input);
+  return hasAuthMethods(modelProviderTypeSchema.parse(config.providerType))
+    ? compileMultiAuthRuntime(input)
+    : compileRegisteredRuntime(input);
 }
