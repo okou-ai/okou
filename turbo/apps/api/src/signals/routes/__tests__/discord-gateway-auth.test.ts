@@ -9,7 +9,7 @@ import {
 import { createApp } from "../../../app-factory";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { discordGatewayRoutes } from "../discord-gateway";
 
 const context = testContext();
@@ -104,13 +104,15 @@ describe("Discord Gateway authentication and ignored transport events", () => {
   it.each([-301, 301])(
     "rejects a signed timestamp outside the past/future window (%s)",
     async (offset) => {
-      const body = eventBody(
-        { id: "222222222222222222", unavailable: true },
-        "GUILD_DELETE",
-      );
-      const timestamp = String(Math.floor(now() / 1000) + offset);
-      const response = await postRaw(body, timestamp);
-      expect(response.status).toBe(401);
+      await withMockNowForTest(new Date("2026-10-05T12:00:00Z"), async () => {
+        const body = eventBody(
+          { id: "222222222222222222", unavailable: true },
+          "GUILD_DELETE",
+        );
+        const timestamp = String(Math.floor(now() / 1000) + offset);
+        const response = await postRaw(body, timestamp);
+        expect(response.status).toBe(401);
+      });
     },
   );
 
