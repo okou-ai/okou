@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -16,7 +15,6 @@ import {
 } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 /*
 FILE-01 hosted-site soft deletion through `DELETE /api/host/sites/:publicSlug`.
@@ -35,16 +33,6 @@ function ownedActor(actor: ApiTestUser): {
     throw new Error("Expected an organization actor");
   }
   return { userId: actor.userId, orgId: actor.orgId };
-}
-
-async function setHostedSiteDelete(actor: ApiTestUser, enabled: boolean) {
-  await updateFeatureSwitchesForUser(context, ownedActor(actor), {
-    [FeatureSwitchKey.HostedSiteDelete]: enabled,
-  });
-}
-
-async function enableHostedSiteDelete(actor: ApiTestUser) {
-  await setHostedSiteDelete(actor, true);
 }
 
 function errorMessage(body: unknown): string {
@@ -67,7 +55,6 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const api = createHostMapsBddApi(context);
     const actor = bdd.user();
     const outsider = bdd.user();
-    await enableHostedSiteDelete(actor);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-delete-${randomUUID().slice(0, 8)}`;
     const first = await api.prepareHostedSite(
@@ -176,7 +163,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     ]);
   });
 
-  it("lets only the site owner delete while the switch is enabled [HOST-D]", async () => {
+  it("lets only the site owner delete [HOST-D]", async () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const owner = bdd.user();
@@ -189,13 +176,6 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     );
     await api.completeHostedSite(owner, published.deploymentId);
 
-    await setHostedSiteDelete(owner, false);
-    const disabled = await api.requestDeleteHostedSite(owner, site, [404]);
-    expect(errorMessage(disabled.body)).toBe(
-      "Hosted site deletion is not available",
-    );
-    await enableHostedSiteDelete(owner);
-    await enableHostedSiteDelete(member);
     for (const [actor, target] of [
       [member, site],
       [owner, `missing-${randomUUID().slice(0, 8)}`],
@@ -215,7 +195,6 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const owner = bdd.user();
-    await enableHostedSiteDelete(owner);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-legacy-${randomUUID().slice(0, 8)}`;
     // Prepare only allocates current-layout sites, so no endpoint can create a
@@ -236,7 +215,6 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const api = createHostMapsBddApi(context);
     const owner = bdd.user();
     const { orgId, userId } = ownedActor(owner);
-    await enableHostedSiteDelete(owner);
     const capture = api.captureHostedSitesS3();
     context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
       id: orgId,

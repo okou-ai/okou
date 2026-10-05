@@ -505,9 +505,6 @@ describe("getFeatureSwitchMetadata", () => {
   it("should classify non-internal switches by rollout audience", () => {
     const metadata = getFeatureSwitchMetadata();
 
-    expect(metadata[FeatureSwitchKey.HostedSiteDelete].rolloutStage).toBe(
-      "released",
-    );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
     expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
       "beta",

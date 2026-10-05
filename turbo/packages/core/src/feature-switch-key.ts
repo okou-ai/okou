@@ -75,6 +75,5 @@ export enum FeatureSwitchKey {
   HomeTaskRecommendations = "homeTaskRecommendations",
   ClaudeCodeUsageReset = "claudeCodeUsageReset",
   AgentResponsibilitySetup = "agentResponsibilitySetup",
-  HostedSiteDelete = "hostedSiteDelete",
   ComposerModelPanel = "composerModelPanel",
 }

@@ -1,7 +1,5 @@
 import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -14,7 +12,6 @@ import {
   getHostedSiteFiles$,
   prepareHostedSiteDeployment$,
 } from "../services/host.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import {
   artifactVisibilityUnavailable,
@@ -187,14 +184,6 @@ const deleteSiteParams$ = pathParamsOf(hostContract.deleteSite);
 const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const params = get(deleteSiteParams$);
-  const featureContext = await get(
-    userFeatureSwitchContext(auth.orgId, auth.userId),
-  );
-  signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteDelete, featureContext)) {
-    return notFound("Hosted site deletion is not available");
-  }
-
   const result = await set(
     deleteHostedSite$,
     {
