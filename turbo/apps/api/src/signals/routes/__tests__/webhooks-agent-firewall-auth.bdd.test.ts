@@ -8,6 +8,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
+  getSecretKmsClient,
   setSecretKmsClientForTests,
   type SecretKmsClient,
   type SecretKmsDataKey,
@@ -20,7 +21,11 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settle } from "../../utils";
+import {
+  createDeferredPromise,
+  settle,
+  settleIncludingAbort,
+} from "../../utils";
 import {
   basicTemplate,
   createFirewallApi,
@@ -1299,151 +1304,154 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       });
       const fw = createFirewallApi(context);
       const connectors = createConnectorBddApi(context);
-      const { actor, headers } = await firewallRun();
-      const mcp = await connectors.createCustomConnector(actor, {
-        kind: "mcp",
-        displayName: `BDD Automatic MCP ${refreshError}`,
-        endpoint: provider.endpoint,
-        transport: "streamable-http",
-        fields: [],
-        headerInjections: [],
-        queryInjections: [],
-        authMode: "automatic",
-      });
-      const authorizationUrl = await connectors.startCustomConnectorOAuth2(
-        actor,
-        mcp.id,
-      );
-      const state = new URL(authorizationUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected Automatic MCP OAuth state");
-      }
-      await connectors.completeCustomConnectorOAuth2Callback({
-        code: `automatic-mcp-${refreshError}-code`,
-        state,
-        iss: provider.issuer,
-      });
-      if (refreshError === "invalid_client") {
-        const secondAuthorization = await connectors.startCustomConnectorOAuth2(
+      await withPublicFirewallRun(async (headers, fixture) => {
+        const actor = fixture.actor;
+        const mcp = await connectors.createCustomConnector(actor, {
+          kind: "mcp",
+          displayName: `BDD Automatic MCP ${refreshError}`,
+          endpoint: provider.endpoint,
+          transport: "streamable-http",
+          fields: [],
+          headerInjections: [],
+          queryInjections: [],
+          authMode: "automatic",
+        });
+        fixture.registerCustomConnector(mcp.id);
+        const authorizationUrl = await connectors.startCustomConnectorOAuth2(
           actor,
           mcp.id,
-          undefined,
-          { intent: "add", displayName: "Second" },
         );
-        const secondState = new URL(secondAuthorization).searchParams.get(
-          "state",
-        );
-        if (!secondState) {
-          throw new Error("Expected second Automatic MCP OAuth state");
+        const state = new URL(authorizationUrl).searchParams.get("state");
+        if (!state) {
+          throw new Error("Expected Automatic MCP OAuth state");
         }
         await connectors.completeCustomConnectorOAuth2Callback({
-          code: "automatic-mcp-invalid-client-second-code",
-          state: secondState,
+          code: `automatic-mcp-${refreshError}-code`,
+          state,
           iss: provider.issuer,
         });
-      }
-      const accounts = await connectors.listCustomConnectorAccounts(
-        actor,
-        mcp.id,
-      );
-      const [account] = accounts;
-      if (!account) {
-        throw new Error("Expected an Automatic MCP OAuth account");
-      }
-      const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
-      const secretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
-      const authBody = {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate(secretKey)}`,
-        },
-        matchedFirewall: {
-          name: internalName,
-          apiId: `${internalName}:0`,
-          customConnectorId: mcp.id,
-          sourceId: account.id,
-          routingVariables: {},
-        },
-        forceRefresh: true,
-      };
-
-      const failed = await fw.requestFirewallAuth(headers, authBody, [502]);
-      if (failed.status !== 502) {
-        throw new Error("Expected Automatic MCP OAuth refresh failure");
-      }
-      expect(failed.body.error).toMatchObject({
-        code: "TOKEN_REFRESH_FAILED",
-        connectors: [mcp.id],
-        failureReason,
-      });
-      await expect(
-        connectors.readCustomConnector(actor, mcp.id),
-      ).resolves.toMatchObject({
-        connected: connectedAfterFailure,
-      });
-      expect(
-        provider.tokenBodies.map((body) => {
-          return body.get("grant_type");
-        }),
-      ).toStrictEqual(
-        refreshError === "invalid_client"
-          ? ["authorization_code", "authorization_code", "refresh_token"]
-          : ["authorization_code", "refresh_token"],
-      );
-      const verifyOutcome: Record<typeof refreshError, () => Promise<void>> = {
-        invalid_grant: async () => {
-          for (const forceRefresh of [false, true]) {
-            const repeated = await fw.requestFirewallAuth(
-              headers,
-              { ...authBody, forceRefresh },
-              [502],
+        if (refreshError === "invalid_client") {
+          const secondAuthorization =
+            await connectors.startCustomConnectorOAuth2(
+              actor,
+              mcp.id,
+              undefined,
+              { intent: "add", displayName: "Second" },
             );
-            expect(repeated.body).toMatchObject({
-              error: { failureReason: "reconnect_required" },
-            });
+          const secondState = new URL(secondAuthorization).searchParams.get(
+            "state",
+          );
+          if (!secondState) {
+            throw new Error("Expected second Automatic MCP OAuth state");
           }
-          expect(provider.tokenBodies).toHaveLength(4);
-        },
-        invalid_client: async () => {
-          const retiredAccounts = await connectors.listCustomConnectorAccounts(
-            actor,
-            mcp.id,
-          );
-          expect(retiredAccounts).toHaveLength(2);
-          expect(
-            retiredAccounts.map((item) => {
-              return item.connectionStatus;
-            }),
-          ).toStrictEqual(["reconnect-required", "reconnect-required"]);
-          await connectors.startCustomConnectorOAuth2(
-            actor,
-            mcp.id,
-            undefined,
-            { intent: "reconnect", connectionId: account.id },
-          );
-          expect(provider.registrationBodies).toHaveLength(2);
-        },
-        temporarily_unavailable: async () => {
-          const recovered = await fw.requestFirewallAuth(
-            headers,
-            authBody,
-            [200],
-          );
-          expect(recovered.body).toMatchObject({
-            headers: {
-              Authorization: "Bearer automatic-refreshed-access-token",
-            },
-            refreshedConnectors: [mcp.id],
+          await connectors.completeCustomConnectorOAuth2Callback({
+            code: "automatic-mcp-invalid-client-second-code",
+            state: secondState,
+            iss: provider.issuer,
           });
-          expect(provider.tokenBodies[2]?.get("grant_type")).toBe(
-            "refresh_token",
-          );
-          expect(provider.tokenBodies[2]?.get("resource")).toBe(
-            provider.endpoint,
-          );
-        },
-      };
-      await verifyOutcome[refreshError]();
+        }
+        const accounts = await connectors.listCustomConnectorAccounts(
+          actor,
+          mcp.id,
+        );
+        const [account] = accounts;
+        if (!account) {
+          throw new Error("Expected an Automatic MCP OAuth account");
+        }
+        const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
+        const secretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
+        const authBody = {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate(secretKey)}`,
+          },
+          matchedFirewall: {
+            name: internalName,
+            apiId: `${internalName}:0`,
+            customConnectorId: mcp.id,
+            sourceId: account.id,
+            routingVariables: {},
+          },
+          forceRefresh: true,
+        };
+
+        const failed = await fw.requestFirewallAuth(headers, authBody, [502]);
+        if (failed.status !== 502) {
+          throw new Error("Expected Automatic MCP OAuth refresh failure");
+        }
+        expect(failed.body.error).toMatchObject({
+          code: "TOKEN_REFRESH_FAILED",
+          connectors: [mcp.id],
+          failureReason,
+        });
+        await expect(
+          connectors.readCustomConnector(actor, mcp.id),
+        ).resolves.toMatchObject({
+          connected: connectedAfterFailure,
+        });
+        expect(
+          provider.tokenBodies.map((body) => {
+            return body.get("grant_type");
+          }),
+        ).toStrictEqual(
+          refreshError === "invalid_client"
+            ? ["authorization_code", "authorization_code", "refresh_token"]
+            : ["authorization_code", "refresh_token"],
+        );
+        const verifyOutcome: Record<typeof refreshError, () => Promise<void>> =
+          {
+            invalid_grant: async () => {
+              for (const forceRefresh of [false, true]) {
+                const repeated = await fw.requestFirewallAuth(
+                  headers,
+                  { ...authBody, forceRefresh },
+                  [502],
+                );
+                expect(repeated.body).toMatchObject({
+                  error: { failureReason: "reconnect_required" },
+                });
+              }
+              expect(provider.tokenBodies).toHaveLength(4);
+            },
+            invalid_client: async () => {
+              const retiredAccounts =
+                await connectors.listCustomConnectorAccounts(actor, mcp.id);
+              expect(retiredAccounts).toHaveLength(2);
+              expect(
+                retiredAccounts.map((item) => {
+                  return item.connectionStatus;
+                }),
+              ).toStrictEqual(["reconnect-required", "reconnect-required"]);
+              await connectors.startCustomConnectorOAuth2(
+                actor,
+                mcp.id,
+                undefined,
+                { intent: "reconnect", connectionId: account.id },
+              );
+              expect(provider.registrationBodies).toHaveLength(2);
+            },
+            temporarily_unavailable: async () => {
+              const recovered = await fw.requestFirewallAuth(
+                headers,
+                authBody,
+                [200],
+              );
+              expect(recovered.body).toMatchObject({
+                headers: {
+                  Authorization: "Bearer automatic-refreshed-access-token",
+                },
+                refreshedConnectors: [mcp.id],
+              });
+              expect(provider.tokenBodies[2]?.get("grant_type")).toBe(
+                "refresh_token",
+              );
+              expect(provider.tokenBodies[2]?.get("resource")).toBe(
+                provider.endpoint,
+              );
+            },
+          };
+        await verifyOutcome[refreshError]();
+      });
     },
   );
 
@@ -1596,70 +1604,100 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   it("keeps multi-secret connector auth on one replacement snapshot", async () => {
     const fw = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
-    const { actor, headers } = await firewallRun();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    const oldCredentials = {
-      accessKeyId: "old-aws-access-key-id",
-      secretAccessKey: "old-aws-secret-access-key",
-      sessionToken: "old-aws-session-token",
-    };
-    const newCredentials = {
-      accessKeyId: "new-aws-access-key-id",
-      secretAccessKey: "new-aws-secret-access-key",
-      sessionToken: "new-aws-session-token",
-    };
-    const provider = mockAwsExternalCodeProvider({
-      credentialsByRequest: [oldCredentials, newCredentials],
-    });
-
-    async function connectAws(): Promise<void> {
-      const session = await connectors.startExternalCode(actor, "aws", "cli");
-      await connectors.completeExternalCode(actor, "aws", {
-        sessionId: session.sessionId,
-        sessionToken: session.sessionToken,
-        code: awsVerificationCode(session.authorizationUrl),
+    await withPublicFirewallRun(async (headers, fixture) => {
+      const actor = fixture.actor;
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      const oldCredentials = {
+        accessKeyId: "old-aws-access-key-id",
+        secretAccessKey: "old-aws-secret-access-key",
+        sessionToken: "old-aws-session-token",
+      };
+      const newCredentials = {
+        accessKeyId: "new-aws-access-key-id",
+        secretAccessKey: "new-aws-secret-access-key",
+        sessionToken: "new-aws-session-token",
+      };
+      const provider = mockAwsExternalCodeProvider({
+        credentialsByRequest: [oldCredentials, newCredentials],
       });
-    }
 
-    await connectAws();
-    const decryptGate = gateFirstStoredSecretDecrypt();
-    const awsSecretSources = await exactSecretConnectorSources(actor, {
-      AWS_ACCESS_KEY_ID: "aws",
-      AWS_SECRET_ACCESS_KEY: "aws",
-      AWS_SESSION_TOKEN: "aws",
+      async function connectAws(): Promise<void> {
+        const session = await connectors.startExternalCode(actor, "aws", "cli");
+        await connectors.completeExternalCode(actor, "aws", {
+          sessionId: session.sessionId,
+          sessionToken: session.sessionToken,
+          code: awsVerificationCode(session.authorizationUrl),
+        });
+      }
+
+      const accountIds = fixture.registerBuiltinConnector("aws");
+      await connectAws();
+      const [account] = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "aws",
+      );
+      if (!account) {
+        throw new Error("Expected AWS account");
+      }
+      accountIds.add(account.id);
+      const originalKmsClient = getSecretKmsClient();
+      const decryptGate = gateFirstStoredSecretDecrypt();
+      let pendingAuth: ReturnType<typeof fw.requestFirewallAuth> | undefined;
+      const authOutcome = await settleIncludingAbort(
+        (async () => {
+          const awsSecretSources = await exactSecretConnectorSources(actor, {
+            AWS_ACCESS_KEY_ID: "aws",
+            AWS_SECRET_ACCESS_KEY: "aws",
+            AWS_SESSION_TOKEN: "aws",
+          });
+          pendingAuth = fw.requestFirewallAuth(
+            headers,
+            {
+              encryptedSecrets: fw.encryptedSecretsBody({}),
+              authHeaders: {
+                "X-AWS-Access-Key-ID": secretTemplate("AWS_ACCESS_KEY_ID"),
+                "X-AWS-Secret-Access-Key": secretTemplate(
+                  "AWS_SECRET_ACCESS_KEY",
+                ),
+                "X-AWS-Session-Token": secretTemplate("AWS_SESSION_TOKEN"),
+              },
+              ...awsSecretSources,
+            },
+            [200],
+          );
+          await decryptGate.started;
+          const replacement = await settle(connectAws());
+          decryptGate.release();
+          const resolved = await pendingAuth;
+          if (!replacement.ok) {
+            throw replacement.error;
+          }
+          if (resolved.status !== 200) {
+            throw new Error("Expected AWS firewall auth to resolve");
+          }
+
+          expect(provider.tokenRequests).toHaveLength(2);
+          expect(resolved.body.headers).toStrictEqual({
+            "X-AWS-Access-Key-ID": oldCredentials.accessKeyId,
+            "X-AWS-Secret-Access-Key": oldCredentials.secretAccessKey,
+            "X-AWS-Session-Token": oldCredentials.sessionToken,
+          });
+
+          fixture.registerBuiltinConnectorDeletion("aws", account.id);
+          await connectors.deleteDefaultBuiltinConnectorAccount(actor, "aws");
+        })(),
+      );
+
+      decryptGate.release();
+      if (pendingAuth) {
+        await Promise.allSettled([pendingAuth]);
+      }
+      setSecretKmsClientForTests(originalKmsClient);
+
+      if (!authOutcome.ok) {
+        throw authOutcome.error;
+      }
     });
-    const pendingAuth = fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          "X-AWS-Access-Key-ID": secretTemplate("AWS_ACCESS_KEY_ID"),
-          "X-AWS-Secret-Access-Key": secretTemplate("AWS_SECRET_ACCESS_KEY"),
-          "X-AWS-Session-Token": secretTemplate("AWS_SESSION_TOKEN"),
-        },
-        ...awsSecretSources,
-      },
-      [200],
-    );
-    await decryptGate.started;
-    const replacement = await settle(connectAws());
-    decryptGate.release();
-    const resolved = await pendingAuth;
-    if (!replacement.ok) {
-      throw replacement.error;
-    }
-    if (resolved.status !== 200) {
-      throw new Error("Expected AWS firewall auth to resolve");
-    }
-
-    expect(provider.tokenRequests).toHaveLength(2);
-    expect(resolved.body.headers).toStrictEqual({
-      "X-AWS-Access-Key-ID": oldCredentials.accessKeyId,
-      "X-AWS-Secret-Access-Key": oldCredentials.secretAccessKey,
-      "X-AWS-Session-Token": oldCredentials.sessionToken,
-    });
-
-    await connectors.deleteDefaultBuiltinConnectorAccount(actor, "aws");
   });
 
   it.each([

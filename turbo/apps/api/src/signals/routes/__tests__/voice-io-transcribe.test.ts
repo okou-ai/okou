@@ -1972,29 +1972,31 @@ describe("voice provider capacity recovery", () => {
   );
 
   it("ends persistent capacity failures after three attempts", async () => {
-    await voiceActor();
-    let attempts = 0;
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        attempts += 1;
-        return attempts <= 3
-          ? new HttpResponse(null, { status: 429 })
-          : recoveredVoiceResponse();
-      }),
-    );
-    const response = await accept(
-      client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)]),
-      }),
-      [503],
-    );
-    expect(response.body.error).toStrictEqual({
-      code: "PROVIDER_UNAVAILABLE",
-      message:
-        "Speech recognition is temporarily busy. Please retry in a moment.",
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
+      let attempts = 0;
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          attempts += 1;
+          return attempts <= 3
+            ? new HttpResponse(null, { status: 429 })
+            : recoveredVoiceResponse();
+        }),
+      );
+      const response = await accept(
+        client().segment({
+          headers: { authorization: "Bearer clerk-session" },
+          body: form([audioFile(1)]),
+        }),
+        [503],
+      );
+      expect(response.body.error).toStrictEqual({
+        code: "PROVIDER_UNAVAILABLE",
+        message:
+          "Speech recognition is temporarily busy. Please retry in a moment.",
+      });
+      expect(attempts).toBe(3);
     });
-    expect(attempts).toBe(3);
   });
 
   it.each([
@@ -2063,30 +2065,32 @@ describe("voice provider capacity recovery", () => {
   });
 
   it("stops recovery when the elapsed budget is exhausted", async () => {
-    await voiceActor();
-    const started = new Date("2026-09-09T08:00:00Z").getTime();
-    mockNow(started);
-    let attempts = 0;
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        attempts += 1;
-        if (attempts > 1) {
-          mockNow(started + 15_000);
-        }
-        return attempts <= 2
-          ? new HttpResponse(null, { status: 503 })
-          : recoveredVoiceResponse();
-      }),
-    );
-    const response = await accept(
-      client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)]),
-      }),
-      [503],
-    );
-    expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    expect(attempts).toBe(2);
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
+      const started = new Date("2026-09-09T08:00:00Z").getTime();
+      mockNow(started);
+      let attempts = 0;
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          attempts += 1;
+          if (attempts > 1) {
+            mockNow(started + 15_000);
+          }
+          return attempts <= 2
+            ? new HttpResponse(null, { status: 503 })
+            : recoveredVoiceResponse();
+        }),
+      );
+      const response = await accept(
+        client().segment({
+          headers: { authorization: "Bearer clerk-session" },
+          body: form([audioFile(1)]),
+        }),
+        [503],
+      );
+      expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+      expect(attempts).toBe(2);
+    });
   });
 
   it("aborts an in-flight recovery request when its budget expires", async () => {
