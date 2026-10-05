@@ -29,7 +29,19 @@ teardown_file() {
     fi
 }
 
-@test "mock codex chat run returns a completed response" {
+@test "personal codex subscription returns a completed native response" {
+    run runner_api_curl "/api/run-models"
+    assert_success
+    run jq -e --arg model "$E2E_MOCK_CODEX_MODEL" '
+        .defaultModel == "okou-1.0" and
+        any(.models[]?;
+            .model == $model and
+            .defaultProviderType == "codex-oauth-token" and
+            .credentialScope == "member"
+        )
+    ' <<<"$output"
+    assert_success
+
     run runner_chat_start_mock_codex "$RUNNER_AGENT_ID" "echo from codex"
 
     assert_success
@@ -38,4 +50,13 @@ teardown_file() {
     [[ -n "$(runner_chat_field "$output" '.runId')" ]]
     [[ -n "$(runner_chat_field "$output" '.threadId')" ]]
     [[ -n "$(runner_chat_field "$output" '.sessionId')" ]]
+    local run_id
+    run_id="$(runner_chat_field "$output" '.runId')"
+    run runner_api_curl "/api/runs/${run_id}/context"
+    assert_success
+    run jq -e '
+        .cliAgentType == "codex" and
+        any(.firewalls[]?; .name == "model-provider:codex-oauth-token")
+    ' <<<"$output"
+    assert_success
 }

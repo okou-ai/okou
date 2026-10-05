@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-test("deployed E2E tests only use Luna for GPT models", async () => {
+test("deployed E2E tests use Auto or mocked personal subscriptions", async () => {
   const directory = fileURLToPath(new URL("../tests/", import.meta.url));
   const files = await readdir(directory, { recursive: true });
   const testFiles = files.filter((file) => file.endsWith(".bats"));
@@ -17,7 +17,10 @@ test("deployed E2E tests only use Luna for GPT models", async () => {
     const source = await readFile(path, "utf8");
     for (const [index, line] of source.split("\n").entries()) {
       for (const [model] of line.matchAll(/\bgpt-[a-z\d][a-z\d.-]*/giu)) {
-        if (model !== "gpt-5.6-luna" && model !== "gpt-6-luna") {
+        if (
+          model !== "gpt-6-astra" ||
+          !source.includes("runner_e2e_use_mock_codex_profile")
+        ) {
           violations.push(
             `${relative(directory, path)}:${index + 1}: ${model}`,
           );
@@ -29,7 +32,7 @@ test("deployed E2E tests only use Luna for GPT models", async () => {
   assert.deepEqual(
     violations,
     [],
-    `Use a Luna model for GPT E2E coverage:\n${violations.join("\n")}`,
+    `Use Auto for live platform E2E coverage:\n${violations.join("\n")}`,
   );
 });
 
@@ -39,11 +42,11 @@ test("runner behavioral E2E tests select the mock Codex profile", async () => {
   );
   // These files intentionally cover real model/provider behavior or mock Claude.
   const providerTests = new Set([
-    "run-t09-real-codex-steer.bats",
-    "run-t10-real-claude-pi-smoke.bats",
-    "run-t11-real-codex-billing.bats",
+    "run-t09-auto-steer.bats",
+    "run-t10-auto-pi-smoke.bats",
+    "run-t11-auto-billing.bats",
     "run-t21-claude-runtime-regressions.bats",
-    "run-t24-built-in-provider-fallback.bats",
+    "run-t24-auto-continuation.bats",
   ]);
   const files = (await readdir(directory)).filter((file) =>
     file.endsWith(".bats"),
@@ -56,7 +59,11 @@ test("runner behavioral E2E tests select the mock Codex profile", async () => {
     if (!/^\s*runner_e2e_use_mock_codex_profile\s*$/m.test(source)) {
       violations.push(`${file}: select the mock Codex profile in setup`);
     }
-    if (/\bdeepseek-v4-flash\b/.test(source)) {
+    if (
+      /runner_chat_(?:send|steer)[^\n]*"okou-1\.0"|^\s*"okou-1\.0"\s*\\?\s*$/m.test(
+        source,
+      )
+    ) {
       violations.push(`${file}: do not select the real default model`);
     }
   }
@@ -79,7 +86,7 @@ test("mock Codex start helpers reject missing or incorrect profiles before dispa
   const invalidProfiles = [
     { name: "missing profile", profile: "", model: "" },
     { name: "wrong profile", profile: "real-codex", model: "gpt-6-astra" },
-    { name: "real model", profile: "mock-codex", model: "deepseek-v4-flash" },
+    { name: "real model", profile: "mock-codex", model: "okou-1.0" },
   ];
 
   for (const helper of helpers) {

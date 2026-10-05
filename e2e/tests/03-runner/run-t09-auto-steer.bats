@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Real Codex steer test through the supported agent and chat APIs.
+# Real Auto/OpenRouter steering through the supported agent and chat APIs.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
@@ -16,10 +16,10 @@ setup_file() {
 
     export RUNNER_AGENT_ID
     RUNNER_AGENT_ID="$(create_runner_agent \
-        "e2e-real-codex-steer-$(date +%s%3N)-$RANDOM")"
+        "e2e-auto-steer-$(date +%s%3N)-$RANDOM")"
     set_runner_agent_instructions \
         "$RUNNER_AGENT_ID" \
-        "Real Codex steer test instructions."
+        "Auto steer test instructions."
 }
 
 teardown_file() {
@@ -28,7 +28,7 @@ teardown_file() {
     fi
 }
 
-run_real_codex_steer() {
+run_auto_steer() {
     local steer_prompt="$1"
     local after_complete_prompt="$2"
     local initial_prompt='Run `sleep 10` with Bash, then follow the instruction in the next message received during this run. If no follow-up is received, reply only RESULT=missing.'
@@ -40,7 +40,7 @@ run_real_codex_steer() {
         "$RUNNER_AGENT_ID" \
         "$initial_prompt" \
         "$steer_prompt" \
-        "gpt-6-luna" \
+        "okou-1.0" \
         "$expected_output" \
         150)" || return 1
     run_id="$(jq -er '.runId' <<< "$steer_result")" || return 1
@@ -75,12 +75,12 @@ run_real_codex_steer() {
     printf '%s\n%s\n' "$steer_output" "$successor_output"
 }
 
-@test "real codex steers an active run then starts a successor" {
+@test "auto steers an active run then starts a successor" {
     # Run and event IDs identify this invocation; keep live-model replies short.
     local steer_prompt='Reply only RESULT=STEER_OK'
     local after_complete_prompt='RESULT=NEXT_OK'
 
-    run run_real_codex_steer "$steer_prompt" "$after_complete_prompt"
+    run run_auto_steer "$steer_prompt" "$after_complete_prompt"
 
     assert_success
     assert_output --partial "${steer_prompt#Reply only }"
