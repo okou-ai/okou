@@ -683,7 +683,7 @@ describe("Pi memory Stage 1 worker", () => {
       { orgId, userId: actor.userId },
       { [FeatureSwitchKey.PiMemory]: true },
     );
-    await chat.configureBuiltInPiModel(actor, "deepseek-v4.1-flash");
+    await chat.configureBuiltInPiModel(actor, "okou-1.0");
 
     function scope() {
       if (!memoryStorageId || !orgId) {
@@ -704,7 +704,7 @@ describe("Pi memory Stage 1 worker", () => {
         const run = await chat.sendChatRun(actor, {
           agentId,
           prompt: "Produce owned Stage 1 history",
-          model: "deepseek-v4.1-flash",
+          model: "okou-1.0",
         });
         const owned: (typeof runs)[number] = {
           runId: run.runId,
@@ -1101,6 +1101,13 @@ describe("Pi memory Stage 1 worker", () => {
     const selectedModel = "deepseek-v4.1-flash";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const storage = await createPublicStorageFixture();
+    const chatModels = await createMiscRoutesApi(context).listRunModels(
+      actorFor(storage),
+    );
+    expect(chatModels.defaultModel).toBe("okou-1.0");
+    expect(chatModels.models).not.toContainEqual(
+      expect.objectContaining({ model: selectedModel }),
+    );
     await storage.seed({
       raw: (piSessionId) => {
         return settledHistory(piSessionId, "secondary built-in candidate");
