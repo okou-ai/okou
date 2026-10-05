@@ -329,7 +329,6 @@ export function PwaMePage() {
       </div>
       <CodexResetUsageDialog
         open={reset.resetDialog.open}
-        providerType={reset.resetDialog.type}
         resetCredits={reset.resetDialog.resetCredits}
         resetting={reset.actionPending}
         onOpenChange={reset.handleCodexResetOpenChange}

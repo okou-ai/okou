@@ -24,6 +24,7 @@ import {
 } from "../../../test-fixtures/system-config-seeds";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
+import { settleIncludingAbort } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { billingStatusRoutes } from "../billing-status";
@@ -180,7 +181,10 @@ async function cleanupFundedPeopleSearchActor(
   ).toStrictEqual([]);
 }
 
-async function fundActorWithSubscription(actor: ApiTestUser) {
+async function fundActorWithSubscription(
+  actor: ApiTestUser,
+  { deleteCliUser = false }: { readonly deleteCliUser?: boolean } = {},
+) {
   if (!actor.orgId) {
     throw new Error("People Search test actor must belong to an organization");
   }
@@ -194,8 +198,56 @@ async function fundActorWithSubscription(actor: ApiTestUser) {
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
+  let cliToken: string | undefined;
   const owner = createFixtureOperationOwner(async () => {
-    await cleanupFundedPeopleSearchActor(owned);
+    const cleanupResult = await settleIncludingAbort(
+      cleanupFundedPeopleSearchActor(owned),
+    );
+
+    if (deleteCliUser) {
+      // This unique user owns every bound token, including a lost issue response.
+      const webhooks = createWebhookCallbackApi(context);
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: "user.deleted",
+        data: { id: actor.userId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      if (cliToken) {
+        // Keep positive Clerk membership: only actual bearer revocation yields 401.
+        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+          {
+            data: [
+              {
+                id: `membership_${actor.userId}`,
+                role: "org:admin",
+                organization: {
+                  id: owned.orgId,
+                  slug: owned.orgId,
+                  name: "People Search fixture",
+                },
+                publicUserData: { userId: actor.userId },
+              },
+            ],
+          },
+        );
+        authenticate(actor);
+        await accept(
+          client()(peopleSearchContract).search({
+            headers: { authorization: `Bearer ${cliToken}` },
+            body: defaultRequest(),
+          }),
+          [401],
+        );
+        await flushWaitUntilForTest();
+      }
+      // Unapproved anonymous challenges retain their public 900-second expiry.
+    }
+
+    if (!cleanupResult.ok) {
+      throw cleanupResult.error;
+    }
   });
   await owner.run(async () => {
     await bootstrapOnboarding(actor);
@@ -283,7 +335,12 @@ async function fundActorWithSubscription(actor: ApiTestUser) {
       credits: 1000,
     });
   });
-  return owner;
+  return {
+    ...owner,
+    registerCliToken(token: string) {
+      cliToken = token;
+    },
+  };
 }
 
 function peopleSearchPricingKey(): UsagePricingKey {
@@ -619,24 +676,29 @@ describe("okou people-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await createPricingFixture([peopleSearchPricing()]);
-    await fundActor(actor);
-    const { token } = await createRunsApi(context).createCliToken(actor);
-    server.use(
-      http.post(PERPLEXITY_AGENT_URL, () => {
-        return HttpResponse.json(providerResponse());
-      }),
-    );
+    const owner = await fundActorWithSubscription(actor, {
+      deleteCliUser: true,
+    });
+    await owner.run(async () => {
+      const { token } = await createRunsApi(context).createCliToken(actor);
+      owner.registerCliToken(token);
+      server.use(
+        http.post(PERPLEXITY_AGENT_URL, () => {
+          return HttpResponse.json(providerResponse());
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(peopleSearchContract).search({
-        headers: { authorization: `Bearer ${token}` },
-        body: defaultRequest(),
-      }),
-      [200],
-    );
+      const response = await accept(
+        client(pricing.resolution)(peopleSearchContract).search({
+          headers: { authorization: `Bearer ${token}` },
+          body: defaultRequest(),
+        }),
+        [200],
+      );
 
-    expect(response.body.profiles[0]?.name).toBe("Jordan Lee");
-    expect(response.body.creditsCharged).toBe(20);
+      expect(response.body.profiles[0]?.name).toBe("Jordan Lee");
+      expect(response.body.creditsCharged).toBe(20);
+    });
   });
 
   it("deduplicates by validated source identity before enforcing the response budget", async () => {

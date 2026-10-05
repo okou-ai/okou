@@ -19,7 +19,6 @@ import {
   waitLoopUntil,
   tapError,
 } from "../../utils.ts";
-import { writeToClipboard } from "../clipboard.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type CodexDeviceAuthDialogMode = "connect" | "reconnect";
@@ -49,8 +48,6 @@ type ActiveCodexDeviceAuthFlowState = {
   readonly verificationCode: string;
   readonly expiresAtMs: number;
   readonly pollIntervalMs: number;
-  readonly approvalOpened: boolean;
-  readonly codeCopied: boolean;
   readonly errorMessage: string | null;
 };
 
@@ -107,46 +104,6 @@ function codexDeviceAuthErrorMessage(
     );
   }
   return error.message;
-}
-
-function openApprovalPage(browserUrl: string): boolean {
-  const approvalWindow = window.open(browserUrl, "_blank");
-  if (!approvalWindow) {
-    return false;
-  }
-  approvalWindow.opener = null;
-  return true;
-}
-
-async function copyCodeAndOpenApprovalPage(
-  current: ActiveCodexDeviceAuthFlowState,
-): Promise<{ readonly opened: boolean; readonly copied: boolean }> {
-  const copyPromise = writeToClipboard(current.verificationCode);
-  const opened = openApprovalPage(current.browserUrl);
-  const copied = await copyPromise;
-  return { opened, copied };
-}
-
-function approvalAttemptErrorMessage(args: {
-  readonly opened: boolean;
-  readonly copied: boolean;
-}): string | null {
-  if (args.opened && args.copied) {
-    return null;
-  }
-  if (!args.opened && !args.copied) {
-    return i18n.t(($) => {
-      return $.settings.models.deviceAuth.codex.copyAndOpenError;
-    });
-  }
-  if (!args.opened) {
-    return i18n.t(($) => {
-      return $.settings.models.deviceAuth.codex.openError;
-    });
-  }
-  return i18n.t(($) => {
-    return $.settings.models.deviceAuth.codex.copyError;
-  });
 }
 
 function isCurrentStarting(
@@ -395,8 +352,6 @@ function createCodexRunFlow$(
         verificationCode: started.verificationCode,
         expiresAtMs,
         pollIntervalMs,
-        approvalOpened: false,
-        codeCopied: false,
         errorMessage: null,
       });
 
@@ -447,30 +402,6 @@ function createCodexOpen$(
   );
 }
 
-function createCodexOpenApprovalPage$(ctx: CodexDeviceAuthSignalContext) {
-  return command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const current = get(ctx.internalFlowState$);
-      if (!isActive(current)) {
-        return false;
-      }
-      const result = await copyCodeAndOpenApprovalPage(current);
-      signal.throwIfAborted();
-      const latest = get(ctx.internalFlowState$);
-      if (!isCurrentActive(latest, current.requestId)) {
-        return result.opened;
-      }
-      set(ctx.internalFlowState$, {
-        ...latest,
-        approvalOpened: result.opened || latest.approvalOpened,
-        codeCopied: result.copied || latest.codeCopied,
-        errorMessage: approvalAttemptErrorMessage(result),
-      });
-      return result.opened;
-    },
-  );
-}
-
 function createCodexClose$(ctx: CodexDeviceAuthSignalContext) {
   return command(async ({ get, set }, signal: AbortSignal) => {
     const current = get(ctx.internalFlowState$);
@@ -511,7 +442,6 @@ function createCodexDeviceAuthSignals(
       return get(ctx.internalFlowState$);
     }),
     open$: createCodexOpen$(ctx, run$),
-    openApprovalPage$: createCodexOpenApprovalPage$(ctx),
     close$: createCodexClose$(ctx),
     run$,
   };
@@ -521,7 +451,6 @@ export const {
   dialogState$: codexDeviceAuthDialogState$,
   flowState$: codexDeviceAuthFlowState$,
   open$: openCodexDeviceAuthDialog$,
-  openApprovalPage$: openCodexDeviceAuthApprovalPage$,
   close$: closeCodexDeviceAuthDialog$,
   run$: runCodexDeviceAuth$,
 } = createCodexDeviceAuthSignals("org", reloadOrgModelProviders$);
@@ -539,8 +468,6 @@ export const openCodexDeviceAuthDialogPersonal$: Command<
   Promise<boolean>,
   [OpenPersonalCodexDeviceAuthArgs, AbortSignal]
 > = personalCodexDeviceAuthSignals.open$;
-export const openCodexDeviceAuthApprovalPagePersonal$ =
-  personalCodexDeviceAuthSignals.openApprovalPage$;
 export const closeCodexDeviceAuthDialogPersonal$ =
   personalCodexDeviceAuthSignals.close$;
 export const runCodexDeviceAuthPersonal$ = personalCodexDeviceAuthSignals.run$;

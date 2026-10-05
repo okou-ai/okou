@@ -1553,6 +1553,17 @@ test("Reconnect a stale workspace Claude account", async () => {
     within(reconnectDialog).getByText("Reconnect Claude"),
   ).toBeInTheDocument();
 
+  const approvalLink = within(reconnectDialog).getByTestId(
+    "claude-code-device-auth-open",
+  );
+  expect(queryAllByRoleFast("link", reconnectDialog)).toContain(approvalLink);
+  expect(approvalLink).toHaveAttribute(
+    "href",
+    "https://claude.ai/oauth/authorize",
+  );
+  expect(approvalLink).toHaveAttribute("target", "_blank");
+  expect(approvalLink).toHaveAttribute("rel", "noopener noreferrer");
+
   await fill(codeInput, "workspace-claude-code");
   click(within(reconnectDialog).getByTestId("claude-code-device-auth-submit"));
 
@@ -1586,31 +1597,44 @@ test("Complete a stale workspace Codex reconnection", async () => {
       updatedAt: "2026-03-01T00:00:00Z",
     },
   ]);
-  context.mocks.browser.open(context.mocks.browser.authWindow());
-  context.mocks.browser.clipboardWriteText();
-  context.mocks.api(codexDeviceAuthContract.complete, ({ respond }) => {
-    context.mocks.data.orgModelProviders([
-      {
-        ...staleCodexProvider(),
-        needsReconnect: false,
-        lastRefreshErrorCode: null,
-      },
-    ]);
-    return respond(200, {
-      status: "complete",
-      provider: {
-        ...staleCodexProvider(),
-        needsReconnect: false,
-        lastRefreshErrorCode: null,
-      },
-      created: false,
-    });
-  });
+  const approval = context.mocks.deferred<void>();
+  context.mocks.api(
+    codexDeviceAuthContract.complete,
+    async ({ respond, withSignal }) => {
+      await withSignal(approval.promise);
+      context.mocks.data.orgModelProviders([
+        {
+          ...staleCodexProvider(),
+          needsReconnect: false,
+          lastRefreshErrorCode: null,
+        },
+      ]);
+      return respond(200, {
+        status: "complete",
+        provider: {
+          ...staleCodexProvider(),
+          needsReconnect: false,
+          lastRefreshErrorCode: null,
+        },
+        created: false,
+      });
+    },
+  );
 
   await openProvidersTab();
 
   const alert = await screen.findByRole("alert");
   click(within(alert).getByText("Reconnect"));
+
+  const approvalLink = await screen.findByTestId("codex-device-auth-open");
+  expect(queryAllByRoleFast("link")).toContain(approvalLink);
+  expect(approvalLink).toHaveAttribute(
+    "href",
+    "https://auth.openai.com/codex/device",
+  );
+  expect(approvalLink).toHaveAttribute("target", "_blank");
+  expect(approvalLink).toHaveAttribute("rel", "noopener noreferrer");
+  approval.resolve();
 
   await waitFor(() => {
     expect(screen.getByText("ChatGPT connected")).toBeInTheDocument();

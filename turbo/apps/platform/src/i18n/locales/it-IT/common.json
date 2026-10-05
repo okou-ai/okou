@@ -4917,7 +4917,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "Impossibile aprire la pagina di approvazione. Utilizza il collegamento manualmente e incolla qui il codice.",
           "authorizationCode": "Codice di autorizzazione",
           "codePlaceholder": "Incolla il codice da Claude",
           "codeRequired": "Incolla il codice di autorizzazione Claude per continuare.",
@@ -4935,21 +4934,15 @@
           "usageNotice": "Accedi con il tuo abbonamento Claude per usare i modelli Claude con agenti basati su Claude Code."
         },
         "codex": {
-          "approvalOpened": "Pagina di approvazione aperta. Copia il codice del dispositivo prima di approvare.",
-          "codeCopied": "Codice dispositivo copiato. In attesa di approvazione...",
-          "codeCopiedRetry": "Codice dispositivo copiato. Prova ad aprire nuovamente la pagina di approvazione.",
           "connectedToast": "ChatGPT connesso",
           "connectTitle": "Connetti Codex",
-          "copyAndOpen": "Copia il codice e apri la pagina di approvazione",
-          "copyAndOpenError": "Impossibile copiare il codice del dispositivo o aprire la pagina di approvazione. Copia il codice manualmente e riprova.",
-          "copyError": "È stata aperta la pagina di approvazione, ma il codice del dispositivo non è stato copiato. Copialo manualmente prima di approvarlo.",
           "deviceCode": "Codice dispositivo",
           "error": "Connessione ChatGPT non riuscita. Ricomincia per riprovare.",
           "expired": "La sessione di connessione Codex è scaduta. Ricomincia per riprovare.",
           "freePlanRejected": "I piani gratuiti ChatGPT non possono utilizzare Codex tramite {{brandName}}. Passa a Plus o Pro e riprova.",
-          "instructions": "Per prima cosa fai clic su Copia codice e apri la pagina di approvazione. Quindi incolla il codice del dispositivo in OpenAI quando richiesto. Infine, approva l'accesso e mantieni aperta questa finestra di dialogo mentre {{brandName}} termina la connessione.",
+          "instructions": "Per prima cosa copia il codice del dispositivo con il pulsante di copia, quindi apri la pagina di approvazione. Quindi incolla il codice del dispositivo in OpenAI quando richiesto. Infine, approva l'accesso e mantieni aperta questa finestra di dialogo mentre {{brandName}} termina la connessione.",
           "invalidTokenFormat": "Codex ha prodotto un formato di token di accesso che {{brandName}} non riconosce. Aggiorna Codex e riprova.",
-          "openError": "Codice dispositivo copiato, ma non è stato possibile aprire la pagina di approvazione. Riprova.",
+          "openApproval": "Apri la pagina di approvazione",
           "preparing": "Preparazione...",
           "reconnectAction": "Riconnetti ChatGPT",
           "reconnectTitle": "Riconnetti Codex",
@@ -5101,7 +5094,7 @@
         "workspaceDescription": "Disponibile per tutti in quest'area di lavoro."
       },
       "reset": {
-        "confirmDescription": "Usa un ripristino {{provider}} per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",
+        "confirmDescription": "Usa un ripristino Codex per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",
         "progress": "Reimpostazione...",
         "remaining_one": "{{value}} ripristino rimasto",
         "remaining_many": "{{value}} ripristini rimasti",
@@ -5111,7 +5104,7 @@
         "remainingWithExpiry_one": "{{value}} ripristino rimasto · scade {{expiry}}",
         "remainingWithExpiry_many": "{{value}} ripristini rimasti · scadono {{expiry}}",
         "remainingWithExpiry_other": "{{value}} ripristini rimasti · scadono {{expiry}}",
-        "title": "Reimpostare l'utilizzo di {{provider}}?"
+        "title": "Reimpostare l'utilizzo di Codex?"
       },
       "stale": {
         "claudeExpired": "La sessione Claude Code è scaduta. Riconnettiti per continuare.",
@@ -5127,9 +5120,9 @@
         "accountDisconnected": "Account disconnesso",
         "accountSwitched": "Account attivo cambiato",
         "policiesUpdated": "Impostazioni del provider del modello aggiornate",
-        "reset": "Utilizzo {{provider}} reimpostato",
-        "resetUnavailable": "Nessuna reimpostazione dell'utilizzo {{provider}} disponibile",
-        "resetUnneeded": "L'utilizzo di {{provider}} non necessita di un ripristino in questo momento"
+        "reset": "Utilizzo Codex reimpostato",
+        "resetUnavailable": "Nessuna reimpostazione dell'utilizzo Codex disponibile",
+        "resetUnneeded": "L'utilizzo di Codex non necessita di un ripristino in questo momento"
       },
       "usage": {
         "inDays": "tra {{days}}g",

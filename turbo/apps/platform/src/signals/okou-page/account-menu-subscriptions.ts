@@ -102,10 +102,8 @@ export function accountMenuSubscriptionUsageRows(
       {
         type: definition.type,
         usage,
-        // Only a provider whose upstream reports redeemable resets carries
-        // these fields, so their presence is what offers the reset action
-        // rather than a per-provider allowlist repeated in the view.
-        ...(provider.subscriptionResetCredits === undefined
+        ...(provider.type !== "codex-oauth-token" ||
+        provider.subscriptionResetCredits === undefined
           ? {}
           : {
               resetCredits: provider.subscriptionResetCredits,

@@ -1,5 +1,23 @@
 # Deployment Compatibility
 
+## Claude Code manual usage reset retirement
+
+Retire `claudeCodeUsageReset` and the Claude Code-only grant query and redeem
+request introduced in #36165. Ordinary Claude Code profile and usage-window
+reads, OAuth connection, and the existing Codex reset contracts remain intact.
+No stored credentials, database schema, usage history, or provider grants change.
+
+New App with old API explicitly limits reset controls to Codex, even if an old
+API response or cached Claude Code account still carries reset credits. Old App
+with new API stops receiving Claude Code reset credits; a stale reset control
+receives the existing not-found response from the type-based, account-based,
+or failed-run reset endpoint. Those endpoints continue to support Codex with
+their existing account ownership and identity checks. No wire shape changes or
+Web floor update are needed. An old API can still redeem Claude Code resets
+until it drains; source cleanup alone does not disable a serving old revision.
+Rollback restores that revision's feature-switch-controlled behavior. This PR
+does not change production overrides, merge, deploy, or revoke provider grants.
+
 ## Organization model mode defaults to Auto
 
 Migration 1320 changes only the `org_metadata.model_mode` column default to

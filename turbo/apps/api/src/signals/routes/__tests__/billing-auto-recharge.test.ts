@@ -7,6 +7,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -155,10 +156,15 @@ describe("GET /api/billing/auto-recharge", () => {
   });
 
   it("returns default config for a new org metadata row", async () => {
-    const admin = await createOnboardedActor();
-    const response = await billingApi.readAutoRecharge(admin);
+    const admin = createActor();
+    const owner = createPublicBillingZeroFixture(context, admin);
+    await owner.run(async () => {
+      await owner.initialize();
 
-    expect(response).toStrictEqual(defaultAutoRechargeConfig);
+      const response = await billingApi.readAutoRecharge(admin);
+
+      expect(response).toStrictEqual(defaultAutoRechargeConfig);
+    });
   });
 
   it("returns the legacy default when the org metadata row does not exist", async () => {
@@ -576,21 +582,25 @@ describe("PUT /api/billing/auto-recharge", () => {
     expect(readBack).toStrictEqual(response.body);
   });
 
-  it("returns 400 when enabling on a suspended org", async () => {
-    const admin = await createOnboardedActor();
+  it("returns 400 when enabling for a Limited Free workspace", async () => {
+    const admin = createActor();
+    const owner = createPublicBillingZeroFixture(context, admin);
+    await owner.run(async () => {
+      await owner.initialize();
 
-    const response = await billingApi.updateAutoRecharge(
-      admin,
-      { enabled: true, threshold: 1000, amount: 5000 },
-      [400],
-    );
+      const response = await billingApi.updateAutoRecharge(
+        admin,
+        { enabled: true, threshold: 1000, amount: 5000 },
+        [400],
+      );
 
-    expect(response.body).toStrictEqual({
-      error: {
-        message:
-          "Auto-recharge is only available for Pro, Team, or Custom workspaces",
-        code: "BAD_REQUEST",
-      },
+      expect(response.body).toStrictEqual({
+        error: {
+          message:
+            "Auto-recharge is only available for Pro, Team, or Custom workspaces",
+          code: "BAD_REQUEST",
+        },
+      });
     });
   });
 

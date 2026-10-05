@@ -40,10 +40,7 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
-import {
-  normalizeRunMetadata,
-  writeRunMetadata$,
-} from "../services/agent-run-metadata-write.service";
+import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
 import {
   releaseNeverStartedRunSlots,
   transitionAgentRunsToTerminal,
@@ -756,54 +753,6 @@ async function deleteRunOwnershipForAction(
   return actionOk();
 }
 
-const attachRunThreadForAction$ = command(
-  async ({ set }, body: Record<string, unknown>, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const runId = readString(body, "run_id");
-    if (!runId) {
-      return actionBadRequest("run_id is required");
-    }
-    const [run] = await db
-      .select({ userId: agentRuns.userId, sessionId: agentRuns.sessionId })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, runId));
-    signal.throwIfAborted();
-    if (!run) {
-      return actionBadRequest("run not found");
-    }
-    const [session] = await db
-      .select({ agentId: agentSessions.agentId })
-      .from(agentSessions)
-      .where(eq(agentSessions.id, run.sessionId));
-    signal.throwIfAborted();
-    if (!session) {
-      return actionBadRequest("session not found");
-    }
-    const [thread] = await db
-      .insert(chatThreads)
-      .values({
-        userId: run.userId,
-        agentId: session.agentId,
-        title: "concurrent cleanup recheck",
-      })
-      .returning({ id: chatThreads.id });
-    signal.throwIfAborted();
-    if (!thread) {
-      return actionBadRequest("failed to seed chat thread");
-    }
-    await set(
-      writeRunMetadata$,
-      {
-        patch: { chatThreadId: thread.id },
-        where: eq(agentRuns.id, runId),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return actionOk({ thread_id: thread.id });
-  },
-);
-
 async function getRunForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -882,7 +831,7 @@ const cronCleanupSandboxesActionHandlers = {
     deleteConnectorDiagnosticRegistrationForAction,
   "transition-run-terminal": transitionRunTerminalForAction,
 } satisfies Record<
-  Exclude<CronCleanupSandboxesAction, "attach-run-thread">,
+  CronCleanupSandboxesAction,
   CronCleanupSandboxesActionHandler
 >;
 
@@ -897,9 +846,6 @@ const mutateTestCronCleanupSandboxesState$ = command(
       return bodyResult.response;
     }
     const body = bodyResult.data as Record<string, unknown>;
-    if (bodyResult.data.action === "attach-run-thread") {
-      return await set(attachRunThreadForAction$, body, signal);
-    }
     const db = set(writeDb$);
     const handler = cronCleanupSandboxesActionHandlers[bodyResult.data.action];
     return await handler(db, body, signal);
