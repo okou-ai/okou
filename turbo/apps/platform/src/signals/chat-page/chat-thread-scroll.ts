@@ -155,18 +155,17 @@ function scrollAnchorForPosition(
   position: ThreadScrollPosition,
 ): HTMLElement | null {
   if (position.anchor === "last-read-marker") {
-    const marker = Array.from(
-      container.querySelectorAll<HTMLElement>(
-        "[data-chat-last-read-marker-event-id]",
-      ),
-    ).find((candidate) => {
-      return (
-        candidate.dataset.chatLastReadMarkerEventId === position.targetEventId
-      );
-    });
-    if (marker) {
-      return marker;
-    }
+    return (
+      Array.from(
+        container.querySelectorAll<HTMLElement>(
+          "[data-chat-last-read-marker-event-id]",
+        ),
+      ).find((candidate) => {
+        return (
+          candidate.dataset.chatLastReadMarkerEventId === position.targetEventId
+        );
+      }) ?? null
+    );
   }
   return scrollAnchorForEvent(container, position.targetEventId);
 }
