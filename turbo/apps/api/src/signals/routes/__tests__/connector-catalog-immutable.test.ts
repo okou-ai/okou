@@ -36,6 +36,10 @@ import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
 import { db$, writeDb$ } from "../../external/db";
+import type {
+  ClerkOrganizationMembership,
+  ClerkPaginated,
+} from "../../external/clerk";
 import { createStore } from "ccstate";
 import { createDeferredPromise, settle } from "../../utils";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -379,6 +383,38 @@ async function ownedMcpRun(candidate: ReturnType<typeof release>) {
 }
 
 async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+  // Real agent tokens still resolve the owner's organization membership.
+  // Bound only this owned actor; unrelated users receive a valid empty list.
+  context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+    (params: unknown): Promise<ClerkPaginated<ClerkOrganizationMembership>> => {
+      const matches =
+        typeof params === "object" &&
+        params !== null &&
+        "userId" in params &&
+        params.userId === actor.userId;
+      return Promise.resolve({
+        totalCount: matches ? 1 : 0,
+        data: matches
+          ? [
+              {
+                id: `membership-${actor.userId}`,
+                role: "org:member",
+                createdAt: now(),
+                organization: {
+                  id: actor.orgId,
+                  name: "Owned catalog organization",
+                  slug: null,
+                  imageUrl: "",
+                  hasImage: false,
+                  createdAt: now(),
+                },
+                publicUserData: { userId: actor.userId },
+              },
+            ]
+          : [],
+      });
+    },
+  );
   const seconds = Math.floor(now() / 1000);
   const token = signSandboxJwtForTests({
     scope: "okou",
