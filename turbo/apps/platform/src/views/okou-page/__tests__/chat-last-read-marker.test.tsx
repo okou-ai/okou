@@ -290,7 +290,7 @@ test("The disabled switch preserves tail scrolling and hides the read divider", 
 });
 
 test("Open at the read boundary even when it is outside the default render window", async () => {
-  mockConversation("2026-08-20T12:02:02.000Z");
+  const conversation = mockConversation("2026-08-20T12:02:02.000Z");
   await openThread();
   const marker = await screen.findByRole("separator", { name: MARKER_LABEL });
   const firstUnread = screen.getByText("Read marker question 3");
@@ -303,6 +303,22 @@ test("Open at the read boundary even when it is outside the default render windo
     // clamped at the start of the available history.
     expect(marker.getBoundingClientRect().top).toBe(0);
   });
+
+  // Also preserve the expanded boundary as the render window grows.
+  act(() => {
+    conversation.appendTurn();
+  });
+  await expect(
+    screen.findByText("Read marker answer 16"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByRole("separator", { name: MARKER_LABEL })).toHaveLength(
+    1,
+  );
+  expect(
+    marker.compareDocumentPosition(firstUnread) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(marker.getBoundingClientRect().top).toBe(0);
 });
 
 test("Keep the entry divider and reader position when messages and read state advance", async () => {
