@@ -38,6 +38,7 @@ import {
 import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
+  type ConnectorRuntimeLookup,
 } from "./connector-catalog-runtime.service";
 import type {
   ConnectorServerFirewallCatalog,
@@ -302,7 +303,7 @@ export async function resolveActiveNetworkPolicyRefreshes(
   db: ReadonlyDb,
   scope: UserPermissionGrantScope,
   connectorSlugs: readonly string[],
-  preloadedSnapshot?: ConnectorRuntimeSelection,
+  preloadedSnapshot?: ConnectorRuntimeLookup,
   checkedAt: Date = nowDate(),
 ): Promise<readonly ActiveNetworkPolicyRefresh[]> {
   if (connectorSlugs.length === 0) {

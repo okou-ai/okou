@@ -110,7 +110,7 @@ import { reportBuiltInModelProviderFailure$ } from "../services/built-in-model-p
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
-import { resolveConnectorRuntimeTargets } from "../services/connector-runtime-sync.service";
+import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
@@ -2880,15 +2880,18 @@ const connectorRuntimeSyncInner$ = command(
       return authError;
     }
 
-    const results = await resolveConnectorRuntimeTargets({
-      db,
-      scope: {
-        orgId: run.orgId,
-        userId: run.userId,
-        agentId: run.agentId,
+    const results = await set(
+      resolveConnectorRuntimeTargets$,
+      {
+        scope: {
+          orgId: run.orgId,
+          userId: run.userId,
+          agentId: run.agentId,
+        },
+        targets: body.data.targets,
       },
-      targets: body.data.targets,
-    });
+      signal,
+    );
     signal.throwIfAborted();
     return {
       status: 200 as const,

@@ -38,7 +38,7 @@ import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
-import { db$, type Db, writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   buildConnectorDiagnosticBaseCandidates,
@@ -58,7 +58,7 @@ import {
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import {
-  resolveConnectorRuntimeDiagnosticTargets,
+  resolveConnectorRuntimeDiagnosticTargets$,
   type ConnectorRuntimeDiagnosticResult,
 } from "./connector-runtime-sync.service";
 import type { FirewallRoutingRouteMetadata } from "./connector-server-firewall-catalog.service";
@@ -641,29 +641,50 @@ function isCustomAvailableDiagnosticRuntime(
   return "label" in runtime;
 }
 
+const readRunDiagnosticState$ = command(
+  async (
+    { set },
+    args: Pick<ResolveConnectorCheckArgs, "request" | "orgId" | "userId">,
+    scope: RunDiagnosticRegistration,
+    snapshot: ConnectorRuntimeSnapshot,
+    signal: AbortSignal,
+  ): Promise<RunDiagnosticState> => {
+    const targets = runtimeTargetsForRequest(scope, args.request);
+    const runtimes =
+      targets.length === 0
+        ? []
+        : await set(
+            resolveConnectorRuntimeDiagnosticTargets$,
+            {
+              scope: {
+                orgId: args.orgId,
+                userId: args.userId,
+                agentId: scope.agentId,
+              },
+              targets,
+            },
+            signal,
+          );
+    const result = await loadRunDiagnosticState({
+      scope,
+      request: args.request,
+      snapshot,
+      runtimes,
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
 async function loadRunDiagnosticState(args: {
-  readonly db: Db;
   readonly scope: RunDiagnosticRegistration;
   readonly request: ConnectorCheckRequestBody;
-  readonly orgId: string;
-  readonly userId: string;
   readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly runtimes: readonly ConnectorRuntimeDiagnosticResult[];
 }): Promise<RunDiagnosticState> {
   const targets = runtimeTargetsForRequest(args.scope, args.request);
-  const runtimes =
-    targets.length === 0
-      ? []
-      : await resolveConnectorRuntimeDiagnosticTargets({
-          db: args.db,
-          scope: {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: args.scope.agentId,
-          },
-          targets,
-        });
   const runtimeByTargetKey = new Map(
-    runtimes.map((runtime) => {
+    args.runtimes.map((runtime) => {
       return [connectorRuntimeTargetKey(runtime.target), runtime] as const;
     }),
   );
@@ -1688,14 +1709,13 @@ export const resolveConnectorCheck$ = command(
     signal.throwIfAborted();
     let timeline: ConnectorCheckTimeline;
     if (runRegistration) {
-      const state = await loadRunDiagnosticState({
-        db,
-        scope: runRegistration,
-        request: args.request,
-        orgId: args.orgId,
-        userId: args.userId,
+      const state = await set(
+        readRunDiagnosticState$,
+        args,
+        runRegistration,
         snapshot,
-      });
+        signal,
+      );
       signal.throwIfAborted();
       timeline = { kind: "run", state };
     } else {

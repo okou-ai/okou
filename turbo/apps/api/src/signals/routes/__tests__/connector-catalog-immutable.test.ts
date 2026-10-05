@@ -7,6 +7,10 @@ import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-conne
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
+import {
+  resolveConnectorRuntimeTargets$,
+  resolveConnectorRuntimeDiagnosticTargets$,
+} from "../../services/connector-runtime-sync.service";
 import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { PGlite } from "@electric-sql/pglite";
@@ -379,7 +383,45 @@ async function ownedMcpRun(candidate: ReturnType<typeof release>) {
     "INSERT INTO connectors (id, auth_method, user_id, org_id, storage_version, connector_slug) VALUES ($1, $2, $3, $4, 1, $5)",
     [connectionId, method.id, userId, orgId, connector.slug],
   );
-  return { userId, orgId, runId, connectionId, connectorSlug: connector.slug };
+  return {
+    userId,
+    orgId,
+    agentId,
+    runId,
+    connectionId,
+    connectorSlug: connector.slug,
+  };
+}
+
+function runtimeArgs(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+  return {
+    scope: { orgId: actor.orgId, userId: actor.userId, agentId: actor.agentId },
+    targets: [
+      {
+        kind: "builtin" as const,
+        connectorSlug: actor.connectorSlug,
+        sourceId: actor.connectionId,
+      },
+    ],
+  };
+}
+
+async function runtimeSync(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+  return await createStore().set(
+    resolveConnectorRuntimeTargets$,
+    runtimeArgs(actor),
+    context.signal,
+  );
+}
+
+async function runtimeDiagnostics(
+  actor: Awaited<ReturnType<typeof ownedMcpRun>>,
+) {
+  return await createStore().set(
+    resolveConnectorRuntimeDiagnosticTargets$,
+    runtimeArgs(actor),
+    context.signal,
+  );
 }
 
 async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
@@ -855,7 +897,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
   });
-  it("n4: real MCP consumer follows hash switches while captured entries retain their hash", async () => {
+  it("n4: real MCP and runtime consumers follow hash switches while captured entries retain their hash", async () => {
     const first = release("2099-01-02.old", "Old MCP catalog");
     const next = release("2099-01-02.new", "New MCP catalog");
     serve(first);
@@ -866,6 +908,23 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         { displayName: "Old MCP catalog", connectionId: actor.connectionId },
       ],
     });
+    statements = [];
+    for (const runtime of [
+      await runtimeSync(actor),
+      await runtimeDiagnostics(actor),
+    ]) {
+      expect(runtime).toMatchObject([
+        {
+          target: { kind: "builtin", connectorSlug: actor.connectorSlug },
+          state: "available",
+        },
+      ]);
+    }
+    expect(
+      statements.filter((query) => {
+        return query.includes("connector_catalog");
+      }),
+    ).toHaveLength(2);
     const slug = first.artifact.connectors[0]?.slug;
     if (!slug) {
       throw new Error("Missing MCP connector");
@@ -885,6 +944,15 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         { displayName: "New MCP catalog", connectionId: actor.connectionId },
       ],
     });
+    statements = [];
+    await expect(runtimeSync(actor)).resolves.toMatchObject([
+      { state: "available" },
+    ]);
+    expect(
+      statements.filter((query) => {
+        return query.includes("connector_catalog");
+      }),
+    ).toHaveLength(1);
     statements = [];
     const retained = await createStore().get(
       immutableConnectorRuntimeSelection({
@@ -936,7 +1004,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       configured.connectors.get("github")?.methods.size ?? 0,
     );
   });
-  it("n5: real MCP consumer distinguishes unknown from missing rows without legacy or R2 fallback", async () => {
+  it("n5: real MCP and runtime consumers distinguish unknown from missing rows without legacy or R2 fallback", async () => {
     if (!engine) {
       throw new Error("Missing case engine");
     }
@@ -968,11 +1036,24 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       [candidate.hash, slug],
     );
     expect((await mcpDirectory(actor)).status).toBe(500);
+    await expect(runtimeSync(actor)).rejects.toThrow(
+      "Immutable connector catalog manifest entry is missing",
+    );
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
+    await expect(runtimeSync(unknownActor)).resolves.toStrictEqual([
+      {
+        target: { kind: "builtin", connectorSlug: unknown },
+        state: "absent",
+        reason: "connector-unavailable",
+      },
+    ]);
     await engine.exec("DELETE FROM connector_catalog");
     expect((await mcpDirectory(unknownActor)).status).toBe(500);
+    await expect(runtimeDiagnostics(unknownActor)).rejects.toThrow(
+      "Immutable connector catalog current is missing",
+    );
     await expect(
       createStore().get(
         immutableConnectorRuntimeSelection({
@@ -984,7 +1065,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const catalogReads = statements.filter((query) => {
       return query.includes("connector_catalog");
     });
-    expect(catalogReads).toHaveLength(4);
+    // Preserve the four existing catalog reads plus the three real runtime
+    // command reads above; none may recover from still-present legacy data.
+    expect(catalogReads).toHaveLength(7);
     for (const query of catalogReads) {
       expect(query).not.toContain("connector_catalog_active_snapshot");
       expect(query).not.toContain("connector_catalog_runtime_projection");
