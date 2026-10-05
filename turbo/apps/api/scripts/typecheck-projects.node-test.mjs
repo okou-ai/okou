@@ -38,6 +38,8 @@ function fixture(t) {
   for (const name of [
     "tsconfig.json",
     "tsconfig.gateways.json",
+    "tsconfig.foundation.json",
+    "tsconfig.admission.json",
     "tsconfig.core.json",
     "tsconfig.routes.json",
     "tsconfig.bootstrap.json",
@@ -60,6 +62,8 @@ function fixture(t) {
   );
   for (const file of [
     ...JSON.parse(readFileSync(join(root, "tsconfig.gateways.json"))).include,
+    ...JSON.parse(readFileSync(join(root, "tsconfig.foundation.json"))).include,
+    ...JSON.parse(readFileSync(join(root, "tsconfig.admission.json"))).include,
     "src/signals/routes/example.ts",
     "src/lib/example.ts",
     "src/__tests__/alpha.test.ts",
@@ -135,7 +139,7 @@ function config(root, name) {
 }
 
 function generatedNames() {
-  return [0, 1].map((index) => {
+  return [0, 1, 2].map((index) => {
     return `.typecheck/tsconfig.tests-${index}.json`;
   });
 }
@@ -174,9 +178,13 @@ test("generated programs retain compiler semantics, references and every canonic
     );
     assert.deepEqual(child.raw.include, []);
   }
-  assert.notEqual(
-    children[0].options.tsBuildInfoFile,
-    children[1].options.tsBuildInfoFile,
+  assert.equal(
+    new Set(
+      children.map((child) => {
+        return child.options.tsBuildInfoFile;
+      }),
+    ).size,
+    children.length,
   );
   const mtimes = generatedNames().map((name) => {
     return statSync(join(root, name), { bigint: true }).mtimeNs;
@@ -197,6 +205,155 @@ test("generated programs retain compiler semantics, references and every canonic
     }),
     contents,
   );
+});
+
+test("foundation roots are unique, declaration-isolated and cannot import downstream sources", (t) => {
+  const root = fixture(t);
+  prepare(root);
+  accepted(guard(root));
+  const foundation = config(root, "tsconfig.foundation.json");
+  const core = config(root, "tsconfig.core.json");
+  assert.equal(foundation.options.composite, true);
+  assert.equal(foundation.options.emitDeclarationOnly, true);
+  assert.equal(
+    foundation.options.disableSourceOfProjectReferenceRedirect,
+    true,
+  );
+  assert.equal(foundation.options.strict, core.options.strict);
+  assert.equal(foundation.options.noUncheckedIndexedAccess, true);
+  assert.notEqual(
+    foundation.options.tsBuildInfoFile,
+    core.options.tsBuildInfoFile,
+  );
+  assert.equal(
+    core.projectReferences.some((ref) => {
+      return ref.path === join(root, "tsconfig.foundation.json");
+    }),
+    true,
+  );
+  assert.equal(
+    foundation.fileNames.some((file) => {
+      return core.fileNames.includes(file);
+    }),
+    false,
+  );
+  write(root, "src/lib/db-raw-rows.ts", 'import "./example";\n');
+  rejected(
+    guard(root),
+    /Foundation modules must not import downstream implementation roots/,
+  );
+  write(
+    root,
+    "src/lib/db-raw-rows.ts",
+    'export type Downstream = import("./example").Example;\n',
+  );
+  rejected(
+    guard(root),
+    /Foundation modules must not import downstream implementation roots/,
+  );
+});
+
+test("foundation membership loss and overlapping core ownership fail closed", (t) => {
+  const root = fixture(t);
+  prepare(root);
+  changeConfig(root, "tsconfig.foundation.json", (value) => {
+    value.include = value.include.filter((file) => {
+      return file !== "src/lib/db-raw-rows.ts";
+    });
+  });
+  rejected(guard(root), /missing baseline roots/);
+  changeConfig(root, "tsconfig.foundation.json", (value) => {
+    value.include.push("src/lib/db-raw-rows.ts");
+  });
+  changeConfig(root, "tsconfig.core.json", (value) => {
+    value.exclude = value.exclude.filter((file) => {
+      return file !== "src/lib/db-raw-rows.ts";
+    });
+  });
+  rejected(guard(root), /must belong to exactly one Program/);
+});
+
+test("admission preserves compiler isolation and rejects downstream imports", (t) => {
+  const root = fixture(t);
+  prepare(root);
+  const admission = config(root, "tsconfig.admission.json");
+  const foundation = config(root, "tsconfig.foundation.json");
+  const core = config(root, "tsconfig.core.json");
+  assert.equal(admission.options.composite, true);
+  assert.equal(admission.options.declaration, true);
+  assert.equal(admission.options.emitDeclarationOnly, true);
+  assert.equal(admission.options.disableSourceOfProjectReferenceRedirect, true);
+  assert.equal(admission.options.strict, true);
+  assert.equal(admission.options.noUncheckedIndexedAccess, true);
+  assert.equal(
+    new Set(
+      [foundation, admission, core].map((project) => {
+        return project.options.tsBuildInfoFile;
+      }),
+    ).size,
+    3,
+  );
+  for (const name of [
+    "tsconfig.core.json",
+    "tsconfig.routes.json",
+    "tsconfig.bootstrap.json",
+    "tsconfig.tests.json",
+    "tsconfig.bootstrap-wiring.json",
+  ]) {
+    const downstream = config(root, name);
+    for (const upstream of ["foundation", "admission"]) {
+      assert.ok(
+        downstream.projectReferences.some((ref) => {
+          return ref.path === join(root, `tsconfig.${upstream}.json`);
+        }),
+      );
+    }
+    assert.ok(
+      admission.fileNames.every((file) => {
+        return !downstream.fileNames.includes(file);
+      }),
+    );
+  }
+  write(root, "src/lib/strip-markdown.ts", 'export * from "./db-raw-rows";\n');
+  accepted(guard(root));
+  for (const content of [
+    'import "./example";\n',
+    'export * from "./example";\n',
+    'export type Downstream = import("./example").Example;\n',
+    'export const load = () => import("./example");\n',
+  ]) {
+    write(root, "src/lib/strip-markdown.ts", content);
+    rejected(
+      guard(root),
+      /Admission modules must not import downstream implementation roots/,
+    );
+  }
+  write(root, "src/lib/strip-markdown.ts", "export {};\n");
+  write(root, "src/lib/db-raw-rows.ts", 'import "./strip-markdown";\n');
+  rejected(
+    guard(root),
+    /Foundation modules must not import downstream implementation roots/,
+  );
+});
+
+test("admission membership loss and duplicate ownership fail closed", (t) => {
+  const root = fixture(t);
+  prepare(root);
+  changeConfig(root, "tsconfig.admission.json", (value) => {
+    value.include = value.include.filter((file) => {
+      return file !== "src/lib/strip-markdown.ts";
+    });
+  });
+  rejected(guard(root), /missing baseline roots/);
+  changeConfig(root, "tsconfig.admission.json", (value) => {
+    value.include.push("src/lib/strip-markdown.ts");
+  });
+  changeConfig(root, "tsconfig.core.json", (value) => {
+    value.exclude = value.exclude.filter((file) => {
+      return file !== "src/lib/strip-markdown.ts";
+    });
+  });
+  rejected(guard(root), /must belong to exactly one Program/);
 });
 
 test("membership follows additions, deletions and renames and rejects stale output", (t) => {
@@ -400,11 +557,14 @@ if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
   const success = invoke("all");
   assert.equal(success.status, 0, success.stderr);
   assert.deepEqual(projects(), [
+    "tsconfig.foundation.json",
+    "tsconfig.admission.json",
     "tsconfig.core.json",
     "tsconfig.routes.json",
     "tsconfig.bootstrap.json",
     ".typecheck/tsconfig.tests-0.json",
     ".typecheck/tsconfig.tests-1.json",
+    ".typecheck/tsconfig.tests-2.json",
     "tsconfig.bootstrap-wiring.json",
   ]);
   assert.deepEqual(commands().slice(0, 5), [
@@ -423,7 +583,27 @@ if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
   rmSync(join(root, "commands.jsonl"));
   const failure = invoke("all", "tsconfig.routes.json");
   assert.equal(failure.status, 17, failure.stderr);
-  assert.deepEqual(projects(), ["tsconfig.core.json", "tsconfig.routes.json"]);
+  assert.deepEqual(projects(), [
+    "tsconfig.foundation.json",
+    "tsconfig.admission.json",
+    "tsconfig.core.json",
+    "tsconfig.routes.json",
+  ]);
+  rmSync(join(root, "commands.jsonl"));
+  const foundationFailure = invoke("all", "tsconfig.foundation.json");
+  assert.equal(foundationFailure.status, 17, foundationFailure.stderr);
+  assert.deepEqual(projects(), ["tsconfig.foundation.json"]);
+  assert.match(foundationFailure.stdout, /Type check phase: foundation/);
+  assert.doesNotMatch(foundationFailure.stdout, /Type check phase: core/);
+  rmSync(join(root, "commands.jsonl"));
+  const admissionFailure = invoke("all", "tsconfig.admission.json");
+  assert.equal(admissionFailure.status, 17, admissionFailure.stderr);
+  assert.deepEqual(projects(), [
+    "tsconfig.foundation.json",
+    "tsconfig.admission.json",
+  ]);
+  assert.match(admissionFailure.stdout, /Type check phase: admission/);
+  assert.doesNotMatch(admissionFailure.stdout, /Type check phase: core/);
   rmSync(join(root, "commands.jsonl"));
   const tests = invoke("tests");
   assert.equal(tests.status, 0, tests.stderr);
@@ -434,5 +614,24 @@ if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
   assert.deepEqual(projects(), [
     ".typecheck/tsconfig.tests-0.json",
     ".typecheck/tsconfig.tests-1.json",
+    ".typecheck/tsconfig.tests-2.json",
   ]);
+  for (const index of [0, 1, 2]) {
+    rmSync(join(root, "commands.jsonl"));
+    const testFailure = invoke(
+      "all",
+      `.typecheck/tsconfig.tests-${index}.json`,
+    );
+    assert.equal(testFailure.status, 17, testFailure.stderr);
+    assert.deepEqual(
+      projects().slice(-index - 1),
+      [0, 1, 2].slice(0, index + 1).map((group) => {
+        return `.typecheck/tsconfig.tests-${group}.json`;
+      }),
+    );
+    assert.doesNotMatch(
+      testFailure.stdout,
+      /Type check phase: bootstrap-wiring/,
+    );
+  }
 });
