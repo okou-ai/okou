@@ -39,6 +39,31 @@ interface OwnedTeamsDispatch {
   defaultAgentId: string | null;
 }
 
+async function recordTeamsNotice(
+  fixture: OwnedTeamsDispatch,
+  request: Request,
+): Promise<void> {
+  const body = (await request.json()) as {
+    text?: string;
+    attachments?: {
+      contentType: string;
+      content: { body?: { type: string; text?: string }[] };
+    }[];
+  };
+  if (body.text) {
+    fixture.notices.push(body.text);
+  }
+  for (const attachment of body.attachments ?? []) {
+    if (attachment.contentType === "application/vnd.microsoft.card.adaptive") {
+      for (const item of attachment.content.body ?? []) {
+        if (item.type === "TextBlock" && item.text) {
+          fixture.notices.push(item.text);
+        }
+      }
+    }
+  }
+}
+
 /** Owns complete setup and dispatch operations for the two selected cases. */
 export function createPublicTeamsDispatchFixture(context: TestContext) {
   const owned: OwnedTeamsDispatch[] = [];
@@ -76,20 +101,14 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
       http.post(
         `${fixture.installation.serviceUrl}v3/conversations/:conversationId/activities`,
         async ({ request }) => {
-          const body = (await request.json()) as { text?: string };
-          if (body.text) {
-            fixture.notices.push(body.text);
-          }
+          await recordTeamsNotice(fixture, request);
           return HttpResponse.json({ id: "typing-activity" });
         },
       ),
       http.post(
         `${fixture.installation.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
         async ({ request }) => {
-          const body = (await request.json()) as { text?: string };
-          if (body.text) {
-            fixture.notices.push(body.text);
-          }
+          await recordTeamsNotice(fixture, request);
           return HttpResponse.json({ id: "reply-activity" });
         },
       ),
