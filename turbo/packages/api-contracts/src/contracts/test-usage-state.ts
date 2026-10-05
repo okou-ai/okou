@@ -63,19 +63,6 @@ export const testUsageStateActionBodySchema = z.discriminatedUnion("action", [
     title: z.string().optional(),
   }),
   z.object({
-    action: z.literal("insert-model-usage-event-for-run"),
-    org_id: z.string(),
-    user_id: z.string(),
-    run_id: z.string(),
-    input_tokens: z.number().optional(),
-    output_tokens: z.number().optional(),
-    cache_read_input_tokens: z.number().optional(),
-    cache_creation_input_tokens: z.number().optional(),
-    credits_charged: z.number().optional(),
-    status: z.string().optional(),
-    processed_at: nullableDateStringSchema.optional(),
-  }),
-  z.object({
     action: z.literal("insert-usage-event"),
     org_id: z.string(),
     user_id: z.string().optional(),
@@ -116,11 +103,6 @@ export const testUsageStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("delete-billing-attribution"),
     run_id: z.string(),
-  }),
-  z.object({
-    action: z.literal("set-usage-event-created-at"),
-    id: z.string(),
-    created_at: z.string(),
   }),
   z.object({
     action: z.literal("materialize-hourly-usage"),

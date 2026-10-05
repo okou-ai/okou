@@ -113,14 +113,6 @@ export const testSystemStoragePresignedUrlCacheStateActionBodySchema =
       version_id: z.string(),
     }),
     z.object({
-      action: z.literal("set-storage-version-archive-size"),
-      org_id: z.string(),
-      user_id: z.string(),
-      storage_name: z.string(),
-      version_id: z.string(),
-      archive_size: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-    }),
-    z.object({
       action: z.literal("read-cache-by-object-key-prefix"),
       object_key_prefix: z.string(),
     }),

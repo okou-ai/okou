@@ -30,6 +30,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { onRejection, safeSync, settle } from "../utils";
+import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
 import { deleteWorkflow$ } from "./workflow-delete.service";
 import {
   lockAcceptedOfficialWorkflowCatalog,
@@ -430,7 +431,7 @@ function resolveBlueprint(
     (typeof autonomyBudget !== "number" ||
       !Number.isSafeInteger(autonomyBudget) ||
       autonomyBudget < 0 ||
-      autonomyBudget > 10)
+      autonomyBudget > INITIAL_AUTONOMY_BUDGET)
   ) {
     return {
       ok: false,
@@ -1105,7 +1106,7 @@ type OfficialAutomationPatchResult =
 
 function officialPatchMetadata(resolved: ResolvedBlueprint, currentTime: Date) {
   return {
-    autonomyBudget: resolved.autonomyBudget ?? 10,
+    autonomyBudget: resolved.autonomyBudget ?? INITIAL_AUTONOMY_BUDGET,
     officialAppliedFingerprint: resolved.blueprint.fingerprint,
     officialParameterBindings: [...resolved.bindings],
     officialResultEmailEnabled: resolved.blueprint.runtime.resultEmail,

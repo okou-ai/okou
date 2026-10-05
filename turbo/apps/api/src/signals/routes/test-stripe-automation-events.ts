@@ -91,18 +91,6 @@ const applyStripeAutomationEventFixture$ = command(
         signal.throwIfAborted();
         break;
       }
-      case "make-latest-due": {
-        await db
-          .update(stripeWorkflowDeliveries)
-          .set({
-            claimExpiresAt: null,
-            nextAttemptAt: currentTime,
-            updatedAt: currentTime,
-          })
-          .where(eq(stripeWorkflowDeliveries.id, delivery.id));
-        signal.throwIfAborted();
-        break;
-      }
     }
     signal.throwIfAborted();
     return { status: 200 as const, body: { ok: true as const } };

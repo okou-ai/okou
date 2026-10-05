@@ -919,7 +919,7 @@ describe("chat-run-finished workflow automations", () => {
         context,
         patternMatch,
       );
-      expect(fireAlwaysState).toMatchObject({ autonomyBudget: 10 });
+      expect(fireAlwaysState).toMatchObject({ autonomyBudget: 32 });
       expect(patternMatchState).toMatchObject({ autonomyBudget: 0 });
       await expect(
         readLatestWorkflowAutomationRunFixture(context, fireAlways),

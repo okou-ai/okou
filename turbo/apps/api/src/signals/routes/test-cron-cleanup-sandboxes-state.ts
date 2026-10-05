@@ -804,20 +804,6 @@ const attachRunThreadForAction$ = command(
   },
 );
 
-async function deleteRunThreadForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const threadId = readString(body, "thread_id");
-  if (!threadId) {
-    return actionBadRequest("thread_id is required");
-  }
-  await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function getRunForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -886,7 +872,6 @@ const cronCleanupSandboxesActionHandlers = {
   "seed-run-ownership": seedRunOwnershipForAction,
   "delete-run": deleteRunForAction,
   "delete-run-ownership": deleteRunOwnershipForAction,
-  "delete-run-thread": deleteRunThreadForAction,
   "get-run": getRunForAction,
   "get-run-ownership": getRunOwnershipForAction,
   "get-connector-diagnostic-registration":

@@ -1245,6 +1245,24 @@ async function reconcileStaleQueuedMessages(threadId: string): Promise<void> {
   );
 }
 
+async function allThreadEventRows(actor: ApiTestUser, chatThreadId: string) {
+  const rows = await chat.listThreadEventRows(actor, chatThreadId);
+  let page = rows;
+  // The endpoint caps each page at 50; a 32-hop chain spans multiple pages.
+  while (page.length === 50) {
+    const last = page.at(-1);
+    if (!last) {
+      throw new Error("Expected a cursor on a full event page");
+    }
+    page = await chat.listThreadEventRows(actor, chatThreadId, {
+      lastEventId: last.id,
+      lastSeqId: last.seqId,
+    });
+    rows.push(...page);
+  }
+  return rows;
+}
+
 /**
  * Run now only enqueues; the background pick launches the run. Flush the pick
  * and read the newest launched run from the automation thread.
@@ -1254,10 +1272,11 @@ async function launchedAutomationRunId(
   chatThreadId: string,
 ): Promise<string | undefined> {
   await flushWaitUntilForTest();
-  const { events } = await chat.listThreadEvents(actor, chatThreadId);
-  return [...events].reverse().find((event) => {
+  const events = await allThreadEventRows(actor, chatThreadId);
+  const launched = [...events].reverse().find((event) => {
     return event.eventType === "input.prompt" && event.runId;
-  })?.runId;
+  });
+  return launched?.runId ?? undefined;
 }
 
 async function requireActiveOfficialRunId(
@@ -3730,6 +3749,71 @@ describe("Official Workflow installations", () => {
     expect(fixedTimezone.body.workflow.automations).toMatchObject([
       { schedule: { type: "cron", timezone: "UTC" } },
     ]);
+  });
+
+  it("accepts a 32-hop Blueprint budget and rejects a binding above the limit", async () => {
+    installCatalogStorageFixture();
+    const definitionName = `api-test-budget-${randomUUID()}`;
+    const scheduled = evolvedScheduledBlueprint();
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          scheduled,
+          {
+            ...loopBlueprint(),
+            desiredState: {
+              ...loopBlueprint().desiredState,
+              autonomyBudget: 32,
+            },
+          },
+        ]),
+      ]),
+    );
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const { agentId } = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    await setOfficialWorkflowsEnabled(actor, true);
+    const headers = authHeaders(actor);
+    const blueprintBindings = (budget: number) => {
+      return [
+        {
+          blueprintKey: "daily",
+          bindings: [{ key: "autonomy-budget", value: budget }],
+        },
+        {
+          blueprintKey: "pulse",
+          bindings: [{ key: "interval-seconds", value: 3600 }],
+        },
+      ];
+    };
+    await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { agentId, blueprints: blueprintBindings(33) },
+      }),
+      [400],
+    );
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { agentId, blueprints: blueprintBindings(32) },
+      }),
+      [201],
+    );
+    expect(installed.body.workflow.automations).toHaveLength(2);
+    for (const automation of installed.body.workflow.automations) {
+      await expect(
+        readWorkflowAutomationAutonomyFixture(context, automation.id),
+      ).resolves.toMatchObject({ autonomyBudget: 32, enabled: true });
+    }
   });
 
   it("guards access and validates concurrent installations through public boundaries", async () => {
@@ -8707,9 +8791,9 @@ describe("Official Workflow Run admission", () => {
     });
     let sourceThreadId = sourceThread.id;
     let sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    // Spend nine of the ten public delegation hops through real admission.
+    // Spend 31 of the 32 public delegation hops through real admission.
     // Each completed parent releases its slot before the next child is claimed.
-    for (let hop = 0; hop < 9; hop += 1) {
+    for (let hop = 0; hop < 31; hop += 1) {
       const child = await accept(
         workflowClient().run({
           headers: officialQueueHeaders(actor, sourceRunId, {
@@ -8789,7 +8873,7 @@ describe("Official Workflow Run admission", () => {
     );
     await flushWaitUntilForTest();
     const rejections = (
-      await chat.listThreadEventRows(actor, denied.body.chatThreadId)
+      await allThreadEventRows(actor, denied.body.chatThreadId)
     ).filter((event) => {
       return event.eventType === "input.rejected";
     });

@@ -1,5 +1,25 @@
 # Deployment Compatibility
 
+## Autonomous delegation budget expansion
+
+Migration 1319 widens the Run and workflow automation autonomy checks from
+`0..10` to `0..32` and changes the automation column default to 32. Apply it
+before the new API writes budgets above 10. Historical Run and automation
+budgets are preserved: this migration does not refill an exhausted chain or
+rewrite an explicitly smaller budget. New human inputs and default automation
+creation receive 32; delegated Runs and Run-finished watchers still inherit
+exactly their source budget minus one, and a zero-budget source is rejected.
+
+Old APIs remain compatible with the expanded database and continue assigning
+10 to human inputs. They can consume persisted budgets above 10 using the same
+integer decrement rule. An old Official Workflow validator can reject a new
+Blueprint budget above 10 until that API drains. No App, CLI or Runner wire
+shape changes. Rolling back the API retains the wider constraints and stored
+budgets; it must not restore the old database checks while rows above 10 exist.
+Existing automations retain their stored budget unless the normal authorized
+reconfiguration or reconciliation path changes it. This source PR does not
+resume rejected inputs, alter live automations, merge, deploy or release.
+
 ## Thread mute (staff organization rollout)
 
 `ChatThreadMuting` is independent of archiving and defaults to disabled with the

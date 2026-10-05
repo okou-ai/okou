@@ -94,14 +94,6 @@ type StripeAutomationBinding = Pick<
   "connectorId" | "stripeAccountId" | "mode"
 >;
 
-type DormantMaterializationReservedHook = (args: {
-  readonly definitionName: string;
-  readonly workflowId: string;
-  readonly automationId: string;
-  readonly blueprintKey: string;
-  readonly fingerprint: string;
-}) => Promise<void>;
-
 type AutomationStructureTransitionPreparedHook = (args: {
   readonly definitionName: string;
   readonly workflowId: string;
@@ -118,12 +110,6 @@ type ReconfigurationPersistedHook = (args: {
   readonly fingerprint: string;
 }) => Promise<void>;
 
-const dormantMaterializationReservedHookForTest = testOverride<
-  DormantMaterializationReservedHook | undefined
->(() => {
-  return undefined;
-});
-
 const automationStructureTransitionPreparedHookForTest = testOverride<
   AutomationStructureTransitionPreparedHook | undefined
 >(() => {
@@ -135,16 +121,6 @@ const reconfigurationPersistedHookForTest = testOverride<
 >(() => {
   return undefined;
 });
-
-export function setDormantMaterializationReservedHookForTest(
-  hook: DormantMaterializationReservedHook,
-): void {
-  dormantMaterializationReservedHookForTest.set(hook);
-}
-
-export function clearDormantMaterializationReservedHookForTest(): void {
-  dormantMaterializationReservedHookForTest.clear();
-}
 
 export function setAutomationStructureTransitionPreparedHookForTest(
   hook: AutomationStructureTransitionPreparedHook,
@@ -3204,13 +3180,6 @@ const reconcileDormantBlueprint$ = command(
         message: "Official Workflow Automation creation recovery is busy",
       };
     }
-    await dormantMaterializationReservedHookForTest.get()?.({
-      definitionName: args.definitionName,
-      workflowId: args.workflowId,
-      automationId: reservation.id,
-      blueprintKey: args.blueprint.key,
-      fingerprint: args.blueprint.fingerprint,
-    });
     signal.throwIfAborted();
     return await set(
       materializeReservedDormantAutomation$,

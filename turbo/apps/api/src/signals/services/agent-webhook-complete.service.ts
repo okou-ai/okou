@@ -39,7 +39,7 @@ import {
   type AgentCheckpointInput,
   type PreparedAgentCheckpoint,
   persistAgentCheckpointInTransaction,
-  prepareAgentCheckpointPersistence$,
+  createAgentCheckpointOperations,
 } from "./agent-webhook-checkpoints.service";
 import { lockPiMemoryPhase2CompletionStorage } from "./pi-memory-phase2-maintenance.service";
 import {
@@ -904,6 +904,7 @@ function createCompletionTerminalRedrive(runId: string) {
 /** One validated completion request owns this graph and its lazy post-commit read. */
 export function createAgentRunCompletion(runId: string, userId: string) {
   const initialRun$ = createInitialCompletionRun(runId, userId);
+  const checkpointOperations = createAgentCheckpointOperations(runId, userId);
   const undeliveredTerminalChatCallback$ =
     createCompletionTerminalRedrive(runId);
   const complete$ = command(
@@ -925,7 +926,7 @@ export function createAgentRunCompletion(runId: string, userId: string) {
       let checkpointPreparation: PreparedAgentCheckpoint | null = null;
       if (checkpointInput) {
         const preparation = await set(
-          prepareAgentCheckpointPersistence$,
+          checkpointOperations.prepare$,
           checkpointInput,
           { source: "combined-completion" },
           signal,

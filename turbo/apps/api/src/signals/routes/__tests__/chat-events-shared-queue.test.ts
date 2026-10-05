@@ -333,13 +333,13 @@ describe("CHAT-02: shared user message queue", () => {
     }
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    // Ten public delegation hops exhaust the source. Human forwarding is
+    // Thirty-two public delegation hops exhaust the source. Human forwarding is
     // still an ordinary user request, not another agent delegation.
     const { run: source } = await callerAtDelegationDepth(
       actor,
       agentId,
       runnerGroup,
-      10,
+      32,
     );
     const targetThread = await chat.createThread(actor, { agentId });
     const forwardedEventId = randomUUID();
@@ -864,13 +864,13 @@ describe("CHAT-02: shared user message queue", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const target = await chat.createThread(actor, { agentId });
     const blockedTarget = await chat.createThread(actor, { agentId });
-    // The documented ten-hop limit is reached through nine ordinary hops,
+    // The thirty-two-hop limit is reached through thirty-one ordinary hops,
     // then the last allowed delegation below. No budget row is injected.
     const { run: root, claim: rootClaim } = await callerAtDelegationDepth(
       actor,
       agentId,
       runnerGroup,
-      9,
+      31,
     );
 
     const delegatedEventId = randomUUID();
