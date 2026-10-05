@@ -401,14 +401,6 @@ async function readCacheByObjectKeyPrefix(
   });
 }
 
-async function readCacheByObjectKeyPrefixForAction(
-  db: Db,
-  body: CacheStateAction<"read-cache-by-object-key-prefix">,
-  signal: AbortSignal,
-) {
-  return await readCacheByObjectKeyPrefix(db, body.object_key_prefix, signal);
-}
-
 const mutateSystemStoragePresignedUrlCacheState$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!isTestEndpointAllowed(get(request$))) {
@@ -472,9 +464,6 @@ const mutateSystemStoragePresignedUrlCacheState$ = command(
       }
       case "read-storage-version": {
         return await readStorageVersionForAction(db, body, signal);
-      }
-      case "read-cache-by-object-key-prefix": {
-        return await readCacheByObjectKeyPrefixForAction(db, body, signal);
       }
     }
   },

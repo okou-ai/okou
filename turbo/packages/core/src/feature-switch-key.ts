@@ -70,7 +70,6 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
-  ClaudeCodeUsageReset = "claudeCodeUsageReset",
   AgentResponsibilitySetup = "agentResponsibilitySetup",
   ComposerModelPanel = "composerModelPanel",
 }

@@ -4917,7 +4917,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "La página de aprobación no se pudo abrir. Usa el enlace manualmente y pega el código aquí.",
           "authorizationCode": "Código de autorización",
           "codePlaceholder": "Pega el código de Claude",
           "codeRequired": "Pega el código de autorización de Claude para continuar.",
@@ -4935,21 +4934,15 @@
           "usageNotice": "Inicia sesión con tu suscripción a Claude para usar modelos Claude con agentes basados en Claude Code."
         },
         "codex": {
-          "approvalOpened": "Página de aprobación abierta. Copia el código del dispositivo antes de aprobar.",
-          "codeCopied": "Código del dispositivo copiado. Esperando aprobación...",
-          "codeCopiedRetry": "Código del dispositivo copiado. Intenta abrir la página de aprobación de nuevo.",
           "connectedToast": "ChatGPT conectado",
           "connectTitle": "Conectar Codex",
-          "copyAndOpen": "Copiar código y abrir la página de aprobación",
-          "copyAndOpenError": "No se pudo copiar el código del dispositivo ni abrir la página de aprobación. Copia el código manualmente e inténtalo de nuevo.",
-          "copyError": "Se abrió la página de aprobación, pero el código del dispositivo no se copió. Cópialo manualmente antes de aprobar.",
           "deviceCode": "Código del dispositivo",
           "error": "Falló la conexión con ChatGPT. Empieza de nuevo para reintentarlo.",
           "expired": "La sesión de conexión con Codex ha caducado. Empieza de nuevo para reintentarlo.",
           "freePlanRejected": "Los planes gratuitos de ChatGPT no permiten usar Codex mediante {{brandName}}. Mejora a Plus o Pro e inténtalo de nuevo.",
-          "instructions": "Primero haz clic en Copiar código y abre la página de aprobación. Luego pega el código del dispositivo en OpenAI cuando te lo pidan. Finalmente, aprueba el acceso y mantén este diálogo abierto mientras {{brandName}} termina la conexión.",
+          "instructions": "Primero copia el código del dispositivo con el botón de copiar y abre la página de aprobación. Luego pega el código del dispositivo en OpenAI cuando te lo pidan. Finalmente, aprueba el acceso y mantén este diálogo abierto mientras {{brandName}} termina la conexión.",
           "invalidTokenFormat": "Codex generó un formato de token de inicio de sesión que {{brandName}} no reconoce. Actualiza Codex e inténtalo de nuevo.",
-          "openError": "Código del dispositivo copiado, pero la página de aprobación no pudo abrirse. Inténtalo de nuevo.",
+          "openApproval": "Abrir la página de aprobación",
           "preparing": "Preparando...",
           "reconnectAction": "Volver a conectar ChatGPT",
           "reconnectTitle": "Volver a conectar Codex",
@@ -5101,7 +5094,7 @@
         "workspaceDescription": "Disponible para todos en este espacio de trabajo."
       },
       "reset": {
-        "confirmDescription": "Usa un restablecimiento de {{provider}} para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
+        "confirmDescription": "Usa un restablecimiento de Codex para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
         "progress": "Restableciendo...",
         "remaining_one": "Queda {{value}} restablecimiento",
         "remaining_many": "Quedan {{value}} restablecimientos",
@@ -5111,7 +5104,7 @@
         "remainingWithExpiry_one": "Queda {{value}} restablecimiento · vence {{expiry}}",
         "remainingWithExpiry_many": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
         "remainingWithExpiry_other": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
-        "title": "¿Restablecer el uso de {{provider}}?"
+        "title": "¿Restablecer el uso de Codex?"
       },
       "stale": {
         "claudeExpired": "Tu sesión de Claude Code ha caducado. Vuelve a conectarla para continuar.",
@@ -5127,9 +5120,9 @@
         "accountDisconnected": "Cuenta desconectada",
         "accountSwitched": "Cuenta activa cambiada",
         "policiesUpdated": "Configuración del proveedor de modelos actualizada",
-        "reset": "Uso de {{provider}} restablecido",
-        "resetUnavailable": "No hay reinicios de uso de {{provider}} disponibles",
-        "resetUnneeded": "No es necesario restablecer el uso de {{provider}} ahora"
+        "reset": "Uso de Codex restablecido",
+        "resetUnavailable": "No hay reinicios de uso de Codex disponibles",
+        "resetUnneeded": "No es necesario restablecer el uso de Codex ahora"
       },
       "usage": {
         "inDays": "en {{days}}d",

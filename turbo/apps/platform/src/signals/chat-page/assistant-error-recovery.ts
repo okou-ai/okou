@@ -910,12 +910,7 @@ export function createAssistantErrorRecoverySignals(deps: {
       }
       const result = await set(
         resetPersonalCodexAccountSubscriptionUsage$,
-        {
-          // This action is offered only for Codex runs; see the
-          // `framework === "codex"` gate on `resetAndTryAgain`.
-          type: "codex-oauth-token",
-          account: recovery.actions.resetAndTryAgain.accountId,
-        },
+        recovery.actions.resetAndTryAgain.accountId,
         signal,
       );
       signal.throwIfAborted();

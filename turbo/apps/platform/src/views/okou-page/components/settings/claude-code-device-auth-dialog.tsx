@@ -1,7 +1,7 @@
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Loader2 } from "lucide-react";
 
@@ -12,8 +12,6 @@ import {
   claudeCodeDeviceAuthFlowStatePersonal$,
   closeClaudeCodeDeviceAuthDialog$,
   closeClaudeCodeDeviceAuthDialogPersonal$,
-  openClaudeCodeDeviceAuthApprovalPage$,
-  openClaudeCodeDeviceAuthApprovalPagePersonal$,
   runClaudeCodeDeviceAuth$,
   runClaudeCodeDeviceAuthPersonal$,
   setClaudeCodeDeviceAuthAuthorizationCode$,
@@ -40,7 +38,6 @@ interface ClaudeCodeDeviceAuthScopeBundle {
   dialog: ClaudeCodeDeviceAuthDialogState;
   flow: ClaudeCodeDeviceAuthFlowState;
   close: (signal: AbortSignal) => Promise<void>;
-  openApprovalPage: (signal: AbortSignal) => boolean | Promise<boolean>;
   run: (signal: AbortSignal) => Promise<boolean>;
   submit: (signal: AbortSignal) => Promise<boolean>;
   submitting: boolean;
@@ -61,7 +58,6 @@ function useOrgClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundle {
   const dialog = useGet(claudeCodeDeviceAuthDialogState$);
   const flow = useGet(claudeCodeDeviceAuthFlowState$);
   const close = useSet(closeClaudeCodeDeviceAuthDialog$);
-  const openApprovalPage = useSet(openClaudeCodeDeviceAuthApprovalPage$);
   const [, run] = useLoadableSet(runClaudeCodeDeviceAuth$);
   const [submitLoadable, submit] = useLoadableSet(submitClaudeCodeDeviceAuth$);
   const setAuthorizationCode = useSet(
@@ -71,7 +67,6 @@ function useOrgClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundle {
     dialog,
     flow,
     close,
-    openApprovalPage,
     run,
     submit,
     submitting: submitLoadable.state === "loading",
@@ -83,9 +78,6 @@ function usePersonalClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundl
   const dialog = useGet(claudeCodeDeviceAuthDialogStatePersonal$);
   const flow = useGet(claudeCodeDeviceAuthFlowStatePersonal$);
   const close = useSet(closeClaudeCodeDeviceAuthDialogPersonal$);
-  const openApprovalPage = useSet(
-    openClaudeCodeDeviceAuthApprovalPagePersonal$,
-  );
   const [, run] = useLoadableSet(runClaudeCodeDeviceAuthPersonal$);
   const [submitLoadable, submit] = useLoadableSet(
     submitClaudeCodeDeviceAuthPersonal$,
@@ -97,7 +89,6 @@ function usePersonalClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundl
     dialog,
     flow,
     close,
-    openApprovalPage,
     run,
     submit,
     submitting: submitLoadable.state === "loading",
@@ -112,16 +103,8 @@ function ClaudeCodeDeviceAuthDialogView({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const {
-    dialog,
-    flow,
-    close,
-    openApprovalPage,
-    run,
-    submit,
-    submitting,
-    setAuthorizationCode,
-  } = bundle;
+  const { dialog, flow, close, run, submit, submitting, setAuthorizationCode } =
+    bundle;
   const title =
     dialog.mode === "reconnect"
       ? t(($) => {
@@ -147,7 +130,6 @@ function ClaudeCodeDeviceAuthDialogView({
         onSubmit={() => {
           detach(submit(pageSignal), Reason.DomCallback);
         }}
-        openApprovalPage={openApprovalPage}
         setAuthorizationCode={setAuthorizationCode}
         submitting={submitting}
       />
@@ -160,7 +142,6 @@ function ClaudeCodeDeviceAuthBody({
   mode,
   onStart,
   onSubmit,
-  openApprovalPage,
   setAuthorizationCode,
   submitting,
 }: {
@@ -168,7 +149,6 @@ function ClaudeCodeDeviceAuthBody({
   mode: "connect" | "reconnect";
   onStart: () => void;
   onSubmit: () => void;
-  openApprovalPage: (signal: AbortSignal) => boolean | Promise<boolean>;
   setAuthorizationCode: (value: string) => void;
   submitting: boolean;
 }) {
@@ -190,7 +170,6 @@ function ClaudeCodeDeviceAuthBody({
         <ClaudeCodeDeviceAuthPendingForm
           flow={flow}
           onSubmit={onSubmit}
-          openApprovalPage={openApprovalPage}
           setAuthorizationCode={setAuthorizationCode}
           submitting={submitting}
         />
@@ -221,18 +200,15 @@ function ClaudeCodeDeviceAuthBody({
 function ClaudeCodeDeviceAuthPendingForm({
   flow,
   onSubmit,
-  openApprovalPage,
   setAuthorizationCode,
   submitting,
 }: {
   flow: Extract<ClaudeCodeDeviceAuthFlowState, { status: "pending" }>;
   onSubmit: () => void;
-  openApprovalPage: (signal: AbortSignal) => boolean | Promise<boolean>;
   setAuthorizationCode: (value: string) => void;
   submitting: boolean;
 }) {
   const brandName = useGet(brandName$);
-  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   return (
     <form
@@ -257,19 +233,17 @@ function ClaudeCodeDeviceAuthPendingForm({
           )}
         </p>
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        onClick={() => {
-          detach(openApprovalPage(pageSignal), Reason.DomCallback);
-        }}
+      <a
+        href={flow.browserUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={buttonVariants({ variant: "outline", className: "w-full" })}
         data-testid="claude-code-device-auth-open"
       >
         {t(($) => {
           return $.settings.models.deviceAuth.claude.openApproval;
         })}
-      </Button>
+      </a>
       <div className="flex flex-col gap-2">
         <label
           className="text-sm font-medium text-foreground"

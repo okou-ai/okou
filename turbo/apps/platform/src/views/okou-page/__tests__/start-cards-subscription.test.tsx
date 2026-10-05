@@ -167,6 +167,12 @@ test("The Codex button opens the Codex sign-in from the start card", async () =>
 
   const dialog = await screen.findByRole("dialog", { name: "Connect Codex" });
   expect(dialog).toHaveTextContent("ABCD-EFGH");
+  const link = within(dialog).getByTestId("codex-device-auth-open");
+  expect(queryAllByRoleFast("link", dialog)).toContain(link);
+  expect(link).toHaveAttribute("href", "https://auth.openai.com/codex/device");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  expect(link).toHaveTextContent("Open approval page");
 });
 
 test("The Claude button opens the Claude sign-in from the start card", async () => {
@@ -187,6 +193,15 @@ test("The Claude button opens the Claude sign-in from the start card", async () 
 
   const inputs = await screen.findAllByTestId("claude-code-device-auth-code");
   expect(inputs).not.toHaveLength(0);
+  const dialog = inputs[0]?.closest<HTMLElement>('[role="dialog"]');
+  if (!dialog) {
+    throw new Error("Expected Claude sign-in dialog");
+  }
+  const link = within(dialog).getByTestId("claude-code-device-auth-open");
+  expect(queryAllByRoleFast("link", dialog)).toContain(link);
+  expect(link).toHaveAttribute("href", "https://claude.ai/oauth/authorize");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
 });
 
 test("The subscription card stays out while the account list is in flight", async () => {
@@ -225,8 +240,6 @@ test("A member with a personal model account does not see the subscription card"
 
 test("Connecting Codex from the card retires it for a regular start card", async () => {
   const approval = context.mocks.deferred<void>();
-  context.mocks.browser.clipboardWriteText();
-  context.mocks.browser.open(context.mocks.browser.authWindow());
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
     return respond(200, {
       sessionToken: "start-card-codex-session",
@@ -256,7 +269,10 @@ test("Connecting Codex from the card retires it for a regular start card", async
 
   click(subscriptionButton("Codex"));
   const dialog = await screen.findByRole("dialog", { name: "Connect Codex" });
-  click(within(dialog).getByTestId("codex-device-auth-open"));
+  expect(within(dialog).getByTestId("codex-device-auth-open")).toHaveAttribute(
+    "href",
+    "https://auth.openai.com/codex/device",
+  );
   approval.resolve();
 
   await waitFor(() => {
