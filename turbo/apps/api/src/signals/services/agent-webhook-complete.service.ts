@@ -254,42 +254,37 @@ async function persistLastEventSequence(
     .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId)));
 }
 
-async function loadCompletionRun(
-  db: Db,
-  input: CompleteAgentRunInput,
-): Promise<RunRecord | null> {
-  const [run] = await db
-    .select({
-      id: agentRuns.id,
-      apiStartedAt: agentRuns.apiStartedAt,
-      error: agentRuns.error,
-      orgId: agentRuns.orgId,
-      sessionId: agentRuns.sessionId,
-      status: agentRuns.status,
-      userId: agentRuns.userId,
-      cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
-      chatThreadId: agentRuns.chatThreadId,
-      triggerSource: agentRuns.triggerSource,
-      launchSnapshot: agentRuns.launchSnapshot,
-      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
-      modelProvider: agentRuns.modelProvider,
-      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
-      selectedModel: agentRuns.selectedModel,
-      modelRuntimeProvider: agentRuns.modelRuntimeProvider,
-      modelRuntimeModel: agentRuns.modelRuntimeModel,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, input.body.runId),
-        eq(agentRuns.userId, input.auth.userId),
-      ),
-    )
-    .limit(1);
-  if (!run) {
-    return null;
-  }
-  return { ...run, status: runStatusSchema.parse(run.status) };
+function createInitialCompletionRun(runId: string, userId: string) {
+  return computed(async (get): Promise<RunRecord | null> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({
+        id: agentRuns.id,
+        apiStartedAt: agentRuns.apiStartedAt,
+        error: agentRuns.error,
+        orgId: agentRuns.orgId,
+        sessionId: agentRuns.sessionId,
+        status: agentRuns.status,
+        userId: agentRuns.userId,
+        cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
+        chatThreadId: agentRuns.chatThreadId,
+        triggerSource: agentRuns.triggerSource,
+        launchSnapshot: agentRuns.launchSnapshot,
+        langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
+        modelProvider: agentRuns.modelProvider,
+        modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+        selectedModel: agentRuns.selectedModel,
+        modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+        modelRuntimeModel: agentRuns.modelRuntimeModel,
+      })
+      .from(agentRuns)
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId)))
+      .limit(1);
+    if (!run) {
+      return null;
+    }
+    return { ...run, status: runStatusSchema.parse(run.status) };
+  });
 }
 
 async function prepareCompletion(
@@ -907,7 +902,8 @@ function createCompletionTerminalRedrive(runId: string) {
 }
 
 /** One validated completion request owns this graph and its lazy post-commit read. */
-export function createAgentRunCompletion(runId: string) {
+export function createAgentRunCompletion(runId: string, userId: string) {
+  const initialRun$ = createInitialCompletionRun(runId, userId);
   const undeliveredTerminalChatCallback$ =
     createCompletionTerminalRedrive(runId);
   const complete$ = command(
@@ -917,7 +913,7 @@ export function createAgentRunCompletion(runId: string) {
       signal: AbortSignal,
     ): Promise<CompletionResponse> => {
       const db = set(writeDb$);
-      const initialRun = await loadCompletionRun(db, input);
+      const initialRun = await get(initialRun$);
       signal.throwIfAborted();
       if (!initialRun) {
         return notFound("Agent run not found");
