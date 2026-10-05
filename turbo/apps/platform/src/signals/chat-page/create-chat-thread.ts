@@ -156,6 +156,7 @@ import { createConnectorAccountActionCardSignalsRegistry } from "./connector-acc
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
 import { createBankingCardSignalsRegistry } from "./banking-action-block.ts";
 import { createBrowserUserActionCardSignalsRegistry } from "./browser-user-action-block.ts";
+import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
 import { getChatThreadTitleParts } from "./chat-thread-title.ts";
@@ -1461,6 +1462,9 @@ function createArtifactPreviewImageUrls(
 
 interface EventTreeRegistries {
   readonly chatActionContext: ChatActionContext;
+  readonly subscriptionResetCardSignals: ReturnType<
+    typeof createSubscriptionResetCardSignalsRegistry
+  >;
   readonly artifactCardSignals: ArtifactCardSignalsRegistry;
   readonly connectorCardSignals: ReturnType<
     typeof createConnectorCardSignalsRegistry
@@ -1492,6 +1496,7 @@ interface EventTreeRegistries {
 }
 
 function createCardRefRegistrar({
+  subscriptionResetCardSignals,
   connectorCardSignals,
   connectorAccountActionCardSignals,
   permissionCardSignals,
@@ -1505,6 +1510,15 @@ function createCardRefRegistrar({
   return command(
     ({ set }, descriptor: CardDescriptorBlock): MarkdownCardRef => {
       switch (descriptor.type) {
+        case "subscription-reset": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              subscriptionResetCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
         case "connector-action": {
           return {
             kind: descriptor.type,
@@ -1933,6 +1947,8 @@ function createPagedEventResources({
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const runDetailSignals = createRunDetailSignalsRegistry();
+  const subscriptionResetCardSignals =
+    createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
   const connectorAccountActionCardSignals =
     createConnectorAccountActionCardSignalsRegistry(connector);
@@ -1973,6 +1989,7 @@ function createPagedEventResources({
     diagramCodesForEvents$,
   } = createEventTreeSignals({
     chatActionContext,
+    subscriptionResetCardSignals,
     artifactCardSignals,
     connectorCardSignals,
     connectorAccountActionCardSignals,

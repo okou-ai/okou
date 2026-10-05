@@ -1,5 +1,8 @@
 import { modelCatalog$ } from "../services/model-catalog.service";
-import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import {
+  personalModelProviderAccountsByIdContract,
+  personalSubscriptionsContract,
+} from "@okouai/api-contracts/contracts/personal-model-providers";
 import { command } from "ccstate";
 
 import { isNotFoundResponse, notFound } from "../../lib/error";
@@ -24,6 +27,7 @@ import {
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
 import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
+import { subscriptionControlsEnabled$ } from "../services/subscription-controls.service";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -86,8 +90,51 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: response };
 });
 
+const getSubscriptionInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const enabled = await get(subscriptionControlsEnabled$);
+    signal.throwIfAborted();
+    if (!enabled) {
+      return notFound("Resource not found");
+    }
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(personalSubscriptionsContract.get));
+    const provider = await personalModelProviderAccountResponseById({
+      db: set(writeDb$),
+      orgId: auth.orgId,
+      userId: auth.userId,
+      id: params.id,
+    });
+    signal.throwIfAborted();
+    if (!provider) {
+      return notFound("Resource not found");
+    }
+    const refreshed = await set(
+      refreshPersonalModelProviderSubscriptionUsage$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        result: { modelProviders: [provider] },
+      },
+      signal,
+    );
+    const response = refreshed.modelProviders[0];
+    if (!response) {
+      throw new Error("Subscription usage refresh returned no account");
+    }
+    return { status: 200 as const, body: response };
+  },
+);
+
 const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  if (auth.tokenType === "agent") {
+    const enabled = await get(subscriptionControlsEnabled$);
+    signal.throwIfAborted();
+    if (!enabled) {
+      return notFound("Resource not found");
+    }
+  }
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
@@ -212,6 +259,13 @@ const auth = {
 
 export const meModelProviderAccountRoutes: readonly RouteEntry[] = [
   {
+    route: personalSubscriptionsContract.get,
+    handler: authRoute(
+      { ...auth, requiredCapability: "subscription:read" },
+      getSubscriptionInner$,
+    ),
+  },
+  {
     route:
       personalModelProviderAccountsByIdContract.resetFailedRunSubscriptionUsage,
     handler: authRoute(auth, resetFailedRunInner$),
@@ -222,7 +276,10 @@ export const meModelProviderAccountRoutes: readonly RouteEntry[] = [
   },
   {
     route: personalModelProviderAccountsByIdContract.activate,
-    handler: authRoute(auth, activateInner$),
+    handler: authRoute(
+      { ...auth, requiredCapability: "subscription:switch" },
+      activateInner$,
+    ),
   },
   {
     route: personalModelProviderAccountsByIdContract.delete,

@@ -76,6 +76,7 @@ import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
+import { SubscriptionResetCard } from "./subscription-reset-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
 
 type ChatImagePreviewLinkProps = {
@@ -312,6 +313,9 @@ export function MarkdownCardView({
           label={label}
         />
       );
+    }
+    case "subscription-reset": {
+      return <SubscriptionResetCard signals={card.signals} />;
     }
     case "connector-action": {
       return <ConnectorActionCard signals={card.signals} />;

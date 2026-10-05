@@ -2219,6 +2219,32 @@
       },
       "templates": "Templat"
     },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "Permintaan reset ini sudah digunakan.",
+      "confirm": "Reset",
+      "confirmation": "Reset memakai satu kredit. Permintaan hanya dikirim saat Anda mengeklik Reset.",
+      "credits_other": "Sisa reset: {{count}}",
+      "creditsUnknown": "Sisa reset: tidak diketahui",
+      "error": "Reset gagal. Muat ulang atau coba lagi permintaan yang sama.",
+      "expiresAt": "Kredit kedaluwarsa: {{time}}",
+      "fiveHour": "Periode 5 jam",
+      "loadFailed": "Tidak dapat membaca penggunaan langganan.",
+      "loading": "Memuat langganan…",
+      "noCredit": "Tidak ada kredit reset yang tersedia.",
+      "nothingToReset": "Tidak ada periode penggunaan yang habis untuk direset.",
+      "reconnect": "Hubungkan kembali langganan ini di Model pribadi.",
+      "remaining": "{{window}}: tersisa {{percent}}",
+      "reset": "Penggunaan berhasil direset.",
+      "resetAt": "Waktu reset: {{time}}",
+      "resetting": "Mereset…",
+      "retry": "Muat ulang",
+      "title": "Reset Card",
+      "unavailable": "Langganan ini tidak tersedia di ruang kerja saat ini.",
+      "unknown": "Tidak diketahui",
+      "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis.",
+      "weekly": "Periode mingguan"
+    },
     "taskChips": {
       "chooseTask": "Pilih tugas",
       "ideas": {

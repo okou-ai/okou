@@ -232,6 +232,21 @@ saves geometry only. Exercise action dialogs and their completed/error states
 in the page integration tests and in preview acceptance as well; this read-only
 loading regression does not authorize or execute those actions.
 
+## Subscription Reset Cards
+
+`/subscriptions/<account-id>/reset?idempotencyKey=<uuid>` becomes a Reset Card
+through the trusted action-link pipeline and also opens an authenticated
+standalone page. Both read live usage, natural reset times, remaining reset
+credits and credit expiry for the exact account. Rendering and opening never
+reset usage; only the user clicks Reset. Repeated occurrences share signals
+and retries retain the URL's original idempotency key. The existing server
+checks account ownership and organization; agent credentials cannot execute
+reset. Claude Code shows natural recovery information without a reset button.
+
+The outer `SubscriptionResetCard` frame remains mounted with fixed responsive
+geometry through loading, error, unavailable, refresh and completion. See
+[subscription controls](subscription-controls.md) for CLI commands and rollout.
+
 ## Failure Recovery Classification
 
 The authoritative error category for a failed run is its optional

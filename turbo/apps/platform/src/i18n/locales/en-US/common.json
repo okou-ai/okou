@@ -2228,6 +2228,33 @@
       },
       "templates": "Templates"
     },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "This reset request has already been redeemed.",
+      "confirm": "Reset",
+      "confirmation": "Reset uses one reset credit. Only clicking Reset submits the request.",
+      "credits_one": "Remaining resets: {{count}}",
+      "credits_other": "Remaining resets: {{count}}",
+      "creditsUnknown": "Remaining resets: unknown",
+      "error": "Reset failed. Refresh or retry with the same request.",
+      "expiresAt": "Credits expire: {{time}}",
+      "fiveHour": "5-hour window",
+      "loadFailed": "Could not read subscription usage.",
+      "loading": "Loading subscription…",
+      "noCredit": "No reset credits are available.",
+      "nothingToReset": "There is no exhausted usage window to reset.",
+      "reconnect": "Reconnect this subscription in Personal Models.",
+      "remaining": "{{window}}: {{percent}} remaining",
+      "reset": "Usage reset successfully.",
+      "resetAt": "Resets: {{time}}",
+      "resetting": "Resetting…",
+      "retry": "Refresh",
+      "title": "Reset Card",
+      "unavailable": "This subscription is unavailable in the current workspace.",
+      "unknown": "Unknown",
+      "unsupported": "Manual reset is not supported; usage recovers naturally.",
+      "weekly": "Weekly window"
+    },
     "taskChips": {
       "chooseTask": "Choose a task",
       "ideas": {

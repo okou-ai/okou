@@ -49,6 +49,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   upgrade: null,
   model: null,
   "model-provider": null,
+  subscription: ["subscription:read", "subscription:switch"],
   search: null,
   chat: [
     "chat-event:read",
@@ -147,6 +148,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Inspect model provider routing",
     load: async () => {
       return (await import("./commands/model-provider")).modelProviderCommand;
+    },
+  },
+  {
+    name: "subscription",
+    description:
+      "Inspect and switch personal subscriptions; create user-confirmed reset links",
+    load: async () => {
+      return (await import("./commands/subscription")).subscriptionCommand;
     },
   },
   {
@@ -627,6 +636,7 @@ export function buildHelpText(
     "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
     "  Model routing?        okou model-provider ls",
+    "  Subscriptions?        okou subscription list",
     "  Update yourself?       okou agent --help",
     "  Manage workflows?     okou workflow --help",
     ...commandExampleIfVisible(

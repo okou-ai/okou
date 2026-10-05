@@ -1,5 +1,32 @@
 # Deployment Compatibility
 
+## Personal subscription CLI and Reset Cards
+
+`SubscriptionControls` adds a staff-gated single-account usage GET at
+`/api/me/subscriptions/:id`, additive optional `subscriptionResetSupported`
+metadata, and `subscription:read` / `subscription:switch` run capabilities.
+Existing human list, activation, and Codex reset behavior remain unchanged.
+No database migration, stored Run update, Runner protocol change, or account
+selection change is required. Reset stays user-confirmed; no agent reset
+capability is issued.
+
+New API with old App/CLI preserves the existing routes and response fields;
+older readers ignore the new optional metadata. Older token readers already
+filter unknown capability names rather than rejecting newer tokens. New CLI
+with old API cannot use the new single-account endpoint or subscription agent
+capabilities: it reports the API denial or missing endpoint rather than
+falling back to a different account. New App with old API renders the Reset
+Card unavailable and cannot submit a reset through it. Old App with new API
+continues to use the existing Codex controls.
+
+Existing URLs remain exact-account descriptors with one stable idempotency
+key, not bearer authorizations. The standalone page and card require an owned
+account in the signed-in current organization. Roll out the new API and App
+before relying on links in external integrations. Rollback restores the old
+interface without modifying active accounts or running Runs; retained new
+links may be unavailable until the supporting versions return. This PR does
+not enable production overrides, deploy, or update the Web floor.
+
 ## Claude Code manual usage reset retirement
 
 Retire `claudeCodeUsageReset` and the Claude Code-only grant query and redeem
