@@ -340,13 +340,9 @@ export const deleteOrgModelProvider$ = command(
 
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 
-/**
- * Row shape returned to the route handler. The codex paste handler's
- * `UpsertedProvider` remains a structural subset of this shape.
- */
+/** Metadata returned to organization model-provider route handlers. */
 export interface ModelProviderInfo {
   readonly id: string;
-  readonly userId: string;
   readonly type: ModelProviderType;
   readonly framework: ModelProviderFramework;
   readonly secretName: string | null;
@@ -354,7 +350,6 @@ export interface ModelProviderInfo {
   readonly secretNames: string[] | null;
   readonly isDefault: boolean;
   readonly selectedModel: string | null;
-  readonly tokenExpiresAt: Date | null;
   readonly needsReconnect: boolean;
   readonly lastRefreshErrorCode: string | null;
   readonly workspaceName: string | null;
@@ -365,75 +360,23 @@ export interface ModelProviderInfo {
   readonly updatedAt: Date;
 }
 
-function toModelProviderInfo(params: {
-  id: string;
-  userId: string;
-  type: ModelProviderType;
-  secretName?: string | null;
-  authMethod?: string | null;
-  secretNames?: string[] | null;
-  isDefault: boolean;
-  selectedModel: string | null;
-  tokenExpiresAt?: Date | null;
-  needsReconnect?: boolean;
-  lastRefreshErrorCode?: string | null;
-  workspaceName?: string | null;
-  planType?: string | null;
-  subscriptionResetPeriod?: string | null;
-  subscriptionNextResetAt?: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): ModelProviderInfo {
-  const type = params.type;
-  const authMethod = params.authMethod ?? null;
-  const secretNames =
-    params.secretNames !== undefined
-      ? params.secretNames
-      : authMethod
-        ? (getSecretNamesForAuthMethod(params.type, authMethod) ?? null)
-        : null;
-
-  return {
-    id: params.id,
-    userId: params.userId,
-    type,
-    framework: getFrameworkForType(type),
-    secretName: params.secretName ?? null,
-    authMethod,
-    secretNames,
-    isDefault: params.isDefault,
-    selectedModel: params.selectedModel,
-    tokenExpiresAt: params.tokenExpiresAt ?? null,
-    needsReconnect: params.needsReconnect ?? false,
-    lastRefreshErrorCode: params.lastRefreshErrorCode ?? null,
-    workspaceName: params.workspaceName ?? null,
-    planType: params.planType ?? null,
-    subscriptionResetPeriod: params.subscriptionResetPeriod ?? null,
-    subscriptionNextResetAt: params.subscriptionNextResetAt ?? null,
-    createdAt: params.createdAt,
-    updatedAt: params.updatedAt,
-  };
-}
-
 function toModelProviderInfoFromRow(args: {
   readonly provider: ModelProviderRow;
-  readonly userId: string;
   readonly type: ModelProviderType;
-  readonly secretName?: string | null;
-  readonly authMethod?: string | null;
-  readonly secretNames?: string[] | null;
+  readonly secretName: string | null;
+  readonly authMethod: string | null;
+  readonly secretNames: string[] | null;
 }): ModelProviderInfo {
   const { provider } = args;
-  return toModelProviderInfo({
+  return {
     id: provider.id,
-    userId: args.userId,
     type: args.type,
+    framework: getFrameworkForType(args.type),
     secretName: args.secretName,
     authMethod: args.authMethod,
     secretNames: args.secretNames,
     isDefault: provider.isDefault,
     selectedModel: provider.selectedModel,
-    tokenExpiresAt: provider.tokenExpiresAt,
     needsReconnect: provider.needsReconnect,
     lastRefreshErrorCode: provider.lastRefreshErrorCode,
     workspaceName: provider.workspaceName,
@@ -442,7 +385,7 @@ function toModelProviderInfoFromRow(args: {
     subscriptionNextResetAt: provider.subscriptionNextResetAt,
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt,
-  });
+  };
 }
 
 function validateSingleSecretProviderRequest(args: {
@@ -758,9 +701,10 @@ export const upsertOrgModelProvider$ = command(
     return {
       provider: toModelProviderInfoFromRow({
         provider: result.provider,
-        userId: args.userId,
         type: args.type,
         secretName,
+        authMethod: null,
+        secretNames: null,
       }),
       created: result.created,
     };
@@ -1023,8 +967,8 @@ export const upsertOrgMultiAuthModelProvider$ = command(
     return {
       provider: toModelProviderInfoFromRow({
         provider,
-        userId: args.userId,
         type: args.type,
+        secretName: null,
         authMethod: args.authMethod,
         secretNames,
       }),
@@ -1091,8 +1035,10 @@ export const upsertOrgNoSecretModelProvider$ = command(
     return {
       provider: toModelProviderInfoFromRow({
         provider,
-        userId: ORG_SENTINEL_USER_ID,
         type: args.type,
+        secretName: null,
+        authMethod: null,
+        secretNames: null,
       }),
       created: provider.id === proposedId,
     };

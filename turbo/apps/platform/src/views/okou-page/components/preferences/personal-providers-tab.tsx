@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical, Plus } from "lucide-react";
@@ -72,13 +71,7 @@ export function PersonalProvidersTab() {
   );
 }
 
-function PersonalModelsHeading({
-  auto = false,
-  action,
-}: {
-  readonly auto?: boolean;
-  readonly action?: ReactNode;
-}) {
+function PersonalModelsHeading({ auto = false }: { readonly auto?: boolean }) {
   const { t } = useTranslation();
   if (auto) {
     return (
@@ -95,7 +88,6 @@ function PersonalModelsHeading({
             })}
           </p>
         </div>
-        {action}
       </div>
     );
   }
@@ -107,7 +99,6 @@ function PersonalModelsHeading({
       description={t(($) => {
         return $.settings.models.personal.accountsDescription;
       })}
-      action={action}
     />
   );
 }
