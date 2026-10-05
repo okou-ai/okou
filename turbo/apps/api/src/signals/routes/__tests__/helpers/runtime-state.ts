@@ -401,17 +401,6 @@ export async function stageOfficialWorkflowAutomationFixture(
   });
 }
 
-export async function readRunUploadedFileSources(
-  context: TestContext,
-  runId: string,
-): Promise<readonly string[]> {
-  const response = await postAction(context, {
-    action: "read-run-uploaded-file-sources",
-    run_id: runId,
-  });
-  return response.uploaded_file_sources ?? [];
-}
-
 export async function updateChatEventSnapshotHead(
   context: TestContext,
   threadId: string,

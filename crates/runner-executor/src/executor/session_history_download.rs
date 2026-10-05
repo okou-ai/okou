@@ -939,6 +939,7 @@ async fn download_body_with_retries(
                 }
                 tracing::info!(
                     action = "session_history_download_retry",
+                    r2_key = runner_storage::r2_download::key_from_url(url).as_deref(),
                     attempt,
                     max_attempts = SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
                     failure_kind = error.failure_kind,

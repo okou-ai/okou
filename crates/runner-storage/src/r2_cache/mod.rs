@@ -171,6 +171,13 @@ pub struct R2ImageCache {
     bucket: String,
 }
 
+impl R2ImageCache {
+    /// The SDK object key, for existing Runner-local INFO template logs only.
+    pub fn template_download_key(&self, hash: &str) -> String {
+        keys::key_for_template_hash(hash)
+    }
+}
+
 impl std::fmt::Debug for R2ImageCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("R2ImageCache")

@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
 import { testRuntimeStateContract } from "@okouai/api-contracts/contracts/test-runtime-state";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow } from "../../../lib/time";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { runnerWssTicketRoutes } from "../runner-wss-tickets";
 import { testRuntimeStateRoutes } from "../test-runtime-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const inventoryHostname = "runner-a.example.com";
@@ -48,6 +53,72 @@ async function createRun(f: Awaited<ReturnType<typeof setup>>) {
   return run;
 }
 
+async function createOwnedRun(f: Awaited<ReturnType<typeof setup>>) {
+  const run = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Resolve an existing Runner target",
+  });
+  let sandboxToken: string | undefined;
+  onTestFinished(async () => {
+    const api = createRunsApi(context);
+    const bdd = createBddApi(context);
+    bdd.acceptAgentStorageWrites();
+    const current = await api.readRun(f.actor, run.runId);
+    if (current.status === "pending" || current.status === "running") {
+      await api.requestCancelRun(f.actor, run.runId, [200]);
+    }
+    if (
+      sandboxToken &&
+      (current.status === "pending" ||
+        current.status === "running" ||
+        current.status === "cancelled")
+    ) {
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Cancelled by test cleanup" },
+        { authorization: `Bearer ${sandboxToken}` },
+        [200],
+      );
+    }
+    await flushWaitUntilForTest();
+    await bdd.deleteAgent(f.actor, f.agentId);
+  });
+  await f.api.heartbeatRunner(f.runnerGroup);
+  return {
+    ...run,
+    recordClaim(token: string) {
+      sandboxToken = token;
+    },
+  };
+}
+
+async function bootstrapTarget(
+  f: Awaited<ReturnType<typeof setup>>,
+  runId: string,
+  status: 200 | 404,
+) {
+  createRouteMocks(context).clerk.session(
+    f.actor.userId,
+    f.actor.orgId,
+    f.actor.orgRole,
+  );
+  return await accept(
+    setupApp({ context, routes: runnerWssTicketRoutes })(
+      runnerWssTicketsContract,
+    ).bootstrap({
+      params: { runId },
+      headers: { authorization: "Bearer clerk-session" },
+      body: undefined,
+    }),
+    [status],
+  );
+}
+
+function unavailableTarget() {
+  return {
+    error: { code: "NOT_FOUND", message: "WSS connection unavailable" },
+  };
+}
+
 async function readTarget(
   runId: string,
   owner: { readonly userId: string; readonly orgId: string | null },
@@ -81,7 +152,7 @@ async function claimRun(
     readonly version?: string;
   },
 ) {
-  await f.api.claimRunnerJob(
+  return await f.api.claimRunnerJob(
     runId,
     {
       runnerIdentity: { runnerId: args.runnerId, heartbeatGeneration: 1 },
@@ -173,10 +244,10 @@ describe("internal WSS target via guarded test API route", () => {
 
   it("does not trust runner identity or hostname supplied by a PAT claimant", async () => {
     const f = await setup();
-    const run = await createRun(f);
+    const run = await createOwnedRun(f);
     const runnerId = randomUUID();
     const apiKey = await f.api.createCliToken(f.actor);
-    await f.api.requestClaimRunnerJobAs(
+    const claim = await f.api.requestClaimRunnerJobAs(
       `Bearer ${apiKey.token}`,
       run.runId,
       [200],
@@ -185,8 +256,14 @@ describe("internal WSS target via guarded test API route", () => {
         runnerHostname: inventoryHostname,
       },
     );
+    if (claim.status !== 200) {
+      throw new Error("Expected the actual PAT Runner claim");
+    }
+    run.recordClaim(claim.body.sandboxToken);
     await heartbeat(f, runnerId, "running", 1);
-    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    expect((await bootstrapTarget(f, run.runId, 404)).body).toStrictEqual(
+      unavailableTarget(),
+    );
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 
@@ -230,26 +307,36 @@ describe("internal WSS target via guarded test API route", () => {
 
   it("denies a missing or inactive WSS ingress observation and rejects an older true snapshot", async () => {
     const f = await setup();
-    const run = await createRun(f);
+    const run = await createOwnedRun(f);
     const runnerId = randomUUID();
-    await claimRun(f, run.runId, { runnerId, hostname: inventoryHostname });
+    const claim = await claimRun(f, run.runId, {
+      runnerId,
+      hostname: inventoryHostname,
+    });
+    run.recordClaim(claim.sandboxToken);
     await f.api.requestHeartbeatRunner(true, [200], {
       runnerId,
       group: f.runnerGroup,
       mode: "running",
       snapshotSequence: 1,
     });
-    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    expect((await bootstrapTarget(f, run.runId, 404)).body).toStrictEqual(
+      unavailableTarget(),
+    );
     await heartbeat(f, runnerId, "running", 2);
-    await expect(readTarget(run.runId, f.actor)).resolves.toMatchObject({
-      runnerId,
+    expect((await bootstrapTarget(f, run.runId, 200)).body).toMatchObject({
+      wssUrl: `${publicOrigin}/ws/${runnerId}`,
     });
     await heartbeat(f, runnerId, "running", 3, {
       wssIngressServiceActive: false,
     });
-    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    expect((await bootstrapTarget(f, run.runId, 404)).body).toStrictEqual(
+      unavailableTarget(),
+    );
     await heartbeat(f, runnerId, "running", 2);
-    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    expect((await bootstrapTarget(f, run.runId, 404)).body).toStrictEqual(
+      unavailableTarget(),
+    );
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 
@@ -286,15 +373,18 @@ describe("internal WSS target via guarded test API route", () => {
 
   it("rejects a browser-normalized IP hostname in an otherwise eligible official claim", async () => {
     const f = await setup();
-    const run = await createRun(f);
+    const run = await createOwnedRun(f);
     const runnerId = randomUUID();
-    await claimRun(f, run.runId, {
+    const claim = await claimRun(f, run.runId, {
       runnerId,
       hostname: "127.1",
       version: "0.214.9",
     });
+    run.recordClaim(claim.sandboxToken);
     await heartbeat(f, runnerId, "running", 1);
-    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    expect((await bootstrapTarget(f, run.runId, 404)).body).toStrictEqual(
+      unavailableTarget(),
+    );
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 });

@@ -15,6 +15,7 @@ import { server } from "../../../mocks/server";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { insertCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { encryptSecretForTests } from "./helpers/encrypt-secret";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -22,7 +23,8 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { setBuiltInCandidateCooldownFixture } from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { createPublicModelFailureFixture } from "./helpers/public-model-failure";
 import { createRouteMocks } from "./helpers/route-test";
 import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 import { modelProvidersRoutes } from "../model-providers";
@@ -38,6 +40,61 @@ function uniqueOrgUser(prefix: string): {
     orgId: `org_${prefix}_${randomUUID().slice(0, 8)}`,
     userId: `user_${prefix}_${randomUUID().slice(0, 8)}`,
   };
+}
+
+interface DiagnosticRuntimeRoute {
+  readonly provider_type: "openai-api-key" | "openrouter-codex";
+  readonly upstream_model: string;
+}
+
+async function configureDiagnosticModel(
+  selectedModel: string,
+  routes: readonly DiagnosticRuntimeRoute[],
+): Promise<void> {
+  const restore = await insertCatalogModelFixture({
+    model: selectedModel,
+    displayName: "Owned cooldown diagnostic model",
+    sortOrder: 100_000,
+    // These exact arbitrary upstream identities use the supported native
+    // Codex protocols; they are not substituted with a Pi catalog model.
+    builtInRoutes: routes.map((route, priority) => {
+      return {
+        concreteProviderType: route.provider_type,
+        upstreamModel: route.upstream_model,
+        priority,
+        efforts: ["medium"],
+        defaultEffort: "medium",
+      };
+    }),
+  });
+  onTestFinished(restore);
+  await seedBuiltInModelCandidateKeys(context, selectedModel);
+}
+
+async function reportDiagnosticCooldown(
+  producer: Awaited<ReturnType<typeof createPublicModelFailureFixture>>,
+  selectedModel: string,
+  route: DiagnosticRuntimeRoute,
+  receivedAt: number,
+  durations: readonly number[],
+): Promise<void> {
+  await withMockNowForTest(receivedAt, async () => {
+    const claimed = await producer.claim(selectedModel);
+    expect(claimed.log).toMatchObject({
+      selectedModel,
+      modelRuntimeProvider: route.provider_type,
+      modelRuntimeModel: route.upstream_model,
+    });
+    for (const retryAfterSeconds of durations) {
+      await expect(
+        createRunsApi(context).reportRunnerModelProviderFailure(claimed.runId, {
+          failureKind: "rate_limit",
+          retryAfterSeconds,
+        }),
+      ).resolves.toStrictEqual({ outcome: "recorded" });
+    }
+    await producer.finish(claimed.runId);
+  });
 }
 
 function base64UrlEncode(input: string): string {
@@ -539,43 +596,49 @@ describe("GET /api/model-providers/cooldown-diagnostics", () => {
     const laterDeadline = new Date(startedAt + 60_000);
     const expiredDeadline = new Date(startedAt - 1);
     const firstRoute = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModelPrefix}-upstream-b`,
-      model_key_id: randomUUID(),
     };
     const secondRoute = {
-      provider_type: "openrouter-codex",
+      provider_type: "openrouter-codex" as const,
       upstream_model: `${selectedModelPrefix}-upstream-a`,
-      model_key_id: randomUUID(),
     };
     const expiredRoute = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModelPrefix}-expired`,
-      model_key_id: randomUUID(),
     };
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await configureDiagnosticModel(`${selectedModelPrefix}-b`, [firstRoute]);
+    await configureDiagnosticModel(`${selectedModelPrefix}-a`, [secondRoute]);
+    await configureDiagnosticModel(`${selectedModelPrefix}-expired`, [
+      expiredRoute,
+    ]);
+    const producer = await withMockNowForTest(startedAt - 60_000, async () => {
+      return await createPublicModelFailureFixture(context, [
+        `${selectedModelPrefix}-b`,
+        `${selectedModelPrefix}-a`,
+        `${selectedModelPrefix}-expired`,
+      ]);
+    });
+    await reportDiagnosticCooldown(
+      producer,
       `${selectedModelPrefix}-b`,
       firstRoute,
-      earlierDeadline,
+      startedAt,
+      [30, 60],
     );
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      `${selectedModelPrefix}-b`,
-      firstRoute,
-      laterDeadline,
-    );
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await reportDiagnosticCooldown(
+      producer,
       `${selectedModelPrefix}-a`,
       secondRoute,
-      earlierDeadline,
+      startedAt,
+      [30],
     );
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await reportDiagnosticCooldown(
+      producer,
       `${selectedModelPrefix}-expired`,
       expiredRoute,
-      expiredDeadline,
+      expiredDeadline.getTime() - 30_000,
+      [30],
     );
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouDebug]: true,
@@ -644,15 +707,22 @@ describe("DELETE /api/model-providers/cooldown-diagnostics", () => {
     const selectedModel = `diagnostic-${randomUUID()}`;
     const unavailableUntil = new Date(now() + 60_000);
     const route = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModel}-upstream`,
-      model_key_id: randomUUID(),
     };
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await configureDiagnosticModel(selectedModel, [route]);
+    const producer = await withMockNowForTest(
+      unavailableUntil.getTime() - 120_000,
+      async () => {
+        return await createPublicModelFailureFixture(context, [selectedModel]);
+      },
+    );
+    await reportDiagnosticCooldown(
+      producer,
       selectedModel,
       route,
-      unavailableUntil,
+      unavailableUntil.getTime() - 60_000,
+      [60],
     );
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouDebug]: true,
@@ -710,26 +780,36 @@ describe("DELETE /api/model-providers/cooldown-diagnostics", () => {
     const selectedModel = `diagnostic-${randomUUID()}`;
     const unavailableUntil = new Date(now() + 60_000);
     const selectedRoute = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModel}-selected`,
-      model_key_id: randomUUID(),
     };
     const siblingRoute = {
-      provider_type: "openrouter-codex",
+      provider_type: "openrouter-codex" as const,
       upstream_model: `${selectedModel}-sibling`,
-      model_key_id: randomUUID(),
     };
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await configureDiagnosticModel(selectedModel, [
+      selectedRoute,
+      siblingRoute,
+    ]);
+    const producer = await withMockNowForTest(
+      unavailableUntil.getTime() - 120_000,
+      async () => {
+        return await createPublicModelFailureFixture(context, [selectedModel]);
+      },
+    );
+    await reportDiagnosticCooldown(
+      producer,
       selectedModel,
       selectedRoute,
-      unavailableUntil,
+      unavailableUntil.getTime() - 60_000,
+      [60],
     );
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await reportDiagnosticCooldown(
+      producer,
       selectedModel,
       siblingRoute,
-      unavailableUntil,
+      unavailableUntil.getTime() - 60_000,
+      [60],
     );
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouDebug]: true,

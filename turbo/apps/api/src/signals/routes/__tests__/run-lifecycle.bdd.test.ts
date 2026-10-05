@@ -1,5 +1,5 @@
 import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
@@ -50,10 +50,10 @@ import {
 import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { v5 as uuidv5 } from "uuid";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -103,6 +103,7 @@ import {
   manualHttpCustomConnectorCreateBody,
   mockAutomaticMcpOAuthProvider,
   mockCustomConnectorOAuth2Provider,
+  mockTestOAuthAuthCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -129,7 +130,6 @@ import {
 } from "./helpers/integrations-slack";
 import {
   deleteCustomConnectorCredentialValues,
-  seedCustomConnectorRuntimeConnectors,
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
 import {
@@ -792,6 +792,289 @@ async function entitledRunActor(
   });
   return { actor, agentId: agent.agentId, runnerGroup, granted };
 }
+
+type OrdinaryRunOAuthSlug =
+  | "x"
+  | "slack"
+  | "test-oauth"
+  | "google-ads"
+  | "cloudflare";
+
+interface OrdinaryRunOAuthToken {
+  readonly connectorSlug: OrdinaryRunOAuthSlug;
+  readonly accessToken: string;
+  readonly refreshToken?: string;
+}
+
+/** Only external provider responses are mocked; acquisition uses the real OAuth callback. */
+function mockOrdinaryRunOAuthProvider(token: OrdinaryRunOAuthToken): void {
+  const slug = token.connectorSlug;
+  mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+  if (slug === "test-oauth") {
+    mockTestOAuthAuthCodeProvider({
+      accessToken: token.accessToken,
+      refreshToken: token.refreshToken,
+      omitExpiresIn: true,
+      scope: "",
+      // The real provider maps UserInfo.id to tenantId; firewall hostnames alone
+      // are canonicalized to lowercase, while the environment keeps this case.
+      userId: "test-oauth-oauth-tenantId",
+      username: "e2e-test-oauth",
+      email: "e2e-test-oauth@test.vm0.ai",
+    });
+    return;
+  }
+  if (slug === "slack") {
+    server.use(
+      http.post("https://slack.com/api/oauth.v2.access", () => {
+        return HttpResponse.json({
+          ok: true,
+          authed_user: {
+            id: "e2e-test-slack",
+            access_token: token.accessToken,
+            scope: "",
+          },
+        });
+      }),
+      http.get("https://slack.com/api/users.info", () => {
+        return HttpResponse.json({
+          ok: true,
+          user: {
+            id: "e2e-test-slack",
+            real_name: "e2e-slack",
+            profile: { email: "e2e-slack@test.vm0.ai" },
+          },
+        });
+      }),
+      http.post("https://slack.com/api/auth.revoke", () => {
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    return;
+  }
+  const tokenUrl = {
+    x: "https://api.x.com/2/oauth2/token",
+    "google-ads": "https://oauth2.googleapis.com/token",
+    cloudflare: "https://dash.cloudflare.com/oauth2/token",
+  }[slug];
+  server.use(
+    http.post(tokenUrl, async ({ request }) => {
+      const body = new URLSearchParams(await request.text());
+      if (body.get("grant_type") !== "authorization_code") {
+        throw new Error("Expected ordinary OAuth acquisition, not a refresh");
+      }
+      return HttpResponse.json({
+        access_token: token.accessToken,
+        // Cloudflare requires a refresh token even when no expiry is supplied.
+        refresh_token:
+          token.refreshToken ??
+          (slug === "cloudflare" ? "cloudflare-bdd-refresh" : undefined),
+        token_type: "Bearer",
+        scope: "",
+      });
+    }),
+  );
+  if (slug === "x") {
+    server.use(
+      http.get("https://api.x.com/2/users/me", () => {
+        return HttpResponse.json({
+          data: { id: "e2e-test-x", username: "e2e-x", name: "e2e-x" },
+        });
+      }),
+    );
+  } else if (slug === "google-ads") {
+    server.use(
+      http.get("https://www.googleapis.com/oauth2/v2/userinfo", () => {
+        return HttpResponse.json({
+          id: "e2e-test-google-ads",
+          name: "e2e-google-ads",
+          email: "e2e-google-ads@test.vm0.ai",
+        });
+      }),
+    );
+  } else {
+    server.use(
+      http.get("https://dash.cloudflare.com/oauth2/userinfo", () => {
+        return HttpResponse.json({
+          sub: "e2e-test-cloudflare",
+          preferred_username: "e2e-cloudflare",
+          email: "e2e-cloudflare@test.vm0.ai",
+        });
+      }),
+      http.post("https://dash.cloudflare.com/oauth2/revoke", () => {
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+  }
+}
+
+/** Own only the ordinary OAuth cases; historical runtime fixtures stay separate. */
+function useOrdinaryOAuthRuns() {
+  const cleanups: (() => Promise<void>)[] = [];
+  // This hook runs before the parent context releases its signal and provider mocks.
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) {
+      await cleanup();
+    }
+  });
+
+  return function createOrdinaryOAuthRunApi() {
+    const runs = createRunsApi(context);
+    const agents = new Map<string, ApiTestUser>();
+    const ownedRuns = new Map<
+      string,
+      { actor: ApiTestUser; sandboxToken?: string; acknowledged: boolean }
+    >();
+    const accounts: {
+      readonly actor: ApiTestUser;
+      readonly slug: OrdinaryRunOAuthSlug;
+      readonly id: string;
+    }[] = [];
+    cleanups.push(async () => {
+      const cleanupRuns = createRunsApi(context);
+      const cleanupConnectors = createConnectorBddApi(context);
+      const cleanupAgents = createBddApi(context);
+      // A notification failure belongs to its assertion, not to owned teardown.
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      for (const [runId, owned] of [...ownedRuns].reverse()) {
+        const current = await cleanupRuns.readRun(owned.actor, runId);
+        const active =
+          current.status === "pending" || current.status === "running";
+        if (active) {
+          await cleanupRuns.requestCancelRun(owned.actor, runId, [200]);
+        }
+        if (
+          (active || current.status === "cancelled") &&
+          owned.sandboxToken &&
+          !owned.acknowledged
+        ) {
+          await finishCancelledRun(runId, owned.sandboxToken);
+        }
+        await flushWaitUntilForTest();
+      }
+      // Each account ID comes from the same owner's public account list after
+      // its real callback. Never delete credentials while an owned Run is active.
+      for (const account of accounts.reverse()) {
+        await cleanupConnectors.deleteBuiltinConnectorAccount(
+          account.actor,
+          account.slug,
+          account.id,
+        );
+        await flushWaitUntilForTest();
+      }
+      for (const [agentId, actor] of [...agents].reverse()) {
+        await cleanupAgents.deleteAgent(actor, agentId);
+        await flushWaitUntilForTest();
+      }
+    });
+
+    return {
+      api: {
+        ...runs,
+        async createThreadRun(
+          ...args: Parameters<typeof runs.createThreadRun>
+        ) {
+          const run = await runs.createThreadRun(...args);
+          ownedRuns.set(run.runId, { actor: args[0], acknowledged: false });
+          return run;
+        },
+        async claimRunnerJob(...args: Parameters<typeof runs.claimRunnerJob>) {
+          const claim = await runs.claimRunnerJob(...args);
+          const owned = ownedRuns.get(args[0]);
+          if (!owned) {
+            throw new Error(
+              "Expected an owned Run before claiming OAuth runtime",
+            );
+          }
+          owned.sandboxToken = claim.sandboxToken;
+          return claim;
+        },
+      },
+      async entitledRunActor(...args: Parameters<typeof entitledRunActor>) {
+        const entitled = await entitledRunActor(...args);
+        agents.set(entitled.agentId, entitled.actor);
+        return entitled;
+      },
+      async createAgent(
+        ...args: Parameters<ReturnType<typeof createBddApi>["createAgent"]>
+      ) {
+        const agent = await createBddApi(context).createAgent(...args);
+        agents.set(agent.agentId, args[0]);
+        return agent;
+      },
+      async finishCancelledRun(runId: string, sandboxToken: string) {
+        await finishCancelledRun(runId, sandboxToken);
+        const owned = ownedRuns.get(runId);
+        if (!owned) {
+          throw new Error(
+            "Expected an owned Run before acknowledging cancellation",
+          );
+        }
+        owned.acknowledged = true;
+      },
+      async connect(actor: ApiTestUser, token: OrdinaryRunOAuthToken) {
+        const connectors = createConnectorBddApi(context);
+        if (token.connectorSlug === "test-oauth") {
+          await connectors.updateFeatureSwitches(actor, {
+            [FeatureSwitchKey.TestOauthConnector]: true,
+          });
+        }
+        mockOrdinaryRunOAuthProvider(token);
+        const previous = new Set(
+          (
+            await connectors.listBuiltinConnectorAccounts(
+              actor,
+              token.connectorSlug,
+            )
+          ).map((account) => {
+            return account.id;
+          }),
+        );
+        // startOauth also authorizes an Agent. These cases retain their original
+        // explicit allowlists, including a connected but entirely unenabled X.
+        const started = await connectors.requestOauthStart(
+          actor,
+          token.connectorSlug,
+          "oauth",
+          { statuses: [200], account: { intent: "add" } },
+        );
+        if (started.status !== 200) {
+          throw new Error("Expected the public OAuth start to succeed");
+        }
+        const state = new URL(started.body.authorizationUrl).searchParams.get(
+          "state",
+        );
+        if (!state) {
+          throw new Error(
+            "Expected real OAuth state in the provider authorization URL",
+          );
+        }
+        const completed = await connectors.completeOauthCallbackResult(
+          token.connectorSlug,
+          { state, code: `run-lifecycle-${randomUUID()}` },
+        );
+        const acquired = (
+          await connectors.listBuiltinConnectorAccounts(
+            actor,
+            token.connectorSlug,
+          )
+        ).filter((account) => {
+          return !previous.has(account.id);
+        });
+        for (const account of acquired) {
+          accounts.push({ actor, slug: token.connectorSlug, id: account.id });
+        }
+        if (completed.body.status !== "success" || acquired.length !== 1) {
+          throw new Error(
+            "Expected one publicly readable account from the real OAuth callback",
+          );
+        }
+      },
+    };
+  };
+}
+
+const createOrdinaryOAuthRunApi = useOrdinaryOAuthRuns();
 
 const CHAT_CALLBACK_URL = "http://localhost:3000/api/internal/callbacks/chat";
 
@@ -5575,13 +5858,12 @@ describe("RUN-02: persisted run environment resolution", () => {
 
 describe("RUN-02: stored connector injection into claimed runs", () => {
   it("omits connected stored connectors when the agent run allowlist is empty", async () => {
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
+    const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
 
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "x",
-      authMethod: "oauth",
       accessToken: "x-bdd-unallowed-access",
       refreshToken: "x-bdd-unallowed-refresh",
     });
@@ -5693,8 +5975,8 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
 
   it("maps stored connector variable sources to runtime aliases for permission manifests", async () => {
     const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     api.acceptStorageDownloads();
@@ -5702,14 +5984,13 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     const runnerGroup = api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
 
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "test-oauth",
-      authMethod: "oauth",
       accessToken: "test-oauth-bdd-access",
       refreshToken: "test-oauth-bdd-refresh",
     });
     await api.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
+    const agent = await oauth.createAgent(actor, {
       displayName: "BDD test-oauth connector agent",
       description: "Uses the test-oauth connector.",
       visibility: "private",
@@ -5799,14 +6080,16 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
   });
 
   it("keeps prefetched connector credentials behind placeholders in the Runner claim", async () => {
-    const api = createRunsApi(context);
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
     const connectors = createConnectorBddApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    const { actor, agentId } = await oauth.entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "x",
-      authMethod: "oauth",
       accessToken: "x-bdd-lazy-access",
       refreshToken: "x-bdd-lazy-refresh",
     });
@@ -5844,7 +6127,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
-    await finishCancelledRun(run.runId, claim.sandboxToken);
+    await oauth.finishCancelledRun(run.runId, claim.sandboxToken);
   });
 
   it("uses the builtin Figma firewall for personal access tokens", async () => {
@@ -6238,17 +6521,17 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
   });
 
   it("emits lazy platform-secret metadata without snapshotting platform secrets", async () => {
-    const api = createRunsApi(context);
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
     const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
     mockOptionalEnv(
       "GOOGLE_ADS_DEVELOPER_TOKEN",
       "developer-token-before-claim",
     );
 
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "google-ads",
-      authMethod: "oauth",
       accessToken: "google-ads-bdd-access",
       refreshToken: "google-ads-bdd-refresh",
     });
@@ -7917,26 +8200,79 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await fixture.api.requestCancelRun(fixture.actor, codex.runId, [200]);
   });
 
-  it("reads a seeded canonical connector through runtime auth", async () => {
+  it("reads a publicly configured canonical connector through runtime auth", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     if (!actor.orgId) {
       throw new Error("Expected a custom connector actor with an organization");
     }
+    const storage = context.mocks.s3.send.getMockImplementation();
+    const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+    const owned: {
+      connectorId?: string;
+      runId?: string;
+      sandboxToken?: string;
+    } = {};
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) {
+        return;
+      }
+      if (!storage) {
+        throw new Error("Expected the owned Agent's storage implementation");
+      }
+      context.mocks.s3.send.mockImplementation(storage);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      const { runId, sandboxToken, connectorId } = owned;
+      if (runId) {
+        const current = await api.readRun(actor, runId);
+        if (current.status === "pending" || current.status === "running") {
+          await api.requestCancelRun(actor, runId, [200]);
+        }
+        if (sandboxToken) {
+          await finishCancelledRun(runId, sandboxToken);
+        }
+        await flushWaitUntilForTest();
+      }
+      if (connectorId) {
+        await connectors.deleteCustomConnector(actor, connectorId);
+      }
+      await createBddApi(context).deleteAgent(actor, agentId);
+      cleaned = true;
+    };
+    onTestFinished(cleanup);
     const suffix = randomUUID().slice(0, 8);
-    const runtimeConnector = {
-      id: randomUUID(),
+    const prefixTemplate = `https://canonical-${suffix}.example.test/api/`;
+    const runtimeConnector = await connectors.createCustomConnector(actor, {
       slug: `_bdd-canonical-${suffix}`,
       displayName: "BDD Canonical Runtime",
-      prefixTemplate: `https://canonical-${suffix}.example.test/api/`,
-    };
-    await seedCustomConnectorRuntimeConnectors(context, {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      customConnectors: [runtimeConnector],
+      prefixTemplates: [prefixTemplate],
+      fields: [
+        {
+          key: "optional_secret",
+          label: "Optional secret",
+          kind: "secret",
+          required: false,
+        },
+      ],
+      headerInjections: [
+        {
+          name: "X-Connector",
+          valueTemplate: "runtime-batch {{secrets.optional_secret}}",
+        },
+      ],
+      queryInjections: [],
+      authMode: "manual",
     });
+    owned.connectorId = runtimeConnector.id;
+    await connectors.setCustomConnectorValues(actor, runtimeConnector.id, []);
     const runtimeConnectionId = await defaultCustomConnectorAccountId(
       connectors,
       actor,
@@ -7949,7 +8285,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         return connector.id === runtimeConnector.id;
       }),
     ).toMatchObject({
-      prefixTemplates: [runtimeConnector.prefixTemplate],
+      prefixTemplates: [prefixTemplate],
       headerInjections: [
         {
           name: "X-Connector",
@@ -7977,8 +8313,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       agentId,
       prompt: "use the seeded canonical connector",
     });
+    owned.runId = run.runId;
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    owned.sandboxToken = claim.sandboxToken;
     const runtimeTarget = customConnectorRuntimeRegistration(
       claim,
       runtimeConnector.id,
@@ -8002,7 +8340,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
     });
 
-    await api.requestCancelRun(actor, run.runId, [200]);
+    await cleanup();
   });
 
   it("keeps a granted custom skill independent from runtime admission", async () => {
@@ -10583,17 +10921,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it("refreshes queued connector grants from the stored permission baseline", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    const agent = await bdd.createAgent(actor, {
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
+    const { actor, runnerGroup } = await oauth.entitledRunActor();
+    const agent = await oauth.createAgent(actor, {
       displayName: "BDD queued permission baseline agent",
     });
     const agentId = agent.agentId;
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "slack",
-      authMethod: "oauth",
       accessToken: "xoxb-bdd-baseline",
     });
     await api.enableAgentConnectors(actor, agentId, ["slack"]);
@@ -10668,22 +11004,21 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("applies, scopes, expires, and snapshots user permission grants", async () => {
     const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, runnerGroup } = await entitledRunActor(
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
+    const { actor, runnerGroup } = await oauth.entitledRunActor(
       {},
       NATIVE_RUNNER_ROUTE,
     );
 
     // The grants agent is public so a same-org member can write their own
     // grants for it without being the owner.
-    const agent = await bdd.createAgent(actor, {
+    const agent = await oauth.createAgent(actor, {
       displayName: "BDD grants agent",
     });
     const agentId = agent.agentId;
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "slack",
-      authMethod: "oauth",
       accessToken: "xoxb-bdd-grants",
     });
     await api.enableAgentConnectors(actor, agentId, ["slack"]);
@@ -10702,7 +11037,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       });
       const claim = await api.claimRunnerJob(run.runId);
       await api.requestCancelRun(actor, run.runId, [200]);
-      await finishCancelledRun(run.runId, claim.sandboxToken);
+      await oauth.finishCancelledRun(run.runId, claim.sandboxToken);
       const policy = claim.networkPolicies?.slack;
       if (!policy) {
         throw new Error("Expected a slack network policy on the claim");
@@ -10972,7 +11307,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
     );
     expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
-    await finishCancelledRun(snapshotRun.runId, snapshotClaim.sandboxToken);
+    await oauth.finishCancelledRun(
+      snapshotRun.runId,
+      snapshotClaim.sandboxToken,
+    );
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -11106,17 +11444,16 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it("resumes a session while refreshing its network policy", async () => {
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor(
+    const { actor, agentId, runnerGroup } = await oauth.entitledRunActor(
       {},
       NATIVE_RUNNER_ROUTE,
     );
 
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "slack",
-      authMethod: "oauth",
       accessToken: "xoxb-bdd-claim-response-timing",
     });
     await api.enableAgentConnectors(actor, agentId, ["slack"]);
@@ -11187,18 +11524,16 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it("preserves defaults and overrides across a broad HTTP connector scope", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
+    const { actor, runnerGroup } = await oauth.entitledRunActor();
 
-    const agent = await bdd.createAgent(actor, {
+    const agent = await oauth.createAgent(actor, {
       displayName: "BDD Cloudflare unknown policy agent",
     });
     const agentId = agent.agentId;
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "cloudflare",
-      authMethod: "oauth",
       accessToken: "cloudflare-bdd-token",
     });
     // Nintendo Store owns a catalog skill, so enabling it without its account
@@ -11264,8 +11599,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("loads stored connectors and applies default named policies to runs without explicit policies", async () => {
     const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     api.acceptStorageDownloads();
@@ -11273,13 +11608,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const runnerGroup = api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
 
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "cloudflare",
-      authMethod: "oauth",
       accessToken: "cloudflare-direct-bdd-token",
     });
     await api.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
+    const agent = await oauth.createAgent(actor, {
       displayName: "BDD cloudflare connector agent",
       description: "Uses the cloudflare connector.",
       visibility: "private",
@@ -11321,9 +11655,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const appUrl = "https://app.example.test";
     mockEnv("APP_URL", appUrl);
     const bdd = createBddApi(context);
-    const api = createRunsApi(context);
+    const oauth = createOrdinaryOAuthRunApi();
+    const api = oauth.api;
     const connectors = createConnectorBddApi(context);
-    const fw = createFirewallApi(context);
     const misc = createMiscRoutesApi(context);
     const actor = bdd.user();
     if (!actor.orgId) {
@@ -11342,15 +11676,14 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await bdd.readMe(actor);
     await api.grantProEntitlement(actor);
     await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
-    const agent = await bdd.createAgent(actor, {
+    const agent = await oauth.createAgent(actor, {
       displayName: "Research Bot",
       description: "Finds release details",
       sound: "direct",
       visibility: "private",
     });
-    await fw.seedTestConnector(actor, {
+    await oauth.connect(actor, {
       connectorSlug: "slack",
-      authMethod: "oauth",
       accessToken: "xoxb-bdd-context",
     });
     await api.enableAgentConnectors(actor, agent.agentId, ["slack"]);
@@ -12109,10 +12442,12 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const callbackUrl = "https://callback.example/cancellation-recovery";
-    let callbackRequests = 0;
+    const callbackSecret = randomUUID();
+    mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "bdd-http-bypass");
+    const callbackRequests: Request[] = [];
     server.use(
-      http.post(callbackUrl, () => {
-        callbackRequests += 1;
+      http.post(callbackUrl, ({ request }) => {
+        callbackRequests.push(request);
         return HttpResponse.text("retry later", { status: 503 });
       }),
     );
@@ -12127,6 +12462,7 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
         runId: run.runId,
         url: callbackUrl,
         payload: {},
+        secret: callbackSecret,
       },
       context.signal,
     );
@@ -12135,7 +12471,29 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
 
     await api.requestCancelRun(actor, run.runId, [200]);
     await flushWaitUntilForTest();
-    expect(callbackRequests).toBe(1);
+    expect(callbackRequests).toHaveLength(1);
+    const request = callbackRequests[0];
+    if (!request) {
+      throw new Error("Expected an ordinary HTTP callback request");
+    }
+    const body = await request.text();
+    const timestamp = request.headers.get("X-Okou-Timestamp");
+    expect(timestamp).toMatch(/^\d+$/);
+    expect(request.headers.get("Content-Type")).toBe("application/json");
+    expect(request.headers.get("x-vercel-protection-bypass")).toBe(
+      "bdd-http-bypass",
+    );
+    expect(request.headers.get("X-Okou-Signature")).toBe(
+      createHmac("sha256", callbackSecret)
+        .update(`${timestamp}.${body}`)
+        .digest("hex"),
+    );
+    expect(JSON.parse(body)).toMatchObject({
+      callbackId: expect.any(String),
+      runId: run.runId,
+      status: "failed",
+      payload: {},
+    });
     expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
       runId: run.runId,
       mode: "cooperative",
@@ -12143,7 +12501,7 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
 
     await api.requestCancelRun(actor, run.runId, [200]);
     await flushWaitUntilForTest();
-    expect(callbackRequests).toBe(1);
+    expect(callbackRequests).toHaveLength(1);
   });
 
   it("serializes concurrent claim and cancellation without deadlock", async () => {

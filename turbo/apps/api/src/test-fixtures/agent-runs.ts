@@ -3,7 +3,6 @@ import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-pr
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { agentRunList } from "../signals/services/agent-runs.service";
@@ -61,29 +60,6 @@ export async function listAgentRunsFixture(args: {
       limit: args.limit ?? 50,
     }),
   );
-}
-
-export async function readRunModelRuntimeRouteFixture(runId: string) {
-  const [run] = await db()
-    .select({
-      modelProvider: agentRuns.modelProvider,
-      selectedModel: agentRuns.selectedModel,
-      modelRuntimeProvider: agentRuns.modelRuntimeProvider,
-      modelRuntimeModel: agentRuns.modelRuntimeModel,
-      builtInModelKeyId: agentRuns.builtInModelKeyId,
-      builtInModelKeyVendor: builtInModelKeys.vendor,
-    })
-    .from(agentRuns)
-    .leftJoin(
-      builtInModelKeys,
-      eq(builtInModelKeys.id, agentRuns.builtInModelKeyId),
-    )
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!run) {
-    throw new Error("Expected one run runtime route");
-  }
-  return run;
 }
 
 /** Simulate historical or alternate built-in model route metadata not constructible through current policy. */

@@ -3098,6 +3098,7 @@ async fn fetch_fresh_archive(
                     }
                     info!(
                         action = "storage_cache_fresh_delivery_retry",
+                        r2_key = crate::r2_download::key_from_url(archive_url).as_deref(),
                         attempt,
                         max_attempts = OBJECT_DOWNLOAD_MAX_ATTEMPTS,
                         reason = error.reason,
@@ -3376,6 +3377,7 @@ async fn fetch_cache_target(
             name = %target.name,
             version = %target.version,
             size,
+            r2_key = crate::r2_download::key_from_url(&target.archive_url).as_deref(),
             "storage_cache: entry over size limit, passthrough"
         );
         return Ok(CacheFetchOutcome::Skipped);

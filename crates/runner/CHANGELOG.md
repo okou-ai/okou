@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.220.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.219.20...runner-rs-v0.220.0) (2026-10-04)
+
+
+### Features
+
+* **observability:** log r2 keys only in runner-local info ([#37687](https://github.com/okou-ai/okou/issues/37687)) ([193f547](https://github.com/okou-ai/okou/commit/193f5472860eab1725897d976f25f6b70f3cb1c4))
+
 ## [0.219.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.219.19...runner-rs-v0.219.20) (2026-10-04)
 
 ### Release Dependencies

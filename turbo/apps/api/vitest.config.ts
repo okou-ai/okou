@@ -10,6 +10,8 @@ const immutableCatalogTests = [
 ];
 
 const catalogTests = [
+  "src/signals/routes/__tests__/official-automation-result-email.test.ts",
+  "src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts",
   "src/signals/routes/__tests__/official-workflows.test.ts",
   "src/signals/routes/__tests__/official-workflows-schedule-claims.test.ts",
   "src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts",

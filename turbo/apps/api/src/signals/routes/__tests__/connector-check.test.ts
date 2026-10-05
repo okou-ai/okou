@@ -9,16 +9,21 @@ import {
 } from "@okouai/api-contracts/contracts/connector-check";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settle } from "../../utils";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import {
   awsVerificationCode,
   createConnectorBddApi,
@@ -26,7 +31,6 @@ import {
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import {
   seedConnectorStorageRow,
   setConnectorDefaultState,
@@ -39,6 +43,11 @@ import {
   type OrgMembershipFixture,
 } from "./helpers/org-membership";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithManualConnector,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { connectorCheckRoutes } from "../connector-check";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 
@@ -201,6 +210,7 @@ async function createOwnedRun(
   options: {
     readonly builtinConnectorSlugs?: readonly string[];
     readonly customConnectorIds?: readonly string[];
+    readonly onAgentCreated?: (agentId: string) => void;
   } = {},
 ): Promise<{ readonly runId: string; readonly agentId: string }> {
   bdd.acceptAgentStorageWrites();
@@ -213,6 +223,7 @@ async function createOwnedRun(
     displayName: `Connector check ${randomUUID()}`,
     visibility: "private",
   });
+  options.onAgentCreated?.(agent.agentId);
   if (options.builtinConnectorSlugs) {
     await runsApi.enableAgentConnectors(
       actor,
@@ -621,16 +632,23 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
   it("ignores stale stored connectors that are absent from the catalog", async () => {
     const actor = bdd.user();
-    await seedConnectorStorageRow(context, {
-      authMethod: "api",
+    const catalog = createPublicConnectorCatalog(context);
+    const available = catalogWithManualConnector({
       connectorSlug: "removed-connector",
-      orgId: requireOrgId(actor),
-      storageVersion: 1,
-      userId: actor.userId,
+      authMethodId: "api",
     });
-    await trackConnectedFixture(
-      Promise.resolve({ actor, connectorSlug: "removed-connector" }),
-    );
+    await catalog.publish(available);
+    await connectorsApi.connectManualGrant(actor, "removed-connector", "api", {
+      credential: "removed-connector-secret",
+    });
+    catalog.onCleanup(async () => {
+      await catalog.publish(available);
+      await connectorsApi.deleteDefaultBuiltinConnectorAccount(
+        actor,
+        "removed-connector",
+      );
+    });
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
     const response = await checkWithSession(actor, {
       mode: "url",
@@ -642,6 +660,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       connector: { connectorSlug: "github" },
     });
+    await catalog.cleanup();
   });
 
   it("supports a real PAT and resolves hidden server-authored metadata without private refs", async () => {
@@ -1253,20 +1272,90 @@ describe("POST /api/connectors/diagnostics/check", () => {
   it("uses current permission expiry for an admitted builtin connector", async () => {
     await withMockNowForTest(new Date("2026-09-07T08:00:00.000Z"), async () => {
       const owner = bdd.user();
-      await seedAdminMembership(owner);
-      const firewallApi = createFirewallApi(context);
-      await firewallApi.provisionRunReadyOrg(owner);
-      await firewallApi.seedTestConnector(owner, {
-        connectorSlug: "cloudflare",
-        authMethod: "oauth",
-        accessToken: "cloudflare-test-access-token",
+      const owned: { agentId?: string; runId?: string } = {};
+      const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+      const configureCloudflareOAuth = () => {
+        mockOptionalEnv("CLOUDFLARE_OAUTH_CLIENT_ID", "cloudflare-test-client");
+        mockOptionalEnv(
+          "CLOUDFLARE_OAUTH_CLIENT_SECRET",
+          "cloudflare-test-secret",
+        );
+      };
+      onTestFinished(async () => {
+        // Cleanup uses fresh clients under the current test-context signal.
+        configureCloudflareOAuth();
+        mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+        mockClerkMembership(context, owner, "org:admin");
+        bdd.acceptAgentStorageWrites();
+        context.mocks.ably.publish.mockResolvedValue(undefined);
+        server.use(
+          http.post("https://dash.cloudflare.com/oauth2/revoke", () => {
+            return new HttpResponse(null, { status: 200 });
+          }),
+        );
+        if (owned.runId) {
+          await runsApi.requestCancelRun(owner, owned.runId, [200]);
+          await flushWaitUntilForTest();
+        }
+        if (owned.agentId) {
+          await bdd.deleteAgent(owner, owned.agentId);
+        }
+        const accounts = await connectorsApi.listBuiltinConnectorAccounts(
+          owner,
+          "cloudflare",
+        );
+        for (const account of accounts) {
+          await connectorsApi.deleteBuiltinConnectorAccount(
+            owner,
+            "cloudflare",
+            account.id,
+          );
+        }
+        await flushWaitUntilForTest();
       });
-      await trackConnectedFixture(
-        Promise.resolve({ actor: owner, connectorSlug: "cloudflare" }),
+      await seedAdminMembership(owner);
+      await bdd.completeOnboarding(owner);
+      configureCloudflareOAuth();
+      server.use(
+        http.post("https://dash.cloudflare.com/oauth2/token", () => {
+          return HttpResponse.json({
+            access_token: "cloudflare-test-access-token",
+            refresh_token: `cloudflare-refresh-${randomUUID()}`,
+          });
+        }),
+        http.get("https://dash.cloudflare.com/oauth2/userinfo", () => {
+          return HttpResponse.json({
+            sub: owner.userId,
+            email: owner.email,
+            name: "Cloudflare permission owner",
+          });
+        }),
       );
+      const authorization = await connectorsApi.startOauth(
+        owner,
+        "cloudflare",
+        "oauth",
+      );
+      const state = new URL(authorization.authorizationUrl).searchParams.get(
+        "state",
+      );
+      if (!state) {
+        throw new Error("Expected Cloudflare authorization state");
+      }
+      const connected = await connectorsApi.completeOauthCallbackResult(
+        "cloudflare",
+        { state, code: "cloudflare-permission-code" },
+      );
+      if (connected.body.status !== "success") {
+        throw new Error("Expected the Cloudflare OAuth callback to connect");
+      }
       const { runId, agentId } = await createOwnedRun(owner, {
         builtinConnectorSlugs: ["cloudflare"],
+        onAgentCreated(createdAgentId) {
+          owned.agentId = createdAgentId;
+        },
       });
+      owned.runId = runId;
       context.mocks.axiom.query.mockRejectedValue(
         new Error("Axiom connector diagnostics must not be queried"),
       );
@@ -1318,6 +1407,98 @@ describe("POST /api/connectors/diagnostics/check", () => {
       expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
   });
+
+  it.each(["user", "organization"] as const)(
+    "keeps active Run registration preflight isolated across %s boundaries",
+    async (boundary) => {
+      const owner = bdd.user();
+      const foreign =
+        boundary === "user"
+          ? bdd.user({ orgId: requireOrgId(owner) })
+          : bdd.user({ userId: owner.userId });
+      await bdd.completeOnboarding(owner);
+      await bdd.completeOnboarding(foreign);
+      const runs: { readonly actor: ApiTestUser; readonly runId: string }[] =
+        [];
+      const checks = await settle(
+        (async () => {
+          const owned = await createOwnedRun(owner);
+          runs.push({ actor: owner, runId: owned.runId });
+          const capabilities = ["connector:read", "agent-run:read"] as const;
+          const ownerToken = okouToken(owner, owned.runId, capabilities);
+          const foreignToken = okouToken(foreign, owned.runId, capabilities);
+          const missingToken = okouToken(foreign, randomUUID(), capabilities);
+          const requests: readonly ConnectorCheckRequestBody[] = [
+            {
+              mode: "url",
+              method: "GET",
+              url: `https://${randomUUID()}.example.test/owned`,
+            },
+            { mode: "environment", environmentName: "GH_TOKEN" },
+          ];
+          for (const body of requests) {
+            mockClerkMembership(context, owner, "org:admin");
+            const original = await checkWithToken(ownerToken, body);
+            if (body.mode === "url") {
+              expect(original.body).toStrictEqual({
+                outcome: "no-match",
+                scope: "run",
+              });
+            } else {
+              expect(original.body).toMatchObject({
+                outcome: "resolved",
+                mode: "environment",
+                connector: { connectorSlug: "github" },
+                environmentName: "GH_TOKEN",
+                run: { status: "not-configured" },
+                permission: null,
+              });
+            }
+            mockClerkMembership(context, foreign, "org:admin");
+            const rejected = await accept(
+              client().check({
+                headers: { authorization: `Bearer ${foreignToken}` },
+                body,
+              }),
+              [404],
+            );
+            const missing = await accept(
+              client().check({
+                headers: { authorization: `Bearer ${missingToken}` },
+                body,
+              }),
+              [404],
+            );
+            expect(rejected.body).toStrictEqual({
+              error: { code: "NOT_FOUND", message: "Agent run not found" },
+            });
+            expect(missing.body).toStrictEqual(rejected.body);
+            mockClerkMembership(context, owner, "org:admin");
+            const unchanged = await checkWithToken(ownerToken, body);
+            expect(unchanged.body).toStrictEqual(original.body);
+          }
+        })(),
+      );
+      const cleanupErrors: unknown[] = [];
+      for (const run of [...runs].reverse()) {
+        const deleted = await settle(
+          runsApi.requestCancelRun(run.actor, run.runId, [200]),
+        );
+        if (!deleted.ok) {
+          cleanupErrors.push(deleted.error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [...(!checks.ok ? [checks.error] : []), ...cleanupErrors],
+          "Run registration fixture cleanup failed",
+        );
+      }
+      if (!checks.ok) {
+        throw checks.error;
+      }
+    },
+  );
 
   it("rejects connector diagnostics from another owner of the same organization", async () => {
     const owner = bdd.user();

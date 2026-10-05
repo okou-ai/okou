@@ -566,6 +566,59 @@ async fn axiom_ingests_only_scoped_storage_latency_info() {
 }
 
 #[tokio::test]
+async fn runner_r2_info_keys_reach_local_formatter_but_not_axiom() {
+    let server = MockServer::start_async().await;
+    let (ingest, captured) = capture_axiom_ingest(&server).await;
+    let (layer, guard) = init_with_base_url(&server.base_url(), "t", "test").unwrap();
+    let local_log = tempfile::NamedTempFile::new().unwrap();
+    let writer = local_log.reopen().unwrap();
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(move || writer.try_clone().unwrap())
+        .with_filter(crate::RUNNER_FMT_MAX_LEVEL);
+    let subscriber = tracing_subscriber::registry()
+        .with(fmt_layer)
+        .with(with_ingest_filter(layer));
+    {
+        let _sub = tracing::subscriber::set_default(subscriber);
+        tracing::info!(target: "runner_executor::executor::storage",
+            r2_storage_sources = %json!([{"r2_key": "local-only/storage/archive.tar.gz"}]),
+            "downloading storages");
+        tracing::info!(target: "runner_executor::executor::session_history_download",
+            action = "session_history_download_retry",
+            r2_key = "local-only/history/encoded.jsonl.zst", "history retry");
+        tracing::info!(target: "runner_storage::storage_cache",
+            action = "storage_cache_fresh_delivery_retry",
+            r2_key = "local-only/cache/archive.tar.gz", "cache retry");
+        tracing::info!(target: "runner::cmd::build",
+            r2_key = "local-only/template.tar.zst", "template result");
+        tracing::warn!("existing warning");
+    }
+    guard.shutdown().await;
+
+    let local = std::fs::read_to_string(local_log.path()).unwrap();
+    assert_eq!(local.lines().count(), 5, "{local}");
+    for key in [
+        "local-only/storage/archive.tar.gz",
+        "local-only/history/encoded.jsonl.zst",
+        "local-only/cache/archive.tar.gz",
+        "local-only/template.tar.zst",
+    ] {
+        let line = local.lines().find(|line| line.contains(key)).unwrap();
+        assert!(line.contains(" INFO "), "{line}");
+    }
+    ingest.assert_calls_async(1).await;
+    let remote = captured.events();
+    assert_eq!(remote.len(), 1, "{remote:#?}");
+    assert_eq!(remote[0]["level"], "warn");
+    assert_eq!(remote[0]["message"], "existing warning");
+    let serialized = serde_json::to_string(&remote).unwrap();
+    for forbidden in ["r2_key", "r2_storage_sources", "local-only/"] {
+        assert!(!serialized.contains(forbidden), "{forbidden} reached Axiom");
+    }
+}
+
+#[tokio::test]
 async fn axiom_filter_does_not_suppress_sibling_local_layers() {
     let server = MockServer::start_async().await;
 

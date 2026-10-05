@@ -18,6 +18,11 @@ import {
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   readConnectorCredentialStorageState,
@@ -25,7 +30,6 @@ import {
   seedConnectorStorageRow,
   setBuiltinOAuthScopeFacts,
   setConnectorDefaultState,
-  setConnectorCredentialStorageState,
   setConnectorSecretOwner,
 } from "./helpers/connector-credential-storage-state";
 import { mailRoutes } from "../mail";
@@ -305,7 +309,9 @@ function mockGmailDraftApi(options?: {
   return state;
 }
 
-async function seedGmailMailCardFixture() {
+async function seedGmailMailCardFixture(
+  registerCleanup?: (cleanup: () => Promise<void>) => void,
+) {
   const actor = bdd.user();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped actor");
@@ -315,6 +321,9 @@ async function seedGmailMailCardFixture() {
   const agent = await bdd.createAgent(actor, {
     displayName: "Nova Mail agent",
     visibility: "private",
+  });
+  registerCleanup?.(async () => {
+    await bdd.deleteAgent(actor, agent.agentId);
   });
   const thread = await chat.createThread(actor, {
     agentId: agent.agentId,
@@ -332,6 +341,9 @@ async function seedGmailMailCardFixture() {
   await connectors.completeOauthCallback("gmail", {
     code: "okou-mail-code",
     state,
+  });
+  registerCleanup?.(async () => {
+    await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gmail");
   });
   const gmail = await connectors.readConnectorBySlug(actor, "gmail");
   await runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
@@ -1630,14 +1642,50 @@ describe("POST /api/mail/drafts/link", () => {
   });
 
   it("does not refresh a known mismatched Gmail storage version", async () => {
-    const fixture = await seedGmailMailCardFixture();
-    await setConnectorCredentialStorageState(context, {
-      orgId: fixture.actor.orgId ?? "",
-      userId: fixture.actor.userId,
-      connectorSlug: "gmail",
-      storageVersion: 2,
-      tokenExpiresAt: "2020-01-01T00:00:00.000Z",
+    const catalog = createPublicConnectorCatalog(context);
+    const versionTwo = catalogWithAuthMethod(
+      { connectorSlug: "gmail", authMethodId: "oauth" },
+      (method) => {
+        return { ...method, storage: { ...method.storage, version: 2 } };
+      },
+    );
+    await catalog.publish(versionTwo);
+    const fixture = await seedGmailMailCardFixture(catalog.onCleanup);
+    catalog.onCleanup(async () => {
+      await catalog.publish(versionTwo);
     });
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({
+          access_token: "gmail-mail-card-token",
+          refresh_token: "gmail-refresh-token",
+          expires_in: 0,
+          token_type: "Bearer",
+          scope: GMAIL_MODIFY_SCOPE,
+        });
+      }),
+    );
+    const started = await connectors.startOauth(
+      fixture.actor,
+      "gmail",
+      "oauth",
+      undefined,
+      {
+        intent: "reconnect",
+        connectionId: fixture.gmail.id,
+      },
+    );
+    const state = new URL(started.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected Gmail reconnect state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "expired-version-two",
+      state,
+    });
+    // The real OAuth response makes the token expired without a private date write.
+    // Catalog publication leaves the account at version2 while selecting version1.
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
     let refreshCalls = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -1664,6 +1712,7 @@ describe("POST /api/mail/drafts/link", () => {
       "Connect and authorize Gmail for this agent first",
     );
     expect(refreshCalls).toBe(0);
+    await catalog.cleanup();
   });
 
   it("requires reconnect when the Gmail token refresh fails", async () => {

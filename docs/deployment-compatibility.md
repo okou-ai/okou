@@ -60,6 +60,34 @@ open for incident request-level attribution and serving-version verification;
 synthetic coverage does not establish Notion old-token invalidation or resolve
 its reported 401s.
 
+## Runner-local INFO R2 keys
+
+Only existing ordinary Runner INFO events gain `r2_key` or a
+`r2_storage_sources` list containing keys and logical name/version/mount
+correlation. Event names, levels, counts and conditions are unchanged. These
+sources retain the original API identity when cache delivery rewrites URLs to
+`file://`; the list does not assert every source downloaded in every batch.
+Native R2 URL keys are decoded once and bounded to 1024 bytes, without signing
+parameters, fragments or userinfo. Unknown CDN/Worker/custom endpoints and local
+paths contribute no inferred key. Template keys use the SDK's key construction.
+
+Runner Start's existing formatter tees INFO to stderr and the local rolling
+Runner file, configured for daily rotation and seven-file retention per release
+prefix. This does not impose a global seven-day retention limit on earlier-release
+files or journal entries; other Runner commands use stderr. These events do not
+match the existing Axiom ingest filter. No new key fields
+are added to WARN/ERROR, Guest logs, addon network logs, sandbox-operation
+telemetry, API logs/contracts, Platform responses or metric labels. Existing URL
+and error-text policies are unchanged; this is not universal redaction.
+
+Keys can contain sensitive tenant identifiers or paths. Local file and journal
+access and retention remain relevant; omitting credentials does not make keys
+public. Missing fields do not imply no R2 download, and existing log-free paths
+remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration or
+Web floor is needed. A normal Runner rollout is needed to observe these fields;
+production activation or deployment is not included in this PR. Runner rollback
+removes the local attributes only, without changing download behavior.
+
 ## File transcription and Seedream 5 retirement
 
 - Remove `okou video transcribe` and `/api/voice-io/stt`; old CLIs receive

@@ -84,7 +84,8 @@ import {
   mockTestOAuthDeviceConnectorProvider,
   requestOauthCallbackRaw,
 } from "./helpers/api-bdd-connectors";
-import { createFirewallApi } from "./helpers/api-bdd-firewall";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { withConnectorRuntime } from "./helpers/connector-runtime-consumer";
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
 import {
   createRunsApi,
@@ -1637,7 +1638,14 @@ describe("connector catalog unavailable request telemetry", () => {
     expect.hasAssertions();
     configureSource();
 
-    await expectCatalogUnavailableRequestError("missing_current_identity");
+    const response = await accept(
+      runnerFirewallClient().resolve({
+        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+        body: {},
+      }),
+      [500],
+    );
+    expect(response.body).toStrictEqual({ error: "Internal server error" });
   });
 
   it("classifies an invalid persisted compatibility evaluation", async () => {
@@ -2378,7 +2386,10 @@ describe("connector catalog valid lifecycle", () => {
         recordValue(
           recordValue(method.access, "access").envBindings,
           "envBindings",
-        ).OPTIONAL_SERVICE_TOKEN = `$secrets.${optionalSecretName}`;
+        ).OPTIONAL_SERVICE_TOKEN = {
+          valueRef: `$secrets.${optionalSecretName}`,
+          optional: true,
+        };
       },
     });
     serveObjects(catalogObjects([release], release));
@@ -2408,23 +2419,31 @@ describe("connector catalog valid lifecycle", () => {
         name: "SERVICE_TOKEN",
       }),
     );
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(secrets).toContainEqual(
-      expect.objectContaining({ name: PRIVATE_VALUE, type: "connector" }),
+    expect(listed.connectorProvidedBindings).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "agora",
+        name: "SERVICE_TOKEN",
+        source: { kind: "connector-secret", name: PRIVATE_VALUE },
+      }),
     );
-    expect(JSON.stringify(secrets)).not.toContain("catalog-manual-secret");
-    const storageState = await readConnectorCredentialStorageState(context, {
-      connectorSlug: "agora",
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-      secretNames: [optionalSecretName],
-    });
-    expect(storageState.secrets).toStrictEqual([]);
+    expect(JSON.stringify(listed)).not.toContain("catalog-manual-secret");
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
+    await withConnectorRuntime(
+      context,
+      actor,
+      "agora",
+      async ({ claim, resolveAuth }) => {
+        expect(claim.environment).not.toHaveProperty("OPTIONAL_SERVICE_TOKEN");
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization: "Bearer " + secretTemplate("SERVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization: "Bearer catalog-manual-secret",
+        });
+      },
+    );
   });
 
   it("seeds an external token credential through the CLI test endpoint", async () => {
@@ -2572,16 +2591,39 @@ describe("connector catalog valid lifecycle", () => {
       connectionStatus: "connected",
     });
 
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
+    await expect(
+      connectorsApi.readConnectorBySlug(actor, "agora"),
+    ).resolves.toMatchObject({
+      id: legacyConnection.id,
+      authMethod: "current",
+      connectionStatus: "connected",
     });
-    const names = secrets.map((secret) => {
-      return secret.name;
-    });
-    expect(names).toContain("CURRENT_CREDENTIAL");
-    expect(names).not.toContain("LEGACY_CREDENTIAL");
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "agora",
+        authMethod: "current",
+        name: "SERVICE_TOKEN",
+        source: { kind: "connector-secret", name: "CURRENT_CREDENTIAL" },
+      }),
+    );
+    await withConnectorRuntime(
+      context,
+      actor,
+      "agora",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization: "Bearer " + secretTemplate("SERVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization: "Bearer current-catalog-secret",
+        });
+      },
+    );
 
     const unavailable = buildRelease({
       version: "2026-07-15.external-all-methods-filtered",
@@ -2614,15 +2656,9 @@ describe("connector catalog valid lifecycle", () => {
     expect(filtered.body.filtering.filteredAuthMethods).toHaveLength(2);
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "agora");
-    const secretsAfterDelete = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(
-      secretsAfterDelete.map((secret) => {
-        return secret.name;
-      }),
-    ).not.toContain("CURRENT_CREDENTIAL");
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),
+    ).resolves.toStrictEqual([]);
   });
 
   it("replaces and deletes stored connector state when its method is removed", async () => {
@@ -2702,18 +2738,43 @@ describe("connector catalog valid lifecycle", () => {
       },
     );
     expect(replacement.status).toBe(200);
+    await expect(
+      connectorsApi.readConnectorBySlug(actor, "agora"),
+    ).resolves.toMatchObject({
+      id: legacyConnection.id,
+      authMethod: "current",
+      connectionStatus: "connected",
+    });
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "agora",
+        authMethod: "current",
+        name: "SERVICE_TOKEN",
+        source: { kind: "connector-secret", name: "CURRENT_CREDENTIAL" },
+      }),
+    );
+    await withConnectorRuntime(
+      context,
+      actor,
+      "agora",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization: "Bearer " + secretTemplate("SERVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization: "Bearer current-catalog-secret",
+        });
+      },
+    );
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "agora");
-
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    const secretNames = secrets.map((secret) => {
-      return secret.name;
-    });
-    expect(secretNames).not.toContain("LEGACY_CREDENTIAL");
-    expect(secretNames).not.toContain("CURRENT_CREDENTIAL");
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),
+    ).resolves.toStrictEqual([]);
   });
 
   it("replaces token state when the stored method is removed", async () => {
@@ -2785,20 +2846,55 @@ describe("connector catalog valid lifecycle", () => {
     const callbackLocation = new URL(callback.headers.get("location") ?? "");
     expect(callbackLocation.pathname).toBe("/connector/success");
 
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    const secretNames = secrets.map((secret) => {
-      return secret.name;
-    });
-    expect(secretNames).not.toContain("LEGACY_GMAIL_CREDENTIAL");
-    expect(secretNames).toContain("CATALOG_GMAIL_ACCESS_TOKEN");
-    expect(secretNames).toContain("CATALOG_GMAIL_REFRESH_TOKEN");
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "gmail",
+        authMethod: "oauth",
+        name: "GMAIL_TOKEN",
+        source: {
+          kind: "connector-secret",
+          name: "CATALOG_GMAIL_ACCESS_TOKEN",
+        },
+      }),
+    );
     await expect(
       connectorsApi.readConnectorBySlug(actor, "gmail"),
     ).resolves.toMatchObject({ authMethod: "oauth" });
+    let refreshRequests = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("grant_type")).toBe("refresh_token");
+        expect(body.get("refresh_token")).toBe("gmail-refresh-token");
+        refreshRequests += 1;
+        return HttpResponse.json({
+          access_token: "catalog-gmail-refreshed",
+          refresh_token: "gmail-refresh-token",
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }),
+    );
+    await withConnectorRuntime(
+      context,
+      actor,
+      "gmail",
+      async ({ resolveAuth }) => {
+        const authHeaders = {
+          Authorization: "Bearer " + secretTemplate("GMAIL_TOKEN"),
+        };
+        expect((await resolveAuth({ authHeaders })).headers).toStrictEqual({
+          Authorization: "Bearer gmail-access-token",
+        });
+        expect(
+          (await resolveAuth({ authHeaders, forceRefresh: true })).headers,
+        ).toStrictEqual({ Authorization: "Bearer catalog-gmail-refreshed" });
+        expect(refreshRequests).toBe(1);
+      },
+    );
   });
 
   it("materializes external runtime bindings for runs and firewall auth", async () => {
@@ -3790,18 +3886,38 @@ describe("connector catalog valid lifecycle", () => {
       currentScopes: ["read", "future_scope"],
       storedScopes: ["read"],
     });
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(secrets).toContainEqual(
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
       expect.objectContaining({
-        name: "CATALOG_DEVICE_ACCESS_TOKEN",
-        type: "connector",
+        connectorSlug: "test-oauth-device",
+        authMethod: "api",
+        name: "TEST_OAUTH_DEVICE_TOKEN",
+        source: {
+          kind: "connector-secret",
+          name: "CATALOG_DEVICE_ACCESS_TOKEN",
+        },
       }),
     );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeCompletion);
+    await withConnectorRuntime(
+      context,
+      actor,
+      "test-oauth-device",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {
+            Authorization:
+              "Bearer " + secretTemplate("TEST_OAUTH_DEVICE_TOKEN"),
+          },
+        });
+        expect(resolved.headers).toStrictEqual({
+          Authorization:
+            "Bearer test-device-access:test-device:test-oauth-device-api-client:read:live",
+        });
+      },
+    );
   });
 
   it("executes an external OpenID grant with catalog-owned storage", async () => {
@@ -3856,24 +3972,32 @@ describe("connector catalog valid lifecycle", () => {
       }),
       [307],
     );
-    const storageState = await readConnectorCredentialStorageState(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-      connectorSlug: "steam",
-      variableNames: ["CATALOG_STEAM_ID"],
+    await expect(
+      connectorsApi.readConnectorBySlug(actor, "steam"),
+    ).resolves.toMatchObject({
+      authMethod: "openid",
+      externalId: STEAM_TEST_ID,
+      connectionStatus: "connected",
     });
-    expect(storageState.connector?.storage_version).toBe(1);
-    expect(storageState.variables).toStrictEqual([
-      {
-        name: "CATALOG_STEAM_ID",
-        connector_id: storageState.connector?.id,
-      },
-    ]);
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "steam",
+        authMethod: "openid",
+        name: "STEAM_ID",
+        source: { kind: "connector-variable", name: "CATALOG_STEAM_ID" },
+      }),
+    );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
+    await withConnectorRuntime(context, actor, "steam", ({ claim }) => {
+      expect(claim.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
+    });
   });
 
   it("executes an external-code grant with catalog-owned storage", async () => {
-    mockAwsExternalCodeProvider();
+    const provider = mockAwsExternalCodeProvider();
     configureSource();
     const release = buildRelease({
       version: "2026-07-15.external-code-grant",
@@ -3938,25 +4062,75 @@ describe("connector catalog valid lifecycle", () => {
       currentScopes: ["openid", "future_scope"],
       storedScopes: ["openid"],
     });
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
     expect(
-      secrets.map((secret) => {
-        return secret.name;
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "aws",
+        authMethod: "cli",
+        name: "AWS_ACCESS_KEY_ID",
+        source: { kind: "connector-secret", name: "CATALOG_AWS_ACCESS_KEY_ID" },
       }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        "CATALOG_AWS_ACCESS_KEY_ID",
-        "CATALOG_AWS_LOGIN_DPOP_KEY",
-        "CATALOG_AWS_LOGIN_REFRESH_TOKEN",
-        "CATALOG_AWS_SECRET_ACCESS_KEY",
-        "CATALOG_AWS_SESSION_TOKEN",
-      ]),
+    );
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "aws",
+        authMethod: "cli",
+        name: "AWS_SECRET_ACCESS_KEY",
+        source: {
+          kind: "connector-secret",
+          name: "CATALOG_AWS_SECRET_ACCESS_KEY",
+        },
+      }),
+    );
+    expect(
+      (await connectorsApi.listBuiltinConnectors(actor))
+        .connectorProvidedBindings,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorSlug: "aws",
+        authMethod: "cli",
+        name: "AWS_SESSION_TOKEN",
+        source: { kind: "connector-secret", name: "CATALOG_AWS_SESSION_TOKEN" },
+      }),
     );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeCompletion);
+    await withConnectorRuntime(
+      context,
+      actor,
+      "aws",
+      async ({ resolveAuth }) => {
+        const resolved = await resolveAuth({
+          authHeaders: {},
+          authAwsSigv4: {
+            accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+            sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
+          },
+          forceRefresh: true,
+        });
+        expect(resolved.awsSigv4).toStrictEqual({
+          accessKeyId: "aws-external-code-credential-id",
+          secretAccessKey: "aws-secret-access-key",
+          sessionToken: "aws-session-token",
+        });
+        expect(
+          provider.tokenRequests.map(({ grantType }) => {
+            return grantType;
+          }),
+        ).toStrictEqual(["authorization_code", "refresh_token"]);
+        expect(provider.tokenRequests[1]?.refreshToken).toBe(
+          "aws-login-refresh-token",
+        );
+      },
+      // AWS connector aliases are valid on the vendor Runner harness; Pi
+      // deliberately rejects them as ambient model-provider authentication.
+      { model: "claude-fable-5-1" },
+    );
   });
 
   it("rejects new auth-code actions for an authored-hidden external method", async () => {
