@@ -47,10 +47,12 @@ completed immutable work remains reusable on retry.
 Stable commands obtain the existing DB gateways internally. The owning sync
 command keeps legacy acceptance, new `connector_catalog` hash CAS and Pi
 stable-context invalidation in one transaction callback. New helpers build
-pure values or SQL conditions; they do not accept a DB/transaction handle. Cold start inserts the
-current row explicitly. A lost hash CAS rolls back the transaction; the same
-hash does not repeat activation effects. Only a successful hash switch attempts
-the existing best-effort wakeups after commit. Wakeup failure does not undo the
+pure values or SQL conditions; they do not accept a DB/transaction handle.
+Cold start inserts the current row explicitly. A lost hash CAS rolls back the
+transaction; the same hash does not repeat activation effects. Initializing a
+missing additive mirror of the already-serving digest also does not invalidate
+Pi or replay wakeups. Only a committed serving-digest switch attempts the
+existing best-effort wakeups after commit. Wakeup failure does not undo the
 committed catalog, and a same-hash retry is not a delivery replay.
 
 ## Identity and failure behavior

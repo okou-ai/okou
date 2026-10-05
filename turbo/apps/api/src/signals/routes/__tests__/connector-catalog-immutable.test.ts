@@ -529,6 +529,33 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         )
       ).rows,
     ).toStrictEqual([{ catalog_digest: first.hash }]);
+    // A legacy-accepted deployment can lack the additive mirror. Rebuilding it
+    // still validates/prepares (the existing public outcome is "accepted"),
+    // but must not repeat activation effects for existing consumers.
+    await engine.exec(
+      "DELETE FROM connector_catalog; DELETE FROM connector_catalog_entries",
+    );
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: first.hash }]);
+    expect(
+      (
+        await engine.query(
+          "SELECT generation FROM pi_stable_context_generations",
+        )
+      ).rows,
+    ).toStrictEqual([{ generation: 2 }]);
+    expect(
+      (
+        await engine.query(
+          "SELECT generation, status FROM pi_stable_context_heads",
+        )
+      ).rows,
+    ).toStrictEqual([{ generation: 2, status: "missing" }]);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
+    expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     const concurrent = release(
       "2099-01-01.same-baseline",
       "Competing runtime update",

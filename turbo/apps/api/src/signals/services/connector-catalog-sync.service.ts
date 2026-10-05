@@ -870,6 +870,12 @@ function immutableHashCondition(schemaVersion: number, hash: string) {
   );
 }
 
+function servingCatalogChanged(args: CandidateCommitInput) {
+  return (
+    args.candidate.identity.catalogDigest !== args.baseline?.activeCatalogDigest
+  );
+}
+
 function candidateCommitOutcome(
   result:
     | {
@@ -997,15 +1003,19 @@ const commitCandidate$ = command(
             if (changed.length !== 1) {
               throw new CandidateCommitRetry();
             }
-            switched = true;
-            await tx.execute(
-              connectorCatalogSourceIsTestScoped()
-                ? invalidatePiStableContextsForCatalogSourceSql(
-                    args.sourceId,
-                    args.attemptedAt,
-                  )
-                : invalidateAllPiStableContextsSql(args.attemptedAt),
-            );
+            switched = servingCatalogChanged(args);
+            // Initializing an additive mirror of an already-serving identity
+            // is not an activation and must not replay Pi/wakeup effects.
+            if (switched) {
+              await tx.execute(
+                connectorCatalogSourceIsTestScoped()
+                  ? invalidatePiStableContextsForCatalogSourceSql(
+                      args.sourceId,
+                      args.attemptedAt,
+                    )
+                  : invalidateAllPiStableContextsSql(args.attemptedAt),
+              );
+            }
           }
           signal.throwIfAborted();
           return switched
