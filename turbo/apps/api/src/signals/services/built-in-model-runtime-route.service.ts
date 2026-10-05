@@ -1,24 +1,28 @@
 import {
-BUILT_IN_MODEL_ROUTE_PROVIDERS,
-type BuiltInModelRouteProviderType,
+  BUILT_IN_MODEL_ROUTE_PROVIDERS,
+  type BuiltInModelRouteProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { AUTO_RUN_MODEL,AUTO_RUN_PROVIDER,AUTO_RUN_UPSTREAM_MODEL } from "@okouai/core/auto-run-model";
+import {
+  AUTO_RUN_MODEL,
+  AUTO_RUN_PROVIDER,
+  AUTO_RUN_UPSTREAM_MODEL,
+} from "@okouai/core/auto-run-model";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { computed,type Computed } from "ccstate";
-import { and,eq,gt,inArray } from "drizzle-orm";
+import { computed, type Computed } from "ccstate";
+import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$,type ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import {
-builtInRoutePricingRejectionMessage,
-isBuiltInRoutePriced,
-unpricedBuiltInRouteCategories,
-type BuiltInRoutePricing,
+  builtInRoutePricingRejectionMessage,
+  isBuiltInRoutePriced,
+  unpricedBuiltInRouteCategories,
+  type BuiltInRoutePricing,
 } from "./built-in-route-pricing";
 import {
-catalogBuiltInCandidates,
-type ModelCatalog,
+  catalogBuiltInCandidates,
+  type ModelCatalog,
 } from "./model-catalog.service";
 
 /** One enabled Built-in `model_routes` candidate with a known adapter. */
@@ -29,47 +33,30 @@ interface BuiltInModelRouteTarget {
   readonly vendor: string;
 }
 
-function isBuiltInModelRouteProviderType(
-  value: string,
-): value is BuiltInModelRouteProviderType {
-  return value in BUILT_IN_MODEL_ROUTE_PROVIDERS;
-}
-
-/**
- * Built-in candidates come from the catalog's enabled `built-in` routes in
- * priority order. The concrete provider's protocol adapter (vendor key pool,
- * env bindings) stays in code, so a route naming a provider this API cannot
- * execute is skipped rather than guessed.
- */
+/** The only platform route is Auto; catalog entries cannot add candidates. */
 export function getCatalogBuiltInModelRouteCandidates(
   catalog: ModelCatalog,
   selectedModel: string,
   routePricing?: BuiltInRoutePricing,
 ): readonly BuiltInModelRouteTarget[] {
-  if (selectedModel === AUTO_RUN_MODEL) {
-    const pricingRoute = catalogBuiltInCandidates(catalog, AUTO_RUN_MODEL).find((route) => route.concreteProviderType === AUTO_RUN_PROVIDER);
-    if (routePricing && (!pricingRoute || !isBuiltInRoutePriced(routePricing, pricingRoute))) { return []; }
-    return [{ selectedModel: AUTO_RUN_MODEL, providerType: AUTO_RUN_PROVIDER, upstreamModel: AUTO_RUN_UPSTREAM_MODEL, vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[AUTO_RUN_PROVIDER].vendor }];
+  if (selectedModel !== AUTO_RUN_MODEL) {
+    return [];
   }
-  return catalogBuiltInCandidates(catalog, selectedModel).flatMap((route) => {
-    const providerType = route.concreteProviderType;
-    if (!isBuiltInModelRouteProviderType(providerType)) {
-      return [];
-    }
-    // A new run must not execute on a route whose billable categories lack
-    // usage_pricing; like any unavailable candidate, it yields to the next.
-    if (routePricing && !isBuiltInRoutePriced(routePricing, route)) {
-      return [];
-    }
-    return [
-      {
-        selectedModel,
-        providerType,
-        upstreamModel: route.upstreamModel,
-        vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[providerType].vendor,
-      },
-    ];
-  });
+  const [pricingRoute] = catalogBuiltInCandidates(catalog, AUTO_RUN_MODEL);
+  if (
+    routePricing &&
+    (!pricingRoute || !isBuiltInRoutePriced(routePricing, pricingRoute))
+  ) {
+    return [];
+  }
+  return [
+    {
+      selectedModel: AUTO_RUN_MODEL,
+      providerType: AUTO_RUN_PROVIDER,
+      upstreamModel: AUTO_RUN_UPSTREAM_MODEL,
+      vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[AUTO_RUN_PROVIDER].vendor,
+    },
+  ];
 }
 
 /**
@@ -84,11 +71,7 @@ export function unpricedBuiltInModelMessage(
   selectedModel: string,
   routePricing: BuiltInRoutePricing,
 ): string | null {
-  const routes = catalogBuiltInCandidates(catalog, selectedModel).filter(
-    (route) => {
-      return isBuiltInModelRouteProviderType(route.concreteProviderType);
-    },
-  );
+  const routes = catalogBuiltInCandidates(catalog, selectedModel);
   const unpriced = routes.map((route) => {
     return {
       concreteProviderType: route.concreteProviderType,
@@ -134,12 +117,10 @@ function eligibleBuiltInModelRouteCandidates(
     catalog,
     selectedModel,
     routePricing,
-  ).filter((candidate) => {
-    return candidate.providerType !== "deepseek";
-  });
+  );
 }
 
-/** Captured routes remain valid independently of the new-selection policy. */
+/** A captured platform route must still match the fixed Auto route. */
 export function isBuiltInModelRuntimeRoutePermitted(
   catalog: ModelCatalog,
   route: BuiltInModelRuntimeRoute,

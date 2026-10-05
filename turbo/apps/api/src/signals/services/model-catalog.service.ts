@@ -1,18 +1,24 @@
 import type { MemberRunModelCatalog } from "@okouai/api-contracts/contracts/member-run-model";
 import {
-getBuiltInRouteProviderVendor,
-getFrameworkForType,
-isBuiltInModelProviderType,
-MODEL_PROVIDER_TYPES,
-modelProviderTypeSchema,
-type ModelProviderType,
+  getBuiltInRouteProviderVendor,
+  getFrameworkForType,
+  isBuiltInModelProviderType,
+  MODEL_PROVIDER_TYPES,
+  modelProviderTypeSchema,
+  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,AUTO_RUN_MODEL,AUTO_RUN_PRICING_PROVIDER,AUTO_RUN_PROVIDER,AUTO_RUN_UPSTREAM_MODEL } from "@okouai/core/auto-run-model";
+import {
+  AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
+  AUTO_RUN_MODEL,
+  AUTO_RUN_PRICING_PROVIDER,
+  AUTO_RUN_PROVIDER,
+  AUTO_RUN_UPSTREAM_MODEL,
+} from "@okouai/core/auto-run-model";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import { command,computed,type Computed } from "ccstate";
-import { asc,sql } from "drizzle-orm";
+import { command, computed, type Computed } from "ccstate";
+import { asc, sql } from "drizzle-orm";
 import { db$ } from "../external/db";
 
 /** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
@@ -57,14 +63,38 @@ export type CatalogRoute = Readonly<{
   longContextMinTotalInputTokens: number | null;
 }>;
 
-export const AUTO_CATALOG_ROUTE: CatalogRoute = {
-  model: AUTO_RUN_MODEL, providerType: "built-in", concreteProviderType: AUTO_RUN_PROVIDER,
-  subscriptionType: null, upstreamModel: AUTO_RUN_UPSTREAM_MODEL, enabled: true, priority: 0,
-  serviceTiers: [], defaultServiceTier: null, efforts: [], defaultEffort: null, priceTier: null,
-  pricingKind: MODEL_USAGE_PRICING_KIND, pricingProvider: AUTO_RUN_PRICING_PROVIDER,
-  longContextMinTotalInputTokens: AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-};
-const AUTO_CATALOG_MODEL: CatalogModel = { model: AUTO_RUN_MODEL, displayName: "Auto", sortOrder: 0, isSystemDefault: true, replacedBy: null, builtInOnRestrictedPlans: true, piRouteClass: "gpt-codex" };
+function autoCatalogRoute(): CatalogRoute {
+  return {
+    model: AUTO_RUN_MODEL,
+    providerType: "built-in",
+    concreteProviderType: AUTO_RUN_PROVIDER,
+    subscriptionType: null,
+    upstreamModel: AUTO_RUN_UPSTREAM_MODEL,
+    enabled: true,
+    priority: 0,
+    serviceTiers: [],
+    defaultServiceTier: null,
+    efforts: [],
+    defaultEffort: null,
+    priceTier: null,
+    pricingKind: MODEL_USAGE_PRICING_KIND,
+    pricingProvider: AUTO_RUN_PRICING_PROVIDER,
+    longContextMinTotalInputTokens:
+      AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
+  };
+}
+
+function autoCatalogModel(): CatalogModel {
+  return {
+    model: AUTO_RUN_MODEL,
+    displayName: "Auto",
+    sortOrder: 0,
+    isSystemDefault: true,
+    replacedBy: null,
+    builtInOnRestrictedPlans: true,
+    piRouteClass: "gpt-codex",
+  };
+}
 
 export type ModelCatalog = Readonly<{
   models: readonly CatalogModel[];
@@ -140,12 +170,24 @@ export function validateModelCatalog(
   for (const row of models) {
     followReplacementChain(byModel, row);
   }
-  const systemDefault = AUTO_CATALOG_MODEL;
+  const systemDefault = autoCatalogModel();
   byModel.set(AUTO_RUN_MODEL, systemDefault);
-  for (const route of routes) { validateRoutePricingLink(route); }
+  for (const route of routes) {
+    validateRoutePricingLink(route);
+  }
   return {
-    models: [AUTO_CATALOG_MODEL, ...models.filter((model) => model.model !== AUTO_RUN_MODEL)],
-    routes: [AUTO_CATALOG_ROUTE, ...routes.filter((route) => route.model !== AUTO_RUN_MODEL)],
+    models: [
+      systemDefault,
+      ...models.filter((model) => {
+        return model.model !== AUTO_RUN_MODEL;
+      }),
+    ],
+    routes: [
+      autoCatalogRoute(),
+      ...routes.filter((route) => {
+        return route.model !== AUTO_RUN_MODEL;
+      }),
+    ],
     systemDefault,
     systemDefaultModel: systemDefault.model,
     byModel,
@@ -202,7 +244,11 @@ export function catalogBuiltInRoute(
   model: string,
   concreteProviderType: string,
 ): CatalogRoute | null {
-  if (model === AUTO_RUN_MODEL) { return concreteProviderType === AUTO_RUN_PROVIDER ? AUTO_CATALOG_ROUTE : null; }
+  if (model === AUTO_RUN_MODEL) {
+    return concreteProviderType === AUTO_RUN_PROVIDER
+      ? autoCatalogRoute()
+      : null;
+  }
   return (
     catalogRoutesFor(catalog, model, "built-in").find((candidate) => {
       return candidate.concreteProviderType === concreteProviderType;
@@ -292,15 +338,12 @@ export function isCatalogModelRunnable(
   return resolveCatalogRunModel(catalog, model) === model;
 }
 
-/** Enabled Built-in candidates of a model in ascending fallback priority. */
+/** Platform admission is fixed Auto, never a catalog fallback directory. */
 export function catalogBuiltInCandidates(
-  catalog: ModelCatalog,
+  _catalog: ModelCatalog,
   model: string,
 ): readonly CatalogRoute[] {
-  if (model === AUTO_RUN_MODEL) { return [AUTO_CATALOG_ROUTE]; }
-  return [...catalogRoutesFor(catalog, model, "built-in")].sort((a, b) => {
-    return a.priority - b.priority;
-  });
+  return model === AUTO_RUN_MODEL ? [autoCatalogRoute()] : [];
 }
 
 /**

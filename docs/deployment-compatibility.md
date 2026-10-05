@@ -1,5 +1,25 @@
 # Deployment Compatibility
 
+## Custom model configuration retirement
+
+Migration 1320 deletes `org_model_policies`, `model_provider_surfaces`,
+`model_provider_connections` and `org_metadata.model_mode` with its constraint.
+It contains no data conversion or backfill. Operators must finish the production
+Custom-to-Auto and workspace-credential cleanup before merging/deploying.
+
+This retirement intentionally has no rolling API or old-client compatibility:
+the API, App/worker, CLI and iOS move together to `/api/run-models`. Do not run an
+old API against the contracted schema or roll back to an old policy writer.
+The historical global-catalog migration descriptions below are superseded for
+new model selection; they are not instructions to restore policy projection,
+organization BYOK, gateways or general platform-model routing.
+
+Platform Auto remains fixed to OpenRouter. Personal ChatGPT/Codex and Claude
+subscription selection, account ownership, capabilities and reconnect behavior
+remain. Actual pricing/credits, historical usage, image generation and unrelated
+connectors retain their existing storage. See [the retirement boundary](custom-model-retirement.md)
+and [current model APIs](model-catalog.md). This source PR does not deploy or merge.
+
 ## Autonomous delegation budget expansion
 
 Migration 1319 widens the Run and workflow automation autonomy checks from
