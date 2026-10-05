@@ -290,8 +290,9 @@ describe("GET /api/connectors", () => {
     await catalog.cleanup();
   });
 
-  it("keeps stored connector reads empty or unavailable when the external catalog is unavailable", async () => {
-    // Preserve the legacy corruption contract without changing shared authority.
+  it("keeps immutable stored lists available while legacy account lifecycle rejects unavailable compatibility", async () => {
+    // Only this case-owned legacy compatibility generation becomes unavailable.
+    // The accepted immutable current and entries remain intact.
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `legacy-list-unavailable-${randomUUID()}`,
@@ -313,23 +314,45 @@ describe("GET /api/connectors", () => {
     if (!account) {
       throw new Error("Expected the connected GitLab account");
     }
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsMainContract,
+    );
+    const available = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(available.body.connectors).toStrictEqual([
+      expect.objectContaining({
+        id: account.id,
+        slug: "gitlab",
+        authMethod: "api-token",
+        connectionStatus: "connected",
+      }),
+    ]);
+    expect(available.body.connectorProvidedBindings).toStrictEqual([
+      expect.objectContaining({
+        connectorSlug: "gitlab",
+        namespace: "vars",
+        name: "GITLAB_HOST",
+      }),
+      expect.objectContaining({
+        connectorSlug: "gitlab",
+        namespace: "secrets",
+        name: "GITLAB_TOKEN",
+      }),
+    ]);
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
     await installApiTestConnectorCatalog();
     await invalidateApiTestConnectorCatalogCompatibility();
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
     const response = await accept(
       client.list({ headers: authHeaders() }),
       [200],
     );
+    expect(response.body).toStrictEqual(available.body);
 
-    expect(response.body).toStrictEqual({
-      connectors: [],
-      connectorProvidedBindings: [],
-    });
+    // Unmigrated lifecycle endpoints still reject this legacy generation.
     const unavailableReads = await Promise.all([
       accept(
         accountClient.oauthCompletion({

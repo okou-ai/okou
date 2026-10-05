@@ -11,7 +11,6 @@ import type {
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { db$ } from "../external/db";
-import { singleton } from "../../lib/singleton";
 import {
   connectorCatalogExecutableCapabilityState,
   evaluateConnectorCatalogCompatibility,
@@ -42,30 +41,6 @@ interface SelectionInput {
   readonly requestedConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
   readonly capturedCatalog?: ImmutableConnectorCatalogCapture;
-}
-
-const rawEntries = singleton(() => {
-  return new Map<string, ImmutableConnectorCatalogEntry>();
-});
-const RAW_ENTRY_CACHE_LIMIT = 512;
-
-function rememberEntry(
-  hash: string,
-  slug: string,
-  payload: ImmutableConnectorCatalogEntry,
-) {
-  const cache = rawEntries();
-  const key = `${hash}\0${slug}`;
-  const entry = cache.get(key) ?? payload;
-  cache.delete(key);
-  cache.set(key, entry);
-  while (cache.size > RAW_ENTRY_CACHE_LIMIT) {
-    const oldest = cache.keys().next();
-    if (!oldest.done) {
-      cache.delete(oldest.value);
-    }
-  }
-  return entry;
 }
 
 /** One statement captures current and the requested union, including empty/unknown sets. */
@@ -152,7 +127,7 @@ function capturedEntries(input: SelectionInput): Computed<
           "Immutable connector catalog manifest entry is missing",
         );
       }
-      selected.push(rememberEntry(captured.hash, slug, entry));
+      selected.push(entry);
     }
     return { capturedCatalog: captured, entries: selected };
   });

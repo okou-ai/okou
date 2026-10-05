@@ -74,13 +74,15 @@ current or a missing manifest member fails fast. There is no R2, gzip snapshot,
 compatibility-table or runtime-projection fallback on these branches.
 
 Raw JSONB column contracts describe the publisher/sync-owned schema shape;
-the reader does not recompile relationships or recompute hashes. The bounded
-process-local raw cache uses only `(hash, slug)`. Each selection derives code
-capability filtering afresh; no derived cache crosses capability or request
-boundaries. Features, exact accounts, credential versions and grants remain
-with their existing request owners. Metadata-only dependencies do not enter
-the executable connector map or runtime firewall selection. The statement
-still checks actual manifest-member presence on a raw-cache hit.
+the reader does not recompile relationships or recompute hashes. It uses the
+raw entries returned by the statement directly, without a process-level raw
+cache or computed-owned cache writes/eviction. Entry identity remains the
+captured `(hash, slug)` pair. Each selection derives code capability filtering
+afresh; no derived cache crosses capability or request boundaries. Features,
+exact accounts, credential versions and grants remain with their existing
+request owners. Metadata-only dependencies do not enter the executable
+connector map or runtime firewall selection. Actual manifest-member presence
+is checked on every read.
 
 This is not the full reader cutover. Account lifecycle's legacy helper graph,
 the transaction-bound runtime-sync reads, Pi stable-context recapture's legacy
@@ -93,6 +95,16 @@ window or garbage collection. N4/N5 exercise real cron and authenticated MCP
 consumer behavior in the sole per-case PGlite suite, including fixed-hash reads,
 back-to-old-hash reuse and missing-vs-unknown fail-fast behavior. N1 remains
 unimplemented for its later publisher-pointer stage.
+
+### P4a removed-mechanism assertion ledger
+
+| Retired mechanism/expectation                                                                                    | Replacement and retained boundary coverage                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Process-level raw-entry cache writes inside computed readers                                                     | Cache removed, not moved behind another helper. Same current/entry statement and captured-hash reads remain; N4 retains old→new→old hash, metadata isolation and capability-change coverage. No new cache framework or SQL-count improvement is claimed.                                                                                                                                                                                                   |
+| `connectors-list.test.ts`: migrated stored list becomes empty solely because legacy compatibility is unavailable | The public list must retain the exact pre-invalidation response when immutable current/entries remain intact, including the exact stored account ID, auth method/status and binding metadata. The same case retains all six legacy lifecycle/scope-diff 404/code checks and the unavailable inspect result. N5's missing immutable current/member versus unknown-slug checks remain unchanged. No test case is deleted and no legacy fallback is restored. |
+
+This ledger records source coverage, not a claim that pending or cancelled
+native cases have executed successfully.
 
 ## Identity and failure behavior
 

@@ -156,7 +156,6 @@ import { connectorCheckRoutes } from "../connector-check";
 import {
   automaticMcpCatalogFixture,
   buildAutomaticMcpCatalog,
-  installAutomaticMcpCatalog,
 } from "./helpers/connector-automatic-catalog";
 import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
