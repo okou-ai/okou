@@ -26,10 +26,7 @@ import {
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
 import { safeSync, tapError } from "../utils";
-import {
-  dispatchRunCallbacks$,
-  undeliveredChatCallbackIdForRun,
-} from "./agent-run-callback.service";
+import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
@@ -659,60 +656,6 @@ function settledRunCompletionResponse(run: RunRecord): CompletionResponse {
     releasedSlots: [],
   };
 }
-
-export type RequiredTerminalChatCallbackResult =
-  | { readonly success: true }
-  | { readonly success: false; readonly error: string };
-
-/**
- * Finish the canonical chat projection before the completion webhook is
- * acknowledged. Other callbacks and accounting remain background side
- * effects, but this durable callback owns the lifecycle marker.
- */
-export const dispatchRequiredTerminalChatCallback$ = command(
-  async (
-    { set },
-    input: TerminalSideEffectsInput,
-    signal: AbortSignal,
-  ): Promise<RequiredTerminalChatCallbackResult> => {
-    const db = set(writeDb$);
-    const chatCallbackId = await undeliveredChatCallbackIdForRun(
-      db,
-      input.runId,
-    );
-    signal.throwIfAborted();
-    if (chatCallbackId === undefined) {
-      return { success: true };
-    }
-
-    const [callbackResult] = await set(
-      dispatchRunCallbacks$,
-      {
-        db,
-        runId: input.runId,
-        status: input.status,
-        error: input.error,
-        redriveChatCallbackId: chatCallbackId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (callbackResult?.success) {
-      return { success: true };
-    }
-    if (
-      callbackResult === undefined &&
-      (await undeliveredChatCallbackIdForRun(db, input.runId)) === undefined
-    ) {
-      signal.throwIfAborted();
-      return { success: true };
-    }
-    return {
-      success: false,
-      error: callbackResult?.error ?? "Canonical terminal chat callback failed",
-    };
-  },
-);
 
 const dispatchTerminalCompleteSideEffects$ = command(
   async (

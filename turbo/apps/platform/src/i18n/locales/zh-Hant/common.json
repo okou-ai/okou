@@ -1967,6 +1967,10 @@
       "newThread": "新增聊天",
       "reload": "重新載入任務"
     },
+    "lastReadMarker": {
+      "previouslyRead": "你上次讀到這裡",
+      "unread": "未讀訊息"
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",
@@ -4819,7 +4823,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "授權頁面打不開。請手動開啟連結，再把授權碼貼上到這裡。",
           "authorizationCode": "授權碼",
           "codePlaceholder": "貼上Claude提供的授權碼",
           "codeRequired": "請貼上Claude授權碼後繼續。",
@@ -4837,21 +4840,15 @@
           "usageNotice": "使用你的 Claude 訂閱登入，透過 Claude Code 驅動的智慧代理使用 Claude 系列模型。"
         },
         "codex": {
-          "approvalOpened": "授權頁面已開啟。請先複製裝置碼，再進行授權。",
-          "codeCopied": "裝置碼已複製，等待授權…",
-          "codeCopiedRetry": "裝置碼已複製。請再試著開啟授權頁面。",
           "connectedToast": "ChatGPT已連線",
           "connectTitle": "連線Codex",
-          "copyAndOpen": "複製程式碼並開啟授權頁面",
-          "copyAndOpenError": "無法複製裝置碼或開啟授權頁面。請手動複製程式碼後重試。",
-          "copyError": "授權頁面已開啟，但裝置碼沒有複製成功。請在授權前手動複製。",
           "deviceCode": "裝置碼",
           "error": "ChatGPT連線失敗。請重新開始並重試。",
           "expired": "Codex連線會話已過期。請重新開始並重試。",
           "freePlanRejected": "免費版ChatGPT套餐無法透過{{brandName}}使用Codex。請升級到Plus或Pro後重試。",
-          "instructions": "先點選「複製程式碼並開啟授權頁面」。然後按OpenAI的提示貼上裝置碼。最後確認授權，並在{{brandName}}完成連線前保持這個對話方塊開啟。",
+          "instructions": "先使用複製按鈕複製裝置碼，再開啟授權頁面。然後按OpenAI的提示貼上裝置碼。最後確認授權，並在{{brandName}}完成連線前保持這個對話方塊開啟。",
           "invalidTokenFormat": "Codex返回的登入令牌格式{{brandName}}無法識別。請更新Codex後重試。",
-          "openError": "裝置碼已複製，但授權頁面打不開。請重試。",
+          "openApproval": "開啟授權頁面",
           "preparing": "準備中…",
           "reconnectAction": "重新連線ChatGPT",
           "reconnectTitle": "重新連線Codex",
@@ -4923,14 +4920,14 @@
         "ultrafastMode": "極速模式"
       },
       "reset": {
-        "confirmDescription": "消耗一次{{provider}}重置額度，重置當前的用量週期。你還有{{remaining}}。",
+        "confirmDescription": "消耗一次Codex重置額度，重置當前的用量週期。你還有{{remaining}}。",
         "progress": "正在重置…",
         "remaining_one": "還剩{{value}}次重置",
         "remaining_other": "還剩{{value}}次重置",
         "remainingUnavailable": "剩餘重置次數不可用",
         "remainingUnknown": "重置 —",
         "remainingWithExpiry_other": "還剩{{value}}次重置 · {{expiry}}過期",
-        "title": "重置{{provider}}用量？"
+        "title": "重置Codex用量？"
       },
       "stale": {
         "claudeExpired": "你的Claude Code會話已過期。請重新連線以繼續。",
@@ -4945,9 +4942,9 @@
       "toasts": {
         "accountDisconnected": "帳號已斷開連線",
         "accountSwitched": "已切換當前帳號",
-        "reset": "{{provider}}用量已重置",
-        "resetUnavailable": "沒有可用的{{provider}}用量重置次數",
-        "resetUnneeded": "{{provider}}用量當前不需要重置"
+        "reset": "Codex用量已重置",
+        "resetUnavailable": "沒有可用的Codex用量重置次數",
+        "resetUnneeded": "Codex用量當前不需要重置"
       },
       "usage": {
         "inDays": "{{days}}天后",

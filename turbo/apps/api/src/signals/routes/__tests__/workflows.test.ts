@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -480,23 +481,11 @@ describe("workflows", () => {
   it("runs a workflow slash command with workflow timing attribution", async () => {
     const actor = user({ orgRole: "org:admin" });
     await api.grantProEntitlement(actor);
-    const provider = await miscApi.upsertOrgModelProvider(
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
       actor,
-      { type: "openai-api-key", secret: "workflow-openai-key" },
-      [201],
     );
-    if (provider.status !== 201) {
-      throw new Error("Expected the workflow OpenAI provider to be created");
-    }
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: provider.body.provider.id,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "gpt-6-astra");
     const agent = await createAgent(actor, {
       displayName: "Workflow Runner Agent",
       visibility: "private",

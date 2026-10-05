@@ -6,9 +6,10 @@ const catalogTests = [
   "src/signals/routes/__tests__/official-workflows.test.ts",
   "src/signals/routes/__tests__/official-workflows-schedule-claims.test.ts",
   "src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts",
-  // Switches the global model catalog system default, which org policy
-  // writes project away; it must not overlap other suites' policy writes.
+  // Mutate shared catalog authority or the fixed Auto runtime cooldown.
+  // Do not overlap ordinary suites that admit Auto runs.
   "src/signals/routes/__tests__/model-catalog.test.ts",
+  "src/signals/routes/__tests__/test-runtime-state.test.ts",
 ];
 
 // PostgreSQL cancellation fixtures temporarily replace Client.prototype.query.

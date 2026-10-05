@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -32,6 +33,46 @@ const context = testContext();
 const fixture = createCodexExpiryFixture(context);
 
 describe("Codex expiry cache capacity", () => {
+  const owners = Array.from({ length: 257 }, () => {
+    return { orgId: `org_expiry_${randomUUID()}`, auth: credentials() };
+  });
+
+  const orgIds = new Set(
+    owners.map((owner) => {
+      return owner.orgId;
+    }),
+  );
+
+  function authenticateOwners(userId: string): void {
+    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
+      if (!(request instanceof Request)) {
+        throw new Error("Expected a Clerk authentication request");
+      }
+      const orgId = request.headers.get("authorization")?.slice(7);
+      if (!orgId || !orgIds.has(orgId)) {
+        throw new Error("Expected a capacity-test owner token");
+      }
+      return Promise.resolve({
+        isAuthenticated: true,
+        toAuth: () => {
+          return { userId, orgId, orgRole: "org:admin" };
+        },
+      });
+    });
+  }
+
+  beforeEach(async () => {
+    // Each owner is independent. Route auth resolves its token per request,
+    // so concurrent setup does not race a shared mutable session fixture.
+    authenticateOwners(`user_expiry_capacity_${randomUUID()}`);
+
+    await Promise.all(
+      owners.map(async (owner) => {
+        await seedOrgMetadata({ orgId: owner.orgId, tier: "pro", credits: 0 });
+      }),
+    );
+  });
+
   it("evicts old identity entries at bounded capacity", async () => {
     const remote = upstream();
     const first = await fixture();
@@ -49,14 +90,6 @@ describe("Codex expiry cache capacity", () => {
 
     // The global bound includes in-flight entries. Hold real org connections
     // at their upstream usage response, before unrelated account persistence.
-    const owners = Array.from({ length: 257 }, () => {
-      return { orgId: `org_expiry_${randomUUID()}`, auth: credentials() };
-    });
-    const orgIds = new Set(
-      owners.map((owner) => {
-        return owner.orgId;
-      }),
-    );
     const accountIds = new Set<string>(
       owners.map((owner) => {
         return owner.auth.accountId;
@@ -85,21 +118,7 @@ describe("Codex expiry cache capacity", () => {
         },
       ),
     );
-    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
-      if (!(request instanceof Request)) {
-        throw new Error("Expected a Clerk authentication request");
-      }
-      const orgId = request.headers.get("authorization")?.slice(7);
-      if (!orgId || !orgIds.has(orgId)) {
-        throw new Error("Expected a capacity-test owner token");
-      }
-      return Promise.resolve({
-        isAuthenticated: true,
-        toAuth: () => {
-          return { userId: first.userId, orgId, orgRole: "org:admin" };
-        },
-      });
-    });
+    authenticateOwners(first.userId);
     const providers = setupApp({
       context,
       routes: personalModelProviderTestRoutes,

@@ -16,6 +16,7 @@ import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
 
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
+
 import {
   createCodexExpiryFixture,
   credentials,
@@ -234,6 +235,7 @@ describe("Codex expiry invalidation and identity isolation", () => {
       return expiryResponse(remote.expiry);
     };
     user.session();
+
     const result = await accept(
       setupApp({ context, routes: personalModelProviderTestRoutes })(
         personalModelProvidersMainContract,

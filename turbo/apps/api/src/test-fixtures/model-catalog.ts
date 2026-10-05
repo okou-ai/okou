@@ -10,7 +10,7 @@ import {
   isPiRouteClass,
   type PiRouteClass,
 } from "@okouai/api-contracts/contracts/model-catalog";
-import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
+
 import { db } from "../lib/db";
 import {
   catalogBuiltInCandidates,
@@ -356,48 +356,8 @@ export async function insertBuiltInModelMirrorFixture(
 }
 
 /** Operators reorder or disable a Built-in candidate directly in the database. */
-export async function updateBuiltInRouteFixture(args: {
-  readonly model: string;
-  readonly concreteProviderType: string;
-  readonly enabled: boolean;
-}): Promise<void> {
-  const updated = await db()
-    .update(modelRoutes)
-    .set({ enabled: args.enabled })
-    .where(
-      and(
-        eq(modelRoutes.model, args.model),
-        eq(modelRoutes.providerType, "built-in"),
-        eq(modelRoutes.concreteProviderType, args.concreteProviderType),
-      ),
-    )
-    .returning({ id: modelRoutes.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one Built-in route to be updated");
-  }
-}
 
 /** Operators relink a Built-in route's pricing directly in the database. */
-export async function updateBuiltInRoutePricingProviderFixture(args: {
-  readonly model: string;
-  readonly concreteProviderType: string;
-  readonly pricingProvider: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(modelRoutes)
-    .set({ pricingProvider: args.pricingProvider })
-    .where(
-      and(
-        eq(modelRoutes.model, args.model),
-        eq(modelRoutes.providerType, "built-in"),
-        eq(modelRoutes.concreteProviderType, args.concreteProviderType),
-      ),
-    )
-    .returning({ id: modelRoutes.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one Built-in route to be relinked");
-  }
-}
 
 /**
  * Operators set a Built-in route's long-context pricing threshold directly in
@@ -435,11 +395,6 @@ export async function setBuiltInRouteLongContextThresholdFixture(args: {
 }
 
 /** The model's Pi admission projection from the current database catalog. */
-export async function loadPiCatalogModelFixture(
-  model: string,
-): Promise<PiCatalogModel | null> {
-  return piCatalogModel(await createStore().get(modelCatalog$), model);
-}
 
 /**
  * Operators set a model's Pi route class directly in the database. The

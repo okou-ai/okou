@@ -12,6 +12,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.997.0](https://github.com/okou-ai/okou/compare/app-v0.996.2...app-v0.997.0) (2026-10-05)
+
+
+### Features
+
+* **platform:** add a feature-gated last-read divider and entry positioning ([#37740](https://github.com/okou-ai/okou/issues/37740)) ([52fbc35](https://github.com/okou-ai/okou/commit/52fbc351e258b79ac0e9a104a46247d695ac959e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.2
+    * @okouai/core bumped to 8.731.0
+
+## [0.996.2](https://github.com/okou-ai/okou/compare/app-v0.996.1...app-v0.996.2) (2026-10-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.1
+    * @okouai/core bumped to 8.730.2
+
 ## [0.996.1](https://github.com/okou-ai/okou/compare/app-v0.996.0...app-v0.996.1) (2026-10-05)
 
 

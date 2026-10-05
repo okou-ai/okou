@@ -33,7 +33,7 @@ const {
   api,
   chat,
   entitledChatActor,
-  configureBuiltInPiModel,
+  configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -159,7 +159,7 @@ describe("CHAT-02: model-first provider policies", () => {
       frozenSummary,
     );
     const usagePricingResolution = await createGptUsagePricingResolution();
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -266,7 +266,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await publishPendingPiInstructions(actor, agentId);
     const orgId = requireOrgId(actor);
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -323,7 +323,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const memory = await commitMemoryVersion(context, actor, [
       { path: "memory_summary.md", content: summary },
     ]);
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -380,7 +380,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { path: "memory_summary.md", content: summary },
     ]);
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
 
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
@@ -450,7 +450,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { path: "memory_summary.md", content: summary },
     ]);
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -523,7 +523,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
     const usagePricingResolution = await createGptUsagePricingResolution();
 
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },

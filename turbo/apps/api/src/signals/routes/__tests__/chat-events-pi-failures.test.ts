@@ -14,7 +14,6 @@ const {
   api,
   chat,
   entitledChatActor,
-  configureBuiltInPiModel,
   configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
@@ -34,7 +33,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("preserves an ordinary Pi stop checkpoint for referenced Sandbox continuation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
 
     const objects = mockPiCheckpointObjectStore();
     const answer = "the last complete canonical answer";

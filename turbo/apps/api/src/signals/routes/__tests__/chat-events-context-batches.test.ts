@@ -20,6 +20,8 @@ const {
   connectors,
   entitledNativeChatActor,
   seedBuiltInModelKey,
+  mockPiResourceArchiveDownloads,
+  mockPiCheckpointObjectStore,
   sendChatRun,
   claimChatRun,
   cancelChatRun,
@@ -68,17 +70,15 @@ describe("shared context statement projections through normal sends", () => {
         );
         await api.updateUserModelPreference(actor, MODEL);
       } else {
-        await seedBuiltInModelKey(MODEL);
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: MODEL,
-            preferred: true,
-            defaultProviderType: "built-in",
-            credentialScope: "org",
-            modelProviderId: null,
-          },
-        ]);
-        await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
+        await seedBuiltInModelKey("okou-1.0");
+        await api.updateUserModelPreference(actor, "okou-1.0");
+        await misc.deletePersonalModelProvider(
+          actor,
+          "claude-code-oauth-token",
+          [204],
+        );
+        mockPiResourceArchiveDownloads();
+        mockPiCheckpointObjectStore();
       }
       let customId: string | undefined;
       let workflowId: string | undefined;
@@ -156,7 +156,9 @@ describe("shared context statement projections through normal sends", () => {
         });
         threadId = run.threadId;
         const claimed = await claimChatRun(runnerGroup, run.runId);
-        expect(claimed.claim.modelUsageProvider).toBe(MODEL);
+        expect(claimed.claim.modelUsageProvider).toBe(
+          hasProviders ? MODEL : "okou-1.0",
+        );
         const targets = claimed.claim.connectorRuntimeTargets;
         if (customId) {
           expect(targets).toContainEqual(

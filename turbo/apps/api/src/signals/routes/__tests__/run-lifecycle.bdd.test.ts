@@ -1,11 +1,9 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import {
-  readPrimaryBuiltInRouteFixture,
-  updateRestrictedPlanAccessFixture,
-} from "../../../test-fixtures/model-route-capabilities";
+import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
@@ -3195,29 +3193,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       {},
       NATIVE_RUNNER_ROUTE,
     );
-    const anthropic = (await api.listOrgModelProviders(actor)).find(
-      (provider) => {
-        return provider.type === "anthropic-api-key";
-      },
-    );
-    if (!anthropic) {
-      throw new Error("Expected the org Anthropic provider");
-    }
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: NATIVE_RUNNER_ROUTE.model,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: anthropic.id,
-      },
-    ]);
+
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(actor)
+      .then(() => {
+        return api.updateUserModelPreference(actor, selectedModel);
+      });
 
     const first = await api.createThreadRun(actor, {
       agentId,
@@ -4623,24 +4604,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       throw new Error("Expected suspended run actor to have an org");
     }
     await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 20_000 });
-    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     // A BYOK default route and a selectable built-in route.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "deepseek-v4.1-flash",
-        preferred: false,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD suspended-org agent",
       description: "Covers the suspended entitlement admission branch.",
@@ -4670,7 +4636,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: builtInPrompt,
-        model: "deepseek-v4.1-flash",
+        model: "okou-1.0",
       }),
     ).resolves.toBe("insufficient_credits");
 
@@ -4954,24 +4920,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       supportByok: true,
       restrictedBuiltInModels: false,
     });
-    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     // A BYOK default route and a selectable built-in route.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "deepseek-v4.1-flash",
-        preferred: false,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD staff entitlement admission agent",
       visibility: "private",
@@ -5021,7 +4972,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: builtInPrompt,
-        model: "deepseek-v4.1-flash",
+        model: "okou-1.0",
       }),
     ).resolves.toBe("insufficient_credits");
 
@@ -5064,7 +5015,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     });
     // A new organization starts in Auto with only the fixed default.
     const modelPolicies = await misc.listRunModels(actor);
-    expect(modelPolicies.modelMode).toBe("auto");
+    expect(modelPolicies.defaultModel).toBe("okou-1.0");
     expect(
       modelPolicies.models.map((policy) => {
         return policy.model;
@@ -5142,15 +5093,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       [FeatureSwitchKey.OpenRouterUsRouting]: true,
     });
 
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, selectedModel);
     const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "built-in model provider",
@@ -5174,65 +5117,18 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("runs a built-in model the catalog frees for restricted plans", async () => {
-    const api = createRunsApi(context);
-    const selectedModel = "deepseek-v4-flash";
-    await seedBuiltInModelKey(selectedModel);
-    // Free-plan Built-in access is the catalog row's flag, not a code list.
-    onTestFinished(
-      await updateRestrictedPlanAccessFixture({
-        model: selectedModel,
-        builtInOnRestrictedPlans: true,
-      }),
-    );
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    if (!actor.orgId) {
-      throw new Error("Expected the restricted-plan actor to have an org");
-    }
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "active",
-      supportByok: true,
-      restrictedBuiltInModels: true,
-    });
-
-    const run = await api.createThreadRun(actor, {
-      agentId,
-      prompt: "restricted-plan built-in model",
-      model: selectedModel,
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    await expectBuiltInModelRunRuntimeRoute(actor, run.runId, selectedModel);
-    expect(claim.modelUsageProvider).toBe(selectedModel);
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
   it("claims built-in GPT 5.6 chat runs through Pi with the selected OpenAI runtime model", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    const selectedModel = "gpt-5.6-sol";
+    const selectedModel = "gpt-6-sol";
     await seedBuiltInModelKey(selectedModel);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(actor)
+      .then(() => {
+        return api.updateUserModelPreference(actor, selectedModel);
+      });
 
     preparePiSandboxClaim();
 
@@ -5271,7 +5167,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
   it("keeps built-in DeepSeek admission after a Slack fixture releases its shared key", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    const selectedModel = "deepseek-v4-flash";
+    const selectedModel = "okou-1.0";
     const slackOrgId = `org_${randomUUID()}`;
     const slackUserId = `user_${randomUUID()}`;
     const slackFixture = await fixtureStore.set(
@@ -5301,15 +5197,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await releaseSlackFixture();
 
     const { actor, agentId } = await entitledRunActor();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, selectedModel);
 
     // Admission, not provider execution, is under test.
     preparePiSandboxClaim();
@@ -5337,15 +5225,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await seedBuiltInModelKey(selectedModel);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: selectedModel,
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
+      await api.updateUserModelPreference(actor, selectedModel);
 
       preparePiSandboxClaim();
 
@@ -5403,64 +5283,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     },
   );
 
-  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
-    "projects DeepSeek %s metadata for an OpenRouter workspace key",
-    async (selectedModel) => {
-      const api = createRunsApi(context);
-      const chat = createChatFilesBddApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const { providerId } = await api.createOrgModelProvider(actor, {
-        type: "openrouter-codex",
-        secret: "openrouter-deepseek-flash-key",
-      });
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: selectedModel,
-          preferred: true,
-          defaultProviderType: "openrouter-codex",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
-
-      preparePiSandboxClaim();
-
-      const sent = await chat.sendAndLaunch(actor, {
-        agentId,
-        prompt: "use DeepSeek Flash through OpenRouter",
-        model: selectedModel,
-      });
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.runId);
-
-      // DeepSeek is Pi-eligible: the OpenRouter workspace key is projected
-      // into Pi's Responses route instead of a Codex model catalog.
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.piModelConfig).toMatchObject({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: `deepseek/${selectedModel}`,
-      });
-      expect(claim.modelUsageProvider).toBe(selectedModel);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error(
-          "Expected the OpenRouter DeepSeek run to expose OKOU_TOKEN",
-        );
-      }
-      expect(
-        (claim.appendSystemPrompt ?? "").includes("okou image-recognition"),
-      ).toBe(selectedModel === "deepseek-v4-flash");
-      expect(
-        verifyOkouToken(token)?.capabilities.includes(
-          "image-recognition:write",
-        ),
-      ).toBe(selectedModel === "deepseek-v4-flash");
-
-      await api.requestCancelRun(actor, sent.runId, [200]);
-    },
-  );
-
   it("offers image recognition only for image-unsupported models", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -5469,42 +5291,13 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const supportedModel = "claude-sonnet-5";
     const unknownModel = "gpt-5.6-sol";
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const { providerId: anthropicProviderId } =
-      await api.ensurePersonalSubscriptionModel(actor);
-    const { providerId: openrouterProviderId } =
-      await api.createOrgModelProvider(actor, {
-        type: "openrouter-codex",
-        secret: "recognition-openrouter-key",
-      });
-    const { providerId: openaiProviderId } = await api.createOrgModelProvider(
-      actor,
-      {
-        type: "openai-api-key",
-        secret: "recognition-openai-key",
-      },
-    );
+    await api.ensurePersonalSubscriptionModel(actor);
 
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: unsupportedModel,
-        preferred: true,
-        defaultProviderType: "openrouter-codex",
-        credentialScope: "org",
-        modelProviderId: openrouterProviderId,
-      },
-      {
-        model: supportedModel,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: anthropicProviderId,
-      },
-      {
-        model: unknownModel,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openaiProviderId,
-      },
-    ]);
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(actor)
+      .then(() => {
+        return api.updateUserModelPreference(actor, "claude-fable-5-1");
+      });
 
     // Every model here is Pi-eligible in a chat thread; inspect the frozen
     // sandbox Pi claim.
@@ -5584,19 +5377,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, claudeWebRun.runId, [200]);
 
     // A native Codex route (gpt-6-astra has no Pi route) for a scheduled run.
-    const openai = await api.createOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "bdd-codex-schedule-key",
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openai.providerId,
-      },
-    ]);
+
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(actor)
+      .then(() => {
+        return api.updateUserModelPreference(actor, "gpt-6-astra");
+      });
     const scheduled = await createWorkflowsBddApi(
       context,
     ).startScheduledAutomationRun(actor, agentId);
@@ -5635,24 +5421,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     // A member-scoped policy routes the gpt-6-astra model (native Codex
     // Runner; Pi-eligible GPT models would launch Pi instead) through the
     // personal provider; the org default stays on the anthropic provider.
-    const orgProvider = await api.ensurePersonalSubscriptionModel(actor);
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: orgProvider.providerId,
-      },
-      {
-        // Member-scope routes resolve the provider per caller at run time,
-        // so they must not pin a provider id.
-        model: "gpt-6-astra",
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(actor);
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD codex skills agent",
@@ -5670,7 +5440,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     }
     const thread = await chat.createThread(actor, {
       agentId: agent.agentId,
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
@@ -8166,29 +7936,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
       [200, 201],
     );
-    const anthropic = (
-      await fixture.api.listOrgModelProviders(fixture.actor)
-    ).find((provider) => {
-      return provider.type === "anthropic-api-key";
-    });
-    if (!anthropic) {
-      throw new Error("Expected the org Anthropic provider");
-    }
-    await fixture.api.updateOrgModelPolicies(fixture.actor, [
-      {
-        model: NATIVE_RUNNER_ROUTE.model,
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: anthropic.id,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(fixture.actor)
+      .then(() => {
+        return fixture.api.updateUserModelPreference(
+          fixture.actor,
+          "claude-fable-5-1",
+        );
+      });
     const codex = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect MCP awareness with Codex",
@@ -12025,41 +11781,13 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, latest.runId, [200]);
     await finishCancelledRun(latest.runId, latestClaim.sandboxToken);
 
-    const openai = await api.createOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "bdd-native-web-search-openai-key",
-    });
-    const anthropic = (await api.listOrgModelProviders(actor)).find(
-      (provider) => {
-        return provider.type === "anthropic-api-key";
-      },
-    );
-    if (!anthropic) {
-      throw new Error("Expected the org Anthropic provider");
-    }
     const builtInModel = await seedBuiltInDefaultModelKey();
     // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: NATIVE_RUNNER_ROUTE.model,
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: anthropic.id,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openai.providerId,
-      },
-      {
-        model: builtInModel,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(actor)
+      .then(() => {
+        return api.updateUserModelPreference(actor, "claude-fable-5-1");
+      });
     const codexByok = await api.createThreadRun(actor, {
       agentId,
       prompt: "use Codex native web search",
@@ -13763,19 +13491,12 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     // Astra stays on the native Codex Runner; Pi-eligible GPT models would
     // launch Pi instead of reporting Codex items.
-    const { providerId: openAiProviderId } = await api.createOrgModelProvider(
-      actor,
-      { type: "openai-api-key", secret: "bdd-codex-first-output-key" },
-    );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openAiProviderId,
-      },
-    ]);
+
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(actor)
+      .then(() => {
+        return api.updateUserModelPreference(actor, "gpt-6-astra");
+      });
     failIfChatCallbackRouteIsFetched();
     const requestedAt = Date.parse("2026-07-23T09:00:00.000Z");
     mockNow(requestedAt);
@@ -13962,15 +13683,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const builtInModel = await seedBuiltInDefaultModelKey();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: builtInModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, builtInModel);
     const modelProvider = `bdd-model-pricing-${randomUUID()}`;
     onTestFinished(async () => {
       await deleteUsagePricingRows({
@@ -14690,24 +14403,15 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         {},
         NATIVE_RUNNER_ROUTE,
       );
-      const modelProvider =
-        cliAgentType === "codex" ? "openai-api-key" : "anthropic-api-key";
-      const { providerId } = await api.createOrgModelProvider(actor, {
-        type: modelProvider,
-        secret: `bdd-${cliAgentType}-key`,
-      });
+
       // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
       const model =
         cliAgentType === "codex" ? "gpt-6-astra" : NATIVE_RUNNER_ROUTE.model;
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model,
-          preferred: true,
-          defaultProviderType: modelProvider,
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await createBddIntegrationApi(context)
+        .configureNativeSubscriptionModels(actor)
+        .then(() => {
+          return api.updateUserModelPreference(actor, model);
+        });
       const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `complete with ${cliAgentType} checkpoint`,

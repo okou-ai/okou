@@ -1,6 +1,5 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -619,69 +618,4 @@ test("Connect a personal Claude subscription", async () => {
       }),
     ).toHaveAttribute("aria-valuenow", "76");
   });
-});
-
-// The reset control is offered by the presence of `subscriptionResetCredits`
-// rather than by a provider-type allowlist, so a Claude Code account whose
-// upstream reports grants must show it and one without the field must not.
-test("Redeem a Claude Code subscription reset from the account row", async () => {
-  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "member" });
-  const granted = {
-    ...connectedPersonalClaudeCodeProvider(),
-    isActive: true,
-    modelProviderId: "00000000-0000-4000-a000-000000000320",
-    subscriptionResetCredits: 3,
-    subscriptionResetCreditsNextExpiresAt: "2030-01-04T00:48:00.000Z",
-  };
-  const withoutGrants = {
-    ...connectedPersonalClaudeCodeProvider(),
-    id: "00000000-0000-4000-a000-000000000321",
-    modelProviderId: "00000000-0000-4000-a000-000000000320",
-    isActive: false,
-    accountEmail: "no-grants@example.com",
-    workspaceName: "no-grants@example.com",
-    createdAt: "2026-03-02T00:00:00Z",
-  };
-  let resetAccountId: string | undefined;
-  context.mocks.api(
-    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
-    ({ params, respond }) => {
-      resetAccountId = params.id;
-      return respond(200, { outcome: "reset" });
-    },
-  );
-  context.mocks.data.personalModelProviders([granted, withoutGrants]);
-  await openModelSettings("Use more models");
-
-  const grantedRow = await screen.findByTestId(`oauth-account-${granted.id}`);
-  const withoutGrantsRow = await screen.findByTestId(
-    `oauth-account-${withoutGrants.id}`,
-  );
-  expect(within(grantedRow).getByText("3 resets left")).toBeVisible();
-  expect(
-    within(withoutGrantsRow).queryByText(/resets left/u),
-  ).not.toBeInTheDocument();
-  expect(
-    within(withoutGrantsRow).queryByText("Resets —"),
-  ).not.toBeInTheDocument();
-
-  click(within(grantedRow).getByLabelText("3 resets left"));
-  const confirmDialog = await screen.findByRole("dialog", {
-    name: "Reset Claude Code usage?",
-  });
-  expect(within(confirmDialog).getByText(/3 resets left/u)).toBeInTheDocument();
-  const resetButton = queryAllByRoleFast("button", confirmDialog).find(
-    (button) => {
-      return button.textContent === "Reset usage";
-    },
-  );
-  if (!resetButton) {
-    throw new Error("Reset usage button not found");
-  }
-  click(resetButton);
-
-  await expect(
-    screen.findByText("Claude Code usage reset"),
-  ).resolves.toBeInTheDocument();
-  expect(resetAccountId).toBe(granted.id);
 });

@@ -16,6 +16,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command, computed, type Computed } from "ccstate";
@@ -26,7 +27,7 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadManifest,
   generatePresignedPutUrl,
@@ -1481,112 +1482,152 @@ export const prepareStorageUploadForAuth$ = command(
   },
 );
 
-export const commitStorageUploadForAuth$ = command(
-  async (
-    { set },
-    args: CommitStorageInput,
-    signal: AbortSignal,
-  ): Promise<CommitStorageResponse> => {
-    const writeDb = set(writeDb$);
-    const mounted = await findMountedWritebackStorage(
-      {
-        db: writeDb,
-        auth: args.auth,
-        storageId: args.storageId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if ("status" in mounted) {
-      return mounted;
-    }
-
-    const commitInput: CommitStorageForStorageInput = {
-      storageId: args.storageId,
-      versionId: args.versionId,
-      files: args.files,
-      runId: args.runId,
-      parentVersionId: args.parentVersionId,
-      message: args.message,
-      maintenanceAttestation: args.maintenanceAttestation,
-      sandboxAuth: args.auth,
-    };
-    const binding = maintenanceCheckpointBinding(commitInput);
-    const receipt = binding
-      ? await findPiMemoryPhase2Checkpoint(writeDb, binding)
-      : undefined;
-    signal.throwIfAborted();
-    if (receipt) {
-      if (
-        receipt.versionId !== args.versionId ||
-        computeContentHashFromHashes(args.storageId, args.files) !==
-          receipt.versionId
-      ) {
-        return notFound("Pi memory maintenance checkpoint replay mismatch");
-      }
-      const version = await findStorageVersion({
-        db: writeDb,
-        storageId: args.storageId,
-        versionId: receipt.versionId,
-      });
-      signal.throwIfAborted();
-      if (!version) {
-        return notFound("Pi memory maintenance checkpoint version not found");
-      }
-      return storageCommitSuccess({
-        storage: mounted.storage,
-        versionId: version.id,
-        size: Number(version.size),
-        fileCount: version.fileCount,
-        deduplicated: true,
-      });
-    }
-    const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
-    if (terminalRetry) {
-      const parentVersionId = args.parentVersionId;
-      const version = await findStorageVersion({
-        db: writeDb,
-        storageId: mounted.storage.id,
-        versionId: args.versionId,
-      });
-      signal.throwIfAborted();
-      if (
-        !parentVersionId ||
-        !terminalStorageCommitPersistedStateMatches({
-          storage: mounted.storage,
-          version,
-          input: commitInput,
-        })
-      ) {
-        return notFound("Active agent run not found");
-      }
-
-      const [lineage] = await writeDb
-        .select({ id: storageVersionLineage.id })
-        .from(storageVersionLineage)
-        .where(
-          and(
-            eq(storageVersionLineage.storageId, mounted.storage.id),
-            eq(storageVersionLineage.versionId, args.versionId),
-            eq(storageVersionLineage.parentVersionId, parentVersionId),
-            eq(storageVersionLineage.runId, args.auth.runId),
+function createInitialSandboxStorageReceipt(
+  binding: NonNullable<ReturnType<typeof maintenanceCheckpointBinding>>,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [receipt] = await db
+      .select()
+      .from(piMemoryPhase2Checkpoints)
+      .where(
+        and(
+          eq(piMemoryPhase2Checkpoints.runId, binding.runId),
+          eq(
+            piMemoryPhase2Checkpoints.memoryStorageId,
+            binding.memoryStorageId,
           ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!lineage) {
-        return notFound("Active agent run not found");
-      }
-    }
+          eq(piMemoryPhase2Checkpoints.orgId, binding.orgId),
+          eq(piMemoryPhase2Checkpoints.userId, binding.userId),
+          eq(piMemoryPhase2Checkpoints.leaseToken, binding.leaseToken),
+          eq(
+            piMemoryPhase2Checkpoints.claimedRevision,
+            binding.claimedRevision,
+          ),
+          eq(
+            piMemoryPhase2Checkpoints.claimedBaseVersionId,
+            binding.claimedBaseVersionId,
+          ),
+          eq(
+            piMemoryPhase2Checkpoints.selectionDigest,
+            binding.selectionDigest,
+          ),
+        ),
+      )
+      .limit(1);
+    return receipt;
+  });
+}
 
-    const response = await set(
-      commitStorageUploadForStorage$,
-      commitInput,
-      signal,
-    );
-    return terminalRetry && response.status !== 200
-      ? notFound("Active agent run not found")
-      : response;
-  },
-);
+export function createSandboxStorageCommit(args: CommitStorageInput) {
+  const commitInput: CommitStorageForStorageInput = {
+    storageId: args.storageId,
+    versionId: args.versionId,
+    files: args.files,
+    runId: args.runId,
+    parentVersionId: args.parentVersionId,
+    message: args.message,
+    maintenanceAttestation: args.maintenanceAttestation,
+    sandboxAuth: args.auth,
+  };
+  const binding = maintenanceCheckpointBinding(commitInput);
+  const initialReceipt$ = binding
+    ? createInitialSandboxStorageReceipt(binding)
+    : undefined;
+  const commit$ = command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<CommitStorageResponse> => {
+      const writeDb = set(writeDb$);
+      const mounted = await findMountedWritebackStorage(
+        {
+          db: writeDb,
+          auth: args.auth,
+          storageId: args.storageId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+
+      if ("status" in mounted) {
+        return mounted;
+      }
+
+      const receipt = initialReceipt$ ? await get(initialReceipt$) : undefined;
+      signal.throwIfAborted();
+      if (receipt) {
+        if (
+          receipt.versionId !== args.versionId ||
+          computeContentHashFromHashes(args.storageId, args.files) !==
+            receipt.versionId
+        ) {
+          return notFound("Pi memory maintenance checkpoint replay mismatch");
+        }
+        const version = await findStorageVersion({
+          db: writeDb,
+          storageId: args.storageId,
+          versionId: receipt.versionId,
+        });
+        signal.throwIfAborted();
+        if (!version) {
+          return notFound("Pi memory maintenance checkpoint version not found");
+        }
+        return storageCommitSuccess({
+          storage: mounted.storage,
+          versionId: version.id,
+          size: Number(version.size),
+          fileCount: version.fileCount,
+          deduplicated: true,
+        });
+      }
+      const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
+      if (terminalRetry) {
+        const parentVersionId = args.parentVersionId;
+        const version = await findStorageVersion({
+          db: writeDb,
+          storageId: mounted.storage.id,
+          versionId: args.versionId,
+        });
+        signal.throwIfAborted();
+        if (
+          !parentVersionId ||
+          !terminalStorageCommitPersistedStateMatches({
+            storage: mounted.storage,
+            version,
+            input: commitInput,
+          })
+        ) {
+          return notFound("Active agent run not found");
+        }
+
+        const [lineage] = await writeDb
+          .select({ id: storageVersionLineage.id })
+          .from(storageVersionLineage)
+          .where(
+            and(
+              eq(storageVersionLineage.storageId, mounted.storage.id),
+              eq(storageVersionLineage.versionId, args.versionId),
+              eq(storageVersionLineage.parentVersionId, parentVersionId),
+              eq(storageVersionLineage.runId, args.auth.runId),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!lineage) {
+          return notFound("Active agent run not found");
+        }
+      }
+
+      const response = await set(
+        commitStorageUploadForStorage$,
+        commitInput,
+        signal,
+      );
+      return terminalRetry && response.status !== 200
+        ? notFound("Active agent run not found")
+        : response;
+    },
+  );
+  return { commit$ };
+}

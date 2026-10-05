@@ -1967,6 +1967,10 @@
       "newThread": "Chat baru",
       "reload": "Muat ulang tugas"
     },
+    "lastReadMarker": {
+      "previouslyRead": "Terakhir Anda membaca sampai di sini",
+      "unread": "Pesan belum dibaca"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -4819,7 +4823,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "Halaman persetujuan tidak dapat dibuka. Gunakan tautan secara manual dan tempelkan kode di sini.",
           "authorizationCode": "Kode otorisasi",
           "codePlaceholder": "Tempel kode dari Claude",
           "codeRequired": "Tempel kode otorisasi Claude untuk melanjutkan.",
@@ -4837,21 +4840,15 @@
           "usageNotice": "Masuk dengan langganan Claude Anda untuk menggunakan model Claude dengan agen berbasis Claude Code."
         },
         "codex": {
-          "approvalOpened": "Halaman persetujuan dibuka. Salin kode perangkat sebelum menyetujui.",
-          "codeCopied": "Kode perangkat disalin. Menunggu persetujuan...",
-          "codeCopiedRetry": "Kode perangkat disalin. Coba buka lagi halaman persetujuan.",
           "connectedToast": "ChatGPT terhubung",
           "connectTitle": "Hubungkan Codex",
-          "copyAndOpen": "Salin kode dan buka halaman persetujuan",
-          "copyAndOpenError": "Tidak dapat menyalin kode perangkat atau membuka halaman persetujuan. Salin kode secara manual lalu coba lagi.",
-          "copyError": "Halaman persetujuan terbuka, tetapi kode perangkat tidak disalin. Salin secara manual sebelum menyetujui.",
           "deviceCode": "Kode perangkat",
           "error": "Koneksi ChatGPT gagal. Mulai lagi untuk mencoba kembali.",
           "expired": "Sesi koneksi Codex kedaluwarsa. Mulai lagi untuk mencoba kembali.",
           "freePlanRejected": "Paket ChatGPT gratis tidak dapat menggunakan Codex melalui {{brandName}}. Tingkatkan ke Plus atau Pro lalu coba lagi.",
-          "instructions": "Klik dulu Salin kode dan buka halaman persetujuan. Lalu tempel kode perangkat ke OpenAI saat diminta. Terakhir, setujui akses dan biarkan dialog ini tetap terbuka sampai {{brandName}} selesai menyambungkan.",
+          "instructions": "Salin dulu kode perangkat dengan tombol salin, lalu buka halaman persetujuan. Lalu tempel kode perangkat ke OpenAI saat diminta. Terakhir, setujui akses dan biarkan dialog ini tetap terbuka sampai {{brandName}} selesai menyambungkan.",
           "invalidTokenFormat": "Codex menghasilkan format token masuk yang tidak dikenali {{brandName}}. Perbarui Codex lalu coba lagi.",
-          "openError": "Kode perangkat disalin, tetapi halaman persetujuan tidak dapat dibuka. Coba lagi.",
+          "openApproval": "Buka halaman persetujuan",
           "preparing": "Menyiapkan...",
           "reconnectAction": "Sambungkan ulang ChatGPT",
           "reconnectTitle": "Sambungkan ulang Codex",
@@ -4923,14 +4920,14 @@
         "ultrafastMode": "Mode ultracepat"
       },
       "reset": {
-        "confirmDescription": "Gunakan satu reset {{provider}} untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
+        "confirmDescription": "Gunakan satu reset Codex untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
         "progress": "Mereset...",
         "remaining_one": "{{value}} reset tersisa",
         "remaining_other": "{{value}} reset tersisa",
         "remainingUnavailable": "Sisa reset tidak tersedia",
         "remainingUnknown": "Reset —",
         "remainingWithExpiry_other": "{{value}} reset tersisa · kedaluwarsa {{expiry}}",
-        "title": "Reset penggunaan {{provider}}?"
+        "title": "Reset penggunaan Codex?"
       },
       "stale": {
         "claudeExpired": "Sesi Claude Code Anda kedaluwarsa. Sambungkan ulang untuk melanjutkan.",
@@ -4945,9 +4942,9 @@
       "toasts": {
         "accountDisconnected": "Akun diputuskan",
         "accountSwitched": "Akun aktif diganti",
-        "reset": "Penggunaan {{provider}} direset",
-        "resetUnavailable": "Tidak ada reset penggunaan {{provider}} yang tersedia",
-        "resetUnneeded": "Penggunaan {{provider}} tidak perlu direset saat ini"
+        "reset": "Penggunaan Codex direset",
+        "resetUnavailable": "Tidak ada reset penggunaan Codex yang tersedia",
+        "resetUnneeded": "Penggunaan Codex tidak perlu direset saat ini"
       },
       "usage": {
         "inDays": "dalam {{days}}d",

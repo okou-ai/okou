@@ -46,7 +46,7 @@ function resendSendCallsTo(recipient: string): number {
   }).length;
 }
 
-async function createAgentWithModelProvider(actor: ApiTestUser): Promise<{
+async function createAgentForNoCreditAdmission(actor: ApiTestUser): Promise<{
   readonly agentId: string;
 }> {
   const bdd = createBddApi(context);
@@ -68,7 +68,7 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
-    const { agentId } = await createAgentWithModelProvider(actor);
+    const { agentId } = await createAgentForNoCreditAdmission(actor);
 
     await expect(
       api.readThreadRunRejection(actor, {

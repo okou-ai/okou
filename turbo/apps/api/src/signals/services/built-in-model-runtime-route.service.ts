@@ -9,11 +9,11 @@ import {
 } from "@okouai/core/auto-run-model";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { computed, type Computed } from "ccstate";
+
 import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$, type ReadonlyDb } from "../external/db";
+import { type ReadonlyDb } from "../external/db";
 import {
   builtInRoutePricingRejectionMessage,
   isBuiltInRoutePriced,
@@ -153,11 +153,6 @@ async function loadBuiltInModelKeyIdsByVendor(
 }
 
 /** Request-scoped, so resolving many policies reads the key table once. */
-export const builtInModelKeyIdsByVendor$: Computed<
-  Promise<BuiltInModelKeyIdsByVendor>
-> = computed(async (get) => {
-  return await loadBuiltInModelKeyIdsByVendor(get(db$));
-});
 
 /** Loads the catalog once; callers that already hold it use the variant below. */
 export async function resolveBuiltInModelRuntimeRoute(
@@ -181,19 +176,6 @@ export async function resolveBuiltInModelRuntimeRoute(
  * For callers that already hold the request- or run-scoped catalog. A new run
  * passes its route pricing so unpriced candidates are skipped.
  */
-export async function resolveBuiltInModelRuntimeRouteFromCatalog(
-  db: ReadonlyDb,
-  catalog: ModelCatalog,
-  selectedModel: string,
-  routePricing?: BuiltInRoutePricing,
-): Promise<BuiltInModelRuntimeRoute | null> {
-  return await firstAvailableBuiltInModelRoute(
-    db,
-    selectedModel,
-    eligibleBuiltInModelRouteCandidates(catalog, selectedModel, routePricing),
-    await loadBuiltInModelKeyIdsByVendor(db),
-  );
-}
 
 export async function resolveBuiltInModelRuntimeRouteWithKeys(
   db: ReadonlyDb,

@@ -58,6 +58,7 @@ export enum FeatureSwitchKey {
   AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
+  ChatLastReadMarker = "chatLastReadMarker",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ComposerTemplateChipCover = "composerTemplateChipCover",
@@ -69,7 +70,6 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
-  ClaudeCodeUsageReset = "claudeCodeUsageReset",
   AgentResponsibilitySetup = "agentResponsibilitySetup",
   ComposerModelPanel = "composerModelPanel",
 }

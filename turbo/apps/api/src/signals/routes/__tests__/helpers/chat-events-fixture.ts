@@ -4,6 +4,7 @@ import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Header } from "tar";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
 import { createStoragesBddApi } from "./api-bdd-storages";
 import { storageTextFile } from "./api-bdd-storage-files";
@@ -96,16 +97,16 @@ const PI_BASE_USAGE_CATEGORIES = [
 
 export const GPT_PI_BDD_MODELS = [
   "gpt-6-luna",
-  "gpt-5.6-sol",
-  "gpt-5.6-luna",
+  "gpt-6-sol",
+  "gpt-6.1-sol",
 ] as const;
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
 
-const GPT_PI_USAGE_MODELS = [...GPT_PI_BDD_MODELS, "gpt-6-sol"] as const;
+const GPT_PI_USAGE_MODELS = GPT_PI_BDD_MODELS;
 
-export const USER_OWNED_GPT_FAST_BDD_ROUTES = [
-  ...GPT_PI_BDD_MODELS.map((selectedModel) => {
+export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
+  (selectedModel) => {
     return {
       name: `subscription ${selectedModel}`,
       selectedModel,
@@ -114,8 +115,8 @@ export const USER_OWNED_GPT_FAST_BDD_ROUTES = [
       runtimeModel: selectedModel,
       wireTier: "priority",
     } as const;
-  }),
-] as const;
+  },
+);
 
 const GPT_USAGE_PRICING = [
   "tokens.input",
@@ -253,8 +254,17 @@ export async function createPiUsagePricingResolution(
   ) {
     return await createGptUsagePricingResolution();
   }
+  const categories =
+    provider === "okou-1.0"
+      ? [
+          ...PI_BASE_USAGE_CATEGORIES,
+          ...PI_BASE_USAGE_CATEGORIES.map((category) => {
+            return `${category}.long_context`;
+          }),
+        ]
+      : PI_BASE_USAGE_CATEGORIES;
   const pricing = await createUsagePricingFixture({
-    configured: PI_BASE_USAGE_CATEGORIES.map((category) => {
+    configured: categories.map((category) => {
       return {
         kind: "model",
         provider,
@@ -371,7 +381,10 @@ export async function expectExactPrivatePiMemoryAdmission(args: {
     userId: args.userId,
   });
   expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
-  await readmitPiMemoryStage1CandidateFixture(args.runId);
+  const admitted = await readmitPiMemoryStage1CandidateFixture(args.runId);
+  if (admitted.outcome === "skipped") {
+    throw new Error(`Private Pi memory admission skipped: ${admitted.reason}`);
+  }
   const candidate = await readPiMemoryStage1CandidateFixture({
     orgId: args.orgId,
     userId: args.userId,
@@ -592,7 +605,7 @@ export function createChatEventsFixture(context: TestContext) {
   /** Platform execution is fixed to Auto; personal subscriptions are separate. */
   async function configureBuiltInPiModel(
     actor: ApiTestUser,
-    selectedModel: "okou-1.0" = "okou-1.0",
+    selectedModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
   ): Promise<void> {
     await seedBuiltInModelKey(selectedModel);
     await api.updateUserModelPreference(actor, selectedModel);
@@ -648,7 +661,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   async function configureBuiltInPiModelOnOpenRouter(
     actor: ApiTestUser,
-    selectedModel: "okou-1.0" = "okou-1.0",
+    selectedModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
   ): Promise<string> {
     await configureBuiltInPiModel(actor, selectedModel);
     return selectedModel;

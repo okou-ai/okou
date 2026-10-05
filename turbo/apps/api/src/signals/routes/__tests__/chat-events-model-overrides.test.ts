@@ -45,7 +45,7 @@ const {
 } = createChatEventsFixture(context);
 
 function expectedDefaultEffort(model: string): "xhigh" | "max" {
-  return model === "gpt-6-luna" || model === "gpt-5.6-luna" ? "xhigh" : "max";
+  return model === "gpt-6-luna" || model === "gpt-6.1-sol" ? "xhigh" : "max";
 }
 
 function completedSubscriptionHistory(
@@ -271,8 +271,8 @@ describe("CHAT-02: run-level model overrides", () => {
             return (
               (tier === "fast" && outcome === "completed") ||
               (selectedModel === "gpt-6-luna" && tier === undefined) ||
-              (selectedModel === "gpt-5.6-sol" && outcome === "failed") ||
-              (selectedModel === "gpt-5.6-luna" && outcome === "cancelled")
+              (selectedModel === "gpt-6-sol" && outcome === "failed") ||
+              (selectedModel === "gpt-6.1-sol" && outcome === "cancelled")
             );
           });
       });

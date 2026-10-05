@@ -11,11 +11,16 @@ import {
 } from "@okouai/pi-agent-runtime";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  updateFeatureSwitchesForUser,
+  deleteFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
@@ -25,6 +30,7 @@ import {
 import {
   createChatEventsFixture,
   claimEnvironment,
+  expectExactPrivatePiMemoryAdmission,
   modelProviderSecretPlaceholder,
   createPiUsagePricingResolution,
   eventBackedContents,
@@ -40,6 +46,7 @@ const {
   webhooks,
   entitledChatActor,
   configureBuiltInPiModel,
+  configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
   waitForRunStatus,
@@ -57,6 +64,16 @@ describe("CHAT-02: model-first provider policies", () => {
     "references Pi %s resume history without API history or resource IO",
     async (encoding) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected private memory owner organization");
+      }
+      const memoryOwner = { orgId: actor.orgId, userId: actor.userId };
+      await updateFeatureSwitchesForUser(context, memoryOwner, {
+        [FeatureSwitchKey.PiMemory]: true,
+      });
+      onTestFinished(async () => {
+        await deleteFeatureSwitchesForUser(context, memoryOwner);
+      });
       await publishPendingPiInstructions(actor, agentId);
       const checkpointObjects = mockPiCheckpointObjectStore();
       let resourceDownloads = 0;
@@ -205,6 +222,14 @@ describe("CHAT-02: model-first provider policies", () => {
       await flushWaitUntilForTest();
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "completed",
+      });
+      if (!actor.orgId) {
+        throw new Error("Expected memory owner organization");
+      }
+      await expectExactPrivatePiMemoryAdmission({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        runId: run.runId,
       });
       const callsBeforeResume = context.mocks.s3.send.mock.calls.length;
       const resumed = await sendChatRun(
@@ -436,18 +461,19 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(["deepseek-v4-flash", "deepseek-v4.1-flash", "gpt-6-luna"] as const)(
+  it.each(["okou-1.0", "gpt-6-luna"] as const)(
     "claims %s with Sandbox credentials and bills duplicate Sandbox usage once",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const isDeepSeek =
-        selectedModel === "deepseek-v4-flash" ||
-        selectedModel === "deepseek-v4.1-flash";
+      const builtIn = selectedModel === "okou-1.0";
       const usagePricingResolution =
         await createPiUsagePricingResolution(selectedModel);
-      await configureBuiltInPiModel(actor, selectedModel);
-      const { upstreamModel } =
-        await readPrimaryBuiltInRouteFixture(selectedModel);
+      if (builtIn) {
+        await configureBuiltInPiModel(actor, selectedModel);
+      } else {
+        await configureSubscriptionPiModel(actor, {}, selectedModel);
+      }
+      const upstreamModel = builtIn ? "@preset/okou-1-0" : selectedModel;
 
       const run = await sendChatRun(
         actor,
@@ -462,15 +488,18 @@ describe("CHAT-02: model-first provider policies", () => {
 
       const claimed = await claimChatRun(runnerGroup, run.runId);
       expect(claimed.claim.piModelConfig).toMatchObject({
-        provider: isDeepSeek ? "openrouter" : "openai",
+        provider: builtIn ? "openrouter" : "openai-codex",
         model: upstreamModel,
       });
       expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
       expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
-      expect(claimEnvironment(claimed.claim).OPENAI_API_KEY).toBe(
+      const credentials = claimEnvironment(claimed.claim);
+      expect(
+        builtIn ? credentials.OPENAI_API_KEY : credentials.CHATGPT_ACCESS_TOKEN,
+      ).toBe(
         modelProviderSecretPlaceholder(
-          isDeepSeek ? "openrouter-codex" : "openai-api-key",
-          isDeepSeek ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY",
+          builtIn ? "openrouter-codex" : "codex-oauth-token",
+          builtIn ? "OPENROUTER_API_KEY" : "CHATGPT_ACCESS_TOKEN",
         ),
       );
       const sandboxUsageEvent = {
@@ -508,10 +537,15 @@ describe("CHAT-02: model-first provider policies", () => {
       await waitForRunStatus(actor, run.runId, "cancelled");
       await failChatRun(run.runId, claimed.sandboxHeaders, "Run cancelled");
       await flushWaitUntilForTest();
-      // Only the guest's two reported output tokens are publicly charged.
+      // Metered Auto records the guest output once. Personal subscription
+      // model traffic is not admitted to the platform billing ledger.
       const usage = await readThreadModelUsage(context, actor, run.threadId);
-      expect(usage.tokens).toBe(2);
-      expect(usage.credits).toBeGreaterThan(0);
+      expect(usage.tokens).toBe(builtIn ? 2 : 0);
+      if (builtIn) {
+        expect(usage.credits).toBeGreaterThan(0);
+      } else {
+        expect(usage.credits).toBe(0);
+      }
     },
     90_000,
   );

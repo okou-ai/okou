@@ -40,7 +40,6 @@ const {
   claimChatRun,
   completeChatRunOk,
   cancelChatRun,
-  modelProviderConnectionsClient,
   chatThreadsClient,
   sessionHeaders,
 } = createChatEventsFixture(context);
@@ -107,45 +106,12 @@ async function selectedThreadConnectorFixture(
   };
 }
 
-async function configureRuntimeContextGateway(
+async function configurePersonalRuntimeContext(
   actor: ApiTestUser,
 ): Promise<void> {
-  const gateway = await accept(
-    modelProviderConnectionsClient().create({
-      headers: sessionHeaders(actor),
-      body: {
-        displayName: "Runtime context priority gateway",
-        secret: "runtime-context-priority-secret",
-        surfaces: [
-          {
-            protocol: "anthropic-messages",
-            apiBaseUrl:
-              "https://runtime-context-priority.example.com/anthropic",
-            authHeaderName: "Authorization",
-            authHeaderTemplate: "Bearer {{secret}}",
-            modelMappings: {
-              "claude-fable-5-1": "anthropic/claude-fable-5.1",
-            },
-          },
-        ],
-      },
-    }),
-    [201],
-  );
-  const surfaceId = gateway.body.surfaces[0]?.id;
-  if (!surfaceId) {
-    throw new Error("Expected the runtime context gateway to have a surface");
-  }
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "custom-anthropic-messages",
-      credentialScope: "org",
-      modelProviderId: null,
-      modelProviderSurfaceId: surfaceId,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
 }
 
 describe("chat eager connector credentials", () => {
@@ -482,21 +448,19 @@ describe("CHAT-02: thread connector account selection", () => {
     });
   });
 
-  it("uses the selected connector with the configured model gateway", async () => {
+  it("uses the selected connector with the personal subscription model", async () => {
     const fixture = await selectedThreadConnectorFixture(
       "Runtime context thread",
     );
-    await configureRuntimeContextGateway(fixture.actor);
+    await configurePersonalRuntimeContext(fixture.actor);
     const run = await sendChatRun(fixture.actor, {
       agentId: fixture.agentId,
       threadId: fixture.threadId,
-      prompt: "Use the selected connector with my gateway",
+      prompt: "Use the selected connector with my subscription",
     });
     const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
     expect(claimed.claim.environment).toMatchObject({
-      ANTHROPIC_BASE_URL:
-        "https://runtime-context-priority.example.com/anthropic",
-      ANTHROPIC_MODEL: "anthropic/claude-fable-5.1",
+      ANTHROPIC_MODEL: "claude-fable-5-1",
     });
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,

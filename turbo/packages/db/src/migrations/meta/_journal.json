@@ -1699,8 +1699,22 @@
     {
       "idx": 1320,
       "version": "7",
-      "when": 1791189960227,
-      "tag": "1320_retire_custom_model_configuration",
+      "when": 1791190741675,
+      "tag": "1320_misty_cassandra_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 1321,
+      "version": "7",
+      "when": 1791206124974,
+      "tag": "1321_retire_custom_model_configuration",
+      "breakpoints": true
+    },
+    {
+      "idx": 1322,
+      "version": "7",
+      "when": 1791206187496,
+      "tag": "1322_prune_retired_model_routes",
       "breakpoints": true
     }
   ]

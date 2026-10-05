@@ -1,4 +1,3 @@
-import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersByTypeContract,
@@ -123,7 +122,6 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
   async (
     { get, set },
     args: {
-      readonly type: ModelProviderType;
       readonly idempotencyKey: string;
     },
     signal: AbortSignal,
@@ -132,7 +130,7 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
     const client = createClient(personalModelProvidersByTypeContract);
     const result = await accept(
       client.resetSubscriptionUsage({
-        params: { type: args.type },
+        params: { type: "codex-oauth-token" },
         body: { idempotencyKey: args.idempotencyKey },
         fetchOptions: { signal },
       }),

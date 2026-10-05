@@ -269,16 +269,6 @@ export function mockCatalogHasModel(model: string | null | undefined) {
   });
 }
 
-export function mockCatalogActiveModels(): string[] {
-  return mockModelCatalog.models
-    .filter((entry) => {
-      return entry.replacedBy === null;
-    })
-    .map((entry) => {
-      return entry.model;
-    });
-}
-
 export function mockCatalogBuiltInProvider(
   model: string,
 ): AvailableRunModel["runtimeProviderType"] {

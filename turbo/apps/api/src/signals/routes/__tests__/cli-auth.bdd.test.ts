@@ -13,6 +13,7 @@ import {
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -773,7 +774,10 @@ describe("CLI-TEST: test-enable-connector", () => {
 
 describe("CLI-TEST: test-codex-oauth", () => {
   async function readCodexProvider(actor: ReturnType<typeof bdd.user>) {
-    const providers = await support.listModelProviders(actor);
+    const providers = await support.listPersonalModelProviders(actor, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
     const provider = providers.body.modelProviders.find((candidate) => {
       return candidate.type === "codex-oauth-token";
     });
@@ -816,7 +820,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
     }
     expect(rewritten.body.orgId).toBe(actor.orgId);
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("rejects malformed codex bodies and unprovisioned users", async () => {
@@ -954,7 +962,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
       emailAddress: ["custom@test.com"],
     });
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("accepts pasted auth.json claim variants through public API state", async () => {
@@ -1005,7 +1017,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
       planType: "plus",
     });
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("derives pasted auth.json expiry from API inputs", async () => {
@@ -1056,7 +1072,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
       idTokenExp * 1000,
     );
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("maps invalid pasted auth.json inputs to endpoint errors", async () => {

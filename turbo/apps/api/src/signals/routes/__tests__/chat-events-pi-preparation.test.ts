@@ -15,7 +15,7 @@ const context = testContext({ connectorCatalog: true });
 const {
   api,
   entitledChatActor,
-  configureBuiltInPiModel,
+  configureSubscriptionPiModel,
   sendChatRun,
   sendWaitingChatInput,
   claimChatRun,
@@ -34,7 +34,7 @@ describe("CHAT-02: model-first provider policies", () => {
       prompt: "hold admission capacity",
       model: "claude-fable-5-1",
     });
-    await configureBuiltInPiModel(actor, "gpt-6-luna");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiCheckpointObjectStore();
     const prompt = "keep the complete admission independent";

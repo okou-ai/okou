@@ -15,6 +15,7 @@ import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -68,6 +69,15 @@ interface OrgActor {
   readonly userId: string;
   readonly orgId: string;
   readonly role: "org:admin" | "org:member";
+}
+
+async function configureCustomWorkspace(actor: OrgActor): Promise<void> {
+  await seedOrgMetadata({
+    orgId: actor.orgId,
+    tier: "pro",
+    credits: 0,
+  });
+  mocks.clerk.session(actor.userId, actor.orgId, actor.role);
 }
 
 /** A second person in `admin`'s organization, without admin rights. */

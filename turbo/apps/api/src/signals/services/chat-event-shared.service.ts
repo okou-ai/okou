@@ -22,7 +22,10 @@ import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { writeDb$ } from "../external/db";
 import { z } from "zod";
 import { settleIncludingAbort } from "../utils";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+import {
+  publishChatThreadMessageCreatedSafely,
+  publishChatThreadReadCursorUpdatedSafely,
+} from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { assistantEventIdForRunEvent } from "./assistant-event-id";
 import { chatEventsInsertSql } from "./chat-event.service";
@@ -123,6 +126,8 @@ interface ChatThreadTouchOptions {
    * sidebar list. Cancellation is user-initiated and leaves it archived.
    */
   readonly unarchive?: boolean;
+  /** External notification delivery consumes unread state for the whole thread. */
+  readonly markRead?: boolean;
 }
 
 const appendThreadTouchEvent$ = command(
@@ -186,6 +191,11 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
         .update(chatThreads)
         .set({
           lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
+          ...(options.markRead
+            ? {
+                lastReadAt: sql`GREATEST(${chatThreads.lastReadAt}, ${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
+              }
+            : {}),
           ...(unarchive
             ? {
                 archived: sql`CASE WHEN ${chatThreads.muted} THEN ${chatThreads.archived} ELSE false END`,
@@ -193,7 +203,11 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
             : {}),
         })
         .where(eq(chatThreads.id, threadId))
-        .returning({ id: chatThreads.id, archived: chatThreads.archived }),
+        .returning({
+          id: chatThreads.id,
+          archived: chatThreads.archived,
+          lastReadAt: chatThreads.lastReadAt,
+        }),
     );
     signal.throwIfAborted();
     reportChatEventSideEffect(
@@ -202,6 +216,14 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
       timestampStartedAt,
       timestampWrite,
     );
+    const lastReadAt = timestampWrite.ok && timestampWrite.value[0]?.lastReadAt;
+    if (options.markRead && orgId && lastReadAt) {
+      await publishChatThreadReadCursorUpdatedSafely(
+        { userId: thread.userId, orgId },
+        { threadId, agentId, lastReadAt: lastReadAt.toISOString() },
+      );
+      signal.throwIfAborted();
+    }
     const unarchived =
       unarchive &&
       timestampWrite.ok &&

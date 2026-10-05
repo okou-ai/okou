@@ -152,7 +152,6 @@ test("Connect Codex before sending with a personal route", async () => {
   const approval = context.mocks.deferred<void>();
   const user = userEvent.setup({ delay: null });
   const clipboard = context.mocks.browser.clipboardWriteText();
-  const opened = context.mocks.browser.open(context.mocks.browser.authWindow());
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   configurePersonalRoute({
     model: "gpt-5.6-luna",
@@ -204,20 +203,19 @@ test("Connect Codex before sending with a personal route", async () => {
 
   const dialog = await screen.findByRole("dialog", { name: "Connect Codex" });
   expect(dialog).toHaveTextContent("ABCD-EFGH");
-  click(within(dialog).getByTestId("codex-device-auth-open"));
+  const approvalLink = within(dialog).getByTestId("codex-device-auth-open");
+  expect(queryAllByRoleFast("link", dialog)).toContain(approvalLink);
+  expect(approvalLink).toHaveAttribute(
+    "href",
+    "https://auth.openai.com/codex/device",
+  );
+  expect(clipboard.writes).toStrictEqual([]);
 
-  await expect(
-    within(dialog).findByText("Device code copied. Waiting for approval..."),
-  ).resolves.toBeVisible();
-
+  click(buttonNamed("Copy to clipboard", dialog));
+  await waitFor(() => {
+    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+  });
   expect(clipboard.writes).toStrictEqual(["ABCD-EFGH"]);
-  expect(opened.calls).toStrictEqual([
-    {
-      url: "https://auth.openai.com/codex/device",
-      target: "_blank",
-      features: null,
-    },
-  ]);
 
   approval.resolve();
 

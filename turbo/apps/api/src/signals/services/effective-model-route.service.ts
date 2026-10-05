@@ -1,7 +1,3 @@
-import type {
-  ModelProviderCredentialScope,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { ReadonlyDb } from "../external/db";
@@ -15,17 +11,6 @@ const PERSONAL_TYPES = [
   "codex-oauth-token",
 ] as const;
 type PersonalType = (typeof PERSONAL_TYPES)[number];
-
-export interface ResolvedRunModelRoute {
-  readonly modelProviderId: string | null;
-  readonly modelProviderType: ModelProviderType;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope;
-  readonly selectedModel: string;
-  readonly personalConnectionState?:
-    | "capture_required"
-    | "reconnect_required"
-    | "unavailable";
-}
 
 interface PersonalCandidate {
   readonly type: PersonalType;

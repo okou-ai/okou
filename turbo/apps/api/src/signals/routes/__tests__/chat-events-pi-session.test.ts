@@ -20,7 +20,7 @@ const {
   chat,
   chatCallbacks,
   entitledChatActor,
-  seedBuiltInModelKey,
+  configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -32,24 +32,10 @@ const {
   piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: personal subscription model selection", () => {
   it("preserves one Pi session while selecting Luna, Sol, Luna, and Luna again", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    for (const model of GPT_PI_BDD_MODELS) {
-      await seedBuiltInModelKey(model);
-    }
-    await api.updateOrgModelPolicies(
-      actor,
-      GPT_PI_BDD_MODELS.map((model) => {
-        return {
-          model,
-          preferred: model === "gpt-6-luna",
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        };
-      }),
-    );
+    await configureSubscriptionPiModel(actor);
 
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
@@ -72,9 +58,7 @@ describe("CHAT-02: model-first provider policies", () => {
         expect(claim.claim.piSessionId).toBe(run.threadId);
         expect(claim.claim.piModelConfig).toMatchObject({
           thinkingLevel:
-            model === "gpt-6-luna" || model === "gpt-5.6-luna"
-              ? "xhigh"
-              : "max",
+            model === "gpt-6-luna" || model === "gpt-6.1-sol" ? "xhigh" : "max",
         });
         expect(claim.claim.piModelConfig).not.toHaveProperty("serviceTier");
       }
@@ -108,23 +92,7 @@ describe("CHAT-02: model-first provider policies", () => {
       throw new Error("Expected entitled chat actor to have an org");
     }
     const piModel = "gpt-6-luna";
-    await seedBuiltInModelKey(piModel);
-    await seedBuiltInModelKey("gpt-6-astra");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: piModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await configureSubscriptionPiModel(actor, {}, piModel);
 
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();

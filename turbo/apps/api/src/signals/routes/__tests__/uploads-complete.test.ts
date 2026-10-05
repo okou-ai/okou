@@ -15,8 +15,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { now } from "../../../lib/time";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -28,6 +26,7 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -531,26 +530,20 @@ describe("POST /api/uploads/complete", () => {
 
   it("rejects suspended orgs before completing the upload", async () => {
     const actor = bdd.user();
-    const completed = await bdd.completeOnboarding(actor);
-    expect(completed.status).toBe(200);
-    await seedOrgMetadata({
-      orgId: requireOrgId(actor),
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requireOrgId(actor),
-      status: "suspended",
-    });
+    const fixture = createPublicUnfundedProFixture(context, actor);
+    await fixture.run(async () => {
+      await fixture.initialize();
+      await fixture.suspend();
 
-    const response = await chat.requestCompleteUpload(
-      actor,
-      { id: randomUUID() },
-      [402],
-    );
+      const response = await chat.requestCompleteUpload(
+        actor,
+        { id: randomUUID() },
+        [402],
+      );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    });
   });
 
   it("returns 401 when the request is unauthenticated", async () => {

@@ -21,7 +21,6 @@ import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   ageFakeChatEventObject,
   deleteFakeChatEventObject,
@@ -39,7 +38,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 // Manual objects share the fake R2 directory, so each test owns its teardown.
 const trackFakeChatEventObject = createFixtureTracker(
@@ -149,7 +147,7 @@ async function sendNoCreditMessage(
     readonly userMessage?: UserMessageDocument;
   },
 ): Promise<string> {
-  await api.ensurePersonalSubscriptionModel(actor);
+  // Snapshot input needs a no-credit Auto message, not a paid Custom route.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (sent.status !== 201) {
     throw new Error("Expected the no-credit send to be accepted");

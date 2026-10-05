@@ -32,6 +32,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { createRouteMocks } from "./helpers/route-test";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 const context = testContext();
 const mocks = createRouteMocks(context);

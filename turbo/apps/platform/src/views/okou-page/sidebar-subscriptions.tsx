@@ -54,10 +54,7 @@ export function AccountMenuSubscriptionsPanel({
 }: {
   readonly loading: boolean;
   readonly rows: readonly AccountMenuSubscriptionUsageRow[];
-  readonly onResetCodexUsage?: (
-    type: AccountMenuSubscriptionUsageRow["type"],
-    resetCredits: number | null,
-  ) => void;
+  readonly onResetCodexUsage?: (resetCredits: number | null) => void;
   readonly resetPending?: boolean;
   readonly resetControl?: "menu" | "button";
 }) {
@@ -154,10 +151,7 @@ function AccountMenuSubscriptionProviderSection({
   readonly resetCreditsNextExpiresAt?: string | null;
   readonly resetPending: boolean;
   readonly resetControl: "menu" | "button";
-  readonly onResetCodexUsage?: (
-    type: AccountMenuSubscriptionUsageRow["type"],
-    resetCredits: number | null,
-  ) => void;
+  readonly onResetCodexUsage?: (resetCredits: number | null) => void;
 }) {
   const { t } = useTranslation();
   const windows = subscriptionUsageWindows(usage);
@@ -181,7 +175,7 @@ function AccountMenuSubscriptionProviderSection({
         <h3 className="min-w-0 flex-1 truncate text-xs font-medium leading-4 tracking-tight text-foreground">
           {label}
         </h3>
-        {resetCredits === undefined ? null : (
+        {type !== "codex-oauth-token" || resetCredits === undefined ? null : (
           <ResetControl
             className="ml-auto -me-1"
             resetCredits={resetCredits}
@@ -190,7 +184,7 @@ function AccountMenuSubscriptionProviderSection({
             onReset={
               onResetCodexUsage
                 ? () => {
-                    onResetCodexUsage(type, resetCredits);
+                    onResetCodexUsage(resetCredits);
                   }
                 : undefined
             }

@@ -641,30 +641,11 @@ async function configureCanonicalSlackPiActor(
   const runnerGroup = runs.configureRunnerGroup();
   integrations.configureSlackAppMocks();
   await runs.grantProEntitlement(actor);
-  const { providerId: anthropicProviderId } =
-    await runs.ensurePersonalSubscriptionModel(actor);
-  const { providerId: openaiProviderId } = await runs.createOrgModelProvider(
+  await runs.ensurePersonalSubscriptionModel(actor);
+
+  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
     actor,
-    {
-      type: "openai-api-key",
-      secret: "bdd-slack-luna-api-key",
-    },
   );
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: anthropicProviderId,
-    },
-    {
-      model: selectedModel,
-      defaultProviderType: "openai-api-key",
-      credentialScope: "org",
-      modelProviderId: openaiProviderId,
-    },
-  ]);
 
   await integrations.updateUserModelPreference(actor, "claude-fable-5-1");
   return { actor, orgId, runnerGroup, selectedModel };

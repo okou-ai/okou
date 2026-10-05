@@ -374,6 +374,7 @@ export async function prepareRegisteredModelEnvironment(
     catalog,
     selectedModel,
     type,
+    type,
   );
   if (!upstreamModel) {
     return null;

@@ -31,7 +31,7 @@ import {
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
-const { bdd, api, chat, chatCallbacks } = fixture;
+const { bdd, chat, chatCallbacks } = fixture;
 const CRON_SECRET = "durable-chat-search-projection-secret";
 
 function cronClient() {
@@ -126,7 +126,7 @@ async function sendRejectedPrompt(
 async function promptActor(displayName: string) {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  await api.ensurePersonalSubscriptionModel(actor);
+  // Rejected prompts use the unconfigured Auto workspace's no-credit boundary.
   const agent = await bdd.createAgent(actor, { displayName });
   return { actor, agentId: agent.agentId };
 }

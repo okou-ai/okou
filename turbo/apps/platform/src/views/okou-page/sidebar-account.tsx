@@ -8,7 +8,6 @@ import {
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   LogOut,
   Plus,
@@ -248,10 +247,7 @@ function AccountUsageGroup({
   subscriptionsEnabled,
 }: {
   onOpenCreditBalance: () => void;
-  onResetCodexUsage: (
-    type: ModelProviderType,
-    resetCredits: number | null,
-  ) => void;
+  onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
   subscriptionsEnabled: boolean;
@@ -323,10 +319,7 @@ function AccountUsageGroupWithSubscriptions({
 }: {
   combinedCredit: boolean;
   onOpenCreditBalance: () => void;
-  onResetCodexUsage: (
-    type: ModelProviderType,
-    resetCredits: number | null,
-  ) => void;
+  onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
 }) {
@@ -701,17 +694,14 @@ export function useAccountCodexReset(
   const pageSignal = useGet(pageSignal$);
   const actionPending = actionLoadable.state === "loading";
 
-  const handleOpenCodexReset = (
-    type: ModelProviderType,
-    resetCredits: number | null,
-  ) => {
-    setResetDialog({ open: true, resetCredits, type });
+  const handleOpenCodexReset = (resetCredits: number | null) => {
+    setResetDialog({ open: true, resetCredits });
   };
 
   const handleConfirmCodexReset = () => {
     detach(
       (async () => {
-        await resetCodexSubscriptionUsage(resetDialog.type, pageSignal);
+        await resetCodexSubscriptionUsage(pageSignal);
         await reloadSubscriptions(subscriptionRowsCacheKey, pageSignal);
         setResetDialog({ ...resetDialog, open: false });
       })(),
@@ -846,7 +836,6 @@ export function AccountDropdown({
       {renderCodexResetDialog && (
         <CodexResetUsageDialog
           open={resetDialog.open}
-          providerType={resetDialog.type}
           resetCredits={resetDialog.resetCredits}
           resetting={actionPending}
           onOpenChange={handleCodexResetOpenChange}

@@ -202,17 +202,6 @@ export {
   registryResourceDownloadContract,
   type RegistryResourceDownloadContract,
 } from "./registry-resources";
-export {
-  testTeamsDispatchProbeBodySchema,
-  testTeamsDispatchProbeContract,
-  testTeamsDispatchProbeErrorSchema,
-  testTeamsDispatchProbeFailureResponseSchema,
-  testTeamsDispatchProbeResponseSchema,
-  testTeamsDispatchProbeSuccessResponseSchema,
-  type TestTeamsDispatchProbeBody,
-  type TestTeamsDispatchProbeContract,
-  type TestTeamsDispatchProbeResponse,
-} from "./test-teams-dispatch-probe";
 export { emailInboundContract } from "./email";
 export * from "./browser-user-actions";
 export {
@@ -382,13 +371,6 @@ export {
   type TestSlackStateContract,
   type TestSlackStateResponse,
 } from "./test-slack-state";
-export {
-  testTeamsStateContract,
-  testTeamsStateErrorSchema,
-  testTeamsStateResponseSchema,
-  type TestTeamsStateContract,
-  type TestTeamsStateResponse,
-} from "./test-teams-state";
 export {
   testTelegramStateContract,
   testTelegramStateErrorSchema,

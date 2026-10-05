@@ -18,28 +18,17 @@ const {
   claimChatRun,
   waitForThreadMessages,
   cancelChatRun,
-  upsertOrgModelProvider,
+  configureSubscriptionPiModel,
   mockPiCheckpointObjectStore,
 } = createChatEventsFixture(context);
 
 describe("CHAT effort: thread configuration", () => {
-  it.each(["gpt-5.6-luna", "gpt-6-luna"])(
+  it.each(["gpt-6-luna"] as const)(
     "dispatches %s with xhigh as the default Pi effort",
     async (model) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const { providerId } = await upsertOrgModelProvider(actor, {
-        type: "openai-api-key",
-        secret: "test-luna-effort-key",
-      });
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model,
-          preferred: true,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+
+      await configureSubscriptionPiModel(actor, {}, model);
       const thread = await chat.createThread(actor, {
         agentId,
         model,
@@ -63,27 +52,13 @@ describe("CHAT effort: thread configuration", () => {
     90_000,
   );
   it("applies requested and saved native effort through the existing claim protocol", async () => {
-    const { actor, agentId, providerId, runnerGroup } =
-      await entitledChatActor();
-    const { providerId: openaiProviderId } = await upsertOrgModelProvider(
-      actor,
-      { type: "openai-api-key", secret: "native-effort-openai-key" },
-    );
-    await api.updateOrgModelPolicies(actor, [
-      {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+
+    await configureSubscriptionPiModel(actor).then(() => {
+      return api.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openaiProviderId,
-      },
-    ]);
+      });
+    });
     const thread = await chat.createThread(actor, {
       agentId,
       title: "Saved effort",
@@ -147,19 +122,13 @@ describe("CHAT effort: thread configuration", () => {
 
   it.each([
     {
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       effort: "ultra",
       pi: true,
       providerType: "openai-api-key",
       effectiveEffort: "max",
     },
-    {
-      model: "deepseek-v4-flash",
-      effort: "low",
-      pi: true,
-      providerType: "openrouter-codex",
-      effectiveEffort: "high",
-    },
+
     {
       model: "claude-fable-5-1",
       effort: "ultracode",
@@ -169,21 +138,12 @@ describe("CHAT effort: thread configuration", () => {
     },
   ] as const)(
     "falls back from unavailable $model $effort without deleting the preference",
-    async ({ model, effort, pi, providerType, effectiveEffort }) => {
+    async ({ model, effort, pi, effectiveEffort }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const { providerId } = await upsertOrgModelProvider(actor, {
-        type: providerType,
-        secret: "test-native-effort-key",
-      });
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model,
-          preferred: true,
-          defaultProviderType: providerType,
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+
+      await (pi
+        ? configureSubscriptionPiModel(actor, {}, model)
+        : api.ensurePersonalSubscriptionModel(actor, { model }));
       if (pi) {
         mockPiCheckpointObjectStore();
       }
@@ -253,38 +213,18 @@ describe("CHAT effort: thread configuration", () => {
   ] as const)(
     "preserves enqueued settings after thread edits and retries with Pi $pi and $requestedEffort effort",
     async ({ requestedEffort, effectiveEffort, pi }) => {
-      const { actor, agentId, providerId, runnerGroup } =
-        await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-      const selectedModel = pi ? "gpt-5.6-sol" : "claude-fable-5-1";
-      const targetProviderId = pi
-        ? (
-            await upsertOrgModelProvider(actor, {
-              type: "openai-api-key",
-              secret: "queued-pi-effort-key",
-            })
-          ).providerId
-        : providerId;
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-        ...(pi
-          ? [
-              {
-                model: "gpt-5.6-sol" as const,
-                defaultProviderType: "openai-api-key" as const,
-                credentialScope: "org" as const,
-                modelProviderId: targetProviderId,
-              },
-            ]
-          : []),
-      ]);
+      const selectedModel = pi ? "gpt-6-sol" : "claude-fable-5-1";
+
+      await (pi
+        ? configureSubscriptionPiModel(actor, {}, "gpt-6-sol").then(() => {
+            return api.updateUserModelPreference(actor, "claude-fable-5-1");
+          })
+        : api.ensurePersonalSubscriptionModel(actor, {
+            model: "claude-fable-5-1",
+          }));
       const active = await sendChatRun(actor, {
         agentId,
         prompt: "Active task",
@@ -387,7 +327,7 @@ describe("CHAT effort: thread configuration", () => {
         expect(claimed.claim.piModelConfig).toMatchObject({
           model: selectedModel,
           thinkingLevel: effectiveEffort,
-          serviceTier: "priority",
+          serviceTier: "fast",
         });
       }
       expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
@@ -413,19 +353,10 @@ describe("CHAT effort: thread configuration", () => {
 
   it("offers Fast but not Ultrafast on the direct OpenAI Astra route", async () => {
     const { actor, agentId } = await entitledChatActor();
-    const { providerId } = await upsertOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "test-astra-ultrafast-openai-key",
+
+    await configureSubscriptionPiModel(actor).then(() => {
+      return api.updateUserModelPreference(actor, "gpt-6-astra");
     });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
     const thread = await chat.createThread(actor, {
       agentId,
       title: "Direct API Ultrafast",
@@ -476,19 +407,10 @@ describe("CHAT effort: thread configuration", () => {
 
   it("preserves Fast when changing effort", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const { providerId } = await upsertOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "test-effort-openai-key",
+
+    await configureSubscriptionPiModel(actor).then(() => {
+      return api.updateUserModelPreference(actor, "gpt-6-astra");
     });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
     const thread = await chat.createThread(actor, {
       agentId,
       title: "Independent Fast",

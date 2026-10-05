@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -28,7 +28,7 @@ const {
   chat,
   webhooks,
   entitledChatActor,
-  seedBuiltInModelKey,
+
   configureBuiltInPiModel,
   configureSubscriptionPiModel,
   sendChatRun,
@@ -37,7 +37,6 @@ const {
   failChatRun,
   cancelChatRun,
   sessionHeaders,
-  upsertOrgModelProvider,
   threadPiAutomationsClient,
   postThreadPiAutomationEvent,
   lastThreadPiAutomationRun,
@@ -50,13 +49,11 @@ const {
 
 describe("thread-bound Pi Automation execution", () => {
   it.each(
-    (["gpt-6-luna", "deepseek-v4.1-flash"] as const).flatMap(
-      (selectedModel) => {
-        return (["schedule", "event"] as const).map((source) => {
-          return { source, selectedModel };
-        });
-      },
-    ),
+    (["gpt-6-luna", "okou-1.0"] as const).flatMap((selectedModel) => {
+      return (["schedule", "event"] as const).map((source) => {
+        return { source, selectedModel };
+      });
+    }),
   )(
     "rotates the $source $selectedModel Automation session into Pi and learns only from its user turns",
     async ({ source, selectedModel }) => {
@@ -73,16 +70,8 @@ describe("thread-bound Pi Automation execution", () => {
         name: `pi-source-${source}`,
       });
       if (source === "schedule") {
-        await seedBuiltInModelKey("gpt-6-astra");
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: "gpt-6-astra",
-            preferred: true,
-            defaultProviderType: "built-in",
-            credentialScope: "org",
-            modelProviderId: null,
-          },
-        ]);
+        await configureSubscriptionPiModel(actor);
+        await api.updateUserModelPreference(actor, "gpt-6-astra");
       } else {
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
       }
@@ -144,11 +133,15 @@ describe("thread-bound Pi Automation execution", () => {
         legacyRunId,
       );
 
-      await configureBuiltInPiModel(actor, selectedModel);
-      const { upstreamModel } =
-        await readPrimaryBuiltInRouteFixture(selectedModel);
+      if (selectedModel === "okou-1.0") {
+        await configureBuiltInPiModel(actor, selectedModel);
+      } else {
+        await configureSubscriptionPiModel(actor, {}, selectedModel);
+      }
+      const upstreamModel =
+        selectedModel === "okou-1.0" ? "@preset/okou-1-0" : selectedModel;
       const runtimeProvider =
-        selectedModel === "deepseek-v4.1-flash" ? "openrouter" : "openai";
+        selectedModel === "okou-1.0" ? "openrouter" : "openai-codex";
       await chat.updateThreadModelSelection(actor, threadId, selectedModel);
       await updateFeatureSwitchesForUser(
         context,
@@ -246,7 +239,11 @@ describe("thread-bound Pi Automation execution", () => {
       expect(piSessionId).toBe(legacySessionId);
       const billed = await readThreadModelUsage(context, actor, threadId);
       expect(billed.tokens).toBe(3);
-      expect(billed.credits).toBeGreaterThan(0);
+      if (selectedModel === "okou-1.0") {
+        expect(billed.credits).toBeGreaterThan(0);
+      } else {
+        expect(billed.credits).toBe(0);
+      }
       await webhooks.requestAgentUsageEvent(
         { runId: piRunId, events: [sandboxUsage] },
         piClaim.sandboxHeaders,
@@ -406,26 +403,20 @@ describe("CHAT effort: automation launches", () => {
         effectiveEffort: "max",
       },
       {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-sol",
         effort: "high",
         pi: true,
         providerType: "openai-api-key",
         effectiveEffort: "high",
       },
     ] as const) {
-      const { providerId } = await upsertOrgModelProvider(actor, {
-        type: route.providerType,
-        secret: "test-workflow-effort-key",
-      });
-      await api.updateOrgModelPolicies(actor, [
-        {
+      if (route.pi) {
+        await configureSubscriptionPiModel(actor, {}, route.model);
+      } else {
+        await api.ensurePersonalSubscriptionModel(actor, {
           model: route.model,
-          preferred: true,
-          defaultProviderType: route.providerType,
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+        });
+      }
       await chat.updateThreadModelSelection(actor, threadId, route.model, {
         reasoningEffort: route.effort,
       });
@@ -470,7 +461,7 @@ describe("thread-bound Pi terminal failures", () => {
       await configureSubscriptionPiModel(
         actor,
         { accountId: "terminal-owner" },
-        "gpt-5.6-luna",
+        "gpt-6.1-sol",
       );
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
@@ -506,7 +497,7 @@ describe("thread-bound Pi terminal failures", () => {
           sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
         };
         expect(claimed.claim.piModelConfig).toMatchObject({
-          model: "gpt-5.6-luna",
+          model: "gpt-6.1-sol",
         });
         if (status === "cancelled") {
           await cancelChatRun(actor, runId, claimed.sandboxHeaders);

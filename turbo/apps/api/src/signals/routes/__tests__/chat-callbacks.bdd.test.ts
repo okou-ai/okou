@@ -39,6 +39,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
@@ -76,6 +77,7 @@ const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
+const integrations = createBddIntegrationApi(context);
 const misc = createMiscRoutesApi(context);
 
 const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
@@ -1575,6 +1577,177 @@ describe("CHAT-02: completed chat callback", () => {
       expect.objectContaining({ content: "Completed answer" }),
     );
   });
+
+  it.each(["completed", "failed"] as const)(
+    "consumes the whole thread's unread state without push or unarchive for a Slack %s run",
+    async (status) => {
+      const { actor, runnerGroup } = await entitledChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected organization");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+        { [FeatureSwitchKey.ChatThreadArchiving]: true },
+      );
+      integrations.configureSlackAppMocks();
+      await integrations.configureNativeSubscriptionModels(actor);
+      const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
+      const { teamId, botUserId } = await integrations.installSlackWorkspace(
+        actor,
+        { installerSlackUserId: slackUserId },
+      );
+      const channelId = `C_${randomUUID().replaceAll("-", "")}`;
+      const threadTs = "4000.000100";
+      await integrations.postSlackEvent(teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: `<@${botUserId}> Start a notification thread`,
+        channel: channelId,
+        ts: threadTs,
+      });
+      await flushWaitUntilForTest();
+      await api.heartbeatRunner(runnerGroup);
+      const initialRunId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+      if (!initialRunId) {
+        throw new Error("Expected a Slack run");
+      }
+      const claim = await api.claimRunnerJob(initialRunId);
+      const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+      if (!threadId) {
+        throw new Error("Expected the canonical chat thread identity");
+      }
+      const initialHeaders = {
+        authorization: `Bearer ${claim.sandboxToken}`,
+      };
+      chatCallbacks.mockChatOutputEvents([assistantEvent(0, "Slack answer")]);
+      await completeChatRunOk(initialRunId, initialHeaders, {
+        lastEventSequence: 0,
+      });
+      await flushWaitUntilForTest();
+
+      // A Web run in a Slack-created thread still notifies and becomes unread:
+      // this policy belongs to the current Run, not the thread's history.
+      const { agentId } = await chat.readThreadMetadata(actor, threadId);
+      await chatCallbacks.registerPushSubscription(actor);
+      chatCallbacks.enableVapid();
+      const webRun = await startChatRun(actor, {
+        agentId,
+        threadId,
+        prompt: "Leave an earlier Web result unread",
+      });
+      const webHeaders = await claimChatRun(runnerGroup, webRun.runId);
+      chatCallbacks.mockChatOutputEvents([assistantEvent(0, "Web answer")]);
+      await completeChatRunOk(webRun.runId, webHeaders, {
+        lastEventSequence: 0,
+      });
+      await flushWaitUntilForTest();
+      const before = await chat.requestIndicators(actor, [200]);
+      if (before.status !== 200) {
+        throw new Error("Expected indicators before the external run");
+      }
+      expect(before.body.threads[threadId]).toBe("unread");
+      expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
+      await chat.requestSetThreadArchived(actor, threadId, true, [204]);
+
+      await integrations.postSlackEvent(teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: `<@${botUserId}> Finish through Slack`,
+        channel: channelId,
+        thread_ts: threadTs,
+        ts: "4000.000200",
+      });
+      await flushWaitUntilForTest();
+      const externalRunId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+      if (!externalRunId) {
+        throw new Error("Expected the second Slack run");
+      }
+      const externalClaim = await api.claimRunnerJob(externalRunId);
+      expect(externalClaim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+        threadId,
+      );
+      const headers = {
+        authorization: `Bearer ${externalClaim.sandboxToken}`,
+      };
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+      chatCallbacks.mockOpenRouterCompletions((body) => {
+        if (
+          body.messages[0]?.content.includes("recommended follow-up messages")
+        ) {
+          return JSON.stringify([
+            { prompt: "Continue the task", kind: "talk" },
+          ]);
+        }
+        return "External task complete";
+      });
+      if (status === "completed") {
+        chatCallbacks.mockChatOutputEvents([
+          assistantEvent(0, "Final Slack answer"),
+        ]);
+        await completeChatRunOk(externalRunId, headers, {
+          lastEventSequence: 0,
+        });
+      } else {
+        await failChatRun(externalRunId, headers, "External task failed");
+      }
+      await flushWaitUntilForTest();
+
+      const indicators = await chat.requestIndicators(actor, [200]);
+      if (indicators.status !== 200) {
+        throw new Error("Expected indicators after the external run");
+      }
+      expect(indicators.body.threads[threadId]).toBeUndefined();
+      expect(indicators.body.unreadAt[threadId]).toBeUndefined();
+      expect(indicators.body.agents[agentId]).toBeUndefined();
+      expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
+      await expect(
+        chat.readThreadMetadata(actor, threadId),
+      ).resolves.toMatchObject({
+        archived: true,
+        muted: false,
+      });
+      const detail = await chat.readThread(actor, threadId);
+      expect(detail.lastReadAt).not.toBeNull();
+      const events = await chat.listThreadEvents(actor, threadId);
+      const terminal = events.events.find((event) => {
+        return (
+          event.runId === externalRunId && event.eventType === `run.${status}`
+        );
+      });
+      expect(terminal).toBeDefined();
+      if (!detail.lastReadAt || !terminal) {
+        throw new Error("Expected an automatically read terminal event");
+      }
+      expect(new Date(detail.lastReadAt).getTime()).toBeGreaterThanOrEqual(
+        new Date(terminal.createdAt).getTime(),
+      );
+      if (status === "completed") {
+        const followups = events.events.find((event) => {
+          return (
+            event.runId === externalRunId &&
+            event.eventType === "output.followups"
+          );
+        });
+        expect(followups).toBeDefined();
+        if (!followups) {
+          throw new Error("Expected recommended follow-ups");
+        }
+        expect(new Date(detail.lastReadAt).getTime()).toBeGreaterThanOrEqual(
+          new Date(followups.createdAt).getTime(),
+        );
+      }
+      const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
+      if (threadEvents.status !== 200) {
+        throw new Error("Expected thread events");
+      }
+      expect(
+        threadEvents.body.events.filter((event) => {
+          return event.chatThreadId === threadId && event.kind === "unarchived";
+        }),
+      ).toHaveLength(0);
+    },
+  );
 
   it("keeps muted runs active but suppresses terminal unread, push and automatic unarchive", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

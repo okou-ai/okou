@@ -22,20 +22,27 @@ import {
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { createPublicModelFailureFixture } from "./helpers/public-model-failure";
 import { createRouteMocks } from "./helpers/route-test";
+
 import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 import { modelProvidersRoutes } from "../model-providers";
 
 const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 
-function uniqueOrgUser(prefix: string): {
+async function customOrgUser(fixture: {
   readonly orgId: string;
   readonly userId: string;
-} {
-  return {
+}): Promise<typeof fixture> {
+  mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+
+  return fixture;
+}
+
+async function uniqueOrgUser(prefix: string) {
+  return await customOrgUser({
     orgId: `org_${prefix}_${randomUUID().slice(0, 8)}`,
     userId: `user_${prefix}_${randomUUID().slice(0, 8)}`,
-  };
+  });
 }
 
 interface DiagnosticRuntimeRoute {
@@ -105,7 +112,7 @@ describe("GET /api/model-providers/cooldown-diagnostics", () => {
   });
 
   it("returns 403 when OkouDebug is disabled", async () => {
-    const fixture = uniqueOrgUser("cooldown-disabled");
+    const fixture = await uniqueOrgUser("cooldown-disabled");
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProviderCooldownDiagnosticsContract,
@@ -125,7 +132,7 @@ describe("GET /api/model-providers/cooldown-diagnostics", () => {
   });
 
   it("returns active global cooldowns", async () => {
-    const fixture = uniqueOrgUser("cooldown-active");
+    const fixture = await uniqueOrgUser("cooldown-active");
     const selectedModelPrefix = `diagnostic-${randomUUID()}`;
     const startedAt = Date.UTC(2026, 7, 23, 12, 0, 0);
     const earlierDeadline = new Date(startedAt + 30_000);
@@ -239,7 +246,7 @@ describe("DELETE /api/model-providers/cooldown-diagnostics", () => {
   });
 
   it("rejects non-staff callers without changing the cooldown", async () => {
-    const fixture = uniqueOrgUser("cooldown-cancel-non-staff");
+    const fixture = await uniqueOrgUser("cooldown-cancel-non-staff");
     const selectedModel = `diagnostic-${randomUUID()}`;
     const unavailableUntil = new Date(now() + 60_000);
     const route = {

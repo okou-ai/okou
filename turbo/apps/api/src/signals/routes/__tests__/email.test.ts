@@ -287,7 +287,7 @@ describe("low-credit email delivery", () => {
     // Built-in usage is billed to the organization's credits.
     await createChatEventsFixture(context).configureBuiltInPiModel(
       actor,
-      "deepseek-v4.1-flash",
+      "okou-1.0",
     );
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD low-credit agent",

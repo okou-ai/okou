@@ -2,7 +2,7 @@
 
 ## Custom model configuration retirement
 
-Migration 1320 deletes `org_model_policies`, `model_provider_surfaces`,
+Migration 1321 deletes `org_model_policies`, `model_provider_surfaces`,
 `model_provider_connections` and `org_metadata.model_mode` with its constraint.
 It contains no data conversion or backfill. Operators must finish the production
 Custom-to-Auto and workspace-credential cleanup before merging/deploying.
@@ -19,6 +19,43 @@ subscription selection, account ownership, capabilities and reconnect behavior
 remain. Actual pricing/credits, historical usage, image generation and unrelated
 connectors retain their existing storage. See [the retirement boundary](custom-model-retirement.md)
 and [current model APIs](model-catalog.md). This source PR does not deploy or merge.
+## Claude Code manual usage reset retirement
+
+Retire `claudeCodeUsageReset` and the Claude Code-only grant query and redeem
+request introduced in #36165. Ordinary Claude Code profile and usage-window
+reads, OAuth connection, and the existing Codex reset contracts remain intact.
+No stored credentials, database schema, usage history, or provider grants change.
+
+New App with old API explicitly limits reset controls to Codex, even if an old
+API response or cached Claude Code account still carries reset credits. Old App
+with new API stops receiving Claude Code reset credits; a stale reset control
+receives the existing not-found response from the type-based, account-based,
+or failed-run reset endpoint. Those endpoints continue to support Codex with
+their existing account ownership and identity checks. No wire shape changes or
+Web floor update are needed. An old API can still redeem Claude Code resets
+until it drains; source cleanup alone does not disable a serving old revision.
+Rollback restores that revision's feature-switch-controlled behavior. This PR
+does not change production overrides, merge, deploy, or revoke provider grants.
+
+## Organization model mode defaults to Auto
+
+Migration 1320 changes only the `org_metadata.model_mode` column default to
+`auto`; existing explicit Auto/Custom rows and personal subscription data are
+unchanged. The new API treats missing metadata as Auto in policy listing,
+model selection, queued claims, subscription disconnect cleanup and workspace
+configuration guards. New metadata needs no mode backfill. Explicit Custom
+rows and the Debug mode-switch API remain supported in this incremental fix.
+
+Apply the default migration before the new API so writers that omit the mode
+create Auto rows. A new API with the old database can still read existing
+modes, but omitted-mode inserts retain the old Custom default. An old API with
+the migrated database supports Auto rows, but still treats missing metadata as
+Custom; all serving API versions must drain before relying on that case.
+App, CLI and Runner contracts and persisted Run snapshots are unchanged.
+Rolling back the API does not undo the database default or rewrite saved modes;
+old missing-metadata behavior returns until an Auto-default API serves again.
+This PR does not delete policies, backfill organization modes, modify billing,
+remove Custom configuration APIs, or authorize a production deployment.
 
 ## Autonomous delegation budget expansion
 
@@ -7108,9 +7145,17 @@ and CLI versions. Old Runner versions can consume the longer-lived URLs without
 a wire-format change. Older Guests retain their single-attempt history policy;
 both policies use unchanged prepare-history and checkpoint wire contracts.
 
-Storage URL caches are read on demand and reuse unexpired entries. Missing or
-expired entries are signed once during the normal API request. There is no
-proactive refresh or retry. The cron endpoint is now
+Storage URL caches are read on demand. Updated APIs reuse manifest archive
+URLs in `system_storage`, `workflow_skill_storage`, and `readonly_storage` only
+with at least four hours remaining at selection, including captured or
+prefetched snapshots; exactly four hours remains reusable. Missing, expired,
+or below-margin entries use the existing signing path during the normal API
+request. This margin does not shorten the two-day signature lifetime or change
+cache keys. Private artifact previews retain their strict one-hour margin, and
+presentation template previews retain expiry-only reuse. Old APIs retain their
+previous reuse cutoff until deployed; archive URLs already persisted in Run
+contexts are not retroactively renewed. There is no proactive refresh or
+retry. The cron endpoint is now
 `/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
 Cache keys include the lifetime, so new code does not reuse the previous shorter
 policy. The database's required `refresh_after` and `last_requested_at` columns

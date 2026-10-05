@@ -107,31 +107,12 @@ async function modelSessionScenario({
   withConversation,
 }: (typeof modelSessionScenarios)[number]) {
   const ap = createAgentPhoneBddApi(context);
-  const runs = createRunsApi(context);
+
   const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-  const provider = await runs.createOrgModelProvider(actor, {
-    type: "anthropic-api-key",
-    secret: "phone-dm-model-routing-key",
-  });
-  const openAiProvider = await runs.createOrgModelProvider(actor, {
-    type: "openai-api-key",
-    secret: "phone-dm-native-codex-key",
-  });
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: provider.providerId,
-    },
-    {
-      model: "gpt-6-astra",
-      defaultProviderType: "openai-api-key",
-      credentialScope: "org",
-      modelProviderId: openAiProvider.providerId,
-    },
-  ]);
+
+  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+    actor,
+  );
   const conversationId = withConversation ? uniqueConversationId() : undefined;
   async function send(body: string) {
     return await ap.postAgentPhoneInboundMessage({
@@ -1256,9 +1237,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
     const preferred = await complete("use my web default", "gpt-6-astra");
 
-    await createMiscRoutesApi(context).deleteOrgModelProvider(
+    await createMiscRoutesApi(context).deletePersonalModelProvider(
       actor,
-      "openai-api-key",
+      "codex-oauth-token",
       [204],
     );
     await expect(

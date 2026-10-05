@@ -39,7 +39,6 @@ type ActiveClaudeCodeDeviceAuthFlowState = {
   readonly browserUrl: string;
   readonly expiresAtMs: number;
   readonly authorizationCode: string;
-  readonly approvalOpened: boolean;
   readonly errorMessage: string | null;
 };
 
@@ -68,15 +67,6 @@ function createRequestId(scope: ClaudeCodeDeviceAuthScope): string {
 
 function secondsToMilliseconds(seconds: number): number {
   return seconds * 1000;
-}
-
-function openApprovalPage(browserUrl: string): boolean {
-  const approvalWindow = window.open(browserUrl, "_blank");
-  if (!approvalWindow) {
-    return false;
-  }
-  approvalWindow.opener = null;
-  return true;
 }
 
 function isCurrentStarting(
@@ -218,7 +208,6 @@ function createClaudeCodeRunFlow$(ctx: ClaudeCodeDeviceAuthSignalContext) {
         browserUrl: started.browserUrl,
         expiresAtMs: now() + secondsToMilliseconds(started.expiresIn),
         authorizationCode: "",
-        approvalOpened: false,
         errorMessage: null,
       });
       return true;
@@ -266,33 +255,6 @@ function createClaudeCodeOpen$(
       return await set(run$, signal);
     },
   );
-}
-
-function createClaudeCodeOpenApprovalPage$(
-  ctx: ClaudeCodeDeviceAuthSignalContext,
-) {
-  return command(({ get, set }, signal: AbortSignal): boolean => {
-    const current = get(ctx.internalFlowState$);
-    if (!isActive(current)) {
-      return false;
-    }
-    const opened = openApprovalPage(current.browserUrl);
-    signal.throwIfAborted();
-    const latest = get(ctx.internalFlowState$);
-    if (!isCurrentActive(latest, current.requestId)) {
-      return opened;
-    }
-    set(ctx.internalFlowState$, {
-      ...latest,
-      approvalOpened: opened || latest.approvalOpened,
-      errorMessage: opened
-        ? null
-        : i18n.t(($) => {
-            return $.settings.models.deviceAuth.claude.approvalOpenError;
-          }),
-    });
-    return opened;
-  });
 }
 
 function createClaudeCodeSetAuthorizationCode$(
@@ -415,7 +377,6 @@ function createClaudeCodeDeviceAuthSignals(
       return get(ctx.internalFlowState$);
     }),
     open$: createClaudeCodeOpen$(ctx, run$),
-    openApprovalPage$: createClaudeCodeOpenApprovalPage$(ctx),
     setAuthorizationCode$: createClaudeCodeSetAuthorizationCode$(ctx),
     submit$: createClaudeCodeSubmit$(ctx),
     close$: createClaudeCodeClose$(ctx),
@@ -436,8 +397,6 @@ export const openClaudeCodeDeviceAuthDialogPersonal$: Command<
   Promise<boolean>,
   [OpenPersonalClaudeCodeDeviceAuthArgs, AbortSignal]
 > = personalClaudeCodeDeviceAuthSignals.open$;
-export const openClaudeCodeDeviceAuthApprovalPagePersonal$ =
-  personalClaudeCodeDeviceAuthSignals.openApprovalPage$;
 export const setClaudeCodeDeviceAuthAuthorizationCodePersonal$ =
   personalClaudeCodeDeviceAuthSignals.setAuthorizationCode$;
 export const submitClaudeCodeDeviceAuthPersonal$ =

@@ -450,11 +450,12 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "Computer-use guard agent",
     });
+    const agentId = agent.agentId;
 
     const unknownHost = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "use an unknown host",
         computerUseHostId: randomUUID(),
       },
@@ -470,7 +471,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const installedPinned = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "pin the durable host before stopping it",
         computerUseHostId: installed.hostId,
       },
@@ -486,7 +487,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const stoppedInstalledHost = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         threadId: installedPinned.body.threadId,
         prompt: "use a stopped durable host",
         computerUseHostId: installed.hostId,
@@ -506,7 +507,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const survivorThread = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "pin a host for a later sticky send",
         computerUseHostId: survivor.hostId,
       },
@@ -523,7 +524,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const offlineHostSend = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "use a stale host",
         computerUseHostId: survivor.hostId,
       },
@@ -536,7 +537,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const staleStickySend = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         threadId: survivorThread.body.threadId,
         prompt: "send while the sticky host is stale",
       },

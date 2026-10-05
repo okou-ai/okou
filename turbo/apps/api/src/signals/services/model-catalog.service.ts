@@ -354,19 +354,18 @@ export function catalogProviderUpstreamModel(
   catalog: ModelCatalog,
   model: string,
   providerType: string,
+  subscriptionType: string,
 ): string | null {
-  const [route] = catalogRoutesFor(catalog, model, providerType);
+  const [route] = catalogRoutesFor(
+    catalog,
+    model,
+    providerType,
+    subscriptionType,
+  );
   return route?.upstreamModel ?? null;
 }
 
 /** Only active models (`replaced_by IS NULL`) may be newly configured. */
-export function isCatalogModelAddable(
-  catalog: ModelCatalog,
-  model: string,
-): boolean {
-  const row = catalog.byModel.get(model);
-  return row !== undefined && row.replacedBy === null;
-}
 
 /** Enabled routes of one model for a selected provider type. */
 export function catalogRoutesFor(
@@ -424,13 +423,6 @@ export function memberRunModelCatalog(
 }
 
 /** Display price tier of the model's primary Built-in route. */
-export function catalogBuiltInPriceTier(
-  catalog: ModelCatalog,
-  model: string,
-): string | null {
-  const [primary] = catalogRoutesFor(catalog, model, "built-in");
-  return primary?.priceTier ?? null;
-}
 
 /** The catalog display name; unknown IDs are shown verbatim. */
 export function catalogDisplayName(
@@ -441,20 +433,8 @@ export function catalogDisplayName(
 }
 
 /** Active models in picker order. */
-export function catalogActiveModels(catalog: ModelCatalog): readonly string[] {
-  return catalog.models
-    .filter((row) => {
-      return row.replacedBy === null;
-    })
-    .map((row) => {
-      return row.model;
-    });
-}
 
 /** Picker rank; models outside the catalog sort last. */
-export function catalogModelRank(catalog: ModelCatalog, model: string): number {
-  return catalog.byModel.get(model)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
-}
 
 /**
  * Loaded per owning graph: operators change the catalog directly in the database, and
@@ -560,9 +540,6 @@ export const loadModelCatalog$ = command(
 );
 
 /** The DB-owned system default, derived from the same request catalog. */
-export const systemDefaultRunModel$ = computed(async (get): Promise<string> => {
-  return (await get(modelCatalog$)).systemDefaultModel;
-});
 
 export function frameworkForProviderSelection(
   catalog: ModelCatalog,

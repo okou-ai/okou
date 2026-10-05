@@ -1,5 +1,5 @@
 {
-  "id": "909a6f8c-3c7e-4680-aae2-6a38fddfad7c",
+  "id": "28d573c7-ab4e-4b85-ad69-7b18198c8eda",
   "prevId": "ce71672a-b62d-47a4-b332-cefae69ae172",
   "version": "7",
   "dialect": "postgresql",
@@ -18316,6 +18316,230 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.model_provider_connections": {
+      "name": "model_provider_connections",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_id": {
+          "name": "secret_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_model_provider_connections_org": {
+          "name": "idx_model_provider_connections_org",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_model_provider_connections_secret": {
+          "name": "idx_model_provider_connections_secret",
+          "columns": [
+            {
+              "expression": "secret_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "model_provider_connections_secret_id_secrets_id_fk": {
+          "name": "model_provider_connections_secret_id_secrets_id_fk",
+          "tableFrom": "model_provider_connections",
+          "tableTo": "secrets",
+          "columnsFrom": [
+            "secret_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.model_provider_surfaces": {
+      "name": "model_provider_surfaces",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "protocol": {
+          "name": "protocol",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "api_base_url": {
+          "name": "api_base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_header_name": {
+          "name": "auth_header_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_header_template": {
+          "name": "auth_header_template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_mappings": {
+          "name": "model_mappings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_model_provider_surfaces_connection": {
+          "name": "idx_model_provider_surfaces_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_model_provider_surfaces_connection_protocol": {
+          "name": "idx_model_provider_surfaces_connection_protocol",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "protocol",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "model_provider_surfaces_connection_id_model_provider_connections_id_fk": {
+          "name": "model_provider_surfaces_connection_id_model_provider_connections_id_fk",
+          "tableFrom": "model_provider_surfaces",
+          "tableTo": "model_provider_connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_model_provider_surfaces_protocol": {
+          "name": "chk_model_provider_surfaces_protocol",
+          "value": "\"model_provider_surfaces\".\"protocol\" IN ('anthropic-messages', 'openai-responses')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.model_providers": {
       "name": "model_providers",
       "schema": "",
@@ -22807,6 +23031,13 @@
           "notNull": true,
           "default": false
         },
+        "model_mode": {
+          "name": "model_mode",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'auto'"
+        },
         "onboarding_industry": {
           "name": "onboarding_industry",
           "type": "text",
@@ -23088,6 +23319,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "chk_org_metadata_model_mode": {
+          "name": "chk_org_metadata_model_mode",
+          "value": "\"org_metadata\".\"model_mode\" IN ('auto', 'custom')"
+        },
         "chk_org_metadata_tier_not_free": {
           "name": "chk_org_metadata_tier_not_free",
           "value": "\"org_metadata\".\"tier\" <> 'free'"
@@ -23103,6 +23338,196 @@
         "chk_org_metadata_pending_target_not_pro_suspend": {
           "name": "chk_org_metadata_pending_target_not_pro_suspend",
           "value": "\"org_metadata\".\"pending_subscription_target_tier\" IS NULL OR \"org_metadata\".\"pending_subscription_target_tier\" <> 'pro-suspend'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.org_model_policies": {
+      "name": "org_model_policies",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_provider_type": {
+          "name": "default_provider_type",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'built-in'"
+        },
+        "credential_scope": {
+          "name": "credential_scope",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'org'"
+        },
+        "model_provider_id": {
+          "name": "model_provider_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model_provider_surface_id": {
+          "name": "model_provider_surface_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by_user_id": {
+          "name": "updated_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_org_model_policies_org_model": {
+          "name": "idx_org_model_policies_org_model",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "model",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_org_model_policies_provider": {
+          "name": "idx_org_model_policies_provider",
+          "columns": [
+            {
+              "expression": "model_provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "model_provider_id IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_org_model_policies_surface": {
+          "name": "idx_org_model_policies_surface",
+          "columns": [
+            {
+              "expression": "model_provider_surface_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "model_provider_surface_id IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "org_model_policies_model_provider_id_model_providers_id_fk": {
+          "name": "org_model_policies_model_provider_id_model_providers_id_fk",
+          "tableFrom": "org_model_policies",
+          "tableTo": "model_providers",
+          "columnsFrom": [
+            "model_provider_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "org_model_policies_model_provider_surface_id_model_provider_surfaces_id_fk": {
+          "name": "org_model_policies_model_provider_surface_id_model_provider_surfaces_id_fk",
+          "tableFrom": "org_model_policies",
+          "tableTo": "model_provider_surfaces",
+          "columnsFrom": [
+            "model_provider_surface_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_org_model_policies_credential_scope": {
+          "name": "chk_org_model_policies_credential_scope",
+          "value": "credential_scope IN ('org', 'member')"
+        },
+        "chk_org_model_policies_member_scope_no_provider_id": {
+          "name": "chk_org_model_policies_member_scope_no_provider_id",
+          "value": "credential_scope <> 'member' OR (model_provider_id IS NULL AND model_provider_surface_id IS NULL)"
+        },
+        "chk_org_model_policies_builtin_route_no_provider_id": {
+          "name": "chk_org_model_policies_builtin_route_no_provider_id",
+          "value": "default_provider_type <> 'built-in' OR (model_provider_id IS NULL AND model_provider_surface_id IS NULL)"
+        },
+        "chk_org_model_policies_one_route_id": {
+          "name": "chk_org_model_policies_one_route_id",
+          "value": "model_provider_id IS NULL OR model_provider_surface_id IS NULL"
+        },
+        "chk_org_model_policies_member_scope_oauth_provider": {
+          "name": "chk_org_model_policies_member_scope_oauth_provider",
+          "value": "credential_scope <> 'member' OR default_provider_type IN ('claude-code-oauth-token', 'codex-oauth-token')"
+        },
+        "chk_org_model_policies_oauth_provider_member_scope": {
+          "name": "chk_org_model_policies_oauth_provider_member_scope",
+          "value": "default_provider_type NOT IN ('claude-code-oauth-token', 'codex-oauth-token') OR credential_scope = 'member'"
         }
       },
       "isRLSEnabled": false

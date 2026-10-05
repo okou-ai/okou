@@ -21,7 +21,7 @@ import {
   createChatEventsFixture,
   openRouterBodySchema,
   requireOrgId,
-  createGptUsagePricingResolution,
+  createPiUsagePricingResolution,
   claimEnvironment,
   eventBackedContents,
 } from "./helpers/chat-events-fixture";
@@ -173,11 +173,9 @@ describe("CHAT-02: model-first provider policies", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    const model = await configureBuiltInPiModelOnOpenRouter(
-      actor,
-      "gpt-6-luna",
-    );
+    const usagePricingResolution =
+      await createPiUsagePricingResolution("okou-1.0");
+    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -244,7 +242,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const sandboxUsageEvent = {
       idempotencyKey: randomUUID(),
       kind: "model" as const,
-      provider: "gpt-6-luna",
+      provider: "okou-1.0",
       category: "tokens.output.fast",
       quantity: 2,
     };
@@ -366,7 +364,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-6-luna",
+      model: "@preset/okou-1-0",
       usage: {
         input: 0,
         output: 0,
@@ -406,7 +404,7 @@ describe("CHAT-02: model-first provider policies", () => {
       content: [{ type: "text", text: "Sandbox H2 complete" }],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-6-luna",
+      model: "@preset/okou-1-0",
       usage: {
         input: 5,
         output: 3,
@@ -537,7 +535,7 @@ describe("CHAT-02: model-first provider policies", () => {
       content: [{ type: "text", text: "late replacement H2" }],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-6-luna",
+      model: "@preset/okou-1-0",
       usage: {
         input: 0,
         output: 0,
@@ -796,25 +794,8 @@ describe("CHAT-02: model-first provider policies", () => {
 
     // Switching the thread to the Claude Code route must not resume the Pi
     // checkpoint; the org keeps the Pi route as its default.
-    const anthropic = await api.createOrgModelProvider(actor, {
-      type: "anthropic-api-key",
-      secret: "pi-activity-claude-key",
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "claude-fable-5-1",
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: anthropic.providerId,
-      },
-    ]);
+
+    await api.updateUserModelPreference(actor, model);
     const explicitResume = await api.createThreadRun(actor, {
       agentId,
       threadId: run.threadId,
@@ -830,7 +811,7 @@ describe("CHAT-02: model-first provider policies", () => {
   }
 
   it(
-    "launches OpenRouter Luna in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
+    "launches fixed Auto in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
     piActivityScenario,
     150_000,
   );

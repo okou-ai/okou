@@ -685,15 +685,15 @@ describe("CHAT-02: model-first provider policies", () => {
   it("passes Codex fast mode only for GPT 5.6 sends", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey("gpt-5.6-sol");
+    await seedBuiltInModelKey("gpt-6-sol");
 
-    await configureSubscriptionPiModel(actor, {}, "gpt-5.6-sol");
+    await configureSubscriptionPiModel(actor, {}, "gpt-6-sol");
 
     await preparePiResourceHandoff(actor, agentId);
     const fast = await sendChatRun(actor, {
       agentId,
       prompt: "run codex fast",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       runOptions: { codexServiceTier: "fast" },
     });
     expect((await readThreadProjection(actor, fast.threadId)).serviceTier).toBe(
@@ -719,14 +719,14 @@ describe("CHAT-02: model-first provider policies", () => {
       }),
     ).toStrictEqual({
       type: "model",
-      selectedModel: "gpt-5.6-sol",
+      selectedModel: "gpt-6-sol",
       serviceTier: "priority",
     });
     const fastClaim = await claimChatRun(runnerGroup, fast.runId);
     expect(fastClaim.claim.cliAgentType).toBe("pi");
     expect(fastClaim.claim.piModelConfig).toMatchObject({
       provider: "openai-codex",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       serviceTier: "priority",
     });
     await cancelChatRun(actor, fast.runId, fastClaim.sandboxHeaders);
@@ -795,7 +795,7 @@ describe("CHAT-02: model-first provider policies", () => {
       agentId,
       threadId: fast.threadId,
       prompt: "run codex standard",
-      model: "gpt-5.6-luna",
+      model: "gpt-6.1-sol",
     });
     expect(
       (await readThreadProjection(actor, standard.threadId)).serviceTier,
@@ -822,7 +822,7 @@ describe("CHAT-02: model-first provider policies", () => {
       }),
     ).toStrictEqual({
       type: "model",
-      selectedModel: "gpt-5.6-luna",
+      selectedModel: "gpt-6.1-sol",
     });
     const { claim: standardClaim } = await claimChatRun(
       runnerGroup,
@@ -831,7 +831,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(standardClaim.cliAgentType).toBe("pi");
     expect(standardClaim.piModelConfig).toMatchObject({
       provider: "openai-codex",
-      model: "gpt-5.6-luna",
+      model: "gpt-6.1-sol",
     });
     expect(standardClaim.piModelConfig).not.toHaveProperty("serviceTier");
     await cancelChatRun(actor, standard.runId);

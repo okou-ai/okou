@@ -2,27 +2,23 @@ import { randomUUID } from "node:crypto";
 
 import { http, HttpResponse } from "msw";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
-import type {
-  TestTeamsStatePostResponse,
-  TestTeamsStateResponse,
-} from "@okouai/api-contracts/contracts/test-teams-state";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testTeamsDispatchProbeRoutes } from "../test-teams-dispatch-probe";
-import { testTeamsStateRoutes } from "../test-teams-state";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import { configureNativeCliArtifact } from "./helpers/chat-events-fixture";
+import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
 import {
   installTeamsForTest,
   postTeamsActivityForTest,
@@ -34,65 +30,11 @@ import {
 } from "./helpers/teams-connect";
 
 const context = testContext();
-const api = createRunsApi(context);
-const TEAMS_STATE_ROUTE = "/api/test/teams-state";
-const TEAMS_DISPATCH_PROBE_ROUTE = "/api/test/teams-dispatch-probe";
-const TEAMS_SERVICE_URL = "https://teams.service.test/";
 const TEAMS_TOKEN_URL = "https://teams-auth.test/token";
-
-interface TeamsFixture {
-  readonly tenantId: string;
-  readonly teamsUserId: string;
-  readonly teamsAadObjectId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly connectionId: string | null;
-  readonly defaultAgentId: string | null;
-}
-
-function suffix(): string {
-  return randomUUID().replaceAll("-", "").slice(0, 12);
-}
-
-function uniqueId(prefix: string): string {
-  return `${prefix}_${suffix()}`;
-}
-
-function requestApp(path: string, init?: RequestInit): Promise<Response> {
-  const app = createAppWithRoutes({
-    signal: context.signal,
-    routes: [...testTeamsStateRoutes, ...testTeamsDispatchProbeRoutes],
-  });
-  return Promise.resolve(app.request(path, init));
-}
 
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
-
-function mockTestUserMembership(userId: string, orgId: string): void {
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [{ id: userId }],
-  });
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [
-      { createdAt: 20, organization: { id: uniqueId("org_later") } },
-      { createdAt: 10, organization: { id: orgId } },
-    ],
-  });
-}
-
-async function deleteTeamsFixture(fixture: TeamsFixture): Promise<void> {
-  mockEnv("ENV", "development");
-  await requestApp(
-    `${TEAMS_STATE_ROUTE}?tenant_id=${encodeURIComponent(
-      fixture.tenantId,
-    )}&org_id=${encodeURIComponent(fixture.orgId)}`,
-    { method: "DELETE" },
-  );
-}
-
-const trackTeamsFixture = createFixtureTracker(deleteTeamsFixture);
 
 interface PublicTeamsFixture {
   readonly installation: TeamsConnectFixture;
@@ -197,321 +139,129 @@ async function deletePublicTeamsFixture(
 
 const trackPublicTeamsFixture = createFixtureTracker(deletePublicTeamsFixture);
 
-async function seedTeamsFixture(
-  options: {
-    readonly seedConnection?: boolean;
-    readonly seedDefaultAgent?: boolean;
-  } = {},
-): Promise<TeamsFixture> {
-  const userId = uniqueId("user");
-  const orgId = uniqueId("org");
-  const tenantId = uniqueId("tenant");
-  const teamsUserId = `29:${uniqueId("teams_user")}`;
-  const teamsAadObjectId = uniqueId("aad");
-  mockTestUserMembership(userId, orgId);
-
-  const response = await requestApp(TEAMS_STATE_ROUTE, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      tenant_id: tenantId,
-      tenant_name: "Teams Test Tenant",
-      team_id: "team-test",
-      team_name: "Teams Test Team",
-      service_url: TEAMS_SERVICE_URL,
-      teams_user_id: teamsUserId,
-      teams_aad_object_id: teamsAadObjectId,
-      teams_user_display_name: "Teams User",
-      teams_user_principal_name: "teams@example.test",
-      email: `${userId}@example.test`,
-      seed_connection: options.seedConnection ?? false,
-      seed_default_agent: options.seedDefaultAgent ?? false,
-    }),
-  });
-  const body = await readJson<TestTeamsStatePostResponse>(response);
-  if (response.status !== 200) {
-    throw new Error(
-      `Expected Teams state seed to succeed, received ${
-        response.status
-      }: ${JSON.stringify(body)}`,
-    );
-  }
-
-  const fixture = {
-    tenantId: body.tenant_id,
-    teamsUserId,
-    teamsAadObjectId,
-    orgId: body.org_id,
-    userId: body.user_id,
-    connectionId: body.connection_id,
-    defaultAgentId: body.default_agent_id,
-  };
-  await trackTeamsFixture(Promise.resolve(fixture));
-  // Dispatch diagnostics select their native route separately so the seed-only
-  // free-plan cases still observe the unmodified fixture.
-  return fixture;
-}
-
-async function readTeamsState(
-  tenantId: string,
-): Promise<TestTeamsStateResponse> {
-  const response = await requestApp(
-    `${TEAMS_STATE_ROUTE}?tenant_id=${encodeURIComponent(tenantId)}`,
-  );
-  expect(response.status).toBe(200);
-  return await readJson<TestTeamsStateResponse>(response);
-}
-
-function configureTeamsDispatchMocks(): void {
-  mockEnv("ENV", "development");
-  mockEnv("MICROSOFT_TEAMS_BOT_APP_ID", "teams-app-id");
-  mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "teams-app-password");
-  mockEnv("APP_URL", "http://localhost:3002");
-  mockEnv("OKOU_WEB_URL", "http://localhost:3000");
-  mockEnv("OKOU_API_BACKEND_URL", "http://localhost:3001");
-  mockOptionalEnv("MICROSOFT_TEAMS_BOT_TOKEN_URL", TEAMS_TOKEN_URL);
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-  context.mocks.s3.send.mockResolvedValue({});
-  server.use(
-    http.post(TEAMS_TOKEN_URL, () => {
-      return HttpResponse.json({
-        access_token: "teams-token",
-        token_type: "Bearer",
-        expires_in: 3600,
+describe("Teams message launch context", () => {
+  it("dispatches a Teams message with its public launch context", async () => {
+    const scenario = createPublicTeamsDispatchFixture(context);
+    await scenario.run(async () => {
+      const owned = await scenario.create({
+        withDefaultAgent: true,
+        paidNative: true,
       });
-    }),
-    http.post(
-      `${TEAMS_SERVICE_URL}v3/conversations/:conversationId/activities`,
-      () => {
-        return HttpResponse.json({ id: "typing-activity" });
-      },
-    ),
-    http.post(
-      `${TEAMS_SERVICE_URL}v3/conversations/:conversationId/activities/:activityId`,
-      () => {
-        return HttpResponse.json({ id: "reply-activity" });
-      },
-    ),
-  );
-}
+      const fixture = owned.installation;
+      await expect(scenario.status(owned)).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+        tenantId: fixture.teamsTenantId,
+      });
+      server.use(
+        http.post(
+          `https://login.microsoftonline.com/${fixture.teamsTenantId}/oauth2/v2.0/token`,
+          () => {
+            return HttpResponse.json({
+              access_token: "teams-graph-token",
+              token_type: "Bearer",
+              expires_in: 3600,
+            });
+          },
+        ),
+        http.get(
+          "https://graph.microsoft.com/v1.0/users/:userId/teamwork/installedApps",
+          () => {
+            return HttpResponse.json({ value: [] });
+          },
+        ),
+      );
+      await scenario.dispatch(owned, "hello from teams diagnostics");
 
-async function dispatchTeamsMessage(args: {
-  readonly fixture: TeamsFixture;
-  readonly text: string;
-}): Promise<void> {
-  configureTeamsDispatchMocks();
-  // The dispatch probe observes a pending native Runner claim, not a Pi
-  // API-first completion. Upgrade only this dispatch fixture; seeded free-tier
-  // diagnostic tests still exercise their original plan separately.
-  if (args.fixture.connectionId && args.fixture.defaultAgentId) {
-    const runs = createRunsApi(context);
-    const actor = createBddApi(context).user({
-      userId: args.fixture.userId,
-      orgId: args.fixture.orgId,
-    });
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-  }
-  const response = await requestApp(TEAMS_DISPATCH_PROBE_ROUTE, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      tenant_id: args.fixture.tenantId,
-      conversation_id: "19:e2e-dm@thread.v2",
-      conversation_type: "personal",
-      activity_id: "activity-e2e",
-      teams_user_id: args.fixture.teamsUserId,
-      teams_aad_object_id: args.fixture.teamsAadObjectId,
-      teams_user_display_name: "Teams User",
-      teams_user_principal_name: "teams@example.test",
-      message_text: args.text,
-      service_url: TEAMS_SERVICE_URL,
-    }),
-  });
-  expect(response.status).toBe(200);
-  await expect(
-    readJson<{ readonly ok: boolean }>(response),
-  ).resolves.toStrictEqual({ ok: true });
-  // The dispatch only enqueues the Teams input; the pick that launches the
-  // run happens in background work.
-  await flushWaitUntilForTest();
-}
-
-describe("GET /api/test/teams-state", () => {
-  it("returns 404 outside allowed test environments", async () => {
-    mockEnv("ENV", "production");
-
-    const response = await requestApp(`${TEAMS_STATE_ROUTE}?tenant_id=tenant`);
-
-    expect(response.status).toBe(404);
-    await expect(response.text()).resolves.toBe("Not found");
-  });
-
-  it("requires tenant_id or org_id", async () => {
-    mockEnv("ENV", "development");
-
-    const response = await requestApp(TEAMS_STATE_ROUTE);
-
-    expect(response.status).toBe(400);
-    await expect(readJson(response)).resolves.toStrictEqual({
-      error: "tenant_id or org_id query param is required",
-    });
-  });
-
-  it("returns seeded Teams installation and account diagnostics", async () => {
-    const fixture = await seedTeamsFixture({
-      seedConnection: true,
-      seedDefaultAgent: true,
-    });
-    const body = await readTeamsState(fixture.tenantId);
-
-    expect(body.installation).toMatchObject({
-      teamsTenantId: fixture.tenantId,
-      teamsTenantName: "Teams Test Tenant",
-      orgId: fixture.orgId,
-      installedByUserId: fixture.userId,
-      serviceUrl: TEAMS_SERVICE_URL,
-    });
-    expect(body.connections).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: fixture.connectionId,
-          teamsUserId: fixture.teamsUserId,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-          userId: fixture.userId,
-          dmWelcomeSent: false,
-        }),
-      ]),
-    );
-    expect(body.org_metadata).toMatchObject({
-      orgId: fixture.orgId,
-      defaultAgentId: fixture.defaultAgentId,
-      credits: 10_000,
-      tier: "limited-free-1",
-    });
-    expect(body.default_agent).toStrictEqual({
-      id: fixture.defaultAgentId,
-      name: "e2e-teams-agent",
-      orgId: fixture.orgId,
-    });
-  });
-
-  it("returns dispatched Teams run, route, and callback diagnostics", async () => {
-    createRunsApi(context).acceptStorageDownloads();
-    const fixture = await seedTeamsFixture({
-      seedConnection: true,
-      seedDefaultAgent: true,
-    });
-    server.use(
-      http.post(
-        `https://login.microsoftonline.com/${fixture.tenantId}/oauth2/v2.0/token`,
-        () => {
-          return HttpResponse.json({
-            access_token: "teams-graph-token",
-            token_type: "Bearer",
-            expires_in: 3600,
-          });
-        },
-      ),
-      http.get(
-        "https://graph.microsoft.com/v1.0/users/:userId/teamwork/installedApps",
-        () => {
-          return HttpResponse.json({ value: [] });
-        },
-      ),
-    );
-    await dispatchTeamsMessage({
-      fixture,
-      text: "hello from teams diagnostics",
-    });
-
-    const body = await readTeamsState(fixture.tenantId);
-
-    expect(body.recent_runs).toStrictEqual(
-      expect.arrayContaining([
+      const reads = createRunReadsApi(context);
+      const listed = await reads.requestListLogs(
+        owned.actor,
+        { limit: 50 },
+        [200],
+      );
+      expect(listed.body.data).toContainEqual(
         expect.objectContaining({
           status: "pending",
           triggerSource: "teams",
-          userId: fixture.userId,
-          error: null,
-          promptPreview: "hello from teams diagnostics",
+          agentId: owned.defaultAgentId,
+          prompt: "hello from teams diagnostics",
         }),
-      ]),
-    );
-    const teamsRun = body.recent_runs.find((run) => {
-      return run.promptPreview === "hello from teams diagnostics";
+      );
+      const teamsRun = listed.body.data.find((run) => {
+        return run.prompt === "hello from teams diagnostics";
+      });
+      if (!teamsRun) {
+        throw new Error("Expected the Teams message to launch a Run");
+      }
+      const detail = await reads.requestReadLogById(
+        owned.actor,
+        teamsRun.id,
+        [200],
+      );
+      expect(detail.body).toMatchObject({
+        status: "pending",
+        triggerSource: "teams",
+        agentId: owned.defaultAgentId,
+        error: null,
+        prompt: "hello from teams diagnostics",
+      });
+      expect(detail.body.appendSystemPrompt).toContain(
+        `Tenant ID: ${fixture.teamsTenantId}`,
+      );
+      expect(detail.body.appendSystemPrompt).toContain(
+        "Conversation ID: 19:e2e-dm@thread.v2",
+      );
+      expect(detail.body.appendSystemPrompt).toContain(
+        "Conversation type: personal",
+      );
+      expect(detail.body.appendSystemPrompt).toContain(
+        "Thread ID: activity-e2e",
+      );
+      expect(detail.body.appendSystemPrompt).toContain(
+        "Activity ID: activity-e2e",
+      );
+
+      const chat = createChatFilesBddApi(context);
+      const threads = await chat.requestThreadEvents(owned.actor, {}, [200]);
+      if (threads.status !== 200) {
+        throw new Error("Expected public Teams thread events");
+      }
+      const thread = threads.body.events.find((event) => {
+        return (
+          event.kind === "created" && event.agentId === owned.defaultAgentId
+        );
+      });
+      if (!thread) {
+        throw new Error(
+          "Expected the Teams Run to use a canonical chat thread",
+        );
+      }
+      const page = await chat.listThreadEvents(
+        owned.actor,
+        thread.chatThreadId,
+      );
+      const input = page.events.find((event) => {
+        return (
+          event.eventType === "input.prompt" && event.runId === teamsRun.id
+        );
+      });
+      if (input?.eventType !== "input.prompt") {
+        throw new Error("Expected the Teams input associated with its Run");
+      }
+      expect(chatEventDisplayText(input)).toBe("hello from teams diagnostics");
+      expect(input.userMessage?.parts).toContainEqual({
+        type: "source",
+        kind: "teams",
+        href: `https://teams.microsoft.com/l/message/${encodeURIComponent("19:e2e-dm@thread.v2")}/activity-e2e?tenantId=${encodeURIComponent(fixture.teamsTenantId)}&context=${encodeURIComponent(JSON.stringify({ contextType: "chat" }))}`,
+      });
     });
-    if (!teamsRun?.chatThreadId) {
-      throw new Error("Expected the Teams run to use a canonical chat thread");
-    }
-    expect(body.routes).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          connectionId: fixture.connectionId,
-          conversationId: "19:e2e-dm@thread.v2",
-          userId: fixture.userId,
-          chatThreadId: teamsRun.chatThreadId,
-        }),
-      ]),
-    );
-    expect(body.recent_callbacks).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          status: "pending",
-          internalKind: "chat",
-          attempts: 0,
-          lastError: null,
-          payload: expect.objectContaining({
-            threadId: teamsRun.chatThreadId,
-            teamsDelivery: expect.objectContaining({
-              tenantId: fixture.tenantId,
-              conversationId: "19:e2e-dm@thread.v2",
-              activityId: "activity-e2e",
-              connectionId: fixture.connectionId,
-            }),
-          }),
-        }),
-      ]),
-    );
   });
 });
 
-describe("POST /api/test/teams-dispatch-probe", () => {
+describe("Teams webhook dispatch", () => {
   beforeEach(() => {
     context.mocks.clerk.users.getUserList.mockReset();
     context.mocks.clerk.users.getOrganizationMembershipList.mockReset();
-  });
-
-  it("returns 404 when the test endpoint is not allowed", async () => {
-    mockEnv("ENV", "production");
-
-    const response = await requestApp(TEAMS_DISPATCH_PROBE_ROUTE, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    });
-
-    expect(response.status).toBe(404);
-    await expect(response.text()).resolves.toBe("Not found");
-  });
-
-  it("returns a validation error for bad bodies", async () => {
-    mockEnv("ENV", "development");
-
-    const response = await requestApp(TEAMS_DISPATCH_PROBE_ROUTE, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tenant_id: "tenant" }),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(readJson(response)).resolves.toStrictEqual({
-      error:
-        "tenant_id, conversation_id, teams_user_id, and message_text are required",
-    });
   });
 
   it("drains a persisted Teams message when realtime publishing fails", async () => {
@@ -621,25 +371,55 @@ describe("POST /api/test/teams-dispatch-probe", () => {
   });
 
   it("does not enqueue runs for unlinked users or missing default agents", async () => {
-    const unlinked = await seedTeamsFixture({
-      seedConnection: false,
-      seedDefaultAgent: true,
-    });
-    await dispatchTeamsMessage({ fixture: unlinked, text: "unlinked teams" });
-    expect((await readTeamsState(unlinked.tenantId)).recent_runs).toStrictEqual(
-      [],
-    );
+    const scenario = createPublicTeamsDispatchFixture(context);
+    await scenario.run(async () => {
+      const unlinked = await scenario.create({ withDefaultAgent: true });
+      await scenario.disconnect(unlinked);
+      await expect(scenario.status(unlinked)).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: false,
+        tenantId: unlinked.installation.teamsTenantId,
+      });
+      if (!unlinked.defaultAgentId) {
+        throw new Error(
+          "Expected an independent default Agent for the unlinked gate",
+        );
+      }
+      await createBddApi(context).requestReadAgent(
+        unlinked.actor,
+        unlinked.defaultAgentId,
+        [200],
+      );
+      await scenario.dispatch(unlinked, "unlinked teams");
+      expect(unlinked.notices).toContain(
+        "Please connect your account to use Okou in this Teams workspace.",
+      );
+      const reads = createRunReadsApi(context);
+      expect(
+        (await reads.requestListLogs(unlinked.actor, { limit: 50 }, [200])).body
+          .data,
+      ).toStrictEqual([]);
 
-    const missingDefault = await seedTeamsFixture({
-      seedConnection: true,
-      seedDefaultAgent: false,
+      const missingDefault = await scenario.create({ withDefaultAgent: false });
+      await expect(scenario.status(missingDefault)).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+        tenantId: missingDefault.installation.teamsTenantId,
+        defaultAgentName: null,
+      });
+      await scenario.dispatch(missingDefault, "missing default teams");
+      expect(missingDefault.notices).toContain(
+        "No agent is configured for this org. Please ask your org admin to set a default agent.",
+      );
+      expect(
+        (
+          await reads.requestListLogs(
+            missingDefault.actor,
+            { limit: 50 },
+            [200],
+          )
+        ).body.data,
+      ).toStrictEqual([]);
     });
-    await dispatchTeamsMessage({
-      fixture: missingDefault,
-      text: "missing default teams",
-    });
-    expect(
-      (await readTeamsState(missingDefault.tenantId)).recent_runs,
-    ).toStrictEqual([]);
   });
 });

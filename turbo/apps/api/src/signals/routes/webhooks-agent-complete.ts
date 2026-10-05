@@ -8,11 +8,11 @@ import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
+import { createAgentRunCompletion } from "../services/agent-webhook-complete.service";
 import {
-  createAgentRunCompletion,
-  dispatchRequiredTerminalChatCallback$,
+  createRequiredTerminalChatCallback,
   type RequiredTerminalChatCallbackResult,
-} from "../services/agent-webhook-complete.service";
+} from "../services/required-terminal-chat-callback.service";
 import { settle, tapError } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -43,6 +43,9 @@ const completeRequest$ = computed(async (get) => {
   return {
     ...bodyResult,
     authorizedCompletion$: createAuthorizedCompletion(bodyResult.data.runId),
+    requiredChatCallback: createRequiredTerminalChatCallback(
+      bodyResult.data.runId,
+    ),
   };
 });
 
@@ -72,7 +75,14 @@ const completeAgentRunRoute$ = command(
 
     if (result.status === 200 && result.sideEffects?.kind === "terminal") {
       const requiredResult = await settle(
-        set(dispatchRequiredTerminalChatCallback$, result.sideEffects, signal),
+        set(
+          bodyResult.requiredChatCallback.dispatch$,
+          {
+            status: result.sideEffects.status,
+            error: result.sideEffects.error,
+          },
+          signal,
+        ),
       );
       signal.throwIfAborted();
       const required: RequiredTerminalChatCallbackResult = requiredResult.ok

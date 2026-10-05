@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -67,28 +68,10 @@ interface AgentFixture {
 async function seedAgent(): Promise<AgentFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: WORKSPACE_DEFAULT_MODEL,
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-    {
-      model: OTHER_WORKSPACE_MODEL,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-    {
-      model: PRIORITY_MODEL,
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
-      modelProviderId: null,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(actor);
+  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+    actor,
+  );
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat thread create agent",
     visibility: "private",
@@ -1324,28 +1307,11 @@ describe("POST /api/chat-threads", () => {
     const runnerGroup = api.configureRunnerGroup();
     api.acceptStorageDownloads();
     await api.grantProEntitlement(fixture.actor);
-    const { providerId } = await api.ensurePersonalSubscriptionModel(
+    await api.ensurePersonalSubscriptionModel(fixture.actor);
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
       fixture.actor,
     );
-    const priorityProvider = await api.createOrgModelProvider(fixture.actor, {
-      type: "openai-api-key",
-      secret: "test-priority-openai-key",
-    });
-    await api.updateOrgModelPolicies(fixture.actor, [
-      {
-        model: WORKSPACE_DEFAULT_MODEL,
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: PRIORITY_MODEL,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: priorityProvider.providerId,
-      },
-    ]);
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
     await accept(
       preferenceClient().update({

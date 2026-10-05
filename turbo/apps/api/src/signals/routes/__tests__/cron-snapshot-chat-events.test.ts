@@ -98,7 +98,7 @@ async function sendNoCreditMessage(
     readonly clientEventId?: string;
   },
 ): Promise<string> {
-  await api.ensurePersonalSubscriptionModel(actor);
+  // Snapshot input needs a no-credit Auto message, not a paid Custom route.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (sent.status !== 201 || sent.body.runId !== null) {
     throw new Error("Expected a no-credit send without a run");
@@ -996,7 +996,6 @@ describe("cron snapshot chat events", () => {
     const agent = await bdd.createAgent(owner, {
       displayName: "Sparse snapshot agent",
     });
-    await api.ensurePersonalSubscriptionModel(owner);
     const thread = await chat.createThread(owner, {
       agentId: agent.agentId,
       title: "Sparse snapshot thread",

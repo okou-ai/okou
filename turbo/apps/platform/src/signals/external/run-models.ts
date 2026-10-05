@@ -46,12 +46,3 @@ export const invalidateAvailableRunModels$ = command(({ set }) => {
     return value + 1;
   });
 });
-
-export const refreshAvailableRunModels$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(invalidateAvailableRunModels$);
-    const response = await get(availableRunModels$);
-    signal.throwIfAborted();
-    return response;
-  },
-);

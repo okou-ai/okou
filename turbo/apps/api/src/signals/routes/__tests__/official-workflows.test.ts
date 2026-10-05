@@ -176,15 +176,9 @@ function authHeaders(actor: ApiTestUser) {
 // so fixtures use Fable, which model policy keeps off Pi.
 async function selectBuiltInDefaultModel(actor: ApiTestUser): Promise<void> {
   await seedBuiltInModelKey(context, "claude-fable-5-1");
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
 }
 
 function catalog(

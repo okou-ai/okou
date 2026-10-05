@@ -1151,7 +1151,7 @@ export function createRunsApi(
       });
       await this.updateUserModelPreference(
         actor,
-        options.model ?? "claude-sonnet-5",
+        options.model ?? "claude-fable-5-1",
       );
       return { providerId };
     },

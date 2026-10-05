@@ -1,4 +1,5 @@
 import { mockEnv } from "../../../lib/env";
+import { mockNow, nowDate } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
 import type {
   TestWorkflowSkillStoragePresignedUrlCacheStateActionBody,
@@ -27,7 +28,7 @@ import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const BUCKET = "test-user-storages";
 
 interface CacheRow {
@@ -204,7 +205,51 @@ async function createWorkflowSkillRunFixture(): Promise<{
   };
 }
 
-async function createRunAndClaimWorkflowSkill(args: {
+async function createReadOnlySkillRunFixture(): Promise<{
+  readonly actor: ApiTestUser;
+  readonly agentId: string;
+  readonly runnerGroup: string;
+  readonly storageName: string;
+  readonly objectKeyPrefix: string;
+}> {
+  const fixture = await entitledWorkflowActor();
+  if (!fixture.actor.orgId) {
+    throw new Error("Expected an organization-scoped read-only cache actor");
+  }
+  const storages = createStoragesBddApi(context);
+  storages.mockStorageObjectsExist(2048);
+  const connectors = createConnectorBddApi(context);
+  const custom = await connectors.createCustomConnector(fixture.actor, {
+    displayName: "Read-only lifetime margin connector",
+    prefixTemplates: [
+      `https://readonly-margin-${randomUUID()}.example.test/api/`,
+    ],
+    fields: [
+      { key: "secret", label: "API token", kind: "secret", required: true },
+    ],
+    headerInjections: [
+      { name: "Authorization", valueTemplate: "Bearer {{secrets.secret}}" },
+    ],
+    queryInjections: [],
+    authMode: "manual",
+    skillMarkdown: "Use the read-only lifetime margin connector.",
+  });
+  onTestFinished(async () => {
+    await connectors.deleteCustomConnector(fixture.actor, custom.id);
+  });
+  await connectors.updateAgentCustomConnectors(fixture.actor, fixture.agentId, [
+    custom.id,
+  ]);
+  const storageName = getCustomConnectorSkillStorageName(custom.id);
+  const objectKeyPrefix = await readStorageS3PrefixFixture({
+    orgId: fixture.actor.orgId,
+    userId: VOLUME_ORG_USER_ID,
+    name: storageName,
+  });
+  return { ...fixture, storageName, objectKeyPrefix };
+}
+
+async function createRunAndClaimStorageSkill(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
@@ -231,9 +276,7 @@ async function createRunAndClaimWorkflowSkill(args: {
     return storage.name === args.storageName;
   });
   if (!entry?.archiveUrl) {
-    throw new Error(
-      `Missing workflow skill manifest entry ${args.storageName}`,
-    );
+    throw new Error(`Missing storage skill manifest entry ${args.storageName}`);
   }
   await cancelChatRun(args.actor, run.runId, sandboxHeaders);
   return {
@@ -407,11 +450,77 @@ describe("workflow skill storage presigned URL cache", () => {
     );
   });
 
+  it.each(
+    (["workflow_skill_storage", "readonly_storage"] as const).flatMap(
+      (scope) => {
+        return [
+          4 * 60 * 60 * 1000 - 1,
+          4 * 60 * 60 * 1000,
+          4 * 60 * 60 * 1000 + 1,
+        ].map((remainingMs) => {
+          return { scope, remainingMs };
+        });
+      },
+    ),
+  )(
+    "enforces the four-hour $scope archive margin at $remainingMs ms remaining",
+    async ({ scope, remainingMs }) => {
+      const fixture =
+        scope === "workflow_skill_storage"
+          ? await createWorkflowSkillRunFixture()
+          : await createReadOnlySkillRunFixture();
+      await withCacheCleanup(
+        fixture.objectKeyPrefix,
+        async () => {
+          mockUniquePresignedUrls();
+          const issuedAt = nowDate();
+          mockNow(issuedAt);
+          const first = await createRunAndClaimStorageSkill({
+            ...fixture,
+            prompt: "warm the owned storage archive URL cache",
+          });
+          await flushWaitUntilForTest();
+          // Only signing infrastructure controls a cached URL's expiration;
+          // no production API lets a caller choose it. Change this owned
+          // deadline without aging unrelated run leases, then assert the
+          // production Runner manifest rather than the internal cache row.
+          await stateAction({
+            action: "set-cache-expiration",
+            object_key_prefix: fixture.objectKeyPrefix,
+            scope,
+            expires_at: new Date(
+              issuedAt.getTime() + remainingMs,
+            ).toISOString(),
+          });
+
+          const selected = await createRunAndClaimStorageSkill({
+            ...fixture,
+            prompt: "select a cached archive near the lifetime boundary",
+          });
+          expect(selected.archiveUrl === first.archiveUrl).toBe(
+            remainingMs >= 4 * 60 * 60 * 1000,
+          );
+          expect(selected.versionId).toBe(first.versionId);
+          expect(
+            new URL(selected.archiveUrl).searchParams.get("X-Amz-Expires"),
+          ).toBe("172800");
+          await flushWaitUntilForTest();
+          const reused = await createRunAndClaimStorageSkill({
+            ...fixture,
+            prompt: "reuse the selected storage archive URL",
+          });
+          expect(reused.archiveUrl).toBe(selected.archiveUrl);
+        },
+        scope,
+      );
+    },
+  );
+
   it("reuses cached workflow skill storage URLs", async () => {
     const fixture = await createWorkflowSkillRunFixture();
     await withCacheCleanup(fixture.objectKeyPrefix, async () => {
       mockUniquePresignedUrls();
-      const first = await createRunAndClaimWorkflowSkill({
+      const first = await createRunAndClaimStorageSkill({
         ...fixture,
         prompt: "warm the workflow skill URL cache",
       });
@@ -431,7 +540,7 @@ describe("workflow skill storage presigned URL cache", () => {
         presigned_url: first.archiveUrl,
       });
 
-      const second = await createRunAndClaimWorkflowSkill({
+      const second = await createRunAndClaimStorageSkill({
         ...fixture,
         prompt: "reuse the workflow skill URL cache",
       });

@@ -233,7 +233,8 @@ async function projectSearchMessages(threadIds: string[]) {
 
 async function messageFixture() {
   const f = await threadFixture();
-  await createRunsApi(context).ensurePersonalSubscriptionModel(f.actor);
+  // Canonical message reads use the no-credit Auto rejection path, not a
+  // paid Custom route that would launch a Run.
   async function send(
     prompt: string,
     threadId?: string,

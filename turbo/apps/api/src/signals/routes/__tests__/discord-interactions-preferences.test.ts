@@ -1,3 +1,5 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   generateKeyPairSync,
   randomBytes,
@@ -11,8 +13,7 @@ import {
   type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
@@ -33,8 +34,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { discordInteractionsRoutes } from "../discord-interactions";
 import { integrationsDiscordRoutes } from "../integrations-discord";
-import { modelPoliciesRoutes } from "../model-policies";
-import { modelProvidersRoutes } from "../model-providers";
+
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -439,66 +439,21 @@ async function disconnect(owner: Actor): Promise<void> {
 
 async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
   await createRunsApi(context).grantProEntitlement(scope.owner);
+  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+    scope.owner,
+  );
   const headers = accountApi.authenticate(scope.owner);
-  const providers = setupApp({ context, routes: modelProvidersRoutes })(
-    modelProvidersMainContract,
-  );
-  const anthropic = await accept(
-    providers.upsert({
-      headers,
-      body: {
-        type: "anthropic-api-key",
-        secret: "discord-test-anthropic-key",
-      },
-    }),
-    [200, 201],
-  );
-  const openai = await accept(
-    providers.upsert({
-      headers,
-      body: { type: "openai-api-key", secret: "discord-test-openai-key" },
-    }),
-    [200, 201],
-  );
-  const policies = setupApp({ context, routes: modelPoliciesRoutes })(
-    modelPoliciesMainContract,
-  );
-  const initial = await accept(policies.list({ headers }), [200]);
-  const autoPolicy = {
-    model: SEEDED_SYSTEM_DEFAULT_MODEL,
-    defaultProviderType: "built-in" as const,
-    credentialScope: "org" as const,
-    modelProviderId: null,
-  };
-  const defaultPolicy = {
-    model: "claude-fable-5-1" as const,
-    defaultProviderType: "anthropic-api-key" as const,
-    credentialScope: "org" as const,
-    modelProviderId: anthropic.body.provider.id,
-  };
-  await accept(
-    policies.update({
-      headers,
-      body: {
-        revision: initial.body.revision,
-        policies: [
-          autoPolicy,
-          defaultPolicy,
-          {
-            model: "gpt-6-astra",
-            defaultProviderType: "openai-api-key",
-            credentialScope: "org",
-            modelProviderId: openai.body.provider.id,
-          },
-        ],
-      },
-    }),
-    [200],
-  );
   const preference = setupApp({ context, routes: userModelPreferenceRoutes })(
     userModelPreferenceContract,
   );
-  return { headers, policies, preference, defaultPolicy, autoPolicy };
+  await accept(
+    preference.update({
+      headers,
+      body: { selectedModel: null, serviceTier: null },
+    }),
+    [200],
+  );
+  return { headers, preference };
 }
 
 beforeEach(() => {
@@ -663,10 +618,9 @@ describe("Discord account preferences through private controls", () => {
     );
   });
 
-  it("rechecks model policy after a picker is issued without changing the member preference", async () => {
+  it("rechecks personal subscription access after a picker is issued without changing the member preference", async () => {
     const scope = await routedModelFixture();
-    const { headers, policies, preference, defaultPolicy, autoPolicy } =
-      await configureModelPreferences(scope);
+    const { headers, preference } = await configureModelPreferences(scope);
     const discord = discordHttp([scope]);
     const sender = guildSender(scope);
     const menu = selectMenu(
@@ -683,16 +637,11 @@ describe("Discord account preferences through private controls", () => {
     expect(selected.content).toContain("Model selected for this conversation");
     const before = await accept(preference.get({ headers }), [200]);
     expect(before.body.selectedModel).toBeNull();
-    const current = await accept(policies.list({ headers }), [200]);
-    await accept(
-      policies.update({
-        headers,
-        body: {
-          revision: current.body.revision,
-          policies: [autoPolicy, defaultPolicy],
-        },
-      }),
-      [200],
+
+    await createMiscRoutesApi(context).deletePersonalModelProvider(
+      scope.owner,
+      "codex-oauth-token",
+      [204],
     );
 
     const rejected = await discord.send(
@@ -782,14 +731,13 @@ describe("Discord account preferences through private controls", () => {
   it.each([
     "disconnect",
     "feature",
-    "model policy",
+    "subscription disconnect",
     "disconnect after binding read",
   ] as const)(
     "rejects a model selection revoked by %s during access revalidation",
     async (revocation) => {
       const scope = await routedModelFixture();
-      const { headers, policies, preference, defaultPolicy, autoPolicy } =
-        await configureModelPreferences(scope);
+      const { headers, preference } = await configureModelPreferences(scope);
       const discord = discordHttp([scope]);
       const sender = guildSender(scope);
       const menu = selectMenu(
@@ -811,16 +759,10 @@ describe("Discord account preferences through private controls", () => {
         } else if (revocation === "feature") {
           await enableDiscord(scope.owner, false);
         } else {
-          const current = await accept(policies.list({ headers }), [200]);
-          await accept(
-            policies.update({
-              headers,
-              body: {
-                revision: current.body.revision,
-                policies: [autoPolicy, defaultPolicy],
-              },
-            }),
-            [200],
+          await createMiscRoutesApi(context).deletePersonalModelProvider(
+            scope.owner,
+            "codex-oauth-token",
+            [204],
           );
         }
       }
