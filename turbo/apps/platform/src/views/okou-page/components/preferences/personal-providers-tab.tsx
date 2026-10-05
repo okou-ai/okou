@@ -14,7 +14,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Tooltip,
   TooltipContent,
@@ -766,14 +765,13 @@ function OAuthAccountMenu({
   readonly onDisconnect: () => void;
 }) {
   const { t } = useTranslation();
-  const menuItems: OAuthMenuItem[] = [
+  const menuItems = [
     {
       label: t(($) => {
         return $.settings.models.personal.reconnectAccount;
       }),
       disabled: actionPending,
       onSelect: onReconnect,
-      opensModal: true,
     },
     {
       label: t(($) => {
@@ -781,7 +779,6 @@ function OAuthAccountMenu({
       }),
       disabled: actionPending,
       onSelect: onDisconnect,
-      opensModal: true,
     },
   ];
 
@@ -803,12 +800,16 @@ function OAuthAccountMenu({
         <EllipsisVertical size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        {menuItems.map((item, index) => {
-          const key =
-            item.kind === "separator"
-              ? `separator-${index}`
-              : `${item.kind ?? "item"}-${item.label}`;
-          return <OAuthMenuEntry key={key} item={item} />;
+        {menuItems.map((item) => {
+          return (
+            <DropdownMenuItem
+              key={item.label}
+              disabled={item.disabled}
+              onClick={item.onSelect}
+            >
+              {item.label}
+            </DropdownMenuItem>
+          );
         })}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -1201,54 +1202,5 @@ function SubscriptionUsageResetTooltip({
       </p>
       <p className="text-[10px] text-muted-foreground">{reset.absoluteText}</p>
     </div>
-  );
-}
-
-type OAuthMenuItem =
-  | {
-      readonly kind: "separator";
-    }
-  | {
-      readonly kind: "status";
-      readonly label: string;
-    }
-  | {
-      readonly kind?: "item";
-      readonly label: string;
-      readonly disabled?: boolean;
-      readonly onSelect?: () => void;
-      readonly opensModal?: boolean;
-    };
-
-function OAuthMenuEntry({ item }: { item: OAuthMenuItem }) {
-  if (item.kind === "separator") {
-    return <DropdownMenuSeparator />;
-  }
-  if (item.kind === "status") {
-    return (
-      <DropdownMenuItem
-        disabled
-        className="text-xs text-muted-foreground data-[disabled]:opacity-100"
-      >
-        {item.label}
-      </DropdownMenuItem>
-    );
-  }
-  if (item.opensModal && item.onSelect) {
-    return (
-      <DropdownMenuItem disabled={item.disabled} onClick={item.onSelect}>
-        {item.label}
-      </DropdownMenuItem>
-    );
-  }
-  return (
-    <DropdownMenuItem
-      disabled={item.disabled}
-      onClick={() => {
-        item.onSelect?.();
-      }}
-    >
-      {item.label}
-    </DropdownMenuItem>
   );
 }

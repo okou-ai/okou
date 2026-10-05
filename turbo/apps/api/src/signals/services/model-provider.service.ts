@@ -726,9 +726,9 @@ const persistSingleAuthModelProvider$ = command(
 );
 
 /**
- * Create or update a single-secret personal model provider.
+ * Persist a single-secret model provider for organization upserts.
  */
-export const upsertUserModelProvider$ = command(
+const upsertUserModelProvider$ = command(
   async (
     { set },
     args: {
@@ -999,10 +999,10 @@ function validateMultiAuthUpsertInput(args: {
 }
 
 /**
- * Create or update a multi-auth personal model provider (e.g., aws-bedrock,
- * codex-oauth-token).
+ * Persist a multi-auth model provider for organization upserts (e.g.,
+ * aws-bedrock or codex-oauth-token).
  */
-export const upsertUserMultiAuthModelProvider$ = command(
+const upsertUserMultiAuthModelProvider$ = command(
   async (
     { get, set },
     args: {
