@@ -1613,10 +1613,43 @@ describe("connector account lifecycle routes", () => {
           [200],
         );
         expect(connected.body.connectedAccountId).toBeTruthy();
+        expect(connected.body).toMatchObject({
+          connected: true,
+          configuredFieldKeys: ["secret"],
+          missingRequiredFields: [],
+        });
         if (connected.body.connectedAccountId) {
           connectedAccountIds.push(connected.body.connectedAccountId);
         }
       }
+
+      const detail = await accept(
+        customConnectorByIdClient().get({
+          headers: authHeaders(),
+          params: { id: definition.body.id },
+        }),
+        [200],
+      );
+      const listedDefinitions = await accept(
+        customConnectorClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      for (const projection of [
+        detail.body,
+        listedDefinitions.body.connectors.find((connector) => {
+          return connector.id === definition.body.id;
+        }),
+      ]) {
+        expect(projection).toMatchObject({
+          id: definition.body.id,
+          connected: true,
+          configuredFieldKeys: ["secret"],
+          missingRequiredFields: [],
+        });
+      }
+      const visible = JSON.stringify([detail.body, listedDefinitions.body]);
+      expect(visible).not.toContain("token-work");
+      expect(visible).not.toContain("token-personal");
 
       const accounts = await accept(
         accountClient().connections({
