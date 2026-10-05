@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 
@@ -9,6 +9,8 @@ import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { modelProvidersRoutes } from "../model-providers";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
+import { createRouteMocks } from "./helpers/route-test";
 import {
   createCodexExpiryFixture,
   credentials,
@@ -21,6 +23,30 @@ const context = testContext();
 const fixture = createCodexExpiryFixture(context);
 
 describe("Codex expiry cache capacity", () => {
+  const owners = Array.from({ length: 257 }, () => {
+    return { orgId: `org_expiry_${randomUUID()}`, auth: credentials() };
+  });
+
+  beforeEach(async () => {
+    // Establish the Custom workspaces before exercising the in-flight bound.
+    // Otherwise Auto rejects each connection before it reaches the cache.
+    const userId = `user_expiry_capacity_${randomUUID()}`;
+    for (const owner of owners) {
+      await ensureCustomModelModeForTest(
+        context,
+        { orgId: owner.orgId, userId },
+        () => {
+          createRouteMocks(context).clerk.session(
+            userId,
+            owner.orgId,
+            "org:admin",
+          );
+          return { authorization: "Bearer clerk-session" };
+        },
+      );
+    }
+  });
+
   it("evicts old identity entries at bounded capacity", async () => {
     const remote = upstream();
     const first = await fixture();
@@ -38,9 +64,6 @@ describe("Codex expiry cache capacity", () => {
 
     // The global bound includes in-flight entries. Hold real org connections
     // at their upstream usage response, before unrelated account persistence.
-    const owners = Array.from({ length: 257 }, () => {
-      return { orgId: `org_expiry_${randomUUID()}`, auth: credentials() };
-    });
     const orgIds = new Set(
       owners.map((owner) => {
         return owner.orgId;
