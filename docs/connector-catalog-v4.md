@@ -30,6 +30,38 @@ serving-generation selector or separate warm-up endpoint is needed. Existing
 scheduled syncs keep v4 current. MCP methods do not need to be executable for v4
 acceptance: filtered methods are expected.
 
+## Additive hash-addressed preparation (P3)
+
+The existing pointer and accepted-snapshot readers remain the only serving
+path; reader migration is separate. Sync now prepares connector skill storages
+and exact immutable versions outside the activation transaction, without
+changing connector skill HEADs. Other storage HEAD behavior is unchanged.
+It then inserts the original connector payloads into
+`connector_catalog_entries` under the captured complete `sha256:<64 lowercase hex>`
+digest (also used by current, baseline and unchanged comparisons). Bare hex is
+only an object-path component, not a second database identity. It ignores identical
+insert conflicts, rejects conflicting canonical bytes, and verifies the exact
+manifest slug set. Failed preparation leaves the serving snapshot unchanged;
+completed immutable work remains reusable on retry.
+
+Sync subcommands receive source/capability/validator values and captured facts,
+not reader callbacks, DB handles, accessors or signals in runtime objects.
+Pointer conditional downloads and bounded artifact downloads run inside their
+owning commands through existing S3 gateways. A shared pure byte validator keeps
+the original size, digest, schema and relationship checks; existing reader clients
+retain their loader API. Retry attempts re-observe the baseline and pointer.
+
+Stable commands obtain the existing DB gateways internally. The owning sync
+command keeps legacy acceptance, new `connector_catalog` hash CAS and Pi
+stable-context invalidation in one transaction callback. New helpers build
+pure values or SQL conditions; they do not accept a DB/transaction handle.
+Cold start inserts the current row explicitly. A lost hash CAS rolls back the
+transaction; the same hash does not repeat activation effects. Initializing a
+missing additive mirror of the already-serving digest also does not invalidate
+Pi or replay wakeups. Only a committed serving-digest switch attempts the
+existing best-effort wakeups after commit. Wakeup failure does not undo the
+committed catalog, and a same-hash retry is not a delivery replay.
+
 ## Identity and failure behavior
 
 The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`.

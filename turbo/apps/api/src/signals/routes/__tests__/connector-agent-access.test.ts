@@ -15,7 +15,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);

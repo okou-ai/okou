@@ -178,21 +178,31 @@ async function deleteUsageStateFixtureUsageData(
   fixture: UsageStateFixture,
   signal: AbortSignal,
 ): Promise<void> {
+  const ownedRaw = and(
+    eq(usageEvent.orgId, fixture.orgId),
+    eq(usageEvent.userId, fixture.userId),
+  );
+  const rawRows = await db
+    .select({ id: usageEvent.id })
+    .from(usageEvent)
+    .where(ownedRaw);
+  signal.throwIfAborted();
+  // This fixture has no live raw producer during cleanup. Compaction may only
+  // consume its existing rows. Each delete commits separately: cleanup never
+  // holds one raw row while waiting for another row held by the compactor.
+  // Do not wrap this loop in a transaction or replace it with a bulk delete.
+  for (const row of rawRows) {
+    await db.delete(usageEvent).where(and(ownedRaw, eq(usageEvent.id, row.id)));
+    signal.throwIfAborted();
+  }
+  // Raw deletion waits for any winning compaction to commit. This subsequent
+  // READ COMMITTED statement then removes its new hourly facts as well.
   await db
     .delete(usageEventHourlyRollup)
     .where(
       and(
         eq(usageEventHourlyRollup.orgId, fixture.orgId),
         eq(usageEventHourlyRollup.userId, fixture.userId),
-      ),
-    );
-  signal.throwIfAborted();
-  await db
-    .delete(usageEvent)
-    .where(
-      and(
-        eq(usageEvent.orgId, fixture.orgId),
-        eq(usageEvent.userId, fixture.userId),
       ),
     );
   signal.throwIfAborted();

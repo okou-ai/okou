@@ -292,6 +292,27 @@ export async function loadConnectorCatalogCandidate(args: {
     args.pointer.catalogKey,
     CONNECTOR_CATALOG_MAX_RAW_BYTES,
   );
+  return validateConnectorCatalogCandidateBytes({
+    pointer: args.pointer,
+    rawBytes,
+  });
+}
+
+// Pure validation for callers whose owning gateway has already captured bytes.
+// Keep the reader API above for existing consumers; do not inject I/O into a
+// command's value input merely to reuse validation.
+export function validateConnectorCatalogCandidateBytes(args: {
+  readonly pointer: ConnectorCatalogActivePointer;
+  readonly rawBytes: Uint8Array;
+}): ValidatedConnectorCatalogCandidate {
+  parseStrict(
+    args.pointer,
+    connectorCatalogActivePointerSchema,
+    "invalid-pointer",
+  );
+  const rawBytes = Buffer.from(args.rawBytes);
+  if (rawBytes.length > CONNECTOR_CATALOG_MAX_RAW_BYTES)
+    fail("object-too-large");
   assertDigest(rawBytes, args.pointer.catalogDigest);
   const artifact = parseAndValidateCatalog({
     bytes: rawBytes,

@@ -674,6 +674,19 @@ describe("usage event compaction cron", () => {
       processedRaw: 0,
       hourly: 0,
     });
+    // A later ordinary visit must not resurrect facts after either concurrent
+    // operation won the raw rows. This is a new request, not a failed retry.
+    const nextVisit = await compactOwnedUsage(fixture);
+    expect(nextVisit.body).toMatchObject({
+      rawRowsDeleted: 0,
+      hourlyRowsInserted: 0,
+      reconciled: true,
+    });
+    await expect(readStorage(fixture)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 0,
+    });
   });
 
   it("processes overlapping invocations without duplicating facts", async () => {

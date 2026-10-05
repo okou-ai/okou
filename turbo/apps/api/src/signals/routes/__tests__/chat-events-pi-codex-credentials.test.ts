@@ -9,7 +9,7 @@ import {
   userMessages,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   chat,
   chatCallbacks,

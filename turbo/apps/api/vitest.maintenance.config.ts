@@ -1,10 +1,17 @@
 import { defineConfig } from "vitest/config";
-import base from "./vitest.config";
+import base, { realDatabaseSetupFiles } from "./vitest.config";
 
 export default defineConfig({
   ...base,
   test: {
     ...base.test,
+    // Boundary suites require real DB setup and must not inherit the PGlite project.
+    projects: [
+      {
+        extends: true,
+        test: { name: "api-maintenance", setupFiles: realDatabaseSetupFiles },
+      },
+    ],
     include: [
       "src/**/pi-memory-maintenance.boundary.test.ts",
       "src/**/pi-deferred-handoff.boundary.test.ts",

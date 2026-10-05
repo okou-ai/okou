@@ -11,7 +11,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 

@@ -1,5 +1,14 @@
 import { defineConfig } from "vitest/config";
 
+export const realDatabaseSetupFiles = [
+  "./src/__tests__/env-stub.ts",
+  "./src/__tests__/setup.ts",
+];
+
+const immutableCatalogTests = [
+  "src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
+];
+
 const catalogTests = [
   "src/signals/routes/__tests__/official-automation-result-email.test.ts",
   "src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts",
@@ -25,7 +34,6 @@ export default defineConfig({
     env: {
       TZ: "UTC",
     },
-    setupFiles: ["./src/__tests__/env-stub.ts", "./src/__tests__/setup.ts"],
     exclude: [
       "node_modules/**",
       "dist/**",
@@ -36,16 +44,35 @@ export default defineConfig({
     // scheduling; no database session or production lock is a test resource.
     projects: [
       {
+        // Root setupFiles would be inherited even without extends. Real-DB
+        // setup is assigned only to the three ordinary projects below.
+        test: {
+          name: "api-immutable-catalog",
+          globals: true,
+          environment: "node",
+          env: { TZ: "UTC" },
+          include: immutableCatalogTests,
+          setupFiles: ["./src/__tests__/env-stub.ts"],
+          benchmark: { enabled: false, include: [], exclude: ["**/*"] },
+        },
+      },
+      {
         extends: true,
         test: {
           name: "api",
-          exclude: [...catalogTests, ...bootstrapFailureTests],
+          setupFiles: realDatabaseSetupFiles,
+          exclude: [
+            ...catalogTests,
+            ...bootstrapFailureTests,
+            ...immutableCatalogTests,
+          ],
         },
       },
       {
         extends: true,
         test: {
           name: "api-catalog",
+          setupFiles: realDatabaseSetupFiles,
           include: catalogTests,
           benchmark: { enabled: false },
           fileParallelism: false,
@@ -56,6 +83,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "api-bootstrap-failure",
+          setupFiles: realDatabaseSetupFiles,
           include: bootstrapFailureTests,
           benchmark: { enabled: false },
           isolate: true,

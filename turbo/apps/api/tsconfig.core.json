@@ -70,6 +70,7 @@
     "src/signals/services/chat-event-append.service.ts",
     "src/signals/services/chat-event-type.service.ts",
     "src/signals/services/chat-event.service.ts",
+    "src/signals/services/chat-run-state-read.service.ts",
     "src/signals/services/chat-session-continuity.service.ts",
     "src/signals/services/chat-thread-organization.service.ts",
     "src/signals/services/chat-thread-request-facts.ts",

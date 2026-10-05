@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.998.0](https://github.com/okou-ai/okou/compare/app-v0.997.1...app-v0.998.0) (2026-10-05)
+
+
+### Features
+
+* **db:** add immutable catalog tables and a shared test catalog ([#37697](https://github.com/okou-ai/okou/issues/37697)) ([f24c015](https://github.com/okou-ai/okou/commit/f24c0158fb5d44fe002399bea74aaec8822bf2c0))
+
 ## [0.997.1](https://github.com/okou-ai/okou/compare/app-v0.997.0...app-v0.997.1) (2026-10-05)
 
 

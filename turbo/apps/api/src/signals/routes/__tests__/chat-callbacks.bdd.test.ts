@@ -71,7 +71,7 @@ import {
 // plus a margin for the real time the test spends before and after the claim.
 const ACTIVE_ROW_RELEASE_AFTER_MS =
   CANCELLATION_RECOVERY_STALE_AFTER_MS + 60_000;
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);

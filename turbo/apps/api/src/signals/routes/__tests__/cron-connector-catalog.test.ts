@@ -113,7 +113,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...userPermissionGrantsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const routeMocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -1505,21 +1505,6 @@ async function seedOwnedVolumeStorageVersion(args: {
     s3_key: args.s3Key,
     archive_size: 321,
   });
-}
-
-async function readVolumeStorageVersion(args: {
-  readonly orgId: string;
-  readonly storageName: string;
-  readonly versionId: string;
-}) {
-  const response = await systemStorageStateAction({
-    action: "read-storage-version",
-    org_id: args.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: args.storageName,
-    version_id: args.versionId,
-  });
-  return response.body.storage_version ?? null;
 }
 
 async function syncCatalog() {
@@ -4764,9 +4749,9 @@ describe("connector catalog valid lifecycle", () => {
       readOwnedVolumeStorageState(skill.storageId),
     ).resolves.toStrictEqual({
       s3_prefix: skill.s3Prefix,
-      size: skill.contentSize,
-      file_count: 1,
-      head_version_id: skill.versionId,
+      size: 0,
+      file_count: 0,
+      head_version_id: null,
     });
     const requestedKeys = context.mocks.s3.send.mock.calls.map((call) => {
       const input = commandInput(call[0]);
@@ -4832,208 +4817,6 @@ describe("connector catalog valid lifecycle", () => {
           storageName: skill.storageName,
         }),
       ).resolves.toBeNull();
-    }
-  });
-
-  it("reuses immutable skill versions without regressing HEAD", async () => {
-    configureSource();
-    const connectorSlug = `skill-cache-${randomUUID().slice(0, 8)}`;
-    const storage = createBundledSkillStorageFixture(connectorSlug);
-    const firstSkill = buildBundledSkillFixture(
-      connectorSlug,
-      createHash("sha256").update(`first:${randomUUID()}`).digest("hex"),
-      storage,
-    );
-    const secondSkill = buildBundledSkillFixture(
-      connectorSlug,
-      createHash("sha256").update(`second:${randomUUID()}`).digest("hex"),
-      storage,
-    );
-    await claimOwnedVolumeStorage({ orgId: SYSTEM_ORG_ID, ...storage });
-    onTestFinished(async () => {
-      await cleanupOwnedVolumeStorages([storage.storageId]);
-    });
-    const firstRelease = buildRelease({
-      version: `2026-07-22.skill-cache-first-${randomUUID().slice(0, 8)}`,
-      connectorSlug,
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill =
-          firstSkill.descriptor;
-      },
-    });
-    const secondRelease = buildRelease({
-      version: `2026-07-22.skill-cache-second-${randomUUID().slice(0, 8)}`,
-      connectorSlug,
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill =
-          secondSkill.descriptor;
-      },
-    });
-    const oldRetryRelease = buildRelease({
-      version: `2026-07-22.skill-cache-old-${randomUUID().slice(0, 8)}`,
-      connectorSlug,
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill =
-          firstSkill.descriptor;
-      },
-    });
-
-    serveObjects(catalogObjects([firstRelease], firstRelease));
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
-
-    serveObjects(catalogObjects([firstRelease, secondRelease], secondRelease));
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
-
-    context.mocks.s3.send.mockClear();
-    serveObjects(
-      catalogObjects(
-        [firstRelease, secondRelease, oldRetryRelease],
-        oldRetryRelease,
-      ),
-    );
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
-    const requestedKeys = context.mocks.s3.send.mock.calls.map((call) => {
-      const input = commandInput(call[0]);
-      return typeof input.Key === "string" ? input.Key : null;
-    });
-    expect(requestedKeys).not.toContain(firstSkill.manifestKey);
-    expect(requestedKeys).not.toContain(firstSkill.archiveKey);
-    await expect(
-      readOwnedVolumeStorageState(storage.storageId),
-    ).resolves.toMatchObject({
-      head_version_id: secondSkill.versionId,
-    });
-  });
-
-  it("rolls back all skill registrations and retries a repaired conflict", async () => {
-    configureSource();
-    const suffix = randomUUID().slice(0, 8);
-    const firstConnectorSlug = `skill-atomic-a-${suffix}`;
-    const conflictingConnectorSlug = `skill-atomic-b-${suffix}`;
-    const firstSkill = buildBundledSkillFixture(
-      firstConnectorSlug,
-      createHash("sha256").update(`first:${randomUUID()}`).digest("hex"),
-    );
-    const conflictingSkill = buildBundledSkillFixture(
-      conflictingConnectorSlug,
-      createHash("sha256").update(`conflict:${randomUUID()}`).digest("hex"),
-    );
-    const wrongPrefix = `${SYSTEM_ORG_ID}/volume/wrong-${conflictingSkill.storageName}`;
-    await claimOwnedVolumeStorages([
-      { orgId: SYSTEM_ORG_ID, ...firstSkill },
-      {
-        orgId: SYSTEM_ORG_ID,
-        ...conflictingSkill,
-        s3Prefix: wrongPrefix,
-      },
-    ]);
-    onTestFinished(async () => {
-      await cleanupOwnedVolumeStorages([
-        firstSkill.storageId,
-        conflictingSkill.storageId,
-      ]);
-    });
-    const existingVersionId = createHash("sha256")
-      .update(`existing:${randomUUID()}`)
-      .digest("hex");
-    await seedOwnedVolumeStorageVersion({
-      storageId: conflictingSkill.storageId,
-      versionId: existingVersionId,
-      s3Key: `${wrongPrefix}/${existingVersionId}`,
-    });
-    const conflictingIconBytes = Buffer.from(
-      `<svg>${conflictingConnectorSlug}</svg>`,
-    );
-    const conflictingIconDigest = digest(conflictingIconBytes);
-    const release = buildRelease({
-      version: `2026-07-22.skill-conflict-${randomUUID().slice(0, 8)}`,
-      connectorSlug: firstConnectorSlug,
-      mutateCatalog: (artifact) => {
-        arrayValue(artifact.connectors, "connectors").push(
-          buildCatalogConnector({
-            connectorSlug: conflictingConnectorSlug,
-            label: "Conflicting Skill",
-            iconKey:
-              "platform/views/zero-page/components/settings/icons/" +
-              `${conflictingConnectorSlug}-${conflictingIconDigest.slice("sha256:".length, 19)}.svg`,
-          }),
-        );
-      },
-      mutateRuntime: (artifact) => {
-        const connectors = arrayValue(artifact.connectors, "connectors");
-        firstRecord(connectors, "connectors").skill = firstSkill.descriptor;
-        const conflictingConnector = recordValue(
-          connectors[1],
-          "connectors[1]",
-        );
-        const conflictingPrivateName = "ATOMIC_SKILL_B_TOKEN";
-        const conflictingMethod = firstRecord(
-          conflictingConnector.authMethods,
-          "authMethods",
-        );
-        recordValue(conflictingMethod.storage, "storage").secrets = [
-          conflictingPrivateName,
-        ];
-        firstRecord(
-          recordValue(conflictingMethod.grant, "grant").fields,
-          "grant.fields",
-        ).privateName = conflictingPrivateName;
-        recordValue(
-          recordValue(conflictingMethod.access, "access").envBindings,
-          "envBindings",
-        ).SERVICE_TOKEN = `$secrets.${conflictingPrivateName}`;
-        conflictingConnector.skill = conflictingSkill.descriptor;
-      },
-    });
-    const objects = catalogObjects([release], release);
-    serveObjects(objects);
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      active: null,
-      lastAttempt: { failureCode: "invalid-reference" },
-    });
-    await expect(
-      readOwnedVolumeStorageState(firstSkill.storageId),
-    ).resolves.toStrictEqual({
-      s3_prefix: firstSkill.s3Prefix,
-      size: 0,
-      file_count: 0,
-      head_version_id: null,
-    });
-    await expect(
-      readVolumeStorageVersion({
-        orgId: SYSTEM_ORG_ID,
-        storageName: firstSkill.storageName,
-        versionId: firstSkill.versionId,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      readOwnedVolumeStorageState(conflictingSkill.storageId),
-    ).resolves.toStrictEqual({
-      s3_prefix: wrongPrefix,
-      size: 1,
-      file_count: 1,
-      head_version_id: existingVersionId,
-    });
-
-    await cleanupOwnedVolumeStorages([conflictingSkill.storageId]);
-    await claimOwnedVolumeStorage({
-      orgId: SYSTEM_ORG_ID,
-      ...conflictingSkill,
-    });
-    serveObjects(objects);
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: release.version },
-    });
-    for (const skill of [firstSkill, conflictingSkill]) {
-      await expect(
-        readOwnedVolumeStorageState(skill.storageId),
-      ).resolves.toMatchObject({
-        s3_prefix: skill.s3Prefix,
-        head_version_id: skill.versionId,
-      });
     }
   });
 

@@ -15,7 +15,7 @@ import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const SLACK_USER_CONVERSATIONS_URL =

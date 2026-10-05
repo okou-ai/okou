@@ -1,10 +1,10 @@
 import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import type {
   ConnectorCatalogArtifact,
@@ -337,45 +337,6 @@ async function registerMissingStorageVersions(
   throw result.error;
 }
 
-async function updateNewStorageHeads(
-  db: Db,
-  registrations: readonly PreparedConnectorSkillRegistration[],
-  signal: AbortSignal,
-): Promise<void> {
-  const updatedAt = nowDate();
-  const updated = await db
-    .insert(storages)
-    .values(
-      registrations.map((registration) => {
-        return {
-          orgId: SYSTEM_ORG_ID,
-          userId: VOLUME_ORG_USER_ID,
-          name: registration.storageName,
-          s3Prefix: registration.s3Prefix,
-          size: registration.size,
-          fileCount: registration.fileCount,
-          headVersionId: registration.versionId,
-          updatedAt,
-        };
-      }),
-    )
-    .onConflictDoUpdate({
-      target: [storages.orgId, storages.userId, storages.name],
-      set: {
-        headVersionId: sql`excluded.head_version_id`,
-        size: sql`excluded.size`,
-        fileCount: sql`excluded.file_count`,
-        updatedAt: sql`excluded.updated_at`,
-      },
-      setWhere: eq(storages.s3Prefix, sql`excluded.s3_prefix`),
-    })
-    .returning({ name: storages.name });
-  signal.throwIfAborted();
-  if (updated.length !== registrations.length) {
-    fail("invalid-reference", false);
-  }
-}
-
 async function registerConnectorCatalogSkills(
   db: Db,
   registrations: readonly PreparedConnectorSkillRegistration[],
@@ -390,37 +351,26 @@ async function registerConnectorCatalogSkills(
     missing,
     signal,
   );
-  const insertedVersionIds = await registerMissingStorageVersions(
-    db,
-    missing,
-    storageByName,
-    signal,
-  );
-  const newHeads = missing.filter((registration) => {
-    return insertedVersionIds.has(registration.versionId);
-  });
-  if (newHeads.length === 0) {
-    return;
-  }
-  await updateNewStorageHeads(db, newHeads, signal);
+  await registerMissingStorageVersions(db, missing, storageByName, signal);
 }
 
-export async function registerPreparedConnectorCatalogSkills(
-  args: {
-    readonly db: Db;
-    readonly registrations: readonly PreparedConnectorSkillRegistration[];
+export const registerPreparedConnectorCatalogSkills$ = command(
+  async (
+    { set },
+    registrations: readonly PreparedConnectorSkillRegistration[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (registrations.length === 0) {
+      return;
+    }
+    const db = set(writeDb$);
+    await registerConnectorCatalogSkills(db, registrations, signal);
+    await enqueuePiResourceVersionIndexes(
+      db,
+      registrations.map((registration) => {
+        return registration.versionId;
+      }),
+      signal,
+    );
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.registrations.length === 0) {
-    return;
-  }
-  await registerConnectorCatalogSkills(args.db, args.registrations, signal);
-  await enqueuePiResourceVersionIndexes(
-    args.db,
-    args.registrations.map((registration) => {
-      return registration.versionId;
-    }),
-    signal,
-  );
-}
+);

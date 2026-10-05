@@ -9,6 +9,8 @@ import type {
   ConnectorCatalogAuthMethod,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+
 type ManualField = Extract<
   ConnectorCatalogAuthMethod["grant"],
   { readonly kind: "manual" }
@@ -2406,6 +2408,76 @@ const connectors = [
   }),
 ] satisfies readonly ConnectorCatalogArtifactConnector[];
 
+function automaticMcpConnector(
+  firewallAuth: "none" | "oauth",
+): ConnectorCatalogArtifactConnector {
+  const template = connectors.find((entry) => {
+    return entry.slug === "public-mcp";
+  });
+  if (!template) {
+    throw new Error("Expected the fixed public MCP connector");
+  }
+  const endpoint = "https://automatic-mcp.example.test/server";
+  const accessToken =
+    firewallAuth === "oauth"
+      ? "AUTOMATIC_ACCESS_TOKEN"
+      : `AUTOMATIC_${firewallAuth.toUpperCase()}_ACCESS_TOKEN`;
+  const refreshToken =
+    firewallAuth === "oauth"
+      ? "AUTOMATIC_REFRESH_TOKEN"
+      : `AUTOMATIC_${firewallAuth.toUpperCase()}_REFRESH_TOKEN`;
+  const outputs = {
+    accessToken: secret(accessToken),
+    refreshToken: secret(refreshToken),
+  };
+  return {
+    ...template,
+    slug: `automatic-mcp-${firewallAuth}`,
+    label: "Automatic Tools",
+    mcp: { transport: "streamable-http", endpoint },
+    authMethods: [
+      {
+        id: "smart-connect",
+        label: "Connect",
+        description: null,
+        visible: true,
+        storage: {
+          version: 1,
+          secrets: [accessToken, refreshToken],
+          variables: [],
+        },
+        grant: { kind: "automatic", callbackOrigin: "api", outputs },
+        access: { kind: "automatic", inputs: outputs, outputs },
+        revoke: { kind: "none" },
+      },
+    ],
+    firewall: {
+      kind: "generated",
+      billable: false,
+      config: {
+        description: "Automatic Tools",
+        apis: [
+          {
+            base: endpoint,
+            auth:
+              firewallAuth === "none"
+                ? {}
+                : {
+                    headers: {
+                      Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+                    },
+                  },
+            permissions: [],
+          },
+        ],
+      },
+      categories: null,
+      defaultAllowed: null,
+      defaultUnknownPolicy: "allow",
+    },
+  };
+}
+
 export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
   artifactSchemaVersion: 4,
   catalogVersion: "api-test-v4",
@@ -2420,5 +2492,9 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     ],
     groups: [{ id: "test", label: "Test", menuLabel: "Test" }],
   },
-  connectors,
+  connectors: [
+    ...connectors,
+    automaticMcpConnector("none"),
+    automaticMcpConnector("oauth"),
+  ],
 } satisfies ConnectorCatalogArtifact;

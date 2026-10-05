@@ -17,7 +17,7 @@ import { env } from "../../../lib/env";
 import { settle } from "../../utils";
 import { writeCustomConnectorOAuthState } from "../custom-connector-oauth-write.service";
 
-testContext({ connectorCatalog: true });
+testContext();
 
 // Trigger presence, transaction interleavings and config-key movement cannot
 // be selected through a product API. Private PostgreSQL schemas exercise this

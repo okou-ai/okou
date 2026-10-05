@@ -18,7 +18,7 @@ import {
   type PublicFirewallFixture,
 } from "./helpers/public-firewall-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const AWS_TOKEN_URL = "https://us-east-1.signin.aws.amazon.com/v1/token";
 const AWS_STS_URL = "https://sts.us-east-1.amazonaws.com/";
 
