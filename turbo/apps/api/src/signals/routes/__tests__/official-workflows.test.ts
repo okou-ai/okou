@@ -1245,6 +1245,24 @@ async function reconcileStaleQueuedMessages(threadId: string): Promise<void> {
   );
 }
 
+async function allThreadEventRows(actor: ApiTestUser, chatThreadId: string) {
+  const rows = await chat.listThreadEventRows(actor, chatThreadId);
+  let page = rows;
+  // The endpoint caps each page at 50; a 32-hop chain spans multiple pages.
+  while (page.length === 50) {
+    const last = page.at(-1);
+    if (!last) {
+      throw new Error("Expected a cursor on a full event page");
+    }
+    page = await chat.listThreadEventRows(actor, chatThreadId, {
+      lastEventId: last.id,
+      lastSeqId: last.seqId,
+    });
+    rows.push(...page);
+  }
+  return rows;
+}
+
 /**
  * Run now only enqueues; the background pick launches the run. Flush the pick
  * and read the newest launched run from the automation thread.
@@ -1254,10 +1272,11 @@ async function launchedAutomationRunId(
   chatThreadId: string,
 ): Promise<string | undefined> {
   await flushWaitUntilForTest();
-  const { events } = await chat.listThreadEvents(actor, chatThreadId);
-  return [...events].reverse().find((event) => {
+  const events = await allThreadEventRows(actor, chatThreadId);
+  const launched = [...events].reverse().find((event) => {
     return event.eventType === "input.prompt" && event.runId;
-  })?.runId;
+  });
+  return launched?.runId ?? undefined;
 }
 
 async function requireActiveOfficialRunId(
@@ -8772,9 +8791,9 @@ describe("Official Workflow Run admission", () => {
     });
     let sourceThreadId = sourceThread.id;
     let sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    // Spend nine of the ten public delegation hops through real admission.
+    // Spend 31 of the 32 public delegation hops through real admission.
     // Each completed parent releases its slot before the next child is claimed.
-    for (let hop = 0; hop < 9; hop += 1) {
+    for (let hop = 0; hop < 31; hop += 1) {
       const child = await accept(
         workflowClient().run({
           headers: officialQueueHeaders(actor, sourceRunId, {
@@ -8854,7 +8873,7 @@ describe("Official Workflow Run admission", () => {
     );
     await flushWaitUntilForTest();
     const rejections = (
-      await chat.listThreadEventRows(actor, denied.body.chatThreadId)
+      await allThreadEventRows(actor, denied.body.chatThreadId)
     ).filter((event) => {
       return event.eventType === "input.rejected";
     });
