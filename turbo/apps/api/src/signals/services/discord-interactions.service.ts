@@ -1,63 +1,63 @@
-import { command } from "ccstate";
-import { createHash } from "node:crypto";
-import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { and, eq } from "drizzle-orm";
 import {
-  discordInteractionSchema,
-  type DiscordCommandInteraction,
-  type DiscordComponentInteraction,
+discordInteractionSchema,
+type DiscordCommandInteraction,
+type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
+import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
+import { command } from "ccstate";
+import { and,eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { delay } from "signal-timers";
 
+import type { DiscordCommandName } from "../../lib/discord-command-definition";
+import {
+discordAccountLabel,
+discordAccountMessage,
+discordAccountPicker,
+type DiscordAccountMessage,
+} from "../../lib/discord-interaction-messages";
+import {
+parseDiscordPickerCustomId,
+resolveDiscordInteractionActor,
+verifyDiscordInteractionSignature,
+type DiscordInteractionActor,
+type DiscordPickerState,
+} from "../../lib/discord-interaction-protocol";
 import { env } from "../../lib/env";
 import { monotonicNow } from "../../lib/time";
-import {
-  parseDiscordPickerCustomId,
-  resolveDiscordInteractionActor,
-  verifyDiscordInteractionSignature,
-  type DiscordInteractionActor,
-  type DiscordPickerState,
-} from "../../lib/discord-interaction-protocol";
-import {
-  discordAccountLabel,
-  discordAccountMessage,
-  discordAccountPicker,
-  type DiscordAccountMessage,
-} from "../../lib/discord-interaction-messages";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
+import { writeDb$ } from "../external/db";
 import {
-  discordClient,
-  type DiscordApiResult,
+discordClient,
+type DiscordApiResult,
 } from "../external/discord-client";
 import {
-  discordGuildUserBinding,
-  discordEffectiveAgent,
-  discordDmBinding,
-  discordSenderBindings,
-  disconnectDiscordBinding$,
-  selectDiscordDmBinding$,
-  type DiscordVerifiedBinding,
-} from "./discord-data.service";
-import {
-  discordIntegrationEnabledForOwner$,
-  getDiscordAppConfig,
-} from "./discord-config";
-import type { DiscordCommandName } from "../../lib/discord-command-definition";
+safeJsonParse,
+safeSync,
+settle,
+settleIncludingAbort,
+} from "../utils";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { findDiscordInteractionChatThreadId } from "./discord-chat-ingress.service";
 import {
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
-import { writeDb$ } from "../external/db";
+discordIntegrationEnabledForOwner$,
+getDiscordAppConfig,
+} from "./discord-config";
 import {
-  safeJsonParse,
-  safeSync,
-  settle,
-  settleIncludingAbort,
-} from "../utils";
+disconnectDiscordBinding$,
+discordDmBinding,
+discordEffectiveAgent,
+discordGuildUserBinding,
+discordSenderBindings,
+selectDiscordDmBinding$,
+type DiscordVerifiedBinding,
+} from "./discord-data.service";
+import {
+readIntegrationChatThreadModel$,
+updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 
 const SETUP_GUIDANCE =
   "Discord account onboarding is not available yet. An administrator must configure a verified connection before you can use Okou. This command does not connect or verify an account.";
@@ -327,9 +327,9 @@ const discordModelPicker$ = command(
     ) {
       return discordAccountMessage(STALE_CONTROL);
     }
-    const policies = await set(listOrgModelPolicies$, args.binding, signal);
+    const policies = await set(listAvailableRunModels$, args.binding, signal);
     signal.throwIfAborted();
-    const options = policies.policies.flatMap((policy) => {
+    const options = policies.models.flatMap((policy) => {
       if (policy.routeStatus !== "valid") {
         return [];
       }

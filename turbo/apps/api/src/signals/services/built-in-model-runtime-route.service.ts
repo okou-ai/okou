@@ -1,24 +1,25 @@
 import {
-  BUILT_IN_MODEL_ROUTE_PROVIDERS,
-  type BuiltInModelRouteProviderType,
+BUILT_IN_MODEL_ROUTE_PROVIDERS,
+type BuiltInModelRouteProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { AUTO_RUN_MODEL,AUTO_RUN_PROVIDER,AUTO_RUN_UPSTREAM_MODEL } from "@okouai/core/auto-run-model";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { computed, type Computed } from "ccstate";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { computed,type Computed } from "ccstate";
+import { and,eq,gt,inArray } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$,type ReadonlyDb } from "../external/db";
 import {
-  catalogBuiltInCandidates,
-  type ModelCatalog,
-} from "./model-catalog.service";
-import {
-  builtInRoutePricingRejectionMessage,
-  isBuiltInRoutePriced,
-  unpricedBuiltInRouteCategories,
-  type BuiltInRoutePricing,
+builtInRoutePricingRejectionMessage,
+isBuiltInRoutePriced,
+unpricedBuiltInRouteCategories,
+type BuiltInRoutePricing,
 } from "./built-in-route-pricing";
+import {
+catalogBuiltInCandidates,
+type ModelCatalog,
+} from "./model-catalog.service";
 
 /** One enabled Built-in `model_routes` candidate with a known adapter. */
 interface BuiltInModelRouteTarget {
@@ -45,6 +46,11 @@ export function getCatalogBuiltInModelRouteCandidates(
   selectedModel: string,
   routePricing?: BuiltInRoutePricing,
 ): readonly BuiltInModelRouteTarget[] {
+  if (selectedModel === AUTO_RUN_MODEL) {
+    const pricingRoute = catalogBuiltInCandidates(catalog, AUTO_RUN_MODEL).find((route) => route.concreteProviderType === AUTO_RUN_PROVIDER);
+    if (routePricing && (!pricingRoute || !isBuiltInRoutePriced(routePricing, pricingRoute))) { return []; }
+    return [{ selectedModel: AUTO_RUN_MODEL, providerType: AUTO_RUN_PROVIDER, upstreamModel: AUTO_RUN_UPSTREAM_MODEL, vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[AUTO_RUN_PROVIDER].vendor }];
+  }
   return catalogBuiltInCandidates(catalog, selectedModel).flatMap((route) => {
     const providerType = route.concreteProviderType;
     if (!isBuiltInModelRouteProviderType(providerType)) {

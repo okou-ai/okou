@@ -2,7 +2,7 @@ import type { McpChatThread } from "@okouai/api-contracts/contracts/mcp-chat-thr
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { command } from "ccstate";
 import { db$ } from "../external/db";
-import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
+import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
 
 /** Read the Web policy projection plus persisted replacement identities once. */
 export const mcpChatThreadModels$ = command(
@@ -16,7 +16,7 @@ export const mcpChatThreadModels$ = command(
       return new Map();
     }
     const [listing, replacements] = await Promise.all([
-      set(listOrgModelPoliciesWithSystemDefault$, principal, signal),
+      set(listAvailableRunModelsWithDefault$, principal, signal),
       get(db$)
         .select({
           model: runModelCatalog.model,
@@ -34,7 +34,7 @@ export const mcpChatThreadModels$ = command(
     // and transient provider availability are checked by the ordinary send;
     // they must not erase a stored model's canonical replacement in a read.
     const configured = new Set(
-      listing.response.policies
+      listing.response.models
         .filter((policy) => {
           return policy.routeStatus === "valid";
         })

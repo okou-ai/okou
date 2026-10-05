@@ -1,24 +1,22 @@
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { computed } from "ccstate";
-import { eq, sql, sum } from "drizzle-orm";
+import { eq,sql,sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
-import { activeConcurrencySubscriptionPredicate } from "./org-concurrency-entitlements.service";
 import { executionCreditQueries } from "./execution-credit-balance.service";
+import { activeConcurrencySubscriptionPredicate } from "./org-concurrency-entitlements.service";
 import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
 
 const rawDecoder = zodDriverValueDecoder(z.unknown());
 const metadataSchema = z.object({
   credits: z.number(),
-  modelMode: z.string(),
   defaultAgentId: z.string().nullable(),
 });
 const planSchema = z.object({
@@ -36,22 +34,6 @@ const planSchema = z.object({
   audioDailyRateLimit: z.number(),
   audioDailyDurationSeconds: z.number(),
 });
-const policySchema = z.array(
-  z.object({
-    id: z.string(),
-    orgId: z.string(),
-    model: z.string(),
-    defaultProviderType: z.string(),
-    credentialScope: z.string(),
-    modelProviderId: z.string().nullable(),
-    modelProviderSurfaceId: z.string().nullable(),
-    createdByUserId: z.string().nullable(),
-    updatedByUserId: z.string().nullable(),
-    createdAt: z.coerce.date(),
-    updatedAt: z.coerce.date(),
-  }),
-);
-
 /** Transport only: business decoding belongs to independent derived consumers. */
 export function createExecutionOrgRows(orgId: string) {
   return computed(async (get) => {
@@ -74,24 +56,11 @@ export function createExecutionOrgRows(orgId: string) {
       })
       .from(creditExpiresRecord)
       .where(expired.where);
-    const policies = builder
-      .select({
-        value: sql`COALESCE(jsonb_agg(jsonb_build_object(
-        'id', ${orgModelPolicies.id}, 'orgId', ${orgModelPolicies.orgId}, 'model', ${orgModelPolicies.model},
-        'defaultProviderType', ${orgModelPolicies.defaultProviderType}, 'credentialScope', ${orgModelPolicies.credentialScope},
-        'modelProviderId', ${orgModelPolicies.modelProviderId}, 'modelProviderSurfaceId', ${orgModelPolicies.modelProviderSurfaceId},
-        'createdByUserId', ${orgModelPolicies.createdByUserId}, 'updatedByUserId', ${orgModelPolicies.updatedByUserId},
-        'createdAt', ${orgModelPolicies.createdAt}, 'updatedAt', ${orgModelPolicies.updatedAt})), '[]'::jsonb)`.mapWith(
-          rawDecoder,
-        ),
-      })
-      .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, orgId));
     const rows = await get(db$)
       .select({
         metadata:
           sql`CASE WHEN ${orgMetadata.orgId} IS NULL THEN NULL ELSE jsonb_build_object(
-        'credits', ${orgMetadata.credits}, 'modelMode', ${orgMetadata.modelMode},
+        'credits', ${orgMetadata.credits},
         'defaultAgentId', ${orgMetadata.defaultAgentId}) END`.mapWith(
             rawDecoder,
           ),
@@ -109,7 +78,6 @@ export function createExecutionOrgRows(orgId: string) {
         ),
         slots: sql`(${slots})`.mapWith(rawDecoder),
         expired: sql`(${expiredTotal})`.mapWith(rawDecoder),
-        policies: sql`(${policies})`.mapWith(rawDecoder),
       })
       .from(orgMetadata)
       // Preserve entitlement-only organizations and absent metadata without a second read.
@@ -150,7 +118,4 @@ export function executionOrgSlots(snapshot: ExecutionOrgRows) {
 export function executionExpiredCredits(snapshot: ExecutionOrgRows) {
   const value = requiredOrgRow(snapshot).expired;
   return value === null ? 0 : pgInt8ToSafeIntegerSchema.parse(value);
-}
-export function executionOrgPolicies(snapshot: ExecutionOrgRows) {
-  return policySchema.parse(requiredOrgRow(snapshot).policies);
 }

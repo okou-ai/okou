@@ -1,19 +1,14 @@
 import {
-  MODEL_PROVIDER_TYPES,
-  modelProviderTypeSchema,
-  getModelProviderEnvBindings,
-  getModelProviderFirewall,
-  BUILT_IN_MODEL_ROUTE_PROVIDERS,
-  getSecretNameForType,
-  getSecretsForAuthMethod,
-  hasAuthMethods,
+BUILT_IN_MODEL_ROUTE_PROVIDERS,
+getModelProviderEnvBindings,
+getModelProviderFirewall,
+getSecretNameForType,
+getSecretsForAuthMethod,
+hasAuthMethods,
+MODEL_PROVIDER_TYPES,
+modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
-import {
-  compileModelProviderGatewayRuntime,
-  GATEWAY_RUNTIME_SECRET_NAME,
-} from "./model-provider-gateway-runtime";
-
 export type ModelCredentialValues = Readonly<Record<string, string>>;
 export type ModelRuntimeSelection =
   | {
@@ -149,35 +144,6 @@ function compileMultiAuthRuntime(
       headerName: "Authorization",
       valueTemplate: "Bearer {{secret}}",
       secretName: "CHATGPT_ACCESS_TOKEN",
-    };
-  } else if (type === "aws-bedrock") {
-    const region = forwardable.AWS_REGION;
-    if (!region) {
-      throw new Error("Bedrock region is missing");
-    }
-    transport = { kind: "bedrock", region };
-    authentication =
-      authMethod === "api-key"
-        ? { kind: "aws-bearer", secretName: "AWS_BEARER_TOKEN_BEDROCK" }
-        : {
-            kind: "aws-sigv4",
-            accessKeyIdSecretName: "AWS_ACCESS_KEY_ID",
-            secretAccessKeySecretName: "AWS_SECRET_ACCESS_KEY",
-            sessionTokenSecretName: forwardable.AWS_SESSION_TOKEN
-              ? "AWS_SESSION_TOKEN"
-              : null,
-          };
-  } else if (type === "azure-foundry") {
-    transport = {
-      kind: "http",
-      protocol: "anthropic-messages",
-      baseUrl: `https://${forwardable.ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com/anthropic`,
-    };
-    authentication = {
-      kind: "header",
-      headerName: "api-key",
-      valueTemplate: "{{secret}}",
-      secretName: "ANTHROPIC_FOUNDRY_API_KEY",
     };
   } else {
     throw new Error("Unsupported multi-auth runtime protocol");
@@ -355,7 +321,7 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
 export function compileModelRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
-  const { source, selection, credentials } = input;
+  const { source, selection } = input;
   if (!selection.selectedModel || !selection.upstreamModel) {
     throw new Error(
       "Model runtime requires its selected logical and upstream facts",
@@ -365,58 +331,9 @@ export function compileModelRuntime(
   if (selection.kind === "built-in") {
     return compileManagedRuntime(input);
   }
-  if (config.kind === "registered-provider") {
-    return hasAuthMethods(modelProviderTypeSchema.parse(config.providerType))
-      ? compileMultiAuthRuntime(input)
-      : compileRegisteredRuntime(input);
+  if (source.identity.kind !== "member" || source.credentialOwner !== "member" ||
+    (config.providerType !== "codex-oauth-token" && config.providerType !== "claude-code-oauth-token")) {
+    throw new Error("Configured runtime requires a personal subscription account");
   }
-  if (
-    selection.kind !== "configured" ||
-    source.identity.kind !== "gateway" ||
-    config.kind !== "gateway"
-  ) {
-    throw new Error(
-      "This source has not migrated to the pure model runtime contract",
-    );
-  }
-  const upstreamModel = config.modelMappings[selection.selectedModel];
-  if (!upstreamModel || upstreamModel !== selection.upstreamModel) {
-    throw new Error("Selected model has no gateway mapping");
-  }
-  const apiKey = credentials[GATEWAY_RUNTIME_SECRET_NAME];
-  if (!apiKey?.trim()) {
-    throw new Error("Gateway credential is missing");
-  }
-  const runtime = compileModelProviderGatewayRuntime({
-    surfaceId: source.identity.surfaceId,
-    protocol: config.protocol,
-    apiBaseUrl: config.apiBaseUrl,
-    displayName: config.displayName,
-    authHeaderName: config.authHeaderName,
-    authHeaderTemplate: config.authHeaderTemplate,
-    logicalModel: selection.selectedModel,
-    upstreamModel,
-  });
-  if (runtime.type !== config.providerType) {
-    throw new Error("Gateway provider identity mismatch");
-  }
-  return {
-    selectedModel: selection.selectedModel,
-    upstreamModel,
-    providerType: runtime.type,
-    credentialOwner: source.credentialOwner,
-    transport: {
-      kind: "http",
-      protocol: config.protocol,
-      baseUrl: config.apiBaseUrl,
-    },
-    authentication: {
-      kind: "header",
-      headerName: config.authHeaderName,
-      valueTemplate: config.authHeaderTemplate,
-      secretName: GATEWAY_RUNTIME_SECRET_NAME,
-    },
-    environment: runtime.environment,
-    secrets: { [GATEWAY_RUNTIME_SECRET_NAME]: apiKey },
-  };
+  return hasAuthMethods(modelProviderTypeSchema.parse(config.providerType)) ? compileMultiAuthRuntime(input) : compileRegisteredRuntime(input);
 }

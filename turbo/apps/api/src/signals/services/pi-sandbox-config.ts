@@ -1,50 +1,38 @@
 import {
-  isPiExecutionRoute,
-  isPresetUpstreamModel,
-  type PiCatalogModel,
-  type PiRouteClass,
-  piCatalogModel,
-} from "@okouai/core/pi-execution";
-import {
-  piThinkingLevelForEffort,
-  type ReasoningEffort,
-} from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  PI_MODEL_CONFIG_CURRENT_GENERATION,
-  PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-  type PiModelConfig,
-  type PiModelConfigLegacy,
-} from "@okouai/api-contracts/contracts/runners";
-import {
-  getModelProviderPiEndpoint,
-  getSecretNameForType,
-  isBuiltInModelProviderType,
-  modelProviderTypeSchema,
-  type ModelProviderType,
+getModelProviderPiEndpoint,
+getSecretNameForType,
+isBuiltInModelProviderType,
+modelProviderTypeSchema,
+type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  isPiAgentModelSupported,
-  type PiExecutionRoute,
-  normalizePiExecutionRoute,
-  assertPiNativeCredential,
-  materializePiExecutionRoute,
-} from "@okouai/pi-agent-runtime";
+piThinkingLevelForEffort,
+type ReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
-
 import {
-  resolvePiNativeModelConfig,
-  type PiNativeModelProviderInput,
-  PiNativeConfigurationError,
-} from "./pi-native-model-config";
+PI_MODEL_CONFIG_CURRENT_GENERATION,
+PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
+type PiModelConfig,
+type PiModelConfigLegacy,
+} from "@okouai/api-contracts/contracts/runners";
+import {
+isPiExecutionRoute,
+isPresetUpstreamModel,
+piCatalogModel,
+type PiCatalogModel,
+type PiRouteClass,
+} from "@okouai/core/pi-execution";
+import {
+isPiAgentModelSupported
+} from "@okouai/pi-agent-runtime";
 
-import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
-import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contracts/pi-native";
-import { safeSync } from "../utils";
+import { AUTO_RUN_MODEL,AUTO_RUN_PROVIDER,AUTO_RUN_UPSTREAM_MODEL } from "@okouai/core/auto-run-model";
 import { env } from "../../lib/env";
-import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
+import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
+import { PiModelConfigurationError } from "./pi-model-configuration-error";
 
 /**
  * Resolve non-secret model metadata for the sandbox Pi runtime. Credentials
@@ -59,65 +47,6 @@ function normalizedBaseUrl(url: string): string {
 interface PiRuntimeContract {
   readonly thinkingLevel?: PiModelConfigLegacy["thinkingLevel"];
   readonly serviceTier?: PiModelConfigLegacy["serviceTier"];
-}
-
-type PiCatalogProvider = "deepseek" | "openai";
-
-const GPT_API_KEY_PI_ROUTES = {
-  "openai-api-key": {
-    productProviderType: "openai-api-key",
-    provider: "openai",
-    modelPrefix: "",
-    endpoint: getModelProviderPiEndpoint("openai-api-key", "openai-responses"),
-    credentialSecretName: "OPENAI_API_KEY",
-  },
-  "openrouter-codex": {
-    productProviderType: "openrouter-codex",
-    provider: "openrouter",
-    modelPrefix: "openai/",
-    endpoint: getModelProviderPiEndpoint(
-      "openrouter-codex",
-      "openai-responses",
-    ),
-    credentialSecretName: "OPENROUTER_API_KEY",
-  },
-  "vercel-ai-gateway-codex": {
-    productProviderType: "vercel-ai-gateway-codex",
-    provider: "openai",
-    modelPrefix: "openai/",
-    endpoint: getModelProviderPiEndpoint(
-      "vercel-ai-gateway-codex",
-      "openai-responses",
-    ),
-    credentialSecretName: "VERCEL_AI_GATEWAY_API_KEY",
-  },
-} as const;
-
-type GptApiKeyPiProviderType = keyof typeof GPT_API_KEY_PI_ROUTES;
-
-function isGptApiKeyPiProviderType(
-  value: string | null | undefined,
-): value is GptApiKeyPiProviderType {
-  return (
-    value !== null &&
-    value !== undefined &&
-    Object.hasOwn(GPT_API_KEY_PI_ROUTES, value)
-  );
-}
-
-export function gptApiKeyPiRoute(
-  value: string | null | undefined,
-): (typeof GPT_API_KEY_PI_ROUTES)[GptApiKeyPiProviderType] | null {
-  return isGptApiKeyPiProviderType(value) ? GPT_API_KEY_PI_ROUTES[value] : null;
-}
-
-function piCatalogProvider(
-  routeClass: PiRouteClass | null,
-): PiCatalogProvider | null {
-  if (routeClass === "gpt-codex") {
-    return "openai";
-  }
-  return routeClass === "deepseek" ? "deepseek" : null;
 }
 
 /**
@@ -136,8 +65,7 @@ function piRuntimeContract(args: {
   ) {
     return {
       thinkingLevel: "max",
-      ...((isBuiltInModelProviderType(args.providerType) ||
-        args.providerType === "custom-openai-responses") &&
+      ...(isBuiltInModelProviderType(args.providerType) &&
       args.codexServiceTier === "fast"
         ? { serviceTier: "priority" as const }
         : {}),
@@ -189,7 +117,9 @@ export function shouldUsePiExecution(args: {
   );
 }
 
-interface PiModelProviderConfigInput extends PiNativeModelProviderInput {
+interface PiModelProviderConfigInput {
+  readonly upstreamModel?: string;
+  readonly credentialOwner?: "builtin" | "organization" | "member";
   readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
@@ -273,129 +203,6 @@ function resolveCodexSubscriptionPiModelConfig(
     : null;
 }
 
-function resolveCustomGatewayPiModelConfig(
-  provider: PiModelProviderConfigInput,
-  routeClass: PiRouteClass | null,
-  codexServiceTier: "fast" | "ultrafast" | undefined,
-): PiModelConfig | null {
-  if (
-    provider.type !== "custom-openai-responses" ||
-    provider.inlineFirewall !== true ||
-    !provider.selectedModel ||
-    !provider.credentialHeader
-  ) {
-    return null;
-  }
-  const catalogProvider = piCatalogProvider(routeClass);
-  const baseUrl = provider.environment.OPENAI_BASE_URL;
-  const model = provider.environment.OPENAI_MODEL;
-  if (!catalogProvider || !baseUrl || !model) {
-    return null;
-  }
-  const runtimeContract = piRuntimeContract({
-    providerType: provider.type,
-    upstreamModel: provider.upstreamModel,
-    routeClass,
-    codexServiceTier,
-  });
-  const config = {
-    provider: catalogProvider,
-    baseUrl,
-    model,
-    catalogModel: provider.selectedModel,
-    apiKeyEnv: "OPENAI_API_KEY",
-    credentialSecretName: GATEWAY_RUNTIME_SECRET_NAME,
-    credentialHeader: provider.credentialHeader,
-    ...runtimeContract,
-  } as const;
-  return isPiAgentModelSupported({
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-    model: config.model,
-    catalogModel: config.catalogModel,
-    apiKey: "sandbox-secret",
-    dialect: "openai-responses",
-    transport: "sse",
-    ...runtimeContract,
-  })
-    ? config
-    : null;
-}
-
-function resolveGptApiKeyPiModelConfig(
-  provider: PiModelProviderConfigInput,
-  codexServiceTier: "fast" | "ultrafast" | undefined,
-): PiModelConfig | null {
-  const route = gptApiKeyPiRoute(provider.type);
-  if (
-    !route ||
-    !provider.selectedModel ||
-    provider.inlineFirewall === true ||
-    provider.credentialHeader !== undefined ||
-    (provider.concreteType !== undefined &&
-      provider.concreteType !== route.productProviderType) ||
-    !route.endpoint ||
-    getSecretNameForType(route.productProviderType) !==
-      route.credentialSecretName ||
-    provider.environment.OPENAI_MODEL !==
-      `${route.modelPrefix}${provider.selectedModel}` ||
-    !provider.environment.OPENAI_API_KEY?.trim()
-  ) {
-    return null;
-  }
-  const configuredBaseUrl = provider.environment.OPENAI_BASE_URL;
-  if (
-    configuredBaseUrl &&
-    normalizedBaseUrl(configuredBaseUrl) !==
-      normalizedBaseUrl(route.endpoint.baseUrl)
-  ) {
-    return null;
-  }
-  const serviceTier =
-    codexServiceTier === "fast"
-      ? "priority"
-      : codexServiceTier === "ultrafast"
-        ? "ultrafast"
-        : undefined;
-  const config = {
-    ...(serviceTier === undefined
-      ? { schemaVersion: PI_MODEL_CONFIG_CURRENT_GENERATION }
-      : {
-          schemaVersion: PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-          serviceTier,
-        }),
-    dialect: "openai-responses",
-    transport: "sse",
-    provider: route.provider,
-    baseUrl: route.endpoint.baseUrl,
-    model: `${route.modelPrefix}${provider.selectedModel}`,
-    ...(route.productProviderType === "vercel-ai-gateway-codex"
-      ? { catalogModel: provider.selectedModel }
-      : {}),
-    thinkingLevel: "max",
-    credentialBindings: [
-      {
-        kind: "api-key",
-        environment: "OPENAI_API_KEY",
-        secretName: route.credentialSecretName,
-      },
-    ],
-  } satisfies PiModelConfig;
-  return isPiAgentModelSupported({
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-    model: config.model,
-    ...(config.catalogModel ? { catalogModel: config.catalogModel } : {}),
-    apiKey: "sandbox-secret",
-    dialect: config.dialect,
-    transport: config.transport,
-    thinkingLevel: config.thinkingLevel,
-    serviceTier,
-  })
-    ? config
-    : null;
-}
-
 function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
   catalogModel: PiCatalogModel | null,
@@ -411,9 +218,6 @@ function resolvePiRouteModelConfig(
     catalogModel?.model === provider.selectedModel
       ? catalogModel.piRouteClass
       : null;
-  if (routeClass === "claude-native" && catalogModel) {
-    return resolvePiNativeModelConfig(provider, catalogModel);
-  }
   if (provider.type === "codex-oauth-token") {
     return resolveCodexSubscriptionPiModelConfig(
       provider,
@@ -421,16 +225,7 @@ function resolvePiRouteModelConfig(
       codexServiceTier,
     );
   }
-  if (provider.type === "custom-openai-responses") {
-    return resolveCustomGatewayPiModelConfig(
-      provider,
-      routeClass,
-      codexServiceTier,
-    );
-  }
-  if (isGptApiKeyPiProviderType(provider.type) && routeClass === "gpt-codex") {
-    return resolveGptApiKeyPiModelConfig(provider, codexServiceTier);
-  }
+  if (!isBuiltInModelProviderType(provider.type) || provider.selectedModel !== AUTO_RUN_MODEL || provider.concreteType !== AUTO_RUN_PROVIDER || provider.upstreamModel !== AUTO_RUN_UPSTREAM_MODEL) { return null; }
   return resolveResponsesPiModelConfig(
     { ...provider, selectedModel: provider.selectedModel },
     routeClass,
@@ -549,20 +344,6 @@ export function resolvePiSandboxModelConfig(
   };
 }
 
-export function nativeCredentialEnvironment(
-  route: PiExecutionRoute | undefined,
-): Record<string, string> {
-  return route &&
-    (route.dialect === "anthropic-messages" ||
-      route.dialect === "bedrock-converse-stream")
-    ? Object.fromEntries(
-        route.credentialBindings.map((binding) => {
-          return [binding.environment, PI_NATIVE_CREDENTIAL_PLACEHOLDER];
-        }),
-      )
-    : {};
-}
-
 function assertCurrentPiCliArtifact(): void {
   // The writer and CLI reader are built from the same commit. A mutable or
   // differently pinned package cannot consume a newly captured model.
@@ -577,7 +358,7 @@ function assertCurrentPiCliArtifact(): void {
     cliUrl.hash ||
     cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
   ) {
-    throw new PiNativeConfigurationError(
+    throw new PiModelConfigurationError(
       "Pi requires the current commit-addressed CLI reader artifact",
     );
   }
@@ -591,10 +372,10 @@ export interface PiModelPreparationInput {
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 
-export async function materializePreparedPiProvider(
+export function materializePreparedPiProvider(
   input: PiModelPreparationInput,
   provider: ResolvedModelProviderEnvironment | null,
-): Promise<ResolvedModelProviderEnvironment | null> {
+): ResolvedModelProviderEnvironment | null {
   if (!input.piExecution) {
     return provider;
   }
@@ -613,66 +394,7 @@ export async function materializePreparedPiProvider(
   if (provider.selectedModel === "deepseek-v4.1-flash") {
     assertCurrentPiCliArtifact();
   }
-  if (!("schemaVersion" in config) || config.schemaVersion !== 4) {
-    if (
-      !("schemaVersion" in config) &&
-      (provider.type === "deepseek" || provider.type === "openrouter-codex") &&
-      catalogModel?.piRouteClass === "deepseek"
-    ) {
-      const credential = safeSync(() => {
-        return assertPiNativeCredential(
-          provider.secrets[config.credentialSecretName] ?? "",
-        );
-      });
-      if ("error" in credential) {
-        throw new PiNativeConfigurationError(
-          "Selected Pi credential is invalid",
-        );
-      }
-      return {
-        ...provider,
-        piModelConfig: config,
-        secretConnectorMap: undefined,
-        secretConnectorMetadataMap: undefined,
-      };
-    }
-    return { ...provider, piModelConfig: config };
-  }
-  assertCurrentPiCliArtifact();
-  const secrets: Record<string, string> = {};
-  const route = normalizePiExecutionRoute(config);
-  await materializePiExecutionRoute({
-    route,
-    target: "direct",
-    resolveCredential(binding) {
-      const value = provider.secrets[binding.secretName];
-      if (!value) {
-        throw new PiNativeConfigurationError(
-          "Selected native Pi credential is unavailable",
-        );
-      }
-      const credential = safeSync(() => {
-        return assertPiNativeCredential(value);
-      });
-      if ("error" in credential) {
-        throw new PiNativeConfigurationError(
-          "Selected Pi credential is invalid",
-        );
-      }
-      secrets[binding.secretName] = value;
-      return value;
-    },
-  });
-  return {
-    ...provider,
-    piModelConfig: config,
-    environment: nativeCredentialEnvironment(route),
-    secrets,
-    secretConnectorMap: undefined,
-    secretConnectorMetadataMap: undefined,
-    firewall: piNativeFirewall(config),
-    inlineFirewall: true,
-  };
+  return { ...provider, piModelConfig: config };
 }
 
 export function resolvePreparedPiModelConfig(args: {

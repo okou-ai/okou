@@ -17,11 +17,9 @@ import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { telegramMessages } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
@@ -485,8 +483,6 @@ async function deleteTelegramPostFixtureForAction(
       and(eq(agentSessions.orgId, orgId), eq(agentSessions.userId, userId)),
     );
   signal.throwIfAborted();
-  await db.delete(orgModelPolicies).where(eq(orgModelPolicies.orgId, orgId));
-  signal.throwIfAborted();
   await db
     .delete(orgMembersMetadata)
     .where(
@@ -612,72 +608,6 @@ async function getTelegramPostRunStateForAction(
   });
 }
 
-async function seedModelPoliciesForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const required = requiredActionStrings(body, [
-    "org_id",
-    "user_id",
-    "compose_id",
-  ]);
-  if (!required) {
-    return actionBadRequest("org_id, user_id, and compose_id are required");
-  }
-  await db.insert(orgModelPolicies).values([
-    {
-      orgId: required.org_id!,
-      model: "claude-sonnet-5",
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      createdByUserId: required.user_id!,
-      updatedByUserId: required.user_id!,
-    },
-    {
-      orgId: required.org_id!,
-      model: "claude-opus-5",
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      createdByUserId: required.user_id!,
-      updatedByUserId: required.user_id!,
-    },
-    {
-      orgId: required.org_id!,
-      model: "deepseek-v4-flash",
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      createdByUserId: required.user_id!,
-      updatedByUserId: required.user_id!,
-    },
-  ]);
-  signal.throwIfAborted();
-  await db
-    .insert(builtInModelKeys)
-    .values({
-      vendor: "anthropic",
-      apiKey: "built-in-key-anthropic",
-      label: required.compose_id!,
-    })
-    .onConflictDoNothing({ target: builtInModelKeys.vendor });
-  signal.throwIfAborted();
-  await db
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: required.org_id!,
-      userId: required.user_id!,
-      selectedModel: readActionNullableString(body, "selected_model") ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: {
-        selectedModel: readActionNullableString(body, "selected_model") ?? null,
-      },
-    });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 type TelegramStateActionHandler = (
   db: Db,
   body: Record<string, unknown>,
@@ -690,7 +620,6 @@ const telegramStateActionHandlers = {
   "seed-agent-run-callback": seedAgentRunCallbackForAction,
   "delete-post-fixture": deleteTelegramPostFixtureForAction,
   "get-post-run-state": getTelegramPostRunStateForAction,
-  "seed-model-policies": seedModelPoliciesForAction,
   "delete-fixture": deleteTelegramFixtureForAction,
 } satisfies Record<
   Exclude<TestTelegramStateActionBody["action"], "seed-post-fixture">,
