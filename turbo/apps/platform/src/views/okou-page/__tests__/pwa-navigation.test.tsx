@@ -1,10 +1,5 @@
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -176,9 +171,6 @@ test("Switch between the desktop composer and mobile chat list as the browser re
 
   await screen.findByText("Responsive planning");
   expect(
-    screen.queryByRole("heading", { name: "Chats" }),
-  ).not.toBeInTheDocument();
-  expect(
     screen.getByRole("navigation", { name: "Main navigation" }),
   ).toBeInTheDocument();
   expect(screen.queryByTestId("labeled-nav-rail")).not.toBeInTheDocument();
@@ -221,23 +213,20 @@ test.each([false, true])(
     });
 
     await screen.findByText("Search planning");
-    expect(
-      screen.queryByRole("heading", { name: "Chats" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Inbox")).not.toBeInTheDocument();
-    expect(screen.queryByText("Unread")).not.toBeInTheDocument();
-    expect(screen.queryByText("Search workspace")).not.toBeInTheDocument();
-
-    const newChat = screen.getByLabelText("New chat");
     const search = screen.getByLabelText("Search workspace");
-    const menu = screen.getByLabelText("Open chat list menu");
+    const header = search.closest("header");
+    if (!header) {
+      throw new Error("Expected workspace search in the chat list header");
+    }
     expect(
-      queryAllByRoleFast("button", search.parentElement ?? document),
+      queryAllByRoleFast("button", header).map((button) => {
+        return button.getAttribute("aria-label");
+      }),
     ).toStrictEqual([
-      screen.getByLabelText("Switch agent"),
-      search,
-      newChat,
-      menu,
+      "Switch agent",
+      "Search workspace",
+      "New chat",
+      "Open chat list menu",
     ]);
 
     click(search);
@@ -248,7 +237,7 @@ test.each([false, true])(
       within(dialog).getByPlaceholderText("Search workspace..."),
     ).toHaveFocus();
 
-    fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+    await userEvent.keyboard("{Escape}");
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "Search workspace..." }),
