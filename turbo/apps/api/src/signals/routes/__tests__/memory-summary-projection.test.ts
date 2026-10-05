@@ -6,26 +6,26 @@ import type {
   TestMemorySummaryProjectionStateActionBody,
   TestMemorySummaryProjectionStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-memory-summary-projection-state";
-import {
-  MEMORY_ARTIFACT_NAME,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { readStorageIdentityFixture } from "../../../test-fixtures/storage";
 import { testMemorySummaryProjectionStateRoutes } from "../test-memory-summary-projection-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import type { BddStorageFileEntry } from "./helpers/api-bdd-storage-files";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
-const bdd = createBddApi(context);
-const storages = createStoragesBddApi(context);
 const BUCKET = "memory-summary-projection-test";
 const TAR_BLOCK_SIZE = 512;
 
@@ -210,22 +210,102 @@ function canonicalManifest(files: readonly BddStorageFileEntry[]): Buffer {
   );
 }
 
+// #37440 key10 keeps only the exact-version projection worker/read harness.
+// Ordinary memory ownership and writes come from a real claimed native Run.
 async function publishVersion(args: {
-  readonly actor?: ApiTestUser;
-  readonly storageName?: string;
-  readonly storageOwner?: "organization" | "user";
   readonly files: readonly BddStorageFileEntry[];
   readonly archive: Buffer;
   readonly manifest?: Buffer;
 }): Promise<PublishedVersion> {
-  const actor = args.actor ?? bdd.user();
-  const storageName = args.storageName ?? MEMORY_ARTIFACT_NAME;
-  const storageOwner = args.storageOwner ?? "user";
-  const prepared = await storages.prepareStorage(actor, {
-    storageName,
-    storageOwner,
-    files: args.files,
+  const fixture = createChatEventsFixture(context);
+  const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+  const storage = context.mocks.s3.send.getMockImplementation();
+  const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
+  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+
+  const carrier: {
+    actor: ApiTestUser;
+    agentId: string;
+    runId?: string;
+    sandboxToken?: string;
+    restoreStorage: () => void;
+  } = {
+    actor,
+    agentId,
+    restoreStorage() {
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
+      if (storage) {
+        context.mocks.s3.send.mockImplementation(storage);
+      }
+      if (signedUrl) {
+        context.mocks.s3.getSignedUrl.mockImplementation(signedUrl);
+      }
+    },
+  };
+  onTestFinished(async () => {
+    carrier.restoreStorage();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const runs = createRunsApi(context);
+    runs.acceptTelemetryIngest();
+    if (carrier.runId) {
+      const run = await runs.readRun(carrier.actor, carrier.runId);
+      if (run.status === "pending" || run.status === "running") {
+        await runs.requestCancelRun(carrier.actor, carrier.runId, [200]);
+      }
+      if (
+        carrier.sandboxToken &&
+        ["pending", "running", "cancelled"].includes(run.status)
+      ) {
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          {
+            runId: carrier.runId,
+            exitCode: 1,
+            error: "Memory projection carrier cancelled",
+          },
+          { authorization: `Bearer ${carrier.sandboxToken}` },
+          [200],
+        );
+      }
+    }
+    await flushWaitUntilForTest();
+    await createBddApi(context).deleteAgent(carrier.actor, carrier.agentId);
+    await flushWaitUntilForTest();
   });
+  await fixture.api.ensureOrgModelProvider(actor, {
+    model: "claude-fable-5-1",
+  });
+  const run = await fixture.sendChatRun(actor, {
+    agentId,
+    prompt: "Write the owned memory projection source",
+    model: "claude-fable-5-1",
+  });
+  carrier.runId = run.runId;
+  const claimed = await fixture.claimChatRun(runnerGroup, run.runId);
+  carrier.sandboxToken = claimed.claim.sandboxToken;
+  const manifest = expectCanonicalStorageManifest(
+    claimed.claim.storageManifest,
+  );
+  const memory = manifest?.storageMounts.find((mount) => {
+    return mount.name === MEMORY_ARTIFACT_NAME && mount.storageId;
+  });
+  if (!memory) {
+    throw new Error("Expected an actual writable memory mount");
+  }
+  installS3Objects();
+  const preparedResponse = await fixture.webhooks.requestAgentStoragePrepare(
+    {
+      runId: run.runId,
+      storageId: memory.storageId,
+      files: [...args.files],
+    },
+    claimed.sandboxHeaders,
+    [200],
+  );
+  if (preparedResponse.status !== 200) {
+    throw new Error("Expected Storage prepare success");
+  }
+  const prepared = preparedResponse.body;
   if (!prepared.uploads) {
     throw new Error("Expected a new Storage version with upload targets");
   }
@@ -236,25 +316,27 @@ async function publishVersion(args: {
     manifestKey,
     args.manifest ?? canonicalManifest(args.files),
   );
-  await storages.commitStorage(actor, {
-    storageName,
-    storageOwner,
-    versionId: prepared.versionId,
-    files: args.files,
-  });
-
-  const identity = await readStorageIdentityFixture({
-    orgId: requiredOrgId(actor),
-    userId: storageOwner === "organization" ? VOLUME_ORG_USER_ID : actor.userId,
-    name: storageName,
-  });
+  const committed = await fixture.webhooks.requestAgentStorageCommit(
+    {
+      runId: run.runId,
+      storageId: memory.storageId,
+      versionId: prepared.versionId,
+      files: [...args.files],
+    },
+    claimed.sandboxHeaders,
+    [200],
+  );
+  if (committed.status !== 200) {
+    throw new Error("Expected Storage commit success");
+  }
+  expect(committed.body.versionId).toBe(prepared.versionId);
   return {
     actor,
-    memoryStorageId: identity.id,
-    storageVersionId: prepared.versionId,
+    memoryStorageId: memory.storageId,
+    storageVersionId: committed.body.versionId,
     manifestKey,
     archiveKey,
-    files: args.files,
+    files: [...args.files],
   };
 }
 

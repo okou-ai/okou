@@ -80,11 +80,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("set-run-model-provider"),
-    run_id: z.uuid(),
-    model_provider: z.string().nullable(),
-  }),
-  z.object({
     action: z.literal("save-run-summary"),
     run_id: z.uuid(),
     trigger_source: z.string(),
