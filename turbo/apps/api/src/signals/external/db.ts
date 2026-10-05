@@ -1,16 +1,8 @@
 import { command, computed } from "ccstate";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "../../lib/db";
 
 export type Db = ReturnType<typeof db>;
-
-// Mutation builders shared by node-postgres and lifecycle-owned PGlite. Query
-// results with RETURNING remain typed; bare write driver results stay opaque.
-export type SqlMutationDb = Pick<
-  PgDatabase<PgQueryResultHKT>,
-  "select" | "insert" | "update"
->;
 
 type DbWriteMethod =
   | "insert"

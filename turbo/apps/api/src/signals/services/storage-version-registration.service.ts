@@ -1,7 +1,7 @@
 import { storageVersions } from "@okouai/db/schema/storage";
 import { inArray } from "drizzle-orm";
 
-import type { SqlMutationDb } from "../external/db";
+import type { Db } from "../external/db";
 
 export interface PreparedStorageVersion {
   readonly storageId: string;
@@ -39,7 +39,7 @@ export function storageVersionMatches(
 
 export async function registerPreparedStorageVersions(
   args: {
-    readonly db: Pick<SqlMutationDb, "select" | "insert">;
+    readonly db: Db;
     readonly versions: readonly PreparedStorageVersion[];
   },
   signal: AbortSignal,

@@ -37,13 +37,17 @@ path; reader migration is separate. Sync now prepares connector skill storages
 and exact immutable versions outside the activation transaction, without
 changing connector skill HEADs. Other storage HEAD behavior is unchanged.
 It then inserts the original connector payloads into
-`connector_catalog_entries` under the captured content hash, ignores identical
+`connector_catalog_entries` under the captured complete `sha256:<64 lowercase hex>`
+digest (also used by current, baseline and unchanged comparisons). Bare hex is
+only an object-path component, not a second database identity. It ignores identical
 insert conflicts, rejects conflicting canonical bytes, and verifies the exact
 manifest slug set. Failed preparation leaves the serving snapshot unchanged;
 completed immutable work remains reusable on retry.
 
-The legacy acceptance writes and the new `connector_catalog` hash CAS share
-one transaction with Pi stable-context invalidation. Cold start inserts the
+Stable commands obtain the existing DB gateways internally. The owning sync
+command keeps legacy acceptance, new `connector_catalog` hash CAS and Pi
+stable-context invalidation in one transaction callback. New helpers build
+pure values or SQL conditions; they do not accept a DB/transaction handle. Cold start inserts the
 current row explicitly. A lost hash CAS rolls back the transaction; the same
 hash does not repeat activation effects. Only a successful hash switch attempts
 the existing best-effort wakeups after commit. Wakeup failure does not undo the

@@ -3,7 +3,8 @@ import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { Db, SqlMutationDb } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import type {
   ConnectorCatalogArtifact,
@@ -159,7 +160,7 @@ function preparedStorageVersion(
 }
 
 async function readExistingVersions(
-  db: Pick<Db, "select">,
+  db: ReadonlyDb,
   versionIds: readonly string[],
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, ExistingStorageVersion>> {
@@ -194,7 +195,7 @@ async function readExistingVersions(
 
 export async function prepareConnectorCatalogSkills(
   args: {
-    readonly db: Pick<Db, "select">;
+    readonly db: ReadonlyDb;
     readonly artifact: ConnectorCatalogArtifact;
   },
   signal: AbortSignal,
@@ -223,7 +224,7 @@ export async function prepareConnectorCatalogSkills(
 }
 
 async function missingRegistrations(
-  db: Pick<Db, "select">,
+  db: Db,
   registrations: readonly PreparedConnectorSkillRegistration[],
   signal: AbortSignal,
 ): Promise<readonly PreparedConnectorSkillRegistration[]> {
@@ -252,7 +253,7 @@ async function missingRegistrations(
 }
 
 async function createAndReadCanonicalStorages(
-  db: Pick<SqlMutationDb, "select" | "insert">,
+  db: Db,
   registrations: readonly PreparedConnectorSkillRegistration[],
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, CanonicalStorage>> {
@@ -311,7 +312,7 @@ async function createAndReadCanonicalStorages(
 }
 
 async function registerMissingStorageVersions(
-  db: Pick<SqlMutationDb, "select" | "insert">,
+  db: Db,
   registrations: readonly PreparedConnectorSkillRegistration[],
   storageByName: ReadonlyMap<string, CanonicalStorage>,
   signal: AbortSignal,
@@ -337,7 +338,7 @@ async function registerMissingStorageVersions(
 }
 
 async function registerConnectorCatalogSkills(
-  db: Pick<SqlMutationDb, "select" | "insert">,
+  db: Db,
   registrations: readonly PreparedConnectorSkillRegistration[],
   signal: AbortSignal,
 ): Promise<void> {
@@ -353,22 +354,23 @@ async function registerConnectorCatalogSkills(
   await registerMissingStorageVersions(db, missing, storageByName, signal);
 }
 
-export async function registerPreparedConnectorCatalogSkills(
-  args: {
-    readonly db: SqlMutationDb;
-    readonly registrations: readonly PreparedConnectorSkillRegistration[];
+export const registerPreparedConnectorCatalogSkills$ = command(
+  async (
+    { set },
+    registrations: readonly PreparedConnectorSkillRegistration[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (registrations.length === 0) {
+      return;
+    }
+    const db = set(writeDb$);
+    await registerConnectorCatalogSkills(db, registrations, signal);
+    await enqueuePiResourceVersionIndexes(
+      db,
+      registrations.map((registration) => {
+        return registration.versionId;
+      }),
+      signal,
+    );
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.registrations.length === 0) {
-    return;
-  }
-  await registerConnectorCatalogSkills(args.db, args.registrations, signal);
-  await enqueuePiResourceVersionIndexes(
-    args.db,
-    args.registrations.map((registration) => {
-      return registration.versionId;
-    }),
-    signal,
-  );
-}
+);
