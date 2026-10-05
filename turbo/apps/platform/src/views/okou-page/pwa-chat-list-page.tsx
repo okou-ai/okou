@@ -1,9 +1,8 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, Search, SquarePen } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
@@ -16,7 +15,6 @@ import type {
   SidebarChatThreadListSignals,
   SidebarChatThreadScrollSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   selectChatThreadFilter$,
   type ChatThreadFilter,
@@ -39,83 +37,6 @@ function useSelectFilter() {
   return (filter: ChatThreadFilter) => {
     detach(selectFilter(filter, signal), Reason.DomCallback);
   };
-}
-
-function PwaChatFilters() {
-  const { t } = useTranslation();
-  const unread = useGet(chatThreadOnlyUnread$);
-  const archived = useGet(chatThreadOnlyArchived$);
-  const muted = useGet(chatThreadOnlyMuted$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  const selectFilter = useSelectFilter();
-  const filters: {
-    value: ChatThreadFilter;
-    label: string;
-    active: boolean;
-  }[] = [
-    {
-      value: "all",
-      label: archiveEnabled
-        ? t(($) => {
-            return $.chat.sidebar.inbox;
-          })
-        : t(($) => {
-            return $.chat.sidebar.allChats;
-          }),
-      active: !unread && !archived && !muted,
-    },
-    {
-      value: "unread",
-      label: t(($) => {
-        return $.chat.sidebar.unreadOnly;
-      }),
-      active: unread,
-    },
-  ];
-  if (archived) {
-    filters.push({
-      value: "archived",
-      label: t(($) => {
-        return $.chat.sidebar.archived;
-      }),
-      active: true,
-    });
-  }
-  if (muted) {
-    filters.push({
-      value: "muted",
-      label: t(($) => {
-        return $.chat.sidebar.muted;
-      }),
-      active: true,
-    });
-  }
-
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-2">
-      {filters.map((filter) => {
-        return (
-          <Button
-            key={filter.value}
-            variant="quiet"
-            aria-pressed={filter.active}
-            onClick={() => {
-              selectFilter(filter.value);
-            }}
-            className={cn(
-              "min-h-11 shrink-0 rounded-full border px-4",
-              filter.active
-                ? "border-primary bg-gray-50 text-foreground"
-                : "border-transparent",
-            )}
-          >
-            {filter.label}
-          </Button>
-        );
-      })}
-    </div>
-  );
 }
 
 function PwaChatListHeader() {
@@ -152,24 +73,21 @@ function PwaChatListHeader() {
         >
           <SquarePen aria-hidden="true" />
         </Button>
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon"
+          iconSize="lg"
+          className="min-h-11 min-w-11 shrink-0"
+          aria-label={t(($) => {
+            return $.appShell.sidebar.searchWorkspace;
+          })}
+          onClick={openSearch}
+        >
+          <Search aria-hidden="true" />
+        </Button>
         <ChatThreadsListMenu showMarkAllRead touch />
       </div>
-      <h1 className="pb-3 pt-4 text-2xl font-semibold text-foreground">
-        {t(($) => {
-          return $.appShell.pwaNavigation.chats;
-        })}
-      </h1>
-      <Button
-        variant="neutral"
-        onClick={openSearch}
-        className="mb-3 min-h-11 w-full justify-start gap-2 font-normal text-muted-foreground"
-      >
-        <Search size={18} aria-hidden="true" />
-        {t(($) => {
-          return $.appShell.sidebar.searchWorkspace;
-        })}
-      </Button>
-      <PwaChatFilters />
     </header>
   );
 }
