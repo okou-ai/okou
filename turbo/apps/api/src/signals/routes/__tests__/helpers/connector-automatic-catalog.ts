@@ -8,6 +8,30 @@ import {
   installApiTestConnectorCatalog,
 } from "../../../../test-fixtures/connector-catalog";
 
+export function automaticMcpCatalogFixture(
+  firewallAuth: "none" | "oauth" = "oauth",
+) {
+  const slug = `automatic-mcp-${firewallAuth}`;
+  const connector = API_TEST_CONNECTOR_CATALOG.connectors.find((entry) => {
+    return entry.slug === slug;
+  });
+  if (!connector?.mcp) {
+    throw new Error("Expected the shared automatic MCP connector");
+  }
+  const firewallAuthHeaders: Record<string, string> =
+    firewallAuth === "none"
+      ? {}
+      : { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE };
+  return {
+    bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    slug,
+    methodId: "smart-connect",
+    endpoint: connector.mcp.endpoint,
+    firewallAuthHeaders,
+    target: { kind: "builtin" as const, connectorSlug: slug },
+  };
+}
+
 export interface AutomaticMcpCatalogOptions {
   readonly slug?: string;
   readonly methodId?: string;
@@ -58,7 +82,12 @@ export function buildAutomaticMcpCatalog(
     catalogVersion: `automatic-${randomUUID()}`,
     connectors: [
       ...API_TEST_CONNECTOR_CATALOG.connectors.filter((connector) => {
-        return connector.slug !== slug;
+        // Case generations replace the shared Automatic secret owners; the
+        // ordinary startup catalog and descriptor lookup remain unchanged.
+        return (
+          connector.slug !== slug &&
+          !connector.slug.startsWith("automatic-mcp-")
+        );
       }),
       {
         ...template,

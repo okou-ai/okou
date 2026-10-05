@@ -154,8 +154,8 @@ import { builtinConnectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import {
+  automaticMcpCatalogFixture,
   buildAutomaticMcpCatalog,
-  installAutomaticMcpCatalog,
 } from "./helpers/connector-automatic-catalog";
 import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
@@ -169,7 +169,7 @@ import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
  * billing status API, so no DB fixtures are involved.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const callbackStore = createStore();
 const fixtureStore = createStore();
 // `sandbox-op-log.ts` composes this name from AXIOM_DATASET_SUFFIX, which the
@@ -5890,13 +5890,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
   it("injects oauth connector tokens with billable firewalls and resolvable secrets", async () => {
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-okou-scoped-runtime-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `okou-scoped-runtime-setup-${randomUUID()}`,
-    });
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
     await fw.seedTestConnector(actor, {
@@ -5912,9 +5905,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     });
     const enabled = await api.enableAgentConnectors(actor, agentId, ["x"]);
     expect(enabled).toContain("x");
-    await installApiTestConnectorCatalog({
-      catalogVersion: `okou-scoped-runtime-run-${randomUUID()}`,
-    });
 
     const run = await api.createThreadRun(actor, {
       agentId,
@@ -6335,10 +6325,8 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
   it("uses exact runtime projections and authoritative fallback for mixed sync", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-runtime-sync-projection-${randomUUID()}`,
-    );
+    const catalogBucket = `test-run-lifecycle-runtime-sync-projection-${randomUUID()}`;
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
     await installApiTestConnectorCatalog();
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
@@ -6374,6 +6362,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       }),
     );
     onTestFinished(async () => {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
       await installApiTestConnectorCatalog();
       await connectors.deleteCustomConnector(
         actor,
@@ -8359,13 +8348,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     createBddApi(context).acceptAgentStorageWrites();
     const connectors = createConnectorBddApi(context);
     const storages = createStoragesBddApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-custom-permission-runtime-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-custom-permission-setup-${randomUUID()}`,
-    });
     const { actor, agentId, runnerGroup } = await entitledRunActor(
       {},
       NATIVE_RUNNER_ROUTE,
@@ -8465,10 +8447,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { key: "workspace", kind: "variable", value: "restored" },
     ]);
     await api.requestCancelRun(actor, disconnectedRun.runId, [200]);
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-custom-permission-run-${randomUUID()}`,
-      runtimeProjection: true,
-    });
 
     const restoredRun = await api.createThreadRun(actor, {
       agentId,
@@ -9492,9 +9470,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   );
 
   it("keeps a no-auth catalog firewall when Automatic discovery resolves OAuth", async () => {
-    const catalog = await installAutomaticMcpCatalog({
-      firewallAuth: "none",
-    });
+    const catalog = automaticMcpCatalogFixture("none");
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       authentication: "oauth",
@@ -9745,7 +9721,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   );
 
   it("rotates expired builtin Automatic credentials and requires reconnect after revocation", async () => {
-    const catalog = await installAutomaticMcpCatalog();
+    const catalog = automaticMcpCatalogFixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 120,
@@ -9867,7 +9843,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it("uses a builtin Automatic access token without optional refresh until it expires", async () => {
-    const catalog = await installAutomaticMcpCatalog();
+    const catalog = automaticMcpCatalogFixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 60,

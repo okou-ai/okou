@@ -39,9 +39,7 @@ interface RunFixture {
   readonly authorization: string;
 }
 
-const context = testContext({
-  connectorCatalog: true,
-});
+const context = testContext({});
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const billing = createBillingMediaApi(context);

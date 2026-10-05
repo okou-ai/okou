@@ -74,7 +74,7 @@ try {
 
   const migration = await readFile(
     new URL(
-      "../src/migrations/1321_backfill_file_thread_associations.sql",
+      "../src/migrations/1322_backfill_file_thread_associations.sql",
       import.meta.url,
     ),
     "utf8",

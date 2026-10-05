@@ -22,7 +22,7 @@ import {
 } from "./helpers/public-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 

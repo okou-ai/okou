@@ -30,7 +30,7 @@ import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 import { modelProvidersRoutes } from "../model-providers";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 async function customOrgUser(fixture: {

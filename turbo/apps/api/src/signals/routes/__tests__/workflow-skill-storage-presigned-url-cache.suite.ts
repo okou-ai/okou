@@ -28,7 +28,7 @@ import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const BUCKET = "test-user-storages";
 
 interface CacheRow {

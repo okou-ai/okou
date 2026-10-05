@@ -6,7 +6,6 @@ import {
 import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { setBuiltInRouteLongContextThresholdFixture } from "../../../test-fixtures/model-catalog";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   modelProviderConnectionsMainContract,
   modelProviderConnectionsByIdContract,
@@ -87,8 +86,8 @@ import {
   testPiMemoryStage1StateRoutes,
 } from "../test-pi-memory-stage1-state";
 
-const context = testContext({ connectorCatalog: true });
-const BUCKET = "pi-memory-stage1-worker-test";
+const context = testContext();
+const BUCKET = "test-user-storages";
 const CRON_SECRET = "test-pi-memory-stage1-secret";
 const INPUT_SECRET = "sk-proj-inputsecretabcdefghijklmnopqrstuvwxyz";
 const OUTPUT_SECRET = "sk-proj-outputsecretabcdefghijklmnopqrstuvwxyz";
@@ -3088,8 +3087,6 @@ describe("Stage 1 background credential availability", () => {
     if (!claim.encryptedSecrets) {
       throw new Error("Expected retained runtime envelope");
     }
-    // This suite uses a separate storage bucket, which is part of catalog identity.
-    await installApiTestConnectorCatalog();
     const foreground = await createFirewallApi(context).requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
       {

@@ -10,7 +10,7 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import {
   invalidateApiTestConnectorCatalogCompatibility,
@@ -29,7 +29,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
 
@@ -231,6 +231,12 @@ describe("GET /api/connectors/:connectorSlug", () => {
   });
 
   it("returns 404 when the external catalog is unavailable", async () => {
+    // Preserve the legacy corruption contract without changing shared authority.
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `legacy-slug-unavailable-${randomUUID()}`,
+    );
+    await installApiTestConnectorCatalog();
     const fixture = seedAuthenticatedFixture();
     seededFixtures.push(fixture);
     await connectOpenai(fixture);

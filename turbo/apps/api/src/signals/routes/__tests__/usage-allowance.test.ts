@@ -28,7 +28,7 @@ import {
 } from "./helpers/stripe-billing-webhook";
 import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 
 function usageProvider(): string {
   return `usage-allowance-${randomUUID()}`;

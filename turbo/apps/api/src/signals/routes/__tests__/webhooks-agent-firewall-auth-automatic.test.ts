@@ -16,10 +16,10 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
+import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 
@@ -39,7 +39,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    const catalog = await installAutomaticMcpCatalog();
+    const catalog = automaticMcpCatalogFixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 3600,
@@ -212,7 +212,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       onTestFinished(() => {
         mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
       });
-      const catalog = await installAutomaticMcpCatalog();
+      const catalog = automaticMcpCatalogFixture();
       const refreshAborted = createDeferredPromise<void>(context.signal);
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "cimd",

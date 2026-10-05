@@ -37,7 +37,7 @@ const GMAIL_LIST_URL =
 const GMAIL_MESSAGE_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/:messageId";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const fixture = createChatEventsFixture(context);
 const connectorsApi = createConnectorBddApi(context);
 

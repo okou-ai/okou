@@ -27,7 +27,7 @@ import {
   assistantEvent,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const reads = createRunReadsApi(context);
 const {
   bdd,

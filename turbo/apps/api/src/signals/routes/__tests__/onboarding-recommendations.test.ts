@@ -8,7 +8,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import {
@@ -19,7 +18,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 import { onboardingRecommendationRoutes } from "../onboarding-recommendations";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -100,7 +99,6 @@ describe("onboarding recommendations", () => {
   it.each([false, true])(
     "preserves authorized context when another source fails (Gmail revoked during read: %s)",
     async (revokeGmail) => {
-      await installApiTestConnectorCatalog();
       bdd.acceptAgentStorageWrites();
       const actor = bdd.user({
         userId: `user_onboarding_recommendation_context_${randomUUID()}`,
