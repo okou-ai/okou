@@ -280,7 +280,59 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         }),
       });
       expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toStrictEqual({ ok: true });
+      const connectParameters = new URLSearchParams({
+        tenantId: installation.teamsTenantId,
+        teamsUserId: installation.teamsUserId,
+        teamsAadObjectId: installation.teamsAadObjectId,
+        tenantName: installation.teamsTenantName,
+        teamsUserDisplayName: "Teams User",
+        teamsUserPrincipalName: installation.teamsUserPrincipalName,
+        serviceUrl: installation.serviceUrl,
+        conversationId: "19:e2e-dm@thread.v2",
+        conversationType: "personal",
+        activityId: "activity-e2e",
+        threadId: "activity-e2e",
+        orgId: installation.orgId,
+        botName: "Nova",
+      });
+      await expect(response.json()).resolves.toStrictEqual({
+        ok: true,
+        activity: {
+          kind: "message",
+          activityId: "activity-e2e",
+          tenantId: installation.teamsTenantId,
+          tenantName: installation.teamsTenantName,
+          teamsAppId: null,
+          serviceUrl: installation.serviceUrl,
+          conversationId: "19:e2e-dm@thread.v2",
+          conversationType: "personal",
+          teamId: null,
+          teamAadGroupId: null,
+          teamName: null,
+          channelId: null,
+          timestamp: "2026-06-30T09:10:00.000Z",
+          idempotencyKey: "19:e2e-dm@thread.v2:message:activity-e2e",
+          threadId: "activity-e2e",
+          sender: {
+            id: installation.teamsUserId,
+            name: "Teams User",
+            aadObjectId: installation.teamsAadObjectId,
+            userPrincipalName: installation.teamsUserPrincipalName,
+          },
+          recipient: {
+            id: installation.teamsBotId,
+            name: "Nova",
+            aadObjectId: null,
+            userPrincipalName: null,
+          },
+          rawText: text,
+          text,
+          value: null,
+          mentionsRecipient: false,
+          attachments: [],
+        },
+        connectUrl: `https://app.okou.test/settings/teams?${connectParameters.toString()}`,
+      });
       await flushWaitUntilForTest();
     },
   };
