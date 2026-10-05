@@ -159,6 +159,20 @@ are unchanged. Historical execution failures and the absent failure-time hashes
 remain historical limitations; source containment and green CI do not prove the
 old run's complete causal chain or deployed acceptance.
 
+### Split-file dependency cleanup
+
+The 5536 cohort passed all eight API jobs but failed required API lint with
+232 unused-dependency warnings; its business results are not a lint pass.
+The follow-up removes unused imports and uninvoked helper/constant/type copies
+from nine generation files. Their useful originals remain in the fixed-reader
+files, including the 101-account pagination and bounded MCP awareness checks.
+No registration, live assertion, actor/context initialization or cleanup hook
+is removed. All twelve moved registration bodies remain token-identical;
+that receipt is not a substitute for dependency review or new-head execution.
+Native, production readers, scheduler barriers and the three main resolutions
+are unchanged. Prior scoped lint did not fully cover the new files; its
+warning-clean claim is corrected rather than carried forward.
+
 ## Identity and failure behavior
 
 The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`.

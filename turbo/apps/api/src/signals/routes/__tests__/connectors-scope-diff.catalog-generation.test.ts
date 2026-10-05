@@ -1,26 +1,11 @@
-import { randomUUID } from "node:crypto";
-
-import { builtinConnectorScopeDiffContract } from "@okouai/api-contracts/contracts/connectors";
-
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import {
-  createConnectorBddApi,
-  mockGitHubConnectorOAuth,
-} from "./helpers/api-bdd-connectors";
+import { testContext } from "../../../__tests__/test-context";
+import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {
   API_TEST_CONNECTOR_CATALOG,
   catalogWithAuthMethod,
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
-import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
 const bdd = createBddApi(context);

@@ -3,23 +3,12 @@ import { randomUUID } from "node:crypto";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   builtinConnectorManualGrantContract,
-  builtinConnectorScopeDiffContract,
-  builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  invalidateApiTestConnectorCatalogCompatibility,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
-import {
-  readConnectorCredentialStorageState,
-  setConnectorDefaultState,
-} from "./helpers/connector-credential-storage-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {

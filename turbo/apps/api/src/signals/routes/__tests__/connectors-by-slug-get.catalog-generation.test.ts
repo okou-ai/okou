@@ -1,22 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  builtinConnectorManualGrantContract,
-  builtinConnectorsBySlugContract,
-} from "@okouai/api-contracts/contracts/connectors";
-import { createStore } from "ccstate";
+import { builtinConnectorsBySlugContract } from "@okouai/api-contracts/contracts/connectors";
 import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
-import {
-  invalidateApiTestConnectorCatalogCompatibility,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {
@@ -24,7 +13,6 @@ import {
   catalogWithAuthMethod,
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
-import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
