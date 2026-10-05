@@ -587,20 +587,11 @@ function OAuthAccountTableRow({
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         )}
-        {/* A spent balance has no action to offer, so the row omits it. */}
-        {account.type !== "codex-oauth-token" ||
-        account.subscriptionResetCredits === undefined ||
-        account.subscriptionResetCredits === 0 ? null : (
-          <CodexResetCreditsButton
-            className="ml-auto"
-            resetCredits={account.subscriptionResetCredits}
-            resetCreditsNextExpiresAt={
-              account.subscriptionResetCreditsNextExpiresAt
-            }
-            resetPending={actionPending}
-            onReset={onReset}
-          />
-        )}
+        <OAuthAccountResetControl
+          account={account}
+          resetPending={actionPending}
+          onReset={onReset}
+        />
       </div>
       <div
         role="cell"
@@ -613,6 +604,33 @@ function OAuthAccountTableRow({
         />
       </div>
     </div>
+  );
+}
+
+function OAuthAccountResetControl({
+  account,
+  resetPending,
+  onReset,
+}: {
+  readonly account: ModelProviderResponse;
+  readonly resetPending: boolean;
+  readonly onReset: () => void;
+}) {
+  if (
+    account.type !== "codex-oauth-token" ||
+    account.subscriptionResetCredits === undefined ||
+    account.subscriptionResetCredits === 0
+  ) {
+    return null;
+  }
+  return (
+    <CodexResetCreditsButton
+      className="ml-auto"
+      resetCredits={account.subscriptionResetCredits}
+      resetCreditsNextExpiresAt={account.subscriptionResetCreditsNextExpiresAt}
+      resetPending={resetPending}
+      onReset={onReset}
+    />
   );
 }
 
