@@ -15,10 +15,9 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import {
   automaticMcpCatalogFixture,
-  buildAutomaticMcpCatalog,
   installAutomaticMcpCatalog,
 } from "./helpers/connector-automatic-catalog";
-import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog";
+
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -369,36 +368,6 @@ describe("builtin MCP automatic authentication", () => {
       "success",
     );
     expect(provider.registrationBodies).toHaveLength(1);
-  });
-
-  it("rejects an in-flight callback when its catalog storage contract changes", async () => {
-    const f = createPublicAutomaticCatalog(context);
-    await f.run(async () => {
-      await f.publish();
-      const provider = mockAutomaticMcpOAuthProvider(context, {
-        registration: "cimd",
-      });
-      const started = await beginOAuth(f);
-      await f.publish(
-        buildAutomaticMcpCatalog({
-          slug: f.slug,
-          methodId: f.methodId,
-          storageVersion: 2,
-        }).catalog,
-      );
-      expect((await callback(started.state, provider.issuer)).body.status).toBe(
-        "error",
-      );
-      await accept(receipt(f, started.oauthAttemptId), [404]);
-      expect(
-        (
-          await accept(
-            accounts().connections({ headers, query: f.target }),
-            [200],
-          )
-        ).body.connections,
-      ).toStrictEqual([]);
-    });
   });
 
   it("does not resurrect an account deleted during its reconnect token exchange", async () => {

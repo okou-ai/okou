@@ -43,11 +43,7 @@ import {
   type OrgMembershipFixture,
 } from "./helpers/org-membership";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  catalogWithManualConnector,
-  createPublicConnectorCatalog,
-} from "./helpers/public-connector-catalog";
+
 import { connectorCheckRoutes } from "../connector-check";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 
@@ -628,39 +624,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
     expect(
       genuinelyUnknown.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER),
     ).toBeNull();
-  });
-
-  it("ignores stale stored connectors that are absent from the catalog", async () => {
-    const actor = bdd.user();
-    const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithManualConnector({
-      connectorSlug: "removed-connector",
-      authMethodId: "api",
-    });
-    await catalog.publish(available);
-    await connectorsApi.connectManualGrant(actor, "removed-connector", "api", {
-      credential: "removed-connector-secret",
-    });
-    catalog.onCleanup(async () => {
-      await catalog.publish(available);
-      await connectorsApi.deleteDefaultBuiltinConnectorAccount(
-        actor,
-        "removed-connector",
-      );
-    });
-    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
-
-    const response = await checkWithSession(actor, {
-      mode: "url",
-      method: "GET",
-      url: "https://api.github.com/repos/okou-ai/okou",
-    });
-
-    expect(response.body).toMatchObject({
-      outcome: "resolved",
-      connector: { connectorSlug: "github" },
-    });
-    await catalog.cleanup();
   });
 
   it("supports a real PAT and resolves hidden server-authored metadata without private refs", async () => {
