@@ -29,6 +29,17 @@ export function createPublicUnfundedProFixture(
   const subscriptionId = `sub_unfunded_pro_${suffix}`;
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+  const subscription = {
+    id: subscriptionId,
+    customer: customerId,
+    status: "active",
+    metadata: {},
+    cancel_at_period_end: false,
+    cancel_at: null,
+    schedule: null,
+    trial_end: null,
+    items: { data: [{ price: { id: "price_bdd_pro" } }] },
+  };
 
   async function readBillingStatus() {
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
@@ -108,17 +119,6 @@ export function createPublicUnfundedProFixture(
           id: customerId,
           metadata: { orgId },
         });
-        const subscription = {
-          id: subscriptionId,
-          customer: customerId,
-          status: "active",
-          metadata: {},
-          cancel_at_period_end: false,
-          cancel_at: null,
-          schedule: null,
-          trial_end: null,
-          items: { data: [{ price: { id: "price_bdd_pro" } }] },
-        };
         await webhooks.postStripeEvent(
           {
             id: `evt_unfunded_pro_created_${suffix}`,
@@ -141,6 +141,31 @@ export function createPublicUnfundedProFixture(
         expect((await readBillingStatus()).body).toMatchObject({
           tier: "pro",
           status: "active",
+          credits: 0,
+        });
+      });
+    },
+    async suspend(): Promise<void> {
+      await owner.run(async () => {
+        const webhooks = createWebhookCallbackApi(context);
+        webhooks.configureStripeBillingEnv();
+        context.mocks.stripe.customers.retrieve.mockResolvedValue({
+          id: customerId,
+          metadata: { orgId },
+        });
+        await webhooks.postStripeEvent(
+          {
+            id: `evt_unfunded_pro_suspended_${suffix}`,
+            type: "customer.subscription.updated",
+            created: Math.floor(now() / 1000),
+            data: { object: { ...subscription, status: "canceled" } },
+          },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        expect((await readBillingStatus()).body).toMatchObject({
+          tier: "pro",
+          status: "suspended",
           credits: 0,
         });
       });

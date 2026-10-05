@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { socialContract } from "@okouai/api-contracts/contracts/social";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -7,22 +8,24 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  createUsagePricingFixture,
-  seedOrgMetadata,
-} from "../../../test-fixtures/system-config-seeds";
+import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
+import { deleteSocialKitDownloadJobsForOwner } from "../../../test-fixtures/socialkit-download";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
+import { billingStatusRoutes } from "../billing-status";
 import { socialRoutes } from "../social";
 import {
   createBddApi,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -52,10 +55,25 @@ function authenticate(user: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-async function configuredClient(user: ReturnType<typeof actor>) {
-  await accept(createBddApi(context).completeOnboarding(user), [200]);
-  await seedOrgMetadata({ orgId: user.orgId, tier: "pro", credits: 10_000 });
-  mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "test-socialkit-key");
+async function billingStatus(user: ReturnType<typeof actor>) {
+  const response = await accept(
+    setupAppWithRoutes({ context, routes: billingStatusRoutes })(
+      billingStatusContract,
+    ).get({ headers: authenticate(user) }),
+    [200],
+  );
+  return response.body;
+}
+
+interface FundedDiscoveryActor {
+  readonly actor: ReturnType<typeof actor>;
+  readonly customerId: string;
+  readonly subscriptionId: string;
+  readonly invoiceId: string;
+  readonly downloadUserIds: Set<string>;
+}
+
+async function configuredFixture(user: ReturnType<typeof actor>) {
   const pricing = await createUsagePricingFixture({
     configured: [
       {
@@ -70,11 +88,179 @@ async function configuredClient(user: ReturnType<typeof actor>) {
   onTestFinished(async () => {
     await pricing.cleanup();
   });
-  return setupAppWithRoutes({
-    context,
-    routes: socialRoutes,
-    usagePricingResolution: pricing.resolution,
-  })(socialContract);
+  const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+  const fundedOrgs = new Map<string, FundedDiscoveryActor>();
+  const owner = createFixtureOperationOwner(async () => {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+    context.mocks.s3.send.mockResolvedValue({
+      Contents: [],
+      IsTruncated: false,
+    });
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    await flushWaitUntilForTest();
+
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureStripeBillingEnv();
+    webhooks.configureClerkWebhookSecret();
+    for (const [orgId, owned] of fundedOrgs) {
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        id: owned.subscriptionId,
+        status: "active",
+        metadata: {},
+      });
+      context.mocks.stripe.subscriptions.update.mockResolvedValue({
+        id: owned.subscriptionId,
+      });
+      context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+        id: owned.subscriptionId,
+        status: "canceled",
+      });
+      context.mocks.stripe.invoices.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      webhooks.verifyNextClerkWebhook({
+        type: "organization.deleted",
+        data: { id: orgId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      // Clerk retains download jobs. Join their producers before removing each
+      // registered org/user pair, including submissions with a lost response.
+      for (const userId of owned.downloadUserIds) {
+        await deleteSocialKitDownloadJobsForOwner({ orgId, userId });
+      }
+      // Production retains the real invoice and usage history under unique IDs.
+      expect((await billingStatus(owned.actor)).credits).toBe(0);
+      expect(
+        (
+          await createRunReadsApi(context).requestListLogs(
+            owned.actor,
+            { limit: 50 },
+            [200],
+          )
+        ).body.data,
+      ).toStrictEqual([]);
+    }
+  });
+
+  function registerDownloadOwner(downloadOwner: ReturnType<typeof actor>) {
+    const owned = fundedOrgs.get(downloadOwner.orgId);
+    if (!owned) {
+      throw new Error("Download owner must belong to a funded organization");
+    }
+    owned.downloadUserIds.add(downloadOwner.userId);
+  }
+
+  async function fund(fundedActor: ReturnType<typeof actor>) {
+    if (fundedOrgs.has(fundedActor.orgId)) {
+      throw new Error("Discovery organization already funded");
+    }
+    const suffix = randomUUID();
+    const owned: FundedDiscoveryActor = {
+      actor: fundedActor,
+      customerId: `cus_social_discovery_${suffix}`,
+      subscriptionId: `sub_social_discovery_${suffix}`,
+      invoiceId: `in_social_discovery_${suffix}`,
+      downloadUserIds: new Set(),
+    };
+    fundedOrgs.set(fundedActor.orgId, owned);
+    registerDownloadOwner(fundedActor);
+    await owner.run(async () => {
+      await accept(
+        createBddApi(context).completeOnboarding(fundedActor),
+        [200],
+      );
+      expect((await billingStatus(fundedActor)).credits).toBe(0);
+      const webhooks = createWebhookCallbackApi(context);
+      webhooks.configureStripeBillingEnv();
+      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+        id: owned.customerId,
+        metadata: { orgId: fundedActor.orgId },
+      });
+      const subscription = {
+        id: owned.subscriptionId,
+        customer: owned.customerId,
+        status: "active",
+        metadata: {},
+        cancel_at_period_end: false,
+        cancel_at: null,
+        schedule: null,
+        trial_end: null,
+        items: { data: [{ price: { id: "price_bdd_pro" } }] },
+      };
+      await webhooks.postStripeEvent(
+        {
+          id: `evt_social_discovery_created_${suffix}`,
+          type: "customer.subscription.created",
+          created: Math.floor(now() / 1000),
+          data: { object: subscription },
+        },
+        [200],
+      );
+      await webhooks.postStripeEvent(
+        {
+          id: `evt_social_discovery_updated_${suffix}`,
+          type: "customer.subscription.updated",
+          created: Math.floor(now() / 1000),
+          data: { object: subscription },
+        },
+        [200],
+      );
+      await expect(billingStatus(fundedActor)).resolves.toMatchObject({
+        tier: "pro",
+        status: "active",
+        credits: 0,
+      });
+      await webhooks.postStripeEvent(
+        {
+          id: `evt_social_discovery_paid_${suffix}`,
+          type: "invoice.paid",
+          created: Math.floor(now() / 1000),
+          data: {
+            object: {
+              id: owned.invoiceId,
+              customer: owned.customerId,
+              amount_paid: 1000,
+              metadata: {
+                type: "auto_recharge",
+                orgId: fundedActor.orgId,
+                creditsAmount: "10000",
+              },
+              parent: null,
+              lines: { has_more: false, data: [] },
+            },
+          },
+        },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await expect(billingStatus(fundedActor)).resolves.toMatchObject({
+        tier: "pro",
+        status: "active",
+        credits: 10_000,
+      });
+    });
+  }
+
+  await fund(user);
+  mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "test-socialkit-key");
+  return {
+    client: setupAppWithRoutes({
+      context,
+      routes: socialRoutes,
+      usagePricingResolution: pricing.resolution,
+    })(socialContract),
+    run: owner.run,
+    fund,
+    registerDownloadOwner,
+  };
 }
 
 function basicClient() {
@@ -172,282 +358,292 @@ describe("social download discovery", () => {
 
   it("bounds default pages and continues after exact database anchors despite new insertions", async () => {
     const owner = actor();
-    const client = await configuredClient(owner);
-    providerDownloads("failed");
-    const ids: string[] = [];
-    for (let index = 0; index < 21; index += 1) {
-      const created = await accept(
+    const fixture = await configuredFixture(owner);
+    const client = fixture.client;
+    await fixture.run(async () => {
+      providerDownloads("failed");
+      const ids: string[] = [];
+      for (let index = 0; index < 21; index += 1) {
+        const created = await accept(
+          client.createDownload({
+            headers: authenticate(owner),
+            body: { ...requestBody, url: `https://youtu.be/video-${index}` },
+          }),
+          [202],
+        );
+        ids.push(created.body.downloadId);
+        await flushWaitUntilForTest();
+      }
+      const first = await accept(
+        client.listDownloads({ headers: authenticate(owner), query: {} }),
+        [200],
+      );
+      expect(
+        first.body.downloads.map((task) => {
+          return task.downloadId;
+        }),
+      ).toStrictEqual(ids.slice(1).reverse());
+      expect(first.body.nextCursor).toBe(ids[1]);
+      expect(first.body.downloads[0]).toMatchObject({
+        status: "provider_failed",
+        request: { url: "https://youtu.be/video-20" },
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+        resumeCommand: null,
+        error: { retryable: false, billed: false },
+      });
+
+      await accept(
         client.createDownload({
           headers: authenticate(owner),
-          body: { ...requestBody, url: `https://youtu.be/video-${index}` },
+          body: requestBody,
         }),
         [202],
       );
-      ids.push(created.body.downloadId);
       await flushWaitUntilForTest();
-    }
-    const first = await accept(
-      client.listDownloads({ headers: authenticate(owner), query: {} }),
-      [200],
-    );
-    expect(
-      first.body.downloads.map((task) => {
-        return task.downloadId;
-      }),
-    ).toStrictEqual(ids.slice(1).reverse());
-    expect(first.body.nextCursor).toBe(ids[1]);
-    expect(first.body.downloads[0]).toMatchObject({
-      status: "provider_failed",
-      request: { url: "https://youtu.be/video-20" },
-      requested: { quality: "720p", format: "mp4" },
-      delivered: { quality: null, format: null },
-      resumeCommand: null,
-      error: { retryable: false, billed: false },
+      const last = await accept(
+        client.listDownloads({
+          headers: authenticate(owner),
+          query: {
+            cursor: first.body.nextCursor ?? undefined,
+            status: "provider_failed",
+            limit: 1,
+          },
+        }),
+        [200],
+      );
+      expect(
+        last.body.downloads.map((task) => {
+          return task.downloadId;
+        }),
+      ).toStrictEqual([ids[0]]);
+      expect(last.body.nextCursor).toBeNull();
+      const active = await accept(
+        client.listDownloads({
+          headers: authenticate(owner),
+          query: { status: "active", limit: 100 },
+        }),
+        [200],
+      );
+      expect(active.body).toStrictEqual({ downloads: [], nextCursor: null });
     });
-
-    await accept(
-      client.createDownload({
-        headers: authenticate(owner),
-        body: requestBody,
-      }),
-      [202],
-    );
-    await flushWaitUntilForTest();
-    const last = await accept(
-      client.listDownloads({
-        headers: authenticate(owner),
-        query: {
-          cursor: first.body.nextCursor ?? undefined,
-          status: "provider_failed",
-          limit: 1,
-        },
-      }),
-      [200],
-    );
-    expect(
-      last.body.downloads.map((task) => {
-        return task.downloadId;
-      }),
-    ).toStrictEqual([ids[0]]);
-    expect(last.body.nextCursor).toBeNull();
-    const active = await accept(
-      client.listDownloads({
-        headers: authenticate(owner),
-        query: { status: "active", limit: 100 },
-      }),
-      [200],
-    );
-    expect(active.body).toStrictEqual({ downloads: [], nextCursor: null });
   });
 
   it("recovers submitting and processing task identities without causing provider work", async () => {
     const owner = actor();
-    const client = await configuredClient(owner);
-    const provider = providerDownloads("processing");
-    const started = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.post(`${providerBase}/v2/youtube/download`, async () => {
-        started.resolve();
-        await release.promise;
-        return HttpResponse.json({ jobId: randomUUID(), status: "queued" });
-      }),
-    );
-    const creating = client.createDownload({
-      headers: authenticate(owner),
-      body: requestBody,
+    const fixture = await configuredFixture(owner);
+    const client = fixture.client;
+    await fixture.run(async () => {
+      const provider = providerDownloads("processing");
+      const started = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.post(`${providerBase}/v2/youtube/download`, async () => {
+          started.resolve();
+          await release.promise;
+          return HttpResponse.json({ jobId: randomUUID(), status: "queued" });
+        }),
+      );
+      const creating = fixture.run(() => {
+        return client.createDownload({
+          headers: authenticate(owner),
+          body: requestBody,
+        });
+      });
+      await started.promise;
+      const queued = await accept(
+        client.listDownloads({
+          headers: authenticate(owner),
+          query: { status: "queued" },
+        }),
+        [200],
+      );
+      expect(queued.body.downloads).toHaveLength(1);
+      const task = queued.body.downloads[0];
+      expect(task).toMatchObject({ status: "queued", request: requestBody });
+      const conflict = await accept(
+        client.createDownload({
+          headers: authenticate(owner),
+          body: { ...requestBody, url: "https://youtu.be/different-target" },
+        }),
+        [409],
+      );
+      expect(conflict.body.error).toMatchObject({
+        code: "DOWNLOAD_IN_PROGRESS",
+        recovery: {
+          downloadId: task?.downloadId,
+          resumeCommand: task?.resumeCommand,
+        },
+      });
+      release.resolve();
+      const created = await accept(creating, [202]);
+      await flushWaitUntilForTest();
+      expect(created.body.downloadId).toBe(task?.downloadId);
+      const pollsBefore = provider.polls();
+      const processing = await accept(
+        client.listDownloads({
+          headers: authenticate(owner),
+          query: { status: "active" },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(processing.body.downloads).toMatchObject([
+        {
+          downloadId: created.body.downloadId,
+          status: "processing",
+          resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+        },
+      ]);
+      expect(provider.polls()).toBe(pollsBefore);
+      const processingConflict = await accept(
+        client.createDownload({
+          headers: authenticate(owner),
+          body: requestBody,
+        }),
+        [409],
+      );
+      expect(processingConflict.body.error.recovery?.downloadId).toBe(
+        created.body.downloadId,
+      );
+      const known = await accept(
+        client.getDownload({
+          headers: authenticate(owner),
+          params: { downloadId: created.body.downloadId },
+        }),
+        [200],
+      );
+      expect(known.body.downloadId).toBe(created.body.downloadId);
+      await flushWaitUntilForTest();
     });
-    await started.promise;
-    const queued = await accept(
-      client.listDownloads({
-        headers: authenticate(owner),
-        query: { status: "queued" },
-      }),
-      [200],
-    );
-    expect(queued.body.downloads).toHaveLength(1);
-    const task = queued.body.downloads[0];
-    expect(task).toMatchObject({ status: "queued", request: requestBody });
-    const conflict = await accept(
-      client.createDownload({
-        headers: authenticate(owner),
-        body: { ...requestBody, url: "https://youtu.be/different-target" },
-      }),
-      [409],
-    );
-    expect(conflict.body.error).toMatchObject({
-      code: "DOWNLOAD_IN_PROGRESS",
-      recovery: {
-        downloadId: task?.downloadId,
-        resumeCommand: task?.resumeCommand,
-      },
-    });
-    release.resolve();
-    const created = await accept(creating, [202]);
-    await flushWaitUntilForTest();
-    expect(created.body.downloadId).toBe(task?.downloadId);
-    const pollsBefore = provider.polls();
-    const processing = await accept(
-      client.listDownloads({
-        headers: authenticate(owner),
-        query: { status: "active" },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(processing.body.downloads).toMatchObject([
-      {
-        downloadId: created.body.downloadId,
-        status: "processing",
-        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
-      },
-    ]);
-    expect(provider.polls()).toBe(pollsBefore);
-    const processingConflict = await accept(
-      client.createDownload({
-        headers: authenticate(owner),
-        body: requestBody,
-      }),
-      [409],
-    );
-    expect(processingConflict.body.error.recovery?.downloadId).toBe(
-      created.body.downloadId,
-    );
-    const known = await accept(
-      client.getDownload({
-        headers: authenticate(owner),
-        params: { downloadId: created.body.downloadId },
-      }),
-      [200],
-    );
-    expect(known.body.downloadId).toBe(created.body.downloadId);
-    await flushWaitUntilForTest();
   });
 
   it("isolates listing, cursor anchors, reads, and active conflicts across users and organizations", async () => {
     const owner = actor();
-    const client = await configuredClient(owner);
-    providerDownloads("processing");
-    const created = await accept(
-      client.createDownload({
-        headers: authenticate(owner),
-        body: requestBody,
-      }),
-      [202],
-    );
-    await flushWaitUntilForTest();
-    const otherUser = actor({ orgId: owner.orgId });
-    const otherOrg = actor({ userId: owner.userId });
-    await accept(createBddApi(context).completeOnboarding(otherOrg), [200]);
-    await seedOrgMetadata({
-      orgId: otherOrg.orgId,
-      tier: "pro",
-      credits: 10_000,
-    });
-    for (const other of [otherUser, otherOrg]) {
-      const empty = await accept(
-        client.listDownloads({ headers: authenticate(other), query: {} }),
-        [200],
-      );
-      expect(empty.body).toStrictEqual({ downloads: [], nextCursor: null });
-      await accept(
-        client.getDownload({
-          headers: authenticate(other),
-          params: { downloadId: created.body.downloadId },
+    const fixture = await configuredFixture(owner);
+    const client = fixture.client;
+    await fixture.run(async () => {
+      providerDownloads("processing");
+      const created = await accept(
+        client.createDownload({
+          headers: authenticate(owner),
+          body: requestBody,
         }),
-        [404],
+        [202],
       );
-      for (const cursor of [created.body.downloadId, randomUUID()]) {
-        const page = await accept(
-          client.listDownloads({
-            headers: authenticate(other),
-            query: { cursor },
-          }),
+      await flushWaitUntilForTest();
+      const otherUser = actor({ orgId: owner.orgId });
+      fixture.registerDownloadOwner(otherUser);
+      const otherOrg = actor({ userId: owner.userId });
+      await fixture.fund(otherOrg);
+      for (const other of [otherUser, otherOrg]) {
+        const empty = await accept(
+          client.listDownloads({ headers: authenticate(other), query: {} }),
           [200],
         );
-        expect(page.body).toStrictEqual({ downloads: [], nextCursor: null });
+        expect(empty.body).toStrictEqual({ downloads: [], nextCursor: null });
+        await accept(
+          client.getDownload({
+            headers: authenticate(other),
+            params: { downloadId: created.body.downloadId },
+          }),
+          [404],
+        );
+        for (const cursor of [created.body.downloadId, randomUUID()]) {
+          const page = await accept(
+            client.listDownloads({
+              headers: authenticate(other),
+              query: { cursor },
+            }),
+            [200],
+          );
+          expect(page.body).toStrictEqual({ downloads: [], nextCursor: null });
+        }
       }
-    }
-    const conflict = await accept(
-      client.createDownload({
-        headers: authenticate(otherOrg),
-        body: requestBody,
-      }),
-      [409],
-    );
-    expect(conflict.body.error).toStrictEqual({
-      code: "DOWNLOAD_IN_PROGRESS",
-      message: "Another social media download is already in progress",
-    });
+      const conflict = await accept(
+        client.createDownload({
+          headers: authenticate(otherOrg),
+          body: requestBody,
+        }),
+        [409],
+      );
+      expect(conflict.body.error).toStrictEqual({
+        code: "DOWNLOAD_IN_PROGRESS",
+        message: "Another social media download is already in progress",
+      });
 
-    // Another user in the same organization has an independent active slot.
-    const independent = await accept(
-      client.createDownload({
-        headers: authenticate(otherUser),
-        body: requestBody,
-      }),
-      [202],
-    );
-    await flushWaitUntilForTest();
-    const ownPage = await accept(
-      client.listDownloads({ headers: authenticate(owner), query: {} }),
-      [200],
-    );
-    expect(
-      ownPage.body.downloads.map((task) => {
-        return task.downloadId;
-      }),
-    ).toStrictEqual([created.body.downloadId]);
-    const foreignCursor = await accept(
-      client.listDownloads({
-        headers: authenticate(owner),
-        query: { cursor: independent.body.downloadId },
-      }),
-      [200],
-    );
-    expect(foreignCursor.body).toStrictEqual({
-      downloads: [],
-      nextCursor: null,
+      // Another user in the same organization has an independent active slot.
+      const independent = await accept(
+        client.createDownload({
+          headers: authenticate(otherUser),
+          body: requestBody,
+        }),
+        [202],
+      );
+      await flushWaitUntilForTest();
+      const ownPage = await accept(
+        client.listDownloads({ headers: authenticate(owner), query: {} }),
+        [200],
+      );
+      expect(
+        ownPage.body.downloads.map((task) => {
+          return task.downloadId;
+        }),
+      ).toStrictEqual([created.body.downloadId]);
+      const foreignCursor = await accept(
+        client.listDownloads({
+          headers: authenticate(owner),
+          query: { cursor: independent.body.downloadId },
+        }),
+        [200],
+      );
+      expect(foreignCursor.body).toStrictEqual({
+        downloads: [],
+        nextCursor: null,
+      });
     });
   });
 
   it("redacts provider diagnostics in agent download lists while retaining requested social content", async () => {
     const owner = actor();
-    const client = await configuredClient(owner);
-    providerDownloads("failed");
-    await accept(
-      client.createDownload({
-        headers: authenticate(owner),
-        body: requestBody,
-      }),
-      [202],
-    );
-    await flushWaitUntilForTest();
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: owner.userId,
-      orgId: owner.orgId,
-      runId: randomUUID(),
-      capabilities: ["social:read"],
-      iat: seconds,
-      exp: seconds + 60,
+    const fixture = await configuredFixture(owner);
+    const client = fixture.client;
+    await fixture.run(async () => {
+      providerDownloads("failed");
+      await accept(
+        client.createDownload({
+          headers: authenticate(owner),
+          body: requestBody,
+        }),
+        [202],
+      );
+      await flushWaitUntilForTest();
+      const seconds = Math.floor(now() / 1000);
+      const token = signSandboxJwtForTests({
+        scope: "okou",
+        userId: owner.userId,
+        orgId: owner.orgId,
+        runId: randomUUID(),
+        capabilities: ["social:read"],
+        iat: seconds,
+        exp: seconds + 60,
+      });
+      const page = await accept(
+        client.listDownloads({
+          headers: { authorization: `Bearer ${token}` },
+          query: {},
+        }),
+        [200],
+      );
+      expect(page.body.downloads).toMatchObject([
+        {
+          request: requestBody,
+          error: { message: "Okou Social could not prepare the download" },
+        },
+      ]);
+      expect(JSON.stringify(page.body)).not.toMatch(
+        /socialkit|providerJobId|downloadUrl/iu,
+      );
     });
-    const page = await accept(
-      client.listDownloads({
-        headers: { authorization: `Bearer ${token}` },
-        query: {},
-      }),
-      [200],
-    );
-    expect(page.body.downloads).toMatchObject([
-      {
-        request: requestBody,
-        error: { message: "Okou Social could not prepare the download" },
-      },
-    ]);
-    expect(JSON.stringify(page.body)).not.toMatch(
-      /socialkit|providerJobId|downloadUrl/iu,
-    );
   });
 });

@@ -19,7 +19,7 @@ import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import {
   buildArtifactKeyV2,
   buildFileUrlFromKey,
@@ -57,6 +57,9 @@ import { setRunImageModelFixture } from "../../../test-fixtures/run-image-model"
 import { seedRetiredMemberImageModelFixture } from "../../../test-fixtures/retired-member-image-model";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 
 const context = testContext();
@@ -540,6 +543,70 @@ async function seedImageFixture(options: {
   );
 
   return fixture;
+}
+
+async function publicUnfundedImageFixture() {
+  const bdd = createBddApi(context);
+  const actor = bdd.user();
+  const orgId = actor.orgId;
+  if (!orgId) {
+    throw new Error("Image fixture requires an owned organization");
+  }
+  const fixture = { orgId, userId: actor.userId };
+  const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+  const owner = createFixtureOperationOwner(async () => {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+    context.mocks.s3.send.mockResolvedValue({
+      Contents: [],
+      IsTruncated: false,
+    });
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    await flushWaitUntilForTest();
+
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organization.deleted",
+      data: { id: orgId },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    await expect(orgCredits(fixture)).resolves.toBe(0);
+    expect(
+      (
+        await createRunReadsApi(context).requestListLogs(
+          actor,
+          { limit: 50 },
+          [200],
+        )
+      ).body.data,
+    ).toStrictEqual([]);
+  });
+  await owner.run(async () => {
+    // This helper supplies only the external Clerk directory response.
+    await store.set(
+      seedOrgMembership$,
+      { ...fixture, role: "admin" },
+      context.signal,
+    );
+    await bdd.completeOnboarding(actor);
+    await flushWaitUntilForTest();
+    mocks.clerk.session(actor.userId, orgId, "org:admin");
+    const billing = await accept(
+      setupApp({ context, routes: billingStatusRoutes })(
+        billingStatusContract,
+      ).get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(billing.body).toMatchObject({
+      tier: "limited-free-1",
+      status: "active",
+      credits: 0,
+    });
+  });
+  return { ...fixture, run: owner.run };
 }
 
 async function seedAdmittedImageRun(
@@ -1425,36 +1492,38 @@ describe("POST /api/image-io/generate", () => {
   });
 
   it("returns 402 when the org has no spendable credits", async () => {
-    const fixture = await seedImageFixture({ credits: 0 });
-    await useImageModel(fixture, "gpt-image-1");
-    const pricingFixture = await createScopedImagePricing({
-      configured: GPT_IMAGE_1_PRICING,
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let falCalls = 0;
-    server.use(
-      http.post(FAL_GPT_IMAGE_1_URL, () => {
-        falCalls += 1;
-        return HttpResponse.json({});
-      }),
-    );
+    const fixture = await publicUnfundedImageFixture();
+    await fixture.run(async () => {
+      await useImageModel(fixture, "gpt-image-1");
+      const pricingFixture = await createScopedImagePricing({
+        configured: GPT_IMAGE_1_PRICING,
+      });
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      let falCalls = 0;
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, () => {
+          falCalls += 1;
+          return HttpResponse.json({});
+        }),
+      );
 
-    const app = createImageIoTestApp(pricingFixture.resolution);
-    const response = await app.request("/api/image-io/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ prompt: "a cat" }),
-    });
+      const app = createImageIoTestApp(pricingFixture.resolution);
+      const response = await app.request("/api/image-io/generate", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ prompt: "a cat" }),
+      });
 
-    expect(response.status).toBe(402);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Insufficient credits. Please add credits to continue.",
-        code: "INSUFFICIENT_CREDITS",
-      },
+      expect(response.status).toBe(402);
+      await expect(response.json()).resolves.toStrictEqual({
+        error: {
+          message: "Insufficient credits. Please add credits to continue.",
+          code: "INSUFFICIENT_CREDITS",
+        },
+      });
+      expect(falCalls).toBe(0);
+      await expect(orgCredits(fixture)).resolves.toBe(0);
     });
-    expect(falCalls).toBe(0);
-    await expect(orgCredits(fixture)).resolves.toBe(0);
   });
 
   it("settles admitted provider work after the run becomes terminal", async () => {
