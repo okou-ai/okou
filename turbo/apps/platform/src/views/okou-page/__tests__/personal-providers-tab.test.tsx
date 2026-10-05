@@ -224,7 +224,11 @@ function closeClaudeCodeDialogs(): void {
 
 function connectButtonInRow(row: HTMLElement, label: string): HTMLElement {
   const button = queryAllByRoleFast("button", row).find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
+    return (
+      (
+        candidate.getAttribute("aria-label") ?? candidate.textContent
+      )?.trim() === label
+    );
   });
   if (!button) {
     throw new Error(`${label} button not found`);
