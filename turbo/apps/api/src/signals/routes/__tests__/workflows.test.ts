@@ -2466,7 +2466,7 @@ describe("workflows", () => {
       ["agent:write"],
     );
 
-    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 10);
+    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 32);
     const copied = await accept(
       detailClient().copy({
         headers: { authorization: `Bearer ${sourceToken}` },
@@ -2488,7 +2488,7 @@ describe("workflows", () => {
     }
     await expect(
       readWorkflowAutomationAutonomyFixture(context, copiedAutomation.id),
-    ).resolves.toMatchObject({ autonomyBudget: 9 });
+    ).resolves.toMatchObject({ autonomyBudget: 31 });
 
     await setRunAutonomyBudgetFixture(context, sourceRun.runId, 0);
     const blockedTargetAgent = await createAgent(actor, {

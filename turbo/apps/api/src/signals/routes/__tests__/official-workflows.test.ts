@@ -3732,6 +3732,71 @@ describe("Official Workflow installations", () => {
     ]);
   });
 
+  it("accepts a 32-hop Blueprint budget and rejects a binding above the limit", async () => {
+    installCatalogStorageFixture();
+    const definitionName = `api-test-budget-${randomUUID()}`;
+    const scheduled = evolvedScheduledBlueprint();
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          scheduled,
+          {
+            ...loopBlueprint(),
+            desiredState: {
+              ...loopBlueprint().desiredState,
+              autonomyBudget: 32,
+            },
+          },
+        ]),
+      ]),
+    );
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const { agentId } = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    await setOfficialWorkflowsEnabled(actor, true);
+    const headers = authHeaders(actor);
+    const blueprintBindings = (budget: number) => {
+      return [
+        {
+          blueprintKey: "daily",
+          bindings: [{ key: "autonomy-budget", value: budget }],
+        },
+        {
+          blueprintKey: "pulse",
+          bindings: [{ key: "interval-seconds", value: 3600 }],
+        },
+      ];
+    };
+    await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { agentId, blueprints: blueprintBindings(33) },
+      }),
+      [400],
+    );
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { agentId, blueprints: blueprintBindings(32) },
+      }),
+      [201],
+    );
+    expect(installed.body.workflow.automations).toHaveLength(2);
+    for (const automation of installed.body.workflow.automations) {
+      await expect(
+        readWorkflowAutomationAutonomyFixture(context, automation.id),
+      ).resolves.toMatchObject({ autonomyBudget: 32, enabled: true });
+    }
+  });
+
   it("guards access and validates concurrent installations through public boundaries", async () => {
     installCatalogStorageFixture();
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);

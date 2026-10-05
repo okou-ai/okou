@@ -56,7 +56,7 @@ export const agentRuns = pgTable(
         .where(sql`${table.workflowAutomationId} IS NOT NULL`),
       check(
         "agent_runs_autonomy_budget_check",
-        sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 10`,
+        sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 32`,
       ),
       check(
         "agent_runs_runner_cancellation_mode_check",
