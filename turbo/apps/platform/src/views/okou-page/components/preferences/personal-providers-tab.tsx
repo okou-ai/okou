@@ -211,7 +211,6 @@ function OAuthAccountGroupsSection() {
               open: true,
               resetCredits: account.subscriptionResetCredits ?? null,
               accountId: account.id,
-              type: account.type,
             });
           }}
         />
@@ -589,7 +588,8 @@ function OAuthAccountTableRow({
           <span className="text-xs text-muted-foreground">—</span>
         )}
         {/* A spent balance has no action to offer, so the row omits it. */}
-        {account.subscriptionResetCredits === undefined ||
+        {account.type !== "codex-oauth-token" ||
+        account.subscriptionResetCredits === undefined ||
         account.subscriptionResetCredits === 0 ? null : (
           <CodexResetCreditsButton
             className="ml-auto"
@@ -917,10 +917,7 @@ function CodexResetDialogController({
 
   const confirmReset = () => {
     const resetPromise = resetDialog.accountId
-      ? resetCodexAccount(
-          { type: resetDialog.type, account: resetDialog.accountId },
-          pageSignal,
-        )
+      ? resetCodexAccount(resetDialog.accountId, pageSignal)
       : null;
     if (!resetPromise) {
       return;
@@ -940,7 +937,6 @@ function CodexResetDialogController({
   return (
     <CodexResetUsageDialog
       open={resetDialog.open}
-      providerType={resetDialog.type}
       resetCredits={resetDialog.resetCredits}
       resetting={actionPending}
       onOpenChange={(open) => {

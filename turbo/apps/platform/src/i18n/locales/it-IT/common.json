@@ -5101,7 +5101,7 @@
         "workspaceDescription": "Disponibile per tutti in quest'area di lavoro."
       },
       "reset": {
-        "confirmDescription": "Usa un ripristino {{provider}} per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",
+        "confirmDescription": "Usa un ripristino Codex per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",
         "progress": "Reimpostazione...",
         "remaining_one": "{{value}} ripristino rimasto",
         "remaining_many": "{{value}} ripristini rimasti",
@@ -5111,7 +5111,7 @@
         "remainingWithExpiry_one": "{{value}} ripristino rimasto · scade {{expiry}}",
         "remainingWithExpiry_many": "{{value}} ripristini rimasti · scadono {{expiry}}",
         "remainingWithExpiry_other": "{{value}} ripristini rimasti · scadono {{expiry}}",
-        "title": "Reimpostare l'utilizzo di {{provider}}?"
+        "title": "Reimpostare l'utilizzo di Codex?"
       },
       "stale": {
         "claudeExpired": "La sessione Claude Code è scaduta. Riconnettiti per continuare.",
@@ -5127,9 +5127,9 @@
         "accountDisconnected": "Account disconnesso",
         "accountSwitched": "Account attivo cambiato",
         "policiesUpdated": "Impostazioni del provider del modello aggiornate",
-        "reset": "Utilizzo {{provider}} reimpostato",
-        "resetUnavailable": "Nessuna reimpostazione dell'utilizzo {{provider}} disponibile",
-        "resetUnneeded": "L'utilizzo di {{provider}} non necessita di un ripristino in questo momento"
+        "reset": "Utilizzo Codex reimpostato",
+        "resetUnavailable": "Nessuna reimpostazione dell'utilizzo Codex disponibile",
+        "resetUnneeded": "L'utilizzo di Codex non necessita di un ripristino in questo momento"
       },
       "usage": {
         "inDays": "tra {{days}}g",

@@ -5029,7 +5029,7 @@
         "workspaceDescription": "Available to everyone in this workspace."
       },
       "reset": {
-        "confirmDescription": "Use one {{provider}} reset to reset your current usage windows. You have {{remaining}}.",
+        "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
         "progress": "Resetting...",
         "remaining_one": "{{value}} reset left",
         "remaining_other": "{{value}} resets left",
@@ -5037,7 +5037,7 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} reset left · expires {{expiry}}",
         "remainingWithExpiry_other": "{{value}} resets left · expires {{expiry}}",
-        "title": "Reset {{provider}} usage?"
+        "title": "Reset Codex usage?"
       },
       "stale": {
         "claudeExpired": "Your Claude Code session expired. Re-connect to continue.",
@@ -5053,9 +5053,9 @@
         "accountDisconnected": "Account disconnected",
         "accountSwitched": "Active account switched",
         "policiesUpdated": "Model provider settings updated",
-        "reset": "{{provider}} usage reset",
-        "resetUnavailable": "No {{provider}} usage resets available",
-        "resetUnneeded": "{{provider}} usage does not need a reset right now"
+        "reset": "Codex usage reset",
+        "resetUnavailable": "No Codex usage resets available",
+        "resetUnneeded": "Codex usage does not need a reset right now"
       },
       "usage": {
         "inDays": "in {{days}}d",

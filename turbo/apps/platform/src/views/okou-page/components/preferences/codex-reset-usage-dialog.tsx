@@ -12,7 +12,6 @@ import {
   TooltipTrigger,
   cn,
 } from "@okouai/ui";
-import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { formatLocalizedNumber } from "../../../../i18n/format.ts";
@@ -188,14 +187,12 @@ export function CodexResetCreditsMenuItem({
 
 export function CodexResetUsageDialog({
   open,
-  providerType,
   resetCredits,
   resetting,
   onOpenChange,
   onConfirm,
 }: {
   open: boolean;
-  providerType: ModelProviderType;
   resetCredits: number | null;
   resetting: boolean;
   onOpenChange: (open: boolean) => void;
@@ -203,11 +200,6 @@ export function CodexResetUsageDialog({
 }) {
   const { t } = useTranslation();
   const remaining = formatCodexResetCredits(resetCredits);
-  const provider = t(($) => {
-    return providerType === "codex-oauth-token"
-      ? $.settings.accountMenu.subscriptions.providers.codex
-      : $.settings.accountMenu.subscriptions.providers.claudeCode;
-  });
 
   return (
     <Dialog
@@ -225,14 +217,9 @@ export function CodexResetUsageDialog({
       >
         <DialogHeader>
           <DialogTitle>
-            {t(
-              ($) => {
-                return $.settings.models.reset.title;
-              },
-              {
-                provider,
-              },
-            )}
+            {t(($) => {
+              return $.settings.models.reset.title;
+            })}
           </DialogTitle>
           <DialogDescription>
             {t(
@@ -240,7 +227,6 @@ export function CodexResetUsageDialog({
                 return $.settings.models.reset.confirmDescription;
               },
               {
-                provider,
                 remaining,
               },
             )}

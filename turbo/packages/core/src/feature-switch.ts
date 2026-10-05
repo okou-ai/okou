@@ -368,13 +368,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser. Enable manually to try it.",
     enabled: false,
   },
-  [FeatureSwitchKey.ClaudeCodeUsageReset]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Offer manual usage-window resets for personal Claude Code subscriptions, matching the Codex reset action.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.AgentResponsibilitySetup]: {
     maintainer: "linghan@okou.ai",
     description:

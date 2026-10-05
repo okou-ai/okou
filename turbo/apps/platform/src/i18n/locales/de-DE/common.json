@@ -5037,7 +5037,7 @@
         "workspaceDescription": "Verfügbar für alle in diesem Arbeitsbereich."
       },
       "reset": {
-        "confirmDescription": "Verwenden Sie einen {{provider}}-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
+        "confirmDescription": "Verwenden Sie einen Codex-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
         "progress": "Zurücksetzen...",
         "remaining_one": "{{value}} Reset übrig",
         "remaining_other": "{{value}} Resets übrig",
@@ -5045,7 +5045,7 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} Reset übrig · läuft {{expiry}} ab",
         "remainingWithExpiry_other": "{{value}} Resets übrig · laufen {{expiry}} ab",
-        "title": "{{provider}}-Nutzung zurücksetzen?"
+        "title": "Codex-Nutzung zurücksetzen?"
       },
       "stale": {
         "claudeExpired": "Ihre Claude Code-Sitzung ist abgelaufen. Stellen Sie die Verbindung erneut her, um fortzufahren.",
@@ -5061,9 +5061,9 @@
         "accountDisconnected": "Konto getrennt",
         "accountSwitched": "Aktives Konto gewechselt",
         "policiesUpdated": "Modellanbietereinstellungen aktualisiert",
-        "reset": "{{provider}}-Nutzung zurückgesetzt",
-        "resetUnavailable": "Es sind keine {{provider}}-Nutzungs-Resets verfügbar",
-        "resetUnneeded": "Die {{provider}}-Nutzung muss derzeit nicht zurückgesetzt werden"
+        "reset": "Codex-Nutzung zurückgesetzt",
+        "resetUnavailable": "Es sind keine Codex-Nutzungs-Resets verfügbar",
+        "resetUnneeded": "Die Codex-Nutzung muss derzeit nicht zurückgesetzt werden"
       },
       "usage": {
         "inDays": "in {{days}} T.",

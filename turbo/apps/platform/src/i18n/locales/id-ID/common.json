@@ -5019,14 +5019,14 @@
         "workspaceDescription": "Tersedia untuk semua orang di ruang kerja ini."
       },
       "reset": {
-        "confirmDescription": "Gunakan satu reset {{provider}} untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
+        "confirmDescription": "Gunakan satu reset Codex untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
         "progress": "Mereset...",
         "remaining_one": "{{value}} reset tersisa",
         "remaining_other": "{{value}} reset tersisa",
         "remainingUnavailable": "Sisa reset tidak tersedia",
         "remainingUnknown": "Reset —",
         "remainingWithExpiry_other": "{{value}} reset tersisa · kedaluwarsa {{expiry}}",
-        "title": "Reset penggunaan {{provider}}?"
+        "title": "Reset penggunaan Codex?"
       },
       "stale": {
         "claudeExpired": "Sesi Claude Code Anda kedaluwarsa. Sambungkan ulang untuk melanjutkan.",
@@ -5042,9 +5042,9 @@
         "accountDisconnected": "Akun diputuskan",
         "accountSwitched": "Akun aktif diganti",
         "policiesUpdated": "Pengaturan provider model diperbarui",
-        "reset": "Penggunaan {{provider}} direset",
-        "resetUnavailable": "Tidak ada reset penggunaan {{provider}} yang tersedia",
-        "resetUnneeded": "Penggunaan {{provider}} tidak perlu direset saat ini"
+        "reset": "Penggunaan Codex direset",
+        "resetUnavailable": "Tidak ada reset penggunaan Codex yang tersedia",
+        "resetUnneeded": "Penggunaan Codex tidak perlu direset saat ini"
       },
       "usage": {
         "inDays": "dalam {{days}}d",
