@@ -167,7 +167,7 @@ impl KdcExchange for PendingAuthority {
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn expired_or_cancelled_gss_authority_phase_closes_tls_without_native_work() {
     for cancelled in [false, true] {
         fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).unwrap();
@@ -188,6 +188,9 @@ async fn expired_or_cancelled_gss_authority_phase_closes_tls_without_native_work
         ));
         tokio::select! { _result = &mut authentication => panic!("authentication finished before pending authority"), result = waiting => result.unwrap() }
         if !cancelled {
+            // Observing PendingAuthority means the authentication poll returned
+            // Pending and its production timeout was armed. Advance only then.
+            tokio::time::advance(Duration::from_millis(100)).await;
             let error = match authentication.as_mut().await {
                 Ok(_) => panic!("pending authority authenticated"),
                 Err(error) => error,
