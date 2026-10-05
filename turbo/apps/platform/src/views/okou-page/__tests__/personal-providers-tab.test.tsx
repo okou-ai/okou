@@ -582,7 +582,7 @@ test("Offer Pro from personal account groups when BYOK is unavailable", async ()
   ).resolves.toBeInTheDocument();
 });
 
-test("Start and close personal Claude login from the account menu", async () => {
+test("Start and close personal Claude login directly from its account group", async () => {
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
@@ -605,15 +605,18 @@ test("Start and close personal Claude login from the account menu", async () => 
     [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
   });
 
-  const addAccountButton = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Add account";
-  });
-  if (!addAccountButton) {
-    throw new Error("Add account button not found");
+  const claudeSection = screen
+    .getByRole("heading", { name: "Claude" })
+    .closest("section");
+  if (!claudeSection) {
+    throw new Error("Claude account group not found");
   }
-  click(addAccountButton);
-  const addAccountMenu = await screen.findByRole("menu");
-  click(within(addAccountMenu).getByText("Claude"));
+  const connectAccountButton = connectButtonInRow(
+    claudeSection,
+    "Connect account",
+  );
+  click(connectAccountButton);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
   const authorizationCodeInputs = await screen.findAllByTestId(
     "claude-code-device-auth-code",
@@ -633,7 +636,7 @@ test("Start and close personal Claude login from the account menu", async () => 
     expect(
       screen.queryAllByTestId("claude-code-device-auth-code"),
     ).toHaveLength(0);
-    expect(addAccountButton).toBeEnabled();
+    expect(connectAccountButton).toBeEnabled();
   });
 });
 

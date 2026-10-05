@@ -149,7 +149,7 @@ async function setupLoadedModelsSettings() {
   responses.holdPoliciesAndBilling = true;
   const settings = await openModelsSettings(menu);
   await expect(
-    findEnabledButton("Add account", settings),
+    findEnabledButton("Connect account", settings),
   ).resolves.toBeEnabled();
   responses.holdSubscriptions = true;
   return { settings, responses, release };
@@ -176,7 +176,7 @@ test("Keep loaded model controls usable when switching Settings sections", async
   await within(settings).findByRole("heading", { name: "Preference" });
   await showModels(settings);
   await expect(
-    findEnabledButton("Add account", settings),
+    findEnabledButton("Connect account", settings),
   ).resolves.toBeEnabled();
 });
 
@@ -184,7 +184,7 @@ test("Keep loaded model controls usable after reopening Settings", async () => {
   const { settings, responses } = await setupLoadedModelsSettings();
   const reopened = await reopenModelsSettings(settings, responses);
   await expect(
-    findEnabledButton("Add account", reopened),
+    findEnabledButton("Connect account", reopened),
   ).resolves.toBeEnabled();
 });
 
@@ -192,7 +192,7 @@ test("Apply realtime model policy changes after reopening Settings", async () =>
   const { settings, responses, release } = await setupLoadedModelsSettings();
   const reopened = await reopenModelsSettings(settings, responses);
   await expect(
-    findEnabledButton("Add account", reopened),
+    findEnabledButton("Connect account", reopened),
   ).resolves.toBeEnabled();
   responses.holdPoliciesAndBilling = false;
   responses.holdSubscriptions = false;
@@ -223,7 +223,7 @@ test("Apply realtime billing changes after reopening Settings", async () => {
   const { settings, responses, release } = await setupLoadedModelsSettings();
   const reopened = await reopenModelsSettings(settings, responses);
   await expect(
-    findEnabledButton("Add account", reopened),
+    findEnabledButton("Connect account", reopened),
   ).resolves.toBeEnabled();
   responses.holdPoliciesAndBilling = false;
   responses.holdSubscriptions = false;
