@@ -405,7 +405,7 @@ function affectedCodexExpiryBindings(
   ];
 }
 
-export type UpsertPersonalAccountArgs = {
+type UpsertPersonalAccountArgs = {
   readonly authSession?: DeviceAuthSessionPublication;
   readonly orgId: string;
   readonly userId: string;
