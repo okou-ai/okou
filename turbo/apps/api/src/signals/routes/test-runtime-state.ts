@@ -11,7 +11,6 @@ import {
 } from "@okouai/api-contracts/contracts/test-runtime-state";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import {
   browserSessionTabSnapshots,
@@ -983,20 +982,6 @@ async function readOfficialWorkflowRunStateActionResponse(
       body: { ok: true as const, official_workflow_run_state: null },
     };
   }
-  const [[runnerJobs], [callbacks]] = await Promise.all([
-    db
-      .select({ value: count() })
-      .from(runnerJobQueue)
-      .where(eq(runnerJobQueue.runId, body.run_id)),
-    db
-      .select({ value: count() })
-      .from(agentRunCallbacks)
-      .where(eq(agentRunCallbacks.runId, body.run_id)),
-  ]);
-  signal.throwIfAborted();
-  if (!runnerJobs || !callbacks) {
-    throw new Error("Official Workflow Run state count is incomplete");
-  }
   return {
     status: 200 as const,
     body: {
@@ -1019,8 +1004,6 @@ async function readOfficialWorkflowRunStateActionResponse(
                 : { writeback: mount.writeback }),
             };
           }) ?? null,
-        runner_job_count: runnerJobs.value,
-        callback_count: callbacks.value,
       },
     },
   };

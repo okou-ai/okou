@@ -32,6 +32,7 @@ export function createPublicFirewallFixture(
   const agentIds = new Set<string>();
   const runIds = new Set<string>();
   const builtinAccounts = new Map<ConnectorSlug, Set<string>>();
+  const builtinDeletionIntents = new Map<ConnectorSlug, Set<string>>();
   const customAccounts = new Map<string, Set<string>>();
   let restoreStorage: (() => void) | undefined;
 
@@ -60,7 +61,20 @@ export function createPublicFirewallFixture(
       for (const account of accounts) {
         ownedIds.add(account.id);
       }
+      const existingIds = new Set(
+        accounts.map((account) => {
+          return account.id;
+        }),
+      );
       for (const connectionId of ownedIds) {
+        // A scenario delete may commit before its response is interrupted.
+        // Only an explicitly registered delete may be absent at teardown.
+        if (
+          builtinDeletionIntents.get(slug)?.has(connectionId) &&
+          !existingIds.has(connectionId)
+        ) {
+          continue;
+        }
         await connectors.deleteBuiltinConnectorAccount(
           actor,
           slug,
@@ -143,7 +157,7 @@ export function createPublicFirewallFixture(
   return {
     actor,
     run: owner.run,
-    async fund(): Promise<void> {
+    async fund() {
       const storage = context.mocks.s3.send.getMockImplementation();
       const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
       restoreStorage = () => {
@@ -156,7 +170,7 @@ export function createPublicFirewallFixture(
       };
       createFirewallApi(context).seedClerkDirectory(actor);
       // Selected scenarios observe authorization, not the old synthetic 100000.
-      await createRunsApi(context).grantProEntitlement(actor, {
+      return await createRunsApi(context).grantProEntitlement(actor, {
         customerId,
         subscriptionId,
       });
@@ -171,6 +185,14 @@ export function createPublicFirewallFixture(
       const accountIds = new Set<string>();
       builtinAccounts.set(slug, accountIds);
       return accountIds;
+    },
+    registerBuiltinConnectorDeletion(
+      slug: ConnectorSlug,
+      connectionId: string,
+    ): void {
+      const ids = builtinDeletionIntents.get(slug) ?? new Set<string>();
+      ids.add(connectionId);
+      builtinDeletionIntents.set(slug, ids);
     },
     registerCustomConnector(connectorId: string): Set<string> {
       const accountIds = new Set<string>();

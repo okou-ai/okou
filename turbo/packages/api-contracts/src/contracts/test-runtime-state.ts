@@ -107,10 +107,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     pi_model_config: z.record(z.string(), z.unknown()),
   }),
   z.object({
-    action: z.literal("enable-queued-pi-ownership-transfer"),
-    run_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("read-chat-event-snapshot-head"),
     thread_id: z.uuid(),
   }),
@@ -307,8 +303,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
           }),
         )
         .nullable(),
-      runner_job_count: z.int().nonnegative(),
-      callback_count: z.int().nonnegative(),
     })
     .nullable()
     .optional(),
