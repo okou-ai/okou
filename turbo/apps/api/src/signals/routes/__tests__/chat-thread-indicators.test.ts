@@ -62,16 +62,10 @@ async function createEntitledAgent(
   displayName: string,
 ): Promise<string> {
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(actor);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",

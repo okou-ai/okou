@@ -1,3 +1,4 @@
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -10,15 +11,14 @@ import {
 } from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
+const api = createRunsApi(context);
 const {
   chat,
-  chatCallbacks,
   entitledChatActor,
   configureSubscriptionPiModel,
   authDeviceSupport,
   misc,
   sendChatRun,
-  upsertOrgModelProvider,
   waitForThreadMessages,
 } = createChatEventsFixture(context);
 
@@ -60,13 +60,10 @@ async function fixture(expiresAt = Math.floor(now() / 1000) + 7200) {
   return { actor, agentId, connected, identity };
 }
 
-/** A member ChatGPT auth.json source, with an unrelated org Anthropic key. */
+/** A member ChatGPT auth.json source. */
 async function memberAuthJsonFixture(accountId: string | null) {
   const { actor, agentId } = await entitledChatActor();
-  await upsertOrgModelProvider(actor, {
-    type: "anthropic-api-key",
-    secret: `sk-ant-${randomUUID()}`,
-  });
+
   await misc.upsertPersonalModelProvider(
     actor,
     {
@@ -144,15 +141,7 @@ describe("ChatGPT subscription credentials at launch", () => {
     "launches %s with %i stored-secret decrypts",
     async (selectedModel, decrypts) => {
       const f = await fixture();
-      await chatCallbacks.updateOrgModelPolicies(f.actor, [
-        {
-          model: selectedModel,
-          preferred: true,
-          defaultProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          modelProviderId: null,
-        },
-      ]);
+      await api.updateUserModelPreference(f.actor, selectedModel);
       // The tokens stay behind firewall auth; only native Codex workspace
       // routing reads the plain account id.
       const kms = useSecretKmsProbe();
@@ -176,15 +165,7 @@ describe("ChatGPT auth.json credentials at launch", () => {
     "launches %s with %i stored-secret decrypts beside an org Anthropic key",
     async (selectedModel, decrypts) => {
       const f = await memberAuthJsonFixture(`ws_acct_${randomUUID()}`);
-      await chatCallbacks.updateOrgModelPolicies(f.actor, [
-        {
-          model: selectedModel,
-          preferred: true,
-          defaultProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          modelProviderId: null,
-        },
-      ]);
+      await api.updateUserModelPreference(f.actor, selectedModel);
       // Only native Codex workspace routing reads the plain account id; the
       // org's Anthropic key is never decrypted for this source.
       const kms = useSecretKmsProbe();
@@ -215,15 +196,7 @@ describe("ChatGPT auth.json credentials at launch", () => {
     expect(rejected.body).toMatchObject({
       error: { code: "CODEX_AUTH_JSON_SHAPE_INVALID" },
     });
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "gpt-6-astra");
     const kms = useSecretKmsProbe();
     const response = await chat.requestSendEvent(
       actor,

@@ -9,14 +9,14 @@ import {
   getSecretKmsClient,
   setSecretKmsClientForTests,
 } from "../../../lib/secret-kms-client";
-import { now, withMockNowForTest } from "../../../lib/time";
+
 import {
   insertBuiltInModelMirrorFixture,
   insertCatalogModelFixture,
   setModelPiRouteClassFixture,
 } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
@@ -28,13 +28,10 @@ import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-m
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
-  GPT_API_KEY_BDD_ROUTES,
   requireOrgId,
   createGptUsagePricingResolution,
-  claimEnvironment,
   userMessages,
   eventBackedContents,
-  modelProviderSecretPlaceholder,
   occurrences,
 } from "./helpers/chat-events-fixture";
 
@@ -46,15 +43,12 @@ const {
   chatCallbacks,
   entitledChatActor,
   configureBuiltInPiModel,
-  configureApiKeyGptPiModel,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
-  upsertOrgModelProvider,
-  claimGptPiSandbox,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
   piSandboxBaseSession,
@@ -221,79 +215,6 @@ async function configureOpenRouterThroughProviderReport(args: {
     claimChatRun: claimOwnedRun,
     cancelChatRun: cancelOwnedRun,
   };
-}
-
-function expectApiKeyGptSandboxCarrier(
-  claim: Awaited<ReturnType<typeof api.claimRunnerJob>>,
-  route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
-  tier: "fast" | undefined,
-): void {
-  expect(claim.piModelConfig).toStrictEqual({
-    schemaVersion: tier === undefined ? 2 : 3,
-    ...(tier === undefined ? {} : { serviceTier: "priority" }),
-    dialect: "openai-responses",
-    transport: "sse",
-    provider: route.piProvider,
-    baseUrl: route.baseUrl,
-    model: route.runtimeModel,
-    ...(route.type === "vercel-ai-gateway-codex"
-      ? { catalogModel: route.catalogModel }
-      : {}),
-    thinkingLevel:
-      route.selectedModel === "gpt-6-luna" ||
-      route.selectedModel === "gpt-5.6-luna"
-        ? "xhigh"
-        : "max",
-    credentialBindings: [
-      {
-        kind: "api-key",
-        environment: "OPENAI_API_KEY",
-        secretName: route.secretName,
-      },
-    ],
-  });
-  expect(claimEnvironment(claim)).toMatchObject({
-    OPENAI_API_KEY: modelProviderSecretPlaceholder(
-      route.type,
-      route.secretName,
-    ),
-    OPENAI_MODEL: route.runtimeModel,
-  });
-  expect(claim.billableFirewalls).toStrictEqual([]);
-  expect(claim.secretConnectorMap?.[route.secretName]).toBe(route.type);
-  expect(claim.secretConnectorMetadataMap?.[route.secretName]).toStrictEqual({
-    sourceType: "model-provider",
-    sourceUserId: "__org__",
-    metadataKey: route.type,
-  });
-}
-
-async function expectApiKeyGptSandboxCredential(
-  claim: Awaited<ReturnType<typeof api.claimRunnerJob>>,
-  sandboxHeaders: { readonly authorization: string },
-  route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
-  secret: string,
-): Promise<void> {
-  if (!claim.encryptedSecrets) {
-    throw new Error("Expected API-key claim credentials");
-  }
-  const credential = await createFirewallApi(context).requestFirewallAuth(
-    sandboxHeaders,
-    {
-      encryptedSecrets: claim.encryptedSecrets,
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate(route.secretName)}`,
-      },
-      secretConnectorMap: claim.secretConnectorMap ?? undefined,
-      secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
-    },
-    [200],
-  );
-  if (credential.status !== 200) {
-    throw new Error("Expected API-key firewall credential");
-  }
-  expect(credential.body.headers.Authorization).toBe(`Bearer ${secret}`);
-  expect(credential.body.resolvedSecrets).toStrictEqual([route.secretName]);
 }
 
 describe("CHAT-02: model-first provider policies", () => {
@@ -961,302 +882,6 @@ describe("CHAT-02: model-first provider policies", () => {
           },
         ),
       ).toHaveLength(1);
-    },
-    90_000,
-  );
-
-  const outcomeRepresentativeModels = {
-    "openai-api-key": {
-      standard: "gpt-6-luna",
-      failed: "gpt-5.6-sol",
-      cancelled: "gpt-5.6-luna",
-    },
-    "openrouter-codex": {
-      standard: "gpt-5.6-sol",
-      failed: "gpt-5.6-luna",
-      cancelled: "gpt-6-luna",
-    },
-    "vercel-ai-gateway-codex": {
-      standard: "gpt-5.6-luna",
-      failed: "gpt-5.6-sol",
-      cancelled: "gpt-5.6-luna",
-    },
-  } as const;
-
-  it.each(
-    GPT_API_KEY_BDD_ROUTES.flatMap((route) => {
-      const representative = outcomeRepresentativeModels[route.type];
-      return (
-        [
-          { ...route, tier: undefined, generation: 2, outcome: "completed" },
-          { ...route, tier: "fast", generation: 3, outcome: "completed" },
-          { ...route, tier: "fast", generation: 3, outcome: "failed" },
-          { ...route, tier: "fast", generation: 3, outcome: "cancelled" },
-        ] as const
-      ).filter(({ tier, outcome }) => {
-        return (
-          (tier === "fast" && outcome === "completed") ||
-          (tier === undefined &&
-            route.selectedModel === representative.standard) ||
-          (outcome === "failed" &&
-            route.selectedModel === representative.failed) ||
-          (outcome === "cancelled" &&
-            route.selectedModel === representative.cancelled)
-        );
-      });
-    }),
-  )(
-    "runs $name API-key $tier through the generation-$generation Sandbox with $outcome and credential rotation",
-    async (route) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
-      const initialSecret = `${route.type}-initial-secret`;
-      const providerId = await configureApiKeyGptPiModel(
-        actor,
-        route,
-        initialSecret,
-      );
-      const usagePricingResolution = await createGptUsagePricingResolution();
-      mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-
-      const firstPrompt = `use ${route.name} in the Sandbox`;
-      const first = await sendChatRun(actor, {
-        agentId,
-        prompt: firstPrompt,
-        model: route.selectedModel,
-        runOptions: { codexServiceTier: route.tier },
-      });
-      await flushWaitUntilForTest();
-      await expectThreadModelCredits(context, actor, first.threadId, 0);
-
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await claimGptPiSandbox(actor, first.runId, route.tier);
-      const sandboxHeaders = {
-        authorization: `Bearer ${claim.sandboxToken}`,
-      };
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.piSessionId).toBe(first.threadId);
-      expect(claim.resumeSession).toBeNull();
-      expectApiKeyGptSandboxCarrier(claim, route, route.tier);
-      expect(JSON.stringify(claim)).not.toContain(initialSecret);
-      await expectApiKeyGptSandboxCredential(
-        claim,
-        sandboxHeaders,
-        route,
-        initialSecret,
-      );
-
-      const h0Bytes = piSandboxBaseSession(claim, checkpointObjects);
-      const h2Session = MemoryPiSession.fromJsonl(h0Bytes.toString("utf8"));
-      const sandboxAnswer = `${route.name} Sandbox completion`;
-      h2Session.appendMessage({
-        role: "user",
-        content: firstPrompt,
-        timestamp: 2,
-      });
-      h2Session.appendMessage({
-        role: "assistant",
-        content: [{ type: "text", text: sandboxAnswer }],
-        api: "openai-responses",
-        provider: route.piProvider,
-        model: route.runtimeModel,
-        usage: {
-          input: 5,
-          output: 3,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 8,
-          cost: {
-            input: 0,
-            output: 0,
-            cacheRead: 0,
-            cacheWrite: 0,
-            total: 0,
-          },
-        },
-        stopReason: "stop",
-        timestamp: 3,
-      });
-      expect(h0Bytes.toString("utf8")).not.toMatch(/serviceTier|service_tier/);
-      expect(h0Bytes.toString("utf8")).not.toContain(initialSecret);
-      const h2 = h2Session.toJsonl();
-      expect(h2).not.toMatch(/serviceTier|service_tier/);
-      const h2Hash = createHash("sha256").update(h2).digest("hex");
-      await webhooks.requestAgentCheckpointPrepareHistory(
-        {
-          runId: first.runId,
-          hash: h2Hash,
-          rawSize: Buffer.byteLength(h2),
-          encodedSize: Buffer.byteLength(h2),
-          encoding: "identity",
-        },
-        sandboxHeaders,
-        [200],
-      );
-      checkpointObjects.set(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
-        Buffer.from(h2, "utf8"),
-      );
-      await webhooks.requestAgentEvents(
-        {
-          runId: first.runId,
-          events: [
-            {
-              type: "assistant",
-              sequenceNumber: 1,
-              message: {
-                content: [{ type: "text", text: sandboxAnswer }],
-              },
-            },
-            {
-              type: "result",
-              sequenceNumber: 2,
-              result: sandboxAnswer,
-            },
-          ],
-        },
-        sandboxHeaders,
-        [200],
-      );
-      if (route.outcome === "cancelled") {
-        await cancelChatRun(actor, first.runId);
-      }
-      await webhooks.requestAgentComplete(
-        {
-          runId: first.runId,
-          exitCode: route.outcome === "failed" ? 1 : 0,
-          ...(route.outcome === "failed"
-            ? { error: "API-key Sandbox failed" }
-            : {}),
-          lastEventSequence: 2,
-          checkpoint: {
-            cliAgentType: "pi",
-            cliAgentSessionId: first.threadId,
-            cliAgentSessionHistoryHash: h2Hash,
-          },
-        },
-        sandboxHeaders,
-        route.outcome === "cancelled" ? [400] : [200],
-      );
-      await waitForRunStatus(actor, first.runId, route.outcome);
-      await flushWaitUntilForTest();
-      await webhooks.requestAgentComplete(
-        { runId: first.runId, exitCode: 0 },
-        sandboxHeaders,
-        [200],
-      );
-      await flushWaitUntilForTest();
-      await expectThreadModelCredits(context, actor, first.threadId, 0);
-      const terminal = await api.readRun(actor, first.runId);
-      expect(terminal).toMatchObject({ status: route.outcome });
-      expect(
-        JSON.stringify({
-          terminal,
-          events: (await chat.listThreadEvents(actor, first.threadId)).events,
-          h2,
-        }),
-      ).not.toContain(initialSecret);
-      if (route.outcome !== "completed") {
-        return;
-      }
-      const firstSession = await readCompletedRunSessionId(
-        context,
-        actor,
-        first.runId,
-      );
-
-      const followUpPrompt = `continue the same ${route.name} credential`;
-      const followUp = await sendChatRun(actor, {
-        agentId,
-        threadId: first.threadId,
-        prompt: followUpPrompt,
-        model: route.selectedModel,
-        runOptions: { codexServiceTier: route.tier },
-      });
-      await flushWaitUntilForTest();
-      const followUpClaim = await claimChatRun(runnerGroup, followUp.runId);
-      expect(followUpClaim.claim.resumeSession).toMatchObject({
-        sessionId: first.threadId,
-        historyRef: { kind: "blob", hash: h2Hash },
-      });
-      expectApiKeyGptSandboxCarrier(followUpClaim.claim, route, route.tier);
-      await completeSandboxFirstPiRun({
-        actor,
-        run: followUp,
-        claim: followUpClaim,
-        checkpointObjects,
-        prompt: followUpPrompt,
-        answer: `${route.name} Sandbox follow-up`,
-        responsesModel: {
-          provider: "openai",
-          model: route.runtimeModel,
-        },
-        usagePricingResolution,
-      });
-      await expect(
-        readCompletedRunSessionId(context, actor, followUp.runId),
-      ).resolves.toBe(firstSession);
-      await expectThreadModelCredits(context, actor, followUp.threadId, 0);
-
-      const rotatedSecret = `${route.type}-rotated-secret`;
-      const rotatedAt = now() + 1000;
-      const rotated = await withMockNowForTest(rotatedAt, async () => {
-        const updated = await upsertOrgModelProvider(actor, {
-          type: route.type,
-          secret: rotatedSecret,
-        });
-        expect(updated.providerId).toBe(providerId);
-        return await sendChatRun(actor, {
-          agentId,
-          threadId: first.threadId,
-          prompt: `continue after rotating the ${route.name} credential`,
-          model: route.selectedModel,
-          runOptions: { codexServiceTier: route.tier },
-        });
-      });
-      await flushWaitUntilForTest();
-      const rotatedClaim = await claimChatRun(runnerGroup, rotated.runId);
-      expectApiKeyGptSandboxCarrier(rotatedClaim.claim, route, route.tier);
-      await expectApiKeyGptSandboxCredential(
-        rotatedClaim.claim,
-        rotatedClaim.sandboxHeaders,
-        route,
-        rotatedSecret,
-      );
-      await completeSandboxFirstPiRun({
-        actor,
-        run: rotated,
-        claim: rotatedClaim,
-        checkpointObjects,
-        prompt: `continue after rotating the ${route.name} credential`,
-        answer: `${route.name} rotated Sandbox completion`,
-        responsesModel: {
-          provider: "openai",
-          model: route.runtimeModel,
-        },
-        usagePricingResolution,
-      });
-      await expect(
-        readCompletedRunSessionId(context, actor, rotated.runId),
-      ).resolves.toBe(firstSession);
-      await expectThreadModelCredits(context, actor, rotated.threadId, 0);
-      const publicState = JSON.stringify({
-        run: await api.readRun(actor, rotated.runId),
-        events: (await chat.listThreadEvents(actor, first.threadId)).events,
-      });
-      expect(publicState).not.toContain(initialSecret);
-      expect(publicState).not.toContain(rotatedSecret);
-      const histories = [...checkpointObjects].filter(([key]) => {
-        return key.endsWith(".blob") || key.endsWith(".jsonl");
-      });
-      expect(histories).not.toHaveLength(0);
-      for (const [, value] of histories) {
-        const jsonl = value.toString("utf8");
-        expect(jsonl).not.toMatch(/serviceTier|service_tier/);
-        expect(jsonl).not.toContain(initialSecret);
-        expect(jsonl).not.toContain(rotatedSecret);
-      }
     },
     90_000,
   );

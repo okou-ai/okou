@@ -37,19 +37,8 @@ interface ChatThreadFixture {
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
-  await api.updateOrgModelPolicies(
-    actor,
-    (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
-      return {
-        model,
-        preferred: model === "claude-sonnet-5",
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      };
-    }),
-  );
+  await api.ensurePersonalSubscriptionModel(actor);
+
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat thread model selection agent",
     visibility: "private",
@@ -110,23 +99,13 @@ function metadataClient() {
 }
 
 describe("POST /api/chat-threads/:id/model-selection", () => {
-  it("uses current workspace routes without mutating a rejected selection", async () => {
-    const fixture = await seedChatThread("Current workspace routes");
-    const { providerId } = await api.ensurePersonalSubscriptionModel(
-      fixture.actor,
-    );
-    const route = {
-      defaultProviderType: "anthropic-api-key" as const,
-      credentialScope: "org" as const,
-      modelProviderId: providerId,
-    };
-    await api.updateOrgModelPolicies(fixture.actor, [
-      { ...route, model: "claude-sonnet-5", preferred: true },
-    ]);
+  it("rejects an unavailable personal subscription without mutating selection", async () => {
+    const fixture = await seedChatThread("Personal subscription availability");
+
     const rejected = await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-5",
+      "gpt-6-luna",
       [400],
     );
     expect(rejected.body).toMatchObject({
@@ -138,10 +117,6 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
 
-    await api.updateOrgModelPolicies(fixture.actor, [
-      { ...route, model: "claude-sonnet-5", preferred: true },
-      { ...route, model: "claude-opus-5", preferred: false },
-    ]);
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
@@ -274,23 +249,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     "stores the replacement when an old client requests retired %s",
     async (retiredModel, replacement) => {
       const fixture = await seedChatThread("Model retirement");
-      const { providerId } = await api.ensurePersonalSubscriptionModel(
-        fixture.actor,
-      );
-      await api.updateOrgModelPolicies(
-        fixture.actor,
-        (["claude-sonnet-5", "claude-opus-5", replacement] as const).map(
-          (model) => {
-            return {
-              model,
-              preferred: model === "claude-sonnet-5",
-              defaultProviderType: "anthropic-api-key",
-              credentialScope: "org",
-              modelProviderId: providerId,
-            };
-          },
-        ),
-      );
+
       const token = okouToken({
         userId: fixture.userId,
         orgId: fixture.orgId,

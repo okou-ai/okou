@@ -59,6 +59,7 @@ interface DriveFolderFixture {
 }
 
 const context = testContext({ connectorCatalog: true });
+const api = createRunsApi(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
@@ -292,17 +293,11 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     await runsApi.grantProEntitlement(actor);
-    const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
+    await runsApi.ensurePersonalSubscriptionModel(actor);
     // Upload completion is exercised against a claimable native Runner run.
-    await runsApi.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const runnerGroup = runsApi.configureRunnerGroup();
     await runsApi.heartbeatRunner(runnerGroup);
     const agent = await bdd.createAgent(actor, {
