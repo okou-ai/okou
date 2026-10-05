@@ -1170,8 +1170,6 @@ async function credentialValues(
   return values;
 }
 
-/** Exact connected account observation; no lock or sibling substitution. */
-
 /** Organization subscriptions remain singleton `model_providers` + `secrets`
  * credentials. */
 async function readOrgSubscriptionCredentialBundle(

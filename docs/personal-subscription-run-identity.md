@@ -4,7 +4,7 @@ This document covers the #34012 identity foundation, its #34098/#34111/#34164 re
 
 ## Effective member routing (B)
 
-A new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. This was gated by the organization-scoped `PersonalSubscriptionPriority` switch; that switch has been removed and the behavior is now unconditional for every workspace, with no per-organization opt-out and no rollout allowlist. Personal subscription accounts and their UI are also permanently available in every workspace; neither rollout switch remains. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
+A new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. This routing behavior and the personal subscription account UI apply in every workspace. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
 
 `effective-model-route.service.ts` is the shared database-only leaf for model selection and the optional member projection. It validates logical model and policy structure, then chooses a logical personal candidate or the configured organization route. Missing nullable custom provider/surface references and mappings matter only when that organization route is selected. Unknown discriminators and contradictory policy structure remain errors. A chosen personal route never returns null because of subscription failure, so persisted-model reconciliation cannot turn reconnect, refresh, quota, KMS or provider errors into another model or paid API.
 
@@ -14,7 +14,7 @@ Chat, thread defaults/updates, queued messages promoted to a new run, linked int
 
 Effective provider selection precedes executor, session and model credit/billing decisions. Claude API/Pi to personal Claude Code can rotate the canonical session without changing the logical model. Changing accounts within the same Codex executor/family retains session continuity. Supported Codex Pi/Fast/non-Pi behavior and the unsupported native Claude subscription Pi boundary remain in their existing owners. Existing transient Pi recovery can hand the same captured personal source to Sandbox; it cannot choose another account, organization API, model, or Built-in model charge.
 
-The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is now always present for a real member; it was omitted while the priority switch was off, and `isMemberModelPolicyConfigurable` still keeps its `routeStatus` fallback for an older API that omits it. Because the projection is always present, member-facing decisions that consult it — including the Codex priority service tier — are now judged on the effective route's availability rather than on a merely valid organization route. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
+The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is always present for a real member. `isMemberModelPolicyConfigurable` keeps its `routeStatus` fallback for an older API that omits it. Because the projection is always present, member-facing decisions that consult it — including the Codex priority service tier — are now judged on the effective route's availability rather than on a merely valid organization route. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
 
 Organization Subscription policies retain their required subscription route and missing-connection guidance; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
 
@@ -94,15 +94,14 @@ remain readable as unknown, following the existing error-format read boundary.
 
 Only the latest actionable failed run lazily loads this metadata for recovery,
 independently of Debug; trace controls still require Debug. Exact account reads
-and resets require the failed run ID independently of both UI switches, keeping
-the existing singleton reset available while Priority remains off. The original
-settings reset still requires Accounts. Recovery supplies the run ID and concrete account ID, rechecks owner/org/connected state and the
-captured identity, and compares Codex's resolved upstream account ID again
-before consuming a reset credit. The failure-recovery reset uses a distinct
-run-ID path so an older API returns 404 instead of ignoring a new precondition;
-there is no retry through the settings/type reset endpoints. Singleton display IDs remain logical parent
-IDs and are never substituted for the captured account. Explicit continue
-creates a normal new run using current authorized settings.
+and resets for failure recovery use the failed run ID and concrete account ID.
+Recovery rechecks owner/org/connected state and the captured identity, and
+compares Codex's resolved upstream account ID again before consuming a reset
+credit. The failure-recovery reset uses a distinct run-ID path so an older API
+returns 404 instead of ignoring a new precondition; there is no retry through
+the settings/type reset endpoints. Settings account reads and resets use the
+connected account's concrete ID and their normal authorization checks.
+Explicit continue creates a normal new run using current authorized settings.
 
 Deploy the nullable column before the new API. Old APIs ignore the additive
 column and old run-response decoders strip the optional `source` field; new
@@ -117,7 +116,7 @@ This scheduling change adds no query statement and leaves successful-path query 
 
 Account rows own encrypted credentials. Refresh and verified same-upstream-identity reconnection update those shared credentials under the existing auth-state lock; rotating refresh tokens are never copied per run. Codex uses its upstream account ID. Claude uses account/organization UUIDs when provided by the existing profile endpoint, with the existing stored email/workspace identity for older OAuth connections. A legacy Claude token without recorded identity is checked using that token before a replacement; an unavailable identity is left unchanged rather than inferred from the new active account.
 
-A different verified upstream identity selects/creates a different account row. The replaced account is always retained while an admitted run still references it; the hard-delete path that applied while the priority switch was off no longer exists. Duplicate reconnection reuses the matching identity. Ordinary disconnect hides the account from listing, selection, activation, reset/usage and reconnect by the old ID. A fresh authenticated connection to the same upstream identity can restore that row and its shared refresh state.
+A different verified upstream identity selects/creates a different account row. The replaced account is retained while an admitted run still references it. Duplicate reconnection reuses the matching identity. Ordinary disconnect hides the account from listing, selection, activation, reset/usage and reconnect by the old ID. A fresh authenticated connection to the same upstream identity can restore that row and its shared refresh state.
 
 Disconnected rows and their encrypted secrets survive only while an exact `(runId, orgId, userId, accountId)` reference is `queued`, `pending` or `running`. Runtime firewall and supported Pi credential reads/refreshes must prove that reference. The logical parent survives only to own retained rows and is deleted with its last account row. Retained-only parents are hidden.
 
@@ -126,10 +125,9 @@ The shared terminal transition cleans the final disconnected reference after com
 ## Credential storage and locking
 
 `model_provider_accounts` and `model_provider_account_secrets` are the only
-store for personal Claude and Codex subscriptions. Their `secrets` mirror, the
-singleton provider fields for personal rows, lazy seeding and the historical
-writer bridge were removed; see the
-[deployment compatibility entry](deployment-compatibility.md#personal-subscription-credentials-become-account-only-2026-09-26).
+store for personal Claude and Codex subscriptions. See the
+[deployment compatibility entry](deployment-compatibility.md#personal-subscription-credentials-become-account-only-2026-09-26)
+for the credential storage deployment boundary.
 Organization (`__org__`) subscriptions keep `model_providers` + `secrets`.
 
 - Reads (firewall auth, Pi first-turn and memory credentials, run capture,
@@ -149,9 +147,9 @@ Organization (`__org__`) subscriptions keep `model_providers` + `secrets`.
 
 ## Scale and validation
 
-The controller's production inventory at **2026-09-14 08:38:07 UTC** found **64 logical subscriptions**. Only **31 concrete accounts**, belonging to **16 logical providers in 2 organizations**, existed. Singleton paths are therefore part of the primary preparation and validation surface.
+The controller's historical production inventory at **2026-09-14 08:38:07 UTC** found **64 logical subscriptions** and **31 concrete accounts**, belonging to **16 logical providers in 2 organizations**. These dated counts are not a current inventory.
 
-The API tests exercise real chat admission and runner/firewall authorization for both subscription types with the multi-account UI off/on, feature-off preparation, pending/queued/running replacement, same-identity recovery, retained refresh serialization, final-reference terminal cleanup, and global hard revocation. They assert emitted source IDs and actual authorization headers, not only account-helper return values. Existing supported Pi, account-switch, subscription failure and settings tests remain part of targeted regression validation and the PR pipeline.
+The API tests exercise real chat admission and runner/firewall authorization for both subscription types, including preparation, pending/queued/running replacement, same-identity recovery, retained refresh serialization, final-reference terminal cleanup, and global hard revocation. They assert emitted source IDs and actual authorization headers, not only account-helper return values. Existing supported Pi, account-switch, subscription failure and settings tests remain part of targeted regression validation and the PR pipeline.
 
 ## A3: final Pi credential validation (#34164)
 
@@ -159,9 +157,9 @@ After SDK initialization and before prepared execution/provider requests, Pi
 revalidates the captured account with the activation's exact run ID, org, user
 and source metadata. The shared predicate permits connected accounts and
 requires an exact nonterminal run binding for retained accounts. Ordinary
-disconnect or different-identity replacement therefore preserves admitted A
-when retention is enabled; a later run selects the current connected account.
-Both singleton and multiple-account settings paths use this boundary.
+disconnect or different-identity replacement therefore preserves admitted A;
+a later run selects the current connected account. All personal account entry
+points use this boundary.
 
 Every `needsReconnect` state is unavailable, including a real HTTP 400
 `invalid_grant` that leaves nonblank stored credentials. The three recognized
