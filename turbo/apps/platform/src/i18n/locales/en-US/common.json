@@ -4910,7 +4910,6 @@
         "accountsSectionTitle": "Personal accounts",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Active",
-        "addAccount": "Add account",
         "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
         "autoTitle": "Use more models",
         "claudeDescription": "Sign in with your Claude subscription to use Claude models with Claude Code-backed agents.",

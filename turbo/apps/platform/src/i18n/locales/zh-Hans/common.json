@@ -4900,7 +4900,6 @@
         "accountsSectionTitle": "个人账号",
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
-        "addAccount": "添加账号",
         "autoDescription": "连接你的 Claude 或 ChatGPT 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
         "claudeDescription": "使用你的 Claude 订阅登录，通过 Claude Code 驱动的智能体使用 Claude 系列模型。",

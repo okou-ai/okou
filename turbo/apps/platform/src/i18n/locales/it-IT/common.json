@@ -4982,7 +4982,6 @@
         "accountsSectionTitle": "Account personali",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Attivo",
-        "addAccount": "Aggiungi account",
         "autoDescription": "Collega il tuo account Claude o ChatGPT per usare più modelli.",
         "autoTitle": "Usa più modelli",
         "claudeDescription": "Accedi con il tuo abbonamento Claude per usare i modelli Claude con agenti basati su Claude Code.",

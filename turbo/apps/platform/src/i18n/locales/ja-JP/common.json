@@ -4900,7 +4900,6 @@
         "accountsSectionTitle": "個人アカウント",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "使用中",
-        "addAccount": "アカウントを追加",
         "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
         "claudeDescription": "Claudeのサブスクリプションでログインすると、Claude Codeを基盤とするエージェントでClaudeモデルを利用できます。",
