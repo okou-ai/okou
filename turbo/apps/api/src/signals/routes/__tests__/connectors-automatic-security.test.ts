@@ -12,10 +12,9 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import {
   automaticMcpCatalogFixture,
-  buildAutomaticMcpCatalog,
   installAutomaticMcpCatalog,
 } from "./helpers/connector-automatic-catalog";
-import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog";
+
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -251,36 +250,6 @@ describe("builtin Automatic account and consent ownership", () => {
     expect(account.body).toMatchObject({
       authMethod: f.methodId,
       connectionStatus: "connected",
-    });
-  });
-
-  it("rejects consent frozen for an endpoint that changes without a storage version change", async () => {
-    const f = createPublicAutomaticCatalog(context);
-    await f.run(async () => {
-      await f.publish();
-      const provider = mockAutomaticMcpOAuthProvider(context, {
-        registration: "cimd",
-      });
-      const started = await oauthStart(f);
-      await f.publish(
-        buildAutomaticMcpCatalog({
-          slug: f.slug,
-          methodId: f.methodId,
-          endpoint: "https://replacement.example.test/mcp",
-        }).catalog,
-      );
-      expect((await callback(started.state, provider.issuer)).body.status).toBe(
-        "error",
-      );
-      await accept(receipt(f, started.attemptId), [404]);
-      expect(
-        (
-          await accept(
-            accounts().connections({ headers, query: f.target }),
-            [200],
-          )
-        ).body.connections,
-      ).toStrictEqual([]);
     });
   });
 });

@@ -14,21 +14,10 @@ import { userLocaleSchema } from "@okouai/api-contracts/contracts/user-preferenc
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
-import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { homeTaskRecommendations } from "@okouai/db/schema/home-task-recommendation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import {
-  and,
-  asc,
-  eq,
-  gte,
-  inArray,
-  isNull,
-  lte,
-  notExists,
-  or,
-} from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, not, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -59,6 +48,7 @@ import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { homeTaskGmailCacheAuthorized$ } from "./home-task-recommendation-gmail.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
+import { unfinishedActiveChatRunExists } from "./chat-run-state-read.service";
 import {
   buildHomeTaskCandidates,
   normalizeHomeTaskRecommendations,
@@ -316,16 +306,8 @@ const visibleCachedRow$ = command(
             eq(chatThreads.userId, scope.userId),
             eq(chatThreads.agentId, scope.agentId),
             chatThreadOrganizationPredicate(scope.orgId),
-            notExists(
-              db
-                .select({ id: agentRuns.id })
-                .from(agentRuns)
-                .where(
-                  and(
-                    eq(agentRuns.chatThreadId, chatThreads.id),
-                    inArray(agentRuns.status, ["pending", "running"]),
-                  ),
-                ),
+            not(
+              unfinishedActiveChatRunExists({ chatThreadId: chatThreads.id }),
             ),
           ),
         );

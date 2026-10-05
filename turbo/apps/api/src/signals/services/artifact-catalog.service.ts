@@ -4,9 +4,9 @@ import {
   asc,
   desc,
   eq,
+  exists,
   ilike,
   inArray,
-  isNotNull,
   isNull,
   like,
   lt,
@@ -30,7 +30,6 @@ import {
   type ArtifactKind,
   type ArtifactThumbnail,
 } from "@okouai/db/schema/artifact";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -254,16 +253,6 @@ async function resolveChatThreadId(
   }
   if (!row.runId) {
     return null;
-  }
-
-  const [run] = await db
-    .select({ chatThreadId: agentRuns.chatThreadId })
-    .from(agentRuns)
-    .where(and(eq(agentRuns.id, row.runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-  signal.throwIfAborted();
-  if (run?.chatThreadId) {
-    return run.chatThreadId;
   }
 
   const [event] = await db
@@ -1004,26 +993,27 @@ function toArtifactSummary(row: {
 /**
  * The registry has no thread column, so a thread filter resolves through each
  * artifact kind's source association. File-backed artifacts use the projection
- * file directly or its run, while shared threads retain their nullable source
+ * file directly or an owning chat event, while shared threads retain their nullable source
  * thread ID after snapshot creation.
  */
 function fileChatThreadFilter(db: Db, chatThreadId: string): SQL {
-  const runIds = db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, chatThreadId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    );
   const fileIds = db
     .select({ id: runUploadedFiles.id })
     .from(runUploadedFiles)
     .where(
       or(
         eq(runUploadedFiles.chatThreadId, chatThreadId),
-        inArray(runUploadedFiles.runId, runIds),
+        exists(
+          db
+            .select({ id: chatEvents.id })
+            .from(chatEvents)
+            .where(
+              runOwnedChatEventForRunCondition({
+                runId: runUploadedFiles.runId,
+                chatThreadId,
+              }),
+            ),
+        ),
       ),
     );
   return inArray(artifacts.projectionFileId, fileIds);

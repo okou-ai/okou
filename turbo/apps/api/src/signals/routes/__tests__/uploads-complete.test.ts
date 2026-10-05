@@ -26,6 +26,7 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 
 const context = testContext();
@@ -33,6 +34,7 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const runsApi = createRunsApi(context);
+const eventsFixture = createChatEventsFixture(context);
 
 type ChatObjectStore = ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
 
@@ -264,6 +266,73 @@ describe("POST /api/uploads/complete", () => {
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       expect.stringMatching(/^chatThreadArtifactsChanged:/u),
       null,
+    );
+  });
+
+  it("publishes completed-run uploads to their owning thread and retains files after thread deletion", async () => {
+    const { actor, agentId, runnerGroup } =
+      await eventsFixture.entitledNativeChatActor();
+    const orgId = requireOrgId(actor);
+    const run = await eventsFixture.sendChatRun(actor, {
+      agentId,
+      prompt: "Produce an artifact that finishes uploading after execution.",
+    });
+    const claimed = await eventsFixture.claimChatRun(runnerGroup, run.runId);
+    await eventsFixture.completeChatRunOk(run.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+
+    const objectStore = eventsFixture.chatCallbacks.acceptChatObjectStorage();
+    const uploadFixture = { actor: { ...actor, orgId }, objectStore };
+    const bearer = `Bearer ${okouToken({
+      userId: actor.userId,
+      orgId,
+      runId: run.runId,
+      capabilities: ["file:write"],
+    })}`;
+    const fileId = randomUUID();
+    addUploadObject(uploadFixture, fileId, "completed-run.pdf");
+    context.mocks.ably.publish.mockClear();
+
+    const completedUpload = await chat.completeUploadWithBearer(
+      bearer,
+      { id: fileId },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(completedUpload.body).toMatchObject({
+      id: fileId,
+      filename: "completed-run.pdf",
+    });
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `chatThreadArtifactsChanged:${run.threadId}`,
+      null,
+    );
+
+    await chat.deleteThread(actor, run.threadId);
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    const detachedFileId = randomUUID();
+    addUploadObject(uploadFixture, detachedFileId, "deleted-thread.pdf");
+    const detachedUpload = await chat.completeUploadWithBearer(
+      bearer,
+      { id: detachedFileId },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(detachedUpload.body).toMatchObject({
+      id: detachedFileId,
+      filename: "deleted-thread.pdf",
+    });
+    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+      `chatThreadArtifactsChanged:${run.threadId}`,
+      null,
+    );
+    const catalog = await chat.listArtifactCatalog(actor, { kind: "file" });
+    expect(catalog.artifacts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "completed-run.pdf" }),
+        expect.objectContaining({ title: "deleted-thread.pdf" }),
+      ]),
     );
   });
 
