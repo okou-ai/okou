@@ -258,6 +258,57 @@ try {
     }
   });
   assert.deepEqual(await routes(), after, "SQL retry is a no-op");
+  // A distinct data migration preserves launch defaults on the exact personal
+  // routes; the destructive cleanup above still leaves retained columns intact.
+  await applyPendingMigrations(sql);
+  const defaults = await sql<
+    { model: string; default_effort: string | null }[]
+  >`
+    SELECT model, default_effort FROM model_routes
+    WHERE subscription_type = provider_type AND model <> ${fixtureModel}
+    ORDER BY model
+  `;
+  assert.deepEqual(Array.from(defaults), [
+    { model: "claude-fable-5-1", default_effort: "max" },
+    { model: "claude-opus-5-5", default_effort: "medium" },
+    { model: "claude-sonnet-5-5", default_effort: "high" },
+    { model: "gpt-6-astra", default_effort: "max" },
+    { model: "gpt-6-luna", default_effort: "xhigh" },
+    { model: "gpt-6-sol", default_effort: "max" },
+    { model: "gpt-6.1-sol", default_effort: "medium" },
+  ]);
+  const futureRoute = after.find((route) => route.model === fixtureModel);
+  assert.ok(futureRoute);
+  assert.deepEqual(
+    (await routes()).find((route) => route.id === futureRoute.id),
+    futureRoute,
+  );
+  const defaultEntry = journal.entries.find((item) =>
+    item.tag.endsWith("_preserve_subscription_route_effort_defaults"),
+  );
+  assert.ok(defaultEntry);
+  const defaultMigration = readMigrationFiles({
+    migrationsFolder: DRIZZLE_MIGRATE_OUT,
+  }).find((item) => item.folderMillis === defaultEntry.when);
+  assert.ok(defaultMigration);
+  const defaultsAfter = await routes();
+  for (const statement of defaultMigration.sql) await sql.unsafe(statement);
+  assert.deepEqual(
+    await routes(),
+    defaultsAfter,
+    "default migration SQL retry is a no-op",
+  );
+  await sql`UPDATE model_routes SET enabled = false, default_effort = NULL WHERE model = 'claude-fable-5-1'`;
+  await sql`UPDATE model_routes SET default_effort = 'low' WHERE model = 'claude-opus-5-5'`;
+  const explicitlyConfigured = await routes();
+  for (const statement of defaultMigration.sql) await sql.unsafe(statement);
+  assert.deepEqual(
+    await routes(),
+    explicitlyConfigured,
+    "disabled routes and explicit defaults are never rewritten",
+  );
+  for (const table of retainedTables)
+    assert.deepEqual(await snapshot(table), unchanged.get(table), table);
   console.log(
     `Retired route cleanup passed: ${before.length - after.length} removed, ${after.length} retained; rollback guards, preservation and retries verified`,
   );

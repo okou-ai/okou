@@ -61,6 +61,9 @@ describe("CHAT-02: on-demand member memory initialization", () => {
   it("initializes an existing member's memory from preferences before the member's first run", async () => {
     const { actor: owner } = await entitledChatActor();
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    await api.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
+    });
     const preferences = setupApp({ context, routes: userPreferencesRoutes })(
       userPreferencesContract,
     );
@@ -104,8 +107,8 @@ describe("CHAT-02: on-demand member memory initialization", () => {
       displayName: "Member memory agent",
       visibility: "private",
     });
-    // The owner's preferred model is the owner's own; the member selects the
-    // organization's configured model explicitly.
+    // The member runs with their own connected subscription, never the owner's
+    // account. Memory initialization remains independent of provider ownership.
     const launched = await sendChatRun(member, {
       agentId: agent.agentId,
       model: "claude-fable-5-1",

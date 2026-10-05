@@ -74,26 +74,31 @@ a chat choice nor restores organization policies, gateways, direct API-key
 connections or general vendor fallback. Personal Codex maintenance credentials
 retain their ownership and reconnect safeguards.
 
-## Draft validation boundary (2026-10-05)
+## Validation boundary (2026-10-05)
 
-This implementation is not merge-ready. Source, client and migration convergence
-must not be confused with end-user acceptance:
+The unified PR includes the complete former #37758 cleanup, the resolved main
+integration, and generator-produced migrations 1321–1323. The physical cleanup
+remains deletion-only. A separate, narrow data migration preserves the native
+subscription launch defaults previously supplied by retired mirror routes; it
+never changes explicit defaults, disabled/future routes, or member preferences.
+Luna retains its independent xhigh ceiling.
 
-- Migration replay/schema equivalence and the deletion-only preservation test pass.
-- Platform production/test types, contracts, CLI and edge-worker checks pass.
-- API production type phases pass; the full API test type check still has 57
-  diagnostics across retired/mixed provider, memory, callback, Feishu and workflow
-  fixtures. Mixed personal ownership/refresh/cancellation cases need replacement
-  prerequisites, not blanket deletion or compatibility aliases.
-- Translation extraction/checking remains unresolved; the official extractor
-  stalls in this environment. Retired translation keys and new copy need exact
-  resource generation/checking before acceptance.
-- Full deployed E2E, real subscription sign-in, memory execution and settlement
-  have not been verified by this implementation run. PR CI owns that remaining
-  acceptance; iOS compile/format validation also requires its toolchain.
+Verified locally:
 
-The production conversion is operator-owned and was checked read-only; this PR
-runs no production cleanup, deployment, review or merge.
+- Full migration replay, consecutive reset consistency and schema equivalence.
+- Cleanup guards, rollback, retained data and SQL/journal retry idempotence.
+- Personal subscription default efforts, explicit-default and disabled-route preservation.
+- Normal repository commit hooks, including workspace types and Rust formatting/docs.
+- API test type shards, plus focused ownership, effort, admission, queue, memory handoff,
+  runtime cooldown, provider invalidation, CLI authentication and integration regressions.
+- Platform provider settings and main's last-read marker regressions.
+- Official translation extraction and resource checking for all 12 locales.
+
+These results are not deployed acceptance. The stable pushed HEAD still requires
+current-revision review and required PR/merge-group CI. iOS validation requires
+its CI toolchain. Real subscription sign-in and deployed runner, independent
+memory and settlement verification have not been performed. No production SQL,
+deployment approval or protection bypass is authorized by local validation.
 
 ## Required acceptance scenarios
 

@@ -59,6 +59,21 @@ schema and invalid bindings, one committed journal entry, and journaled and
 SQL-level retries. It also validates the surviving seeded catalog.
 
 The check is included in `test:migration-consistency`. Full migration/schema
-consistency and required PR CI must pass before merge. This PR is stacked on
-#37746; retarget and regenerate migration metadata against the eventual main
-before merging it. Migration numbers are not reserved across concurrent PRs.
+consistency and required PR CI must pass before merge. The former #37758 is
+closed; its complete cleanup ships only through the unified #37746. Migration
+metadata was generated after integrating main's 1320 migration; numbers are not
+reserved across concurrent PRs.
+
+## Personal subscription launch defaults
+
+`1323_preserve_subscription_route_effort_defaults` is separate from the
+unchanged deletion-only cleanup. The canonical subscription rows previously had
+NULL default efforts, while their retired non-subscription mirrors supplied the
+native launch defaults. It preserves those defaults from migration 1298 on the
+six matching active canonical subscription routes only. Explicit defaults,
+disabled/future rows, member preferences, Auto and memory are not rewritten.
+Luna's existing xhigh default from migration 1317 remains unchanged.
+
+The regression also checks all seven personal launch defaults, unchanged future
+metadata, repeat SQL execution, and preservation of disabled rows and explicit
+configured defaults.

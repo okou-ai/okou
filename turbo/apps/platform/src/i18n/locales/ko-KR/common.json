@@ -4727,7 +4727,6 @@
         },
         "model": {
           "autoDescription": "Okou가 각 작업에 맞는 모델을 선택합니다.",
-          "description": "워크스페이스와 실행에 사용할 AI 모델을 선택하세요.",
           "title": "모델"
         },
         "people": {
@@ -4817,9 +4816,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "사용량 초기화",
-        "upgradePro": "Pro로 업그레이드하여 사용",
-        "upgradeToPro": "Pro로 업그레이드"
+        "resetUsage": "사용량 초기화"
       },
       "deviceAuth": {
         "claude": {
@@ -4857,8 +4854,6 @@
       },
       "personal": {
         "accountFallback": "계정 {{number}}",
-        "accountsDescription": "새 실행에 각 공급자가 사용할 계정을 선택하세요.",
-        "accountsSectionTitle": "개인 계정",
         "activeAccount": "활성",
         "autoDescription": "Claude 또는 ChatGPT 계정을 연결하여 더 많은 모델을 사용하세요.",
         "autoTitle": "더 많은 모델 사용하기",
@@ -4885,7 +4880,6 @@
         "useAccount": "사용"
       },
       "picker": {
-        "builtInModel": "내장 모델",
         "chatModels": "채팅 모델",
         "effort": "강도",
         "effortScale": {
@@ -4928,16 +4922,6 @@
         "remainingUnknown": "재설정 —",
         "remainingWithExpiry_other": "{{value}}회 재설정 가능 · {{expiry}} 만료",
         "title": "Codex 사용량을 재설정하시겠습니까?"
-      },
-      "stale": {
-        "claudeExpired": "Claude Code 세션이 만료되었습니다. 계속하려면 다시 연결하세요.",
-        "claudeFailed": "Claude Code 새로고침 실패. 재시도하려면 다시 연결하세요.",
-        "claudeTitle": "Claude Code 세션 재연결 필요",
-        "codexExpired": "ChatGPT 세션이 만료되었습니다. 계속하려면 다시 연결하세요.",
-        "codexFailed": "ChatGPT 새로고침 실패. 재시도하려면 다시 연결하세요.",
-        "codexInvalidated": "ChatGPT 세션이 취소되었습니다. 다시 연결하세요.",
-        "codexReused": "ChatGPT 세션이 다른 곳에서 사용되었습니다. 다시 연결하세요.",
-        "codexTitle": "ChatGPT 세션 재연결 필요"
       },
       "toasts": {
         "accountDisconnected": "계정 연결이 해제되었습니다",
@@ -5215,10 +5199,8 @@
       "connecting": "연결 중...",
       "delete": "삭제",
       "discard": "버리기",
-      "edit": "편집",
       "loading": "로딩 중",
       "moreOptions": "더 보기",
-      "reconnect": "재연결",
       "remove": "제거",
       "save": "저장",
       "saveChanges": "변경 사항 저장",

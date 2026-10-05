@@ -1716,6 +1716,13 @@
       "when": 1791206187496,
       "tag": "1322_prune_retired_model_routes",
       "breakpoints": true
+    },
+    {
+      "idx": 1323,
+      "version": "7",
+      "when": 1791212247476,
+      "tag": "1323_preserve_subscription_route_effort_defaults",
+      "breakpoints": true
     }
   ]
 }

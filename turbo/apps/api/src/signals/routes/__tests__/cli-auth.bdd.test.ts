@@ -13,7 +13,6 @@ import {
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -858,9 +857,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
       {},
       {
         ...LEGACY_CODEX_OAUTH_BODY,
-        expiresIn: 600,
+        // Keep seeding-state inspection outside the automatic refresh window.
+        // Refresh/expiry behavior has separate credential-lifecycle coverage.
+        expiresIn: 3600,
         needsReconnect: true,
-        lastRefreshErrorCode: "refresh_failed",
+        lastRefreshErrorCode: "refresh_token_invalidated",
       },
       [200],
     );
@@ -878,7 +879,7 @@ describe("CLI-TEST: test-codex-oauth", () => {
     expect(legacyProvider).toMatchObject({
       authMethod: "auth_json",
       needsReconnect: true,
-      lastRefreshErrorCode: "refresh_failed",
+      lastRefreshErrorCode: "refresh_token_invalidated",
     });
 
     const preExpired = await authDevice.requestTestCodexOauth(
@@ -924,7 +925,13 @@ describe("CLI-TEST: test-codex-oauth", () => {
     );
     await authDevice.requestTestCodexOauth(
       {},
-      { ...LEGACY_CODEX_OAUTH_BODY, expiresIn: 600 },
+      {
+        ...LEGACY_CODEX_OAUTH_BODY,
+        // Preservation is scoped to the same subscription account, not an
+        // organization-wide provider that can mix identities.
+        accountId: "ws_acct_id_token",
+        expiresIn: 3600,
+      },
       [200],
     );
     const preservedProvider = await readCodexProvider(actor);

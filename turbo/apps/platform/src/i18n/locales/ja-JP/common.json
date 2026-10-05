@@ -4727,7 +4727,6 @@
         },
         "model": {
           "autoDescription": "Okou がタスクごとにモデルを選びます。",
-          "description": "ワークスペースと実行で使用する AI モデルを選択します。",
           "title": "モデル"
         },
         "people": {
@@ -4817,9 +4816,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "使用量をリセットする",
-        "upgradePro": "Pro をアップグレードして使用する",
-        "upgradeToPro": "プロにアップグレード"
+        "resetUsage": "使用量をリセットする"
       },
       "deviceAuth": {
         "claude": {
@@ -4857,8 +4854,6 @@
       },
       "personal": {
         "accountFallback": "アカウント {{number}}",
-        "accountsDescription": "新しい実行で各プロバイダーが使用するアカウントを選択します。",
-        "accountsSectionTitle": "個人アカウント",
         "activeAccount": "使用中",
         "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
@@ -4885,7 +4880,6 @@
         "useAccount": "使用"
       },
       "picker": {
-        "builtInModel": "内蔵モデル",
         "chatModels": "チャットモデル",
         "effort": "強度",
         "effortScale": {
@@ -4928,16 +4922,6 @@
         "remainingUnknown": "リセット —",
         "remainingWithExpiry_other": "リセット残り{{value}}回 · 有効期限{{expiry}}",
         "title": "Codexの使用量をリセットしますか？"
-      },
-      "stale": {
-        "claudeExpired": "Claude Codeセッションの有効期限が切れました。続行するには再接続してください。",
-        "claudeFailed": "Claude Codeの更新に失敗しました。再接続してもう一度お試しください。",
-        "claudeTitle": "Claude Codeセッションの再接続が必要です",
-        "codexExpired": "ChatGPT セッションの有効期限が切れました。続行するには再接続してください。",
-        "codexFailed": "ChatGPT の更新に失敗しました。再接続して再試行してください。",
-        "codexInvalidated": "ChatGPT セッションが取り消されました。再接続します。",
-        "codexReused": "ChatGPT セッションが他の場所で使用されました。再接続します。",
-        "codexTitle": "ChatGPTセッションは再接続が必要です"
       },
       "toasts": {
         "accountDisconnected": "アカウントの接続を解除しました",
@@ -5215,10 +5199,8 @@
       "connecting": "接続中...",
       "delete": "削除",
       "discard": "破棄",
-      "edit": "編集",
       "loading": "読み込み中",
       "moreOptions": "その他のオプション",
-      "reconnect": "再接続",
       "remove": "削除",
       "save": "保存",
       "saveChanges": "変更を保存する",

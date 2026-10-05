@@ -4809,7 +4809,6 @@
         },
         "model": {
           "autoDescription": "Okou sceglie il modello per ogni attività.",
-          "description": "Scegli quali modelli di intelligenza artificiale utilizzare per la tua area di lavoro e le tue esecuzioni.",
           "title": "Modelli"
         },
         "people": {
@@ -4899,9 +4898,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "Reimposta l'utilizzo",
-        "upgradePro": "Aggiorna Pro per usarlo",
-        "upgradeToPro": "Passa a Pro"
+        "resetUsage": "Reimposta l'utilizzo"
       },
       "deviceAuth": {
         "claude": {
@@ -4939,8 +4936,6 @@
       },
       "personal": {
         "accountFallback": "Account {{number}}",
-        "accountsDescription": "Scegli l'account che ogni provider usa per le nuove esecuzioni.",
-        "accountsSectionTitle": "Account personali",
         "activeAccount": "Attivo",
         "autoDescription": "Collega il tuo account Claude o ChatGPT per usare più modelli.",
         "autoTitle": "Usa più modelli",
@@ -4967,7 +4962,6 @@
         "useAccount": "Usa"
       },
       "picker": {
-        "builtInModel": "Modello da incasso",
         "chatModels": "Modelli chat",
         "effort": "Sforzo",
         "effortScale": {
@@ -5013,16 +5007,6 @@
         "remainingWithExpiry_many": "{{value}} ripristini rimasti · scadono {{expiry}}",
         "remainingWithExpiry_other": "{{value}} ripristini rimasti · scadono {{expiry}}",
         "title": "Reimpostare l'utilizzo di Codex?"
-      },
-      "stale": {
-        "claudeExpired": "La sessione Claude Code è scaduta. Riconnettiti per continuare.",
-        "claudeFailed": "Aggiornamento Claude Code non riuscito. Riconnettiti per riprovare.",
-        "claudeTitle": "La sessione Claude Code richiede la riconnessione",
-        "codexExpired": "La tua sessione ChatGPT è scaduta. Riconnettiti per continuare.",
-        "codexFailed": "Aggiornamento ChatGPT non riuscito. Riconnettiti per riprovare.",
-        "codexInvalidated": "La tua sessione ChatGPT è stata revocata. Riconnettiti.",
-        "codexReused": "La tua sessione ChatGPT è stata utilizzata altrove. Riconnettiti.",
-        "codexTitle": "La sessione ChatGPT necessita di riconnessione"
       },
       "toasts": {
         "accountDisconnected": "Account disconnesso",
@@ -5301,10 +5285,8 @@
       "connecting": "Connessione...",
       "delete": "Elimina",
       "discard": "Scartare",
-      "edit": "Modifica",
       "loading": "Caricamento in corso",
       "moreOptions": "Più opzioni",
-      "reconnect": "Riconnettiti",
       "remove": "Rimuovi",
       "save": "Salva",
       "saveChanges": "Salva modifiche",

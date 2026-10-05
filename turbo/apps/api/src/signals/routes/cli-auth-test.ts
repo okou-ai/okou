@@ -19,10 +19,10 @@ import {
 } from "@okouai/connectors/connector-auth-method";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { modelProviders } from "@okouai/db/schema/model-provider";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { command } from "ccstate";
-import { and, eq, notExists } from "drizzle-orm";
+import { and, eq, isNull, notExists } from "drizzle-orm";
 
 import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
@@ -494,6 +494,64 @@ const enableTestConnectors$ = command(
   },
 );
 
+async function readSeededCodexAccountProfile(
+  db: Pick<Db, "select">,
+  owner: { readonly orgId: string; readonly userId: string },
+  accountId: string,
+  signal: AbortSignal,
+) {
+  const [account] = await db
+    .select({
+      accountEmail: modelProviderAccounts.accountEmail,
+      workspaceName: modelProviderAccounts.workspaceName,
+      planType: modelProviderAccounts.planType,
+    })
+    .from(modelProviderAccounts)
+    .where(
+      and(
+        eq(modelProviderAccounts.orgId, owner.orgId),
+        eq(modelProviderAccounts.userId, owner.userId),
+        eq(modelProviderAccounts.type, "codex-oauth-token"),
+        eq(modelProviderAccounts.externalAccountId, accountId),
+        isNull(modelProviderAccounts.disconnectedAt),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  return account;
+}
+
+async function updateSeededCodexAccountFlags(
+  db: Db,
+  accountId: string,
+  flags: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly tokenExpiresAt: Date;
+    readonly needsReconnect: boolean;
+    readonly lastRefreshErrorCode: string | null;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  await db
+    .update(modelProviderAccounts)
+    .set({
+      tokenExpiresAt: flags.tokenExpiresAt,
+      needsReconnect: flags.needsReconnect,
+      lastRefreshErrorCode: flags.lastRefreshErrorCode,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(modelProviderAccounts.id, accountId),
+        eq(modelProviderAccounts.orgId, flags.orgId),
+        eq(modelProviderAccounts.userId, flags.userId),
+        eq(modelProviderAccounts.type, "codex-oauth-token"),
+      ),
+    );
+  signal.throwIfAborted();
+}
+
 const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!testEndpointAllowed(get(request$))) {
     return testEndpointNotFoundResponse();
@@ -584,7 +642,15 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   const tokenExpiresAt = new Date(
     nowDate().getTime() + (bodyResult.data.expiresIn ?? 600) * 1000,
   );
-  await set(
+  // Legacy token inputs omit profile metadata. Preserve it only for the same
+  // caller-owned account; never borrow another account's or member's profile.
+  const existingAccount = await readSeededCodexAccountProfile(
+    get(db$),
+    { orgId, userId },
+    bodyResult.data.accountId,
+    signal,
+  );
+  const seededAccount = await set(
     upsertPersonalModelProviderAccount$,
     {
       orgId,
@@ -599,28 +665,27 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
         CHATGPT_ACCOUNT_ID: bodyResult.data.accountId,
         CHATGPT_ID_TOKEN: bodyResult.data.idToken,
       },
-      metadata: { tokenExpiresAt },
+      metadata: { ...existingAccount, tokenExpiresAt },
     },
     signal,
   );
   signal.throwIfAborted();
 
-  await set(writeDb$)
-    .update(modelProviders)
-    .set({
+  if ("status" in seededAccount) {
+    return stringError(400, seededAccount.body.error.message);
+  }
+  await updateSeededCodexAccountFlags(
+    set(writeDb$),
+    seededAccount.provider.id,
+    {
+      orgId,
+      userId,
       tokenExpiresAt,
       needsReconnect: bodyResult.data.needsReconnect ?? false,
       lastRefreshErrorCode: bodyResult.data.lastRefreshErrorCode ?? null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, userId),
-        eq(modelProviders.type, "codex-oauth-token"),
-      ),
-    );
-  signal.throwIfAborted();
+    },
+    signal,
+  );
 
   return {
     status: 200 as const,

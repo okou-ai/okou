@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -10,10 +9,6 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { codexDeviceAuthRoutes } from "../codex-device-auth";
-import { meModelProvidersListRoutes } from "../me-model-providers-list";
-import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
-import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
-import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
 
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 
@@ -26,13 +21,6 @@ import {
   headers,
   upstream,
 } from "./helpers/codex-reset-credit-expiry";
-
-const personalModelProviderTestRoutes = Object.freeze([
-  ...meModelProvidersListRoutes,
-  ...meModelProvidersUpsertRoutes,
-  ...meModelProvidersDeleteRoutes,
-  ...meModelProvidersResetSubscriptionRoutes,
-]);
 
 const context = testContext();
 const fixture = createCodexExpiryFixture(context);
@@ -224,7 +212,7 @@ describe("Codex expiry invalidation and identity isolation", () => {
     expect(remote.detailsCalls).toBe(before + 1);
   });
 
-  it("isolates org connect metadata from the personal cooldown", async () => {
+  it("isolates another member's connect metadata from the personal cooldown", async () => {
     const remote = upstream();
     const user = await fixture();
     remote.details = () => {
@@ -234,25 +222,12 @@ describe("Codex expiry invalidation and identity isolation", () => {
     remote.details = () => {
       return expiryResponse(remote.expiry);
     };
-    user.session();
-
-    const result = await accept(
-      setupApp({ context, routes: personalModelProviderTestRoutes })(
-        personalModelProvidersMainContract,
-      ).upsert({
-        headers,
-        body: {
-          type: "codex-oauth-token",
-          authMethod: "auth_json",
-          secrets: { CODEX_AUTH_JSON: user.auth.raw },
-        },
-      }),
-      [200, 201],
-    );
-    expect(result.body.provider.type).toBe("codex-oauth-token");
-    expect(remote.detailsCalls).toBe(3);
+    const otherMember = await fixture({ orgId: user.orgId });
+    expect(otherMember.userId).not.toBe(user.userId);
+    expectExpiry(await otherMember.list(), remote.expiry);
+    const callsAfterOtherMember = remote.detailsCalls;
     expectExpiry(await user.list(), null);
-    expect(remote.detailsCalls).toBe(3);
+    expect(remote.detailsCalls).toBe(callsAfterOtherMember);
   });
 
   it.each(["credential", "account"] as const)(

@@ -4745,7 +4745,6 @@
         },
         "model": {
           "autoDescription": "Okou wählt das Modell für jede Aufgabe.",
-          "description": "Wählen Sie aus, welche KI-Modelle Ihr Arbeitsbereich und Ihre Ausführungen verwenden.",
           "title": "Modelle"
         },
         "people": {
@@ -4835,9 +4834,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "Nutzung zurücksetzen",
-        "upgradePro": "Aktualisieren Sie Pro, um es zu verwenden",
-        "upgradeToPro": "Upgrade auf Pro"
+        "resetUsage": "Nutzung zurücksetzen"
       },
       "deviceAuth": {
         "claude": {
@@ -4875,8 +4872,6 @@
       },
       "personal": {
         "accountFallback": "Konto {{number}}",
-        "accountsDescription": "Wähle das Konto, das jeder Anbieter für neue Ausführungen verwendet.",
-        "accountsSectionTitle": "Persönliche Konten",
         "activeAccount": "Aktiv",
         "autoDescription": "Verbinde dein Claude- oder ChatGPT-Konto, um mehr Modelle zu nutzen.",
         "autoTitle": "Mehr Modelle nutzen",
@@ -4903,7 +4898,6 @@
         "useAccount": "Verwenden"
       },
       "picker": {
-        "builtInModel": "Einbaumodell",
         "chatModels": "Chatmodelle",
         "effort": "Aufwand",
         "effortScale": {
@@ -4947,16 +4941,6 @@
         "remainingWithExpiry_one": "{{value}} Reset übrig · läuft {{expiry}} ab",
         "remainingWithExpiry_other": "{{value}} Resets übrig · laufen {{expiry}} ab",
         "title": "Codex-Nutzung zurücksetzen?"
-      },
-      "stale": {
-        "claudeExpired": "Ihre Claude Code-Sitzung ist abgelaufen. Stellen Sie die Verbindung erneut her, um fortzufahren.",
-        "claudeFailed": "Die Aktualisierung von Claude Code ist fehlgeschlagen. Stellen Sie erneut eine Verbindung her, um es noch einmal zu versuchen.",
-        "claudeTitle": "Die Claude Code-Sitzung muss erneut verbunden werden",
-        "codexExpired": "Ihre ChatGPT-Sitzung ist abgelaufen. Stellen Sie die Verbindung erneut her, um fortzufahren.",
-        "codexFailed": "Die ChatGPT-Aktualisierung ist fehlgeschlagen. Stellen Sie erneut eine Verbindung her, um es noch einmal zu versuchen.",
-        "codexInvalidated": "Ihre ChatGPT-Sitzung wurde widerrufen. Erneut verbinden.",
-        "codexReused": "Ihre ChatGPT-Sitzung wurde an anderer Stelle verwendet. Erneut verbinden.",
-        "codexTitle": "Die ChatGPT-Sitzung muss erneut verbunden werden"
       },
       "toasts": {
         "accountDisconnected": "Konto getrennt",
@@ -5234,10 +5218,8 @@
       "connecting": "Verbinden...",
       "delete": "Löschen",
       "discard": "Verwerfen",
-      "edit": "Bearbeiten",
       "loading": "Laden",
       "moreOptions": "Weitere Optionen",
-      "reconnect": "Wieder verbinden",
       "remove": "Entfernen",
       "save": "Speichern",
       "saveChanges": "Änderungen speichern",

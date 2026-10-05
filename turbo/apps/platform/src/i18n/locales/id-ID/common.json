@@ -4727,7 +4727,6 @@
         },
         "model": {
           "autoDescription": "Okou memilih model untuk setiap tugas.",
-          "description": "Pilih model AI yang digunakan oleh ruang kerja dan eksekusi Anda.",
           "title": "Model"
         },
         "people": {
@@ -4817,9 +4816,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "Reset penggunaan",
-        "upgradePro": "Upgrade ke Pro untuk menggunakan",
-        "upgradeToPro": "Upgrade ke Pro"
+        "resetUsage": "Reset penggunaan"
       },
       "deviceAuth": {
         "claude": {
@@ -4857,8 +4854,6 @@
       },
       "personal": {
         "accountFallback": "Akun {{number}}",
-        "accountsDescription": "Pilih akun yang digunakan setiap penyedia untuk eksekusi baru.",
-        "accountsSectionTitle": "Akun pribadi",
         "activeAccount": "Aktif",
         "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",
@@ -4885,7 +4880,6 @@
         "useAccount": "Gunakan"
       },
       "picker": {
-        "builtInModel": "Model bawaan",
         "chatModels": "Model chat",
         "effort": "Upaya",
         "effortScale": {
@@ -4928,16 +4922,6 @@
         "remainingUnknown": "Reset —",
         "remainingWithExpiry_other": "{{value}} reset tersisa · kedaluwarsa {{expiry}}",
         "title": "Reset penggunaan Codex?"
-      },
-      "stale": {
-        "claudeExpired": "Sesi Claude Code Anda kedaluwarsa. Sambungkan ulang untuk melanjutkan.",
-        "claudeFailed": "Penyegaran Claude Code gagal. Sambungkan ulang untuk mencoba lagi.",
-        "claudeTitle": "Sesi Claude Code perlu disambungkan ulang",
-        "codexExpired": "Sesi ChatGPT Anda kedaluwarsa. Sambungkan ulang untuk melanjutkan.",
-        "codexFailed": "Penyegaran ChatGPT gagal. Sambungkan ulang untuk mencoba lagi.",
-        "codexInvalidated": "Sesi ChatGPT Anda dicabut. Sambungkan ulang.",
-        "codexReused": "Sesi ChatGPT Anda digunakan di tempat lain. Sambungkan ulang.",
-        "codexTitle": "Sesi ChatGPT perlu disambungkan ulang"
       },
       "toasts": {
         "accountDisconnected": "Akun diputuskan",
@@ -5215,10 +5199,8 @@
       "connecting": "Menghubungkan...",
       "delete": "Hapus",
       "discard": "Buang",
-      "edit": "Edit",
       "loading": "Memuat",
       "moreOptions": "Opsi lainnya",
-      "reconnect": "Hubungkan kembali",
       "remove": "Hapus",
       "save": "Simpan",
       "saveChanges": "Simpan perubahan",

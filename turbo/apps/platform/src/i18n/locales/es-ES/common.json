@@ -4809,7 +4809,6 @@
         },
         "model": {
           "autoDescription": "Okou elige el modelo para cada tarea.",
-          "description": "Elige qué modelos de IA utilizarán tu espacio de trabajo y tus ejecuciones.",
           "title": "Modelos"
         },
         "people": {
@@ -4899,9 +4898,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "Restablecer uso",
-        "upgradePro": "Actualizar a Pro para usarlo",
-        "upgradeToPro": "Actualizar a Pro"
+        "resetUsage": "Restablecer uso"
       },
       "deviceAuth": {
         "claude": {
@@ -4939,8 +4936,6 @@
       },
       "personal": {
         "accountFallback": "Cuenta {{number}}",
-        "accountsDescription": "Elige la cuenta que usa cada proveedor para las nuevas ejecuciones.",
-        "accountsSectionTitle": "Cuentas personales",
         "activeAccount": "Activa",
         "autoDescription": "Conecta tu cuenta de Claude o ChatGPT para usar más modelos.",
         "autoTitle": "Usa más modelos",
@@ -4967,7 +4962,6 @@
         "useAccount": "Usar"
       },
       "picker": {
-        "builtInModel": "Modelo integrado",
         "chatModels": "Modelos de chat",
         "effort": "Esfuerzo",
         "effortScale": {
@@ -5013,16 +5007,6 @@
         "remainingWithExpiry_many": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
         "remainingWithExpiry_other": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
         "title": "¿Restablecer el uso de Codex?"
-      },
-      "stale": {
-        "claudeExpired": "Tu sesión de Claude Code ha caducado. Vuelve a conectarla para continuar.",
-        "claudeFailed": "No se pudo actualizar Claude Code. Vuelve a conectarlo para reintentarlo.",
-        "claudeTitle": "La sesión de Claude Code debe volver a conectarse",
-        "codexExpired": "Tu sesión de ChatGPT ha expirado. Reconecta para continuar.",
-        "codexFailed": "No se pudo actualizar la sesión de ChatGPT. Vuelve a conectarla para intentarlo de nuevo.",
-        "codexInvalidated": "Tu sesión de ChatGPT ha sido revocada. Reconecta.",
-        "codexReused": "Tu sesión de ChatGPT se usó en otro sitio. Reconéctate.",
-        "codexTitle": "La sesión de ChatGPT necesita reconexión"
       },
       "toasts": {
         "accountDisconnected": "Cuenta desconectada",
@@ -5301,10 +5285,8 @@
       "connecting": "Conectando...",
       "delete": "Eliminar",
       "discard": "Descartar",
-      "edit": "Editar",
       "loading": "Cargando",
       "moreOptions": "Más opciones",
-      "reconnect": "Volver a conectar",
       "remove": "Eliminar",
       "save": "Guardar",
       "saveChanges": "Guardar cambios",

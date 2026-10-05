@@ -4737,7 +4737,6 @@
         },
         "model": {
           "autoDescription": "Okou chooses the model for each task.",
-          "description": "Choose which AI models your workspace and your runs use.",
           "title": "Models"
         },
         "people": {
@@ -4827,9 +4826,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "Reset usage",
-        "upgradePro": "Upgrade Pro to use",
-        "upgradeToPro": "Upgrade to Pro"
+        "resetUsage": "Reset usage"
       },
       "deviceAuth": {
         "claude": {
@@ -4867,8 +4864,6 @@
       },
       "personal": {
         "accountFallback": "Account {{number}}",
-        "accountsDescription": "Choose the account each provider uses for new runs.",
-        "accountsSectionTitle": "Personal accounts",
         "activeAccount": "Active",
         "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
         "autoTitle": "Use more models",
@@ -4895,7 +4890,6 @@
         "useAccount": "Use"
       },
       "picker": {
-        "builtInModel": "Built-in model",
         "chatModels": "Chat models",
         "effort": "Effort",
         "effortScale": {
@@ -4939,16 +4933,6 @@
         "remainingWithExpiry_one": "{{value}} reset left · expires {{expiry}}",
         "remainingWithExpiry_other": "{{value}} resets left · expires {{expiry}}",
         "title": "Reset Codex usage?"
-      },
-      "stale": {
-        "claudeExpired": "Your Claude Code session expired. Re-connect to continue.",
-        "claudeFailed": "Claude Code refresh failed. Re-connect to retry.",
-        "claudeTitle": "Claude Code session needs reconnection",
-        "codexExpired": "Your ChatGPT session expired. Re-connect to continue.",
-        "codexFailed": "ChatGPT refresh failed. Re-connect to retry.",
-        "codexInvalidated": "Your ChatGPT session was revoked. Re-connect.",
-        "codexReused": "Your ChatGPT session was used elsewhere. Re-connect.",
-        "codexTitle": "ChatGPT session needs reconnection"
       },
       "toasts": {
         "accountDisconnected": "Account disconnected",
@@ -5226,10 +5210,8 @@
       "connecting": "Connecting...",
       "delete": "Delete",
       "discard": "Discard",
-      "edit": "Edit",
       "loading": "Loading",
       "moreOptions": "More options",
-      "reconnect": "Reconnect",
       "remove": "Remove",
       "save": "Save",
       "saveChanges": "Save changes",

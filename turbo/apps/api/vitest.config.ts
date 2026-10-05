@@ -10,6 +10,7 @@ const catalogTests = [
   // Do not overlap ordinary suites that admit Auto runs.
   "src/signals/routes/__tests__/model-catalog.test.ts",
   "src/signals/routes/__tests__/test-runtime-state.test.ts",
+  "src/signals/routes/__tests__/model-providers.test.ts",
 ];
 
 // PostgreSQL cancellation fixtures temporarily replace Client.prototype.query.

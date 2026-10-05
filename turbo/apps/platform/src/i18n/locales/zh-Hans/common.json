@@ -4727,7 +4727,6 @@
         },
         "model": {
           "autoDescription": "Okou 为每项任务选择模型。",
-          "description": "选择工作区和运行使用哪些AI模型。",
           "title": "模型"
         },
         "people": {
@@ -4817,9 +4816,7 @@
     },
     "models": {
       "actions": {
-        "resetUsage": "重置用量",
-        "upgradePro": "升级Pro后可用",
-        "upgradeToPro": "升级到Pro"
+        "resetUsage": "重置用量"
       },
       "deviceAuth": {
         "claude": {
@@ -4857,8 +4854,6 @@
       },
       "personal": {
         "accountFallback": "账号{{number}}",
-        "accountsDescription": "选择每个提供商在新任务中使用的账号。",
-        "accountsSectionTitle": "个人账号",
         "activeAccount": "使用中",
         "autoDescription": "连接你的 Claude 或 ChatGPT 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
@@ -4885,7 +4880,6 @@
         "useAccount": "使用"
       },
       "picker": {
-        "builtInModel": "内置模型",
         "chatModels": "对话模型",
         "effort": "思考强度",
         "effortScale": {
@@ -4928,16 +4922,6 @@
         "remainingUnknown": "重置 —",
         "remainingWithExpiry_other": "还剩{{value}}次重置 · {{expiry}}过期",
         "title": "重置Codex用量？"
-      },
-      "stale": {
-        "claudeExpired": "你的Claude Code会话已过期。请重新连接以继续。",
-        "claudeFailed": "Claude Code刷新失败。请重新连接后重试。",
-        "claudeTitle": "Claude Code会话需要重新连接",
-        "codexExpired": "你的ChatGPT会话已过期。请重新连接以继续。",
-        "codexFailed": "ChatGPT刷新失败。请重新连接后重试。",
-        "codexInvalidated": "你的ChatGPT会话已被撤销，请重新连接。",
-        "codexReused": "你的ChatGPT会话在别处被使用，请重新连接。",
-        "codexTitle": "ChatGPT会话需要重新连接"
       },
       "toasts": {
         "accountDisconnected": "账号已断开连接",
@@ -5215,10 +5199,8 @@
       "connecting": "连接中…",
       "delete": "删除",
       "discard": "放弃",
-      "edit": "编辑",
       "loading": "加载中",
       "moreOptions": "更多选项",
-      "reconnect": "重新连接",
       "remove": "移除",
       "save": "保存",
       "saveChanges": "保存更改",
