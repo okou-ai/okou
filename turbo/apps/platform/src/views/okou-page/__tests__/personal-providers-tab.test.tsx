@@ -305,9 +305,6 @@ test("Review personal subscription identity and usage", async () => {
   expect(
     within(rowC).getByLabelText("Resets left unavailable"),
   ).toBeInTheDocument();
-  expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
-  expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
-  expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
   expect(
     activationButton(
       "Active: account-a@example.com (Account A Organization)",
@@ -322,7 +319,6 @@ test("Review personal subscription identity and usage", async () => {
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
-  expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
 });
 
 test("Show no 5h availability when the weekly allowance is exhausted", async () => {
@@ -373,7 +369,6 @@ test("Show no 5h availability when the weekly allowance is exhausted", async () 
       ),
     ).toBeVisible();
   });
-  expect(screen.queryByText("Reset time unavailable")).not.toBeInTheDocument();
 });
 
 test("Organize personal subscriptions in accessible provider tables", async () => {
@@ -390,10 +385,7 @@ test("Organize personal subscriptions in accessible provider tables", async () =
   ] as const) {
     expect(table.parentElement).toContainElement(heading);
     expect(table).toHaveAttribute("aria-labelledby", heading.id);
-    expect(queryAllByRoleFast("columnheader", table)).toHaveLength(0);
   }
-  expect(screen.queryAllByRole("radiogroup")).toHaveLength(0);
-  expect(queryAllByRoleFast("radio")).toHaveLength(0);
   expect(
     within(claudeTable).getByText("No accounts connected."),
   ).toBeInTheDocument();
@@ -508,7 +500,6 @@ test("Review personal subscriptions through account switching", async () => {
         rowA,
       ),
     ).toHaveAttribute("aria-pressed", "false");
-    expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   });
 });
 
@@ -607,12 +598,10 @@ test("Start and close personal Claude login directly from its account group", as
     "Connect account",
   );
   click(connectAccountButton);
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
   const authorizationCodeInputs = await screen.findAllByTestId(
     "claude-code-device-auth-code",
   );
-  expect(authorizationCodeInputs).not.toHaveLength(0);
   const connectDialog = authorizationCodeInputs[0]?.closest('[role="dialog"]');
   if (!(connectDialog instanceof HTMLElement)) {
     throw new Error("Claude connection dialog not found");

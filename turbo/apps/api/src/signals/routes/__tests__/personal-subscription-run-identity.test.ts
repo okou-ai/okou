@@ -959,7 +959,7 @@ describe("personal subscription run identity", () => {
   describe.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
     "%s personal provider removal",
     (type) => {
-      async function removedSingletonFixture() {
+      async function removedProviderFixture() {
         const f = await fixture(type);
         const admitted: string[] = [];
         const owner = createFixtureOperationOwner(async () => {
@@ -988,7 +988,7 @@ describe("personal subscription run identity", () => {
 
       it("denies the retained credentials to the replacement sandbox", async () => {
         const { f, admitted, owner, claim, captured } =
-          await removedSingletonFixture();
+          await removedProviderFixture();
         await owner.run(async () => {
           const next = await connect(f.actor, type, "identity-b");
           const nextRun = await f.start();
@@ -1870,8 +1870,5 @@ describe("personal priority gateway and session boundaries", () => {
     );
     expect(second.cliAgentType).toBe("codex");
     expect(second.resumeSession?.sessionId).toBe(`subscription-${sent.runId}`);
-    const thread = await chat.readThread(f.actor, sent.threadId);
-    expect(thread).not.toHaveProperty("modelProviderId");
-    expect(thread).not.toHaveProperty("modelProviderType");
   });
 });

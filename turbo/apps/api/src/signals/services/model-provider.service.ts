@@ -203,9 +203,9 @@ type NotFoundResponse = ReturnType<typeof notFound>;
  *
  * Delete behavior: a conditional DELETE of the provider row decides the
  * result, then its secrets go in the same short transaction.
- *   - Legacy single-secret providers: an unshared secret is deleted with the
- *     row (the FK cascade also removes any other provider sharing it). During
- *     gateway migration, a shared secret is retained.
+ *   - Single-secret providers: an unshared secret is deleted with the
+ *     row (the FK cascade also removes any other provider sharing it). A
+ *     secret shared with a gateway is retained.
  *   - Multi-auth providers: deletes every auth method's secrets by name, so a
  *     leftover from a replaced auth method cannot survive the provider.
  *
@@ -270,8 +270,8 @@ export const deleteUserModelProvider$ = command(
       }
 
       if (provider.secretId) {
-        // During gateway migration a shared secret is retained; otherwise the
-        // legacy single secret goes with its provider.
+        // Retain secrets shared with a gateway; delete unshared secrets with
+        // their provider.
         const [gatewayReference] = await tx
           .select({ id: modelProviderConnections.id })
           .from(modelProviderConnections)
@@ -707,12 +707,11 @@ const persistSingleAuthModelProvider$ = command(
 /**
  * Persist a single-secret model provider for organization upserts.
  */
-const upsertUserModelProvider$ = command(
+export const upsertOrgModelProvider$ = command(
   async (
     { set },
-    args: {
+    orgArgs: {
       readonly orgId: string;
-      readonly userId: typeof ORG_SENTINEL_USER_ID;
       readonly type: ModelProviderWriteType;
       readonly secret: string;
       readonly selectedModel?: string;
@@ -724,6 +723,7 @@ const upsertUserModelProvider$ = command(
     | BadRequestResponse
     | { readonly provider: ModelProviderInfo; readonly created: boolean }
   > => {
+    const args = { ...orgArgs, userId: ORG_SENTINEL_USER_ID };
     if (hasAuthMethods(args.type)) {
       return badRequestMessage(
         `Provider "${args.type}" requires multiple secrets. Use the multi-auth API instead.`,
@@ -904,8 +904,7 @@ const persistMultiAuthModelProvider$ = command(
 /**
  * Validate the multi-auth upsert input shape (auth method exists, required
  * secrets present, etc.). Returns a BadRequestResponse if any check fails;
- * otherwise null. Extracted from `upsertUserMultiAuthModelProvider$` so the
- * Command body stays under the per-function lint ceiling.
+ * otherwise null.
  */
 function validateMultiAuthUpsertInput(args: {
   readonly type: ModelProviderWriteType;
@@ -914,7 +913,7 @@ function validateMultiAuthUpsertInput(args: {
 }): BadRequestResponse | null {
   if (!hasAuthMethods(args.type)) {
     return badRequestMessage(
-      `Provider "${args.type}" is a legacy single-secret provider. Use the standard upsert API.`,
+      `Provider "${args.type}" is a single-secret provider. Use the standard upsert API.`,
     );
   }
 
@@ -961,12 +960,11 @@ function validateMultiAuthUpsertInput(args: {
  * Persist a multi-auth model provider for organization upserts (e.g.,
  * aws-bedrock or codex-oauth-token).
  */
-const upsertUserMultiAuthModelProvider$ = command(
+export const upsertOrgMultiAuthModelProvider$ = command(
   async (
     { get, set },
-    args: {
+    orgArgs: {
       readonly orgId: string;
-      readonly userId: typeof ORG_SENTINEL_USER_ID;
       readonly type: ModelProviderWriteType;
       readonly authMethod: string;
       readonly secretValues: Record<string, string>;
@@ -979,6 +977,7 @@ const upsertUserMultiAuthModelProvider$ = command(
     | BadRequestResponse
     | { readonly provider: ModelProviderInfo; readonly created: boolean }
   > => {
+    const args = { ...orgArgs, userId: ORG_SENTINEL_USER_ID };
     const validationError = validateMultiAuthUpsertInput({
       type: args.type,
       authMethod: args.authMethod,
@@ -1031,66 +1030,6 @@ const upsertUserMultiAuthModelProvider$ = command(
       }),
       created: result.wasCreated,
     };
-  },
-);
-
-export const upsertOrgModelProvider$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly type: ModelProviderWriteType;
-      readonly secret: string;
-      readonly selectedModel?: string;
-      readonly metadata?: ModelProviderMetadata;
-      readonly authSession?: DeviceAuthSessionPublication;
-    },
-    signal: AbortSignal,
-  ) => {
-    return await set(
-      upsertUserModelProvider$,
-      {
-        orgId: args.orgId,
-        userId: ORG_SENTINEL_USER_ID,
-        type: args.type,
-        secret: args.secret,
-        selectedModel: args.selectedModel,
-        metadata: args.metadata,
-        authSession: args.authSession,
-      },
-      signal,
-    );
-  },
-);
-
-export const upsertOrgMultiAuthModelProvider$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly type: ModelProviderWriteType;
-      readonly authMethod: string;
-      readonly secretValues: Record<string, string>;
-      readonly selectedModel?: string;
-      readonly metadata?: ModelProviderMetadata;
-      readonly authSession?: DeviceAuthSessionPublication;
-    },
-    signal: AbortSignal,
-  ) => {
-    return await set(
-      upsertUserMultiAuthModelProvider$,
-      {
-        orgId: args.orgId,
-        userId: ORG_SENTINEL_USER_ID,
-        type: args.type,
-        authMethod: args.authMethod,
-        secretValues: args.secretValues,
-        selectedModel: args.selectedModel,
-        metadata: args.metadata,
-        authSession: args.authSession,
-      },
-      signal,
-    );
   },
 );
 

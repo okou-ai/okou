@@ -91,9 +91,9 @@ function serializeUpsertedProvider(provider: UpsertedProvider) {
 
 /**
  * Caller-supplied upsert. Org route binds this to
- * `upsertOrgMultiAuthModelProvider`, personal route binds it to a closure
- * over `upsertUserMultiAuthModelProvider(orgId, userId, ...)`. Both signatures
- * normalize to the same shape from the handler's perspective.
+ * `upsertOrgMultiAuthModelProvider$`; personal routes bind it to
+ * `upsertPersonalModelProviderAccount$`. Both callbacks normalize to the same
+ * shape from the handler's perspective.
  */
 type UpsertCodexProvider = (args: {
   authMethod: "auth_json";
