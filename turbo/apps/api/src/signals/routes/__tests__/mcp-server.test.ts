@@ -184,7 +184,8 @@ async function conversationFixture() {
     displayName: "MCP parity Agent",
     visibility: "private",
   });
-  await createRunsApi(context).ensureOrgModelProvider(actor);
+  // Ordinary conversation parity only persists no-credit messages. Keep this
+  // actor in unconfigured Auto; paid Run coverage provisions entitlement itself.
   const token = auth.token({ scope: defaultScopes });
   return { auth, api, chat, actor, agentId: agent.agentId, token };
 }
@@ -972,6 +973,7 @@ describe("MCP Web parity", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(f.actor);
+    await runs.ensureOrgModelProvider(f.actor);
     const run = await runs.createThreadRun(f.actor, {
       agentId: f.agentId,
       prompt: "Ordinary Run state",
