@@ -52,15 +52,16 @@ class RuntimeInputs(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"inert nonexecutable input canary: " + name.encode())
             files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-        packages = {name: {"version": "1.20.1-6ubuntu2"} for name in (
+        architecture = {"x86_64-linux-gnu": "amd64", "aarch64-linux-gnu": "arm64"}[multiarch]
+        packages = {name: {"version": "1.20.1-6ubuntu2", "architecture": architecture} for name in (
             "libgssapi-krb5-2", "libkrb5-3", "libk5crypto3", "libkrb5support0",
             "krb5-user", "krb5-kdc", "krb5-admin-server")}
         if full_qemu:
-            packages.update({name: {"version": "2.1.28+dfsg1-5ubuntu3"} for name in (
+            packages.update({name: {"version": "2.1.28+dfsg1-5ubuntu3", "architecture": architecture} for name in (
                 "libsasl2-2", "libsasl2-modules-gssapi-mit")})
-            packages["libgnutls30t64"] = {"version": "3.8.3-1.1ubuntu3.6"}
+            packages["libgnutls30t64"] = {"version": "3.8.3-1.1ubuntu3.6", "architecture": architecture}
         baseline = {"mitVersion": "1.20.1-6ubuntu2", "multiarch": multiarch,
-                    "packages": packages, "files": files}
+                    "architecture": architecture, "packages": packages, "files": files}
         self.save(baseline)
         return baseline
 
@@ -78,6 +79,45 @@ class RuntimeInputs(unittest.TestCase):
                     self.runtime.mkdir(mode=0o700)
                     self.inputs(multiarch, full_qemu)
                     self.verify(full_qemu, multiarch)
+
+    def test_manifest_architecture_must_match_selected_layout(self):
+        for multiarch, wrong in (("x86_64-linux-gnu", "arm64"), ("aarch64-linux-gnu", "amd64")):
+            for full_qemu in (False, True):
+                with self.subTest(multiarch=multiarch, full_qemu=full_qemu):
+                    self.runtime = self.root / (multiarch + str(full_qemu))
+                    self.runtime.mkdir(mode=0o700)
+                    baseline = self.inputs(multiarch, full_qemu)
+                    baseline["architecture"] = wrong
+                    self.save(baseline)
+                    with self.assertRaises(ValueError):
+                        self.verify(full_qemu, multiarch)
+
+    def test_required_native_package_architecture_must_match_selected_layout(self):
+        for multiarch, wrong in (("x86_64-linux-gnu", "arm64"), ("aarch64-linux-gnu", "amd64")):
+            for full_qemu in (False, True):
+                self.runtime = self.root / (multiarch + str(full_qemu))
+                self.runtime.mkdir(mode=0o700)
+                baseline = self.inputs(multiarch, full_qemu)
+                for name in baseline["packages"]:
+                    with self.subTest(multiarch=multiarch, full_qemu=full_qemu, package=name):
+                        actual = baseline["packages"][name]["architecture"]
+                        baseline["packages"][name]["architecture"] = wrong
+                        self.save(baseline)
+                        with self.assertRaises(ValueError):
+                            self.verify(full_qemu, multiarch)
+                        baseline["packages"][name]["architecture"] = actual
+
+    def test_required_architecture_records_cannot_be_absent(self):
+        baseline = self.inputs(full_qemu=True)
+        del baseline["architecture"]
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
+        baseline["architecture"] = "amd64"
+        del baseline["packages"]["libgssapi-krb5-2"]["architecture"]
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
 
     def test_full_mode_refuses_changed_private_kdc_bytes(self):
         self.inputs(full_qemu=True)

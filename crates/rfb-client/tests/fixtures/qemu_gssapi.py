@@ -71,6 +71,9 @@ def verify_runtime(runtime, multiarch, full_qemu):
     if not manifest.is_file() or manifest.is_symlink():
         raise ValueError("independent fixture provider manifest required")
     baseline = json.loads(manifest.read_text())
+    architecture = {"x86_64-linux-gnu": "amd64", "aarch64-linux-gnu": "arm64"}[multiarch]
+    if baseline.get("architecture") != architecture:
+        raise ValueError("independent fixture package architecture refused")
     if baseline["multiarch"] != multiarch or baseline["mitVersion"] != "1.20.1-6ubuntu2":
         raise ValueError("independent fixture MIT identity refused")
     required = {name: "1.20.1-6ubuntu2" for name in (
@@ -81,6 +84,7 @@ def verify_runtime(runtime, multiarch, full_qemu):
             "libsasl2-2", "libsasl2-modules-gssapi-mit")})
         required["libgnutls30t64"] = "3.8.3-1.1ubuntu3.6"
     if any(name not in baseline["packages"] or baseline["packages"][name]["version"] != version
+           or baseline["packages"][name].get("architecture") != architecture
            for name, version in required.items()):
         raise ValueError("independent fixture package identity refused")
     for name, digest in baseline["files"].items():
