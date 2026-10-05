@@ -2,15 +2,19 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { modelProvidersRoutes } from "../model-providers";
-import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
-import { createRouteMocks } from "./helpers/route-test";
+import { modelPoliciesRoutes } from "../model-policies";
+import { featureSwitchesRoutes } from "../feature-switches";
 import {
   createCodexExpiryFixture,
   credentials,
@@ -27,24 +31,67 @@ describe("Codex expiry cache capacity", () => {
     return { orgId: `org_expiry_${randomUUID()}`, auth: credentials() };
   });
 
-  beforeEach(async () => {
-    // Establish the Custom workspaces before exercising the in-flight bound.
-    // Otherwise Auto rejects each connection before it reaches the cache.
-    const userId = `user_expiry_capacity_${randomUUID()}`;
-    for (const owner of owners) {
-      await ensureCustomModelModeForTest(
-        context,
-        { orgId: owner.orgId, userId },
-        () => {
-          createRouteMocks(context).clerk.session(
-            userId,
-            owner.orgId,
-            "org:admin",
-          );
-          return { authorization: "Bearer clerk-session" };
+  const orgIds = new Set(
+    owners.map((owner) => {
+      return owner.orgId;
+    }),
+  );
+
+  function authenticateOwners(userId: string): void {
+    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
+      if (!(request instanceof Request)) {
+        throw new Error("Expected a Clerk authentication request");
+      }
+      const orgId = request.headers.get("authorization")?.slice(7);
+      if (!orgId || !orgIds.has(orgId)) {
+        throw new Error("Expected a capacity-test owner token");
+      }
+      return Promise.resolve({
+        isAuthenticated: true,
+        toAuth: () => {
+          return { userId, orgId, orgRole: "org:admin" };
         },
-      );
-    }
+      });
+    });
+  }
+
+  beforeEach(async () => {
+    // Each owner is independent. Route auth resolves its token per request,
+    // so concurrent setup does not race a shared mutable session fixture.
+    authenticateOwners(`user_expiry_capacity_${randomUUID()}`);
+    const switches = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    const policies = setupApp({ context, routes: modelPoliciesRoutes })(
+      modelPoliciesMainContract,
+    );
+    await Promise.all(
+      owners.map(async (owner) => {
+        await seedOrgMetadata({ orgId: owner.orgId, tier: "pro", credits: 0 });
+        const headers = { authorization: `Bearer ${owner.orgId}` };
+        await accept(
+          switches.update({
+            headers,
+            body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+          }),
+          [200],
+        );
+        await accept(
+          policies.updateMode({
+            headers,
+            body: { mode: "custom" },
+          }),
+          [200],
+        );
+        await accept(
+          switches.update({
+            headers,
+            body: { switches: { [FeatureSwitchKey.OkouDebug]: false } },
+          }),
+          [200],
+        );
+      }),
+    );
   });
 
   it("evicts old identity entries at bounded capacity", async () => {
@@ -64,11 +111,6 @@ describe("Codex expiry cache capacity", () => {
 
     // The global bound includes in-flight entries. Hold real org connections
     // at their upstream usage response, before unrelated account persistence.
-    const orgIds = new Set(
-      owners.map((owner) => {
-        return owner.orgId;
-      }),
-    );
     const accountIds = new Set<string>(
       owners.map((owner) => {
         return owner.auth.accountId;
@@ -97,21 +139,7 @@ describe("Codex expiry cache capacity", () => {
         },
       ),
     );
-    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
-      if (!(request instanceof Request)) {
-        throw new Error("Expected a Clerk authentication request");
-      }
-      const orgId = request.headers.get("authorization")?.slice(7);
-      if (!orgId || !orgIds.has(orgId)) {
-        throw new Error("Expected a capacity-test owner token");
-      }
-      return Promise.resolve({
-        isAuthenticated: true,
-        toAuth: () => {
-          return { userId: first.userId, orgId, orgRole: "org:admin" };
-        },
-      });
-    });
+    authenticateOwners(first.userId);
     const providers = setupApp({
       context,
       routes: modelProvidersRoutes,
