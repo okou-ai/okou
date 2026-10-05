@@ -345,7 +345,7 @@ function SubscriptionResetDetails({
   const { t } = useTranslation();
   const credits = useResetCreditLabel(account);
   const expiry =
-    (account.subscriptionResetCredits ?? 0) > 0
+    resetSupported(account) && (account.subscriptionResetCredits ?? 0) > 0
       ? formatCodexResetCreditExpiry(
           account.subscriptionResetCreditsNextExpiresAt,
         )
@@ -355,7 +355,7 @@ function SubscriptionResetDetails({
       <div className="break-all font-medium">
         {account.accountEmail ?? account.id}
       </div>
-      <div>{credits}</div>
+      {resetSupported(account) ? <div>{credits}</div> : null}
       {expiry ? (
         <div className="text-muted-foreground">
           {t(
@@ -367,11 +367,13 @@ function SubscriptionResetDetails({
         </div>
       ) : null}
       {notice ? <div role="status">{notice}</div> : null}
-      <div className="text-muted-foreground">
-        {t(($) => {
-          return $.chat.subscriptionReset.confirmation;
-        })}
-      </div>
+      {resetSupported(account) ? (
+        <div className="text-muted-foreground">
+          {t(($) => {
+            return $.chat.subscriptionReset.confirmation;
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -445,14 +447,16 @@ function SubscriptionResetControls({
             <RotateCcw size={15} />
           )}
         </IconButton>
-        <span className="sr-only">
-          <span>{creditLabel}</span>
-          <span>
-            {t(($) => {
-              return $.chat.subscriptionReset.confirmation;
-            })}
+        {resetSupported(account) ? (
+          <span className="sr-only">
+            <span>{creditLabel}</span>
+            <span>
+              {t(($) => {
+                return $.chat.subscriptionReset.confirmation;
+              })}
+            </span>
           </span>
-        </span>
+        ) : null}
         <div className="flex h-9 min-w-24 shrink-0 justify-end">
           {resetSupported(account) ? (
             <Button

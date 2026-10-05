@@ -293,6 +293,17 @@ test.each([
         return candidate.hasAttribute("disabled");
       }),
     ).toStrictEqual(hasButton ? [true] : []);
+    if (!hasButton) {
+      click(button("original@example.test 5h remaining"));
+      const details = within(await screen.findByRole("dialog"));
+      expect(
+        details.queryByText("Remaining resets: 3"),
+      ).not.toBeInTheDocument();
+      expect(
+        details.queryByText(/Only clicking Reset submits the request/),
+      ).not.toBeInTheDocument();
+      expect(details.getByText(notice)).toBeInTheDocument();
+    }
   },
 );
 
