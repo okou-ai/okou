@@ -400,7 +400,7 @@ async function setupConnectedTeamsActor(
       "Expected paid onboarding to create a Teams callback agent",
     );
   }
-  const [{ providerId }] = await Promise.all([
+  await Promise.all([
     runsApi.ensurePersonalSubscriptionModel(actor),
     authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
       visibility: "public",

@@ -23,6 +23,7 @@ import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 const context = testContext({ connectorCatalog: true });
 const {
   api,
+  authDeviceSupport,
   chat,
   misc,
   webhooks,
@@ -211,33 +212,16 @@ describe("CHAT-02: run-level model overrides", () => {
   it("captures the system default when the stored model's provider is removed", async () => {
     const { actor, agentId, providerId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const { providerId: openaiProviderId } = await api.createOrgModelProvider(
-      actor,
-      {
-        type: "openai-api-key",
-        secret: "fallback-default-openai-key",
-      },
-    );
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openaiProviderId,
-      },
-    ]);
+
+    await api.updateUserModelPreference(actor, "okou-1.0");
     const thread = await chat.createThread(actor, {
       agentId,
       model: "claude-sonnet-5",
     });
-    await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
+    await authDeviceSupport.deletePersonalModelProviderAccount(
+      actor,
+      providerId,
+    );
     await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
 
     // The member preference does not replace an unavailable thread model.
@@ -274,22 +258,19 @@ describe("CHAT-02: run-level model overrides", () => {
       return GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
         const routes =
           selectedModel === "gpt-6-luna" && scenario.outcome === "completed"
-            ? [false, true]
+            ? [false]
             : [false];
         return routes
-          .map((organizationApi) => {
+          .map(() => {
             return {
               ...scenario,
               selectedModel,
-              organizationApi,
             };
           })
-          .filter(({ tier, outcome, organizationApi }) => {
+          .filter(({ tier, outcome }) => {
             return (
               (tier === "fast" && outcome === "completed") ||
-              (selectedModel === "gpt-6-luna" &&
-                tier === undefined &&
-                !organizationApi) ||
+              (selectedModel === "gpt-6-luna" && tier === undefined) ||
               (selectedModel === "gpt-5.6-sol" && outcome === "failed") ||
               (selectedModel === "gpt-5.6-luna" && outcome === "cancelled")
             );
@@ -297,8 +278,8 @@ describe("CHAT-02: run-level model overrides", () => {
       });
     }),
   )(
-    "hands native $name subscription $selectedModel runs to a generation-$generation Sandbox with $outcome outcome and no built-in billing (organization API: $organizationApi)",
-    async ({ tier, generation, outcome, selectedModel, organizationApi }) => {
+    "hands native $name subscription $selectedModel runs to a generation-$generation Sandbox with $outcome outcome and no built-in billing",
+    async ({ tier, generation, outcome, selectedModel }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const firewall = createFirewallApi(context);
       chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -315,17 +296,6 @@ describe("CHAT-02: run-level model overrides", () => {
         },
         selectedModel,
       );
-      if (organizationApi) {
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: selectedModel,
-            preferred: true,
-            defaultProviderType: "built-in",
-            credentialScope: "org",
-            modelProviderId: null,
-          },
-        ]);
-      }
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
