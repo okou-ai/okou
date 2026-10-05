@@ -478,6 +478,10 @@ describe("workflow skill storage presigned URL cache", () => {
             prompt: "warm the owned storage archive URL cache",
           });
           await flushWaitUntilForTest();
+          // Only signing infrastructure controls a cached URL's expiration;
+          // no production API lets a caller choose it. Change this owned
+          // deadline without aging unrelated run leases, then assert the
+          // production Runner manifest rather than the internal cache row.
           await stateAction({
             action: "set-cache-expiration",
             object_key_prefix: fixture.objectKeyPrefix,

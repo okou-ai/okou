@@ -74,7 +74,10 @@ function cacheInsert(args: {
   readonly resolvedOrgId: string | null;
   readonly issuedAt: Date;
 }): CacheInsert {
-  const expiresAt = new Date(args.issuedAt.getTime() + 60 * 60_000);
+  // Warm rows model the full lifetime of a freshly signed archive URL.
+  const expiresAt = new Date(
+    args.issuedAt.getTime() + SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS * 1000,
+  );
   return {
     cacheKey: args.cacheKey,
     scope: args.scope,
@@ -539,6 +542,23 @@ test(
     ).run(benchOptions);
   },
 );
+
+test("refreshes near-expiry rows in both storage cache lookup paths", async () => {
+  for (const useMixedLookup of [false, true]) {
+    const fixture = benchFixture(
+      17,
+      `storage-cache-near-expiry-${randomUUID()}`,
+    );
+    const expiresAt = new Date(nowDate().getTime() + 3 * 60 * 60_000);
+    await insertChunks(
+      fixture.rows.map((row) => {
+        return { ...row, expiresAt, refreshAfter: expiresAt };
+      }),
+    );
+    await resolveFixture(fixture, useMixedLookup, fixture.pairs.length);
+    await resolveFixture(fixture, useMixedLookup);
+  }
+});
 
 test("deduplicated lookup routes by both raw and unique request counts", async () => {
   const fixture = benchFixture(17, `storage-cache-duplicates-${randomUUID()}`);

@@ -497,6 +497,9 @@ describe("system storage presigned URL cache", () => {
       const issuedAt = nowDate();
       mockNow(issuedAt);
       const cachedUrl = `https://r2.example.com/cached-${fixture.storageId}`;
+      // Only signing infrastructure controls a cached URL's expiration; no
+      // production API lets a caller choose it. Seed this owned deadline to
+      // test the Runner-visible boundary without aging unrelated run leases.
       await seedOwnedStorageCacheRow({
         fixture,
         versionId,
