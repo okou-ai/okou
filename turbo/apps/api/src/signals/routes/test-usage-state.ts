@@ -192,9 +192,7 @@ async function deleteUsageStateFixtureUsageData(
   // holds one raw row while waiting for another row held by the compactor.
   // Do not wrap this loop in a transaction or replace it with a bulk delete.
   for (const row of rawRows) {
-    await db
-      .delete(usageEvent)
-      .where(and(ownedRaw, eq(usageEvent.id, row.id)));
+    await db.delete(usageEvent).where(and(ownedRaw, eq(usageEvent.id, row.id)));
     signal.throwIfAborted();
   }
   // Raw deletion waits for any winning compaction to commit. This subsequent
