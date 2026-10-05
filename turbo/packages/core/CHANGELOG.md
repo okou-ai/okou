@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.730.1](https://github.com/okou-ai/okou/compare/core-v8.730.0...core-v8.730.1) (2026-10-05)
+
+
+### Refactoring
+
+* graduate fully rolled out feature switches ([#37721](https://github.com/okou-ai/okou/issues/37721)) ([62e6dd4](https://github.com/okou-ai/okou/commit/62e6dd43c07ccfd77517d6f653ab123a37aff89f))
+
 ## [8.730.0](https://github.com/okou-ai/okou/compare/core-v8.729.0...core-v8.730.0) (2026-10-05)
 
 

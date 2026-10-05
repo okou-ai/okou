@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.996.1](https://github.com/okou-ai/okou/compare/app-v0.996.0...app-v0.996.1) (2026-10-05)
+
+
+### Refactoring
+
+* graduate fully rolled out feature switches ([#37721](https://github.com/okou-ai/okou/issues/37721)) ([62e6dd4](https://github.com/okou-ai/okou/commit/62e6dd43c07ccfd77517d6f653ab123a37aff89f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.730.1
+
 ## [0.996.0](https://github.com/okou-ai/okou/compare/app-v0.995.0...app-v0.996.0) (2026-10-05)
 
 
