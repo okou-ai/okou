@@ -589,6 +589,11 @@ test("Offer Pro from personal account groups when BYOK is unavailable", async ()
 });
 
 test("View personal account groups by default in an external workspace", async () => {
+  context.mocks.data.org({
+    id: "org_external",
+    name: "External workspace",
+    role: "member",
+  });
   context.mocks.data.personalModelProviders([]);
   await setupPage({
     context,
@@ -599,7 +604,6 @@ test("View personal account groups by default in an external workspace", async (
         activeOrg: {
           id: "org_external",
           name: "External workspace",
-          role: "member",
         },
         memberships: [{ id: "org_external" }],
       },
