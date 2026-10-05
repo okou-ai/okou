@@ -46,7 +46,7 @@ function resendSendCallsTo(recipient: string): number {
   }).length;
 }
 
-async function createAgentWithModelProvider(actor: ApiTestUser): Promise<{
+async function createAgentForNoCreditAdmission(actor: ApiTestUser): Promise<{
   readonly agentId: string;
 }> {
   const bdd = createBddApi(context);
@@ -57,9 +57,8 @@ async function createAgentWithModelProvider(actor: ApiTestUser): Promise<{
     visibility: "private",
   });
 
-  const api = createRunsApi(context);
-  await api.ensureOrgModelProvider(actor);
-
+  // Missing metadata means Auto. Do not grant a paid Custom route to a
+  // fixture whose contract is rejection for insufficient credits.
   return { agentId: agent.agentId };
 }
 
@@ -68,7 +67,7 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
-    const { agentId } = await createAgentWithModelProvider(actor);
+    const { agentId } = await createAgentForNoCreditAdmission(actor);
 
     await expect(
       api.readThreadRunRejection(actor, {

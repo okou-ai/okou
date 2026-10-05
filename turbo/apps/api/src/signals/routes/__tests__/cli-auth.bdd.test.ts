@@ -13,6 +13,7 @@ import {
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -845,6 +846,7 @@ describe("CLI-TEST: test-codex-oauth", () => {
   it("seeds codex provider state visible through the model-providers API", async () => {
     const actor = bdd.user();
     await authDevice.provisionTestOrg(actor);
+    await createMiscRoutesApi(context).configureCustomModelMode(actor);
 
     const legacySeed = await authDevice.requestTestCodexOauth(
       {},
@@ -960,6 +962,7 @@ describe("CLI-TEST: test-codex-oauth", () => {
   it("accepts pasted auth.json claim variants through public API state", async () => {
     const actor = bdd.user();
     await authDevice.provisionTestOrg(actor);
+    await createMiscRoutesApi(context).configureCustomModelMode(actor);
 
     await authDevice.requestTestCodexOauth(
       {},
