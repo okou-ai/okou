@@ -54,7 +54,7 @@ import {
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
 } from "../pi-memory-phase2-job.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
-import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
+import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import { personalSubscriptionAccountIdentity } from "../personal-subscription-recovery.service";
 import { mockStripeClient } from "../../external/stripe-client";
 import { prepareStorageUploadForAuth$ } from "../storage-write.service";
@@ -161,8 +161,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     await expect(
       withMockNowForTest(now, async () => {
         return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: now },
+          createPiMemoryPhase2Worker(scope).execute$,
+          now,
           testContext().signal,
         );
       }),
@@ -208,8 +208,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     );
     const retried = await withMockNowForTest(retryTime, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: retryTime },
+        createPiMemoryPhase2Worker(scope).execute$,
+        retryTime,
         testContext().signal,
       );
     });
@@ -299,8 +299,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
 
     const result = await withMockNowForTest(now, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: now },
+        createPiMemoryPhase2Worker(scope).execute$,
+        now,
         testContext().signal,
       );
     });
@@ -329,8 +329,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     });
     const store = createStore();
     const result = await store.set(
-      executePiMemoryPhase2Work$,
-      { scope, currentTime: new Date("2026-09-05T02:00:00.000Z") },
+      createPiMemoryPhase2Worker(scope).execute$,
+      new Date("2026-09-05T02:00:00.000Z"),
       testContext().signal,
     );
 
@@ -374,8 +374,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
 
     const result = await withMockNowForTest(now, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: now },
+        createPiMemoryPhase2Worker(scope).execute$,
+        now,
         testContext().signal,
       );
     });
@@ -386,8 +386,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     }
     await expect(
       store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: new Date(now.getTime() + 1) },
+        createPiMemoryPhase2Worker(scope).execute$,
+        new Date(now.getTime() + 1),
         testContext().signal,
       ),
     ).resolves.toStrictEqual({ outcome: "dispatched", runId: result.runId });
@@ -461,8 +461,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     const store = createStore();
     await expect(
       store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime },
+        createPiMemoryPhase2Worker(scope).execute$,
+        currentTime,
         testContext().signal,
       ),
     ).resolves.toStrictEqual({
@@ -509,8 +509,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     await expect(
       withMockNowForTest(now, async () => {
         return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: now },
+          createPiMemoryPhase2Worker(scope).execute$,
+          now,
           testContext().signal,
         );
       }),
@@ -607,8 +607,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     await expect(
       withMockNowForTest(now, async () => {
         return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: now },
+          createPiMemoryPhase2Worker(scope).execute$,
+          now,
           testContext().signal,
         );
       }),
@@ -725,8 +725,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
 
     const result = await withMockNowForTest(now, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: now },
+        createPiMemoryPhase2Worker(scope).execute$,
+        now,
         testContext().signal,
       );
     });
@@ -915,8 +915,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     ).resolves.toStrictEqual([]);
 
     const recovered = await store.set(
-      executePiMemoryPhase2Work$,
-      { scope, currentTime: afterOriginalLease },
+      createPiMemoryPhase2Worker(scope).execute$,
+      afterOriginalLease,
       testContext().signal,
     );
     expect(recovered).toStrictEqual({
@@ -1058,12 +1058,9 @@ async function createPhase2WorkerFixture(label: string, emptyBase = true) {
       at = new Date("2026-09-05T02:00:00Z"),
       signal = testContext().signal,
     ) {
+      const { execute$ } = createPiMemoryPhase2Worker(scope);
       return await withMockNowForTest(at, async () => {
-        return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: at },
-          signal,
-        );
+        return await store.set(execute$, at, signal);
       });
     },
   };
