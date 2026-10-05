@@ -46,7 +46,7 @@ import {
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import {
   agentsMainContract,
   type AgentResponse,
@@ -90,7 +90,7 @@ import { chatThreadArchiveRoutes } from "../../chat-threads-archive";
 import { chatThreadMuteRoutes } from "../../chat-threads-mute";
 import { chatThreadsArtifactsSyncRoutes } from "../../chat-threads-artifacts-sync";
 import { hostRoutes } from "../../host";
-import { modelPoliciesRoutes } from "../../model-policies";
+import { runModelsRoutes } from "../../run-models";
 import { uploadsCompleteRoutes } from "../../uploads-complete";
 import { uploadsPrepareRoutes } from "../../uploads-prepare";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
@@ -238,7 +238,7 @@ const chatFilesRoutes = [
   ...uploadsPrepareRoutes,
   ...uploadsCompleteRoutes,
   ...hostRoutes,
-  ...modelPoliciesRoutes,
+  ...runModelsRoutes,
   ...userModelPreferenceRoutes,
   ...webFileUrlRoutes,
 ] as const;
@@ -346,8 +346,8 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadsContract);
   }
 
-  function modelPoliciesClient() {
-    return chatFilesApp(context)(modelPoliciesMainContract);
+  function runModelsClient() {
+    return chatFilesApp(context)(runModelsMainContract);
   }
 
   /** The member preference, else the system default, as a client sends it. */
@@ -357,8 +357,8 @@ export function createChatFilesBddApi(context: TestContext) {
     if (!actor?.orgId) {
       return SEEDED_SYSTEM_DEFAULT_MODEL;
     }
-    const policies = await accept(
-      modelPoliciesClient().list({ headers: authenticate(context, actor) }),
+    const available = await accept(
+      runModelsClient().list({ headers: authenticate(context, actor) }),
       [200],
     );
     const preference = await accept(
@@ -369,11 +369,11 @@ export function createChatFilesBddApi(context: TestContext) {
     );
     const preferred = preference.body.selectedModel;
     return preferred &&
-      policies.body.policies.some((policy) => {
-        return policy.model === preferred;
+      available.body.models.some((model) => {
+        return model.model === preferred;
       })
       ? preferred
-      : SEEDED_SYSTEM_DEFAULT_MODEL;
+      : available.body.defaultModel;
   }
 
   function threadByIdClient() {

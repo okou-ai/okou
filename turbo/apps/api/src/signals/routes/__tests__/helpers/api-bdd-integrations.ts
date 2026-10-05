@@ -1,3 +1,8 @@
+import { createRunsApi } from "./api-bdd-runs";
+import {
+  createAuthDeviceApiActions,
+  mockCodexDeviceAuthProvider,
+} from "./api-bdd-auth-device";
 import { mockClerkUsers } from "./clerk-users";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -43,8 +48,6 @@ import {
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { slackChannelsContract } from "@okouai/api-contracts/contracts/slack-channels";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
@@ -79,8 +82,6 @@ import { integrationsTelegramRoutes } from "../../integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "../../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../../integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "../../integrations-telegram-upload-init";
-import { modelPoliciesRoutes } from "../../model-policies";
-import { modelProvidersRoutes } from "../../model-providers";
 import { slackChannelsRoutes } from "../../slack-channels";
 import { slackCommandsRoutes } from "../../slack-commands";
 import { slackConnectRoutes } from "../../slack-connect";
@@ -88,7 +89,6 @@ import { slackEventsRoutes } from "../../slack-events";
 import { slackInteractiveRoutes } from "../../slack-interactive";
 import { slackOauthRoutes } from "../../slack-oauth";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
-import { ensureCustomModelModeForTest } from "./org-model-policy-write";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
 
 const TEST_APP_ROUTES = Object.freeze([
@@ -111,8 +111,6 @@ const TEST_APP_ROUTES = Object.freeze([
   ...integrationsTelegramUploadCompleteRoutes,
   ...integrationsTelegramUploadInitRoutes,
   ...integrationsTelegramRoutes,
-  ...modelPoliciesRoutes,
-  ...modelProvidersRoutes,
   ...slackChannelsRoutes,
   ...slackCommandsRoutes,
   ...slackConnectRoutes,
@@ -1272,76 +1270,19 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    // Slack run fixtures claim native Runner jobs, so both org models are
-    // policy-excluded from Pi.
-    async configureSlackRunModelPolicies(actor: ApiTestUser): Promise<void> {
-      await ensureCustomModelModeForTest(context, actor, () => {
-        return authenticate(context, routeMocks, actor);
+    /** Native integration routing comes from connected personal subscriptions. */
+    async configureNativeSubscriptionModels(actor: ApiTestUser): Promise<void> {
+      await createRunsApi(context).ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
       });
-      const providers = setupApp({ context, routes: modelProvidersRoutes })(
-        modelProvidersMainContract,
-      );
-      const anthropic = await accept(
-        providers.upsert({
-          headers: authenticate(context, routeMocks, actor),
-          body: { type: "anthropic-api-key", secret: "bdd-anthropic-key" },
-        }),
-        [200, 201],
-      );
-      const openai = await accept(
-        providers.upsert({
-          headers: authenticate(context, routeMocks, actor),
-          body: { type: "openai-api-key", secret: "bdd-openai-key" },
-        }),
-        [200, 201],
-      );
-      const snapshot = await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).list({ headers: authenticate(context, routeMocks, actor) }),
-        [200],
-      );
-      await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).update({
-          headers: authenticate(context, routeMocks, actor),
-          body: {
-            revision: snapshot.body.revision,
-            policies: [
-              {
-                model: SEEDED_SYSTEM_DEFAULT_MODEL,
-                defaultProviderType: "built-in",
-                credentialScope: "org",
-                modelProviderId: null,
-              },
-              {
-                model: "claude-fable-5-1",
-                defaultProviderType: "anthropic-api-key",
-                credentialScope: "org",
-                modelProviderId: anthropic.body.provider.id,
-              },
-              {
-                model: "gpt-6-astra",
-                defaultProviderType: "openai-api-key",
-                credentialScope: "org",
-                modelProviderId: openai.body.provider.id,
-              },
-            ],
-          },
-        }),
-        [200],
-      );
-      // Runs without an explicit model use the member preference.
-      await accept(
-        setupApp({ context, routes: userModelPreferenceRoutes })(
-          userModelPreferenceContract,
-        ).update({
-          headers: authenticate(context, routeMocks, actor),
-          body: { selectedModel: "claude-fable-5-1", serviceTier: null },
-        }),
-        [200],
-      );
+      mockCodexDeviceAuthProvider({ tokenScope: "personal" });
+      const auth = createAuthDeviceApiActions(context);
+      const started = await auth.requestCodexStart(actor, "personal", [200], {
+        mode: "add",
+      });
+      if (started.status !== 200)
+        throw new Error("Expected personal Codex auth start");
+      await auth.requestCodexComplete(actor, started.body.sessionToken, [200]);
     },
 
     async enableOkouDebug(actor: ApiTestUser): Promise<void> {
