@@ -476,7 +476,6 @@ test("Remove a disconnected subscription from Me without reopening the page", as
     featureSwitches: {
       [FeatureSwitchKey.PwaNavigation]: true,
       [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
     },
     ...workspace.pageOptions,
   });

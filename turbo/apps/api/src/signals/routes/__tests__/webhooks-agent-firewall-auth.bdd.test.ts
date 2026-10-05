@@ -3002,9 +3002,6 @@ describe("FW-9: codex model-provider access", () => {
     const authDevice = createAuthDeviceApiActions(context);
     const support = createAuthDeviceSupportApi(context);
     const { actor, headers } = await firewallRun();
-    await support.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
     const accounts: string[] = [];
     for (const accountId of ["expired-account", "healthy-account"]) {
       mockCodexDeviceAuthProvider({

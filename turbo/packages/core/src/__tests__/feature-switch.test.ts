@@ -10,9 +10,6 @@ import {
 
 describe("FeatureSwitchKey", () => {
   it("uses the canonical switch names", () => {
-    expect(FeatureSwitchKey.PersonalModelProviderAccounts).toBe(
-      "multipleSubscriptions",
-    );
     expect(FeatureSwitchKey.Dummy).toBe("_dummy");
     expect(FeatureSwitchKey.Lab).toBe("_lab");
     expect(FeatureSwitchKey.SidebarSubscriptionUsage).toBe(
@@ -63,29 +60,6 @@ describe("isFeatureEnabled", () => {
         "Create native web forms that apply user-provided values to exact managed Browser controls",
       rolloutStage: "beta",
     });
-  });
-
-  it("enables multiple subscriptions for everyone and honors explicit overrides", () => {
-    for (const context of [
-      {},
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      { orgId: "org_external" },
-    ]) {
-      expect(
-        isFeatureEnabled(
-          FeatureSwitchKey.PersonalModelProviderAccounts,
-          context,
-        ),
-      ).toBe(true);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
-          ...context,
-          overrides: {
-            [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-          },
-        }),
-      ).toBe(false);
-    }
   });
 
   it("enables Pi memory for staff and honors explicit overrides", () => {
@@ -349,15 +323,11 @@ describe("getAllFeatureStates", () => {
       orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
     });
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.SocialDataJobs]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
-      true,
-    );
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
@@ -367,15 +337,11 @@ describe("getAllFeatureStates", () => {
       orgId: "org_nonexistent",
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.SocialDataJobs]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
-      true,
-    );
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
@@ -509,9 +475,6 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
       "beta",
     );
-    expect(
-      metadata[FeatureSwitchKey.PersonalModelProviderAccounts].rolloutStage,
-    ).toBe("released");
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
     ).toBe("beta");

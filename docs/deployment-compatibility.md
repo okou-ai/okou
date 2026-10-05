@@ -7520,31 +7520,31 @@ production drain or full resource coverage. Record that evidence under #34615 as
 ## Saved Social data jobs
 
 The new `social_data_jobs` table and nullable `usage_event` pricing snapshot
-columns must exist before the new API starts. Reconciliation and
-scoped usage cleanup reference the table even when `socialDataJobs` is off.
-Old APIs ignore the additive schema; old usage events keep null snapshots and
-continue using the existing tariff lookup.
+columns must exist before a saved-job API starts. Reconciliation and
+scoped usage cleanup also reference the table. Old APIs ignore the additive
+schema; old usage events keep null snapshots and continue using the existing
+tariff lookup.
 
-Keep `socialDataJobs` disabled until all serving API instances and account
-cleanup workers contain this implementation. Older instances reject the new
-job endpoints, and older account cleanup does not remove saved jobs. Setting
-the flag during that mixed-version window is unsupported. Credential
-provisioning and operational pricing configuration are separate activation
-steps. New job settlement commits the priced usage event and durable job
+Saved jobs are globally available and their rollout switch is removed. All
+serving API instances and account cleanup workers must support saved jobs;
+older instances reject the job endpoints and older account cleanup does not
+remove saved jobs. Credential provisioning and operational pricing
+configuration remain separate operational steps. New job settlement commits the priced usage event and durable job
 receipt together, so legacy settlement workers cannot observe its pending
 event between those writes.
 
 The new CLI uses the saved-job protocol only when job controls are provided.
 An old API rejects those endpoints instead of silently running a different
 collection. Existing commands without job controls keep their current routes.
-New APIs retain list/get/cancel and reconciliation after disabling creation,
-so admitted work can drain. The Usage presentation change reads the existing
+List/get/cancel and reconciliation remain available for admitted work to drain.
+This cleanup does not add an admission-pause control. The Usage presentation change reads the existing
 breakdown contract; stored provider IDs remain unchanged.
 
 After activation, do not roll the API or workers below this implementation
-while jobs or usage receipts remain outstanding. Disable new admissions,
-finish or cancel admitted jobs, and verify durable settlement receipts before
-such a rollback. Database expansion is retained. A merged PR does not prove
+while jobs or usage receipts remain outstanding. A rollback below the saved-job
+implementation requires separately stopping new admissions, finishing or
+cancelling admitted jobs, and verifying durable settlement receipts; the
+removed rollout switch is no longer an admission control. Database expansion is retained. A merged PR does not prove
 fleet parity, the drain, or paid-provider readiness.
 
 ## Browser native input foundation (#35821)

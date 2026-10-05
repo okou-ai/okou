@@ -1875,7 +1875,6 @@ async function codexSource(
     { orgId: storage.org_id, userId: storage.user_id },
     {
       [FeatureSwitchKey.PiMemory]: true,
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
     },
   );
   const token = makeCodexJwt({
@@ -1929,7 +1928,6 @@ async function activateAnotherCodexAccount(
     { orgId: storage.org_id, userId: storage.user_id },
     {
       [FeatureSwitchKey.PiMemory]: true,
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
     },
   );
   const auth = createAuthDeviceApiActions(context);
@@ -2545,7 +2543,6 @@ describe("Stage 1 credential lifecycle fences", () => {
         { orgId: storage.org_id, userId: storage.user_id },
         {
           [FeatureSwitchKey.PiMemory]: true,
-          [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
         },
       );
       if (mode === "disconnected") {
@@ -2597,7 +2594,6 @@ describe("Stage 1 credential lifecycle fences", () => {
         { orgId: storage.org_id, userId: storage.user_id },
         {
           [FeatureSwitchKey.PiMemory]: true,
-          [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
         },
       );
       const controller = new AbortController();
@@ -2957,7 +2953,6 @@ describe("Stage 1 background credential availability", () => {
       { orgId: storage.org_id, userId: storage.user_id },
       {
         [FeatureSwitchKey.PiMemory]: true,
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       },
     );
     await runs.updateOrgModelPolicies(actor, [
@@ -3040,7 +3035,6 @@ describe("Stage 1 background credential availability", () => {
       { orgId: storage.org_id, userId: storage.user_id },
       {
         [FeatureSwitchKey.PiMemory]: true,
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       },
     );
     const provider = installSourceProvider();

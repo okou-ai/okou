@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { mockNow, now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
@@ -720,9 +719,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     "does not publish %s Codex credentials after cancellation during token exchange",
     async (scope) => {
       const actor = bdd.user();
-      await support.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      });
       let sessionToken = "";
       mockCodexDeviceAuthProvider({
         tokenScope: scope,
@@ -945,9 +941,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("adds, switches, reconnects, deduplicates, and deletes concrete Codex accounts", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
 
     mockCodexDeviceAuthProvider({
       tokenScope: "personal",
@@ -1121,9 +1114,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("refreshes and resets the requested inactive Codex account", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
     const currentSeconds = Math.floor(now() / 1000);
     const requestedAccountId = await connectPersonalCodexTestAccount(member, {
       accessTokenExpiresAt: currentSeconds - 60,
@@ -1193,9 +1183,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("isolates terminal Codex refresh state between concrete accounts", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
     const currentSeconds = Math.floor(now() / 1000);
     const accountAId = await connectPersonalCodexTestAccount(member, {
       accessTokenExpiresAt: currentSeconds - 60,
@@ -1285,9 +1272,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("adds, switches, and deduplicates concrete Claude Code accounts by email and workspace", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
 
     const completeClaudeAccount = async (mutation: {
       readonly mode: "add" | "reconnect";
@@ -1388,9 +1372,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
 
   it("enforces the tenth personal account boundary for sequential connects", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await support.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
 
     const completeCodexAccount = async (
       index: number,

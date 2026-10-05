@@ -7,8 +7,6 @@ import type {
   ClaudeCodeDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -36,10 +34,8 @@ import {
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
-import { personalAccountsEnabledForOrg } from "./personal-accounts-availability.service";
 import {
   upsertOrgModelProvider$,
-  upsertUserModelProvider$,
   type ModelProviderInfo,
 } from "./model-provider.service";
 
@@ -832,57 +828,23 @@ const importClaudeCodeOAuthToken$ = command(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-    if (
-      await personalAccountsEnabledForOrg(
-        set(writeDb$),
-        args.orgId,
-        isFeatureEnabled(
-          FeatureSwitchKey.PersonalModelProviderAccounts,
-          featureSwitchContext,
-        ),
-      )
-    ) {
-      const result = await set(
-        upsertPersonalModelProviderAccount$,
-        {
-          orgId: args.orgId,
-          authSession: args.authSession,
-          userId: args.userId,
-          type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
-          authMethod: null,
-          secretValues: {
-            CLAUDE_CODE_OAUTH_TOKEN: args.accessToken,
-          },
-          metadata,
-          mode: personalAccountMutation(args),
-          featureSwitchContext,
-        },
-        signal,
-      );
-      return result;
-    }
-
-    const result = await set(
-      upsertUserModelProvider$,
+    return await set(
+      upsertPersonalModelProviderAccount$,
       {
         orgId: args.orgId,
         authSession: args.authSession,
         userId: args.userId,
         type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
-        secret: args.accessToken,
+        authMethod: null,
+        secretValues: {
+          CLAUDE_CODE_OAUTH_TOKEN: args.accessToken,
+        },
         metadata,
+        mode: personalAccountMutation(args),
+        featureSwitchContext,
       },
       signal,
     );
-    if ("status" in result) {
-      throw new Error(
-        "Claude Code OAuth token import returned an unexpected response",
-      );
-    }
-    return {
-      provider: toModelProviderResponse(result.provider),
-      created: result.created,
-    };
   },
 );
 

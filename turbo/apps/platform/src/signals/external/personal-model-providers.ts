@@ -50,25 +50,6 @@ export const personalModelProviders$ = computed(async (get) => {
   return result.body;
 });
 
-/**
- * Delete a personal model provider by type.
- */
-export const deletePersonalModelProvider$ = command(
-  async ({ get, set }, type: ModelProviderType, _signal: AbortSignal) => {
-    const createClient = get(apiClient$);
-    const client = createClient(personalModelProvidersByTypeContract);
-    await accept(
-      client.delete({
-        params: { type },
-        fetchOptions: { signal: _signal },
-      }),
-      [204],
-    );
-
-    set(forcePersonalModelProvidersReload$);
-  },
-);
-
 export const activatePersonalModelProviderAccount$ = command(
   async ({ get, set }, id: string, signal: AbortSignal) => {
     const createClient = get(apiClient$);
