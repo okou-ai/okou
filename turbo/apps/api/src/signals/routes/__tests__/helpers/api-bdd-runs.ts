@@ -1,4 +1,5 @@
 import { mockClerkUsers } from "./clerk-users";
+import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { randomUUID } from "node:crypto";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
@@ -20,10 +21,10 @@ import {
   type UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
-import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
 import {
   cronProcessUsageEventsContract,
   cronTelegramCleanupContract,
@@ -75,14 +76,9 @@ import { runnerCancellationRoutes } from "../../runner-cancellation";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
-import { modelPoliciesRoutes } from "../../model-policies";
+import { runModelsRoutes } from "../../run-models";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
-import {
-  ensureCustomModelModeForTest,
-  orgModelPolicyWrite,
-  type TestOrgModelPolicy,
-} from "./org-model-policy-write";
-import { modelProvidersRoutes } from "../../model-providers";
+import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
 import { runDetailRoutes } from "../../run-detail";
 import { runsCancelRoutes } from "../../runs-cancel";
 import { runsRoutes } from "../../runs";
@@ -118,13 +114,9 @@ type RunnerConnectorRuntimeSyncRequest = z.input<
 type RunnerConnectorRuntimeSyncStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type RunnerNextSteerableInputStatus = 200 | 400 | 401 | 403 | 500;
 type RunnerSteeredInputStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
-type OrgModelPolicyRequest = z.infer<
-  (typeof modelPoliciesMainContract.update)["body"]
->;
-export type OrgPolicyModel = OrgModelPolicyRequest["policies"][number]["model"];
-type OrgModelProviderUpsertRequest = z.infer<
-  (typeof modelProvidersMainContract.upsert)["body"]
->;
+export type RunModel = z.infer<
+  (typeof runModelsMainContract.list)["responses"][200]
+>["models"][number]["model"];
 type RunnerHeartbeatBody = z.infer<
   (typeof runnersHeartbeatContract.heartbeat)["body"]
 >;
@@ -176,8 +168,8 @@ const runRoutes = [
   ...runnersRoutes,
   ...webhooksStripeRoutes,
   ...billingStatusRoutes,
-  ...modelPoliciesRoutes,
-  ...modelProvidersRoutes,
+  ...runModelsRoutes,
+  ...meModelProvidersUpsertRoutes,
   ...runDetailRoutes,
   ...runsRoutes,
   ...runsCancelRoutes,
@@ -466,37 +458,6 @@ export function createRunsApi(
   const defaultRunnerIdentity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
-  };
-  const replaceOrgModelPolicies = async (
-    actor: ApiTestUser,
-    policies: readonly TestOrgModelPolicy[],
-  ): Promise<void> => {
-    const write = orgModelPolicyWrite(policies);
-    await ensureCustomModelModeForTest(context, actor, () => {
-      return authenticate(context, actor);
-    });
-    const snapshot = await accept(
-      runApp(context)(modelPoliciesMainContract).list({
-        headers: authenticate(context, actor),
-      }),
-      [200],
-    );
-    await accept(
-      runApp(context)(modelPoliciesMainContract).update({
-        headers: authenticate(context, actor),
-        body: { policies: write.policies, revision: snapshot.body.revision },
-      }),
-      [200],
-    );
-    if (write.preferredModel) {
-      await accept(
-        runApp(context)(userModelPreferenceContract).update({
-          headers: authenticate(context, actor),
-          body: { selectedModel: write.preferredModel, serviceTier: null },
-        }),
-        [200],
-      );
-    }
   };
   const applyUserPermissionGrantRequestBody = (
     body: {
@@ -1140,55 +1101,10 @@ export function createRunsApi(
       return response.body.enabledConnectorSlugs;
     },
 
-    async listOrgModelProviders(
-      actor: ApiTestUser,
-    ): Promise<readonly ModelProviderResponse[]> {
-      const response = await accept(
-        runApp(context)(modelProvidersMainContract).list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
-      return response.body.modelProviders;
-    },
-
-    /**
-     * Upserts an org-level model provider with an arbitrary contract body
-     * (single secret or multi-auth secrets map) and returns the provider id.
-     */
-    async createOrgModelProvider(
-      actor: ApiTestUser,
-      body: OrgModelProviderUpsertRequest,
-    ): Promise<{ readonly providerId: string }> {
-      await ensureCustomModelModeForTest(context, actor, () => {
-        return authenticate(context, actor);
-      });
-      const response = await accept(
-        runApp(context)(modelProvidersMainContract).upsert({
-          headers: authenticate(context, actor),
-          body,
-        }),
-        [200, 201],
-      );
-      return { providerId: response.body.provider.id };
-    },
-
-    /**
-     * Replaces the org model-first policies with the given list (the PUT is a
-     * wholesale replace of supported-run-model rows) and stores a `preferred`
-     * policy as the actor's model preference.
-     */
-    async updateOrgModelPolicies(
-      actor: ApiTestUser,
-      policies: readonly TestOrgModelPolicy[],
-    ): Promise<void> {
-      await replaceOrgModelPolicies(actor, policies);
-    },
-
     /** Stores the member's model preference, used when a run names no model. */
     async updateUserModelPreference(
       actor: ApiTestUser,
-      selectedModel: OrgPolicyModel,
+      selectedModel: RunModel,
     ): Promise<void> {
       await accept(
         runApp(context)(userModelPreferenceContract).update({
@@ -1199,56 +1115,44 @@ export function createRunsApi(
       );
     },
 
-    /** Switches the org model mode as a Debug admin would. */
-    async updateOrgModelMode(
-      actor: ApiTestUser,
-      mode: "auto" | "custom",
-    ): Promise<void> {
-      await accept(
-        runApp(context)(modelPoliciesMainContract).updateMode({
+    async listRunModels(actor: ApiTestUser) {
+      const response = await accept(
+        runApp(context)(runModelsMainContract).list({
           headers: authenticate(context, actor),
-          body: { mode },
         }),
         [200],
       );
+      return response.body;
     },
 
-    /**
-     * Configures an org Anthropic key as the default model route. Fixtures
-     * that drive the native Runner claim protocol pass `claude-fable-5-1`,
-     * which model policy keeps off Pi; Sonnet 5 runs through Pi.
-     */
-    async ensureOrgModelProvider(
+    async createPersonalModelProvider(
       actor: ApiTestUser,
-      options: {
-        readonly model?: OrgPolicyModel;
-      } = {},
-    ): Promise<{ readonly providerId: string }> {
-      await ensureCustomModelModeForTest(context, actor, () => {
-        return authenticate(context, actor);
-      });
-      const providerResponse = await accept(
-        runApp(context)(modelProvidersMainContract).upsert({
+      body: UpsertModelProviderRequest,
+    ) {
+      const response = await accept(
+        runApp(context)(personalModelProvidersMainContract).upsert({
           headers: authenticate(context, actor),
-          body: {
-            type: "anthropic-api-key",
-            secret: "test-anthropic-key",
-          },
+          body,
         }),
         [200, 201],
       );
+      return { providerId: response.body.provider.id };
+    },
 
-      const providerId = providerResponse.body.provider.id;
-      await replaceOrgModelPolicies(actor, [
-        {
-          model: options.model ?? "claude-sonnet-5",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
-
+    /** Native Runner prerequisites come from a connected personal subscription. */
+    async ensurePersonalSubscriptionModel(
+      actor: ApiTestUser,
+      options: { readonly model?: RunModel } = {},
+    ) {
+      mockClaudeCodeTokenEndpoint();
+      const { providerId } = await this.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: "bdd-personal-claude-token",
+      });
+      await this.updateUserModelPreference(
+        actor,
+        options.model ?? "claude-sonnet-5",
+      );
       return { providerId };
     },
 

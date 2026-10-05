@@ -42,7 +42,6 @@ import {
   chatEventDisplayText,
 } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -420,32 +419,19 @@ function expectResponseStatus(
 async function configureWorkspaceModelProvider(
   actor: ApiTestUser & { readonly orgId: string },
 ): Promise<void> {
-  // These Gmail queue cases assert the Runner claim path. The default model
-  // gained a Pi route, so keep this fixture on its intended execution path.
-
-  await configureBuiltInModelKey();
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: GMAIL_WORKSPACE_MODEL,
-      preferred: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
-  const updated = await miscApi.listModelPolicies(actor);
+  // Keep native claim/callback coverage through a supported personal subscription.
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: GMAIL_WORKSPACE_MODEL,
+  });
+  const available = await miscApi.listRunModels(actor);
   expect(
-    updated.policies.find((policy) => {
-      return policy.model === GMAIL_WORKSPACE_MODEL;
+    available.models.find((model) => {
+      return model.model === GMAIL_WORKSPACE_MODEL;
     }),
   ).toMatchObject({
-    defaultProviderType: "built-in",
-    modelProviderId: null,
+    defaultProviderType: "claude-code-oauth-token",
+    credentialScope: "member",
   });
-}
-
-async function configureBuiltInModelKey(): Promise<void> {
-  await seedBuiltInModelKey(context, GMAIL_WORKSPACE_MODEL);
 }
 
 async function configureAutomationThreadModel(

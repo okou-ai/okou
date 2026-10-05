@@ -151,7 +151,7 @@ export function createFirewallApi(context: TestContext) {
       );
     },
 
-    async seedOrgCodexProvider(
+    async seedPersonalCodexProvider(
       actor: ApiTestUser,
       body: SeedCodexOauthBody,
     ): Promise<void> {
