@@ -313,7 +313,9 @@ async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
 async function enableWorkflowRuns(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
   // Fable keeps workflow runs on the claimable native Runner route.
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   api.configureRunnerGroup();
 }
 
@@ -1423,7 +1425,9 @@ describe("workflows", () => {
     }
     await api.grantProEntitlement(actor, { tier: "team" });
     // Event Automation creation pins its shared thread model immediately.
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const sourceAgent = await createAgent(actor, {
       displayName: "Copy Source Agent",
       visibility: "private",
@@ -2521,7 +2525,9 @@ describe("workflows", () => {
   it("reuses registered workflow volumes without uploading or reconciling archive size", async () => {
     const actor = user();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const runnerGroup = api.configureRunnerGroup();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();

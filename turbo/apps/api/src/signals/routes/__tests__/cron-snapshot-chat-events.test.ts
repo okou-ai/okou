@@ -98,7 +98,7 @@ async function sendNoCreditMessage(
     readonly clientEventId?: string;
   },
 ): Promise<string> {
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (sent.status !== 201 || sent.body.runId !== null) {
     throw new Error("Expected a no-credit send without a run");
@@ -458,7 +458,9 @@ describe("cron snapshot chat events", () => {
     const runnerGroup = api.configureRunnerGroup();
     await api.grantProEntitlement(owner);
     // Fable keeps the run on the claimable native Runner route.
-    await api.ensureOrgModelProvider(owner, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(owner, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(owner, {
       displayName: "Failure reason snapshot agent",
     });
@@ -994,7 +996,7 @@ describe("cron snapshot chat events", () => {
     const agent = await bdd.createAgent(owner, {
       displayName: "Sparse snapshot agent",
     });
-    await api.ensureOrgModelProvider(owner);
+    await api.ensurePersonalSubscriptionModel(owner);
     const thread = await chat.createThread(owner, {
       agentId: agent.agentId,
       title: "Sparse snapshot thread",

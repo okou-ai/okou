@@ -97,7 +97,7 @@ async function createClaimedBuiltInRun(
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
   // A BYOK default route and an explicitly selectable built-in fixture route.
   await runs.updateOrgModelPolicies(actor, [
     {

@@ -220,7 +220,9 @@ async function artifactActor(
   await api.grantProEntitlement(actor, { tier });
   // Artifact scenarios claim the chat run through the native Runner; Fable
   // stays off Pi while Sonnet 5 would run API-first.
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",

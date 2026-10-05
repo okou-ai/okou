@@ -18,7 +18,9 @@ async function checkpointedRun(actor: ApiTestUser, agentId?: string) {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const targetAgentId =
     agentId ??
     (await bdd.createAgent(actor, { displayName: "History deletion" })).agentId;

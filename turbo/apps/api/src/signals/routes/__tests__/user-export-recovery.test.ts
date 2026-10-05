@@ -153,7 +153,7 @@ test("continues the same export across bounded requests after a staged write los
     agent.agentId,
     "Keep this user's instructions intact.",
   );
-  await createRunsApi(context).ensureOrgModelProvider(user);
+  await createRunsApi(context).ensurePersonalSubscriptionModel(user);
   const chat = createChatFilesBddApi(context);
   const thread = await chat.createThread(user, {
     agentId: agent.agentId,

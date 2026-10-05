@@ -780,7 +780,7 @@ async function entitledRunActor(
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   const granted = await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor, route);
+  await api.ensurePersonalSubscriptionModel(actor, route);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD lifecycle agent",
     description: "Exercises the full run lifecycle.",
@@ -4623,7 +4623,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       throw new Error("Expected suspended run actor to have an org");
     }
     await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 20_000 });
-    const { providerId } = await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
     // A BYOK default route and a selectable built-in route.
     await api.updateOrgModelPolicies(actor, [
       {
@@ -4954,7 +4954,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       supportByok: true,
       restrictedBuiltInModels: false,
     });
-    const { providerId } = await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
     // A BYOK default route and a selectable built-in route.
     await api.updateOrgModelPolicies(actor, [
       {
@@ -5063,10 +5063,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       onboardingPaymentPending: false,
     });
     // A new organization starts in Auto with only the fixed default.
-    const modelPolicies = await misc.listModelPolicies(actor);
+    const modelPolicies = await misc.listRunModels(actor);
     expect(modelPolicies.modelMode).toBe("auto");
     expect(
-      modelPolicies.policies.map((policy) => {
+      modelPolicies.models.map((policy) => {
         return policy.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
@@ -5470,7 +5470,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const unknownModel = "gpt-5.6-sol";
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const { providerId: anthropicProviderId } =
-      await api.ensureOrgModelProvider(actor);
+      await api.ensurePersonalSubscriptionModel(actor);
     const { providerId: openrouterProviderId } =
       await api.createOrgModelProvider(actor, {
         type: "openrouter-codex",
@@ -5635,7 +5635,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     // A member-scoped policy routes the gpt-6-astra model (native Codex
     // Runner; Pi-eligible GPT models would launch Pi instead) through the
     // personal provider; the org default stays on the anthropic provider.
-    const orgProvider = await api.ensureOrgModelProvider(actor);
+    const orgProvider = await api.ensurePersonalSubscriptionModel(actor);
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
@@ -5815,7 +5815,7 @@ describe("RUN-02: persisted run environment resolution", () => {
 
     // Product Agents reference only platform values, so stored variables
     // reach the run through its vars and stored secrets stay unreferenced.
-    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
+    await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD persisted environment agent",
       visibility: "private",
@@ -5995,7 +5995,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       accessToken: "test-oauth-bdd-access",
       refreshToken: "test-oauth-bdd-refresh",
     });
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await oauth.createAgent(actor, {
       displayName: "BDD test-oauth connector agent",
       description: "Uses the test-oauth connector.",
@@ -11631,7 +11631,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       connectorSlug: "cloudflare",
       accessToken: "cloudflare-direct-bdd-token",
     });
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await oauth.createAgent(actor, {
       displayName: "BDD cloudflare connector agent",
       description: "Uses the cloudflare connector.",
@@ -11694,7 +11694,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     // run context's user-info section.
     await bdd.readMe(actor);
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
+    await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
     const agent = await oauth.createAgent(actor, {
       displayName: "Research Bot",
       description: "Finds release details",
@@ -15236,7 +15236,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
 
-    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
+    await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD checkpoint agent",
       visibility: "private",

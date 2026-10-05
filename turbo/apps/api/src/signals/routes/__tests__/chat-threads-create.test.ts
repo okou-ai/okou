@@ -67,7 +67,7 @@ interface AgentFixture {
 async function seedAgent(): Promise<AgentFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   await api.updateOrgModelPolicies(actor, [
     {
       model: WORKSPACE_DEFAULT_MODEL,
@@ -1324,7 +1324,9 @@ describe("POST /api/chat-threads", () => {
     const runnerGroup = api.configureRunnerGroup();
     api.acceptStorageDownloads();
     await api.grantProEntitlement(fixture.actor);
-    const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(
+      fixture.actor,
+    );
     const priorityProvider = await api.createOrgModelProvider(fixture.actor, {
       type: "openai-api-key",
       secret: "test-priority-openai-key",

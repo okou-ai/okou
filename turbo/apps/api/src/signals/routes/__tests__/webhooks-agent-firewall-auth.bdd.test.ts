@@ -100,7 +100,7 @@ async function firewallRun(existingActor?: ApiTestUser): Promise<{
   runsApi.acceptTelemetryIngest();
   runsApi.configureRunnerGroup();
   await fw.provisionRunReadyOrg(actor);
-  await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD firewall agent",
     description: "Exercises firewall auth resolution.",
@@ -130,7 +130,7 @@ async function withPublicFirewallRun(
     runsApi.acceptTelemetryIngest();
     runsApi.configureRunnerGroup();
     await fixture.fund();
-    await runsApi.ensureOrgModelProvider(fixture.actor);
+    await runsApi.ensurePersonalSubscriptionModel(fixture.actor);
     const agent = await bdd.createAgent(fixture.actor, {
       displayName: "BDD firewall agent",
       description: "Exercises firewall auth resolution.",
@@ -788,7 +788,7 @@ describe("FW-3: billable firewall lease", () => {
     runsApi.acceptTelemetryIngest();
     runsApi.configureRunnerGroup();
     const granted = await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor);
+    await runsApi.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD billable suspension agent",
       visibility: "private",
@@ -861,7 +861,7 @@ describe("FW-3: billable firewall lease", () => {
     await runsApi.grantProEntitlement(actor, {
       periodEndUnix: Math.floor(now() / 1000) - 60 * 86_400,
     });
-    await runsApi.ensureOrgModelProvider(actor);
+    await runsApi.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD expired-credit billable agent",
       visibility: "private",
@@ -2707,7 +2707,7 @@ describe("FW-9: codex model-provider access", () => {
   it("refreshes an expired org codex provider and serves the stored token afterwards", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
-    await fw.seedOrgCodexProvider(actor, {
+    await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
@@ -2766,7 +2766,7 @@ describe("FW-9: codex model-provider access", () => {
   it("derives the model-provider source when metadata is omitted", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
-    await fw.seedOrgCodexProvider(actor, {
+    await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
@@ -2805,7 +2805,7 @@ describe("FW-9: codex model-provider access", () => {
   it("rejects cross-user model-provider sources and unknown aliases", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
-    await fw.seedOrgCodexProvider(actor, {
+    await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
@@ -2883,7 +2883,7 @@ describe("FW-9: codex model-provider access", () => {
   it("recovers an unclassified reconnect-flagged codex provider after a successful refresh", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
-    await fw.seedOrgCodexProvider(actor, {
+    await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
@@ -2924,7 +2924,7 @@ describe("FW-9: codex model-provider access", () => {
   it("re-refreshes unclassified reconnect-flagged codex providers before their token expires", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
-    await fw.seedOrgCodexProvider(actor, {
+    await fw.seedPersonalCodexProvider(actor, {
       accessToken: "current-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
@@ -3005,7 +3005,7 @@ describe("FW-9: codex model-provider access", () => {
     };
 
     for (const errorCode of terminalErrorCodes) {
-      await fw.seedOrgCodexProvider(actor, {
+      await fw.seedPersonalCodexProvider(actor, {
         accessToken: "stale-chatgpt-token",
         refreshToken: `chatgpt-refresh-${errorCode}`,
         accountId: "acct-bdd",
@@ -3185,7 +3185,7 @@ describe("FW-9: codex model-provider access", () => {
   it("retries a transient codex refresh failure", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
-    await fw.seedOrgCodexProvider(actor, {
+    await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
@@ -3233,7 +3233,7 @@ describe("FW-9: codex model-provider access", () => {
   it("omits the failure reason for unknown chatgpt refresh error codes", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
-    await fw.seedOrgCodexProvider(actor, {
+    await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",

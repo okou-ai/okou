@@ -44,7 +44,7 @@ export async function createPublicModelFailureFixture(
   }
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-sonnet-5",

@@ -292,7 +292,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     await runsApi.grantProEntitlement(actor);
-    const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+    const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
     // Upload completion is exercised against a claimable native Runner run.
     await runsApi.updateOrgModelPolicies(actor, [
       {

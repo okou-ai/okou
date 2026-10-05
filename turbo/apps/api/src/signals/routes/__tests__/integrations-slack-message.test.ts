@@ -137,7 +137,7 @@ describe("POST /api/integrations/slack/message", () => {
       displayName: "My Assistant",
       visibility: "private",
     });
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();

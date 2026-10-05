@@ -79,7 +79,7 @@ test("exports every owned Discord record, including pre-route ingress and delive
   await enable(owner);
   await enable(peer);
   const storage = installDurableUserExportStorage(context);
-  await createRunsApi(context).ensureOrgModelProvider(owner);
+  await createRunsApi(context).ensurePersonalSubscriptionModel(owner);
   const ownerAgent = await bdd.createAgent(owner, {
     displayName: "Export owner",
   });

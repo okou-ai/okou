@@ -1237,7 +1237,7 @@ describe("managed SocialKit route", () => {
     const pricing = await setupConfiguredPricing();
     configureProvider();
     api.configureRunnerGroup();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await createBddApi(context).createAgent(actor, {
       displayName: "Tool usage agent",
       description: "Calls a paid tool from its run.",

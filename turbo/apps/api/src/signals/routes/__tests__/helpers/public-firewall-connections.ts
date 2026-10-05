@@ -35,7 +35,7 @@ export function createPublicFirewallConnections(context: TestContext) {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD firewall agent",
       description: "Exercises firewall auth resolution.",

@@ -90,7 +90,7 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   await api.grantProEntitlement(actor, {
     tier: args.triggerSource === "automation-event" ? "team" : "pro",
   });
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Banking Agent",
     visibility: "private",

@@ -342,7 +342,9 @@ describe("OPS-01: user data export", () => {
       throw new Error("Expected an organization for the export actor");
     }
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await runs.heartbeatRunner(runnerGroup);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Export Agent",

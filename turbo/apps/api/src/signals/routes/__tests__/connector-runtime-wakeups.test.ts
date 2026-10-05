@@ -28,7 +28,7 @@ async function prepareActor(tier: "pro" | "team" = "pro") {
   runs.acceptStorageDownloads();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor, { tier });
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const { agentId } = await bdd.createAgent(actor);
   return { actor, agentId, runnerGroup };
 }

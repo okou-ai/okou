@@ -58,7 +58,7 @@ async function createAgentWithModelProvider(actor: ApiTestUser): Promise<{
   });
 
   const api = createRunsApi(context);
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
 
   return { agentId: agent.agentId };
 }

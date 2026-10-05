@@ -93,7 +93,7 @@ async function createRunScopedChat(args: {
 }> {
   const actor = actorFor(args);
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
   const runnerGroup = runsApi.configureRunnerGroup();
   await runsApi.heartbeatRunner(runnerGroup);
   const agent = await bdd.createAgent(actor, {

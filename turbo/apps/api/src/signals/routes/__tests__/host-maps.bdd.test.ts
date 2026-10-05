@@ -902,7 +902,9 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     bdd.acceptAgentStorageWrites();
     await runs.grantProEntitlement(actor);
     runs.configureRunnerGroup();
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD host maps agent",
       description: "Run-scoped maps and host attribution.",

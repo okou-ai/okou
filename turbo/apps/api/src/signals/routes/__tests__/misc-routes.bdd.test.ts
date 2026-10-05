@@ -315,11 +315,11 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       }),
     ).toBeTruthy();
 
-    const policies = await api.listModelPolicies(admin);
-    expect(policies.policies.length).toBeGreaterThan(0);
+    const policies = await api.listRunModels(admin);
+    expect(policies.models.length).toBeGreaterThan(0);
     const updatedPolicies = await api.updateModelPolicies(
       admin,
-      policies.policies,
+      policies.models,
       [200],
     );
     if (updatedPolicies.status !== 200) {
@@ -327,9 +327,7 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
         `Expected model policies update to succeed, got ${updatedPolicies.status}`,
       );
     }
-    expect(updatedPolicies.body.policies).toHaveLength(
-      policies.policies.length,
-    );
+    expect(updatedPolicies.body.policies).toHaveLength(policies.models.length);
 
     await api.deleteBuiltInProvider(admin, [204]);
     const afterDelete = await api.listModelProviders(admin);

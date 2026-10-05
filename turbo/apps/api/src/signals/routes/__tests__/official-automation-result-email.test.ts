@@ -91,7 +91,7 @@ function clerkUser(userId: string, email: string) {
 async function setupScenario(): Promise<Scenario> {
   const runnerGroup = runs.configureRunnerGroup();
   const { actor } = await workflows.setupWorkflowOrg();
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",

@@ -681,7 +681,9 @@ describe("POST /api/user-templates", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const fixture = installS3Fixture(context);
     const sendS3 = context.mocks.s3.send.getMockImplementation()!;
     const agent = await bdd.createAgent(actor, {

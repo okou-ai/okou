@@ -99,7 +99,7 @@ async function createRunUploadFixture(
 
   const runnerGroup = runsApi.configureRunnerGroup();
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.heartbeatRunner(runnerGroup);
   const agent = await bdd.createAgent(actor, {
     displayName: `BDD upload completion ${randomUUID().slice(0, 8)}`,

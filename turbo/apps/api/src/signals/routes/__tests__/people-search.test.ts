@@ -984,7 +984,7 @@ describe("okou people-search route", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     await fundActor(actor);
     const pricing = await createPricingFixture([
       peopleSearchPricing(),
@@ -992,7 +992,7 @@ describe("okou people-search route", () => {
     ]);
     configureProvider();
     api.configureRunnerGroup();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await createBddApi(context).createAgent(actor, {
       displayName: "Tool usage agent",
       description: "Calls a paid tool from its run.",

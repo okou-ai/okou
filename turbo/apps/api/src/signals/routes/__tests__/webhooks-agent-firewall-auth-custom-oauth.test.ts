@@ -71,7 +71,7 @@ async function setupCustomOAuthFirewall(
   } else {
     await fw.provisionRunReadyOrg(actor);
   }
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Custom OAuth refresh agent",
   });

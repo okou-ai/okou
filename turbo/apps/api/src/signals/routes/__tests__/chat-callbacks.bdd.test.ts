@@ -132,7 +132,7 @@ async function entitledChatActor(): Promise<EntitledChatActor> {
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor, {
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
   const agent = await bdd.createAgent(actor, {

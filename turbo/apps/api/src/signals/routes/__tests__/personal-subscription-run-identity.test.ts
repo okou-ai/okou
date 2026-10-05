@@ -490,10 +490,9 @@ describe("personal subscription run identity", () => {
           modelProviderId: null,
         },
       ]);
-      const policies =
-        await createMiscRoutesApi(context).listModelPolicies(actor);
+      const policies = await createMiscRoutesApi(context).listRunModels(actor);
       expect(
-        policies.policies.find((policy) => {
+        policies.models.find((policy) => {
           return policy.model === model;
         })?.memberEffective,
       ).toMatchObject({
@@ -1210,7 +1209,7 @@ describe("personal priority connection boundaries", () => {
         [204],
       );
       const policy = configuredPolicy(
-        await createMiscRoutesApi(context).listModelPolicies(f.actor),
+        await createMiscRoutesApi(context).listRunModels(f.actor),
         f.model,
       );
       expect(policy).toMatchObject({
@@ -1250,8 +1249,8 @@ describe("member-effective model policy contract", () => {
     const member = bdd.user({ orgId: f.actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
     const misc = createMiscRoutesApi(context);
-    const before = await misc.listModelPolicies(f.actor);
-    const other = await misc.listModelPolicies(member);
+    const before = await misc.listRunModels(f.actor);
+    const other = await misc.listRunModels(member);
     expect(configuredPolicy(before, f.model)?.memberEffective).toMatchObject({
       providerType: f.type,
       credentialScope: "member",
@@ -1288,7 +1287,7 @@ describe("member-effective model policy contract", () => {
     expect(JSON.stringify(before)).not.toContain(f.connected.token);
     const put = await misc.updateModelPolicies(
       f.actor,
-      before.policies,
+      before.models,
       [200],
       before.revision,
     );
@@ -1300,7 +1299,7 @@ describe("member-effective model policy contract", () => {
       credentialScope: "org",
       memberEffective: { providerType: f.type, credentialScope: "member" },
     });
-    const after = await misc.listModelPolicies(member);
+    const after = await misc.listRunModels(member);
     expect(configuredPolicy(after, f.model)).toMatchObject({
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
@@ -1312,7 +1311,7 @@ describe("member-effective model policy contract", () => {
       expect(response.modelsAvailableToAdd).not.toContain(f.model);
     }
     expect(
-      (await misc.updateModelPolicies(member, before.policies, [403])).status,
+      (await misc.updateModelPolicies(member, before.models, [403])).status,
     ).toBe(403);
     const otherAgent = await bdd.createAgent(member, {
       displayName: "Other member",
@@ -1423,7 +1422,7 @@ describe("member-effective model policy contract", () => {
       });
       expect(rejected).toMatchObject({ error: "conflict" });
       expect(guidance?.content).toContain("subscription");
-      const policies = await createMiscRoutesApi(context).listModelPolicies(
+      const policies = await createMiscRoutesApi(context).listRunModels(
         f.actor,
       );
       expect(configuredPolicy(policies, f.model)).toMatchObject({
@@ -1456,11 +1455,11 @@ describe("personal effective provider entitlement", () => {
         prompt: "personal requires plan authority",
       });
       expect(restricted.rejected).toBeDefined();
-      const policies = await createMiscRoutesApi(context).listModelPolicies(
+      const policies = await createMiscRoutesApi(context).listRunModels(
         f.actor,
       );
       expect(
-        policies.policies.find((policy) => {
+        policies.models.find((policy) => {
           return policy.model === f.model;
         })?.memberEffective,
       ).toMatchObject({
@@ -1670,9 +1669,7 @@ describe("personal priority gateway and session boundaries", () => {
     const kms = useSecretKmsProbe(undefined, () => {
       return Promise.reject(new Error("owned KMS transport unavailable"));
     });
-    const projected = await createMiscRoutesApi(context).listModelPolicies(
-      f.actor,
-    );
+    const projected = await createMiscRoutesApi(context).listRunModels(f.actor);
     expect(configuredPolicy(projected, f.model)?.memberEffective).toMatchObject(
       {
         providerType: f.type,
@@ -1763,7 +1760,7 @@ describe("personal priority gateway and session boundaries", () => {
           [200],
         );
       }
-      const policies = await createMiscRoutesApi(context).listModelPolicies(
+      const policies = await createMiscRoutesApi(context).listRunModels(
         f.actor,
       );
       expect(

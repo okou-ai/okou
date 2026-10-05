@@ -321,7 +321,9 @@ async function entitledDirectRunActor(): Promise<{
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
   // The Claude Code route mounts skills under /home/user/.claude/skills.
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "System storage cache agent",
     visibility: "private",

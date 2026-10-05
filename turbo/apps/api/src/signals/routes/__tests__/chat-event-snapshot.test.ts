@@ -149,7 +149,7 @@ async function sendNoCreditMessage(
     readonly userMessage?: UserMessageDocument;
   },
 ): Promise<string> {
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (sent.status !== 201) {
     throw new Error("Expected the no-credit send to be accepted");

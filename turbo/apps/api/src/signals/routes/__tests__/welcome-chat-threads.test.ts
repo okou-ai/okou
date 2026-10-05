@@ -210,7 +210,7 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("creates a complete ordinary runless welcome with default model/media and connector state", async () => {
     const { actor, agentId } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Notification unavailable"),
     );
@@ -315,7 +315,7 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("falls back to the fixed default model and does not require generation credits", async () => {
     const { actor } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await accept(
       setupApp({ context, routes: modelProvidersRoutes })(
         modelProvidersByTypeContract,
@@ -400,7 +400,7 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("inherits the member's chat model at creation", async () => {
     const { actor } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await accept(
       setupApp({ context, routes: userModelPreferenceRoutes })(
         userModelPreferenceContract,

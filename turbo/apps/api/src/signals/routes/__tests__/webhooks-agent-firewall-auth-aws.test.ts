@@ -38,7 +38,7 @@ async function setupAwsFirewall(publicFixture?: PublicFirewallFixture) {
   } else {
     await fw.provisionRunReadyOrg(actor);
   }
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "AWS refresh agent",
     description: "Exercises AWS refresh and reconnect.",

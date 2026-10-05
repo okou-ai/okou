@@ -145,7 +145,7 @@ describe("chat agent bootstrap prefetch", () => {
   });
   it("preserves a non-default member model preference through prefetch and an independent pick", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    const { providerId } = await api.ensureOrgModelProvider(actor, {
+    const { providerId } = await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
     await api.updateOrgModelPolicies(actor, [

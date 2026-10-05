@@ -203,7 +203,7 @@ async function createPublicEmptyPhase2Scope() {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     const runnerGroup = chat.api.configureRunnerGroup();
     await chat.api.grantProEntitlement(actor);
-    await chat.api.ensureOrgModelProvider(actor, {
+    await chat.api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
     const agent = await chat.bdd.createAgent(actor, {

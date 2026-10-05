@@ -70,7 +70,7 @@ async function createRun(
       "deepseek-v4.1-flash",
     );
   } else {
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
   }
   const agent = await bdd.createAgent(actor, {
     displayName: "X resource accounting",
@@ -626,7 +626,7 @@ describe("X daily resource usage webhook", () => {
     const survivor = await createRun();
     // The threaded run must stay active until cancelled, so it uses Fable,
     // which model policy keeps on the native Runner instead of Pi.
-    await runs.ensureOrgModelProvider(owner.actor, {
+    await runs.ensurePersonalSubscriptionModel(owner.actor, {
       model: "claude-fable-5-1",
     });
     const chat = createChatFilesBddApi(context);

@@ -176,7 +176,7 @@ async function entitledChatActorWithoutRunner(
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Thread lifecycle tests claim and complete a native-harness run. Fable is
   // the permanently native Claude route now that Pi has no off switch.
   await selectNativeClaudeModel(actor, providerId);
@@ -447,7 +447,7 @@ async function sendNoCreditMessageResult(
   actor: ApiTestUser,
   body: NoCreditMessageBody,
 ): Promise<{ readonly threadId: string; readonly createdAt: number }> {
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (
     sent.status !== 201 ||
@@ -608,7 +608,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
-    const { providerId } = await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: `${label} agent`,
     });
@@ -849,7 +849,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [
         {
@@ -914,7 +914,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         },
       ],
     });
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "R2 snapshot pointer agent",
     });
@@ -1029,7 +1029,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("returns chat thread snapshot and lifecycle events with cursor expiry", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Thread event sourcing agent",
     });
@@ -1177,7 +1177,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("keeps no-snapshot cursors anchored to real scoped rows", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "No-snapshot cursor agent",
     });
@@ -1310,7 +1310,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await expectExpiredThreadEventCursor(peer, nextRealEvent.seqId);
 
     const otherOrgActor = bdd.user({ userId: actor.userId });
-    await api.ensureOrgModelProvider(otherOrgActor);
+    await api.ensurePersonalSubscriptionModel(otherOrgActor);
     const otherOrgAgent = await bdd.createAgent(otherOrgActor, {
       displayName: "Cross-organization cursor agent",
     });
@@ -1377,7 +1377,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("removes all deleted Agent threads from the sidebar list and snapshot", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const removedAgent = await bdd.createAgent(actor, {
       displayName: "Agent with sidebar threads to delete",
     });
@@ -1447,7 +1447,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Gap-only snapshot agent",
     });
@@ -1716,8 +1716,8 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const startedAt = now();
     const uncovered = bdd.user({ userId: `user_z${randomUUID()}` });
     const covered = bdd.user({ userId: `user_0${randomUUID()}` });
-    await api.ensureOrgModelProvider(uncovered);
-    await api.ensureOrgModelProvider(covered);
+    await api.ensurePersonalSubscriptionModel(uncovered);
+    await api.ensurePersonalSubscriptionModel(covered);
     const uncoveredAgent = await bdd.createAgent(uncovered, {
       displayName: "Uncompacted retention scope",
     });
@@ -1792,7 +1792,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped retention actor");
     }
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const liveAgent = await bdd.createAgent(actor, {
       displayName: "Bounded retention live agent",
     });
@@ -1941,7 +1941,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       throw new Error("Expected an organization-scoped isolation actor");
     }
     expect(isolatedActor.orgId).not.toBe(actor.orgId);
-    await api.ensureOrgModelProvider(isolatedActor);
+    await api.ensurePersonalSubscriptionModel(isolatedActor);
     const isolatedAgent = await bdd.createAgent(isolatedActor, {
       displayName: "Same-user other-org retention agent",
     });
@@ -1980,7 +1980,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const compactionBlocker = bdd.user({
       userId: "user_00000000-0000-0000-0000-000000000000",
     });
-    await api.ensureOrgModelProvider(compactionBlocker);
+    await api.ensurePersonalSubscriptionModel(compactionBlocker);
     const blockerAgent = await bdd.createAgent(compactionBlocker, {
       displayName: "Above-watermark compaction blocker",
     });
@@ -2111,7 +2111,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       stubTestTimezone("UTC");
     });
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const liveAgent = await bdd.createAgent(actor, {
       displayName: "Snapshot compaction live agent",
     });
@@ -2400,7 +2400,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("updates the Computer Use host binding on a chat thread", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Computer-use thread agent",
     });
@@ -2677,7 +2677,7 @@ describe("CHAT-01 chat thread read state", () => {
       throw new Error("Expected an organization-scoped peer");
     }
 
-    const peerProvider = await api.ensureOrgModelProvider(peer);
+    const peerProvider = await api.ensurePersonalSubscriptionModel(peer);
     await selectNativeClaudeModel(peer, peerProvider.providerId);
     // The peer's policy replacement moved the owner's removed preference to
     // the fixed default; keep the owner on the native Claude route.
@@ -2693,7 +2693,8 @@ describe("CHAT-01 chat thread read state", () => {
 
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
     await api.grantProEntitlement(sameUserOtherOrg);
-    const otherOrgProvider = await api.ensureOrgModelProvider(sameUserOtherOrg);
+    const otherOrgProvider =
+      await api.ensurePersonalSubscriptionModel(sameUserOtherOrg);
     await selectNativeClaudeModel(
       sameUserOtherOrg,
       otherOrgProvider.providerId,
@@ -2856,7 +2857,7 @@ describe("CHAT-01 chat thread read state", () => {
       visibility: "private",
     });
     await api.grantProEntitlement(sameUserOtherOrg);
-    await api.ensureOrgModelProvider(sameUserOtherOrg);
+    await api.ensurePersonalSubscriptionModel(sameUserOtherOrg);
     await chat.updateUserModelPreference(peer, "claude-fable-5-1");
 
     // A completed run's thread must not appear in the active list. Run it

@@ -1200,7 +1200,9 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       ? defaultAgent
       : alternateAgent;
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     if (options.useAlternateInstallationDefault) {
       const orgId = actor.orgId;
       if (!orgId) {

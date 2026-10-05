@@ -433,9 +433,9 @@ async function configureWorkspaceModelProvider(
       modelProviderId: null,
     },
   ]);
-  const updated = await miscApi.listModelPolicies(actor);
+  const updated = await miscApi.listRunModels(actor);
   expect(
-    updated.policies.find((policy) => {
+    updated.models.find((policy) => {
       return policy.model === GMAIL_WORKSPACE_MODEL;
     }),
   ).toMatchObject({

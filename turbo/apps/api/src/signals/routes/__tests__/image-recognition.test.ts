@@ -113,7 +113,9 @@ async function seedImageRecognitionActor(): Promise<ThreadImageRecognitionActor>
   bdd.acceptAgentStorageWrites();
   api.configureRunnerGroup();
   await bdd.completeOnboarding(actor);
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Image recognition agent",
     visibility: "private",

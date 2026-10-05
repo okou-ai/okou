@@ -62,7 +62,7 @@ async function prepareChatTitle() {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, { displayName: "Outcome title" });
   let threadId: string | undefined;
   const events = async () => {

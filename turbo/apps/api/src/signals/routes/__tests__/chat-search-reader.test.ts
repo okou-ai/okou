@@ -74,7 +74,7 @@ async function sendNoCreditMessage(
     readonly prompt: string;
   },
 ): Promise<void> {
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
   const sent = await chat.requestSendEvent(actor, args, [201]);
   if (sent.status !== 201 || sent.body.runId !== null) {
     throw new Error("Expected a no-credit send without a run");
@@ -88,7 +88,7 @@ describe("GET /api/chat/search durable reader", () => {
       owner,
       `search-history-${randomUUID().slice(0, 8)}`,
     );
-    await api.ensureOrgModelProvider(owner);
+    await api.ensurePersonalSubscriptionModel(owner);
     const sparseKeyword = `sparse${randomUUID().replaceAll("-", "")}`;
     const frequentKeyword = `frequent${randomUUID().replaceAll("-", "")}`;
     const prompts = [
@@ -158,7 +158,7 @@ describe("GET /api/chat/search durable reader", () => {
     const owner = bdd.user();
     const source = await createSearchThread(owner, `bounded-${randomUUID()}`);
     const keyword = `bounded${randomUUID().replaceAll("-", "")}`;
-    await api.ensureOrgModelProvider(owner);
+    await api.ensurePersonalSubscriptionModel(owner);
     const baseTime = now();
     await withMockNowForTest(baseTime, async () => {
       for (let index = 0; index <= 100; index++) {

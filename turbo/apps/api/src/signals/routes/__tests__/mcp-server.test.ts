@@ -184,7 +184,7 @@ async function conversationFixture() {
     displayName: "MCP parity Agent",
     visibility: "private",
   });
-  await createRunsApi(context).ensureOrgModelProvider(actor);
+  await createRunsApi(context).ensurePersonalSubscriptionModel(actor);
   const token = auth.token({ scope: defaultScopes });
   return { auth, api, chat, actor, agentId: agent.agentId, token };
 }
