@@ -2011,6 +2011,10 @@
       "newThread": "Nouveau chat",
       "reload": "Recharger les tâches"
     },
+    "lastReadMarker": {
+      "previouslyRead": "Vous avez lu jusqu’ici la dernière fois",
+      "unread": "Messages non lus"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
