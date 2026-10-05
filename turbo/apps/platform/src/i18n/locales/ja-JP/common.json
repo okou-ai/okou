@@ -4835,7 +4835,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "承認ページを開けませんでした。リンクを手動で使用し、ここにコードを貼り付けます。",
           "authorizationCode": "認証コード",
           "codePlaceholder": "Claude からコードを貼り付けます",
           "codeRequired": "Claudeの認証コードを貼り付けて続行します。",
@@ -4853,21 +4852,15 @@
           "usageNotice": "Claudeのサブスクリプションでログインすると、Claude Codeを基盤とするエージェントでClaudeモデルを利用できます。"
         },
         "codex": {
-          "approvalOpened": "承認ページが開きました。承認する前にデバイスコードをコピーしてください。",
-          "codeCopied": "デバイスコードがコピーされました。承認を待っています...",
-          "codeCopiedRetry": "デバイスコードがコピーされました。もう一度承認ページを開いてみてください。",
           "connectedToast": "ChatGPT が接続されました",
           "connectTitle": "Codex を接続します",
-          "copyAndOpen": "コードをコピーして承認ページを開く",
-          "copyAndOpenError": "デバイスコードをコピーできなかったか、承認ページを開けませんでした。コードを手動でコピーして、再試行してください。",
-          "copyError": "承認ページが開きましたが、デバイス コードがコピーされませんでした。承認する前に手動でコピーしてください。",
           "deviceCode": "デバイスコード",
           "error": "ChatGPT 接続に失敗しました。もう一度やり直してください。",
           "expired": "Codex 接続セッションの有効期限が切れました。もう一度やり直してください。",
           "freePlanRejected": "無料の ChatGPT プランでは、{{brandName}} 経由で Codex を使用できません。 Plus または Pro にアップグレードして、もう一度試してください。",
-          "instructions": "まず、「コードをコピーして承認ページを開く」をクリックします。次に、プロンプトが表示されたら、デバイス コードを OpenAI に貼り付けます。最後にアクセスを承認し、{{brandName}} が接続を完了するまでこのダイアログを開いたままにします。",
+          "instructions": "まず、コピーボタンでデバイス コードをコピーし、承認ページを開きます。次に、プロンプトが表示されたら、デバイス コードを OpenAI に貼り付けます。最後にアクセスを承認し、{{brandName}} が接続を完了するまでこのダイアログを開いたままにします。",
           "invalidTokenFormat": "Codex は、{{brandName}} が認識できない形式のログイン トークンを生成しました。 Codex を更新して、再試行してください。",
-          "openError": "デバイスコードはコピーされましたが、承認ページを開けませんでした。もう一度やり直してください。",
+          "openApproval": "承認ページを開く",
           "preparing": "準備中...",
           "reconnectAction": "ChatGPT を再接続する",
           "reconnectTitle": "Codex を再接続します",

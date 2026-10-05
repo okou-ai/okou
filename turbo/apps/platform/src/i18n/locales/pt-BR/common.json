@@ -4917,7 +4917,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "Não foi possível abrir a página de aprovação. Use o link manualmente e cole o código aqui.",
           "authorizationCode": "Código de autorização",
           "codePlaceholder": "Cole o código do Claude",
           "codeRequired": "Cole o código de autorização do Claude para continuar.",
@@ -4935,21 +4934,15 @@
           "usageNotice": "Entre com sua assinatura Claude para usar modelos Claude com agentes baseados no Claude Code."
         },
         "codex": {
-          "approvalOpened": "Página de aprovação aberta. Copie o código do dispositivo antes de aprovar.",
-          "codeCopied": "Código do dispositivo copiado. Aguardando aprovação...",
-          "codeCopiedRetry": "Código do dispositivo copiado. Tente abrir a página de aprovação novamente.",
           "connectedToast": "ChatGPT conectado",
           "connectTitle": "Conectar o Codex",
-          "copyAndOpen": "Copiar código e abrir página de aprovação",
-          "copyAndOpenError": "Não foi possível copiar o código do dispositivo nem abrir a página de aprovação. Copie o código manualmente e tente de novo.",
-          "copyError": "A página de aprovação foi aberta, mas o código do dispositivo não foi copiado. Copie-o manualmente antes de aprovar.",
           "deviceCode": "Código do dispositivo",
           "error": "Falha na conexão com o ChatGPT. Inicie novamente para tentar de novo.",
           "expired": "A sessão de conexão com o Codex expirou. Inicie novamente para tentar de novo.",
           "freePlanRejected": "Os planos gratuitos do ChatGPT não podem usar o Codex pelo {{brandName}}. Faça upgrade para o Plus ou Pro e tente de novo.",
-          "instructions": "Primeiro, clique em Copiar código e abrir página de aprovação. Depois, cole o código do dispositivo na OpenAI quando solicitado. Por fim, aprove o acesso e mantenha esta caixa de diálogo aberta enquanto o {{brandName}} conclui a conexão.",
+          "instructions": "Primeiro, copie o código do dispositivo com o botão de copiar e abra a página de aprovação. Depois, cole o código do dispositivo na OpenAI quando solicitado. Por fim, aprove o acesso e mantenha esta caixa de diálogo aberta enquanto o {{brandName}} conclui a conexão.",
           "invalidTokenFormat": "O Codex gerou um formato de token de login que o {{brandName}} não reconhece. Atualize o Codex e tente de novo.",
-          "openError": "O código do dispositivo foi copiado, mas não foi possível abrir a página de aprovação. Tente de novo.",
+          "openApproval": "Abrir página de aprovação",
           "preparing": "Preparando...",
           "reconnectAction": "Reconectar o ChatGPT",
           "reconnectTitle": "Reconectar o Codex",

@@ -4917,7 +4917,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "La page d'approbation n'a pas pu être ouverte. Utilisez le lien manuellement et collez le code ici.",
           "authorizationCode": "Code d'autorisation",
           "codePlaceholder": "Coller le code depuis Claude",
           "codeRequired": "Collez le code d'autorisation Claude pour continuer.",
@@ -4935,21 +4934,15 @@
           "usageNotice": "Connectez-vous avec votre abonnement Claude pour utiliser les modèles Claude avec des agents basés sur Claude Code."
         },
         "codex": {
-          "approvalOpened": "Page d'approbation ouverte. Copiez le code de l'appareil avant d'approuver.",
-          "codeCopied": "Code de l'appareil copié. En attente de l'approbation...",
-          "codeCopiedRetry": "Code de l'appareil copié. Essayez d'ouvrir à nouveau la page d'approbation.",
           "connectedToast": "ChatGPT connecté",
           "connectTitle": "Connecter Codex",
-          "copyAndOpen": "Copier le code et ouvrir la page d'approbation",
-          "copyAndOpenError": "Impossible de copier le code de l'appareil ou d'ouvrir la page d'approbation. Copiez le code manuellement et réessayez.",
-          "copyError": "Page d'approbation ouverte, mais le code de l'appareil n'a pas été copié. Copiez-le manuellement avant d'approuver.",
           "deviceCode": "Code de l'appareil",
           "error": "Échec de la connexion à ChatGPT. Recommencez pour réessayer.",
           "expired": "La session de connexion Codex a expiré. Recommencez pour réessayer.",
           "freePlanRejected": "Les plans gratuits ChatGPT ne peuvent pas utiliser Codex via {{brandName}}. Passez à Plus ou Pro et réessayez.",
-          "instructions": "Cliquez d'abord sur Copier le code et ouvrez la page d'approbation. Ensuite, collez le code de l'appareil dans OpenAI lorsqu'il est demandé. Enfin, approuvez l'accès et gardez cette fenêtre ouverte pendant que {{brandName}} termine la connexion.",
+          "instructions": "Copiez d'abord le code de l'appareil avec le bouton de copie, puis ouvrez la page d'approbation. Ensuite, collez le code de l'appareil dans OpenAI lorsqu'il est demandé. Enfin, approuvez l'accès et gardez cette fenêtre ouverte pendant que {{brandName}} termine la connexion.",
           "invalidTokenFormat": "Codex a produit un jeton de connexion dans un format que {{brandName}} ne reconnaît pas. Mettez à jour Codex et réessayez.",
-          "openError": "Code de l'appareil copié, mais la page d'approbation n'a pas pu être ouverte. Réessayez.",
+          "openApproval": "Ouvrir la page d'approbation",
           "preparing": "Préparation...",
           "reconnectAction": "Reconnecter ChatGPT",
           "reconnectTitle": "Reconnecter Codex",

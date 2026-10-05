@@ -4853,7 +4853,6 @@
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "Die Genehmigungsseite konnte nicht geöffnet werden. Verwenden Sie den Link manuell und fügen Sie den Code hier ein.",
           "authorizationCode": "Autorisierungscode",
           "codePlaceholder": "Code von Claude einfügen",
           "codeRequired": "Fügen Sie den Claude-Autorisierungscode ein, um fortzufahren.",
@@ -4871,21 +4870,15 @@
           "usageNotice": "Melden Sie sich mit Ihrem Claude-Abo an, um Claude-Modelle mit Claude Code-basierten Agenten zu nutzen."
         },
         "codex": {
-          "approvalOpened": "Genehmigungsseite geöffnet. Kopieren Sie den Gerätecode vor der Genehmigung.",
-          "codeCopied": "Gerätecode kopiert. Warten auf Genehmigung...",
-          "codeCopiedRetry": "Gerätecode kopiert. Versuchen Sie erneut, die Genehmigungsseite zu öffnen.",
           "connectedToast": "ChatGPT verbunden",
           "connectTitle": "Codex verbinden",
-          "copyAndOpen": "Code kopieren und Genehmigungsseite öffnen",
-          "copyAndOpenError": "Der Gerätecode konnte nicht kopiert oder die Genehmigungsseite konnte nicht geöffnet werden. Kopieren Sie den Code manuell und versuchen Sie es erneut.",
-          "copyError": "Die Genehmigungsseite wurde geöffnet, aber der Gerätecode wurde nicht kopiert. Kopieren Sie es manuell, bevor Sie es genehmigen.",
           "deviceCode": "Gerätecode",
           "error": "Die ChatGPT-Verbindung ist fehlgeschlagen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "expired": "Die Codex-Verbindungssitzung ist abgelaufen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "freePlanRejected": "Kostenlose ChatGPT-Pläne können Codex nicht über {{brandName}} nutzen. Führen Sie ein Upgrade auf Plus oder Pro durch und versuchen Sie es erneut.",
-          "instructions": "Klicken Sie zunächst auf Code kopieren und Genehmigungsseite öffnen. Fügen Sie dann den Gerätecode in OpenAI ein, wenn Sie dazu aufgefordert werden. Genehmigen Sie abschließend den Zugriff und lassen Sie dieses Dialogfeld geöffnet, während {{brandName}} die Verbindung herstellt.",
+          "instructions": "Kopieren Sie zunächst den Gerätecode mit der Kopierschaltfläche und öffnen Sie dann die Genehmigungsseite. Fügen Sie dann den Gerätecode in OpenAI ein, wenn Sie dazu aufgefordert werden. Genehmigen Sie abschließend den Zugriff und lassen Sie dieses Dialogfeld geöffnet, während {{brandName}} die Verbindung herstellt.",
           "invalidTokenFormat": "Codex hat ein Login-Token-Format erstellt, das {{brandName}} nicht erkennt. Aktualisieren Sie Codex und versuchen Sie es erneut.",
-          "openError": "Gerätecode kopiert, aber die Genehmigungsseite konnte nicht geöffnet werden. Versuchen Sie es erneut.",
+          "openApproval": "Genehmigungsseite öffnen",
           "preparing": "Vorbereiten...",
           "reconnectAction": "Verbinden Sie ChatGPT erneut",
           "reconnectTitle": "Codex erneut verbinden",
