@@ -355,6 +355,7 @@ test("shows Auto once for a configured Okou model", async () => {
 });
 
 test("Keep a next-run model choice through active-run steering", async () => {
+  const steeringQueued = context.mocks.deferred<void>();
   const runModels: (string | undefined)[] = [];
   configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
   const lifecycle = installRunChat({
@@ -375,6 +376,9 @@ test("Keep a next-run model choice through active-run steering", async () => {
         text: "Sol is still working.",
       }),
     ],
+    onQueuedEventAppend: () => {
+      steeringQueued.resolve();
+    },
     onRunCreate: (body) => {
       const model = body.userMessage?.parts.find((part) => {
         return part.type === "model";
@@ -405,6 +409,10 @@ test("Keep a next-run model choice through active-run steering", async () => {
     screen.queryByText("Model changed to GPT 5.6 Luna"),
   ).not.toBeInTheDocument();
 
+  // Clearing the draft and showing the optimistic input do not prove that
+  // the server accepted steering while Sol was active. With no appendGate,
+  // queued persistence finishes in the same turn as this fixture callback.
+  await steeringQueued.promise;
   lifecycle.completeRun("Sol finished the current task.");
   await expect(
     screen.findByText("Sol finished the current task."),
