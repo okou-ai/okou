@@ -1,42 +1,22 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { HttpResponse, http } from "msw";
 
-import {
-  CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
-  connectorAccountsContract,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import {
-  builtinConnectorManualGrantContract,
-  builtinConnectorsBySlugContract,
-} from "@okouai/api-contracts/contracts/connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   customConnectorByIdContract,
-  customConnectorValuesContract,
   customConnectorsContract,
-  type CreateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  captureApiTestConnectorCatalogCleanup,
-} from "../../../test-fixtures/connector-catalog";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { settle } from "../../utils";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
-import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -47,9 +27,7 @@ import {
   catalogWithManualConnector,
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -72,10 +50,6 @@ function authHeaders() {
 
 function accountClient() {
   return setupApp({ context, routes })(connectorAccountsContract);
-}
-
-function connectorClient() {
-  return setupApp({ context, routes })(builtinConnectorManualGrantContract);
 }
 
 function customConnectorClient() {
@@ -409,41 +383,6 @@ describe("connector account lifecycle routes", () => {
     );
     await catalog.cleanup();
   });
-
-  async function createBulkAccounts(): Promise<string[]> {
-    await seedFixture();
-
-    const createdAccountIds: string[] = [];
-    const connectorsApi = connectorClient();
-    // Four owned streams keep independent requests moving without unbounded
-    // fan-out. Wait for every stream before fixture cleanup after a failure.
-    const created = await Promise.allSettled(
-      Array.from({ length: 4 }, async (_, stream) => {
-        for (let index = stream; index < 101; index += 4) {
-          const label = `Bulk ${index.toString().padStart(3, "0")}`;
-          const response = await accept(
-            connectorsApi.connect({
-              headers: authHeaders(),
-              params: { connectorSlug: "openai" },
-              body: {
-                authMethod: "api-token",
-                account: { intent: "add", displayName: label },
-                values: { apiKey: `sk-${label}` },
-              },
-            }),
-            [200],
-          );
-          createdAccountIds[index] = response.body.id;
-        }
-      }),
-    );
-    for (const result of created) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-    }
-    return createdAccountIds;
-  }
 
   it("treats a removed built-in catalog target as absent", async () => {
     const fixture = await seedFixture();

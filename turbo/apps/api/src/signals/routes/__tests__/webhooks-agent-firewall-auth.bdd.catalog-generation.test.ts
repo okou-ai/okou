@@ -1,71 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  getSecretKmsClient,
-  setSecretKmsClientForTests,
-  type SecretKmsClient,
-  type SecretKmsDataKey,
-  type SecretKmsGenerateDataKeyRequest,
-} from "../../../lib/secret-kms-client";
-import { now } from "../../../lib/time";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { testContext } from "../../../__tests__/test-context";
-import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  createDeferredPromise,
-  settle,
-  settleIncludingAbort,
-} from "../../utils";
-import {
-  basicTemplate,
-  createFirewallApi,
-  secretTemplate,
-  varTemplate,
-} from "./helpers/api-bdd-firewall";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
-import {
-  awsVerificationCode,
-  createConnectorBddApi,
-  mockAutomaticMcpOAuthProvider,
-  mockAwsExternalCodeProvider,
-  mockTestOAuthAuthCodeProvider,
-} from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import type { ApiTestUser } from "./helpers/api-bdd";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
-import {
-  createPublicFirewallFixture,
-  type PublicFirewallFixture,
-} from "./helpers/public-firewall-fixture";
 import {
   API_TEST_CONNECTOR_CATALOG,
   catalogWithAuthMethod,
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
-import {
-  createAuthDeviceApiActions,
-  mockCodexDeviceAuthProvider,
-} from "./helpers/api-bdd-auth-device";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import {
-  transitionRunToTerminal,
-  transitionRunToTimeout,
-  type TestTerminalRunStatus,
-} from "./helpers/api-bdd-run-timeout";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { setBuiltinOAuthScopeFacts } from "./helpers/connector-credential-storage-state";
 
 /**
  * HOOK-02 / FW: firewall auth template resolution and connector refresh
