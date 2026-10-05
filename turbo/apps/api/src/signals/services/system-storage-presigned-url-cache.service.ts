@@ -80,6 +80,8 @@ const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
 export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
 // Leave time for clients and asynchronous providers to fetch a returned URL.
 const PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS = 60 * 60 * 1000;
+// Leave enough time for Runner launch and archive downloads after cache selection.
+const STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS = 4 * 60 * 60 * 1000;
 const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
 // Bound cache-key construction before deduplication; the SQL pair limit stays at 51.
 const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_REQUESTS = 128;
@@ -1339,6 +1341,21 @@ async function storagePresignedUrlCacheRows(args: {
     : await lookup();
 }
 
+function hasReusablePresignedUrlLifetime(args: {
+  readonly scope: StoragePresignedUrlCacheScope;
+  readonly expiresAt: Date;
+  readonly issuedAt: Date;
+  readonly minimumRemainingMs?: number;
+}): boolean {
+  const remainingMs = args.expiresAt.getTime() - args.issuedAt.getTime();
+  return (
+    remainingMs > (args.minimumRemainingMs ?? 0) &&
+    (args.scope === "presentation_template_preview" ||
+      args.scope === "private_artifact_preview" ||
+      remainingMs >= STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS)
+  );
+}
+
 function classifyStoragePresignedUrlCacheRows(args: {
   readonly requestsByCacheKey: ReadonlyMap<string, StoragePresignedUrlRequest>;
   readonly rows: readonly SelectedStoragePresignedUrlCacheRow[];
@@ -1357,8 +1374,12 @@ function classifyStoragePresignedUrlCacheRows(args: {
     const row = rowByCacheKey.get(cacheKey);
     if (
       row &&
-      row.expiresAt.getTime() - args.issuedAt.getTime() >
-        args.minimumRemainingMs
+      hasReusablePresignedUrlLifetime({
+        scope: request.scope,
+        expiresAt: row.expiresAt,
+        issuedAt: args.issuedAt,
+        minimumRemainingMs: args.minimumRemainingMs,
+      })
     ) {
       args.stats.hitCount += 1;
       args.results.set(cacheKey, {
@@ -1596,7 +1617,14 @@ export async function signStorageManifestPresignedUrls(args: {
     const row = args.prefetchedRows.rowsByScope
       .get(entry.request.scope as StorageManifestPresignedUrlCacheScope)
       ?.get(entry.cacheKey);
-    if (!row || row.expiresAt.getTime() <= issuedAt.getTime()) {
+    if (
+      !row ||
+      !hasReusablePresignedUrlLifetime({
+        scope: entry.request.scope,
+        expiresAt: row.expiresAt,
+        issuedAt,
+      })
+    ) {
       return true;
     }
     results.set(entry.cacheKey, {
