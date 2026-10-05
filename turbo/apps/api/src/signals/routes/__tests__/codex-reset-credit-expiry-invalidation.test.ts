@@ -12,6 +12,7 @@ import { createDeferredPromise } from "../../utils";
 import { codexDeviceAuthRoutes } from "../codex-device-auth";
 import { modelProvidersRoutes } from "../model-providers";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 import {
   createCodexExpiryFixture,
   credentials,
@@ -223,6 +224,10 @@ describe("Codex expiry invalidation and identity isolation", () => {
       return expiryResponse(remote.expiry);
     };
     user.session();
+    await ensureCustomModelModeForTest(context, user, () => {
+      user.session();
+      return headers;
+    });
     const result = await accept(
       setupApp({ context, routes: modelProvidersRoutes })(
         modelProvidersMainContract,
