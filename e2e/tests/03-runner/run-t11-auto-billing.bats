@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Real Codex smoke and built-in usage attribution through public APIs.
+# Auto/OpenRouter completion and billable platform usage through public APIs.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
@@ -19,26 +19,27 @@ teardown() {
     runner_e2e_teardown_test
 }
 
-@test "real codex reports built-in model usage" {
-    run create_runner_agent "e2e-real-codex-${TEST_ID}"
+@test "auto reports billable model usage after a successful answer" {
+    run create_runner_agent "e2e-auto-billing-${TEST_ID}"
     echo "$output"
     assert_success
     AGENT_ID="$output"
 
     run set_runner_agent_instructions \
         "$AGENT_ID" \
-        "Real Codex billing smoke test instructions."
+        "Auto billing smoke test instructions."
     echo "$output"
     assert_success
 
-    # The dedicated built-in Codex account keeps Luna independent of the
-    # BYOK steering account without changing either runtime or model policy.
-    run runner_api_curl "/api/model-policies"
+    # This account has no personal subscription: Auto is the only platform model.
+    run runner_api_curl "/api/run-models"
     echo "$output"
     assert_success
     run jq -e '
-        any(.policies[]?;
-            .model == "gpt-5.6-luna" and
+        .defaultModel == "okou-1.0" and
+        (.models | length == 1) and
+        any(.models[]?;
+            .model == "okou-1.0" and
             .defaultProviderType == "built-in" and
             .credentialScope == "org" and
             .modelProviderId == null
@@ -47,8 +48,8 @@ teardown() {
     echo "$output"
     assert_success
 
-    local prompt="Briefly confirm that the real Codex runner is responding."
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "gpt-5.6-luna"
+    local prompt="Briefly confirm that the Auto runner is responding."
+    run runner_chat_send "$AGENT_ID" "$prompt" "" "okou-1.0"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -100,11 +101,11 @@ teardown() {
     run runner_e2e_wait_for_usage_event \
         "$THREAD_ID" \
         "$RUN_ID" \
-        "gpt-5.6-luna"
+        "okou-1.0"
     echo "$output"
     assert_success
 
-    run runner_e2e_wait_for_usage_record "$THREAD_ID" "gpt-5.6-luna"
+    run runner_e2e_wait_for_usage_record "$THREAD_ID" "okou-1.0"
     echo "$output"
     assert_success
     local usage_record="$output"
@@ -116,7 +117,7 @@ teardown() {
             any(.breakdown[]?;
                 .kind == "model" and
                 any(.providers[]?;
-                    .provider == "gpt-5.6-luna" and .credits > 0
+                    .provider == "okou-1.0" and .credits > 0
                 )
             )
         )
