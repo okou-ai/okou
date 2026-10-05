@@ -365,7 +365,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.PwaNavigation]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Use bottom navigation, an agent chat list, and Me in the mobile installed PWA. Enable manually to try it.",
+      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser. Enable manually to try it.",
     enabled: false,
   },
   [FeatureSwitchKey.ClaudeCodeUsageReset]: {

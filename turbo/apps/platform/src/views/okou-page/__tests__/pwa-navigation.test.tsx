@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -33,11 +33,11 @@ const legacyEnvironments = [
     featureSwitches: {},
   },
   {
-    name: "an enabled switch in a regular mobile browser",
+    name: "the default switch setting in a regular mobile browser",
     caseId: 72,
     standalone: false,
     desktop: false,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+    featureSwitches: {},
   },
   {
     name: "an enabled switch in a desktop PWA",
@@ -61,25 +61,6 @@ function mockDisplayMode({
     }
     return query === "(min-width: 48rem)" && desktop;
   });
-}
-
-function mockIosStandalone(): void {
-  const descriptor = Object.getOwnPropertyDescriptor(navigator, "standalone");
-  Object.defineProperty(navigator, "standalone", {
-    configurable: true,
-    value: true,
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (descriptor) {
-        Object.defineProperty(navigator, "standalone", descriptor);
-      } else {
-        Reflect.deleteProperty(navigator, "standalone");
-      }
-    },
-    { once: true },
-  );
 }
 
 function linkTo(href: string, container: ParentNode = document): HTMLElement {
@@ -164,6 +145,91 @@ test("Keep the existing desktop PWA navigation when the switch is enabled", asyn
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
 });
 
+test("Switch between the desktop composer and mobile chat list as the browser resizes", async () => {
+  const viewport = context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
+  });
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 79,
+    threads: [continuityThread(79, 1, "Responsive planning")],
+  });
+
+  await setupPage({
+    context,
+    path: CHAT_LIST_PATH,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+    ...workspace.pageOptions,
+  });
+
+  await screen.findByRole("textbox", { name: "Message" });
+  expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
+
+  act(() => {
+    viewport.setMatches(false);
+  });
+
+  await screen.findByRole("heading", { name: "Chats" });
+  expect(screen.getByText("Responsive planning")).toBeInTheDocument();
+  expect(
+    screen.getByRole("navigation", { name: "Main navigation" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId("labeled-nav-rail")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("textbox", { name: "Message" }),
+  ).not.toBeInTheDocument();
+
+  act(() => {
+    viewport.setMatches((query) => {
+      return query === "(min-width: 48rem)";
+    });
+  });
+
+  await screen.findByRole("textbox", { name: "Message" });
+  expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("navigation", { name: "Main navigation" }),
+  ).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
+});
+
+test("Keep Me within mobile widths while the browser resizes", async () => {
+  const viewport = context.mocks.browser.matchMedia(false);
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 80,
+    threads: [],
+  });
+
+  await setupPage({
+    context,
+    path: "/me",
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+    ...workspace.pageOptions,
+  });
+
+  await screen.findByRole("heading", { name: "Me" });
+
+  act(() => {
+    viewport.setMatches((query) => {
+      return query === "(min-width: 48rem)";
+    });
+  });
+
+  await screen.findByRole("heading", { name: "That page isn't here." });
+  expect(
+    screen.queryByRole("navigation", { name: "Main navigation" }),
+  ).not.toBeInTheDocument();
+
+  act(() => {
+    viewport.setMatches(false);
+  });
+
+  await screen.findByRole("heading", { name: "Me" });
+  expect(
+    screen.getByRole("navigation", { name: "Main navigation" }),
+  ).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/me");
+});
+
 test.each(legacyEnvironments)(
   "Keep /me unavailable for $name",
   async (environment) => {
@@ -192,8 +258,8 @@ test.each(legacyEnvironments)(
   },
 );
 
-test("Browse and filter PWA chats before opening a conversation and returning", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
+test("Browse and filter mobile browser chats before opening a conversation and returning", async () => {
+  mockDisplayMode({ standalone: false, desktop: false });
   const inbox = continuityThread(74, 1, "Plan the launch");
   const archived = {
     ...continuityThread(74, 2, "Previous launch"),
@@ -310,9 +376,8 @@ test("Browse and filter PWA chats before opening a conversation and returning", 
   expect(window.location.pathname).toBe("/me");
 });
 
-test("Open profile settings from Me in an iOS standalone PWA", async () => {
+test("Open profile settings from Me in a regular mobile browser", async () => {
   mockDisplayMode({ standalone: false, desktop: false });
-  mockIosStandalone();
   const workspace = installContinuityWorkspace(context, {
     caseId: 75,
     threads: [],
@@ -463,8 +528,8 @@ test("Remove a disconnected subscription from Me without reopening the page", as
   expect(window.location.pathname).toBe("/me");
 });
 
-test("Switch the PWA chat list to another agent", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
+test("Switch the mobile browser chat list to another agent", async () => {
+  mockDisplayMode({ standalone: false, desktop: false });
   const researchAgentId = "c7000000-0000-4000-a000-000000000002";
   const workspace = installContinuityWorkspace(context, {
     caseId: 78,
