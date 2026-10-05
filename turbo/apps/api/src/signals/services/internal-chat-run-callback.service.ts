@@ -1248,7 +1248,10 @@ const insertAssistantErrorEvent$ = command(
       args.threadId,
       {
         orgId: args.orgId,
-        unarchive: args.lifecycleEvent === "failed",
+        unarchive:
+          args.lifecycleEvent === "failed" &&
+          !hasExternalNotificationDeliveryChannel(args),
+        markRead: hasExternalNotificationDeliveryChannel(args),
       },
       signal,
     );
@@ -1375,7 +1378,7 @@ interface RunLifecycleDeliveryCallbacks {
   readonly agentphoneDeliveryCallbackId?: string;
 }
 
-function hasCanonicalIntegrationDelivery(
+function hasExternalNotificationDeliveryChannel(
   args: Pick<
     RunLifecycleMarkerArgs,
     | "slackDelivery"
@@ -1496,7 +1499,7 @@ export async function insertRunLifecycleMarkerProjection(args: {
   let deliveryEvent = await loadCanonicalDeliveryEvent(
     args.tx,
     input.runId,
-    hasCanonicalIntegrationDelivery(input),
+    hasExternalNotificationDeliveryChannel(input),
   );
   if (!deliveryEvent && requiresIntegrationCompletionFallback(input)) {
     deliveryEvent = await insertIntegrationCompletionFallback({
@@ -1576,7 +1579,10 @@ const insertRunLifecycleMarker$ = command(
       {
         touchedAt: markerCreatedAt,
         orgId: args.orgId,
-        unarchive: args.event === "completed",
+        unarchive:
+          args.event === "completed" &&
+          !hasExternalNotificationDeliveryChannel(args),
+        markRead: hasExternalNotificationDeliveryChannel(args),
       },
       signal,
     );
@@ -1603,43 +1609,65 @@ const insertRunLifecycleMarker$ = command(
   },
 );
 
-async function insertRecommendedFollowupsEvent(args: {
-  readonly db: Db;
-  readonly runId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly followups: readonly ChatRecommendedFollowup[];
-}): Promise<boolean> {
-  const inserted =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await args.db.execute(
-        chatEventInsertSql(
-          {
-            id: followupsEventIdForRun(args.runId),
-            chatThreadId: args.threadId,
-            eventType: "output.followups",
-            content: serializeChatFollowupsContent(args.followups),
-            runId: args.runId,
-          },
-          "id",
+const insertRecommendedFollowupsEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly followups: readonly ChatRecommendedFollowup[];
+      readonly markRead: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const inserted =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await args.db.execute(
+          chatEventInsertSql(
+            {
+              id: followupsEventIdForRun(args.runId),
+              chatThreadId: args.threadId,
+              eventType: "output.followups",
+              content: serializeChatFollowupsContent(args.followups),
+              runId: args.runId,
+            },
+            "id",
+          ),
         ),
-      ),
-    )[0] ?? null;
+      )[0] ?? null;
 
-  if (!inserted) {
-    return false;
-  }
+    signal.throwIfAborted();
+    if (!inserted) {
+      return false;
+    }
 
-  await publishChatThreadMessageCreatedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-    threadId: args.threadId,
-    syncThroughSeqId: inserted.seqId,
-  });
-  return true;
-}
+    if (args.markRead) {
+      await set(
+        touchChatThreadLastMessageAtIndependently$,
+        args.threadId,
+        {
+          touchedAt: inserted.createdAt,
+          orgId: args.orgId,
+          markRead: true,
+        },
+        signal,
+      );
+    }
+    await publishChatThreadMessageCreatedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+      threadId: args.threadId,
+      syncThroughSeqId: inserted.seqId,
+    });
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
 async function generateRecommendedFollowupsForCompletedRun(
   args: {
@@ -1918,14 +1946,19 @@ const runCompletedChatCallbackSideEffects$ = command(
         signal,
       );
       if (followups) {
-        await insertRecommendedFollowupsEvent({
-          db: args.db,
-          runId: args.runId,
-          threadId: args.chatThread.chatThreadId,
-          userId: args.chatThread.userId,
-          orgId: args.chatThread.orgId,
-          followups,
-        });
+        await set(
+          insertRecommendedFollowupsEvent$,
+          {
+            db: args.db,
+            runId: args.runId,
+            threadId: args.chatThread.chatThreadId,
+            userId: args.chatThread.userId,
+            orgId: args.chatThread.orgId,
+            followups,
+            markRead: !args.sendWebPush,
+          },
+          signal,
+        );
       }
     })();
 
@@ -3317,7 +3350,7 @@ const finishTerminalChatCallbackAfterProjection$ = command(
       const backgroundSignal = new AbortController().signal;
       // Use this Run's persisted delivery targets, not thread history or
       // delivery success. Channel failures must not fall back to Web push.
-      const sendWebPush = !hasCanonicalIntegrationDelivery(
+      const sendWebPush = !hasExternalNotificationDeliveryChannel(
         args.callback.payload,
       );
       waitUntil(
