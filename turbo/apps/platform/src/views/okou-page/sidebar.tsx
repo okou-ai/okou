@@ -681,7 +681,7 @@ function LabeledNavRail() {
   );
 }
 
-function ThreeColumnSearchDialogContainer() {
+export function ThreeColumnSearchDialogContainer() {
   const open = useGet(threeColumnSearchOpen$);
   const onOpenChange = useSet(setThreeColumnSearchOpen$);
   const navigate = useSet(detachedNavigateTo$);

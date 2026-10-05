@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "無法載入智慧體",
+      "backToChats": "返回聊天列表",
+      "chatListUnavailable": "無法載入聊天",
+      "chats": "聊天",
+      "me": "我",
+      "navigation": "主導覽",
+      "searchAgents": "搜尋智慧體",
+      "switchAgent": "切換智慧體"
+    },
     "shortcutHelp": {
       "close": "關閉快捷鍵面板",
       "description": "當前頁面可用的快捷鍵",

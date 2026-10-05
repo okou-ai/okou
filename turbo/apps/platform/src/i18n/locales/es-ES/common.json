@@ -387,6 +387,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "No se pudieron cargar los agentes",
+      "backToChats": "Volver a los chats",
+      "chatListUnavailable": "No se pudieron cargar los chats",
+      "chats": "Chats",
+      "me": "Yo",
+      "navigation": "Navegación principal",
+      "searchAgents": "Buscar agentes",
+      "switchAgent": "Cambiar agente"
+    },
     "shortcutHelp": {
       "close": "Cerrar atajos de teclado",
       "description": "Atajos disponibles en esta página",

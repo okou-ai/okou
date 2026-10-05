@@ -36,6 +36,8 @@ import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
+import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
+import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
 
 function localizedAnonymousTaglines(t: TFunction<"common">): string[] {
   return [
@@ -409,7 +411,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   );
 }
 
-export function AgentChatPage() {
+function AgentComposerPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
   const pageSignal = useGet(pageSignal$);
@@ -544,4 +546,9 @@ export function AgentChatPage() {
       <PersonalCodexDeviceAuthDialog />
     </div>
   );
+}
+
+export function AgentChatPage() {
+  const showChatList = useGet(pwaChatListVisible$);
+  return showChatList ? <PwaChatListPage /> : <AgentComposerPage />;
 }

@@ -387,6 +387,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Impossibile caricare gli agenti",
+      "backToChats": "Torna alle chat",
+      "chatListUnavailable": "Impossibile caricare le chat",
+      "chats": "Chat",
+      "me": "Io",
+      "navigation": "Navigazione principale",
+      "searchAgents": "Cerca agenti",
+      "switchAgent": "Cambia agente"
+    },
     "shortcutHelp": {
       "close": "Chiudi le scorciatoie da tastiera",
       "description": "Scorciatoie disponibili in questa pagina",

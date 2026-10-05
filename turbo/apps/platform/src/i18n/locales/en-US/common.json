@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Could not load agents",
+      "backToChats": "Back to chats",
+      "chatListUnavailable": "Could not load chats",
+      "chats": "Chats",
+      "me": "Me",
+      "navigation": "Main navigation",
+      "searchAgents": "Search agents",
+      "switchAgent": "Switch agent"
+    },
     "shortcutHelp": {
       "close": "Close keyboard shortcuts",
       "description": "Available shortcuts on this page",

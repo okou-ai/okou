@@ -362,6 +362,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PwaNavigation]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Use bottom navigation, an agent chat list, and Me in the mobile installed PWA. Enable manually to try it.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ClaudeCodeUsageReset]: {
     maintainer: "ethan@okou.ai",
     description:

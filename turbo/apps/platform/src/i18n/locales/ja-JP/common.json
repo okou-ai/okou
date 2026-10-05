@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "エージェントを読み込めませんでした",
+      "backToChats": "チャット一覧に戻る",
+      "chatListUnavailable": "チャットを読み込めませんでした",
+      "chats": "チャット",
+      "me": "自分",
+      "navigation": "メインナビゲーション",
+      "searchAgents": "エージェントを検索",
+      "switchAgent": "エージェントを切り替え"
+    },
     "shortcutHelp": {
       "close": "キーボードショートカットを閉じる",
       "description": "このページで利用可能なショートカット",

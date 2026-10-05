@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Agents konnten nicht geladen werden",
+      "backToChats": "Zurück zu Chats",
+      "chatListUnavailable": "Chats konnten nicht geladen werden",
+      "chats": "Chats",
+      "me": "Ich",
+      "navigation": "Hauptnavigation",
+      "searchAgents": "Agents suchen",
+      "switchAgent": "Agent wechseln"
+    },
     "shortcutHelp": {
       "close": "Tastaturkürzel schließen",
       "description": "Verfügbare Tastaturkürzel für diese Seite",

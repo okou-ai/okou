@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "एजेंट लोड नहीं हो सके",
+      "backToChats": "चैट पर वापस जाएँ",
+      "chatListUnavailable": "चैट लोड नहीं हो सकीं",
+      "chats": "चैट",
+      "me": "मैं",
+      "navigation": "मुख्य नेविगेशन",
+      "searchAgents": "एजेंट खोजें",
+      "switchAgent": "एजेंट बदलें"
+    },
     "shortcutHelp": {
       "close": "कुंजीपटल शॉर्टकट बंद करें",
       "description": "इस पृष्ठ पर उपलब्ध शॉर्टकट",

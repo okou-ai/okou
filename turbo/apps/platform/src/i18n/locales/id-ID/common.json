@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Tidak dapat memuat agen",
+      "backToChats": "Kembali ke obrolan",
+      "chatListUnavailable": "Tidak dapat memuat obrolan",
+      "chats": "Obrolan",
+      "me": "Saya",
+      "navigation": "Navigasi utama",
+      "searchAgents": "Cari agen",
+      "switchAgent": "Ganti agen"
+    },
     "shortcutHelp": {
       "close": "Tutup pintasan keyboard",
       "description": "Pintasan yang tersedia di halaman ini",

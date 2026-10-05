@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "에이전트를 불러올 수 없습니다",
+      "backToChats": "채팅 목록으로 돌아가기",
+      "chatListUnavailable": "채팅을 불러올 수 없습니다",
+      "chats": "채팅",
+      "me": "나",
+      "navigation": "기본 탐색",
+      "searchAgents": "에이전트 검색",
+      "switchAgent": "에이전트 전환"
+    },
     "shortcutHelp": {
       "close": "단축키 닫기",
       "description": "이 페이지에서 사용 가능한 단축키",

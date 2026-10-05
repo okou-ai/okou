@@ -387,6 +387,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Impossible de charger les agents",
+      "backToChats": "Retour aux discussions",
+      "chatListUnavailable": "Impossible de charger les discussions",
+      "chats": "Discussions",
+      "me": "Moi",
+      "navigation": "Navigation principale",
+      "searchAgents": "Rechercher des agents",
+      "switchAgent": "Changer d’agent"
+    },
     "shortcutHelp": {
       "close": "Fermer les raccourcis clavier",
       "description": "Raccourcis disponibles sur cette page",
