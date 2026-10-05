@@ -1,0 +1,192 @@
+import { randomUUID } from "node:crypto";
+
+import { HttpResponse, http } from "msw";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
+
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  getSecretKmsClient,
+  setSecretKmsClientForTests,
+  type SecretKmsClient,
+  type SecretKmsDataKey,
+  type SecretKmsGenerateDataKeyRequest,
+} from "../../../lib/secret-kms-client";
+import { now } from "../../../lib/time";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
+import { testContext } from "../../../__tests__/test-context";
+import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import {
+  createDeferredPromise,
+  settle,
+  settleIncludingAbort,
+} from "../../utils";
+import {
+  basicTemplate,
+  createFirewallApi,
+  secretTemplate,
+  varTemplate,
+} from "./helpers/api-bdd-firewall";
+import {
+  createBddApi,
+  expectApiError,
+  type ApiTestUser,
+} from "./helpers/api-bdd";
+import {
+  awsVerificationCode,
+  createConnectorBddApi,
+  mockAutomaticMcpOAuthProvider,
+  mockAwsExternalCodeProvider,
+  mockTestOAuthAuthCodeProvider,
+} from "./helpers/api-bdd-connectors";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
+import {
+  createPublicFirewallFixture,
+  type PublicFirewallFixture,
+} from "./helpers/public-firewall-fixture";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
+import {
+  createAuthDeviceApiActions,
+  mockCodexDeviceAuthProvider,
+} from "./helpers/api-bdd-auth-device";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import {
+  transitionRunToTerminal,
+  transitionRunToTimeout,
+  type TestTerminalRunStatus,
+} from "./helpers/api-bdd-run-timeout";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { setBuiltinOAuthScopeFacts } from "./helpers/connector-credential-storage-state";
+
+/**
+ * HOOK-02 / FW: firewall auth template resolution and connector refresh
+ * through POST /api/webhooks/agent/firewall/auth.
+ *
+ * Given state is constructed through public routes. The narrow test-only
+ * connector credential state route is used only for persisted metadata that
+ * an old deployment can leave behind but no production API exposes.
+ *
+ * Unreachable through public APIs (kept out of this file deliberately):
+ * - TOKEN_ACCESS_RESOLUTION_FAILED needs a current token whose backing secret
+ *   row is missing; public seeding writes both atomically.
+ * - The 402/5s low-credit billable lease needs a public API that drains an
+ *   org's credits below the threshold while keeping the tier active.
+ */
+
+const context = testContext();
+const publicConnections = createPublicFirewallConnections(context);
+
+async function exactSecretConnectorSources(
+  actor: ApiTestUser,
+  sources: Readonly<Record<string, ConnectorSlug>>,
+  platformSecretNames: readonly string[] = [],
+): Promise<{
+  readonly secretConnectorMap: Readonly<Record<string, ConnectorSlug>>;
+  readonly secretConnectorMetadataMap: Readonly<
+    Record<
+      string,
+      | { readonly sourceType: "connector"; readonly sourceId: string }
+      | { readonly sourceType: "platform-secret" }
+    >
+  >;
+}> {
+  const connectors = createConnectorBddApi(context);
+  const entries = await Promise.all(
+    Object.entries(sources).map(async ([secretName, connectorSlug]) => {
+      const metadata = !platformSecretNames.includes(secretName)
+        ? {
+            sourceType: "connector" as const,
+            sourceId: (
+              await connectors.readConnectorBySlug(actor, connectorSlug)
+            ).id,
+          }
+        : { sourceType: "platform-secret" as const };
+      return [secretName, { connectorSlug, metadata }] as const;
+    }),
+  );
+  return {
+    secretConnectorMap: Object.fromEntries(
+      entries.map(([secretName, source]) => {
+        return [secretName, source.connectorSlug];
+      }),
+    ),
+    secretConnectorMetadataMap: Object.fromEntries(
+      entries.map(([secretName, source]) => {
+        return [secretName, source.metadata];
+      }),
+    ),
+  };
+}
+
+describe("FW-4: connector refresh and replacement snapshots", () => {
+  afterEach(publicConnections.cleanup);
+
+  it("does not call the provider for a known storage version mismatch", async () => {
+    const fw = createFirewallApi(context);
+    const connectors = createConnectorBddApi(context);
+    const catalog = createPublicConnectorCatalog(context);
+    const versionTwo = catalogWithAuthMethod(
+      { connectorSlug: "test-oauth", authMethodId: "oauth" },
+      (method) => {
+        return { ...method, storage: { ...method.storage, version: 2 } };
+      },
+    );
+    await catalog.publish(versionTwo);
+    const { actor, headers } = await publicConnections.run();
+    catalog.onCleanup(async () => {
+      await publicConnections.cleanup();
+      await catalog.publish(versionTwo);
+      await connectors.deleteDefaultBuiltinConnectorAccount(
+        actor,
+        "test-oauth",
+      );
+      await connectors.deleteFeatureSwitches(actor);
+    });
+    await publicConnections.testOAuth(actor, {
+      accessToken: "stale-access",
+      refreshToken: "refresh-1",
+      expiresIn: -60,
+    });
+    // Publishing changes the selected method, not the account's stored version.
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
+    let providerCalls = 0;
+    fw.mockTestOauthTokenRefresh(() => {
+      providerCalls += 1;
+      return fw.oauthTokenResponse({
+        accessToken: "must-not-be-written",
+        expiresIn: 3600,
+      });
+    });
+
+    const response = await fw.requestFirewallAuth(
+      headers,
+      {
+        encryptedSecrets: fw.encryptedSecretsBody({
+          TEST_OAUTH_TOKEN: "stale-access",
+        }),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
+        },
+        ...(await exactSecretConnectorSources(actor, {
+          TEST_OAUTH_TOKEN: "test-oauth",
+        })),
+      },
+      [424],
+    );
+    if (response.status !== 424) {
+      throw new Error("Expected mismatched storage version to be unavailable");
+    }
+    expect(response.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    expect(providerCalls).toBe(0);
+    await catalog.cleanup();
+  });
+});

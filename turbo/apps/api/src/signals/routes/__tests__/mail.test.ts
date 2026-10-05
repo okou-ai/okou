@@ -18,11 +18,7 @@ import {
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  catalogWithAuthMethod,
-  createPublicConnectorCatalog,
-} from "./helpers/public-connector-catalog";
+
 import { createRouteMocks } from "./helpers/route-test";
 import {
   readConnectorCredentialStorageState,
@@ -1639,80 +1635,6 @@ describe("POST /api/mail/drafts/link", () => {
       [409],
     );
     expect(conflict.body.error.message).toContain("already linked");
-  });
-
-  it("does not refresh a known mismatched Gmail storage version", async () => {
-    const catalog = createPublicConnectorCatalog(context);
-    const versionTwo = catalogWithAuthMethod(
-      { connectorSlug: "gmail", authMethodId: "oauth" },
-      (method) => {
-        return { ...method, storage: { ...method.storage, version: 2 } };
-      },
-    );
-    await catalog.publish(versionTwo);
-    const fixture = await seedGmailMailCardFixture(catalog.onCleanup);
-    catalog.onCleanup(async () => {
-      await catalog.publish(versionTwo);
-    });
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        return HttpResponse.json({
-          access_token: "gmail-mail-card-token",
-          refresh_token: "gmail-refresh-token",
-          expires_in: 0,
-          token_type: "Bearer",
-          scope: GMAIL_MODIFY_SCOPE,
-        });
-      }),
-    );
-    const started = await connectors.startOauth(
-      fixture.actor,
-      "gmail",
-      "oauth",
-      undefined,
-      {
-        intent: "reconnect",
-        connectionId: fixture.gmail.id,
-      },
-    );
-    const state = new URL(started.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected Gmail reconnect state");
-    }
-    await connectors.completeOauthCallback("gmail", {
-      code: "expired-version-two",
-      state,
-    });
-    // The real OAuth response makes the token expired without a private date write.
-    // Catalog publication leaves the account at version2 while selecting version1.
-    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
-    let refreshCalls = 0;
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        refreshCalls += 1;
-        return HttpResponse.json({
-          access_token: "must-not-be-written",
-          expires_in: 3600,
-        });
-      }),
-    );
-
-    const response = await accept(
-      client().linkDraft({
-        headers: authHeaders(),
-        body: {
-          threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
-          gmailDraftId: GMAIL_DRAFT_ID,
-        },
-      }),
-      [409],
-    );
-    expect(response.body.error.message).toBe(
-      "Connect and authorize Gmail for this agent first",
-    );
-    expect(refreshCalls).toBe(0);
-    await catalog.cleanup();
   });
 
   it("requires reconnect when the Gmail token refresh fails", async () => {

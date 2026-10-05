@@ -3,7 +3,7 @@
 ## Scope and dependency
 
 This batch implements the account-lifecycle selection consumer only. It is stacked
-on `okou-ai/okou#37699` at
+on `okou-ai/okou#37699`, originally at
 `348837a965b2004569d066765602648260b090f8`, because that commit supplies
 `immutableConnectorRuntimeSelection` and `ConnectorRuntimeLookup`; current main
 has the merged P2/P3 writer but not that scoped reader. Do not reimplement a DB
@@ -13,10 +13,19 @@ Authoritative design: [W2](https://app.okou.ai/artifacts/apwqx5vqkv.md), superse
 where applicable by [Ethan v5](https://app.okou.ai/artifacts/4cka9byjec.md) and the
 coordinator's explicit small-batch boundaries.
 
-The parent retains its separately owned scheduling finding and pending Preview.
-This child does not repair or accept that patch, and does not require the parent
-to wait for this child. Necessary later parent alignment uses normal integration
-and a fresh independent resolution review.
+Before delivery, the branch normally merges the observed parent HEAD
+`5536ce04069b638594451973254a403e47d9606d`, retaining its actual main merge,
+catalog-generation grouping repair, 1322 migration and all metadata. The one
+real conflict is in `connectors-list.test.ts`: keep the parent's relocation of
+`skips stored connectors whose runtime method is unavailable` into its unchanged
+`connectors-list.catalog-generation.test.ts`, and retain this child's renamed
+compatibility case and new account assertions in the ordinary file. No test case
+is lost, duplicated or restored to the wrong group.
+
+The parent's scheduling causality/repair acceptance and Preview remain separately
+owned. This child does not repair or independently approve that patch, and does
+not require the parent to wait for this child. Necessary later parent alignment
+uses normal integration and a fresh independent resolution review.
 
 ## Actual reader mapping
 
@@ -129,7 +138,9 @@ accepted by this child; no broader fixture cleanup is hidden in this ledger.
 
 ## Verification and remaining gates
 
-Scoped ESLint/Oxlint/format and full API aggregate type checks passed. Initial
+Scoped ESLint/Oxlint (including type-aware production and test lint), format and
+full API aggregate type checks passed on the original account commit. The parent
+integration is checked again before delivery; natural CI remains separate. Initial
 static checks found the removed legacy logger unused and a widened literal union
 in the new computed callback; both were corrected with an explicit result type
 and removal of the now-unused logger. Logs preserve those failures. The first

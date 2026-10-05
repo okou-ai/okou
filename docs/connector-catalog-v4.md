@@ -106,6 +106,59 @@ unimplemented for its later publisher-pointer stage.
 This ledger records source coverage, not a claim that pending or cancelled
 native cases have executed successfully.
 
+## Transitional ordinary-test publication containment
+
+The immutable serving pointer is schema-global, unlike the legacy source-owned
+rows. Source cleanup does not restore this pointer, and a later shared fixture
+setup is not a reset. Whole-file serialization is therefore insufficient when
+fixed-catalog readers and generation writers share a file/project.
+
+Fixed readers stay in their original files/projects. Dedicated
+`*.catalog-generation.test.ts` files contain only the existing generation
+contracts, run serially in group 3 after ordinary readers, the fixed catalog
+project (group 1), and bootstrap readers (group 2). The two restricted-manifest
+cron suites run in group 4. Each generation contract first publishes its own
+prerequisite generation; it does not assume the preceding file's current hash.
+Existing cleanup may republish that case's own contract generation for safe
+account deletion, but no global snapshot/restore or default-catalog reset is
+introduced. Case-internal request concurrency is unchanged. This is transitional
+containment while legacy mechanisms remain, not the v5/P6/P7 terminal design.
+
+### Case movement / removed-publication ledger
+
+Each row moves the original registration body without changing its tokens,
+assertions, authentication, account/method/version identity or owned cleanup.
+The target is the same filename stem plus `.catalog-generation.test.ts`.
+
+| Original file                              | Moved contract(s)                                                                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connector-accounts.test.ts`               | Exact-account requested scopes across default changes; removed builtin target absent                                                            |
+| `connector-check.test.ts`                  | Stale stored connector absent from accepted catalog                                                                                             |
+| `connectors-automatic-security.test.ts`    | Frozen consent rejects changed endpoint with unchanged storage version                                                                          |
+| `connectors-automatic.test.ts`             | In-flight callback rejects changed storage contract                                                                                             |
+| `connectors-by-slug-get.test.ts`           | Stored runtime method unavailable returns 404/code                                                                                              |
+| `connectors-list.test.ts`                  | Unavailable stored runtime method excluded, healthy public catalog facts retained                                                               |
+| `connectors-scope-diff.test.ts`            | Unavailable runtime method returns 404/code                                                                                                     |
+| `mail.test.ts`                             | Known Gmail storage-version mismatch never refreshes provider                                                                                   |
+| `run-lifecycle.bdd.test.ts`                | Exact Automatic none/oauth admission and outside-sandbox injection; none/oauth reconnect retains catalog auth (two parameterized registrations) |
+| `webhooks-agent-firewall-auth.bdd.test.ts` | Known storage-version mismatch never calls provider                                                                                             |
+
+Twelve registration blocks (fourteen expanded cases) move; none is deleted or
+skipped. Original fixed Automatic siblings, API6 connect/list/status/grant/auth
+assertions, API2's strengthened stored-list contract and bootstrap cases remain
+before these writers. Native N3's `Promise.all` competition and ordinary cron's
+overlap sync/concurrent reads are unchanged.
+
+The pure `connector-accounts.test.ts` 101-account pagination fixture no longer
+publishes a catalog per case. It uses the existing shared fixed descriptor while
+retaining all 101 API-created accounts, bounded parallel creation/deletion,
+pagination cursors, summaries and case-owned account cleanup. No replacement
+self-installing fixture, ordinary PGlite/DB adapter or production fallback is
+introduced. Native bootstrap, actor membership and five-engine lifecycle guards
+are unchanged. Historical execution failures and the absent failure-time hashes
+remain historical limitations; source containment and green CI do not prove the
+old run's complete causal chain or deployed acceptance.
+
 ## Identity and failure behavior
 
 The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`.

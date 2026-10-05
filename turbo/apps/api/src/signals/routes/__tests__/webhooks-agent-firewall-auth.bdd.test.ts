@@ -49,11 +49,7 @@ import {
   createPublicFirewallFixture,
   type PublicFirewallFixture,
 } from "./helpers/public-firewall-fixture";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  catalogWithAuthMethod,
-  createPublicConnectorCatalog,
-} from "./helpers/public-connector-catalog";
+
 import {
   createAuthDeviceApiActions,
   mockCodexDeviceAuthProvider,
@@ -937,66 +933,6 @@ describe("FW-3: billable firewall lease", () => {
 
 describe("FW-4: connector refresh and replacement snapshots", () => {
   afterEach(publicConnections.cleanup);
-
-  it("does not call the provider for a known storage version mismatch", async () => {
-    const fw = createFirewallApi(context);
-    const connectors = createConnectorBddApi(context);
-    const catalog = createPublicConnectorCatalog(context);
-    const versionTwo = catalogWithAuthMethod(
-      { connectorSlug: "test-oauth", authMethodId: "oauth" },
-      (method) => {
-        return { ...method, storage: { ...method.storage, version: 2 } };
-      },
-    );
-    await catalog.publish(versionTwo);
-    const { actor, headers } = await publicConnections.run();
-    catalog.onCleanup(async () => {
-      await publicConnections.cleanup();
-      await catalog.publish(versionTwo);
-      await connectors.deleteDefaultBuiltinConnectorAccount(
-        actor,
-        "test-oauth",
-      );
-      await connectors.deleteFeatureSwitches(actor);
-    });
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    // Publishing changes the selected method, not the account's stored version.
-    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
-    let providerCalls = 0;
-    fw.mockTestOauthTokenRefresh(() => {
-      providerCalls += 1;
-      return fw.oauthTokenResponse({
-        accessToken: "must-not-be-written",
-        expiresIn: 3600,
-      });
-    });
-
-    const response = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          TEST_OAUTH_TOKEN: "stale-access",
-        }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-        },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        })),
-      },
-      [424],
-    );
-    if (response.status !== 424) {
-      throw new Error("Expected mismatched storage version to be unavailable");
-    }
-    expect(response.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-    expect(providerCalls).toBe(0);
-    await catalog.cleanup();
-  });
 
   it("defaults the refreshed expiry when the provider omits expires_in", async () => {
     const fw = createFirewallApi(context);

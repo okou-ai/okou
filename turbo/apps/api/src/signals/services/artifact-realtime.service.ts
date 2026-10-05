@@ -1,5 +1,5 @@
-import { and, eq, isNotNull } from "drizzle-orm";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { eq } from "drizzle-orm";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
@@ -12,21 +12,21 @@ export async function publishArtifactsChangedForRun(
   runId: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const [runThread] = await writeDb
+  const [fileThread] = await writeDb
     .select({
-      chatThreadId: agentRuns.chatThreadId,
+      chatThreadId: chatThreads.id,
       userId: chatThreads.userId,
     })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
+    .from(runUploadedFiles)
+    .innerJoin(chatThreads, eq(runUploadedFiles.chatThreadId, chatThreads.id))
+    .where(eq(runUploadedFiles.runId, runId))
     .limit(1);
   signal.throwIfAborted();
 
-  if (runThread?.chatThreadId) {
+  if (fileThread) {
     await publishUserSignal(
-      [runThread.userId],
-      `chatThreadArtifactsChanged:${runThread.chatThreadId}`,
+      [fileThread.userId],
+      `chatThreadArtifactsChanged:${fileThread.chatThreadId}`,
     );
     signal.throwIfAborted();
     return;

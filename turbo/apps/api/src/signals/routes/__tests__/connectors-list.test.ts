@@ -20,13 +20,7 @@ import {
   readConnectorCredentialStorageState,
   setConnectorDefaultState,
 } from "./helpers/connector-credential-storage-state";
-import { createBddApi } from "./helpers/api-bdd";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  catalogWithAuthMethod,
-  createPublicConnectorCatalog,
-} from "./helpers/public-connector-catalog";
+
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -246,48 +240,6 @@ describe("GET /api/connectors", () => {
       [404],
     );
     expect(detail.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("skips stored connectors whose runtime method is unavailable", async () => {
-    const fixture = seedAuthenticatedFixture();
-    const actor = createBddApi(context).user(fixture);
-    const connectors = createConnectorBddApi(context);
-    const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithAuthMethod(
-      { connectorSlug: "openai", authMethodId: "api-token" },
-      (method) => {
-        return { ...method, id: "unavailable-method" };
-      },
-    );
-    await catalog.publish(available);
-    await connectGitlab(fixture);
-    catalog.onCleanup(async () => {
-      await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gitlab");
-    });
-    await connectors.connectManualGrant(actor, "openai", "unavailable-method", {
-      apiKey: "unavailable-method-secret",
-    });
-    catalog.onCleanup(async () => {
-      await catalog.publish(available);
-      await connectors.deleteDefaultBuiltinConnectorAccount(actor, "openai");
-    });
-    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const response = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body.connectors).toHaveLength(1);
-    expect(response.body.connectors[0]).toMatchObject({ slug: "gitlab" });
-    expect(response.body.connectorProvidedBindings).not.toContainEqual(
-      expect.objectContaining({ connectorSlug: "openai" }),
-    );
-    await catalog.cleanup();
   });
 
   it("keeps immutable stored lists and account reads available while legacy scope reads reject unavailable compatibility", async () => {
