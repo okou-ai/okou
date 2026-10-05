@@ -5,10 +5,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { isNotFoundResponse, notFound } from "../../lib/error";
-import {
-  consumePersonalClaudeCodeSubscriptionReset$,
-  consumePersonalCodexRateLimitResetCredit$,
-} from "../services/model-provider-subscription-usage.service";
+import { consumePersonalCodexRateLimitResetCredit$ } from "../services/model-provider-subscription-usage.service";
 import type { RouteEntry } from "../route-entry";
 import { writeDb$ } from "../external/db";
 import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
@@ -21,10 +18,7 @@ const resetSubscriptionUsageInner$ = command(
     );
     signal.throwIfAborted();
 
-    if (
-      params.type !== "codex-oauth-token" &&
-      params.type !== "claude-code-oauth-token"
-    ) {
+    if (params.type !== "codex-oauth-token") {
       return notFound(`Provider "${params.type}" not found`);
     }
 
@@ -50,9 +44,7 @@ const resetSubscriptionUsageInner$ = command(
     }
 
     const result = await set(
-      params.type === "claude-code-oauth-token"
-        ? consumePersonalClaudeCodeSubscriptionReset$
-        : consumePersonalCodexRateLimitResetCredit$,
+      consumePersonalCodexRateLimitResetCredit$,
       {
         orgId: auth.orgId,
         userId: auth.userId,

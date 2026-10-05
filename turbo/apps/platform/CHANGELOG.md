@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.997.1](https://github.com/okou-ai/okou/compare/app-v0.997.0...app-v0.997.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **platform:** use filled icons for active pwa tabs ([#37749](https://github.com/okou-ai/okou/issues/37749)) ([7341256](https://github.com/okou-ai/okou/commit/7341256d123ca8583d5af1537afe80c5b827297c))
+* **platform:** use native links for model approval pages ([#37756](https://github.com/okou-ai/okou/issues/37756)) ([73ddcf9](https://github.com/okou-ai/okou/commit/73ddcf90af7e260d331987c18b380970afb59590))
+
+
+### Refactoring
+
+* retire claude code manual usage reset ([#37755](https://github.com/okou-ai/okou/issues/37755)) ([1855ed7](https://github.com/okou-ai/okou/commit/1855ed7f5d58c7aa931a6acc27f2fa375edc395f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.732.0
+
 ## [0.997.0](https://github.com/okou-ai/okou/compare/app-v0.996.2...app-v0.997.0) (2026-10-05)
 
 

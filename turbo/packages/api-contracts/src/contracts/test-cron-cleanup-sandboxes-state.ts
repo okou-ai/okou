@@ -10,7 +10,6 @@ export const testCronCleanupSandboxesStateActionBodySchema = z
     action: z.enum([
       "seed-run",
       "seed-run-ownership",
-      "attach-run-thread",
       "delete-run",
       "delete-run-ownership",
       "get-run",

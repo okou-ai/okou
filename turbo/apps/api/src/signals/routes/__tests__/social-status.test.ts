@@ -11,11 +11,11 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { socialRoutes } from "../social";
 import { billingStatusRoutes } from "../billing-status";
 import { createBddApi } from "./helpers/api-bdd";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -331,35 +331,37 @@ describe("GET /api/social/status", () => {
 
   it("does not forward credentials, expose account data, or charge an empty balance", async () => {
     const actor = statusActor();
-    await createBddApi(context).completeOnboarding(actor);
-    await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 0 });
-    mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "status-must-not-forward");
-    server.use(
-      http.get(STATUS_URL, ({ request }) => {
-        expect(request.headers.get("authorization")).toBeNull();
-        expect(new URL(request.url).search).toBe("");
-        return HttpResponse.json({
-          ...twitterFeed(),
-          provider: "socialkit",
-          accountCredits: 12_345,
-        });
-      }),
-    );
-    const response = await accept(
-      client().status({ headers: HEADERS, query: { platform: "twitter" } }),
-      [200],
-    );
-    expect(response.body.overall.status).toBe("healthy");
-    expect(JSON.stringify(response.body)).not.toMatch(
-      /credits|socialkit|status-must-not-forward/iu,
-    );
-    const balance = await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({ headers: HEADERS }),
-      [200],
-    );
-    expect(balance.body.credits).toBe(0);
+    const fixture = createPublicUnfundedProFixture(context, actor);
+    await fixture.initialize();
+    await fixture.run(async () => {
+      mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "status-must-not-forward");
+      server.use(
+        http.get(STATUS_URL, ({ request }) => {
+          expect(request.headers.get("authorization")).toBeNull();
+          expect(new URL(request.url).search).toBe("");
+          return HttpResponse.json({
+            ...twitterFeed(),
+            provider: "socialkit",
+            accountCredits: 12_345,
+          });
+        }),
+      );
+      const response = await accept(
+        client().status({ headers: HEADERS, query: { platform: "twitter" } }),
+        [200],
+      );
+      expect(response.body.overall.status).toBe("healthy");
+      expect(JSON.stringify(response.body)).not.toMatch(
+        /credits|socialkit|status-must-not-forward/iu,
+      );
+      const balance = await accept(
+        setupApp({ context, routes: billingStatusRoutes })(
+          billingStatusContract,
+        ).get({ headers: HEADERS }),
+        [200],
+      );
+      expect(balance.body.credits).toBe(0);
+    });
   });
 
   it("rejects unauthenticated callers", async () => {

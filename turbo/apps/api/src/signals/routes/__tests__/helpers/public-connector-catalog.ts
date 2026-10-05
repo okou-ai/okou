@@ -26,7 +26,10 @@ import { cronConnectorCatalogRoutes } from "../../cron-connector-catalog";
 export { API_TEST_CONNECTOR_CATALOG };
 
 /** Publish external artifacts through the real, source-scoped catalog route. */
-export function createPublicConnectorCatalog(context: TestContext) {
+export function createPublicConnectorCatalog(
+  context: TestContext,
+  options: { readonly cleanupOwnership?: "caller" } = {},
+) {
   const previousBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const previousCronSecret = env("CRON_SECRET");
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
@@ -70,7 +73,9 @@ export function createPublicConnectorCatalog(context: TestContext) {
     mockEnv("CRON_SECRET", previousCronSecret);
     cleaned = true;
   }
-  onTestFinished(cleanup);
+  if (options.cleanupOwnership !== "caller") {
+    onTestFinished(cleanup);
+  }
 
   async function publish(catalog: ConnectorCatalogArtifact) {
     if (cleaned) {

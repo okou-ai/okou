@@ -37,6 +37,7 @@ export function PwaBottomNavigation() {
         return $.appShell.pwaNavigation.chats;
       }),
       Icon: MessageCircle,
+      filledPath: "M22 12a10 10 0 0 1-14.3 9L2 22l1-5.7A10 10 0 1 1 22 12Z",
       active: isChatRoute(route),
     },
     {
@@ -45,6 +46,8 @@ export function PwaBottomNavigation() {
         return $.appShell.sidebar.navigation.connectors;
       }),
       Icon: Plug,
+      filledPath:
+        "M7 2h2v6h6V2h2v6h2v5a7 7 0 0 1-6 6.93V23h-2v-3.07A7 7 0 0 1 5 13V8h2V2Z",
       active: route === "connectors",
     },
     {
@@ -53,6 +56,8 @@ export function PwaBottomNavigation() {
         return $.appShell.sidebar.navigation.artifacts;
       }),
       Icon: Package,
+      filledPath:
+        "m12 2 10 5.5v9L12 22 2 16.5v-9L12 2Zm0 10.2L3.5 7.5l-.7 1.3 8.45 4.65v6.8h1.5v-6.8l8.45-4.65-.7-1.3-8.5 4.7Zm4.14-3.98-8-4.4-.72 1.31 8 4.4.72-1.31Z",
       active: route === "artifacts",
     },
     {
@@ -61,6 +66,8 @@ export function PwaBottomNavigation() {
         return $.appShell.pwaNavigation.me;
       }),
       Icon: User,
+      filledPath:
+        "M17 7A5 5 0 1 1 7 7a5 5 0 0 1 10 0ZM10 14h4a7 7 0 0 1 7 7v1H3v-1a7 7 0 0 1 7-7Z",
       active:
         !isChatRoute(route) && route !== "connectors" && route !== "artifacts",
     },
@@ -72,7 +79,7 @@ export function PwaBottomNavigation() {
       })}
       className="grid shrink-0 grid-cols-4 gap-1 border-t border-border/50 bg-background px-2 pt-1 pb-safe [[data-keyboard-open=true]_&]:hidden"
     >
-      {tabs.map(({ pathname, options, label, Icon, active }) => {
+      {tabs.map(({ pathname, options, label, Icon, filledPath, active }) => {
         return (
           <Link
             key={pathname}
@@ -80,13 +87,23 @@ export function PwaBottomNavigation() {
             options={options}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition-colors hover:bg-state-hover",
+              "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition-colors",
               active
-                ? "bg-state-selected text-foreground"
-                : "text-muted-foreground",
+                ? "text-brand-text hover:text-brand-text-hover"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
-            <Icon className="size-5" aria-hidden="true" />
+            {active ? (
+              <svg
+                viewBox="0 0 24 24"
+                className="size-5 fill-current"
+                aria-hidden="true"
+              >
+                <path d={filledPath} fillRule="evenodd" />
+              </svg>
+            ) : (
+              <Icon className="size-5" aria-hidden="true" />
+            )}
             <span className="max-w-full truncate">{label}</span>
           </Link>
         );

@@ -1,5 +1,17 @@
 # Changelog
 
+## [8.732.0](https://github.com/okou-ai/okou/compare/core-v8.731.0...core-v8.732.0) (2026-10-05)
+
+
+### Features
+
+* promote composer image annotation to beta ([#37761](https://github.com/okou-ai/okou/issues/37761)) ([da041e4](https://github.com/okou-ai/okou/commit/da041e4cb11814975e354c75decb720afba05512))
+
+
+### Refactoring
+
+* retire claude code manual usage reset ([#37755](https://github.com/okou-ai/okou/issues/37755)) ([1855ed7](https://github.com/okou-ai/okou/commit/1855ed7f5d58c7aa931a6acc27f2fa375edc395f))
+
 ## [8.731.0](https://github.com/okou-ai/okou/compare/core-v8.730.2...core-v8.731.0) (2026-10-05)
 
 

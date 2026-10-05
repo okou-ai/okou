@@ -354,6 +354,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Let an attached image be marked up in the composer lightbox — boxes, arrows, freehand, text, highlight and redaction, each able to carry a note — and send a rendered copy carrying the editable marks.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
@@ -367,13 +368,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser. Enable manually to try it.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ClaudeCodeUsageReset]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Offer manual usage-window resets for personal Claude Code subscriptions, matching the Codex reset action.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.AgentResponsibilitySetup]: {
     maintainer: "linghan@okou.ai",
