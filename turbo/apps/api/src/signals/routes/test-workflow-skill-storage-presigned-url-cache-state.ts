@@ -108,21 +108,6 @@ async function readCacheByObjectKeyPrefixForAction(
   });
 }
 
-async function setCacheExpirationForAction(
-  db: Db,
-  body: CacheStateAction<"set-cache-expiration">,
-  signal: AbortSignal,
-) {
-  await db
-    .update(systemStoragePresignedUrlCache)
-    .set({ expiresAt: new Date(body.expires_at) })
-    .where(
-      objectKeyPrefixCondition(body.object_key_prefix, cacheScope(body.scope)),
-    );
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 const mutateWorkflowSkillStoragePresignedUrlCacheState$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!isTestEndpointAllowed(get(request$))) {
@@ -145,7 +130,17 @@ const mutateWorkflowSkillStoragePresignedUrlCacheState$ = command(
         return await readCacheByObjectKeyPrefixForAction(db, body, signal);
       }
       case "set-cache-expiration": {
-        return await setCacheExpirationForAction(db, body, signal);
+        await db
+          .update(systemStoragePresignedUrlCache)
+          .set({ expiresAt: new Date(body.expires_at) })
+          .where(
+            objectKeyPrefixCondition(
+              body.object_key_prefix,
+              cacheScope(body.scope),
+            ),
+          );
+        signal.throwIfAborted();
+        return actionOk();
       }
     }
   },

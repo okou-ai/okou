@@ -7068,9 +7068,17 @@ and CLI versions. Old Runner versions can consume the longer-lived URLs without
 a wire-format change. Older Guests retain their single-attempt history policy;
 both policies use unchanged prepare-history and checkpoint wire contracts.
 
-Storage URL caches are read on demand and reuse unexpired entries. Missing or
-expired entries are signed once during the normal API request. There is no
-proactive refresh or retry. The cron endpoint is now
+Storage URL caches are read on demand. Updated APIs reuse manifest archive
+URLs in `system_storage`, `workflow_skill_storage`, and `readonly_storage` only
+with at least four hours remaining at selection, including captured or
+prefetched snapshots; exactly four hours remains reusable. Missing, expired,
+or below-margin entries use the existing signing path during the normal API
+request. This margin does not shorten the two-day signature lifetime or change
+cache keys. Private artifact previews retain their strict one-hour margin, and
+presentation template previews retain expiry-only reuse. Old APIs retain their
+previous reuse cutoff until deployed; archive URLs already persisted in Run
+contexts are not retroactively renewed. There is no proactive refresh or
+retry. The cron endpoint is now
 `/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
 Cache keys include the lifetime, so new code does not reuse the previous shorter
 policy. The database's required `refresh_after` and `last_requested_at` columns
