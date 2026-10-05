@@ -115,7 +115,9 @@ function mockConversation(lastReadAt: string | null, events = history()) {
       notFoundThreads: [],
     });
   });
-  let turnCount = 15;
+  let turnCount = events.filter((event) => {
+    return event.runLifecycleEvent !== undefined;
+  }).length;
   return {
     appendTurn() {
       turnCount++;
@@ -255,7 +257,7 @@ function mockTranscriptGeometry() {
   }
 }
 
-async function openThread(enabled = true, suffix = "") {
+async function openThread(enabled = true, suffix = "", lastTurn = 15) {
   mockTranscriptGeometry();
   await setupPage({
     context,
@@ -264,7 +266,7 @@ async function openThread(enabled = true, suffix = "") {
     featureSwitches: { [FeatureSwitchKey.ChatLastReadMarker]: enabled },
   });
   await expect(
-    screen.findByText("Read marker answer 15"),
+    screen.findByText(`Read marker answer ${lastTurn.toString()}`),
   ).resolves.toBeInTheDocument();
   return chatScrollContainer();
 }
@@ -288,8 +290,8 @@ test("The disabled switch preserves tail scrolling and hides the read divider", 
 });
 
 test("Open at the read boundary even when it is outside the default render window", async () => {
-  const conversation = mockConversation("2026-08-20T12:02:02.000Z");
-  const container = await openThread();
+  mockConversation("2026-08-20T12:02:02.000Z");
+  await openThread();
   const marker = await screen.findByRole("separator", { name: MARKER_LABEL });
   const firstUnread = screen.getByText("Read marker question 3");
   expect(
@@ -301,12 +303,24 @@ test("Open at the read boundary even when it is outside the default render windo
     // clamped at the start of the available history.
     expect(marker.getBoundingClientRect().top).toBe(0);
   });
+});
+
+test("Keep the entry divider and reader position when messages and read state advance", async () => {
+  // Render-window expansion is covered independently above. A short history
+  // isolates the two live updates without re-rendering 15 unrelated Runs.
+  const conversation = mockConversation("2026-08-20T12:01:02.000Z", history(3));
+  const container = await openThread(true, "", 3);
+  const marker = await screen.findByRole("separator", { name: MARKER_LABEL });
+  const firstUnread = screen.getByText("Read marker question 2");
+  await waitFor(() => {
+    expect(marker.getBoundingClientRect().top).toBe(16);
+  });
 
   act(() => {
     conversation.appendTurn();
   });
   await expect(
-    screen.findByText("Read marker answer 16"),
+    screen.findByText("Read marker answer 4"),
   ).resolves.toBeInTheDocument();
   // The server has already advanced its read cursor; the entry divider and
   // the reader's held viewport still belong to the old boundary.
@@ -317,7 +331,7 @@ test("Open at the read boundary even when it is outside the default render windo
     marker.compareDocumentPosition(firstUnread) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(marker.getBoundingClientRect().top).toBe(0);
+  expect(marker.getBoundingClientRect().top).toBe(16);
 
   container.scrollTop += ROW_HEIGHT;
   fireEvent.scroll(container);
@@ -333,7 +347,7 @@ test("Open at the read boundary even when it is outside the default render windo
     conversation.appendTurn();
   });
   await expect(
-    screen.findByText("Read marker answer 17"),
+    screen.findByText("Read marker answer 5"),
   ).resolves.toBeInTheDocument();
   expect(
     screen.getByRole("separator", { name: MARKER_LABEL }),
