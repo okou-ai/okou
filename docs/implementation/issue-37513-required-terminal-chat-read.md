@@ -169,3 +169,26 @@ Lefthook 2.1.16 setup is separately authorized; repository check configuration
 and resource settings are not changed. New-head CI and independent review are
 required before any protected merge decision. Exact post-read/AbortSignal
 interleaving and reliable/exactly-once delivery remain unproven.
+
+## D6 conflict integration
+
+This second normal integration merges main
+`22d6957d33dcfcb3a99b3a268f9deb556f8d0de3` into the original D4b branch.
+PR #37732 is D6 initial Run READ ownership, not D7 cancellation redrive.
+The complete D6 initial-read, D5 post-commit-read and completion-factory
+declarations match this main byte for byte; the D4b private owner matches
+`7dc6527f664f46e694c268368c4fcc54581113c9` byte for byte.
+The main synchronous inert authorization computed remains unchanged. Its
+first consumption follows body await, caller abort check and invalid-body
+return, and derives completion identity from validated Run ID and verified
+auth user ID. Required before/after observations remain a separate graph.
+The four temporal observations do not share memoized results. No SQL/schema/
+provider/query count or transaction behavior is modified by this resolution.
+
+The prior 7dc head only had dynamic GitHub Code Quality checks, not complete
+repository CI; required types, Knip, API shards and gates were absent. Current
+main conflict was a sufficient PR Actions blocker, not proof of the sole
+historical cause. The auxiliary wrong-name assertion exited 1 and remains
+a failed audit attempt; the explicitly corrected complete-declaration audit
+passed separately. No old-head CI or merge authority transfers to a new head.
+Exact required post-read and cancellation interleavings remain coverage gaps.

@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.996.0](https://github.com/okou-ai/okou/compare/app-v0.995.0...app-v0.996.0) (2026-10-05)
+
+
+### Features
+
+* simplify mobile pwa chat list header ([#37728](https://github.com/okou-ai/okou/issues/37728)) ([4844ec7](https://github.com/okou-ai/okou/commit/4844ec7dd63b7854700dc2eb43f5fcf9ba9b41b3))
+
 ## [0.995.0](https://github.com/okou-ai/okou/compare/app-v0.994.0...app-v0.995.0) (2026-10-05)
 
 

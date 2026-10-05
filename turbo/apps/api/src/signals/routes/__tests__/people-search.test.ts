@@ -38,6 +38,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 import { usageRecordRoutes } from "../usage-record";
 
@@ -847,26 +848,28 @@ describe("okou people-search route", () => {
     let providerRequests = 0;
     configureProvider();
     const pricing = await createPricingFixture([peopleSearchPricing()]);
-    await bootstrapOnboarding(actor);
-    await setActorCredits(actor, 0);
-    server.use(
-      http.post(PERPLEXITY_AGENT_URL, () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
+    const owner = createPublicUnfundedProFixture(context, actor);
+    await owner.initialize();
+    await owner.run(async () => {
+      server.use(
+        http.post(PERPLEXITY_AGENT_URL, () => {
+          providerRequests += 1;
+          return HttpResponse.json(providerResponse());
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(peopleSearchContract).search({
-        headers: authenticate(actor),
-        body: defaultRequest(),
-      }),
-      [402],
-    );
+      const response = await accept(
+        client(pricing.resolution)(peopleSearchContract).search({
+          headers: authenticate(actor),
+          body: defaultRequest(),
+        }),
+        [402],
+      );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(providerRequests).toBe(0);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expect(providerRequests).toBe(0);
+    });
   });
 
   it("maps provider failures without billing", async () => {
