@@ -82,7 +82,12 @@ export function buildAutomaticMcpCatalog(
     catalogVersion: `automatic-${randomUUID()}`,
     connectors: [
       ...API_TEST_CONNECTOR_CATALOG.connectors.filter((connector) => {
-        return connector.slug !== slug;
+        // Case generations replace the shared Automatic secret owners; the
+        // ordinary startup catalog and descriptor lookup remain unchanged.
+        return (
+          connector.slug !== slug &&
+          !connector.slug.startsWith("automatic-mcp-")
+        );
       }),
       {
         ...template,
