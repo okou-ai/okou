@@ -11,7 +11,7 @@ import { Menu, Package, Share2, UserPlus } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { RouteKey } from "../../signals/route-paths.ts";
 import { Button, cn, useMediaQuery } from "@okouai/ui";
-import { Sidebar } from "./sidebar.tsx";
+import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
 import {
   AutomationMenuButton,
   ChatThreadHeaderTitle,
@@ -60,6 +60,13 @@ import {
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
+import {
+  pwaChatListVisible$,
+  pwaNavigationEnabled$,
+} from "../../signals/okou-page/pwa-navigation.ts";
+import { PwaBackToChats, PwaBottomNavigation } from "./pwa-navigation.tsx";
+import { ChatThreadDialogs } from "./sidebar-threads.tsx";
+import { NotFoundPage } from "../not-found-page.tsx";
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -297,7 +304,7 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
   );
 }
 
-function MobileTopBar() {
+function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
   const setExpanded = useSet(setSidebarExpanded$);
   const { t } = useTranslation();
 
@@ -311,22 +318,28 @@ function MobileTopBar() {
   return (
     <div className="relative md:hidden shrink-0 flex items-center min-h-12 px-3 gap-2 bg-background border-b border-border/50 z-10">
       <MobileSharingOverlayLeaf />
-      <Button
-        showTooltip
-        type="button"
-        onClick={() => {
-          setExpanded(true);
-        }}
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-        className="shrink-0"
-        aria-label={t(($) => {
-          return $.appShell.sidebar.mobile.openMenu;
-        })}
-      >
-        <Menu size={18} />
-      </Button>
+      {pwaNavigation ? (
+        isChatRoute(activeId) ? (
+          <PwaBackToChats />
+        ) : null
+      ) : (
+        <Button
+          showTooltip
+          type="button"
+          onClick={() => {
+            setExpanded(true);
+          }}
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          className="shrink-0"
+          aria-label={t(($) => {
+            return $.appShell.sidebar.mobile.openMenu;
+          })}
+        >
+          <Menu size={18} />
+        </Button>
+      )}
       {activeId === "chat" ? (
         <div className="flex-1 min-w-0">
           {thread && <ChatThreadHeaderTitle thread={thread} />}
@@ -407,6 +420,13 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const chatListHidden = useGet(sidebarOff$);
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
+  const pwaNavigation = useGet(pwaNavigationEnabled$);
+  const chatListVisible = useGet(pwaChatListVisible$);
+  const activeRoute = useGet(activeRoute$);
+
+  if (activeRoute === "me" && !pwaNavigation) {
+    return <NotFoundPage />;
+  }
 
   return withChatScrollLayout(
     <div
@@ -426,12 +446,35 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <AttachmentLightboxMount />
       <SkillImportDialogMount />
       <QueueDrawer />
-      {isDesktop ? <Sidebar isDesktop /> : <MobileSidebarMount />}
+      {pwaNavigation ? (
+        <>
+          <ChatThreadDialogs />
+          <ThreeColumnSearchDialogContainer />
+        </>
+      ) : isDesktop ? (
+        <Sidebar isDesktop />
+      ) : (
+        <MobileSidebarMount />
+      )}
       <WorkspaceInset beside={chatListHidden ? "nav-rail" : "chat-list"}>
         <InstallBanner />
         <IosInstallModal />
-        {!isDesktop && <MobileTopBar />}
-        {children}
+        {!isDesktop &&
+          !(
+            pwaNavigation &&
+            (activeRoute === "me" ||
+              (activeRoute === "agentChat" && chatListVisible))
+          ) && <MobileTopBar pwaNavigation={pwaNavigation} />}
+        {pwaNavigation ? (
+          <>
+            <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">
+              {children}
+            </div>
+            <PwaBottomNavigation />
+          </>
+        ) : (
+          children
+        )}
       </WorkspaceInset>
     </div>,
   );

@@ -5,14 +5,20 @@ import {
 } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getUserTemplateStorageName } from "@okouai/core/storage-names";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { ClerkRateLimitError } from "../../external/clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { extractFilesFromTarGz } from "../../../lib/tar";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
@@ -27,7 +33,8 @@ import { userTemplatesRoutes } from "../user-templates";
 const context = testContext();
 const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
-const storageApi = createStoragesBddApi(context);
+const runs = createRunsApi(context);
+const chatEvents = createChatEventsFixture(context);
 
 const SOURCE_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -670,10 +677,42 @@ describe("POST /api/user-templates", () => {
   });
 
   it("replaces the stored package rather than adding to it", async () => {
-    const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const fixture = installS3Fixture(context);
+    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Template package consumer",
+      visibility: "private",
+    });
+    const activeRuns = new Set<string>();
+    const ownedTemplates = new Set<string>();
     const client = templateClient();
+    onTestFinished(async () => {
+      // Global teardown resets external mocks before this owned cleanup.
+      context.mocks.s3.send.mockImplementation(sendS3);
+      for (const runId of activeRuns) {
+        await runs.requestCancelRun(actor, runId, [200]);
+        await flushWaitUntilForTest();
+      }
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      for (const templateId of ownedTemplates) {
+        await accept(
+          // A fresh client uses the current, un-aborted context signal.
+          templateClient().delete({
+            headers: webHeaders(),
+            params: { templateId },
+            body: undefined,
+          }),
+          [204],
+        );
+      }
+      await bdd.deleteAgent(actor, agent.agentId);
+    });
+    await enableFor(actor);
 
     const threeFiles = await uploadTemplateFile(
       context,
@@ -695,14 +734,46 @@ describe("POST /api/user-templates", () => {
       }),
       [200],
     );
+    ownedTemplates.add(published.body.id);
     const storageName = getUserTemplateStorageName(published.body.id);
-    const storedFileCount = async () => {
-      const storages = await storageApi.listStorages(actor, "organization");
-      return storages.find((storage) => {
-        return storage.name === storageName;
-      })?.fileCount;
+    const consumedFiles = async () => {
+      const { runId } = await chatEvents.sendChatRun(actor, {
+        agentId: agent.agentId,
+        prompt: "Use the selected presentation guidance",
+        model: "claude-fable-5-1",
+        template: {
+          type: "custom",
+          selection: { userTemplateId: published.body.id },
+        },
+      });
+      activeRuns.add(runId);
+      const { claim } = await chatEvents.claimChatRun(runnerGroup, runId);
+      const mount = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts.find((candidate) => {
+        return candidate.name === storageName;
+      });
+      if (!mount?.archiveUrl) {
+        throw new Error("Expected the selected template's real archive mount");
+      }
+      const files = [
+        ...extractFilesFromTarGz(fixture.readSignedObject(mount.archiveUrl)),
+      ].sort((left, right) => {
+        return left.path.localeCompare(right.path);
+      });
+      await runs.requestCancelRun(actor, runId, [200]);
+      await flushWaitUntilForTest();
+      activeRuns.delete(runId);
+      return files;
     };
-    await expect(storedFileCount()).resolves.toBe(3);
+    await expect(consumedFiles()).resolves.toStrictEqual(
+      [
+        ...guidance("presentation"),
+        { path: "swatches.md", content: "Retired on the next pass.\n" },
+      ].sort((left, right) => {
+        return left.path.localeCompare(right.path);
+      }),
+    );
 
     const twoFiles = await uploadTemplateFile(
       context,
@@ -720,10 +791,19 @@ describe("POST /api/user-templates", () => {
       [200],
     );
 
-    // Two, not three. A rebuild that dropped a file has dropped it: the new
-    // version is exactly what was sent, so nothing the guide no longer
-    // mentions is left behind for a run to read.
-    await expect(storedFileCount()).resolves.toBe(2);
+    // Inspect what a genuine consuming Run receives. The independent stored
+    // file_count metadata assertion was intentionally retired under #37440.
+    const replacementFiles = await consumedFiles();
+    expect(replacementFiles).toStrictEqual(
+      [...guidance("presentation")].sort((left, right) => {
+        return left.path.localeCompare(right.path);
+      }),
+    );
+    expect(
+      replacementFiles.map((file) => {
+        return file.path;
+      }),
+    ).not.toContain("swatches.md");
   });
 
   it("applies the row's kind to the replacement, not the caller's", async () => {

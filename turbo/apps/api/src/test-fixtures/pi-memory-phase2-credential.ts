@@ -131,13 +131,15 @@ export async function createPhase2Provider(
   const actor = createBddApi(context).user({ ...owner, orgRole: "org:admin" });
   const misc = createMiscRoutesApi(context);
   const key = `phase2-key-${randomUUID()}`;
+  if (type !== "codex-oauth-token") {
+    await misc.configureCustomModelMode(actor);
+  }
   if (type === "custom-openai-responses") {
     return await createPhase2CustomProvider(context, owner, mapsSelectedModel);
   }
   if (type === "codex-oauth-token") {
     await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.PiMemory]: true,
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
     });
     const account = subscription?.accountId ?? `account-${randomUUID()}`;
     const token = makeCodexJwt({

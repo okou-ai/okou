@@ -79,7 +79,7 @@ import { customConnectorsRoutes } from "../custom-connectors";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const connectorsApi = createConnectorBddApi(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const storagesApi = createStoragesBddApi(context);
@@ -90,6 +90,8 @@ async function installCatalogWithUnavailableMethods(args: {
     typeof replaceApiTestConnectorCatalogFilteredAuthMethods
   >[0];
 }): Promise<void> {
+  // This still exercises the legacy persisted filtering mechanism (#26).
+  mockEnv("R2_USER_STORAGES_BUCKET_NAME", `legacy-filtering-${randomUUID()}`);
   mockOptionalEnv(args.capabilityIdentityEnvName, undefined);
   await installApiTestConnectorCatalog();
   await replaceApiTestConnectorCatalogFilteredAuthMethods(

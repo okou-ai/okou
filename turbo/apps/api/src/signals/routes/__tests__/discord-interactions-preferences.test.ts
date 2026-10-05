@@ -49,6 +49,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 
 const context = testContext();
 const accountApi = createAuthOrgAgentsBddApi(context);
@@ -439,6 +440,9 @@ async function disconnect(owner: Actor): Promise<void> {
 
 async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
   await createRunsApi(context).grantProEntitlement(scope.owner);
+  await ensureCustomModelModeForTest(context, scope.owner, () => {
+    return accountApi.authenticate(scope.owner);
+  });
   const headers = accountApi.authenticate(scope.owner);
   const providers = setupApp({ context, routes: modelProvidersRoutes })(
     modelProvidersMainContract,

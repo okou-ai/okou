@@ -4,6 +4,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
+import { seedOrgMetadata } from "../../../../test-fixtures/system-config-seeds";
 import { modelPoliciesRoutes } from "../../model-policies";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
@@ -88,10 +89,21 @@ export async function ensureCustomModelModeForTest(
   await updateFeatureSwitchesForUser(context, featureSwitchActor, {
     [FeatureSwitchKey.OkouDebug]: true,
   });
-  await accept(
-    client.updateMode({ headers: authenticate(), body: { mode: "custom" } }),
-    [200],
-  );
+  const switched = await client.updateMode({
+    headers: authenticate(),
+    body: { mode: "custom" },
+  });
+  if (switched.status === 404) {
+    // Bare test identities have no billing/bootstrap row. Custom/BYOK tests
+    // need an explicit paid workspace, not the missing-metadata Auto default.
+    await seedOrgMetadata({ orgId, tier: "pro", credits: 0 });
+    await accept(
+      client.updateMode({ headers: authenticate(), body: { mode: "custom" } }),
+      [200],
+    );
+  } else {
+    await accept(Promise.resolve(switched), [200]);
+  }
   await updateFeatureSwitchesForUser(context, featureSwitchActor, {
     [FeatureSwitchKey.OkouDebug]: false,
   });

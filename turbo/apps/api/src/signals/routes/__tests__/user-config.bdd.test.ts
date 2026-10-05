@@ -21,7 +21,7 @@ accept for agent creation. Sandbox, Okou run, and forged-PAT bearers are minted
 with the exported test token signers.
 */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
 const cfg = createUserConfigBddApi(context);
 
@@ -123,6 +123,22 @@ describe("AUTH-03 agent user connectors", () => {
     expect(new Set(deduped.enabledConnectorSlugs)).toStrictEqual(
       new Set(["github", "slack"]),
     );
+
+    for (const operation of ["add", "remove"] as const) {
+      const unchanged = await cfg.updateUserBuiltinConnectors(
+        admin,
+        agent.agentId,
+        [],
+        operation,
+      );
+      expect(new Set(unchanged.enabledConnectorSlugs)).toStrictEqual(
+        new Set(["github", "slack"]),
+      );
+      const readUnchanged = await cfg.readUserConnectors(admin, agent.agentId);
+      expect(new Set(readUnchanged.enabledConnectorSlugs)).toStrictEqual(
+        new Set(["github", "slack"]),
+      );
+    }
 
     const added = await cfg.updateUserBuiltinConnectors(
       admin,

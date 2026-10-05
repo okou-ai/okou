@@ -2843,9 +2843,9 @@ dependencies = [
 
 [[package]]
 name = "pageant"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d8eab09a361a4afe0b1668be978cd97e4f052e927a92b0b608cf902965d49ce"
+checksum = "f0786409b5aaa884655c9b4065681db0835db0cc185a6fb19fb17a5d38656866"
 dependencies = [
  "base16ct",
  "byteorder",
@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.219.20"
+version = "0.220.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3639,7 +3639,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.4.10"
+version = "0.5.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3708,7 +3708,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3880,7 +3880,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.1.27"
+version = "0.2.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3921,7 +3921,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.20"
+version = "0.2.21"
 dependencies = [
  "api-contracts",
  "async-trait",

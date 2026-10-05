@@ -7,7 +7,6 @@ import { command, computed, type Computed } from "ccstate";
 import {
   getAuthMethodsForType,
   getFrameworkForType,
-  getModelProviderPresentationLabel,
   getSecretNameForType,
   getSecretNamesForAuthMethod,
   getSecretsForAuthMethod,
@@ -34,7 +33,6 @@ import {
 } from "@okouai/core/feature-switch";
 import { modelProviders as modelProvidersTable } from "@okouai/db/schema/model-provider";
 import { modelProviderConnections } from "@okouai/db/schema/model-provider-gateway";
-import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import { db$, writeDb$ } from "../external/db";
@@ -55,9 +53,6 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   disconnectPersonalModelProviderAccounts$,
   isPersonalSubscriptionProviderType,
-  upsertPersonalModelProviderAccount$,
-  type UpsertPersonalAccountArgs,
-  visiblePersonalModelProviderCondition,
 } from "./model-provider-account.service";
 import {
   type BuiltInModelRuntimeRoute,
@@ -153,9 +148,8 @@ function modelProviderResponse(row: {
   };
 }
 
-function modelProvidersForUser(
+export function modelProviders(
   orgId: string,
-  ownerUserId: string,
 ): Computed<Promise<ModelProviderListResponse>> {
   return computed(async (get): Promise<ModelProviderListResponse> => {
     const rows = await get(db$)
@@ -180,7 +174,7 @@ function modelProvidersForUser(
       .where(
         and(
           eq(modelProvidersTable.orgId, orgId),
-          eq(modelProvidersTable.userId, ownerUserId),
+          eq(modelProvidersTable.userId, ORG_SENTINEL_USER_ID),
         ),
       )
       .orderBy(modelProvidersTable.type);
@@ -194,12 +188,6 @@ function modelProvidersForUser(
   });
 }
 
-export function modelProviders(
-  orgId: string,
-): Computed<Promise<ModelProviderListResponse>> {
-  return modelProvidersForUser(orgId, ORG_SENTINEL_USER_ID);
-}
-
 type NotFoundResponse = ReturnType<typeof notFound>;
 
 /**
@@ -207,9 +195,9 @@ type NotFoundResponse = ReturnType<typeof notFound>;
  *
  * Delete behavior: a conditional DELETE of the provider row decides the
  * result, then its secrets go in the same short transaction.
- *   - Legacy single-secret providers: an unshared secret is deleted with the
- *     row (the FK cascade also removes any other provider sharing it). During
- *     gateway migration, a shared secret is retained.
+ *   - Single-secret providers: an unshared secret is deleted with the
+ *     row (the FK cascade also removes any other provider sharing it). A
+ *     secret shared with a gateway is retained.
  *   - Multi-auth providers: deletes every auth method's secrets by name, so a
  *     leftover from a replaced auth method cannot survive the provider.
  *
@@ -274,8 +262,8 @@ export const deleteUserModelProvider$ = command(
       }
 
       if (provider.secretId) {
-        // During gateway migration a shared secret is retained; otherwise the
-        // legacy single secret goes with its provider.
+        // Retain secrets shared with a gateway; delete unshared secrets with
+        // their provider.
         const [gatewayReference] = await tx
           .select({ id: modelProviderConnections.id })
           .from(modelProviderConnections)
@@ -344,13 +332,9 @@ export const deleteOrgModelProvider$ = command(
 
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 
-/**
- * Row shape returned to the route handler. The codex paste handler's
- * `UpsertedProvider` remains a structural subset of this shape.
- */
+/** Metadata returned to organization model-provider route handlers. */
 export interface ModelProviderInfo {
   readonly id: string;
-  readonly userId: string;
   readonly type: ModelProviderType;
   readonly framework: ModelProviderFramework;
   readonly secretName: string | null;
@@ -358,7 +342,6 @@ export interface ModelProviderInfo {
   readonly secretNames: string[] | null;
   readonly isDefault: boolean;
   readonly selectedModel: string | null;
-  readonly tokenExpiresAt: Date | null;
   readonly needsReconnect: boolean;
   readonly lastRefreshErrorCode: string | null;
   readonly workspaceName: string | null;
@@ -369,75 +352,23 @@ export interface ModelProviderInfo {
   readonly updatedAt: Date;
 }
 
-function toModelProviderInfo(params: {
-  id: string;
-  userId: string;
-  type: ModelProviderType;
-  secretName?: string | null;
-  authMethod?: string | null;
-  secretNames?: string[] | null;
-  isDefault: boolean;
-  selectedModel: string | null;
-  tokenExpiresAt?: Date | null;
-  needsReconnect?: boolean;
-  lastRefreshErrorCode?: string | null;
-  workspaceName?: string | null;
-  planType?: string | null;
-  subscriptionResetPeriod?: string | null;
-  subscriptionNextResetAt?: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): ModelProviderInfo {
-  const type = params.type;
-  const authMethod = params.authMethod ?? null;
-  const secretNames =
-    params.secretNames !== undefined
-      ? params.secretNames
-      : authMethod
-        ? (getSecretNamesForAuthMethod(params.type, authMethod) ?? null)
-        : null;
-
-  return {
-    id: params.id,
-    userId: params.userId,
-    type,
-    framework: getFrameworkForType(type),
-    secretName: params.secretName ?? null,
-    authMethod,
-    secretNames,
-    isDefault: params.isDefault,
-    selectedModel: params.selectedModel,
-    tokenExpiresAt: params.tokenExpiresAt ?? null,
-    needsReconnect: params.needsReconnect ?? false,
-    lastRefreshErrorCode: params.lastRefreshErrorCode ?? null,
-    workspaceName: params.workspaceName ?? null,
-    planType: params.planType ?? null,
-    subscriptionResetPeriod: params.subscriptionResetPeriod ?? null,
-    subscriptionNextResetAt: params.subscriptionNextResetAt ?? null,
-    createdAt: params.createdAt,
-    updatedAt: params.updatedAt,
-  };
-}
-
 function toModelProviderInfoFromRow(args: {
   readonly provider: ModelProviderRow;
-  readonly userId: string;
   readonly type: ModelProviderType;
-  readonly secretName?: string | null;
-  readonly authMethod?: string | null;
-  readonly secretNames?: string[] | null;
+  readonly secretName: string | null;
+  readonly authMethod: string | null;
+  readonly secretNames: string[] | null;
 }): ModelProviderInfo {
   const { provider } = args;
-  return toModelProviderInfo({
+  return {
     id: provider.id,
-    userId: args.userId,
     type: args.type,
+    framework: getFrameworkForType(args.type),
     secretName: args.secretName,
     authMethod: args.authMethod,
     secretNames: args.secretNames,
     isDefault: provider.isDefault,
     selectedModel: provider.selectedModel,
-    tokenExpiresAt: provider.tokenExpiresAt,
     needsReconnect: provider.needsReconnect,
     lastRefreshErrorCode: provider.lastRefreshErrorCode,
     workspaceName: provider.workspaceName,
@@ -446,24 +377,7 @@ function toModelProviderInfoFromRow(args: {
     subscriptionNextResetAt: provider.subscriptionNextResetAt,
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt,
-  });
-}
-
-/**
- * Reject the built-in provider on personal-tier callers — it is org-only per
- * Epic #11868.
- * Returns BadRequestResponse so the route handler emits 400 without throwing.
- */
-function assertBuiltInOrgOnly(
-  type: ModelProviderWriteType,
-  userId: string,
-): BadRequestResponse | null {
-  if (type === "built-in" && userId !== ORG_SENTINEL_USER_ID) {
-    return badRequestMessage(
-      `${getModelProviderPresentationLabel(type)} provider is org-only and cannot be configured per-user`,
-    );
-  }
-  return null;
+  };
 }
 
 function validateSingleSecretProviderRequest(args: {
@@ -525,7 +439,6 @@ type MultiAuthInsertValues = typeof modelProvidersTable.$inferInsert;
 
 function buildMultiAuthInsertValues(args: {
   type: ModelProviderWriteType;
-  userId: string;
   authMethod: string;
   selectedModel: string | undefined;
   orgId: string;
@@ -533,7 +446,7 @@ function buildMultiAuthInsertValues(args: {
 }): MultiAuthInsertValues {
   return {
     type: args.type,
-    userId: args.userId,
+    userId: ORG_SENTINEL_USER_ID,
     authMethod: args.authMethod,
     isDefault: false,
     selectedModel: args.selectedModel ?? null,
@@ -619,7 +532,6 @@ const persistSingleAuthModelProvider$ = command(
     { set },
     args: {
       readonly orgId: string;
-      readonly userId: string;
       readonly type: ModelProviderWriteType;
       readonly secretName: string;
       readonly encryptedValue: string;
@@ -641,7 +553,7 @@ const persistSingleAuthModelProvider$ = command(
         .insert(modelProvidersTable)
         .values({
           type: args.type,
-          userId: args.userId,
+          userId: ORG_SENTINEL_USER_ID,
           secretId: null,
           isDefault: false,
           selectedModel: args.selectedModel ?? null,
@@ -677,7 +589,7 @@ const persistSingleAuthModelProvider$ = command(
       const [upsertedSecret] = await tx
         .insert(secrets)
         .values({
-          userId: args.userId,
+          userId: ORG_SENTINEL_USER_ID,
           name: args.secretName,
           encryptedValue: args.encryptedValue,
           type: "model-provider",
@@ -726,14 +638,13 @@ const persistSingleAuthModelProvider$ = command(
 );
 
 /**
- * Create or update a single-secret personal model provider.
+ * Persist a single-secret model provider for organization upserts.
  */
-export const upsertUserModelProvider$ = command(
+export const upsertOrgModelProvider$ = command(
   async (
     { set },
     args: {
       readonly orgId: string;
-      readonly userId: string;
       readonly type: ModelProviderWriteType;
       readonly secret: string;
       readonly selectedModel?: string;
@@ -745,11 +656,6 @@ export const upsertUserModelProvider$ = command(
     | BadRequestResponse
     | { readonly provider: ModelProviderInfo; readonly created: boolean }
   > => {
-    const builtIn = assertBuiltInOrgOnly(args.type, args.userId);
-    if (builtIn) {
-      return builtIn;
-    }
-
     if (hasAuthMethods(args.type)) {
       return badRequestMessage(
         `Provider "${args.type}" requires multiple secrets. Use the multi-auth API instead.`,
@@ -762,21 +668,6 @@ export const upsertUserModelProvider$ = command(
     }
     const { secretName } = validation;
 
-    if (
-      args.userId !== ORG_SENTINEL_USER_ID &&
-      isPersonalSubscriptionProviderType(args.type)
-    ) {
-      return await set(
-        upsertSingletonSubscription$,
-        {
-          ...args,
-          type: args.type,
-          authMethod: null,
-          secretValues: { [secretName]: args.secret },
-        },
-        signal,
-      );
-    }
     const encryptedValue = await encryptStoredSecretValue(args.secret);
     signal.throwIfAborted();
 
@@ -793,15 +684,16 @@ export const upsertUserModelProvider$ = command(
     );
     signal.throwIfAborted();
 
-    await publishProviderChanged(args);
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
     signal.throwIfAborted();
 
     return {
       provider: toModelProviderInfoFromRow({
         provider: result.provider,
-        userId: args.userId,
         type: args.type,
         secretName,
+        authMethod: null,
+        secretNames: null,
       }),
       created: result.created,
     };
@@ -835,7 +727,6 @@ const persistMultiAuthModelProvider$ = command(
     { set },
     args: {
       readonly orgId: string;
-      readonly userId: string;
       readonly type: ModelProviderWriteType;
       readonly authMethod: string;
       readonly selectedModel?: string;
@@ -903,7 +794,7 @@ const persistMultiAuthModelProvider$ = command(
           .where(
             and(
               eq(secrets.orgId, args.orgId),
-              eq(secrets.userId, args.userId),
+              eq(secrets.userId, ORG_SENTINEL_USER_ID),
               eq(secrets.type, "model-provider"),
               isNull(secrets.connectorId),
               inArray(secrets.name, obsoleteNames),
@@ -916,7 +807,7 @@ const persistMultiAuthModelProvider$ = command(
           .insert(secrets)
           .values({
             orgId: args.orgId,
-            userId: args.userId,
+            userId: ORG_SENTINEL_USER_ID,
             type: "model-provider",
             ...secret,
           })
@@ -945,8 +836,7 @@ const persistMultiAuthModelProvider$ = command(
 /**
  * Validate the multi-auth upsert input shape (auth method exists, required
  * secrets present, etc.). Returns a BadRequestResponse if any check fails;
- * otherwise null. Extracted from `upsertUserMultiAuthModelProvider$` so the
- * Command body stays under the per-function lint ceiling.
+ * otherwise null.
  */
 function validateMultiAuthUpsertInput(args: {
   readonly type: ModelProviderWriteType;
@@ -955,7 +845,7 @@ function validateMultiAuthUpsertInput(args: {
 }): BadRequestResponse | null {
   if (!hasAuthMethods(args.type)) {
     return badRequestMessage(
-      `Provider "${args.type}" is a legacy single-secret provider. Use the standard upsert API.`,
+      `Provider "${args.type}" is a single-secret provider. Use the standard upsert API.`,
     );
   }
 
@@ -999,15 +889,14 @@ function validateMultiAuthUpsertInput(args: {
 }
 
 /**
- * Create or update a multi-auth personal model provider (e.g., aws-bedrock,
- * codex-oauth-token).
+ * Persist a multi-auth model provider for organization upserts (e.g.,
+ * aws-bedrock or codex-oauth-token).
  */
-export const upsertUserMultiAuthModelProvider$ = command(
+export const upsertOrgMultiAuthModelProvider$ = command(
   async (
     { get, set },
     args: {
       readonly orgId: string;
-      readonly userId: string;
       readonly type: ModelProviderWriteType;
       readonly authMethod: string;
       readonly secretValues: Record<string, string>;
@@ -1030,20 +919,10 @@ export const upsertUserMultiAuthModelProvider$ = command(
     }
 
     const featureSwitchContext = await get(
-      userFeatureSwitchContext(args.orgId, args.userId),
+      userFeatureSwitchContext(args.orgId, ORG_SENTINEL_USER_ID),
     );
     signal.throwIfAborted();
 
-    if (
-      args.userId !== ORG_SENTINEL_USER_ID &&
-      isPersonalSubscriptionProviderType(args.type)
-    ) {
-      return await set(
-        upsertSingletonSubscription$,
-        { ...args, type: args.type },
-        signal,
-      );
-    }
     const secretNames = Object.keys(args.secretValues);
     const encryptedSecrets = await encryptMultiAuthSecrets(
       { ...args, featureSwitchContext },
@@ -1069,79 +948,19 @@ export const upsertUserMultiAuthModelProvider$ = command(
     signal.throwIfAborted();
 
     const { provider } = result;
-    await publishProviderChanged(args);
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
     signal.throwIfAborted();
 
     return {
       provider: toModelProviderInfoFromRow({
         provider,
-        userId: args.userId,
         type: args.type,
+        secretName: null,
         authMethod: args.authMethod,
         secretNames,
       }),
       created: result.wasCreated,
     };
-  },
-);
-
-export const upsertOrgModelProvider$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly type: ModelProviderWriteType;
-      readonly secret: string;
-      readonly selectedModel?: string;
-      readonly metadata?: ModelProviderMetadata;
-      readonly authSession?: DeviceAuthSessionPublication;
-    },
-    signal: AbortSignal,
-  ) => {
-    return await set(
-      upsertUserModelProvider$,
-      {
-        orgId: args.orgId,
-        userId: ORG_SENTINEL_USER_ID,
-        type: args.type,
-        secret: args.secret,
-        selectedModel: args.selectedModel,
-        metadata: args.metadata,
-        authSession: args.authSession,
-      },
-      signal,
-    );
-  },
-);
-
-export const upsertOrgMultiAuthModelProvider$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly type: ModelProviderWriteType;
-      readonly authMethod: string;
-      readonly secretValues: Record<string, string>;
-      readonly selectedModel?: string;
-      readonly metadata?: ModelProviderMetadata;
-      readonly authSession?: DeviceAuthSessionPublication;
-    },
-    signal: AbortSignal,
-  ) => {
-    return await set(
-      upsertUserMultiAuthModelProvider$,
-      {
-        orgId: args.orgId,
-        userId: ORG_SENTINEL_USER_ID,
-        type: args.type,
-        authMethod: args.authMethod,
-        secretValues: args.secretValues,
-        selectedModel: args.selectedModel,
-        metadata: args.metadata,
-        authSession: args.authSession,
-      },
-      signal,
-    );
   },
 );
 
@@ -1158,10 +977,6 @@ export const upsertOrgNoSecretModelProvider$ = command(
     | BadRequestResponse
     | { readonly provider: ModelProviderInfo; readonly created: boolean }
   > => {
-    const builtIn = assertBuiltInOrgOnly(args.type, ORG_SENTINEL_USER_ID);
-    if (builtIn) {
-      return builtIn;
-    }
     if (args.type !== "built-in") {
       return badRequestMessage(`Provider "${args.type}" requires a secret`);
     }
@@ -1207,96 +1022,12 @@ export const upsertOrgNoSecretModelProvider$ = command(
     return {
       provider: toModelProviderInfoFromRow({
         provider,
-        userId: ORG_SENTINEL_USER_ID,
         type: args.type,
+        secretName: null,
+        authMethod: null,
+        secretNames: null,
       }),
       created: provider.id === proposedId,
-    };
-  },
-);
-
-const upsertSingletonSubscription$ = command(
-  async (
-    { get, set },
-    args: Omit<UpsertPersonalAccountArgs, "mode" | "featureSwitchContext">,
-    signal: AbortSignal,
-  ): Promise<
-    | BadRequestResponse
-    | { readonly provider: ModelProviderInfo; readonly created: boolean }
-  > => {
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(args.orgId, args.userId),
-    );
-    signal.throwIfAborted();
-    const db = set(writeDb$);
-    const [previous] = await db
-      .select({ id: modelProvidersTable.id })
-      .from(modelProvidersTable)
-      .where(
-        and(
-          eq(modelProvidersTable.orgId, args.orgId),
-          eq(modelProvidersTable.userId, args.userId),
-          eq(modelProvidersTable.type, args.type),
-          visiblePersonalModelProviderCondition(),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const result = await set(
-      upsertPersonalModelProviderAccount$,
-      { ...args, featureSwitchContext, mode: { kind: "replace-active" } },
-      signal,
-    );
-    signal.throwIfAborted();
-    if ("status" in result) {
-      return badRequestMessage(result.body.error.message);
-    }
-    if (!result.provider.modelProviderId) {
-      throw new Error("Concrete subscription account has no logical provider");
-    }
-    const [provider] = await db
-      .select()
-      .from(modelProvidersTable)
-      .where(eq(modelProvidersTable.id, result.provider.modelProviderId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!provider) {
-      throw new Error("Subscription provider disappeared after connection");
-    }
-    // Personal subscription state lives only on the connected account; the
-    // logical provider row keeps the singleton ID, default and model selection.
-    const [account] = await db
-      .select()
-      .from(modelProviderAccounts)
-      .where(eq(modelProviderAccounts.id, result.provider.id))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!account) {
-      throw new Error("Subscription account disappeared after connection");
-    }
-    return {
-      created: !previous,
-      provider: toModelProviderInfo({
-        id: provider.id,
-        userId: args.userId,
-        type: args.type,
-        authMethod: args.authMethod,
-        secretName: getSecretNameForType(args.type) ?? null,
-        secretNames: args.authMethod
-          ? (getSecretNamesForAuthMethod(args.type, args.authMethod) ?? null)
-          : null,
-        isDefault: provider.isDefault,
-        selectedModel: provider.selectedModel,
-        tokenExpiresAt: account.tokenExpiresAt,
-        needsReconnect: account.needsReconnect,
-        lastRefreshErrorCode: account.lastRefreshErrorCode,
-        workspaceName: account.workspaceName,
-        planType: account.planType,
-        subscriptionResetPeriod: account.subscriptionResetPeriod,
-        subscriptionNextResetAt: account.subscriptionNextResetAt,
-        createdAt: provider.createdAt,
-        updatedAt: provider.updatedAt,
-      }),
     };
   },
 );

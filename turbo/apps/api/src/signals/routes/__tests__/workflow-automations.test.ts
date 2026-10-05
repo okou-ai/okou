@@ -68,7 +68,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...workflowsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -5766,7 +5766,7 @@ describe("okou workflow automations", () => {
     );
     await expect(
       readWorkflowAutomationAutonomyFixture(context, rootAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 10 });
+    ).resolves.toMatchObject({ autonomyBudget: 32 });
 
     const rootRun = await runAutomationNow(rootAutomation.body.id);
     if (!rootRun.runId) {
@@ -5774,7 +5774,7 @@ describe("okou workflow automations", () => {
     }
     await expect(
       readRunAutonomyBudgetFixture(context, rootRun.runId),
-    ).resolves.toBe(10);
+    ).resolves.toBe(32);
     const rootToken = runs.okouTokenForRunWithCapabilities(
       actor,
       rootRun.runId,
@@ -5793,7 +5793,7 @@ describe("okou workflow automations", () => {
     );
     await expect(
       readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 9 });
+    ).resolves.toMatchObject({ autonomyBudget: 31 });
 
     await setRunAutonomyBudgetFixture(context, rootRun.runId, 1);
     const zeroBudgetAutomation = await accept(
@@ -5844,7 +5844,7 @@ describe("okou workflow automations", () => {
     expect(blockedEnable.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
     await expect(
       readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
-    ).resolves.toMatchObject({ autonomyBudget: 9, enabled: false });
+    ).resolves.toMatchObject({ autonomyBudget: 31, enabled: false });
 
     await setRunAutonomyBudgetFixture(context, exhaustedRun.runId, 2);
     await accept(

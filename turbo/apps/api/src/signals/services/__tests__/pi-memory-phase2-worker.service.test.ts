@@ -19,6 +19,7 @@ import { z } from "zod";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -54,7 +55,8 @@ import {
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
 } from "../pi-memory-phase2-job.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
-import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
+import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
+import { deleteStoragesWithPiMemoryCandidates } from "../pi-memory-stage1-candidate.service";
 import { personalSubscriptionAccountIdentity } from "../personal-subscription-recovery.service";
 import { mockStripeClient } from "../../external/stripe-client";
 import { prepareStorageUploadForAuth$ } from "../storage-write.service";
@@ -77,7 +79,10 @@ import {
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
-import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
@@ -89,6 +94,148 @@ import {
   makeCodexAuthJson,
 } from "../../routes/__tests__/helpers/api-bdd-auth-device";
 import { executePhase2Runtime } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
+import { createFixtureOperationOwner } from "../../routes/__tests__/helpers/fixture-operation-owner";
+
+const publicScopeContext = testContext();
+
+async function cleanupPublicEmptyMemory(owner: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly memoryStorageId: string | undefined;
+}): Promise<void> {
+  // Teardown only: setup can fail before the runner exposes the owned mount.
+  const memories = await db()
+    .select({ id: storages.id })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.orgId, owner.orgId),
+        eq(storages.userId, owner.userId),
+        eq(storages.name, MEMORY_ARTIFACT_NAME),
+        owner.memoryStorageId
+          ? eq(storages.id, owner.memoryStorageId)
+          : undefined,
+      ),
+    );
+  const storageIds = memories.map((memory) => {
+    return memory.id;
+  });
+  if (storageIds.length === 0) {
+    return;
+  }
+  await db().transaction(async (tx) => {
+    await tx
+      .update(storages)
+      .set({ headVersionId: null })
+      .where(inArray(storages.id, storageIds));
+    await deleteStoragesWithPiMemoryCandidates(
+      tx,
+      inArray(storages.id, storageIds),
+    );
+  });
+}
+
+async function createPublicEmptyPhase2Scope() {
+  const context = publicScopeContext;
+  const chat = createChatEventsFixture(context);
+  const actor = chat.bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected an owned Phase 2 organization");
+  }
+  const orgId = actor.orgId;
+  const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+  let agentId: string | undefined;
+  let runId: string | undefined;
+  let sandboxToken: string | undefined;
+  let memoryStorageId: string | undefined;
+  const owner = createFixtureOperationOwner(async () => {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+    context.mocks.s3.send.mockResolvedValue({
+      Contents: [],
+      IsTruncated: false,
+    });
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    chat.api.acceptStorageDownloads();
+    chat.api.acceptTelemetryIngest();
+    if (runId) {
+      const current = await chat.api.readRun(actor, runId);
+      if (current.status === "pending" || current.status === "running") {
+        await chat.api.requestCancelRun(actor, runId, [200]);
+      }
+      if (
+        sandboxToken &&
+        ["pending", "running", "cancelled"].includes(current.status)
+      ) {
+        await chat.webhooks.requestAgentComplete(
+          {
+            runId,
+            exitCode: 1,
+            error: "Owned empty-memory carrier cancelled",
+          },
+          { authorization: `Bearer ${sandboxToken}` },
+          [200],
+        );
+      }
+    }
+    await flushWaitUntilForTest();
+    if (agentId) {
+      await chat.bdd.deleteAgent(actor, agentId);
+      await flushWaitUntilForTest();
+    }
+    await cleanupPublicEmptyMemory({
+      orgId,
+      userId: actor.userId,
+      memoryStorageId,
+    });
+    await deleteFeatureSwitchesForUser(context, {
+      orgId,
+      userId: actor.userId,
+    });
+  });
+
+  const scope = await owner.run(async () => {
+    chat.chatCallbacks.acceptChatObjectStorage();
+    chat.api.acceptStorageDownloads();
+    chat.api.acceptTelemetryIngest();
+    chat.chatCallbacks.disableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    const runnerGroup = chat.api.configureRunnerGroup();
+    await chat.api.grantProEntitlement(actor);
+    await chat.api.ensureOrgModelProvider(actor, {
+      model: "claude-fable-5-1",
+    });
+    const agent = await chat.bdd.createAgent(actor, {
+      displayName: "Empty Memory carrier",
+      description: "Exposes the initialized Memory through a native claim.",
+      visibility: "private",
+    });
+    agentId = agent.agentId;
+    const run = await chat.chat.sendAndLaunch(actor, {
+      agentId,
+      prompt: "Keep the initialized Memory empty.",
+    });
+    runId = run.runId;
+    const claimed = await chat.claimChatRun(runnerGroup, runId);
+    sandboxToken = claimed.claim.sandboxToken;
+    expect(claimed.claim.cliAgentType).not.toBe("pi");
+    const manifest = expectCanonicalStorageManifest(
+      claimed.claim.storageManifest,
+    );
+    const memory = manifest?.storageMounts.find((mount) => {
+      return mount.name === MEMORY_ARTIFACT_NAME;
+    });
+    if (!memory) {
+      throw new Error("Expected the carrier's real Memory mount");
+    }
+    memoryStorageId = memory.storageId;
+    expect(memory).toMatchObject({ empty: true, writeback: true });
+    expect(memory.versionId).not.toBe("");
+    return { memoryStorageId, orgId, userId: actor.userId };
+  });
+  return { scope, run: owner.run };
+}
 
 async function deleteRunSessionsForScope(scope: {
   readonly orgId: string;
@@ -161,8 +308,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     await expect(
       withMockNowForTest(now, async () => {
         return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: now },
+          createPiMemoryPhase2Worker(scope).execute$,
+          now,
           testContext().signal,
         );
       }),
@@ -208,8 +355,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     );
     const retried = await withMockNowForTest(retryTime, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: retryTime },
+        createPiMemoryPhase2Worker(scope).execute$,
+        retryTime,
         testContext().signal,
       );
     });
@@ -299,8 +446,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
 
     const result = await withMockNowForTest(now, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: now },
+        createPiMemoryPhase2Worker(scope).execute$,
+        now,
         testContext().signal,
       );
     });
@@ -324,15 +471,17 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
   });
 
   it("does not claim when no control job is ready", async () => {
-    const scope = await createPhase2TestScope("sandbox-no-work", {
-      emptyBase: true,
-    });
+    const fixture = await createPublicEmptyPhase2Scope();
     const store = createStore();
-    const result = await store.set(
-      executePiMemoryPhase2Work$,
-      { scope, currentTime: new Date("2026-09-05T02:00:00.000Z") },
-      testContext().signal,
-    );
+    // The exact scoped worker is the key 10 isolation exception. Ordinary
+    // empty Memory and its HEAD come from onboarding and this real claim.
+    const result = await fixture.run(async () => {
+      return await store.set(
+        createPiMemoryPhase2Worker(fixture.scope).execute$,
+        new Date("2026-09-05T02:00:00.000Z"),
+        publicScopeContext.signal,
+      );
+    });
 
     expect(result).toStrictEqual({ outcome: "no_work" });
   });
@@ -374,8 +523,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
 
     const result = await withMockNowForTest(now, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: now },
+        createPiMemoryPhase2Worker(scope).execute$,
+        now,
         testContext().signal,
       );
     });
@@ -386,8 +535,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     }
     await expect(
       store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: new Date(now.getTime() + 1) },
+        createPiMemoryPhase2Worker(scope).execute$,
+        new Date(now.getTime() + 1),
         testContext().signal,
       ),
     ).resolves.toStrictEqual({ outcome: "dispatched", runId: result.runId });
@@ -461,8 +610,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     const store = createStore();
     await expect(
       store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime },
+        createPiMemoryPhase2Worker(scope).execute$,
+        currentTime,
         testContext().signal,
       ),
     ).resolves.toStrictEqual({
@@ -509,8 +658,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     await expect(
       withMockNowForTest(now, async () => {
         return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: now },
+          createPiMemoryPhase2Worker(scope).execute$,
+          now,
           testContext().signal,
         );
       }),
@@ -607,8 +756,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     await expect(
       withMockNowForTest(now, async () => {
         return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: now },
+          createPiMemoryPhase2Worker(scope).execute$,
+          now,
           testContext().signal,
         );
       }),
@@ -725,8 +874,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
 
     const result = await withMockNowForTest(now, async () => {
       return await store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: now },
+        createPiMemoryPhase2Worker(scope).execute$,
+        now,
         testContext().signal,
       );
     });
@@ -915,8 +1064,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     ).resolves.toStrictEqual([]);
 
     const recovered = await store.set(
-      executePiMemoryPhase2Work$,
-      { scope, currentTime: afterOriginalLease },
+      createPiMemoryPhase2Worker(scope).execute$,
+      afterOriginalLease,
       testContext().signal,
     );
     expect(recovered).toStrictEqual({
@@ -1058,12 +1207,9 @@ async function createPhase2WorkerFixture(label: string, emptyBase = true) {
       at = new Date("2026-09-05T02:00:00Z"),
       signal = testContext().signal,
     ) {
+      const { execute$ } = createPiMemoryPhase2Worker(scope);
       return await withMockNowForTest(at, async () => {
-        return await store.set(
-          executePiMemoryPhase2Work$,
-          { scope, currentTime: at },
-          signal,
-        );
+        return await store.set(execute$, at, signal);
       });
     },
   };

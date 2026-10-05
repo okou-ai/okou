@@ -257,18 +257,6 @@ export async function readRunFailureReasonFixture(
   return response.failure_reason ?? null;
 }
 
-export async function setRunModelProviderStateFixture(
-  context: TestContext,
-  runId: string,
-  modelProvider: string | null,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-run-model-provider",
-    run_id: runId,
-    model_provider: modelProvider,
-  });
-}
-
 /**
  * Launch snapshots are intentionally writer-only in Stage 2, so persistence
  * cannot be observed through a production API. Keep this test-only exception
@@ -399,17 +387,6 @@ export async function stageOfficialWorkflowAutomationFixture(
     blueprint_key: blueprintKey,
     reconciliation_status: "reconciling",
   });
-}
-
-export async function readRunUploadedFileSources(
-  context: TestContext,
-  runId: string,
-): Promise<readonly string[]> {
-  const response = await postAction(context, {
-    action: "read-run-uploaded-file-sources",
-    run_id: runId,
-  });
-  return response.uploaded_file_sources ?? [];
 }
 
 export async function updateChatEventSnapshotHead(

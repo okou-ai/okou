@@ -17,7 +17,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackOauthRoutes } from "../slack-oauth";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
 const slackOrgs = createPublicSlackOrgApi(context);

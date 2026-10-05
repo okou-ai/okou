@@ -43,7 +43,6 @@ import {
   insertChatThreadEventTransactionFixture,
   readChatThreadEventIdsFixture,
   setChatThreadSnapshotBoundaryFixture,
-  setChatThreadSnapshotObjectKeyFixture,
 } from "../../../test-fixtures/chat-thread-events";
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
 import {
@@ -107,7 +106,7 @@ const TEST_APP_ROUTES = Object.freeze([
  * where the persisted row shape is the contract under test.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
@@ -448,7 +447,8 @@ async function sendNoCreditMessageResult(
   actor: ApiTestUser,
   body: NoCreditMessageBody,
 ): Promise<{ readonly threadId: string; readonly createdAt: number }> {
-  await api.ensureOrgModelProvider(actor);
+  // An unconfigured Auto workspace has no credits and needs no paid Custom
+  // provider fixture to persist a rejected message for search assertions.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (
     sent.status !== 201 ||
@@ -931,12 +931,9 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const client = setupApp({ context, routes: chatThreadRoutes })(
       chatThreadsContract,
     );
-    await setChatThreadSnapshotObjectKeyFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      latestSeqId: materialized.latestSeqId,
-      body: Buffer.from("{}"),
-    });
+    // This callback owns the only published snapshot in the external fake.
+    // Losing that object must not stop either request from presigning its URL.
+    threadSnapshotObjects.clear();
 
     // The API must not read or materialize the R2 object for either request.
     const headerlessResponse = await accept(

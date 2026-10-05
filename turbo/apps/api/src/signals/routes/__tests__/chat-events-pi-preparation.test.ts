@@ -11,7 +11,7 @@ import {
   createGptUsagePricingResolution,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   entitledChatActor,

@@ -15,7 +15,7 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { tarArchive, tarEntry } from "../../../test-fixtures/tar-archive";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -78,7 +78,7 @@ function cleanup(user: ApiTestUser, jobId: string): void {
   });
 }
 
-async function completedZip(
+async function readCompletedExport(
   user: ApiTestUser,
   jobId: string,
   storage: ReturnType<typeof installDurableUserExportStorage>,
@@ -123,6 +123,15 @@ async function completedZip(
       );
     }
   }
+  return { zip, downloadUrl };
+}
+
+async function completedZip(
+  user: ApiTestUser,
+  jobId: string,
+  storage: ReturnType<typeof installDurableUserExportStorage>,
+) {
+  const { zip } = await readCompletedExport(user, jobId, storage);
   const emails = await createEmailOutboxStateApi(context).findItems({
     toAddress: user.email,
     subject: readySubject,
@@ -616,18 +625,52 @@ test("excludes agents owned by other members from a subject data export", async 
   const instructions = "A colleague authored these instructions.";
   await bdd.updateAgentInstructions(owner, agent.agentId, instructions);
   const storage = installDurableUserExportStorage(context);
+  mockEnv("RESEND_API_KEY", "owned-export-delivery-test-key");
+  mockEnv("RESEND_FROM_DOMAIN", "mail.example.com");
+  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+  context.mocks.resend.send.mockReset();
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `owned-export-${user.userId}` },
+    error: null,
+  });
   const api = createOpsLogsApi(context);
   const started = await api.requestPostUserExport(user, [202]);
   cleanup(user, started.body.jobId);
   await flushWaitUntilForTest();
   await work(user, started.body.jobId, "run", 200);
-  const zip = await completedZip(user, started.body.jobId, storage);
+  const { zip, downloadUrl } = await readCompletedExport(
+    user,
+    started.body.jobId,
+    storage,
+  );
   // A public agent stays its author's record. Sharing it grants this user read
   // access in the product; it does not make its text this user's export data.
   expect(zip.getEntry(`agents/${agent.agentId}.json`)).toBeNull();
   for (const entry of zip.getEntries()) {
     expect(entry.getData().toString("utf8")).not.toContain(instructions);
   }
+  // The approved lookup addresses owned delivery work, not row assertions.
+  const outbox = createEmailOutboxStateApi(context);
+  const emails = await outbox.findItems({
+    toAddress: user.email,
+    subject: readySubject,
+  });
+  const itemIds = emails.map((email) => {
+    return email.id;
+  });
+  if (itemIds.length > 0) {
+    await outbox.drainItems(itemIds);
+    await outbox.drainItems(itemIds);
+  }
+  expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      to: user.email,
+      subject: readySubject,
+      html: expect.stringContaining(downloadUrl),
+      text: expect.stringContaining(downloadUrl),
+    }),
+    expect.anything(),
+  );
 });
 
 test("does not publish an export after one of its agents stops being reachable", async () => {

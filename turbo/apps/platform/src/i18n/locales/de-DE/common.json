@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Agents konnten nicht geladen werden",
+      "backToChats": "Zurück zu Chats",
+      "chatListUnavailable": "Chats konnten nicht geladen werden",
+      "chats": "Chats",
+      "me": "Ich",
+      "navigation": "Hauptnavigation",
+      "searchAgents": "Agents suchen",
+      "switchAgent": "Agent wechseln"
+    },
     "shortcutHelp": {
       "close": "Tastaturkürzel schließen",
       "description": "Verfügbare Tastaturkürzel für diese Seite",
@@ -1963,6 +1973,10 @@
       "newTasksAvailable": "Neue Aufgaben verfügbar",
       "newThread": "Neuer Chat",
       "reload": "Aufgaben neu laden"
+    },
+    "lastReadMarker": {
+      "previouslyRead": "Hier haben Sie zuletzt aufgehört zu lesen",
+      "unread": "Ungelesene Nachrichten"
     },
     "mail": {
       "bcc": "BCC",
@@ -4916,14 +4930,10 @@
         "accountFallback": "Konto {{number}}",
         "accountsDescription": "Wähle das Konto, das jeder Anbieter für neue Ausführungen verwendet.",
         "accountsSectionTitle": "Persönliche Konten",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktiv",
-        "addAccount": "Konto hinzufügen",
         "autoDescription": "Verbinde dein Claude- oder ChatGPT-Konto, um mehr Modelle zu nutzen.",
         "autoTitle": "Mehr Modelle nutzen",
-        "claudeDescription": "Melden Sie sich mit Ihrem Claude-Abo an, um Claude-Modelle mit Claude Code-basierten Agenten zu nutzen.",
         "claudeTitle": "Claude",
-        "codexDescription": "Verbinden Sie Ihr ChatGPT-Konto, um GPT-Modelle zu nutzen.",
         "codexTitle": "ChatGPT (Codex)",
         "connectAccount": "Konto verbinden",
         "description": "Wird nur bei Ihren Ausführungen mit Ihren eigenen Anmeldeinformationen verwendet.",
@@ -4936,10 +4946,8 @@
         "noAccounts": "Keine Konten verbunden.",
         "reconnectAccount": "Erneut verbinden",
         "retry": "Erneut versuchen",
-        "sectionTitle": "Persönlich",
         "status": {
           "connected": "Verbunden",
-          "connectedWithDetail": "Verbunden ({{detail}})",
           "fiveHour": "5h",
           "left": "{{percent}} übrig",
           "stale": "Aufmerksamkeit",
@@ -5052,7 +5060,6 @@
       "toasts": {
         "accountDisconnected": "Konto getrennt",
         "accountSwitched": "Aktives Konto gewechselt",
-        "disconnected": "{{provider}} getrennt",
         "policiesUpdated": "Modellanbietereinstellungen aktualisiert",
         "reset": "{{provider}}-Nutzung zurückgesetzt",
         "resetUnavailable": "Es sind keine {{provider}}-Nutzungs-Resets verfügbar",
@@ -5324,17 +5331,14 @@
     "shared": {
       "cancel": "Abbrechen",
       "close": "Schließen",
-      "connect": "Verbinden",
       "connecting": "Verbinden...",
       "delete": "Löschen",
       "discard": "Verwerfen",
-      "disconnect": "Trennen",
       "edit": "Bearbeiten",
       "loading": "Laden",
       "moreOptions": "Weitere Optionen",
       "reconnect": "Wieder verbinden",
       "remove": "Entfernen",
-      "replace": "Ersetzen",
       "save": "Speichern",
       "saveChanges": "Änderungen speichern",
       "saving": "Speichern..."

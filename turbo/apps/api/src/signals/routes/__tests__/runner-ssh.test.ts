@@ -33,6 +33,7 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
@@ -1152,6 +1153,8 @@ describe("SSH connection observations", () => {
 
 describe("official Runner SSH authority", () => {
   const claimedFixture = useClaimedFixture();
+  const publicRuns = createPublicRemoteAccessRunApi(context);
+  afterEach(publicRuns.cleanup);
 
   it("allows an ordinary owner and preserves a pinned connection", async () => {
     const f = await claimedFixture();
@@ -1356,7 +1359,31 @@ describe("official Runner SSH authority", () => {
   });
 
   it("checks current chat access and credential existence on every call", async () => {
-    const f = await fixture({ triggerSource: "automation-event" });
+    const owner = {
+      orgId: `org_ssh_event_${randomUUID()}`,
+      userId: `user_ssh_event_${randomUUID()}`,
+    };
+    authenticate(owner);
+    const connection = await accept(
+      config().create({
+        headers: sessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "SSH fixture",
+          host: "ssh.example.com",
+          credential: inlineSshKey("deploy", privateKey, passphrase),
+        },
+      }),
+      [201],
+    );
+    await enableHostDefault(owner, connection.body.id);
+    const run = await publicRuns.start(owner, "automation-event");
+    const runtime = await publicRuns.claim(run, runnerHeaders);
+    const f = {
+      ...runtime,
+      connectionId: connection.body.id,
+      credentialId: connection.body.credentialId,
+    };
     const kms = useSecretKmsProbe();
     authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(

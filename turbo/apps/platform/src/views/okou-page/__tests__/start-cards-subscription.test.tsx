@@ -112,9 +112,9 @@ function installPlan(supportByok: boolean): void {
 async function findSettledCodexRow(status: string): Promise<void> {
   await waitFor(() => {
     expect(
-      within(screen.getByTestId("oauth-card-codex-oauth-token")).getByText(
-        status,
-      ),
+      within(
+        screen.getByTestId(`oauth-account-${connectedCodex().id}`),
+      ).getByText(status),
     ).toBeInTheDocument();
   });
 }
@@ -217,7 +217,7 @@ test("The subscription card stays out while the account list is in flight", asyn
 
 test("A member with a personal model account does not see the subscription card", async () => {
   await setupStartCards([connectedCodex()], "?settings=model");
-  await findSettledCodexRow("Connected (Pro)");
+  await findSettledCodexRow("Connected");
 
   expect(screen.getByTestId("start-cards").children).toHaveLength(3);
   expect(screen.queryByTestId("start-card-subscription")).toBeNull();
@@ -292,6 +292,6 @@ test("The card body opens Settings on Models", async () => {
   click(openSettings);
 
   await expect(
-    screen.findByTestId("oauth-card-codex-oauth-token"),
+    screen.findByRole("region", { name: "ChatGPT (Codex)" }),
   ).resolves.toBeInTheDocument();
 });

@@ -351,8 +351,10 @@ function ChatThreadPinMenuItems({
 
 function ChatThreadMenu({
   signals,
+  touch = false,
 }: {
   signals: SidebarChatThreadItemSignals;
+  touch?: boolean;
 }) {
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
@@ -381,7 +383,7 @@ function ChatThreadMenu({
               type="button"
               variant="quiet"
               size="icon-2xs"
-              className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
+              className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
                 hasRestingIndicator
                   ? ""
                   : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
@@ -440,7 +442,7 @@ function ChatThreadMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className="w-56"
+          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
           <ChatThreadPinMenuItems signals={signals} />
@@ -529,9 +531,11 @@ function ChatThreadItemTitle({ title }: { title: string }) {
 function ChatThreadItemLink({
   signals,
   shortcutNumber,
+  touch,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
+  touch: boolean;
 }) {
   const { t } = useTranslation();
   const title = useGet(signals.title$);
@@ -562,7 +566,7 @@ function ChatThreadItemLink({
         e.preventDefault();
         detach(openRename(pageSignal), Reason.DomCallback);
       }}
-      className={`col-span-2 col-start-1 row-start-1 grid h-8 grid-cols-subgrid items-center rounded-lg pl-2 text-left text-sm leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+      className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
           : isUnread
@@ -570,7 +574,12 @@ function ChatThreadItemLink({
             : "text-sidebar-foreground hover:bg-state-hover"
       }`}
     >
-      <span className="flex min-w-0 items-center gap-2 pr-8">
+      <span
+        className={cn(
+          "flex min-w-0 items-center gap-2",
+          touch ? "pr-12" : "pr-8",
+        )}
+      >
         <ChatThreadListPaneIcon signals={signals} />
         <ChatThreadItemTitle
           title={
@@ -591,18 +600,29 @@ function ChatThreadItemLink({
   );
 }
 
-function ChatThreadItem({
+export function ChatThreadItem({
   signals,
   shortcutNumber,
+  touch = false,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
+  touch?: boolean;
 }) {
   return (
     <div className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center">
-      <ChatThreadItemLink signals={signals} shortcutNumber={shortcutNumber} />
-      <div className="pointer-events-none relative col-start-1 row-start-1 flex h-8 w-8 items-center justify-center justify-self-end">
-        <ChatThreadMenu signals={signals} />
+      <ChatThreadItemLink
+        signals={signals}
+        shortcutNumber={shortcutNumber}
+        touch={touch}
+      />
+      <div
+        className={cn(
+          "pointer-events-none relative col-start-1 row-start-1 flex items-center justify-center justify-self-end",
+          touch ? "h-14 w-12" : "h-8 w-8",
+        )}
+      >
+        <ChatThreadMenu signals={signals} touch={touch} />
       </div>
     </div>
   );
@@ -1150,10 +1170,12 @@ function ChatThreadFilterMenuItems() {
   );
 }
 
-function ChatThreadsListMenu({
+export function ChatThreadsListMenu({
   showMarkAllRead,
+  touch = false,
 }: {
   showMarkAllRead: boolean;
+  touch?: boolean;
 }) {
   const { t } = useTranslation();
   const markAllReadAction = useMarkAllReadMenuAction(showMarkAllRead);
@@ -1167,7 +1189,7 @@ function ChatThreadsListMenu({
               variant="quiet"
               size="icon-sm"
               iconSize="md"
-              className="shrink-0"
+              className={cn("shrink-0", touch && "min-h-11 min-w-11")}
               aria-label={t(($) => {
                 return $.chat.sidebar.openListMenu;
               })}
@@ -1176,7 +1198,10 @@ function ChatThreadsListMenu({
         >
           <ChatThreadsListMenuTooltip />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuContent
+          align="end"
+          className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
+        >
           {markAllReadAction.visible ? (
             <>
               <MarkAllReadMenuItem {...markAllReadAction} />

@@ -12,6 +12,7 @@ import { createDeferredPromise } from "../../utils";
 import { codexDeviceAuthRoutes } from "../codex-device-auth";
 import { modelProvidersRoutes } from "../model-providers";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 import {
   createCodexExpiryFixture,
   credentials,
@@ -27,10 +28,10 @@ const fixture = createCodexExpiryFixture(context);
 
 describe("Codex expiry invalidation and identity isolation", () => {
   it.each([false, true])(
-    "invalidates on ambiguous consume failure, accounts=%s",
-    async (accounts) => {
+    "invalidates on ambiguous consume failure, account route=%s",
+    async (accountRoute) => {
       const remote = upstream();
-      const user = await fixture({ accounts });
+      const user = await fixture({ accountRoute });
       expectExpiry(await user.list(), remote.expiry);
       let consumeCalls = 0;
       server.use(
@@ -58,7 +59,9 @@ describe("Codex expiry invalidation and identity isolation", () => {
     "fences an in-flight expiry across %s",
     async (mutation) => {
       const remote = upstream();
-      const user = await fixture({ accounts: mutation === "replace-account" });
+      const user = await fixture({
+        accountRoute: mutation === "replace-account",
+      });
       const started = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<Response>(context.signal);
       remote.details = () => {
@@ -143,7 +146,7 @@ describe("Codex expiry invalidation and identity isolation", () => {
 
   it("preserves another concrete account's cooldown across connect and reconnect", async () => {
     const remote = upstream();
-    const first = await fixture({ accounts: true });
+    const first = await fixture({ accountRoute: true });
     remote.details = () => {
       return new HttpResponse(null, {
         status: 429,
@@ -221,6 +224,10 @@ describe("Codex expiry invalidation and identity isolation", () => {
       return expiryResponse(remote.expiry);
     };
     user.session();
+    await ensureCustomModelModeForTest(context, user, () => {
+      user.session();
+      return headers;
+    });
     const result = await accept(
       setupApp({ context, routes: modelProvidersRoutes })(
         modelProvidersMainContract,
@@ -259,7 +266,7 @@ describe("Codex expiry invalidation and identity isolation", () => {
   it("fences an old flight when current credentials rotate without reconnect", async () => {
     mockNow(Date.UTC(2030, 0, 1));
     const remote = upstream();
-    const user = await fixture({ accounts: true });
+    const user = await fixture({ accountRoute: true });
     const started = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<Response>(context.signal);
     remote.details = () => {

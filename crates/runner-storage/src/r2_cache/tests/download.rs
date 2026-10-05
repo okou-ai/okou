@@ -132,6 +132,10 @@ async fn downloads_exact_regular_template_from_template_key() {
         regular_template_archive(b"hello"),
     );
     let cache = mock_cache("test-bucket", &[&get]);
+    assert_eq!(
+        cache.template_download_key("hash"),
+        "runner-templates/hash.tar.zst"
+    );
     let dst = tempfile::tempdir().unwrap();
     let destination = dst.path().join("rootfs.ext4.staging");
 

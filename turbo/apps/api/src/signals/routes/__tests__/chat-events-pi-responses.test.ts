@@ -4,9 +4,14 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  getSecretKmsClient,
+  setSecretKmsClientForTests,
+} from "../../../lib/secret-kms-client";
 import { now, withMockNowForTest } from "../../../lib/time";
 import {
+  insertBuiltInModelMirrorFixture,
   insertCatalogModelFixture,
   setModelPiRouteClassFixture,
 } from "../../../test-fixtures/model-catalog";
@@ -16,6 +21,10 @@ import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import type { ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -29,7 +38,7 @@ import {
   occurrences,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,
@@ -38,7 +47,6 @@ const {
   entitledChatActor,
   configureBuiltInPiModel,
   configureApiKeyGptPiModel,
-  configureBuiltInPiModelOnOpenRouter,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -52,6 +60,168 @@ const {
   piSandboxBaseSession,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
+
+async function configureOpenRouterThroughProviderReport(args: {
+  readonly actor: ApiTestUser;
+  readonly agentId: string;
+  readonly runnerGroup: string;
+  readonly selectedModel:
+    | "deepseek-v4-flash"
+    | "deepseek-v4.1-flash"
+    | "gpt-6-luna"
+    | "gpt-5.6-sol";
+}): Promise<{
+  readonly model: string;
+  readonly sendChatRun: typeof sendChatRun;
+  readonly claimChatRun: typeof claimChatRun;
+  readonly cancelChatRun: typeof cancelChatRun;
+}> {
+  let model: string = args.selectedModel;
+  const needsPrimaryFailure = !args.selectedModel.startsWith("deepseek");
+  if (needsPrimaryFailure) {
+    const mirror = await insertBuiltInModelMirrorFixture(args.selectedModel);
+    onTestFinished(mirror.restore);
+    model = mirror.model;
+  }
+  await seedBuiltInModelCandidateKeys(context, model);
+  const owned = new Map<
+    string,
+    {
+      readonly actor: ApiTestUser;
+      readonly usagePricingResolution: Parameters<typeof sendChatRun>[2];
+      readonly restoreExternalState: () => void;
+      sandboxToken?: string;
+      finished: boolean;
+    }
+  >();
+
+  async function cleanupOwnedRuns(): Promise<void> {
+    const cleanupRuns = createRunsApi(context);
+    const cleanupWebhooks = createWebhookCallbackApi(context);
+    for (const [runId, run] of owned) {
+      if (run.finished) {
+        continue;
+      }
+      const current = await cleanupRuns.readRun(run.actor, runId);
+      if (
+        current.status === "pending" ||
+        current.status === "running" ||
+        current.status === "cancelled"
+      ) {
+        run.restoreExternalState();
+        cleanupRuns.acceptTelemetryIngest();
+        context.mocks.ably.publish.mockResolvedValue(undefined);
+        if (current.status !== "cancelled") {
+          await cleanupRuns.requestCancelRun(
+            run.actor,
+            runId,
+            [200],
+            run.usagePricingResolution,
+          );
+        }
+        if (run.sandboxToken) {
+          await cleanupWebhooks.requestAgentComplete(
+            { runId, exitCode: 1, error: "Cancelled OpenRouter test Run" },
+            { authorization: `Bearer ${run.sandboxToken}` },
+            [200],
+            undefined,
+            run.usagePricingResolution,
+          );
+        }
+      }
+      await flushWaitUntilForTest();
+      run.finished = true;
+    }
+  }
+
+  // These selected callbacks own every main Run before its first claim. This
+  // hook and the producer hook both finish Runs before releasing model state.
+  onTestFinished(cleanupOwnedRuns);
+
+  async function sendOwnedRun(...parameters: Parameters<typeof sendChatRun>) {
+    const run = await sendChatRun(...parameters);
+    const storage = context.mocks.s3.send.getMockImplementation();
+    const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    const kms = getSecretKmsClient();
+    owned.set(run.runId, {
+      actor: parameters[0],
+      usagePricingResolution: parameters[2],
+      finished: false,
+      restoreExternalState() {
+        mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+        mockOptionalEnv("SECRETS_KMS_KEY_ID", kmsKey);
+        setSecretKmsClientForTests(kms);
+        if (storage) {
+          context.mocks.s3.send.mockImplementation(storage);
+        }
+        if (signedUrl) {
+          context.mocks.s3.getSignedUrl.mockImplementation(signedUrl);
+        }
+      },
+    });
+    return run;
+  }
+
+  async function claimOwnedRun(...parameters: Parameters<typeof claimChatRun>) {
+    const claim = await claimChatRun(...parameters);
+    const run = owned.get(parameters[1]);
+    if (!run) {
+      throw new Error("Expected to own the claimed OpenRouter test Run");
+    }
+    run.sandboxToken = claim.claim.sandboxToken;
+    return claim;
+  }
+
+  async function cancelOwnedRun(
+    ...parameters: Parameters<typeof cancelChatRun>
+  ): Promise<void> {
+    const run = owned.get(parameters[1]);
+    if (!run?.sandboxToken) {
+      throw new Error("Expected a claimed OpenRouter test Run to cancel");
+    }
+    await cancelChatRun(
+      parameters[0],
+      parameters[1],
+      parameters[2] ?? { authorization: `Bearer ${run.sandboxToken}` },
+    );
+    run.finished = true;
+  }
+
+  await api.updateOrgModelPolicies(args.actor, [
+    {
+      model,
+      preferred: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    },
+  ]);
+  // DeepSeek's direct candidate is ineligible for managed routing, so its
+  // ordinary launch already selects OpenRouter. GPT first reports the actual
+  // primary through a separate claimed Run on this test-owned mirror.
+  if (needsPrimaryFailure) {
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    await coolDownBuiltInRoutesThroughReports(context, {
+      actor: args.actor,
+      agentId: args.agentId,
+      runnerGroup: args.runnerGroup,
+      model,
+      routes: [
+        { providerType: "openai-api-key", upstreamModel: args.selectedModel },
+      ],
+      beforeCooldownCleanup: cleanupOwnedRuns,
+    });
+  }
+  return {
+    model,
+    sendChatRun: sendOwnedRun,
+    claimChatRun: claimOwnedRun,
+    cancelChatRun: cancelOwnedRun,
+  };
+}
 
 function expectApiKeyGptSandboxCarrier(
   claim: Awaited<ReturnType<typeof api.claimRunnerJob>>,
@@ -155,10 +325,13 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const orgId = requireOrgId(actor);
-      const model = await configureBuiltInPiModelOnOpenRouter(
-        actor,
-        selectedModel,
-      );
+      const { model, sendChatRun, claimChatRun, cancelChatRun } =
+        await configureOpenRouterThroughProviderReport({
+          actor,
+          agentId,
+          runnerGroup,
+          selectedModel,
+        });
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
@@ -196,10 +369,13 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it("launches a model on the runtime its catalog Pi route class selects", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const model = await configureBuiltInPiModelOnOpenRouter(
-      actor,
-      "gpt-6-luna",
-    );
+    const { model, sendChatRun, claimChatRun, cancelChatRun } =
+      await configureOpenRouterThroughProviderReport({
+        actor,
+        agentId,
+        runnerGroup,
+        selectedModel: "gpt-6-luna",
+      });
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
     const launch = async (prompt: string) => {
@@ -298,10 +474,13 @@ describe("CHAT-02: model-first provider policies", () => {
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();
-    const model = await configureBuiltInPiModelOnOpenRouter(
-      actor,
-      "gpt-6-luna",
-    );
+    const { model, sendChatRun, claimChatRun, cancelChatRun } =
+      await configureOpenRouterThroughProviderReport({
+        actor,
+        agentId,
+        runnerGroup,
+        selectedModel: "gpt-6-luna",
+      });
 
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
@@ -475,10 +654,13 @@ describe("CHAT-02: model-first provider policies", () => {
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
-      const model = await configureBuiltInPiModelOnOpenRouter(
-        actor,
-        selectedModel,
-      );
+      const { model, sendChatRun, claimChatRun } =
+        await configureOpenRouterThroughProviderReport({
+          actor,
+          agentId,
+          runnerGroup,
+          selectedModel,
+        });
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();

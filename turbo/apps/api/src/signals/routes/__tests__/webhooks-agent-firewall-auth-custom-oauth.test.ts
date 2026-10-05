@@ -20,9 +20,13 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createPublicFirewallFixture,
+  type PublicFirewallFixture,
+} from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 async function setupCustomOAuthFirewall(
@@ -32,6 +36,7 @@ async function setupCustomOAuthFirewall(
     readonly initial?: OAuthIdentityFixtureOptions;
     readonly refresh?: OAuthIdentityFixtureOptions;
   } = {},
+  publicFixture?: PublicFirewallFixture,
 ) {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -55,21 +60,27 @@ async function setupCustomOAuthFirewall(
   const fw = createFirewallApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
-  const actor = bdd.user({ orgRole: "org:admin" });
+  const actor = publicFixture?.actor ?? bdd.user({ orgRole: "org:admin" });
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  await fw.provisionRunReadyOrg(actor);
+  if (publicFixture) {
+    await publicFixture.fund();
+  } else {
+    await fw.provisionRunReadyOrg(actor);
+  }
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Custom OAuth refresh agent",
   });
+  publicFixture?.registerAgent(agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",
   });
+  publicFixture?.registerRun(run.runId);
   const headers = fw.sandboxHeaders(actor, run.runId);
   const connector = await connectors.createCustomConnector(
     actor,
@@ -109,6 +120,7 @@ async function setupCustomOAuthFirewall(
           },
         },
   );
+  const ownedAccountIds = publicFixture?.registerCustomConnector(connector.id);
   async function connect(mutation: ConnectorAccountMutationIntent) {
     const previous = await connectors.listCustomConnectorAccounts(
       actor,
@@ -145,6 +157,7 @@ async function setupCustomOAuthFirewall(
     if (!account) {
       throw new Error("Expected authorized custom OAuth account");
     }
+    ownedAccountIds?.add(account.id);
     return account;
   }
   function request(connectionId: string, forceRefresh: boolean) {
@@ -326,42 +339,52 @@ describe.each(["configured", "automatic"] as const)(
         error: "temporarily_unavailable",
       },
     ])("keeps $name observable and recoverable", async ({ status, error }) => {
-      const custom = await setupCustomOAuthFirewall(mode, (attempt) => {
-        return attempt <= 2
-          ? HttpResponse.json({ error }, { status })
-          : HttpResponse.json({
-              access_token: "custom-recovered",
-              token_type: "Bearer",
-              expires_in: 3600,
-            });
+      const publicFixture = createPublicFirewallFixture(context, {
+        orgRole: "org:admin",
       });
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const failed = await custom.request(custom.account.id, true);
-        expect(failed.status).toBe(502);
-        expect(failed.body).toMatchObject({
-          error: {
-            code: "TOKEN_REFRESH_FAILED",
-            failureReason: "upstream_provider",
+      await publicFixture.run(async () => {
+        const custom = await setupCustomOAuthFirewall(
+          mode,
+          (attempt) => {
+            return attempt <= 2
+              ? HttpResponse.json({ error }, { status })
+              : HttpResponse.json({
+                  access_token: "custom-recovered",
+                  token_type: "Bearer",
+                  expires_in: 3600,
+                });
           },
+          {},
+          publicFixture,
+        );
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const failed = await custom.request(custom.account.id, true);
+          expect(failed.status).toBe(502);
+          expect(failed.body).toMatchObject({
+            error: {
+              code: "TOKEN_REFRESH_FAILED",
+              failureReason: "upstream_provider",
+            },
+          });
+        }
+        expect(custom.provider.tokenBodies).toHaveLength(3);
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: custom.account.id,
+            connectionStatus: "connected",
+            reconnectReason: null,
+          }),
+        );
+        const recovered = await custom.request(custom.account.id, true);
+        expect(recovered.status).toBe(200);
+        expect(recovered.body).toMatchObject({
+          headers: { Authorization: "Bearer custom-recovered" },
         });
-      }
-      expect(custom.provider.tokenBodies).toHaveLength(3);
-      await expect(
-        custom.connectors.listCustomConnectorAccounts(
-          custom.actor,
-          custom.connector.id,
-        ),
-      ).resolves.toContainEqual(
-        expect.objectContaining({
-          id: custom.account.id,
-          connectionStatus: "connected",
-          reconnectReason: null,
-        }),
-      );
-      const recovered = await custom.request(custom.account.id, true);
-      expect(recovered.status).toBe(200);
-      expect(recovered.body).toMatchObject({
-        headers: { Authorization: "Bearer custom-recovered" },
       });
     });
   },
@@ -371,120 +394,150 @@ describe.each(["configured", "automatic"] as const)(
   "Custom %s OAuth identity refresh",
   (mode) => {
     it("populates a previously unnamed account from verified refresh identity", async () => {
-      const custom = await setupCustomOAuthFirewall(mode, undefined, {
-        refresh: {
-          subject: `${mode}-refresh-user`,
-          userInfoUsername: `${mode}-refresh-name`,
-          userInfoEmail: `${mode}-refresh@example.test`,
-        },
+      const publicFixture = createPublicFirewallFixture(context, {
+        orgRole: "org:admin",
       });
+      await publicFixture.run(async () => {
+        const custom = await setupCustomOAuthFirewall(
+          mode,
+          undefined,
+          {
+            refresh: {
+              subject: `${mode}-refresh-user`,
+              userInfoUsername: `${mode}-refresh-name`,
+              userInfoEmail: `${mode}-refresh@example.test`,
+            },
+          },
+          publicFixture,
+        );
 
-      const refreshed = await custom.request(custom.account.id, true);
-      expect(refreshed.status).toBe(200);
-      expect(refreshed.body).toMatchObject({
-        headers: {
-          Authorization:
-            mode === "automatic"
-              ? "Bearer automatic-refreshed-access-token"
-              : "Bearer custom-oauth-refreshed-access-token",
-        },
+        const refreshed = await custom.request(custom.account.id, true);
+        expect(refreshed.status).toBe(200);
+        expect(refreshed.body).toMatchObject({
+          headers: {
+            Authorization:
+              mode === "automatic"
+                ? "Bearer automatic-refreshed-access-token"
+                : "Bearer custom-oauth-refreshed-access-token",
+          },
+        });
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: custom.account.id,
+            externalId: `${mode}-refresh-user`,
+            externalUsername: `${mode}-refresh-name`,
+            externalEmail: `${mode}-refresh@example.test`,
+            connectionStatus: "connected",
+            reconnectReason: null,
+          }),
+        );
       });
-      await expect(
-        custom.connectors.listCustomConnectorAccounts(
-          custom.actor,
-          custom.connector.id,
-        ),
-      ).resolves.toContainEqual(
-        expect.objectContaining({
-          id: custom.account.id,
-          externalId: `${mode}-refresh-user`,
-          externalUsername: `${mode}-refresh-name`,
-          externalEmail: `${mode}-refresh@example.test`,
-          connectionStatus: "connected",
-          reconnectReason: null,
-        }),
-      );
     });
 
     it("requires reconnect instead of replacing a verified principal during refresh", async () => {
-      const custom = await setupCustomOAuthFirewall(mode, undefined, {
-        initial: {
-          subject: `${mode}-original-user`,
-          userInfoUsername: `${mode}-original-name`,
-          userInfoEmail: `${mode}-original@example.test`,
-        },
-        refresh: {
-          subject: `${mode}-other-user`,
-          userInfoUsername: `${mode}-other-name`,
-          userInfoEmail: `${mode}-other@example.test`,
-        },
+      const publicFixture = createPublicFirewallFixture(context, {
+        orgRole: "org:admin",
       });
+      await publicFixture.run(async () => {
+        const custom = await setupCustomOAuthFirewall(
+          mode,
+          undefined,
+          {
+            initial: {
+              subject: `${mode}-original-user`,
+              userInfoUsername: `${mode}-original-name`,
+              userInfoEmail: `${mode}-original@example.test`,
+            },
+            refresh: {
+              subject: `${mode}-other-user`,
+              userInfoUsername: `${mode}-other-name`,
+              userInfoEmail: `${mode}-other@example.test`,
+            },
+          },
+          publicFixture,
+        );
 
-      const refreshed = await custom.request(custom.account.id, true);
-      expect(refreshed.status).toBe(502);
-      expect(refreshed.body).toMatchObject({
-        error: {
-          code: "TOKEN_REFRESH_FAILED",
-          failureReason: "reconnect_required",
-        },
+        const refreshed = await custom.request(custom.account.id, true);
+        expect(refreshed.status).toBe(502);
+        expect(refreshed.body).toMatchObject({
+          error: {
+            code: "TOKEN_REFRESH_FAILED",
+            failureReason: "reconnect_required",
+          },
+        });
+        expect(JSON.stringify(refreshed.body)).not.toContain(
+          mode === "automatic"
+            ? "automatic-refreshed-access-token"
+            : "custom-oauth-refreshed-access-token",
+        );
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: custom.account.id,
+            externalId: `${mode}-original-user`,
+            externalUsername: `${mode}-original-name`,
+            externalEmail: `${mode}-original@example.test`,
+            connectionStatus: "reconnect-required",
+            reconnectReason: "authorization_expired_or_revoked",
+          }),
+        );
       });
-      expect(JSON.stringify(refreshed.body)).not.toContain(
-        mode === "automatic"
-          ? "automatic-refreshed-access-token"
-          : "custom-oauth-refreshed-access-token",
-      );
-      await expect(
-        custom.connectors.listCustomConnectorAccounts(
-          custom.actor,
-          custom.connector.id,
-        ),
-      ).resolves.toContainEqual(
-        expect.objectContaining({
-          id: custom.account.id,
-          externalId: `${mode}-original-user`,
-          externalUsername: `${mode}-original-name`,
-          externalEmail: `${mode}-original@example.test`,
-          connectionStatus: "reconnect-required",
-          reconnectReason: "authorization_expired_or_revoked",
-        }),
-      );
     });
   },
 );
 
 test("preserves static OAuth identity when refreshed identity is unusable", async () => {
-  const custom = await setupCustomOAuthFirewall("configured", undefined, {
-    initial: {
-      subject: "static-preserved-user",
-      userInfoUsername: "static-preserved-name",
-      userInfoEmail: "static-preserved@example.test",
-    },
-    refresh: {
-      subject: "static-untrusted-user",
-      invalidIdToken: true,
-    },
+  const publicFixture = createPublicFirewallFixture(context, {
+    orgRole: "org:admin",
   });
+  await publicFixture.run(async () => {
+    const custom = await setupCustomOAuthFirewall(
+      "configured",
+      undefined,
+      {
+        initial: {
+          subject: "static-preserved-user",
+          userInfoUsername: "static-preserved-name",
+          userInfoEmail: "static-preserved@example.test",
+        },
+        refresh: {
+          subject: "static-untrusted-user",
+          invalidIdToken: true,
+        },
+      },
+      publicFixture,
+    );
 
-  const refreshed = await custom.request(custom.account.id, true);
-  expect(refreshed.status).toBe(200);
-  expect(refreshed.body).toMatchObject({
-    headers: {
-      Authorization: "Bearer custom-oauth-refreshed-access-token",
-    },
+    const refreshed = await custom.request(custom.account.id, true);
+    expect(refreshed.status).toBe(200);
+    expect(refreshed.body).toMatchObject({
+      headers: {
+        Authorization: "Bearer custom-oauth-refreshed-access-token",
+      },
+    });
+    await expect(
+      custom.connectors.listCustomConnectorAccounts(
+        custom.actor,
+        custom.connector.id,
+      ),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        id: custom.account.id,
+        externalId: "static-preserved-user",
+        externalUsername: "static-preserved-name",
+        externalEmail: "static-preserved@example.test",
+        connectionStatus: "connected",
+        reconnectReason: null,
+      }),
+    );
   });
-  await expect(
-    custom.connectors.listCustomConnectorAccounts(
-      custom.actor,
-      custom.connector.id,
-    ),
-  ).resolves.toContainEqual(
-    expect.objectContaining({
-      id: custom.account.id,
-      externalId: "static-preserved-user",
-      externalUsername: "static-preserved-name",
-      externalEmail: "static-preserved@example.test",
-      connectionStatus: "connected",
-      reconnectReason: null,
-    }),
-  );
 });

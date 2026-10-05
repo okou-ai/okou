@@ -5,8 +5,6 @@ import type {
   CodexDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -34,11 +32,7 @@ import {
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
-import { personalAccountsEnabledForOrg } from "./personal-accounts-availability.service";
-import {
-  upsertOrgMultiAuthModelProvider$,
-  upsertUserMultiAuthModelProvider$,
-} from "./model-provider.service";
+import { upsertOrgMultiAuthModelProvider$ } from "./model-provider.service";
 
 const CODEX_DEVICE_AUTH_ISSUER = "https://auth.openai.com";
 const CODEX_DEVICE_AUTH_API_BASE_URL = `${CODEX_DEVICE_AUTH_ISSUER}/api/accounts`;
@@ -832,7 +826,8 @@ interface ImportCodexAuthJsonArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly rawAuthJson: string;
-  readonly accountMutation?: PersonalProviderAccountMutation;
+  readonly mode: CodexDeviceAuthMode | undefined;
+  readonly modelProviderId: string | undefined;
 }
 
 interface ImportedCodexPasteArgs {
@@ -843,7 +838,6 @@ interface ImportedCodexPasteArgs {
     readonly CHATGPT_ACCOUNT_ID: string;
     readonly CHATGPT_ID_TOKEN: string;
   };
-  readonly selectedModel: string | undefined;
   readonly metadata: {
     readonly externalAccountId: string;
     readonly accountEmail: string | null;
@@ -874,7 +868,6 @@ const importCodexAuthJson$ = command(
     const common = {
       rawAuthJson: args.rawAuthJson,
       selectedModel: undefined,
-      signal,
       upsert: async (pasteArgs: ImportedCodexPasteArgs) => {
         if (args.scope === "org") {
           const result = await set(
@@ -896,30 +889,11 @@ const importCodexAuthJson$ = command(
           }
           return result;
         }
-        if (args.accountMutation) {
-          const featureSwitchContext = await get(
-            userFeatureSwitchContext(args.orgId, args.userId),
-          );
-          const result = await set(
-            upsertPersonalModelProviderAccount$,
-            {
-              orgId: args.orgId,
-              authSession: args.authSession,
-              userId: args.userId,
-              type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
-              authMethod: pasteArgs.authMethod,
-              secretValues: pasteArgs.secretValues,
-              selectedModel: pasteArgs.selectedModel,
-              metadata: pasteArgs.metadata,
-              mode: args.accountMutation,
-              featureSwitchContext,
-            },
-            signal,
-          );
-          return result;
-        }
-        const result = await set(
-          upsertUserMultiAuthModelProvider$,
+        const featureSwitchContext = await get(
+          userFeatureSwitchContext(args.orgId, args.userId),
+        );
+        return await set(
+          upsertPersonalModelProviderAccount$,
           {
             orgId: args.orgId,
             authSession: args.authSession,
@@ -928,15 +902,11 @@ const importCodexAuthJson$ = command(
             authMethod: pasteArgs.authMethod,
             secretValues: pasteArgs.secretValues,
             metadata: pasteArgs.metadata,
+            mode: personalAccountMutation(args),
+            featureSwitchContext,
           },
           signal,
         );
-        if ("status" in result) {
-          throw new Error(
-            "upsertUserMultiAuthModelProvider$ unexpectedly returned BAD_REQUEST during codex device auth",
-          );
-        }
-        return result;
       },
     };
 
@@ -948,7 +918,7 @@ const importCodexAuthJson$ = command(
               orgId: args.orgId,
               ...common,
             },
-            common.signal,
+            signal,
           )
         : await handleCodexAuthJsonPaste(
             {
@@ -957,7 +927,7 @@ const importCodexAuthJson$ = command(
               userId: args.userId,
               ...common,
             },
-            common.signal,
+            signal,
           );
 
     if (response.status === 400 || response.status === 404) {
@@ -1130,7 +1100,7 @@ const completeLoadedCodexDeviceAuth$ = command(
 
 const importClaimedCodexDeviceAuth$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly session: ModelProviderAuthSession;
       readonly scope: CodexDeviceAuthScope;
@@ -1172,23 +1142,6 @@ const importClaimedCodexDeviceAuth$ = command(
       };
     }
 
-    const featureSwitchContext =
-      args.scope === "personal"
-        ? await get(userFeatureSwitchContext(args.orgId, args.userId))
-        : undefined;
-    signal.throwIfAborted();
-    const accountMutation =
-      featureSwitchContext &&
-      (await personalAccountsEnabledForOrg(
-        set(writeDb$),
-        args.orgId,
-        isFeatureEnabled(
-          FeatureSwitchKey.PersonalModelProviderAccounts,
-          featureSwitchContext,
-        ),
-      ))
-        ? personalAccountMutation(args)
-        : undefined;
     const imported = await settle(
       set(
         importCodexAuthJson$,
@@ -1202,7 +1155,8 @@ const importClaimedCodexDeviceAuth$ = command(
           orgId: args.orgId,
           userId: args.userId,
           rawAuthJson: authJsonFromTokens(tokens.value),
-          ...(accountMutation ? { accountMutation } : {}),
+          mode: args.mode,
+          modelProviderId: args.modelProviderId,
         },
         signal,
       ),

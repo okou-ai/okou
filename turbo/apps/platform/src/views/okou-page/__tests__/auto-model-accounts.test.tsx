@@ -1,8 +1,8 @@
+import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -101,16 +101,22 @@ async function openSettings(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: "/agents?settings=model",
-    featureSwitches: {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-    },
   });
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   await within(settings).findByRole("heading", { name: "Use more models" });
   return settings;
 }
 
-test("Offer a single connection entry point in Auto mode and keep it after cancelling authorization", async () => {
+function providerSection(settings: HTMLElement, name = "Claude"): HTMLElement {
+  const heading = within(settings).getByRole("heading", { name });
+  const section = heading.closest("section");
+  if (!section) {
+    throw new Error(`Provider section not found: ${name}`);
+  }
+  return section;
+}
+
+test("Offer a direct connection action in each empty provider section and keep it after cancelling authorization", async () => {
   mockAutoMode();
   context.mocks.data.personalModelProviders([]);
   const settings = await openSettings();
@@ -123,13 +129,19 @@ test("Offer a single connection entry point in Auto mode and keep it after cance
   expect(
     within(settings).queryByRole("heading", { name: "Models" }),
   ).not.toBeInTheDocument();
+  expect(within(settings).getAllByText("No accounts connected.")).toHaveLength(
+    2,
+  );
   expect(
-    within(settings).queryByText("No accounts connected."),
-  ).not.toBeInTheDocument();
-  click(button("Connect account", settings));
-  const menu = await screen.findByRole("menu");
-  expect(within(menu).getByText("ChatGPT (Codex)")).toBeInTheDocument();
-  click(within(menu).getByText("Claude"));
+    button("Connect account", providerSection(settings, "ChatGPT (Codex)")),
+  ).toBeEnabled();
+  expect(
+    queryAllByRoleFast("button", settings).filter((element) => {
+      return element.textContent?.trim() === "Connect account";
+    }),
+  ).toHaveLength(2);
+  click(button("Connect account", providerSection(settings)));
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   const input = await screen.findByTestId("claude-code-device-auth-code");
   const authorization = input.closest('[role="dialog"]');
   if (!(authorization instanceof HTMLElement)) {
@@ -144,7 +156,7 @@ test("Offer a single connection entry point in Auto mode and keep it after cance
   expect(button("Connect account", settings)).toBeEnabled();
 });
 
-test("Switch to account management only after successful authorization is confirmed by the account list", async () => {
+test("Show a connected account in its provider section only after authorization is confirmed by the account list", async () => {
   mockAutoMode();
   context.mocks.data.personalModelProviders([]);
   const connected = account();
@@ -173,9 +185,7 @@ test("Switch to account management only after successful authorization is confir
   await waitFor(() => {
     return expect(button("Connect account", settings)).toBeEnabled();
   });
-  click(button("Connect account", settings));
-  const menu = await screen.findByRole("menu");
-  click(within(menu).getByText("Claude"));
+  click(button("Connect account", providerSection(settings)));
   const input = await screen.findByTestId("claude-code-device-auth-code");
   await fill(input, "claude-auth-code");
   const authorization = input.closest('[role="dialog"]');
@@ -194,18 +204,16 @@ test("Switch to account management only after successful authorization is confir
   );
   expect(within(row).getByText("account@example.com")).toBeInTheDocument();
   expect(within(row).getByText("Connected")).toBeInTheDocument();
-  expect(button("Add account", settings)).toBeEnabled();
+  expect(button("Connect account", providerSection(settings))).toBeEnabled();
   expect(
-    queryAllByRoleFast("button", settings).some((element) => {
-      return element.textContent?.trim() === "Connect account";
-    }),
-  ).toBeFalsy();
+    button("Connect account", providerSection(settings, "ChatGPT (Codex)")),
+  ).toBeEnabled();
   expect(
     within(settings).getByText("No accounts connected."),
   ).toBeInTheDocument();
 });
 
-test("Return to the connection empty state after disconnecting the final saved account", async () => {
+test("Keep both provider sections after disconnecting the final saved account", async () => {
   mockAutoMode();
   const connected = account("codex-oauth-token");
   context.mocks.data.personalModelProviders([connected]);
@@ -225,9 +233,9 @@ test("Return to the connection empty state after disconnecting the final saved a
   expect(
     within(settings).queryByTestId(`oauth-account-${connected.id}`),
   ).not.toBeInTheDocument();
-  expect(
-    within(settings).queryByText("No accounts connected."),
-  ).not.toBeInTheDocument();
+  expect(within(settings).getAllByText("No accounts connected.")).toHaveLength(
+    2,
+  );
 });
 
 test("Keep expired accounts in management and expose their existing reconnect flow", async () => {
@@ -239,11 +247,57 @@ test("Keep expired accounts in management and expose their existing reconnect fl
     `oauth-account-${expired.id}`,
   );
   expect(within(row).getByText("Attention")).toBeInTheDocument();
-  expect(button("Add account", settings)).toBeEnabled();
+  expect(button("Connect account", providerSection(settings))).toBeEnabled();
   click(button("Reconnect", row));
   await expect(
     screen.findByTestId("claude-code-device-auth-code"),
   ).resolves.toBeInTheDocument();
+});
+
+test("Connect ChatGPT directly without selecting a provider from a menu", async () => {
+  mockAutoMode();
+  context.mocks.data.personalModelProviders([]);
+  context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
+    return respond(200, {
+      sessionToken: "mock-personal-codex-session",
+      type: "codex",
+      status: "pending",
+      scope: "personal",
+      browserUrl: "https://auth.openai.com/codex/device",
+      verificationCode: "TEST-CODE",
+      expiresIn: 900,
+      interval: 5,
+    });
+  });
+  const settings = await openSettings();
+  click(
+    button("Connect account", providerSection(settings, "ChatGPT (Codex)")),
+  );
+  const authorization = await screen.findByRole("dialog", {
+    name: "Connect Codex",
+  });
+  expect(within(authorization).getByText("TEST-CODE")).toBeInTheDocument();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+});
+
+test("Disable only the provider that has reached the ten-account limit", async () => {
+  mockAutoMode();
+  context.mocks.data.personalModelProviders(
+    Array.from({ length: 10 }, (_, index) => {
+      return {
+        ...account(),
+        id: `00000000-0000-4000-a000-${String(index + 400).padStart(12, "0")}`,
+        accountEmail: `claude-${index}@example.com`,
+        workspaceName: `claude-${index}@example.com`,
+        isActive: index === 0,
+      };
+    }),
+  );
+  const settings = await openSettings();
+  expect(button("Connect account", providerSection(settings))).toBeDisabled();
+  expect(
+    button("Connect account", providerSection(settings, "ChatGPT (Codex)")),
+  ).toBeEnabled();
 });
 
 test("Show loading rather than a connect prompt before the first account read completes", async () => {

@@ -80,13 +80,6 @@ const actionBodySchema = z.discriminatedUnion("action", [
     updatedAt: z.iso.datetime(),
   }),
   z.object({
-    action: z.literal("correlate-legacy-checkout-session"),
-    orgId: z.string().min(1),
-    usagePackSubscriptionId: z.string().uuid(),
-    stripeCheckoutSessionId: z.string().min(1),
-    updatedAt: z.iso.datetime(),
-  }),
-  z.object({
     action: z.literal("set-grant-remaining"),
     orgId: z.string().min(1),
     userId: z.string().min(1),
@@ -314,38 +307,6 @@ type SeedLegacyMigrationAction = Extract<
   TestUsagePackSubscriptionStateAction,
   { readonly action: "seed-legacy-migration" }
 >;
-type CorrelateLegacyCheckoutSessionAction = Extract<
-  TestUsagePackSubscriptionStateAction,
-  { readonly action: "correlate-legacy-checkout-session" }
->;
-
-async function correlateLegacyCheckoutSession(
-  db: Db,
-  body: CorrelateLegacyCheckoutSessionAction,
-  signal: AbortSignal,
-): Promise<void> {
-  // The previous production writer correlates after releasing the organization
-  // lock and only filters by snapshot ID. Production has no endpoint that can
-  // pause and resume that deployed flow, so this test-only action reproduces
-  // its unconditional update exactly while retaining org scoping for cleanup.
-  const correlated = await db
-    .update(usagePackSubscriptions)
-    .set({
-      stripeCheckoutSessionId: body.stripeCheckoutSessionId,
-      updatedAt: new Date(body.updatedAt),
-    })
-    .where(
-      and(
-        eq(usagePackSubscriptions.id, body.usagePackSubscriptionId),
-        eq(usagePackSubscriptions.orgId, body.orgId),
-      ),
-    )
-    .returning({ id: usagePackSubscriptions.id });
-  signal.throwIfAborted();
-  if (correlated.length !== 1) {
-    throw new Error("Failed to correlate the legacy Checkout Session");
-  }
-}
 
 // Stripe callbacks and cron are production ingress surfaces, but production
 // deliberately has no API for constructing a pending local correlation row or
@@ -861,10 +822,6 @@ const mutateTestUsagePackSubscriptionState$ = command(
             ),
           );
         signal.throwIfAborted();
-        return { status: 200 as const, body: { action: "ok" as const } };
-      }
-      case "correlate-legacy-checkout-session": {
-        await correlateLegacyCheckoutSession(db, body, signal);
         return { status: 200 as const, body: { action: "ok" as const } };
       }
       case "set-grant-remaining": {

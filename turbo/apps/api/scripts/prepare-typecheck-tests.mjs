@@ -12,6 +12,7 @@ const canonicalName = "tsconfig.tests.json";
 export const testProjectNames = [
   ".typecheck/tsconfig.tests-0.json",
   ".typecheck/tsconfig.tests-1.json",
+  ".typecheck/tsconfig.tests-2.json",
 ];
 
 function normalized(path) {
@@ -77,9 +78,12 @@ function expectedProjects(root) {
       throw new Error(`Test root is not a file: ${file}`);
     }
   }
-  const groups = [[], []];
+  const groups = testProjectNames.map(() => {
+    return [];
+  });
   for (const file of files) {
-    groups[createHash("sha256").update(file).digest()[0] % 2].push(file);
+    const group = createHash("sha256").update(file).digest()[0] % groups.length;
+    groups[group].push(file);
   }
   const projects = testProjectNames.map((name, index) => {
     const directory = dirname(resolve(root, name));

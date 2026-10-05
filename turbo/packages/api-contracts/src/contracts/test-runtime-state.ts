@@ -54,7 +54,7 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("set-run-autonomy-budget"),
     run_id: z.uuid(),
-    autonomy_budget: z.int().min(0).max(10),
+    autonomy_budget: z.int().min(0).max(32),
   }),
   z.object({
     action: z.literal("read-run-autonomy-budget"),
@@ -80,11 +80,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("set-run-model-provider"),
-    run_id: z.uuid(),
-    model_provider: z.string().nullable(),
-  }),
-  z.object({
     action: z.literal("save-run-summary"),
     run_id: z.uuid(),
     trigger_source: z.string(),
@@ -94,7 +89,7 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("set-workflow-automation-autonomy-budget"),
     automation_id: z.uuid(),
-    autonomy_budget: z.int().min(0).max(10),
+    autonomy_budget: z.int().min(0).max(32),
   }),
   z.object({
     action: z.literal("read-workflow-automation-autonomy-state"),
@@ -110,14 +105,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     // Stored rows can come from a future or invalid writer. The claim boundary
     // must validate them, not this test-only fixture endpoint.
     pi_model_config: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    action: z.literal("enable-queued-pi-ownership-transfer"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-run-uploaded-file-sources"),
-    run_id: z.uuid(),
   }),
   z.object({
     action: z.literal("read-chat-event-snapshot-head"),
@@ -201,7 +188,7 @@ export const testRuntimeStateActionResponseSchema = z.object({
   processed: z.int().nonnegative().optional(),
   selected_model: z.string().optional(),
   built_in_model_route: builtInModelRuntimeRouteSchema.nullable().optional(),
-  autonomy_budget: z.int().min(0).max(10).nullable().optional(),
+  autonomy_budget: z.int().min(0).max(32).nullable().optional(),
   failure_reason: runFailureReasonTokenSchema.nullable().optional(),
   wss_target: z
     .object({
@@ -216,7 +203,7 @@ export const testRuntimeStateActionResponseSchema = z.object({
     .optional(),
   workflow_automation_state: z
     .object({
-      autonomy_budget: z.int().min(0).max(10),
+      autonomy_budget: z.int().min(0).max(32),
       enabled: z.boolean(),
       event_connector_id: z.uuid().nullable(),
       last_run_id: z.uuid().nullable(),
@@ -228,11 +215,10 @@ export const testRuntimeStateActionResponseSchema = z.object({
   workflow_automation_run: z
     .object({
       run_id: z.uuid(),
-      autonomy_budget: z.int().min(0).max(10),
+      autonomy_budget: z.int().min(0).max(32),
     })
     .nullable()
     .optional(),
-  uploaded_file_sources: z.array(z.string()).optional(),
   chat_event_snapshot_head: z
     .object({
       archive_schema_version: z.int().positive(),
@@ -317,8 +303,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
           }),
         )
         .nullable(),
-      runner_job_count: z.int().nonnegative(),
-      callback_count: z.int().nonnegative(),
     })
     .nullable()
     .optional(),

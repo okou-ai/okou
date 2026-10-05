@@ -23,9 +23,10 @@ import {
   type UsagePricingFixture,
   type UsagePricingKey,
 } from "../../../test-fixtures/system-config-seeds";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { now, nowDate } from "../../../lib/time";
 import type { RouteEntry } from "../../route-entry";
 import { createDeferredPromise } from "../../utils";
@@ -38,11 +39,14 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   generatedStripeCustomerId,
   postUsageAllowanceInvoicePaid,
 } from "./helpers/stripe-billing-webhook";
 import { createRouteMocks } from "./helpers/route-test";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
@@ -136,6 +140,175 @@ async function setActorCredits(
 async function fundActor(actor: ApiTestUser): Promise<void> {
   await bootstrapOnboarding(actor);
   await setActorCredits(actor, 1000);
+}
+
+interface FundedWebSearchActor {
+  readonly actor: ApiTestUser;
+  readonly orgId: string;
+  readonly customerId: string;
+  readonly subscriptionId: string;
+  readonly invoiceId: string;
+  readonly storageBucket: string;
+}
+
+async function cleanupFundedWebSearchActor(
+  owned: FundedWebSearchActor,
+): Promise<void> {
+  mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
+  context.mocks.s3.send.mockResolvedValue({
+    Contents: [],
+    IsTruncated: false,
+  });
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  await flushWaitUntilForTest();
+
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.subscriptions.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "active",
+    metadata: {},
+  });
+  context.mocks.stripe.subscriptions.update.mockResolvedValue({
+    id: owned.subscriptionId,
+  });
+  context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "canceled",
+  });
+  // This one-time credit invoice has no subscription invoice to refund.
+  context.mocks.stripe.invoices.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.deleted",
+    data: { id: owned.orgId },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+
+  // Public deletion removes the wallet and active work. Production retains
+  // immutable billing and usage history under this fixture's unique IDs.
+  await expect(credits(owned.actor)).resolves.toBe(0);
+  expect(
+    (
+      await createRunReadsApi(context).requestListLogs(
+        owned.actor,
+        { limit: 50 },
+        [200],
+      )
+    ).body.data,
+  ).toStrictEqual([]);
+}
+
+async function fundActorWithSubscription(actor: ApiTestUser): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Web Search test actor must belong to an organization");
+  }
+  const suffix = randomUUID();
+  const owned = {
+    actor,
+    orgId: actor.orgId,
+    customerId: `cus_web_search_${suffix}`,
+    subscriptionId: `sub_web_search_${suffix}`,
+    invoiceId: `in_web_search_${suffix}`,
+    storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+  };
+  const owner = createFixtureOperationOwner(async () => {
+    await cleanupFundedWebSearchActor(owned);
+  });
+  await owner.run(async () => {
+    await bootstrapOnboarding(actor);
+    await expect(credits(actor)).resolves.toBe(0);
+
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureStripeBillingEnv();
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: owned.customerId,
+      metadata: { orgId: owned.orgId },
+    });
+    const subscription = {
+      id: owned.subscriptionId,
+      customer: owned.customerId,
+      status: "active",
+      metadata: {},
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      items: { data: [{ price: { id: "price_bdd_pro" } }] },
+    };
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_web_search_created_${suffix}`,
+        type: "customer.subscription.created",
+        created: Math.floor(now() / 1000),
+        data: { object: subscription },
+      },
+      [200],
+    );
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_web_search_updated_${suffix}`,
+        type: "customer.subscription.updated",
+        created: Math.floor(now() / 1000),
+        data: { object: subscription },
+      },
+      [200],
+    );
+    const subscribed = await accept(
+      client()(billingStatusContract).get({
+        headers: authenticate(actor),
+      }),
+      [200],
+    );
+    expect(subscribed.body).toMatchObject({
+      tier: "pro",
+      status: "active",
+      credits: 0,
+    });
+
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_web_search_paid_${suffix}`,
+        type: "invoice.paid",
+        created: Math.floor(now() / 1000),
+        data: {
+          object: {
+            id: owned.invoiceId,
+            customer: owned.customerId,
+            amount_paid: 100,
+            metadata: {
+              type: "auto_recharge",
+              orgId: owned.orgId,
+              creditsAmount: "1000",
+            },
+            parent: null,
+            lines: { has_more: false, data: [] },
+          },
+        },
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const funded = await accept(
+      client()(billingStatusContract).get({
+        headers: authenticate(actor),
+      }),
+      [200],
+    );
+    expect(funded.body).toMatchObject({
+      tier: "pro",
+      status: "active",
+      credits: 1000,
+    });
+  });
 }
 
 async function credits(actor: ApiTestUser): Promise<number> {
@@ -626,7 +799,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     let providerRequests = 0;
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupMissingWebSearchPricing();
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -780,7 +953,7 @@ describe("okou web-search route", () => {
     let authorization: string | null = null;
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, async ({ request }) => {
@@ -839,7 +1012,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -865,7 +1038,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const longTitle = `${"t".repeat(WEB_SEARCH_MAX_TITLE_CHARS - 1)}😀`;
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -909,7 +1082,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
         return HttpResponse.json({
@@ -988,7 +1161,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1014,7 +1187,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1047,7 +1220,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1073,7 +1246,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1104,7 +1277,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1130,7 +1303,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1160,7 +1333,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1197,7 +1370,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const payload = JSON.stringify(providerResponse());
     server.use(
@@ -1229,7 +1402,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const json = JSON.stringify({ results: [] });
     const payload = `${json}${" ".repeat(MAX_PROVIDER_RESPONSE_BYTES - json.length)}`;
@@ -1275,7 +1448,7 @@ describe("okou web-search route", () => {
     let providerSignalAborted = false;
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, async ({ request }) => {
@@ -1308,7 +1481,7 @@ describe("okou web-search route", () => {
     abortError.name = "AbortError";
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1349,7 +1522,7 @@ describe("okou web-search route", () => {
     let providerRequests = 0;
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, () => {
@@ -1387,7 +1560,7 @@ describe("okou web-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredWebSearchPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.post(PERPLEXITY_SEARCH_URL, async () => {

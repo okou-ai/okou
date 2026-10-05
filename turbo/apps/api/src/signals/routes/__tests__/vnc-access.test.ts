@@ -18,6 +18,7 @@ import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -26,6 +27,7 @@ import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
   vncConnectionBody,
+  vncRunnerHeaders,
   vncSessionHeaders as headers,
 } from "./helpers/vnc-runtime";
 
@@ -94,7 +96,11 @@ async function visibility(agentId: string, value: "public" | "private") {
 
 describe("live chat VNC Run inventory", () => {
   const claimed = createClaimedVncApi(context);
-  afterEach(claimed.cleanup);
+  const publicRuns = createPublicRemoteAccessRunApi(context);
+  afterEach(async () => {
+    await publicRuns.cleanup();
+    await claimed.cleanup();
+  });
 
   it("advertises the exact client-certificate profile without revealing private material", async () => {
     useSecretKmsProbe();
@@ -778,7 +784,18 @@ describe("live chat VNC Run inventory", () => {
   it.each(["pending", "completed", "cancelled", "failed"] as const)(
     "rejects inventory for a %s Run despite an enabled host default",
     async (status) => {
-      const f = await api.fixture({ runtime: { status } });
+      const value = await owner();
+      const connection = await accept(
+        api.connections().create({ headers, body: vncConnectionBody() }),
+        [201],
+      );
+      await api.enableDefault(value, "vnc", connection.body.id);
+      const f = await publicRuns.start(value);
+      if (status !== "pending") {
+        const runtime = await publicRuns.claim(f, vncRunnerHeaders);
+        await publicRuns.finish(runtime, status);
+      }
+      api.authenticate(f);
       const unavailableInventory = await accept(
         inventory().list({ headers: token(f) }),
         [404],

@@ -15,6 +15,7 @@ import { server } from "../../../mocks/server";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { insertCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { encryptSecretForTests } from "./helpers/encrypt-secret";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -22,22 +23,87 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { setBuiltInCandidateCooldownFixture } from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { createPublicModelFailureFixture } from "./helpers/public-model-failure";
 import { createRouteMocks } from "./helpers/route-test";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 import { modelProvidersRoutes } from "../model-providers";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
-function uniqueOrgUser(prefix: string): {
+async function customOrgUser(fixture: {
   readonly orgId: string;
   readonly userId: string;
-} {
-  return {
+}): Promise<typeof fixture> {
+  mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+  await ensureCustomModelModeForTest(context, fixture, () => {
+    return { authorization: "Bearer clerk-session" };
+  });
+  return fixture;
+}
+
+async function uniqueOrgUser(prefix: string) {
+  return await customOrgUser({
     orgId: `org_${prefix}_${randomUUID().slice(0, 8)}`,
     userId: `user_${prefix}_${randomUUID().slice(0, 8)}`,
-  };
+  });
+}
+
+interface DiagnosticRuntimeRoute {
+  readonly provider_type: "openai-api-key" | "openrouter-codex";
+  readonly upstream_model: string;
+}
+
+async function configureDiagnosticModel(
+  selectedModel: string,
+  routes: readonly DiagnosticRuntimeRoute[],
+): Promise<void> {
+  const restore = await insertCatalogModelFixture({
+    model: selectedModel,
+    displayName: "Owned cooldown diagnostic model",
+    sortOrder: 100_000,
+    // These exact arbitrary upstream identities use the supported native
+    // Codex protocols; they are not substituted with a Pi catalog model.
+    builtInRoutes: routes.map((route, priority) => {
+      return {
+        concreteProviderType: route.provider_type,
+        upstreamModel: route.upstream_model,
+        priority,
+        efforts: ["medium"],
+        defaultEffort: "medium",
+      };
+    }),
+  });
+  onTestFinished(restore);
+  await seedBuiltInModelCandidateKeys(context, selectedModel);
+}
+
+async function reportDiagnosticCooldown(
+  producer: Awaited<ReturnType<typeof createPublicModelFailureFixture>>,
+  selectedModel: string,
+  route: DiagnosticRuntimeRoute,
+  receivedAt: number,
+  durations: readonly number[],
+): Promise<void> {
+  await withMockNowForTest(receivedAt, async () => {
+    const claimed = await producer.claim(selectedModel);
+    expect(claimed.log).toMatchObject({
+      selectedModel,
+      modelRuntimeProvider: route.provider_type,
+      modelRuntimeModel: route.upstream_model,
+    });
+    for (const retryAfterSeconds of durations) {
+      await expect(
+        createRunsApi(context).reportRunnerModelProviderFailure(claimed.runId, {
+          failureKind: "rate_limit",
+          retryAfterSeconds,
+        }),
+      ).resolves.toStrictEqual({ outcome: "recorded" });
+    }
+    await producer.finish(claimed.runId);
+  });
 }
 
 function base64UrlEncode(input: string): string {
@@ -289,7 +355,7 @@ describe("GET /api/model-providers", () => {
   });
 
   it("allows organization members to list org providers", async () => {
-    const fixture = uniqueOrgUser("zmp-list-member");
+    const fixture = await uniqueOrgUser("zmp-list-member");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
     const client = setupApp({ context, routes: modelProvidersRoutes })(
@@ -305,8 +371,7 @@ describe("GET /api/model-providers", () => {
   });
 
   it("lists org providers", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
+    const { orgId, userId } = await uniqueOrgUser("zmp-list");
 
     mocks.clerk.session(userId, orgId, "org:admin");
 
@@ -332,8 +397,7 @@ describe("GET /api/model-providers", () => {
   });
 
   it("does not show first provider as default", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
+    const { orgId, userId } = await uniqueOrgUser("zmp-list-default");
 
     mocks.clerk.session(userId, orgId, "org:admin");
 
@@ -358,8 +422,7 @@ describe("GET /api/model-providers", () => {
   });
 
   it("does not show same-framework providers as default", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
+    const { orgId, userId } = await uniqueOrgUser("zmp-list-framework");
 
     mocks.clerk.session(userId, orgId, "org:admin");
 
@@ -402,8 +465,7 @@ describe("GET /api/model-providers", () => {
   });
 
   it("does not mark provider rows as framework defaults via list", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
+    const { orgId, userId } = await uniqueOrgUser("zmp-list-framework-default");
 
     mocks.clerk.session(userId, orgId, "org:admin");
 
@@ -512,7 +574,7 @@ describe("GET /api/model-providers/cooldown-diagnostics", () => {
   });
 
   it("returns 403 when OkouDebug is disabled", async () => {
-    const fixture = uniqueOrgUser("cooldown-disabled");
+    const fixture = await uniqueOrgUser("cooldown-disabled");
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProviderCooldownDiagnosticsContract,
@@ -532,50 +594,56 @@ describe("GET /api/model-providers/cooldown-diagnostics", () => {
   });
 
   it("returns active global cooldowns", async () => {
-    const fixture = uniqueOrgUser("cooldown-active");
+    const fixture = await uniqueOrgUser("cooldown-active");
     const selectedModelPrefix = `diagnostic-${randomUUID()}`;
     const startedAt = Date.UTC(2026, 7, 23, 12, 0, 0);
     const earlierDeadline = new Date(startedAt + 30_000);
     const laterDeadline = new Date(startedAt + 60_000);
     const expiredDeadline = new Date(startedAt - 1);
     const firstRoute = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModelPrefix}-upstream-b`,
-      model_key_id: randomUUID(),
     };
     const secondRoute = {
-      provider_type: "openrouter-codex",
+      provider_type: "openrouter-codex" as const,
       upstream_model: `${selectedModelPrefix}-upstream-a`,
-      model_key_id: randomUUID(),
     };
     const expiredRoute = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModelPrefix}-expired`,
-      model_key_id: randomUUID(),
     };
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await configureDiagnosticModel(`${selectedModelPrefix}-b`, [firstRoute]);
+    await configureDiagnosticModel(`${selectedModelPrefix}-a`, [secondRoute]);
+    await configureDiagnosticModel(`${selectedModelPrefix}-expired`, [
+      expiredRoute,
+    ]);
+    const producer = await withMockNowForTest(startedAt - 60_000, async () => {
+      return await createPublicModelFailureFixture(context, [
+        `${selectedModelPrefix}-b`,
+        `${selectedModelPrefix}-a`,
+        `${selectedModelPrefix}-expired`,
+      ]);
+    });
+    await reportDiagnosticCooldown(
+      producer,
       `${selectedModelPrefix}-b`,
       firstRoute,
-      earlierDeadline,
+      startedAt,
+      [30, 60],
     );
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      `${selectedModelPrefix}-b`,
-      firstRoute,
-      laterDeadline,
-    );
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await reportDiagnosticCooldown(
+      producer,
       `${selectedModelPrefix}-a`,
       secondRoute,
-      earlierDeadline,
+      startedAt,
+      [30],
     );
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await reportDiagnosticCooldown(
+      producer,
       `${selectedModelPrefix}-expired`,
       expiredRoute,
-      expiredDeadline,
+      expiredDeadline.getTime() - 30_000,
+      [30],
     );
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouDebug]: true,
@@ -640,19 +708,26 @@ describe("DELETE /api/model-providers/cooldown-diagnostics", () => {
   });
 
   it("rejects non-staff callers without changing the cooldown", async () => {
-    const fixture = uniqueOrgUser("cooldown-cancel-non-staff");
+    const fixture = await uniqueOrgUser("cooldown-cancel-non-staff");
     const selectedModel = `diagnostic-${randomUUID()}`;
     const unavailableUntil = new Date(now() + 60_000);
     const route = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModel}-upstream`,
-      model_key_id: randomUUID(),
     };
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await configureDiagnosticModel(selectedModel, [route]);
+    const producer = await withMockNowForTest(
+      unavailableUntil.getTime() - 120_000,
+      async () => {
+        return await createPublicModelFailureFixture(context, [selectedModel]);
+      },
+    );
+    await reportDiagnosticCooldown(
+      producer,
       selectedModel,
       route,
-      unavailableUntil,
+      unavailableUntil.getTime() - 60_000,
+      [60],
     );
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouDebug]: true,
@@ -710,26 +785,36 @@ describe("DELETE /api/model-providers/cooldown-diagnostics", () => {
     const selectedModel = `diagnostic-${randomUUID()}`;
     const unavailableUntil = new Date(now() + 60_000);
     const selectedRoute = {
-      provider_type: "openai-api-key",
+      provider_type: "openai-api-key" as const,
       upstream_model: `${selectedModel}-selected`,
-      model_key_id: randomUUID(),
     };
     const siblingRoute = {
-      provider_type: "openrouter-codex",
+      provider_type: "openrouter-codex" as const,
       upstream_model: `${selectedModel}-sibling`,
-      model_key_id: randomUUID(),
     };
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await configureDiagnosticModel(selectedModel, [
+      selectedRoute,
+      siblingRoute,
+    ]);
+    const producer = await withMockNowForTest(
+      unavailableUntil.getTime() - 120_000,
+      async () => {
+        return await createPublicModelFailureFixture(context, [selectedModel]);
+      },
+    );
+    await reportDiagnosticCooldown(
+      producer,
       selectedModel,
       selectedRoute,
-      unavailableUntil,
+      unavailableUntil.getTime() - 60_000,
+      [60],
     );
-    await setBuiltInCandidateCooldownFixture(
-      context,
+    await reportDiagnosticCooldown(
+      producer,
       selectedModel,
       siblingRoute,
-      unavailableUntil,
+      unavailableUntil.getTime() - 60_000,
+      [60],
     );
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouDebug]: true,
@@ -824,7 +909,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("returns 403 when the caller is not an org admin", async () => {
-    const fixture = uniqueOrgUser("zmp-upsert-member");
+    const fixture = await uniqueOrgUser("zmp-upsert-member");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -844,7 +929,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("creates and updates an org single-secret provider", async () => {
-    const fixture = uniqueOrgUser("zmp-upsert-single");
+    const fixture = await uniqueOrgUser("zmp-upsert-single");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -891,7 +976,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("rejects whitespace-only org single-secret provider secrets", async () => {
-    const fixture = uniqueOrgUser("zmp-upsert-blank-secret");
+    const fixture = await uniqueOrgUser("zmp-upsert-blank-secret");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -923,7 +1008,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("creates org-level AWS Bedrock multi-auth provider", async () => {
-    const fixture = uniqueOrgUser("zmp-upsert-bedrock");
+    const fixture = await uniqueOrgUser("zmp-upsert-bedrock");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -974,7 +1059,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("recovers after concurrent first saves with different auth methods", async () => {
-    const fixture = uniqueOrgUser("zmp-concurrent-bedrock");
+    const fixture = await uniqueOrgUser("zmp-concurrent-bedrock");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1029,7 +1114,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("rejects secrets outside the selected provider auth method", async () => {
-    const fixture = uniqueOrgUser("zmp-unknown-multi-secret");
+    const fixture = await uniqueOrgUser("zmp-unknown-multi-secret");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1061,7 +1146,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("rejects invalid multi-auth shape for single-secret providers", async () => {
-    const fixture = uniqueOrgUser("zmp-upsert-bad-multi");
+    const fixture = await uniqueOrgUser("zmp-upsert-bad-multi");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1083,7 +1168,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("creates an openai-api-key provider by default", async () => {
-    const fixture = uniqueOrgUser("zmp-openai");
+    const fixture = await uniqueOrgUser("zmp-openai");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
     );
@@ -1113,7 +1198,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("does not mark provider rows as defaults across frameworks", async () => {
-    const fixture = uniqueOrgUser("zmp-cross-framework");
+    const fixture = await uniqueOrgUser("zmp-cross-framework");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1159,7 +1244,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("handles codex auth_json paste", async () => {
-    const fixture = uniqueOrgUser("zmp-codex-paste");
+    const fixture = await uniqueOrgUser("zmp-codex-paste");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     server.use(
       http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
@@ -1213,7 +1298,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("handles codex auth_json claim variants through provider upsert", async () => {
-    const fixture = uniqueOrgUser("zmp-codex-claims");
+    const fixture = await uniqueOrgUser("zmp-codex-claims");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1280,7 +1365,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("returns typed codex auth_json validation errors", async () => {
-    const fixture = uniqueOrgUser("zmp-codex-invalid");
+    const fixture = await uniqueOrgUser("zmp-codex-invalid");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1353,7 +1438,7 @@ describe("POST /api/model-providers", () => {
   });
 
   it("returns typed codex auth_json validation errors for token claims", async () => {
-    const fixture = uniqueOrgUser("zmp-codex-token-invalid");
+    const fixture = await uniqueOrgUser("zmp-codex-token-invalid");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1483,7 +1568,7 @@ describe("DELETE /api/model-providers/:type", () => {
   });
 
   it("returns 403 for non-admin members", async () => {
-    const fixture = uniqueOrgUser("zmp-delete-member");
+    const fixture = await uniqueOrgUser("zmp-delete-member");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersByTypeContract,
@@ -1503,7 +1588,7 @@ describe("DELETE /api/model-providers/:type", () => {
   });
 
   it("returns 404 when the target provider is absent", async () => {
-    const fixture = uniqueOrgUser("zmp-delete-missing");
+    const fixture = await uniqueOrgUser("zmp-delete-missing");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersByTypeContract,
@@ -1521,7 +1606,7 @@ describe("DELETE /api/model-providers/:type", () => {
   });
 
   it("deletes an org single-secret provider", async () => {
-    const fixture = uniqueOrgUser("zmp-delete-legacy");
+    const fixture = await uniqueOrgUser("zmp-delete-legacy");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const mainClient = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1569,7 +1654,7 @@ describe("DELETE /api/model-providers/:type", () => {
   });
 
   it("deletes a codex auth_json provider", async () => {
-    const fixture = uniqueOrgUser("zmp-delete-multiauth");
+    const fixture = await uniqueOrgUser("zmp-delete-multiauth");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const mainClient = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
@@ -1620,7 +1705,7 @@ describe("DELETE /api/model-providers/:type", () => {
   });
 
   it("does not promote another provider when deleting a provider", async () => {
-    const fixture = uniqueOrgUser("zmp-delete-default");
+    const fixture = await uniqueOrgUser("zmp-delete-default");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const mainClient = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,

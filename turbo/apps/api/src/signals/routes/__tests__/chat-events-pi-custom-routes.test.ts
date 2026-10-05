@@ -24,7 +24,7 @@ import {
 
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,

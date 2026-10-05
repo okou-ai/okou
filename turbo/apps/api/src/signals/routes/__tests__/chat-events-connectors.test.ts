@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import {
   API_TEST_CONNECTOR_CATALOG,
   apiTestConnectorCatalogValidationAuthority,
@@ -17,7 +17,7 @@ import {
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
@@ -30,7 +30,7 @@ import {
   type EntitledChatActor,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,
@@ -74,17 +74,19 @@ interface SelectedThreadConnectorFixture extends EntitledChatActor {
 
 async function selectedThreadConnectorFixture(
   title: string,
+  legacyProjectionMutation = false,
 ): Promise<SelectedThreadConnectorFixture> {
-  // A unique version still shares the active source with other test files.
-  // Own the source so their catalog setup cannot invalidate this projection.
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `test-thread-runtime-context-${randomUUID()}`,
-  );
-  await installApiTestConnectorCatalog({
-    catalogVersion: `api-test-thread-runtime-overlap-${randomUUID()}`,
-    runtimeProjection: true,
-  });
+  if (legacyProjectionMutation) {
+    // Preserve the live legacy fallback contract without mutating the shared fixture.
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `test-thread-runtime-context-${randomUUID()}`,
+    );
+    await installApiTestConnectorCatalog({
+      catalogVersion: `api-test-thread-runtime-overlap-${randomUUID()}`,
+      runtimeProjection: true,
+    });
+  }
   const entitled = await entitledChatActor();
   const connection = await connectors.connectManualGrant(
     entitled.actor,
@@ -354,6 +356,7 @@ describe("CHAT-02: thread connector account selection", () => {
     async (projectionState) => {
       const fixture = await selectedThreadConnectorFixture(
         "Thread catalog projection fallback",
+        true,
       );
       // Advance authority so setup's cached selection cannot hide a missing row.
       await installApiTestConnectorCatalog({
@@ -608,6 +611,30 @@ describe("CHAT-02: thread connector account selection", () => {
 
   it("uses default custom HTTP and MCP accounts without persisting overrides", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const storage = context.mocks.s3.send.getMockImplementation();
+    const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+    const connectorIds: string[] = [];
+    let cleanupRun: (() => Promise<void>) | undefined;
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) {
+        return;
+      }
+      if (!storage) {
+        throw new Error("Expected the owned Agent's storage implementation");
+      }
+      context.mocks.s3.send.mockImplementation(storage);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      await cleanupRun?.();
+      for (const connectorId of connectorIds) {
+        await connectors.deleteCustomConnector(actor, connectorId);
+      }
+      await createBddApi(context).deleteAgent(actor, agentId);
+      cleaned = true;
+    };
+    onTestFinished(cleanup);
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization-scoped chat actor");
@@ -620,6 +647,7 @@ describe("CHAT-02: thread connector account selection", () => {
         prefixTemplates: ["https://thread-http-runtime.example.test/v1/"],
       }),
     );
+    connectorIds.push(httpConnector.id);
     const mcpConnector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       slug: `_thread-mcp-runtime-${randomUUID()}`,
@@ -643,6 +671,7 @@ describe("CHAT-02: thread connector account selection", () => {
       queryInjections: [],
       authMode: "manual",
     });
+    connectorIds.push(mcpConnector.id);
     await connectors.setCustomConnectorSecret(
       actor,
       httpConnector.id,
@@ -657,24 +686,20 @@ describe("CHAT-02: thread connector account selection", () => {
       httpConnector.id,
       mcpConnector.id,
     ]);
-    const httpConnection = await readCustomConnectorCredentialStorageParent(
-      context,
-      {
-        orgId,
-        userId: actor.userId,
-        customConnectorId: httpConnector.id,
-      },
+    const httpAccounts = await connectors.listCustomConnectorAccounts(
+      actor,
+      httpConnector.id,
     );
-    const mcpConnection = await readCustomConnectorCredentialStorageParent(
-      context,
-      {
-        orgId,
-        userId: actor.userId,
-        customConnectorId: mcpConnector.id,
-      },
+    const mcpAccounts = await connectors.listCustomConnectorAccounts(
+      actor,
+      mcpConnector.id,
     );
-    const httpConnectorId = httpConnection.connector?.id;
-    const mcpConnectorId = mcpConnection.connector?.id;
+    const httpConnectorId = httpAccounts.find((account) => {
+      return account.isDefault;
+    })?.id;
+    const mcpConnectorId = mcpAccounts.find((account) => {
+      return account.isDefault;
+    })?.id;
     if (!httpConnectorId || !mcpConnectorId) {
       throw new Error("Expected custom HTTP and MCP connector accounts");
     }
@@ -683,7 +708,14 @@ describe("CHAT-02: thread connector account selection", () => {
       agentId,
       prompt: "Use my selected HTTP and MCP connector accounts",
     });
+    cleanupRun = async () => {
+      await api.requestCancelRun(actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+    };
     const claimed = await claimChatRun(runnerGroup, run.runId);
+    cleanupRun = async () => {
+      await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    };
     expect(claimed.claim.connectorRuntimeTargets).toContainEqual({
       kind: "custom",
       customConnectorId: httpConnector.id,
@@ -704,7 +736,7 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
     expect(selections.body.selections).toStrictEqual([]);
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    await cleanup();
   });
 
   it("starts the run when a selected custom connector becomes unavailable", async () => {

@@ -1,3 +1,4 @@
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -47,7 +48,6 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
 import {
   appendOfficialWorkflowQueueInputFixture,
@@ -110,7 +110,7 @@ import {
 } from "./helpers/runtime-state";
 import { readExportText } from "./helpers/user-export-storage";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
@@ -120,6 +120,7 @@ const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const outbox = createEmailOutboxStateApi(context);
+const publicResults = createPublicAutomationResultEmailApi(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
 const GMAIL_TOPIC_NAME =
   "projects/vm0-ai-488909/topics/official-workflow-gmail-events";
@@ -1243,6 +1244,24 @@ async function reconcileStaleQueuedMessages(threadId: string): Promise<void> {
   );
 }
 
+async function allThreadEventRows(actor: ApiTestUser, chatThreadId: string) {
+  const rows = await chat.listThreadEventRows(actor, chatThreadId);
+  let page = rows;
+  // The endpoint caps each page at 50; a 32-hop chain spans multiple pages.
+  while (page.length === 50) {
+    const last = page.at(-1);
+    if (!last) {
+      throw new Error("Expected a cursor on a full event page");
+    }
+    page = await chat.listThreadEventRows(actor, chatThreadId, {
+      lastEventId: last.id,
+      lastSeqId: last.seqId,
+    });
+    rows.push(...page);
+  }
+  return rows;
+}
+
 /**
  * Run now only enqueues; the background pick launches the run. Flush the pick
  * and read the newest launched run from the automation thread.
@@ -1252,10 +1271,11 @@ async function launchedAutomationRunId(
   chatThreadId: string,
 ): Promise<string | undefined> {
   await flushWaitUntilForTest();
-  const { events } = await chat.listThreadEvents(actor, chatThreadId);
-  return [...events].reverse().find((event) => {
+  const events = await allThreadEventRows(actor, chatThreadId);
+  const launched = [...events].reverse().find((event) => {
     return event.eventType === "input.prompt" && event.runId;
-  })?.runId;
+  });
+  return launched?.runId ?? undefined;
 }
 
 async function requireActiveOfficialRunId(
@@ -1734,6 +1754,68 @@ function configureResultEmailRecipient(actor: ApiTestUser): void {
   ]);
 }
 
+function configureResultEmailDelivery(): void {
+  mockEnv("RESEND_API_KEY", "official-result-delivery-test-key");
+  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+  context.mocks.resend.send.mockReset();
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `official-result-${randomUUID()}` },
+    error: null,
+  });
+}
+
+async function drainResultEmails(
+  sourceRunId: string,
+  sourceWorkflowAutomationId: string,
+): Promise<void> {
+  // The approved outbox lookup only addresses this test's delivery work.
+  // Observe delivery through Resend, including every matching owned item.
+  const { items } = await outbox.findSourceState({
+    sourceRunId,
+    sourceWorkflowAutomationId,
+  });
+  if (items.length > 0) {
+    await outbox.drainItems(
+      items.map((item) => {
+        return item.id;
+      }),
+    );
+  }
+}
+
+async function observeInstalledResultEmail(
+  actor: ApiTestUser,
+  automationId: string,
+  expected: boolean,
+  subject?: string,
+): Promise<void> {
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  const runnerGroup = runs.configureRunnerGroup();
+  runs.acceptTelemetryIngest();
+  publicResults.configureDelivery(actor);
+  const { runId } = await publicResults.start(actor, automationId, runnerGroup);
+  await publicResults.complete(actor, runId, runnerGroup, {
+    output: "Public result email eligibility",
+  });
+  await publicResults.drain(runId, automationId);
+  if (expected) {
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "Okou <okou@mail.example.com>",
+        to: actor.email,
+        ...(subject === undefined ? {} : { subject }),
+        text: expect.stringContaining("Public result email eligibility"),
+      }),
+      expect.any(Object),
+    );
+    await publicResults.drain(runId, automationId);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+  } else {
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
+  }
+}
+
 async function completeSuccessfulRun(
   runnerGroup: string,
   runId: string,
@@ -1856,6 +1938,7 @@ async function installOfficialWorkflowLifecycleScenario() {
   const { agentId } = await workflowBdd.createAgent(actor);
   onTestFinished(async () => {
     installCatalogStorageFixture();
+    await publicResults.cleanup(actor);
     await bdd.deleteAgent(actor, agentId);
     await cleanupCatalog();
   });
@@ -1981,13 +2064,6 @@ async function installStaleAdmissionScenario() {
 
 beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
-  // testContext seeds the default source; this hook also seeds the source
-  // derived from the unique bucket used by this test.
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `official-workflow-installation-test-${randomUUID()}`,
-  );
-  await installApiTestConnectorCatalog();
   await cleanupCatalog();
 });
 
@@ -2007,8 +2083,28 @@ describe("Morning Brief preference", () => {
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected a default Agent");
     }
+    const defaultAgentId = onboarding.defaultAgentId;
     onTestFinished(async () => {
       installCatalogStorageFixture();
+      await publicResults.cleanup(actor);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      for (const installation of await listMorningBriefInstallations(actor)) {
+        if (installation.agentId === defaultAgentId) {
+          await accept(
+            installationClient().uninstall({
+              headers: authHeaders(actor),
+              params: { workflowId: installation.id },
+            }),
+            [204],
+          );
+        }
+      }
       await cleanupCatalog();
     });
     await connectBriefSource(actor);
@@ -2093,26 +2189,26 @@ describe("Morning Brief preference", () => {
       automationId: automation.id,
       chatThreadId: automation.chatThreadId,
     };
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, automation.id),
-    ).resolves.toMatchObject({
-      officialBlueprintKey: "daily-delivery",
-      officialResultEmailEnabled: true,
-    });
     return { actor, headers, identities, morningBrief };
   }
 
   it("installs idempotently without the Official Workflows feature", async () => {
-    const { identities } = await setupEnabledMorningBrief();
+    const { actor, identities } = await setupEnabledMorningBrief();
     expect(identities).toStrictEqual({
       workflowId: expect.any(String),
       automationId: expect.any(String),
       chatThreadId: null,
     });
+    await observeInstalledResultEmail(
+      actor,
+      identities.automationId,
+      true,
+      "Morning Brief",
+    );
   });
 
   it("preserves Morning Brief identities across disable and re-enable", async () => {
-    const { headers, identities, morningBrief } =
+    const { actor, headers, identities, morningBrief } =
       await setupEnabledMorningBrief();
     const disabled = await accept(
       morningBriefPreferenceClient().update({
@@ -2154,6 +2250,12 @@ describe("Morning Brief preference", () => {
       },
     ]);
     expect(after.body.workflow.id).toBe(identities.workflowId);
+    await observeInstalledResultEmail(
+      actor,
+      identities.automationId,
+      true,
+      "Morning Brief",
+    );
   });
 
   it("preserves enable intent while timezone or default Agent is unavailable", async () => {
@@ -3432,6 +3534,7 @@ describe("Official Workflow installations", () => {
     const { agentId } = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
       installCatalogStorageFixture();
+      await publicResults.cleanup(actor);
       await bdd.deleteAgent(actor, agentId);
       await cleanupCatalog();
     });
@@ -3499,14 +3602,6 @@ describe("Official Workflow installations", () => {
     if (!morningBriefAutomation) {
       throw new Error("Expected the Morning Brief Automation");
     }
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, morningBriefAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 10,
-      enabled: true,
-      officialBlueprintKey: "daily-delivery",
-      officialResultEmailEnabled: true,
-    });
 
     const retiredConnectorDoctor = await accept(
       officialClient().install({
@@ -3518,6 +3613,12 @@ describe("Official Workflow installations", () => {
     );
     expect(retiredConnectorDoctor.body.error.message).toBe(
       "Official Workflow is retired: connector-doctor",
+    );
+    await observeInstalledResultEmail(
+      actor,
+      morningBriefAutomation.id,
+      true,
+      "Morning Brief",
     );
   });
 
@@ -3640,6 +3741,71 @@ describe("Official Workflow installations", () => {
     expect(fixedTimezone.body.workflow.automations).toMatchObject([
       { schedule: { type: "cron", timezone: "UTC" } },
     ]);
+  });
+
+  it("accepts a 32-hop Blueprint budget and rejects a binding above the limit", async () => {
+    installCatalogStorageFixture();
+    const definitionName = `api-test-budget-${randomUUID()}`;
+    const scheduled = evolvedScheduledBlueprint();
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          scheduled,
+          {
+            ...loopBlueprint(),
+            desiredState: {
+              ...loopBlueprint().desiredState,
+              autonomyBudget: 32,
+            },
+          },
+        ]),
+      ]),
+    );
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const { agentId } = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    await setOfficialWorkflowsEnabled(actor, true);
+    const headers = authHeaders(actor);
+    const blueprintBindings = (budget: number) => {
+      return [
+        {
+          blueprintKey: "daily",
+          bindings: [{ key: "autonomy-budget", value: budget }],
+        },
+        {
+          blueprintKey: "pulse",
+          bindings: [{ key: "interval-seconds", value: 3600 }],
+        },
+      ];
+    };
+    await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { agentId, blueprints: blueprintBindings(33) },
+      }),
+      [400],
+    );
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { agentId, blueprints: blueprintBindings(32) },
+      }),
+      [201],
+    );
+    expect(installed.body.workflow.automations).toHaveLength(2);
+    for (const automation of installed.body.workflow.automations) {
+      await expect(
+        readWorkflowAutomationAutonomyFixture(context, automation.id),
+      ).resolves.toMatchObject({ autonomyBudget: 32, enabled: true });
+    }
   });
 
   it("guards access and validates concurrent installations through public boundaries", async () => {
@@ -4325,7 +4491,7 @@ describe("Official Workflow installations", () => {
   });
 
   it("preserves automation identity and pause state when reconfiguring an Official installation", async () => {
-    const { dailyAutomation, headers, installed } =
+    const { actor, dailyAutomation, headers, installed } =
       await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
     const automationIds = installed.body.workflow.automations.map(
@@ -4357,13 +4523,6 @@ describe("Official Workflow installations", () => {
       enabled: false,
       nextRunAt: null,
       official: { intendedEnabled: false },
-    });
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, dailyAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      enabled: false,
-      officialResultEmailEnabled: true,
     });
 
     const reconfigured = await accept(
@@ -4426,13 +4585,7 @@ describe("Official Workflow installations", () => {
       }),
       [200],
     );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, dailyAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      enabled: true,
-      officialResultEmailEnabled: true,
-    });
+    await observeInstalledResultEmail(actor, dailyAutomation.id, true);
   });
 
   it("copies active installations and compensates rejected storage writes", async () => {
@@ -4467,6 +4620,7 @@ describe("Official Workflow installations", () => {
     onTestFinished(async () => {
       if (!activeCopyAgentDeleted) {
         installCatalogStorageFixture();
+        await publicResults.cleanup(actor);
         await bdd.deleteAgent(actor, activeCopyAgentId);
       }
     });
@@ -4520,13 +4674,15 @@ describe("Official Workflow installations", () => {
     if (!activeCopiedDaily) {
       throw new Error("Expected an ordinary copied daily automation");
     }
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, activeCopiedDaily.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      officialBlueprintKey: null,
-      officialResultEmailEnabled: null,
-    });
+    await accept(
+      automationClient().enable({
+        headers,
+        params: { id: activeCopiedDaily.id },
+      }),
+      [200],
+    );
+    await observeInstalledResultEmail(actor, activeCopiedDaily.id, false);
+    await publicResults.cleanup(actor);
     await bdd.deleteAgent(actor, activeCopyAgentId);
     activeCopyAgentDeleted = true;
 
@@ -7894,9 +8050,11 @@ describe("Official Workflow Run admission", () => {
           onceAutomation,
           webhookAutomation,
         } = prepared;
+        configureResultEmailDelivery();
         const producerRuns: {
           readonly runId: string;
           readonly automationId: string;
+          readonly output: string;
         }[] = [];
         if (producerKind === "explicit and scheduled") {
           const explicit = await accept(
@@ -7917,6 +8075,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: explicitRunId,
             automationId: loopAutomation.id,
+            output: "Explicit Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -7947,6 +8106,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: scheduledRunId,
             automationId: loopAutomation.id,
+            output: "Scheduled Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -7971,6 +8131,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: onceRunId,
             automationId: onceAutomation.id,
+            output: "Once Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -8009,6 +8170,7 @@ describe("Official Workflow Run admission", () => {
           producerRuns.push({
             runId: webhookRunId,
             automationId: webhookAutomation.id,
+            output: "Event Official result",
           });
           await completeSuccessfulRun(
             runnerGroup,
@@ -8017,24 +8179,33 @@ describe("Official Workflow Run admission", () => {
           );
         }
 
-        for (const producer of producerRuns) {
-          const source = await outbox.findSourceState({
-            sourceRunId: producer.runId,
-            sourceWorkflowAutomationId: producer.automationId,
-          });
-          expect(source.claim).not.toBeNull();
-          expect(source.items).toStrictEqual([
+        for (const [index, producer] of producerRuns.entries()) {
+          await drainResultEmails(producer.runId, producer.automationId);
+          expect(context.mocks.resend.send).toHaveBeenNthCalledWith(
+            index + 1,
             expect.objectContaining({
+              from: "Okou <okou@mail.example.com>",
+              to: actor.email,
               subject: `Display ${definitionName}`,
-              source_run_id: producer.runId,
-              source_workflow_automation_id: producer.automationId,
-              status: "pending",
-              template: expect.objectContaining({
-                template: "official-automation-result",
-              }),
+              text: expect.stringContaining(producer.output),
+              html: expect.stringContaining(
+                `https://app.okou.ai/activities/${producer.runId}`,
+              ),
             }),
-          ]);
+            expect.anything(),
+          );
+          expect(
+            context.mocks.resend.send.mock.calls[index]?.[0],
+          ).toMatchObject({
+            text: expect.stringContaining(
+              `https://app.okou.ai/workflows/${prepared.installed.body.workflow.id}/automations?automationId=${producer.automationId}`,
+            ),
+          });
+          await drainResultEmails(producer.runId, producer.automationId);
         }
+        expect(context.mocks.resend.send).toHaveBeenCalledTimes(
+          producerRuns.length,
+        );
       });
     },
   );
@@ -8044,6 +8215,7 @@ describe("Official Workflow Run admission", () => {
       "api-test-result-brand",
       true,
     );
+    configureResultEmailDelivery();
     const sessionRun = await accept(
       automationClient().run({
         headers: scenario.headers,
@@ -8064,15 +8236,19 @@ describe("Official Workflow Run admission", () => {
       sessionRunId,
       "Session-brand result",
     );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: sessionRunId,
-        sourceWorkflowAutomationId: scenario.automation.id,
+    await drainResultEmails(sessionRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        from: "Okou <okou@mail.example.com>",
+        to: scenario.actor.email,
+        subject: `Display ${scenario.definitionName}`,
+        text: expect.stringContaining("Session-brand result"),
+        html: expect.stringContaining(
+          `https://app.okou.ai/activities/${sessionRunId}`,
+        ),
       }),
-    ).resolves.toMatchObject({
-      items: [{ source_run_id: sessionRunId }],
-      claim: { source_run_id: sessionRunId },
-    });
+      expect.anything(),
+    );
 
     const agentToken = runs.okouTokenForRunWithCapabilities(
       scenario.actor,
@@ -8104,12 +8280,8 @@ describe("Official Workflow Run admission", () => {
     expect((await runs.readRun(scenario.actor, agentRunId)).status).toBe(
       "completed",
     );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: agentRunId,
-        sourceWorkflowAutomationId: scenario.automation.id,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
+    await drainResultEmails(agentRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
 
     mockEnv("RESEND_FROM_DOMAIN", "mail.example.com");
     const redrive = await accept(
@@ -8123,17 +8295,30 @@ describe("Official Workflow Run admission", () => {
       [200],
     );
     expect(redrive.body.successful_callbacks).toBeGreaterThan(0);
-    const source = await outbox.findSourceState({
-      sourceRunId: agentRunId,
-      sourceWorkflowAutomationId: scenario.automation.id,
-    });
-    expect(source.claim).not.toBeNull();
-    expect(source.items).toStrictEqual([
+    await drainResultEmails(agentRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
-        source_run_id: agentRunId,
-        source_workflow_automation_id: scenario.automation.id,
+        from: "Okou <okou@mail.example.com>",
+        to: scenario.actor.email,
+        subject: `Display ${scenario.definitionName}`,
+        text: expect.stringContaining("Agent-token retry result"),
+        html: expect.stringContaining(
+          `https://app.okou.ai/activities/${agentRunId}`,
+        ),
       }),
-    ]);
+      expect.anything(),
+    );
+    await drainResultEmails(sessionRunId, scenario.automation.id);
+    await drainResultEmails(agentRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    for (const [message] of context.mocks.resend.send.mock.calls) {
+      expect(message).toMatchObject({
+        text: expect.stringContaining(
+          `https://app.okou.ai/workflows/${scenario.installed.body.workflow.id}/automations?automationId=${scenario.automation.id}`,
+        ),
+      });
+    }
   });
 
   it("uses the immutable launch snapshot across Official result-email reconfiguration", async () => {
@@ -8141,6 +8326,7 @@ describe("Official Workflow Run admission", () => {
       "api-test-result-reconfigure",
       true,
     );
+    configureResultEmailDelivery();
     const enabledRun = await accept(
       automationClient().run({
         headers: scenario.headers,
@@ -8172,24 +8358,27 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, scenario.automation.id),
-    ).resolves.toMatchObject({ officialResultEmailEnabled: false });
     await completeSuccessfulRun(
       scenario.runnerGroup,
       enabledRunId,
       "Enabled launch survives disablement",
     );
-    const enabledSource = await outbox.findSourceState({
-      sourceRunId: enabledRunId,
-      sourceWorkflowAutomationId: scenario.automation.id,
-    });
-    expect(enabledSource.claim).not.toBeNull();
-    expect(enabledSource.items).toStrictEqual([
+    expect((await runs.readRun(scenario.actor, enabledRunId)).status).toBe(
+      "completed",
+    );
+    await drainResultEmails(enabledRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        source_workflow_automation_id: scenario.automation.id,
+        from: "Okou <okou@mail.example.com>",
+        to: scenario.actor.email,
+        subject: `Display ${scenario.definitionName}`,
+        text: expect.stringContaining("Enabled launch survives disablement"),
+        html: expect.stringContaining(
+          `https://app.okou.ai/activities/${enabledRunId}`,
+        ),
       }),
-    ]);
+      expect.anything(),
+    );
 
     const disabledRun = await accept(
       automationClient().run({
@@ -8220,20 +8409,17 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, scenario.automation.id),
-    ).resolves.toMatchObject({ officialResultEmailEnabled: true });
     await completeSuccessfulRun(
       scenario.runnerGroup,
       disabledRunId,
       "Disabled launch stays ineligible",
     );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: disabledRunId,
-        sourceWorkflowAutomationId: scenario.automation.id,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
+    expect((await runs.readRun(scenario.actor, disabledRunId)).status).toBe(
+      "completed",
+    );
+    await drainResultEmails(enabledRunId, scenario.automation.id);
+    await drainResultEmails(disabledRunId, scenario.automation.id);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
   });
 
   it("retains the Official result source through uninstall, TTL cleanup, and concurrent redrive", async () => {
@@ -8607,9 +8793,9 @@ describe("Official Workflow Run admission", () => {
     });
     let sourceThreadId = sourceThread.id;
     let sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    // Spend nine of the ten public delegation hops through real admission.
+    // Spend 31 of the 32 public delegation hops through real admission.
     // Each completed parent releases its slot before the next child is claimed.
-    for (let hop = 0; hop < 9; hop += 1) {
+    for (let hop = 0; hop < 31; hop += 1) {
       const child = await accept(
         workflowClient().run({
           headers: officialQueueHeaders(actor, sourceRunId, {
@@ -8689,7 +8875,7 @@ describe("Official Workflow Run admission", () => {
     );
     await flushWaitUntilForTest();
     const rejections = (
-      await chat.listThreadEventRows(actor, denied.body.chatThreadId)
+      await allThreadEventRows(actor, denied.body.chatThreadId)
     ).filter((event) => {
       return event.eventType === "input.rejected";
     });
@@ -8718,8 +8904,27 @@ describe("Official Workflow Run admission", () => {
       });
       const { agentId } = await workflowBdd.createAgent(actor);
       installCatalogStorageFixture();
+      context.mocks.s3.send.mockClear();
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      const accepted = await readAcceptedDefinitionFixture(definitionName);
+      const publishedArchives = context.mocks.s3.send.mock.calls.flatMap(
+        ([command]) => {
+          return command instanceof PutObjectCommand &&
+            command.input.Key?.endsWith("/archive.tar.gz")
+            ? [command.input.Key]
+            : [];
+        },
+      );
+      expect(publishedArchives).toHaveLength(1);
+      const published = publishedArchives[0]?.match(
+        /^[^/]+\/([^/]+)\/([^/]+)\/archive\.tar\.gz$/,
+      );
+      const storageId = published?.[1];
+      const versionId = published?.[2];
+      if (!storageId || !versionId) {
+        throw new Error(
+          "Expected the accepted Official definition's published archive identity",
+        );
+      }
       const headers = authHeaders(actor);
       await setOfficialWorkflowsEnabled(actor, true);
       const installation = await accept(
@@ -8732,12 +8937,19 @@ describe("Official Workflow Run admission", () => {
       );
       onTestFinished(async () => {
         installCatalogStorageFixture();
-        const createdRuns = await runs.listAgentRuns(actor, {
-          agent: agentId,
-          limit: 100,
-        });
-        for (const run of createdRuns.runs) {
-          await runs.requestCancelRun(actor, run.id, [200, 400]);
+        const createdRuns = await runReadsApi.requestListLogs(
+          actor,
+          { agentId, limit: 100 },
+          [200],
+        );
+        for (const run of createdRuns.body.data) {
+          if (
+            run.status === "queued" ||
+            run.status === "pending" ||
+            run.status === "running"
+          ) {
+            await runs.requestCancelRun(actor, run.id, [200, 400]);
+          }
         }
         await flushWaitUntilForTest();
         await bdd.deleteAgent(actor, agentId);
@@ -8844,10 +9056,18 @@ describe("Official Workflow Run admission", () => {
       }
       expect(resumedClaim.storageManifest.storageMounts).toContainEqual(
         expect.objectContaining({
-          storageId: accepted.definition.artifact.storageId,
-          versionId: accepted.definition.artifact.storageVersion,
+          storageId,
+          versionId,
         }),
       );
+      const duplicateClaim = await runs.requestClaimRunnerJob(
+        true,
+        resumedRunId,
+        [404],
+      );
+      expect(duplicateClaim.body).toStrictEqual({
+        error: { message: "Job not found in queue", code: "NOT_FOUND" },
+      });
       if (queueCase.origin === "agent_run") {
         expect(resumedClaim.appendSystemPrompt).toContain(
           `SOURCE_RUN_ID: ${firstRunId}`,

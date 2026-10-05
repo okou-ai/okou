@@ -14,6 +14,7 @@ const SCROLL_COMMIT_TO_TAIL_ATTRIBUTE = "data-chat-scroll-commit-to-tail";
 export interface ThreadScrollPosition {
   readonly targetEventId: string;
   readonly viewportOffsetTop: number;
+  readonly anchor?: "last-read-marker";
 }
 
 export interface ScrollToEventOptions {
@@ -149,6 +150,26 @@ function scrollAnchorForEvent(
   );
 }
 
+function scrollAnchorForPosition(
+  container: HTMLElement,
+  position: ThreadScrollPosition,
+): HTMLElement | null {
+  if (position.anchor === "last-read-marker") {
+    return (
+      Array.from(
+        container.querySelectorAll<HTMLElement>(
+          "[data-chat-last-read-marker-event-id]",
+        ),
+      ).find((candidate) => {
+        return (
+          candidate.dataset.chatLastReadMarkerEventId === position.targetEventId
+        );
+      }) ?? null
+    );
+  }
+  return scrollAnchorForEvent(container, position.targetEventId);
+}
+
 function scrollContainerForCommitMarker(marker: HTMLElement): HTMLElement {
   const container = marker.closest("[data-scroll-container]");
   if (!(container instanceof HTMLElement)) {
@@ -206,7 +227,7 @@ function scrollToPosition(
   position: ThreadScrollPosition,
   behavior: ScrollBehavior = "instant",
 ): boolean {
-  const target = scrollAnchorForEvent(container, position.targetEventId);
+  const target = scrollAnchorForPosition(container, position);
   if (!target) {
     return false;
   }
@@ -283,7 +304,8 @@ function sameScrollPosition(
 ): boolean {
   return (
     left?.targetEventId === right.targetEventId &&
-    left.viewportOffsetTop === right.viewportOffsetTop
+    left.viewportOffsetTop === right.viewportOffsetTop &&
+    left.anchor === right.anchor
   );
 }
 

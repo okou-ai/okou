@@ -14,11 +14,11 @@ import {
   type SecretKmsGenerateDataKeyRequest,
 } from "../../../lib/secret-kms-client";
 import { now } from "../../../lib/time";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import {
   basicTemplate,
@@ -41,6 +41,15 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
 import {
+  createPublicFirewallFixture,
+  type PublicFirewallFixture,
+} from "./helpers/public-firewall-fixture";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
+import {
   createAuthDeviceApiActions,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
@@ -51,10 +60,7 @@ import {
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  setConnectorCredentialStorageState,
-  setBuiltinOAuthScopeFacts,
-} from "./helpers/connector-credential-storage-state";
+import { setBuiltinOAuthScopeFacts } from "./helpers/connector-credential-storage-state";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
@@ -74,7 +80,7 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  *   org's credits below the threshold while keeping the tier active.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const publicConnections = createPublicFirewallConnections(context);
 const TERMINAL_RUN_STATUSES = [
   "completed",
@@ -112,6 +118,43 @@ async function firewallRun(existingActor?: ApiTestUser): Promise<{
     runId: run.runId,
     headers: fw.sandboxHeaders(actor, run.runId),
   };
+}
+
+async function withPublicFirewallRun(
+  scenario: (
+    headers: { readonly authorization: string },
+    fixture: PublicFirewallFixture,
+    subscription: Awaited<ReturnType<PublicFirewallFixture["fund"]>>,
+  ) => Promise<void>,
+): Promise<void> {
+  const fixture = createPublicFirewallFixture(context);
+  await fixture.run(async () => {
+    const bdd = createBddApi(context);
+    const runsApi = createRunsApi(context);
+    const fw = createFirewallApi(context);
+    bdd.acceptAgentStorageWrites();
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    runsApi.configureRunnerGroup();
+    const subscription = await fixture.fund();
+    await runsApi.ensureOrgModelProvider(fixture.actor);
+    const agent = await bdd.createAgent(fixture.actor, {
+      displayName: "BDD firewall agent",
+      description: "Exercises firewall auth resolution.",
+      visibility: "private",
+    });
+    fixture.registerAgent(agent.agentId);
+    const run = await runsApi.createThreadRun(fixture.actor, {
+      agentId: agent.agentId,
+      prompt: "resolve firewall auth",
+    });
+    fixture.registerRun(run.runId);
+    await scenario(
+      fw.sandboxHeaders(fixture.actor, run.runId),
+      fixture,
+      subscription,
+    );
+  });
 }
 
 async function exactSecretConnectorSources(
@@ -256,256 +299,276 @@ describe("FW-1: firewall auth boundaries", () => {
   });
 
   it("rejects undecryptable secret payloads for a real run", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const garbage = await fw.requestFirewallAuth(
-      headers,
-      { encryptedSecrets: "garbage", authHeaders: {} },
-      [400],
-    );
-    expectApiError(garbage.body);
-    expect(garbage.body.error.message).toContain("Failed to decrypt");
+      const garbage = await fw.requestFirewallAuth(
+        headers,
+        { encryptedSecrets: "garbage", authHeaders: {} },
+        [400],
+      );
+      expectApiError(garbage.body);
+      expect(garbage.body.error.message).toContain("Failed to decrypt");
+    });
   });
 });
 
 describe("FW-2: template resolution without connector refresh", () => {
   it("resolves secret-backed auth headers", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          API_KEY: "secret-value",
-          SCRAPENINJA_TOKEN: "rapidapi-secret",
-        }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-          "X-RapidAPI-Host": "scrapeninja.p.rapidapi.com",
-          "X-RapidAPI-Key": secretTemplate("SCRAPENINJA_TOKEN"),
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            API_KEY: "secret-value",
+            SCRAPENINJA_TOKEN: "rapidapi-secret",
+          }),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+            "X-RapidAPI-Host": "scrapeninja.p.rapidapi.com",
+            "X-RapidAPI-Key": secretTemplate("SCRAPENINJA_TOKEN"),
+          },
         },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected firewall auth resolution to succeed");
-    }
-    expect(resolved.body.headers.Authorization).toBe("Bearer secret-value");
-    expect(resolved.body.headers["X-RapidAPI-Host"]).toBe(
-      "scrapeninja.p.rapidapi.com",
-    );
-    expect(resolved.body.headers["X-RapidAPI-Key"]).toBe("rapidapi-secret");
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-    expect(resolved.body.resolvedSecrets).toContain("API_KEY");
-    expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected firewall auth resolution to succeed");
+      }
+      expect(resolved.body.headers.Authorization).toBe("Bearer secret-value");
+      expect(resolved.body.headers["X-RapidAPI-Host"]).toBe(
+        "scrapeninja.p.rapidapi.com",
+      );
+      expect(resolved.body.headers["X-RapidAPI-Key"]).toBe("rapidapi-secret");
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+      expect(resolved.body.resolvedSecrets).toContain("API_KEY");
+      expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
+    });
   });
 
   it("resolves variable and basic auth header templates", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          BASIC_USER: "alice",
-          SHARED: "secret-shared",
-        }),
-        authHeaders: {
-          "X-Tenant": varTemplate("TENANT"),
-          "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
-          "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
-          "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            BASIC_USER: "alice",
+            SHARED: "secret-shared",
+          }),
+          authHeaders: {
+            "X-Tenant": varTemplate("TENANT"),
+            "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
+            "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
+            "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
+          },
+          vars: {
+            TENANT: "tenant-1",
+            BASIC_PASS: "var-pass",
+            SHARED: "var-shared",
+          },
         },
-        vars: {
-          TENANT: "tenant-1",
-          BASIC_PASS: "var-pass",
-          SHARED: "var-shared",
-        },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected firewall auth resolution to succeed");
-    }
-    expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
-    expect(resolved.body.headers["X-Basic"]).toBe(
-      `Basic ${Buffer.from("alice:var-pass").toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Literal-Basic"]).toBe(
-      `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Shared"]).toBe("secret-shared:var-shared");
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected firewall auth resolution to succeed");
+      }
+      expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
+      expect(resolved.body.headers["X-Basic"]).toBe(
+        `Basic ${Buffer.from("alice:var-pass").toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Literal-Basic"]).toBe(
+        `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Shared"]).toBe(
+        "secret-shared:var-shared",
+      );
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+    });
   });
 
   it("resolves secret templates in the base URL and query", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          BASE_SECRET: "base-secret",
-          QUERY_SECRET: "query-secret",
-        }),
-        authHeaders: {},
-        authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
-        authQuery: { token: secretTemplate("QUERY_SECRET") },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected firewall auth resolution to succeed");
-    }
-    expect(resolved.body.base).toBe("https://api.example.test/base-secret");
-    expect(resolved.body.query).toStrictEqual({ token: "query-secret" });
-    expect(resolved.body.expiresAt).toBeNull();
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-    expect(resolved.body.resolvedSecrets).toStrictEqual(
-      [...resolved.body.resolvedSecrets].sort(),
-    );
-    expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
-    expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            BASE_SECRET: "base-secret",
+            QUERY_SECRET: "query-secret",
+          }),
+          authHeaders: {},
+          authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
+          authQuery: { token: secretTemplate("QUERY_SECRET") },
+        },
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected firewall auth resolution to succeed");
+      }
+      expect(resolved.body.base).toBe("https://api.example.test/base-secret");
+      expect(resolved.body.query).toStrictEqual({ token: "query-secret" });
+      expect(resolved.body.expiresAt).toBeNull();
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+      expect(resolved.body.resolvedSecrets).toStrictEqual(
+        [...resolved.body.resolvedSecrets].sort(),
+      );
+      expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
+      expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
+    });
   });
 
   it("reports unresolvable template references as connector-not-configured", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("NEVER_SET")}`,
+      const missing = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("NEVER_SET")}`,
+          },
+          secretConnectorMap: {},
         },
-        secretConnectorMap: {},
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected unresolved secret to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+        [424],
+      );
+      if (missing.status !== 424) {
+        throw new Error("Expected unresolved secret to fail with 424");
+      }
+      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    });
   });
 
   it("uses pinned routing variables and current auth-only variables for builtin connectors", async () => {
-    const fw = createFirewallApi(context);
-    const connectorsApi = createConnectorBddApi(context);
-    const { actor, headers } = await firewallRun();
-    const jiraConnection = await connectorsApi.connectManualGrant(
-      actor,
-      "jira",
-      "api-token",
-      {
-        apiToken: "current-jira-token",
-        domain: "current.atlassian.net",
-        email: "current@example.test",
-      },
-    );
-    const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({}),
-      authHeaders: {
-        "X-Domain": varTemplate("JIRA_DOMAIN"),
-        "X-Email": varTemplate("JIRA_EMAIL"),
-      },
-      vars: {
-        JIRA_DOMAIN: "run-start.atlassian.net",
-        JIRA_EMAIL: "run-start@example.test",
-      },
-      matchedFirewall: {
-        name: "jira",
-        apiId: "jira:0",
-        connectorSlug: "jira" as const,
-        sourceId: jiraConnection.id,
-        routingVariables: {
-          JIRA_DOMAIN: "run-start.atlassian.net",
+    await withPublicFirewallRun(async (headers, fixture) => {
+      const fw = createFirewallApi(context);
+      const connectorsApi = createConnectorBddApi(context);
+      const actor = fixture.actor;
+      const accountIds = fixture.registerBuiltinConnector("jira");
+      const jiraConnection = await connectorsApi.connectManualGrant(
+        actor,
+        "jira",
+        "api-token",
+        {
+          apiToken: "current-jira-token",
+          domain: "current.atlassian.net",
+          email: "current@example.test",
         },
-      },
-    };
+      );
+      accountIds.add(jiraConnection.id);
+      const body = {
+        encryptedSecrets: fw.encryptedSecretsBody({}),
+        authHeaders: {
+          "X-Domain": varTemplate("JIRA_DOMAIN"),
+          "X-Email": varTemplate("JIRA_EMAIL"),
+        },
+        vars: {
+          JIRA_DOMAIN: "run-start.atlassian.net",
+          JIRA_EMAIL: "run-start@example.test",
+        },
+        matchedFirewall: {
+          name: "jira",
+          apiId: "jira:0",
+          connectorSlug: "jira" as const,
+          sourceId: jiraConnection.id,
+          routingVariables: {
+            JIRA_DOMAIN: "run-start.atlassian.net",
+          },
+        },
+      };
 
-    const resolved = await fw.requestFirewallAuth(headers, body, [200]);
-    if (resolved.status !== 200) {
-      throw new Error("Expected builtin connector auth resolution to succeed");
-    }
-    expect(resolved.body.headers).toStrictEqual({
-      "X-Domain": "run-start.atlassian.net",
-      "X-Email": "current@example.test",
+      const resolved = await fw.requestFirewallAuth(headers, body, [200]);
+      if (resolved.status !== 200) {
+        throw new Error(
+          "Expected builtin connector auth resolution to succeed",
+        );
+      }
+      expect(resolved.body.headers).toStrictEqual({
+        "X-Domain": "run-start.atlassian.net",
+        "X-Email": "current@example.test",
+      });
+
+      fixture.registerBuiltinConnectorDeletion("jira", jiraConnection.id);
+      await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "jira");
+      const disconnected = await fw.requestFirewallAuth(headers, body, [424]);
+      if (disconnected.status !== 424) {
+        throw new Error("Expected disconnected builtin connector auth to fail");
+      }
+      expect(disconnected.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
     });
-
-    await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "jira");
-    const disconnected = await fw.requestFirewallAuth(headers, body, [424]);
-    if (disconnected.status !== 424) {
-      throw new Error("Expected disconnected builtin connector auth to fail");
-    }
-    expect(disconnected.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
   });
 
   it("passes literals through query templates and keeps basic-literal templates opaque", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    // The quoted basic arguments are literals: the embedded secret template
-    // must neither be collected as a reference nor resolved, so the request
-    // succeeds even though NEVER_SET is absent from the secret payload.
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({ PASS: "pass-secret" }),
-        authHeaders: {
-          "X-Empty-Basic": basicTemplate("", ""),
-          "X-Literal-Template": basicTemplate(
-            `"${secretTemplate("NEVER_SET")}"`,
-            "secrets.PASS",
-          ),
-          "X-Quoted-Namespace": basicTemplate('"secrets.PASS"', "secrets.PASS"),
+      // The quoted basic arguments are literals: the embedded secret template
+      // must neither be collected as a reference nor resolved, so the request
+      // succeeds even though NEVER_SET is absent from the secret payload.
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({ PASS: "pass-secret" }),
+          authHeaders: {
+            "X-Empty-Basic": basicTemplate("", ""),
+            "X-Literal-Template": basicTemplate(
+              `"${secretTemplate("NEVER_SET")}"`,
+              "secrets.PASS",
+            ),
+            "X-Quoted-Namespace": basicTemplate(
+              '"secrets.PASS"',
+              "secrets.PASS",
+            ),
+          },
+          authQuery: {
+            token: "literal-query-value",
+            workspace: varTemplate("WORKSPACE_ID"),
+          },
+          vars: { WORKSPACE_ID: "workspace-9" },
         },
-        authQuery: {
-          token: "literal-query-value",
-          workspace: varTemplate("WORKSPACE_ID"),
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected the literal template resolution to succeed");
+      }
+      expect(resolved.body.headers["X-Empty-Basic"]).toBe(
+        `Basic ${Buffer.from(":").toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Literal-Template"]).toBe(
+        `Basic ${Buffer.from(`${secretTemplate("NEVER_SET")}:pass-secret`).toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Quoted-Namespace"]).toBe(
+        `Basic ${Buffer.from("secrets.PASS:pass-secret").toString("base64")}`,
+      );
+      expect(resolved.body.query).toStrictEqual({
+        token: "literal-query-value",
+        workspace: "workspace-9",
+      });
+      expect(resolved.body.resolvedSecrets).toStrictEqual(["PASS"]);
+
+      const withoutQuery = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: { Authorization: "Bearer static-token" },
         },
-        vars: { WORKSPACE_ID: "workspace-9" },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected the literal template resolution to succeed");
-    }
-    expect(resolved.body.headers["X-Empty-Basic"]).toBe(
-      `Basic ${Buffer.from(":").toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Literal-Template"]).toBe(
-      `Basic ${Buffer.from(`${secretTemplate("NEVER_SET")}:pass-secret`).toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Quoted-Namespace"]).toBe(
-      `Basic ${Buffer.from("secrets.PASS:pass-secret").toString("base64")}`,
-    );
-    expect(resolved.body.query).toStrictEqual({
-      token: "literal-query-value",
-      workspace: "workspace-9",
+        [200],
+      );
+      if (withoutQuery.status !== 200) {
+        throw new Error("Expected the query-less resolution to succeed");
+      }
+      expect(withoutQuery.body.query).toBeUndefined();
+      expect(withoutQuery.body.headers.Authorization).toBe(
+        "Bearer static-token",
+      );
     });
-    expect(resolved.body.resolvedSecrets).toStrictEqual(["PASS"]);
-
-    const withoutQuery = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: { Authorization: "Bearer static-token" },
-      },
-      [200],
-    );
-    if (withoutQuery.status !== 200) {
-      throw new Error("Expected the query-less resolution to succeed");
-    }
-    expect(withoutQuery.body.query).toBeUndefined();
-    expect(withoutQuery.body.headers.Authorization).toBe("Bearer static-token");
   });
 });
 
@@ -545,36 +608,56 @@ describe("FW-3: billable firewall lease", () => {
   });
 
   it("denies billable auth for suspended workspaces even with credits", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    if (!actor.orgId) {
-      throw new Error("Expected firewall actor to have an org");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId ?? "",
-      tier: "pro",
-      credits: 20_000,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-    });
-
-    const denied = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+    await withPublicFirewallRun(async (headers, fixture, subscription) => {
+      const fw = createFirewallApi(context);
+      const actor = fixture.actor;
+      if (!actor.orgId) {
+        throw new Error("Expected firewall actor to have an org");
+      }
+      await createWebhookCallbackApi(context).postStripeEvent(
+        {
+          type: "customer.subscription.updated",
+          data: {
+            object: {
+              id: subscription.subscriptionId,
+              customer: subscription.customerId,
+              status: "canceled",
+              cancel_at_period_end: false,
+              cancel_at: null,
+              schedule: null,
+              trial_end: null,
+              metadata: {},
+              items: { data: [{ price: { id: "price_bdd_pro" } }] },
+            },
+          },
         },
-        firewallBillable: true,
-      },
-      [402],
-    );
-    if (denied.status !== 402) {
-      throw new Error("Expected suspended billable auth to be denied");
-    }
-    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await expect(
+        createRunsApi(context).readBillingStatus(actor),
+      ).resolves.toMatchObject({
+        tier: "pro",
+        status: "suspended",
+        credits: 20_000,
+      });
+
+      const denied = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+          },
+          firewallBillable: true,
+        },
+        [402],
+      );
+      if (denied.status !== 402) {
+        throw new Error("Expected suspended billable auth to be denied");
+      }
+      expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    });
   });
 
   it("does not refresh an expired connector when billable auth is denied", async () => {
@@ -630,27 +713,28 @@ describe("FW-3: billable firewall lease", () => {
   });
 
   it("bounds billable auth expiry by the credit authorization lease", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const before = Math.floor(now() / 1000);
-    const leased = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+      const before = Math.floor(now() / 1000);
+      const leased = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+          },
+          firewallBillable: true,
         },
-        firewallBillable: true,
-      },
-      [200],
-    );
-    if (leased.status !== 200) {
-      throw new Error("Expected billable firewall auth to succeed");
-    }
-    expect(leased.body.expiresAt).not.toBeNull();
-    expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
-    expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
+        [200],
+      );
+      if (leased.status !== 200) {
+        throw new Error("Expected billable firewall auth to succeed");
+      }
+      expect(leased.body.expiresAt).not.toBeNull();
+      expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
+      expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
+    });
   });
 
   it("merges the billable lease with refreshed connector token expiries", async () => {
@@ -851,20 +935,32 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("does not call the provider for a known storage version mismatch", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const connectors = createConnectorBddApi(context);
+    const catalog = createPublicConnectorCatalog(context);
+    const versionTwo = catalogWithAuthMethod(
+      { connectorSlug: "test-oauth", authMethodId: "oauth" },
+      (method) => {
+        return { ...method, storage: { ...method.storage, version: 2 } };
+      },
+    );
+    await catalog.publish(versionTwo);
+    const { actor, headers } = await publicConnections.run();
+    catalog.onCleanup(async () => {
+      await publicConnections.cleanup();
+      await catalog.publish(versionTwo);
+      await connectors.deleteDefaultBuiltinConnectorAccount(
+        actor,
+        "test-oauth",
+      );
+      await connectors.deleteFeatureSwitches(actor);
+    });
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
     });
-    await setConnectorCredentialStorageState(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-      connectorSlug: "test-oauth",
-      storageVersion: 2,
-    });
+    // Publishing changes the selected method, not the account's stored version.
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
     let providerCalls = 0;
     fw.mockTestOauthTokenRefresh(() => {
       providerCalls += 1;
@@ -894,6 +990,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(response.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
     expect(providerCalls).toBe(0);
+    await catalog.cleanup();
   });
 
   it("defaults the refreshed expiry when the provider omits expires_in", async () => {
@@ -2190,56 +2287,67 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("treats malformed and failing provider token responses as upstream failures", async () => {
-    const fw = createFirewallApi(context);
-    const connectorsApi = createConnectorBddApi(context);
-    const { actor, headers } = await firewallRun();
-    await connectorsApi.connectManualGrant(actor, "lark", "api-token", {
-      appId: "lark-app-id",
-      appSecret: "lark-app-secret",
+    await withPublicFirewallRun(async (headers, fixture) => {
+      const fw = createFirewallApi(context);
+      const connectorsApi = createConnectorBddApi(context);
+      const actor = fixture.actor;
+      const accountIds = fixture.registerBuiltinConnector("lark");
+      const account = await connectorsApi.connectManualGrant(
+        actor,
+        "lark",
+        "api-token",
+        {
+          appId: "lark-app-id",
+          appSecret: "lark-app-secret",
+        },
+      );
+      accountIds.add(account.id);
+      server.use(
+        http.post(
+          "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+          () => {
+            return HttpResponse.json({ code: 0, msg: "ok" });
+          },
+        ),
+      );
+
+      const body = {
+        encryptedSecrets: fw.encryptedSecretsBody({}),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("LARK_TOKEN")}`,
+        },
+        ...(await exactSecretConnectorSources(actor, {
+          LARK_TOKEN: "lark",
+        })),
+      };
+
+      const malformed = await fw.requestFirewallAuth(headers, body, [502]);
+      if (malformed.status !== 502) {
+        throw new Error(
+          "Expected the malformed lark response to fail with 502",
+        );
+      }
+      expect(malformed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
+      expect(malformed.body.error.failureReason).toBe("upstream_provider");
+      expect(malformed.body.error.connectors).toStrictEqual(["lark"]);
+
+      // Provider HTTP failures classify the same way without flagging the
+      // connector for reconnect.
+      server.use(
+        http.post(
+          "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+          () => {
+            return new HttpResponse(null, { status: 500 });
+          },
+        ),
+      );
+      const failing = await fw.requestFirewallAuth(headers, body, [502]);
+      if (failing.status !== 502) {
+        throw new Error("Expected the failing lark endpoint to fail with 502");
+      }
+      expect(failing.body.error.failureReason).toBe("upstream_provider");
+      expect(failing.body.error.connectors).toStrictEqual(["lark"]);
     });
-    server.use(
-      http.post(
-        "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
-        () => {
-          return HttpResponse.json({ code: 0, msg: "ok" });
-        },
-      ),
-    );
-
-    const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({}),
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("LARK_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        LARK_TOKEN: "lark",
-      })),
-    };
-
-    const malformed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (malformed.status !== 502) {
-      throw new Error("Expected the malformed lark response to fail with 502");
-    }
-    expect(malformed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(malformed.body.error.failureReason).toBe("upstream_provider");
-    expect(malformed.body.error.connectors).toStrictEqual(["lark"]);
-
-    // Provider HTTP failures classify the same way without flagging the
-    // connector for reconnect.
-    server.use(
-      http.post(
-        "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
-        () => {
-          return new HttpResponse(null, { status: 500 });
-        },
-      ),
-    );
-    const failing = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failing.status !== 502) {
-      throw new Error("Expected the failing lark endpoint to fail with 502");
-    }
-    expect(failing.body.error.failureReason).toBe("upstream_provider");
-    expect(failing.body.error.connectors).toStrictEqual(["lark"]);
   });
 
   it("refreshes mapped-input connector access and stores its variable outputs", async () => {
@@ -2442,40 +2550,51 @@ describe("FW-5: timeout closes firewall credential authority", () => {
 
 describe("FW-6: manual-grant api-token refresh without a provider client", () => {
   it("resolves a missing alias through the synchronous input-driven refresh", async () => {
-    const fw = createFirewallApi(context);
-    const connectorsApi = createConnectorBddApi(context);
-    const { actor, headers } = await firewallRun();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.TestOauthConnector]: true,
-    });
-    await connectorsApi.connectManualGrant(actor, "test-oauth", "api-token", {
-      apiToken: "manual-secret",
-      inputVariable: "manual-var",
-      tenantId: "tenant-x",
-    });
-
-    const before = Math.floor(now() / 1000);
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("TEST_OAUTH_API_TOKEN")}`,
+    await withPublicFirewallRun(async (headers, fixture) => {
+      const fw = createFirewallApi(context);
+      const connectorsApi = createConnectorBddApi(context);
+      const actor = fixture.actor;
+      await connectorsApi.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.TestOauthConnector]: true,
+      });
+      const accountIds = fixture.registerBuiltinConnector("test-oauth");
+      const account = await connectorsApi.connectManualGrant(
+        actor,
+        "test-oauth",
+        "api-token",
+        {
+          apiToken: "manual-secret",
+          inputVariable: "manual-var",
+          tenantId: "tenant-x",
         },
-        ...(await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_API_TOKEN: "test-oauth",
-        })),
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected api-token refresh to succeed");
-    }
-    expect(resolved.body.headers.Authorization).toBe(
-      "Bearer fresh-test-oauth-api-token:manual-secret:manual-var",
-    );
-    expect(resolved.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
-    expect(resolved.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 3500);
+      );
+
+      accountIds.add(account.id);
+      const before = Math.floor(now() / 1000);
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("TEST_OAUTH_API_TOKEN")}`,
+          },
+          ...(await exactSecretConnectorSources(actor, {
+            TEST_OAUTH_API_TOKEN: "test-oauth",
+          })),
+        },
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected api-token refresh to succeed");
+      }
+      expect(resolved.body.headers.Authorization).toBe(
+        "Bearer fresh-test-oauth-api-token:manual-secret:manual-var",
+      );
+      expect(resolved.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
+      expect(resolved.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
+        before + 3500,
+      );
+    });
   });
 });
 
@@ -2568,79 +2687,90 @@ describe("FW-8: static access tokens and unavailable sources", () => {
   });
 
   it("reports aliases for never-connected connector slugs as not configured", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("NOTION_TOKEN")}`,
+      const missing = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("NOTION_TOKEN")}`,
+          },
+          secretConnectorMap: { NOTION_TOKEN: "notion" },
         },
-        secretConnectorMap: { NOTION_TOKEN: "notion" },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected unconnected connector alias to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+        [424],
+      );
+      if (missing.status !== 424) {
+        throw new Error(
+          "Expected unconnected connector alias to fail with 424",
+        );
+      }
+      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    });
   });
 });
 
 describe("FW-9: codex model-provider access", () => {
   it("resolves static model-provider auth from an empty runtime namespace", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          "x-api-key": secretTemplate("ANTHROPIC_API_KEY"),
-        },
-        secretConnectorMap: { ANTHROPIC_API_KEY: "anthropic-api-key" },
-        secretConnectorMetadataMap: {
-          ANTHROPIC_API_KEY: {
-            sourceType: "model-provider" as const,
-            sourceUserId: ORG_SENTINEL_USER_ID,
-            metadataKey: "anthropic-api-key",
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            "x-api-key": secretTemplate("ANTHROPIC_API_KEY"),
+          },
+          secretConnectorMap: { ANTHROPIC_API_KEY: "anthropic-api-key" },
+          secretConnectorMetadataMap: {
+            ANTHROPIC_API_KEY: {
+              sourceType: "model-provider" as const,
+              sourceUserId: ORG_SENTINEL_USER_ID,
+              metadataKey: "anthropic-api-key",
+            },
           },
         },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected static model-provider auth to resolve");
-    }
-    expect(resolved.body.headers["x-api-key"]).toBe("test-anthropic-key");
-    expect(resolved.body.resolvedSecrets).toStrictEqual(["ANTHROPIC_API_KEY"]);
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected static model-provider auth to resolve");
+      }
+      expect(resolved.body.headers["x-api-key"]).toBe("test-anthropic-key");
+      expect(resolved.body.resolvedSecrets).toStrictEqual([
+        "ANTHROPIC_API_KEY",
+      ]);
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+    });
   });
 
   it("derives static model-provider auth when metadata is omitted", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          "x-api-key": secretTemplate("ANTHROPIC_API_KEY"),
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            "x-api-key": secretTemplate("ANTHROPIC_API_KEY"),
+          },
+          secretConnectorMap: { ANTHROPIC_API_KEY: "anthropic-api-key" },
         },
-        secretConnectorMap: { ANTHROPIC_API_KEY: "anthropic-api-key" },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected derived static model-provider auth to resolve");
-    }
-    expect(resolved.body.headers["x-api-key"]).toBe("test-anthropic-key");
-    expect(resolved.body.resolvedSecrets).toStrictEqual(["ANTHROPIC_API_KEY"]);
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error(
+          "Expected derived static model-provider auth to resolve",
+        );
+      }
+      expect(resolved.body.headers["x-api-key"]).toBe("test-anthropic-key");
+      expect(resolved.body.resolvedSecrets).toStrictEqual([
+        "ANTHROPIC_API_KEY",
+      ]);
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+    });
   });
 
   it("refreshes an expired org codex provider and serves the stored token afterwards", async () => {
@@ -2905,24 +3035,25 @@ describe("FW-9: codex model-provider access", () => {
   });
 
   it("reports missing codex providers as not configured", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+      const missing = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+          },
+          secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
         },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected missing codex provider to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+        [424],
+      );
+      if (missing.status !== 424) {
+        throw new Error("Expected missing codex provider to fail with 424");
+      }
+      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    });
   });
 
   it("stops retrying terminal chatgpt refresh failures", async () => {
@@ -2987,9 +3118,6 @@ describe("FW-9: codex model-provider access", () => {
     const authDevice = createAuthDeviceApiActions(context);
     const support = createAuthDeviceSupportApi(context);
     const { actor, headers } = await firewallRun();
-    await support.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
     const accounts: string[] = [];
     for (const accountId of ["expired-account", "healthy-account"]) {
       mockCodexDeviceAuthProvider({
@@ -3272,7 +3400,6 @@ describe("FW-10: platform connector secrets", () => {
       refreshToken: "google-ads-refresh",
     });
     mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
-    await installApiTestConnectorCatalog();
 
     const missing = await fw.requestFirewallAuth(
       headers,
@@ -3374,7 +3501,6 @@ describe("FW-10: platform connector secrets", () => {
     const fw = createFirewallApi(context);
     const { headers } = await firewallRun();
     mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
-    await installApiTestConnectorCatalog();
 
     const resolved = await fw.requestFirewallAuth(
       headers,
@@ -3399,64 +3525,66 @@ describe("FW-10: platform connector secrets", () => {
 
 describe("FW-11: aws sigv4 template resolution", () => {
   it("resolves aws sigv4 credentials from secret and var templates", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          AWS_SECRET_ACCESS_KEY: "secret-access-key",
-          AWS_SESSION_TOKEN: "session-token",
-        }),
-        authHeaders: {},
-        authAwsSigv4: {
-          accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
-          secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
-          sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            AWS_SECRET_ACCESS_KEY: "secret-access-key",
+            AWS_SESSION_TOKEN: "session-token",
+          }),
+          authHeaders: {},
+          authAwsSigv4: {
+            accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+            sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
+          },
+          vars: { AWS_ACCESS_KEY_ID: "access-key-id" },
         },
-        vars: { AWS_ACCESS_KEY_ID: "access-key-id" },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected the sigv4 resolution to succeed");
-    }
-    expect(resolved.body.headers).toStrictEqual({});
-    expect(resolved.body.awsSigv4).toStrictEqual({
-      accessKeyId: "access-key-id",
-      secretAccessKey: "secret-access-key",
-      sessionToken: "session-token",
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected the sigv4 resolution to succeed");
+      }
+      expect(resolved.body.headers).toStrictEqual({});
+      expect(resolved.body.awsSigv4).toStrictEqual({
+        accessKeyId: "access-key-id",
+        secretAccessKey: "secret-access-key",
+        sessionToken: "session-token",
+      });
+      expect(resolved.body.resolvedSecrets).toStrictEqual([
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+      ]);
+      expect(resolved.body.expiresAt).toBeNull();
     });
-    expect(resolved.body.resolvedSecrets).toStrictEqual([
-      "AWS_SECRET_ACCESS_KEY",
-      "AWS_SESSION_TOKEN",
-    ]);
-    expect(resolved.body.expiresAt).toBeNull();
   });
 
   it("rejects empty resolved aws sigv4 credentials as connector-not-configured", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          AWS_ACCESS_KEY_ID: "",
-          AWS_SECRET_ACCESS_KEY: "secret-access-key",
-        }),
-        authHeaders: {},
-        authAwsSigv4: {
-          accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
-          secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+      const missing = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            AWS_ACCESS_KEY_ID: "",
+            AWS_SECRET_ACCESS_KEY: "secret-access-key",
+          }),
+          authHeaders: {},
+          authAwsSigv4: {
+            accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+          },
         },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected the empty sigv4 credential to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+        [424],
+      );
+      if (missing.status !== 424) {
+        throw new Error("Expected the empty sigv4 credential to fail with 424");
+      }
+      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    });
   });
 });

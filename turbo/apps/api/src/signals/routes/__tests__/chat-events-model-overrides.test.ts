@@ -1,7 +1,6 @@
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -21,14 +20,13 @@ import {
 } from "./helpers/chat-events-fixture";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,
   misc,
   webhooks,
   chatCallbacks,
-  authDeviceSupport,
   entitledChatActor,
   entitledNativeChatActor,
   configureSubscriptionPiModel,
@@ -340,9 +338,6 @@ describe("CHAT-02: run-level model overrides", () => {
           },
         ]);
       }
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-      });
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();

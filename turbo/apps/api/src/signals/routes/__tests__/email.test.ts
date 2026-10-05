@@ -298,6 +298,15 @@ describe("low-credit email delivery", () => {
       agentId: agent.agentId,
       prompt: "cross the low-credit alert threshold",
     });
+    onTestFinished(async () => {
+      const cleanupBdd = createBddApi(context);
+      const cleanupRuns = createRunsApi(context);
+      cleanupBdd.acceptAgentStorageWrites();
+      cleanupRuns.acceptTelemetryIngest();
+      await cleanupRuns.requestCancelRun(actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      await cleanupBdd.deleteAgent(actor, agent.agentId);
+    });
     await webhooks.requestAgentUsageEvent(
       {
         runId: run.runId,
@@ -321,32 +330,19 @@ describe("low-credit email delivery", () => {
     // the organization's admin recipients.
     await billing.readBillingStatus(actor);
     await billing.processOrgUsageEvents(actor);
-    const item = await email.findEmailOutboxItem({
+    expect((await billing.readBillingStatus(actor)).credits).toBe(4999);
+    const items = await email.findEmailOutboxItems({
       to: actor.email,
       subject: "Your credit balance is running low",
     });
-    expect(item).toMatchObject({
-      from_address: "Okou Team <support@okou.io>",
-      headers: {
-        "List-Unsubscribe": expect.stringContaining(
-          "<https://api.okou.ai/api/email/unsubscribe?token=",
-        ),
-        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-      },
-      template: {
-        template: "credit-low-balance",
-        props: {
-          remainingCredits: 4999,
-          thresholdCredits: 5000,
-          billingUrl:
-            "https://app.okou.ai/?settings=billing&billingView=credits",
-          unsubscribeUrl: expect.stringContaining(
-            "https://app.okou.ai/email/unsubscribe?token=",
-          ),
-        },
-      },
+    const [item] = items;
+    if (!item) {
+      throw new Error("Expected the owned low-credit delivery");
+    }
+    const ids = items.map((item) => {
+      return item.id;
     });
-    const drained = await email.drainEmailOutboxItems([item.id]);
+    const drained = await email.drainEmailOutboxItems(ids);
 
     expect(drained).toBe(1);
     expect(resendMocks.send).toHaveBeenCalledTimes(1);
@@ -385,6 +381,8 @@ describe("low-credit email delivery", () => {
         "https://app.okou.ai/?settings=billing&billingView=credits",
       ),
     });
+    await expect(email.drainEmailOutboxItems(ids)).resolves.toBe(0);
+    expect(resendMocks.send).toHaveBeenCalledTimes(1);
   });
 });
 

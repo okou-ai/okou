@@ -44,7 +44,7 @@ import {
   writeAgentInstructionsStorage$,
 } from "../services/agent-instructions-storage.service";
 import {
-  updateUserBuiltinConnectors,
+  updateUserBuiltinConnectors$,
   updateUserCustomConnectors,
 } from "../services/user-connectors.service";
 import { onRejection } from "../utils";
@@ -849,7 +849,7 @@ const updateAgentUserConnectorsInner$ = command(
       }
     }
 
-    const updated = await updateUserBuiltinConnectors(writeDb, {
+    const updated = await set(updateUserBuiltinConnectors$, {
       orgId: auth.orgId,
       userId: auth.userId,
       agentId: params.id,

@@ -26,12 +26,14 @@ import {
 } from "../../../test-fixtures/model-catalog";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { readRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatEvents = createChatEventsFixture(context);
+const runReads = createRunReadsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const billing = createBillingMediaApi(context);
 function authHeaders() {
@@ -87,12 +89,13 @@ function uniformPrices(
   );
 }
 
-function signInAdmin(): void {
+async function signInAdmin(): Promise<void> {
   const actor = authOrgApi.user();
   if (!actor.orgId) {
     throw new Error("Expected an organization member");
   }
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+  await ensureCustomModelModeForTest(context, actor, authHeaders);
 }
 
 function builtIn(model: UpdateOrgModelPolicy["model"]): UpdateOrgModelPolicy {
@@ -111,7 +114,7 @@ async function listPolicies() {
 
 describe("model catalog authority", () => {
   it("exposes the database system default and display price tiers", async () => {
-    signInAdmin();
+    await signInAdmin();
     const { body } = await accept(
       catalogApi().get({ headers: authHeaders() }),
       [200],
@@ -126,7 +129,7 @@ describe("model catalog authority", () => {
   });
 
   it("projects the system default policy without storing a per-organization row", async () => {
-    signInAdmin();
+    await signInAdmin();
     const initial = await listPolicies();
 
     expect(initial.policies).toStrictEqual([
@@ -151,7 +154,7 @@ describe("model catalog authority", () => {
   });
 
   it("admits a new policy for an active catalog model", async () => {
-    signInAdmin();
+    await signInAdmin();
     const { revision } = await listPolicies();
 
     const added = await accept(
@@ -169,7 +172,7 @@ describe("model catalog authority", () => {
   });
 
   it("stores the final replacement for a legacy model preference", async () => {
-    signInAdmin();
+    await signInAdmin();
     const { revision } = await listPolicies();
     await accept(
       policiesApi().update({
@@ -217,7 +220,7 @@ describe("model catalog authority", () => {
       ],
     });
     onTestFinished(restore);
-    signInAdmin();
+    await signInAdmin();
     await seedBuiltInModelCandidateKeys(context, model);
     const initial = await listPolicies();
     expect(initial.modelsAvailableToAdd).toContain(model);
@@ -384,9 +387,8 @@ describe("model catalog authority", () => {
       prompt: "bill the new catalog model",
       model,
     });
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({ selectedModel: model });
+    const log = await runReads.requestReadLogById(actor, run.runId, [200]);
+    expect(log.body).toMatchObject({ selectedModel: model });
     const { claim, sandboxHeaders } = await chatEvents.claimChatRun(
       runnerGroup,
       run.runId,
@@ -737,9 +739,8 @@ describe("model catalog authority", () => {
       prompt: "bill long-context usage",
       model,
     });
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({
+    const log = await runReads.requestReadLogById(actor, run.runId, [200]);
+    expect(log.body).toMatchObject({
       selectedModel: model,
       modelRuntimeProvider: "openai-api-key",
       modelRuntimeModel: upstreamModel,

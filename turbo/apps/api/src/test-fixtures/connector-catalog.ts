@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { createStore } from "ccstate";
 import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
 import {
+  connectorCatalog,
+  connectorCatalogEntries,
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
   connectorCatalogRuntimeProjections,
@@ -13,6 +15,9 @@ import type { ConnectorCatalogCompatibilityEvaluationPayload } from "@okouai/db/
 import { and, asc, eq } from "drizzle-orm";
 
 import { mockOptionalEnv } from "../lib/env";
+import type { Tx } from "../lib/db-types";
+import { closeDbPool } from "../lib/db";
+import { settleIncludingAbort } from "../signals/utils";
 import { writeDb$, type Db } from "../signals/external/db";
 import { nowDate } from "../lib/time";
 import {
@@ -53,6 +58,27 @@ export const API_TEST_CONNECTOR_FIREWALL_CONFIGS =
     return firewall === null ? [] : [firewall];
   });
 
+export const API_TEST_CONNECTOR_CATALOG_SOURCE = connectorCatalogSource();
+
+export async function installSharedApiTestConnectorCatalog(): Promise<void> {
+  const installation = await settleIncludingAbort(
+    installApiTestConnectorCatalog({
+      sourceId: API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId,
+      runtimeProjection: true,
+      ifAbsent: true,
+    }),
+  );
+  // Startup owns this connection, not the case's database authority. Cases
+  // may deliberately choose an unavailable endpoint before their first read.
+  const shutdown = await settleIncludingAbort(closeDbPool());
+  if (!installation.ok) {
+    throw installation.error;
+  }
+  if (!shutdown.ok) {
+    throw shutdown.error;
+  }
+}
+
 const DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION =
   API_TEST_CONNECTOR_CATALOG.catalogVersion;
 
@@ -82,12 +108,82 @@ export function mockApiTestConnectorProviderConfiguration(): void {
   }
 }
 
+async function prepareSharedCatalogRows(args: {
+  readonly tx: Tx;
+  readonly syncState: typeof connectorCatalogSyncState.$inferInsert;
+  readonly catalog: ConnectorCatalogArtifact;
+  readonly hash: string;
+  readonly activatedAt: Date;
+}): Promise<boolean> {
+  // The winning INSERT and all fixture rows commit together. Concurrent
+  // workers wait on that conflict instead of replacing shared authority.
+  const inserted = await args.tx
+    .insert(connectorCatalogSyncState)
+    .values(args.syncState)
+    .onConflictDoNothing()
+    .returning();
+  if (inserted.length === 0) {
+    const [snapshot] = await args.tx
+      .select({ hash: connectorCatalogActiveSnapshot.catalogDigest })
+      .from(connectorCatalogActiveSnapshot)
+      .where(
+        and(
+          eq(connectorCatalogActiveSnapshot.sourceId, args.syncState.sourceId),
+          eq(
+            connectorCatalogActiveSnapshot.schemaVersion,
+            args.syncState.schemaVersion,
+          ),
+        ),
+      );
+    if (snapshot?.hash !== args.hash) {
+      throw new Error(
+        "Shared test catalog identity does not match the fixed fixture",
+      );
+    }
+    return false;
+  }
+  const { connectors, ...catalogHeader } = args.catalog;
+  await args.tx
+    .insert(connectorCatalogEntries)
+    .values(
+      connectors.map((connector) => {
+        return { hash: args.hash, slug: connector.slug, payload: connector };
+      }),
+    )
+    .onConflictDoNothing();
+  await args.tx
+    .insert(connectorCatalog)
+    .values({
+      schemaVersion: args.catalog.artifactSchemaVersion,
+      hash: args.hash,
+      catalogVersion: args.catalog.catalogVersion,
+      activatedAt: args.activatedAt,
+      catalogHeader,
+      entrySlugs: connectors
+        .map((connector) => {
+          return connector.slug;
+        })
+        .sort(),
+    })
+    .onConflictDoNothing();
+  return true;
+}
+
+function requireOwnedLegacyCatalogSource(sourceId: string): void {
+  if (sourceId === API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId) {
+    throw new Error(
+      "Legacy catalog mutation must own a separate source; the shared test catalog is immutable",
+    );
+  }
+}
+
 export async function installApiTestConnectorCatalog(
   options: {
     readonly catalogVersion?: string;
     readonly runtimeProjection?: boolean;
     readonly sourceId?: string;
     readonly catalog?: ConnectorCatalogArtifact;
+    readonly ifAbsent?: boolean;
   } = {},
 ): Promise<void> {
   const catalogVersion =
@@ -107,6 +203,9 @@ export async function installApiTestConnectorCatalog(
   const catalogDigest = sha256Digest(rawBytes);
   const catalogGzip = encodeConnectorCatalogSnapshot(rawBytes);
   const sourceId = options.sourceId ?? connectorCatalogSource().sourceId;
+  if (!options.ifAbsent) {
+    requireOwnedLegacyCatalogSource(sourceId);
+  }
   const capability = connectorCatalogExecutableCapabilityState();
   const activatedAt = nowDate();
   const db = store.set(writeDb$);
@@ -139,20 +238,34 @@ export async function installApiTestConnectorCatalog(
   };
 
   await db.transaction(async (tx) => {
-    await tx
-      .insert(connectorCatalogSyncState)
-      .values({
-        sourceId,
-        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ...syncStateValues,
-      })
-      .onConflictDoUpdate({
-        target: [
-          connectorCatalogSyncState.sourceId,
-          connectorCatalogSyncState.schemaVersion,
-        ],
-        set: syncStateValues,
+    const syncState = {
+      sourceId,
+      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+      ...syncStateValues,
+    };
+    if (options.ifAbsent) {
+      const installed = await prepareSharedCatalogRows({
+        tx,
+        syncState,
+        catalog,
+        hash: catalogDigest,
+        activatedAt,
       });
+      if (!installed) {
+        return;
+      }
+    } else {
+      await tx
+        .insert(connectorCatalogSyncState)
+        .values(syncState)
+        .onConflictDoUpdate({
+          target: [
+            connectorCatalogSyncState.sourceId,
+            connectorCatalogSyncState.schemaVersion,
+          ],
+          set: syncStateValues,
+        });
+    }
     await tx
       .insert(connectorCatalogActiveSnapshot)
       .values({
@@ -225,6 +338,9 @@ export async function readApiTestConnectorCatalogSnapshot(
 
 export function captureApiTestConnectorCatalogCleanup(): () => Promise<void> {
   const { sourceId } = connectorCatalogSource();
+  if (sourceId === API_TEST_CONNECTOR_CATALOG_SOURCE.sourceId) {
+    throw new Error("The shared test catalog must not be deleted by a test");
+  }
   return async () => {
     await deleteApiTestConnectorCatalogSource(sourceId);
   };

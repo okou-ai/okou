@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -9,6 +9,7 @@ import {
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import type { Tx } from "../../lib/db-types";
@@ -18,17 +19,14 @@ import { piLangfuseDebugUserId } from "../../lib/pi-langfuse-debug";
 import { recordPiLangfuseRunEndToEnd } from "../../lib/pi-langfuse-tracing";
 import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
 import { safeSync, tapError } from "../utils";
-import {
-  dispatchRunCallbacks$,
-  undeliveredChatCallbackIdForRun,
-} from "./agent-run-callback.service";
+import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
@@ -38,7 +36,7 @@ import {
   type AgentCheckpointInput,
   type PreparedAgentCheckpoint,
   persistAgentCheckpointInTransaction,
-  prepareAgentCheckpointPersistence$,
+  createAgentCheckpointOperations,
 } from "./agent-webhook-checkpoints.service";
 import { lockPiMemoryPhase2CompletionStorage } from "./pi-memory-phase2-maintenance.service";
 import {
@@ -253,42 +251,37 @@ async function persistLastEventSequence(
     .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId)));
 }
 
-async function loadCompletionRun(
-  db: Db,
-  input: CompleteAgentRunInput,
-): Promise<RunRecord | null> {
-  const [run] = await db
-    .select({
-      id: agentRuns.id,
-      apiStartedAt: agentRuns.apiStartedAt,
-      error: agentRuns.error,
-      orgId: agentRuns.orgId,
-      sessionId: agentRuns.sessionId,
-      status: agentRuns.status,
-      userId: agentRuns.userId,
-      cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
-      chatThreadId: agentRuns.chatThreadId,
-      triggerSource: agentRuns.triggerSource,
-      launchSnapshot: agentRuns.launchSnapshot,
-      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
-      modelProvider: agentRuns.modelProvider,
-      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
-      selectedModel: agentRuns.selectedModel,
-      modelRuntimeProvider: agentRuns.modelRuntimeProvider,
-      modelRuntimeModel: agentRuns.modelRuntimeModel,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, input.body.runId),
-        eq(agentRuns.userId, input.auth.userId),
-      ),
-    )
-    .limit(1);
-  if (!run) {
-    return null;
-  }
-  return { ...run, status: runStatusSchema.parse(run.status) };
+function createInitialCompletionRun(runId: string, userId: string) {
+  return computed(async (get): Promise<RunRecord | null> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({
+        id: agentRuns.id,
+        apiStartedAt: agentRuns.apiStartedAt,
+        error: agentRuns.error,
+        orgId: agentRuns.orgId,
+        sessionId: agentRuns.sessionId,
+        status: agentRuns.status,
+        userId: agentRuns.userId,
+        cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
+        chatThreadId: agentRuns.chatThreadId,
+        triggerSource: agentRuns.triggerSource,
+        launchSnapshot: agentRuns.launchSnapshot,
+        langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
+        modelProvider: agentRuns.modelProvider,
+        modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+        selectedModel: agentRuns.selectedModel,
+        modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+        modelRuntimeModel: agentRuns.modelRuntimeModel,
+      })
+      .from(agentRuns)
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId)))
+      .limit(1);
+    if (!run) {
+      return null;
+    }
+    return { ...run, status: runStatusSchema.parse(run.status) };
+  });
 }
 
 async function prepareCompletion(
@@ -664,60 +657,6 @@ function settledRunCompletionResponse(run: RunRecord): CompletionResponse {
   };
 }
 
-export type RequiredTerminalChatCallbackResult =
-  | { readonly success: true }
-  | { readonly success: false; readonly error: string };
-
-/**
- * Finish the canonical chat projection before the completion webhook is
- * acknowledged. Other callbacks and accounting remain background side
- * effects, but this durable callback owns the lifecycle marker.
- */
-export const dispatchRequiredTerminalChatCallback$ = command(
-  async (
-    { set },
-    input: TerminalSideEffectsInput,
-    signal: AbortSignal,
-  ): Promise<RequiredTerminalChatCallbackResult> => {
-    const db = set(writeDb$);
-    const chatCallbackId = await undeliveredChatCallbackIdForRun(
-      db,
-      input.runId,
-    );
-    signal.throwIfAborted();
-    if (chatCallbackId === undefined) {
-      return { success: true };
-    }
-
-    const [callbackResult] = await set(
-      dispatchRunCallbacks$,
-      {
-        db,
-        runId: input.runId,
-        status: input.status,
-        error: input.error,
-        redriveChatCallbackId: chatCallbackId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (callbackResult?.success) {
-      return { success: true };
-    }
-    if (
-      callbackResult === undefined &&
-      (await undeliveredChatCallbackIdForRun(db, input.runId)) === undefined
-    ) {
-      signal.throwIfAborted();
-      return { success: true };
-    }
-    return {
-      success: false,
-      error: callbackResult?.error ?? "Canonical terminal chat callback failed",
-    };
-  },
-);
-
 const dispatchTerminalCompleteSideEffects$ = command(
   async (
     { set },
@@ -887,93 +826,118 @@ function recordCompletionCommitOutcome(
   }
 }
 
-export const completeAgentRun$ = command(
-  async (
-    { set },
-    input: CompleteAgentRunInput,
-    signal: AbortSignal,
-  ): Promise<CompletionResponse> => {
-    const db = set(writeDb$);
-    const initialRun = await loadCompletionRun(db, input);
-    signal.throwIfAborted();
-    if (!initialRun) {
-      return notFound("Agent run not found");
-    }
-    if (initialRun.status === "timeout") {
-      return settledRunCompletionResponse(initialRun);
-    }
-    const checkpointInput = checkpointInputForCompletion(input);
-    let checkpointPreparation: PreparedAgentCheckpoint | null = null;
-    if (checkpointInput) {
-      const preparation = await set(
-        prepareAgentCheckpointPersistence$,
-        checkpointInput,
-        { source: "combined-completion" },
-        signal,
-      );
-      if (!preparation.ok) {
-        return preparation.response;
-      }
-      checkpointPreparation = preparation.prepared;
-    }
-    let expectedChatThreadId = initialRun.chatThreadId;
-    let commit: ReleasedCompletionCommit;
-    while (true) {
-      const result = await db.transaction(async (tx) => {
-        const transition = await completeAgentRunTransition(
-          tx,
-          input,
-          {
-            checkpointInput,
-            checkpointPreparation,
-            expectedChatThreadId,
-          },
-          signal,
-        );
-        if (transition.kind !== "committed") {
-          return transition;
-        }
-        // The runner reported completion, so the active row is released
-        // whether or not the run ever started. Must stay last in the tx.
-        const releasedSlots = await releaseRunSlots(tx, [input.body.runId]);
-        return {
-          kind: transition.kind,
-          commit: { ...transition.commit, releasedSlots },
-        };
-      });
+function createCompletionTerminalRedrive(runId: string) {
+  return computed(async (get): Promise<string | undefined> => {
+    const db = get(db$);
+    const [callback] = await db
+      .select({ id: agentRunCallbacks.id })
+      .from(agentRunCallbacks)
+      .where(
+        and(
+          eq(agentRunCallbacks.runId, runId),
+          eq(agentRunCallbacks.internalKind, "chat"),
+          inArray(agentRunCallbacks.status, ["pending", "failed"]),
+        ),
+      )
+      .limit(1);
+    return callback?.id;
+  });
+}
+
+/** One validated completion request owns this graph and its lazy post-commit read. */
+export function createAgentRunCompletion(runId: string, userId: string) {
+  const initialRun$ = createInitialCompletionRun(runId, userId);
+  const checkpointOperations = createAgentCheckpointOperations(runId, userId);
+  const undeliveredTerminalChatCallback$ =
+    createCompletionTerminalRedrive(runId);
+  const complete$ = command(
+    async (
+      { get, set },
+      input: CompleteAgentRunInput,
+      signal: AbortSignal,
+    ): Promise<CompletionResponse> => {
+      const db = set(writeDb$);
+      const initialRun = await get(initialRun$);
       signal.throwIfAborted();
-      if (result.kind === "retry") {
-        expectedChatThreadId = result.chatThreadId;
-        continue;
+      if (!initialRun) {
+        return notFound("Agent run not found");
       }
-      if (result.kind === "not-found") {
+      if (initialRun.status === "timeout") {
         return settledRunCompletionResponse(initialRun);
       }
-      if (result.kind === "response") {
-        return result.response;
+      const checkpointInput = checkpointInputForCompletion(input);
+      let checkpointPreparation: PreparedAgentCheckpoint | null = null;
+      if (checkpointInput) {
+        const preparation = await set(
+          checkpointOperations.prepare$,
+          checkpointInput,
+          { source: "combined-completion" },
+          signal,
+        );
+        if (!preparation.ok) {
+          return preparation.response;
+        }
+        checkpointPreparation = preparation.prepared;
       }
-      commit = result.commit;
-      break;
-    }
+      let expectedChatThreadId = initialRun.chatThreadId;
+      let commit: ReleasedCompletionCommit;
+      while (true) {
+        const result = await db.transaction(async (tx) => {
+          const transition = await completeAgentRunTransition(
+            tx,
+            input,
+            {
+              checkpointInput,
+              checkpointPreparation,
+              expectedChatThreadId,
+            },
+            signal,
+          );
+          if (transition.kind !== "committed") {
+            return transition;
+          }
+          // The runner reported completion, so the active row is released
+          // whether or not the run ever started. Must stay last in the tx.
+          const releasedSlots = await releaseRunSlots(tx, [input.body.runId]);
+          return {
+            kind: transition.kind,
+            commit: { ...transition.commit, releasedSlots },
+          };
+        });
+        signal.throwIfAborted();
+        if (result.kind === "retry") {
+          expectedChatThreadId = result.chatThreadId;
+          continue;
+        }
+        if (result.kind === "not-found") {
+          return settledRunCompletionResponse(initialRun);
+        }
+        if (result.kind === "response") {
+          return result.response;
+        }
+        commit = result.commit;
+        break;
+      }
 
-    commit = await expireCommittedRunTimeBudget(
-      db,
-      input.body.runId,
-      commit,
-      signal,
-    );
+      commit = await expireCommittedRunTimeBudget(
+        db,
+        input.body.runId,
+        commit,
+        signal,
+      );
 
-    recordCompletionCommitOutcome(input, commit);
-    const redriveTerminalChatCallback =
-      !commit.transitioned &&
-      (commit.run.status === "completed" || commit.run.status === "failed") &&
-      (await undeliveredChatCallbackIdForRun(db, input.body.runId)) !==
-        undefined;
-    signal.throwIfAborted();
-    return completionResponse(
-      input.body.runId,
-      commit,
-      redriveTerminalChatCallback,
-    );
-  },
-);
+      recordCompletionCommitOutcome(input, commit);
+      const redriveTerminalChatCallback =
+        !commit.transitioned &&
+        (commit.run.status === "completed" || commit.run.status === "failed") &&
+        (await get(undeliveredTerminalChatCallback$)) !== undefined;
+      signal.throwIfAborted();
+      return completionResponse(
+        input.body.runId,
+        commit,
+        redriveTerminalChatCallback,
+      );
+    },
+  );
+  return { complete$ };
+}

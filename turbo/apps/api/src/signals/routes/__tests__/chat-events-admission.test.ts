@@ -10,14 +10,13 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { mailRoutes } from "../mail";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createPublicChatAdmissionFixture } from "./helpers/public-chat-admission-fixture";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
@@ -28,7 +27,7 @@ import {
   assistantEvent,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const reads = createRunReadsApi(context);
 const {
   bdd,
@@ -689,201 +688,196 @@ describe("CHAT-02: dispatch failure", () => {
 
 describe("CHAT-02: admission without spendable credits", () => {
   it("blocks admission with request-branded guidance through visible chat messages", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const completed = await bdd.completeOnboarding(actor);
-    expect(completed.status).toBe(200);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Suspended chat agent",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected suspended chat actor to have an org");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-      canBuyCredits: true,
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
+    const fixture = createPublicChatAdmissionFixture(context);
+    await fixture.run(async () => {
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const actor = fixture.actor;
+      bdd.acceptAgentStorageWrites();
+      fixture.captureStorageMocks();
+      const completed = await bdd.completeOnboarding(actor);
+      expect(completed.status).toBe(200);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Suspended chat agent",
+      });
+      fixture.registerAgent(agent.agentId);
+      await fixture.activateWithoutCredits();
+      await fixture.suspend(0);
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-sonnet-5",
+          preferred: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+
+      const clientEventId = randomUUID();
+      const sendBody: ChatRunSendBody = {
+        agentId: agent.agentId,
+        prompt: "blocked by suspended plan",
         model: "claude-sonnet-5",
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-
-    const clientEventId = randomUUID();
-    const sendBody: ChatRunSendBody = {
-      agentId: agent.agentId,
-      prompt: "blocked by suspended plan",
-      model: "claude-sonnet-5",
-      clientEventId,
-    };
-    const sent = await chat.requestSendEvent(actor, sendBody, [201]);
-    if (sent.status !== 201) {
-      throw new Error("Expected the blocked send to return 201 without a run");
-    }
-    expect(sent.body).toStrictEqual({
-      runId: null,
-      threadId: sent.body.threadId,
-      createdAt: expect.any(String),
-    });
-
-    // The pick rejects the input in the background.
-    const messages = await waitForThreadMessages(
-      actor,
-      sent.body.threadId,
-      (items) => {
-        return assistantMessages(items).some((message) => {
-          return message.eventType === "output.error";
-        });
-      },
-    );
-    const blockedUsers = userMessages(messages.events);
-    expect(blockedUsers).toHaveLength(2);
-    const queuedUser = blockedUsers.find((message) => {
-      return (
-        message.eventType === "input.prompt" && message.id === clientEventId
-      );
-    });
-    if (!queuedUser) {
-      throw new Error("Expected the original queued user message");
-    }
-    expect(queuedUser).toMatchObject({
-      content: null,
-    });
-    expect(chatEventDisplayText(queuedUser)).toBe("blocked by suspended plan");
-    expect(queuedUser.runId).toBeUndefined();
-    const blockedUser = blockedUsers.find((message) => {
-      return (
-        message.eventType === "input.rejected" &&
-        message.revokesEventId === clientEventId
-      );
-    });
-    if (!blockedUser) {
-      throw new Error("Expected an insufficient-credits replacement message");
-    }
-    expect(blockedUser).toMatchObject({
-      content: null,
-      error: "insufficient_credits",
-      revokesEventId: clientEventId,
-    });
-    expect(chatEventDisplayText(blockedUser)).toBe("blocked by suspended plan");
-    expect(blockedUser.runId).toBeUndefined();
-    const guidance = assistantMessages(messages.events).find((message) => {
-      return message.eventType === "output.error";
-    });
-    if (!guidance) {
-      throw new Error("Expected insufficient-credits assistant guidance");
-    }
-    expect(guidance.content).toContain("Buy more credits");
-    expect(guidance.content).toContain("https://app.okou.ai/?settings=usage");
-    expect(guidance.error).toBe("insufficient_credits");
-
-    const appended = await chat.listThreadEvents(actor, sent.body.threadId, {
-      sinceEventId: queuedUser.id,
-      sinceSeqId: queuedUser.seqId,
-    });
-    expect(appended.events).toStrictEqual([
-      expect.objectContaining({
-        id: blockedUser.id,
-        revokesEventId: clientEventId,
-        error: "insufficient_credits",
-      }),
-      expect.objectContaining({
-        id: guidance.id,
-        error: "insufficient_credits",
-      }),
-    ]);
-
-    const queue = await api.readRunQueue(actor);
-    expect(queue.body.concurrency.active).toBe(0);
-
-    const retry = await chat.requestSendEvent(
-      actor,
-      { ...sendBody, threadId: sent.body.threadId },
-      [201],
-    );
-    if (retry.status !== 201) {
-      throw new Error("Expected the retried send to be accepted");
-    }
-    // The retry is accepted as a duplicate at request time and stores nothing.
-    expect(retry.body).toStrictEqual({
-      runId: null,
-      threadId: sent.body.threadId,
-      createdAt: expect.any(String),
-    });
-    expect(Date.parse(retry.body.createdAt ?? "")).toBeGreaterThanOrEqual(
-      Date.parse(sent.body.createdAt ?? ""),
-    );
-    const afterRetry = await chat.listThreadEvents(actor, sent.body.threadId);
-    expect(afterRetry.events).toHaveLength(3);
-  }, 60_000);
-
-  it("settles a send right after cancelling a pending run with one rejection", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected chat actor to have an org");
-    }
-    const pending = await sendChatRun(actor, {
-      agentId,
-      prompt: "never started",
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId,
-      status: "suspended",
-      supportByok: true,
-      restrictedBuiltInModels: false,
-    });
-    // The cancel's slot hand-off is left running: it may pick and reject the
-    // next send's input before the send's own background pick does.
-    await cancelChatRun(actor, pending.runId);
-
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: pending.threadId,
-        prompt: "sent right after the cancel",
         clientEventId,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the send to settle as a rejection");
-    }
-    expect(sent.body.runId).toBeNull();
+      };
+      const sent = await chat.requestSendEvent(actor, sendBody, [201]);
+      if (sent.status !== 201) {
+        throw new Error(
+          "Expected the blocked send to return 201 without a run",
+        );
+      }
+      expect(sent.body).toStrictEqual({
+        runId: null,
+        threadId: sent.body.threadId,
+        createdAt: expect.any(String),
+      });
 
-    await waitForThreadMessages(actor, pending.threadId, (items) => {
-      return userMessages(items).some((message) => {
+      // The pick rejects the input in the background.
+      const messages = await waitForThreadMessages(
+        actor,
+        sent.body.threadId,
+        (items) => {
+          return assistantMessages(items).some((message) => {
+            return message.eventType === "output.error";
+          });
+        },
+      );
+      const blockedUsers = userMessages(messages.events);
+      expect(blockedUsers).toHaveLength(2);
+      const queuedUser = blockedUsers.find((message) => {
+        return (
+          message.eventType === "input.prompt" && message.id === clientEventId
+        );
+      });
+      if (!queuedUser) {
+        throw new Error("Expected the original queued user message");
+      }
+      expect(queuedUser).toMatchObject({
+        content: null,
+      });
+      expect(chatEventDisplayText(queuedUser)).toBe(
+        "blocked by suspended plan",
+      );
+      expect(queuedUser.runId).toBeUndefined();
+      const blockedUser = blockedUsers.find((message) => {
         return (
           message.eventType === "input.rejected" &&
           message.revokesEventId === clientEventId
         );
       });
+      if (!blockedUser) {
+        throw new Error("Expected an insufficient-credits replacement message");
+      }
+      expect(blockedUser).toMatchObject({
+        content: null,
+        error: "insufficient_credits",
+        revokesEventId: clientEventId,
+      });
+      expect(chatEventDisplayText(blockedUser)).toBe(
+        "blocked by suspended plan",
+      );
+      expect(blockedUser.runId).toBeUndefined();
+      const guidance = assistantMessages(messages.events).find((message) => {
+        return message.eventType === "output.error";
+      });
+      if (!guidance) {
+        throw new Error("Expected insufficient-credits assistant guidance");
+      }
+      expect(guidance.content).toContain("Buy more credits");
+      expect(guidance.content).toContain("https://app.okou.ai/?settings=usage");
+      expect(guidance.error).toBe("insufficient_credits");
+
+      const appended = await chat.listThreadEvents(actor, sent.body.threadId, {
+        sinceEventId: queuedUser.id,
+        sinceSeqId: queuedUser.seqId,
+      });
+      expect(appended.events).toStrictEqual([
+        expect.objectContaining({
+          id: blockedUser.id,
+          revokesEventId: clientEventId,
+          error: "insufficient_credits",
+        }),
+        expect.objectContaining({
+          id: guidance.id,
+          error: "insufficient_credits",
+        }),
+      ]);
+
+      const queue = await api.readRunQueue(actor);
+      expect(queue.body.concurrency.active).toBe(0);
+
+      const retry = await chat.requestSendEvent(
+        actor,
+        { ...sendBody, threadId: sent.body.threadId },
+        [201],
+      );
+      if (retry.status !== 201) {
+        throw new Error("Expected the retried send to be accepted");
+      }
+      // The retry is accepted as a duplicate at request time and stores nothing.
+      expect(retry.body).toStrictEqual({
+        runId: null,
+        threadId: sent.body.threadId,
+        createdAt: expect.any(String),
+      });
+      expect(Date.parse(retry.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+        Date.parse(sent.body.createdAt ?? ""),
+      );
+      const afterRetry = await chat.listThreadEvents(actor, sent.body.threadId);
+      expect(afterRetry.events).toHaveLength(3);
     });
-    await flushWaitUntilForTest();
-    const settled = await chat.listThreadEvents(actor, pending.threadId);
-    expect(
-      userMessages(settled.events).filter((message) => {
-        return (
-          message.eventType === "input.rejected" &&
-          message.revokesEventId === clientEventId
-        );
-      }),
-    ).toStrictEqual([
-      expect.objectContaining({ error: "insufficient_credits" }),
-    ]);
+  }, 60_000);
+
+  it("settles a send right after cancelling a pending run with one rejection", async () => {
+    const fixture = createPublicChatAdmissionFixture(context);
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.createPaidNativeActor();
+      const pending = await sendChatRun(actor, {
+        agentId,
+        prompt: "never started",
+      });
+      fixture.registerRun(pending.runId);
+      await fixture.suspend(20_000);
+      // The cancel's slot hand-off is left running: it may pick and reject the
+      // next send's input before the send's own background pick does.
+      await cancelChatRun(actor, pending.runId);
+
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: pending.threadId,
+          prompt: "sent right after the cancel",
+          clientEventId,
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the send to settle as a rejection");
+      }
+      expect(sent.body.runId).toBeNull();
+
+      await waitForThreadMessages(actor, pending.threadId, (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.eventType === "input.rejected" &&
+            message.revokesEventId === clientEventId
+          );
+        });
+      });
+      await flushWaitUntilForTest();
+      const settled = await chat.listThreadEvents(actor, pending.threadId);
+      expect(
+        userMessages(settled.events).filter((message) => {
+          return (
+            message.eventType === "input.rejected" &&
+            message.revokesEventId === clientEventId
+          );
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({ error: "insufficient_credits" }),
+      ]);
+    });
   }, 60_000);
 });
 

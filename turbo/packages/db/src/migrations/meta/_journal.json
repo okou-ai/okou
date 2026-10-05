@@ -1688,6 +1688,27 @@
       "when": 1791088990644,
       "tag": "1318_calm_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 1319,
+      "version": "7",
+      "when": 1791184868198,
+      "tag": "1319_expand_autonomy_budget_to_32",
+      "breakpoints": true
+    },
+    {
+      "idx": 1320,
+      "version": "7",
+      "when": 1791190741675,
+      "tag": "1320_misty_cassandra_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 1321,
+      "version": "7",
+      "when": 1791200048640,
+      "tag": "1321_old_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

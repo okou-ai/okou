@@ -3184,7 +3184,7 @@ export function createThreadClaimRunObjects(
           member,
           orgProviderType,
           customSurface,
-          modelMode: org?.modelMode === "auto" ? "auto" : "custom",
+          modelMode: org?.modelMode === "custom" ? "custom" : "auto",
           subscriptionModels,
         })
       : badRequestMessage("Queued input is missing its model selection");

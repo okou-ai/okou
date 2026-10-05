@@ -27,7 +27,7 @@ import {
   teamsMessageActivityForTest,
 } from "./helpers/teams-connect";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);

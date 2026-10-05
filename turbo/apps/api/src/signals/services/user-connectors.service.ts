@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
@@ -12,7 +13,7 @@ import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-con
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
   loadConnectorRuntimeSnapshot,
@@ -226,61 +227,102 @@ async function lockCustomConnectorDefinitionsForGrant(
   };
 }
 
-export async function updateUserBuiltinConnectors(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-    readonly enabledConnectorSlugs: readonly ConnectorSlug[];
-    readonly operation?: UserBuiltinConnectorUpdateOperation;
-  },
-): Promise<UpdateUserBuiltinConnectorsResult> {
-  const enabledConnectorSlugs = Array.from(new Set(args.enabledConnectorSlugs));
-  const operation = args.operation ?? "replace";
-
-  return await db.transaction(async (tx) => {
-    const agentLocked = await lockAgentForConnectorReplace(tx, args);
-    if (!agentLocked) {
-      return { status: "agentNotFound" };
-    }
-
-    const connectorScope = and(
-      eq(userBuiltinConnectors.orgId, args.orgId),
-      eq(userBuiltinConnectors.userId, args.userId),
-      eq(userBuiltinConnectors.agentId, args.agentId),
+export const updateUserBuiltinConnectors$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string;
+      readonly enabledConnectorSlugs: readonly ConnectorSlug[];
+      readonly operation?: UserBuiltinConnectorUpdateOperation;
+    },
+  ): Promise<UpdateUserBuiltinConnectorsResult> => {
+    const db = set(writeDb$);
+    const enabledConnectorSlugs = Array.from(
+      new Set(args.enabledConnectorSlugs),
     );
+    const operation = args.operation ?? "replace";
 
-    if (operation === "replace") {
-      await tx.delete(userBuiltinConnectors).where(connectorScope);
-    } else if (operation === "remove" && enabledConnectorSlugs.length > 0) {
-      await tx
-        .delete(userBuiltinConnectors)
+    return await db.transaction(async (tx) => {
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
         .where(
           and(
-            connectorScope,
-            inArray(userBuiltinConnectors.connectorSlug, enabledConnectorSlugs),
+            eq(agents.orgId, args.orgId),
+            eq(agents.id, args.agentId),
+            or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
           ),
-        );
-    }
+        )
+        .for("update")
+        .limit(1);
+      if (agent === undefined) {
+        return { status: "agentNotFound" };
+      }
 
-    if (operation !== "remove" && enabledConnectorSlugs.length > 0) {
-      await tx
-        .insert(userBuiltinConnectors)
-        .values(
-          enabledConnectorSlugs.map((connectorSlug) => {
-            return {
+      const connectorScope = and(
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
+      );
+
+      if (operation === "replace") {
+        await tx.delete(userBuiltinConnectors).where(connectorScope);
+      } else if (operation === "remove" && enabledConnectorSlugs.length > 0) {
+        await tx
+          .delete(userBuiltinConnectors)
+          .where(
+            and(
+              connectorScope,
+              inArray(
+                userBuiltinConnectors.connectorSlug,
+                enabledConnectorSlugs,
+              ),
+            ),
+          );
+      }
+
+      if (operation !== "remove" && enabledConnectorSlugs.length > 0) {
+        await tx
+          .insert(userBuiltinConnectors)
+          .values(
+            enabledConnectorSlugs.map((connectorSlug) => {
+              return {
+                orgId: args.orgId,
+                userId: args.userId,
+                agentId: args.agentId,
+                connectorSlug,
+              };
+            }),
+          )
+          .onConflictDoNothing();
+      }
+
+      if (operation === "replace") {
+        await tx.execute(
+          invalidatePiStableContextSql(
+            {
               orgId: args.orgId,
               userId: args.userId,
               agentId: args.agentId,
-              connectorSlug,
-            };
-          }),
-        )
-        .onConflictDoNothing();
-    }
+            },
+            nowDate(),
+          ),
+        );
+        return { status: "updated", enabledConnectorSlugs };
+      }
 
-    if (operation === "replace") {
+      const rows = await tx
+        .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+        .from(userBuiltinConnectors)
+        .where(connectorScope);
+      const result = {
+        status: "updated",
+        enabledConnectorSlugs: rows.map((row) => {
+          return row.connectorSlug;
+        }),
+      } as const;
       await tx.execute(
         invalidatePiStableContextSql(
           {
@@ -291,32 +333,10 @@ export async function updateUserBuiltinConnectors(
           nowDate(),
         ),
       );
-      return { status: "updated", enabledConnectorSlugs };
-    }
-
-    const rows = await tx
-      .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-      .from(userBuiltinConnectors)
-      .where(connectorScope);
-    const result = {
-      status: "updated",
-      enabledConnectorSlugs: rows.map((row) => {
-        return row.connectorSlug;
-      }),
-    } as const;
-    await tx.execute(
-      invalidatePiStableContextSql(
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: args.agentId,
-        },
-        nowDate(),
-      ),
-    );
-    return result;
-  });
-}
+      return result;
+    });
+  },
+);
 
 interface NormalizedCustomConnectorGrantRequest {
   readonly grants: readonly AgentCustomConnectorGrant[];

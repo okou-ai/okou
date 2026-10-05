@@ -105,19 +105,6 @@ interface SeedRunArgs {
   readonly lifecycleOnly?: boolean;
 }
 
-interface ModelUsageEventArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId: string;
-  readonly inputTokens?: number;
-  readonly outputTokens?: number;
-  readonly cacheReadInputTokens?: number;
-  readonly cacheCreationInputTokens?: number;
-  readonly creditsCharged?: number;
-  readonly status?: string;
-  readonly processedAt?: Date | null;
-}
-
 type UsageStateAction<Action extends TestUsageStateActionBody["action"]> =
   Extract<TestUsageStateActionBody, { readonly action: Action }>;
 
@@ -134,18 +121,8 @@ type UsageStateEventWriteAction = UsageStateAction<
 >;
 
 type UsageStateEventMaterializationAction = UsageStateAction<
-  | "delete-run"
-  | "delete-billing-attribution"
-  | "set-usage-event-created-at"
-  | "read-usage-storage-counts"
+  "delete-run" | "delete-billing-attribution" | "read-usage-storage-counts"
 >;
-
-const MODEL_TOKEN_CATEGORIES = [
-  "tokens.input",
-  "tokens.output",
-  "tokens.cache_read",
-  "tokens.cache_creation",
-] as const;
 
 function parseOptionalDate(value: string | null | undefined): Date | null {
   if (!value) {
@@ -447,54 +424,6 @@ async function seedChatThread(
   return row.id;
 }
 
-interface ModelRowQuantity {
-  readonly category: (typeof MODEL_TOKEN_CATEGORIES)[number];
-  readonly quantity: number;
-}
-
-function buildModelUsageRows(args: ModelUsageEventArgs): {
-  rows: (typeof usageEvent.$inferInsert)[];
-} {
-  const status = args.status ?? "pending";
-  const createdAt = nowDate();
-  const processedAt =
-    args.processedAt !== undefined
-      ? args.processedAt
-      : status === "processed"
-        ? createdAt
-        : null;
-  const provider = "claude-sonnet-4-6";
-  const quantities: readonly ModelRowQuantity[] = [
-    { category: "tokens.input", quantity: args.inputTokens ?? 0 },
-    { category: "tokens.output", quantity: args.outputTokens ?? 0 },
-    { category: "tokens.cache_read", quantity: args.cacheReadInputTokens ?? 0 },
-    {
-      category: "tokens.cache_creation",
-      quantity: args.cacheCreationInputTokens ?? 0,
-    },
-  ];
-  const billable = quantities.filter((entry, index) => {
-    return index === 0 || entry.quantity > 0;
-  });
-  const rows = billable.map((entry, index) => {
-    return {
-      runId: args.runId,
-      orgId: args.orgId,
-      userId: args.userId,
-      kind: "model",
-      provider,
-      category: entry.category,
-      quantity: entry.quantity,
-      creditsCharged: index === 0 ? (args.creditsCharged ?? null) : null,
-      status,
-      idempotencyKey: randomUUID(),
-      createdAt,
-      processedAt,
-    };
-  });
-  return { rows };
-}
-
 function buildGenericUsageRows(args: {
   readonly orgId: string;
   readonly userId?: string;
@@ -539,29 +468,13 @@ function buildGenericUsageRows(args: {
   return values;
 }
 
-type UsageInsertAction = UsageStateAction<
-  "insert-model-usage-event-for-run" | "insert-usage-event"
->;
+type UsageInsertAction = UsageStateAction<"insert-usage-event">;
 
 function buildFixtureUsageRows(body: UsageInsertAction) {
   const processedAt =
     body.processed_at === undefined
       ? undefined
       : parseOptionalDate(body.processed_at);
-  if (body.action === "insert-model-usage-event-for-run") {
-    return buildModelUsageRows({
-      orgId: body.org_id,
-      userId: body.user_id,
-      runId: body.run_id,
-      inputTokens: body.input_tokens ?? 100,
-      outputTokens: body.output_tokens ?? 50,
-      cacheReadInputTokens: body.cache_read_input_tokens,
-      cacheCreationInputTokens: body.cache_creation_input_tokens,
-      creditsCharged: body.credits_charged,
-      status: body.status,
-      processedAt,
-    }).rows;
-  }
   return buildGenericUsageRows({
     orgId: body.org_id,
     userId: body.user_id,
@@ -853,33 +766,6 @@ async function deleteBillingAttribution(
   await db
     .delete(billingRunAttribution)
     .where(eq(billingRunAttribution.runId, runId));
-  signal.throwIfAborted();
-}
-
-async function setUsageEventCreatedAt(
-  db: Db,
-  args: { readonly id: string; readonly createdAt: Date },
-  signal: AbortSignal,
-): Promise<void> {
-  const [row] = await db
-    .select({
-      runId: usageEvent.runId,
-      originalCreatedAt: usageEvent.createdAt,
-    })
-    .from(usageEvent)
-    .where(eq(usageEvent.id, args.id))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!row) {
-    return;
-  }
-  const where = row.runId
-    ? and(
-        eq(usageEvent.runId, row.runId),
-        eq(usageEvent.createdAt, row.originalCreatedAt),
-      )
-    : eq(usageEvent.id, args.id);
-  await db.update(usageEvent).set({ createdAt: args.createdAt }).where(where);
   signal.throwIfAborted();
 }
 
@@ -1251,14 +1137,6 @@ async function mutateUsageStateEventMaterializationState(
       await deleteBillingAttribution(db, body.run_id, signal);
       return { status: 200 as const, body: { ok: true as const } };
     }
-    case "set-usage-event-created-at": {
-      await setUsageEventCreatedAt(
-        db,
-        { id: body.id, createdAt: new Date(body.created_at) },
-        signal,
-      );
-      return { status: 200 as const, body: { ok: true as const } };
-    }
     case "read-usage-storage-counts": {
       const counts = await readUsageStorageCounts(db, {
         scope: body.scope,
@@ -1286,7 +1164,6 @@ async function mutateUsageState(
       action:
         | "delete-usage-data"
         | "seed-run"
-        | "insert-model-usage-event-for-run"
         | "insert-usage-event"
         | "materialize-hourly-usage";
     }
@@ -1309,7 +1186,6 @@ async function mutateUsageState(
     }
     case "delete-run":
     case "delete-billing-attribution":
-    case "set-usage-event-created-at":
     case "read-usage-storage-counts": {
       return await mutateUsageStateEventMaterializationState(db, body, signal);
     }
@@ -1339,10 +1215,7 @@ const mutateUsageState$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (bodyResult.data.action === "seed-run") {
     return await set(seedUsageRunState$, bodyResult.data, signal);
   }
-  if (
-    bodyResult.data.action === "insert-model-usage-event-for-run" ||
-    bodyResult.data.action === "insert-usage-event"
-  ) {
+  if (bodyResult.data.action === "insert-usage-event") {
     return await set(insertFixtureUsage$, bodyResult.data, signal);
   }
   if (bodyResult.data.action === "materialize-hourly-usage") {

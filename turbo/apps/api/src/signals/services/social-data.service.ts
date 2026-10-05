@@ -16,7 +16,6 @@ import {
   type SocialDataQuoteResponse,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -35,7 +34,6 @@ import {
 import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
 import {
   inspectSocialDataProviderPlan,
@@ -142,29 +140,6 @@ function publicJob(job: Job): SocialDataJobResponse {
   });
 }
 
-const requireEnabled$ = command(
-  async (
-    { set },
-    auth: Actor,
-    signal: AbortSignal,
-  ): Promise<ErrorResponse | null> => {
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return isFeatureEnabled(FeatureSwitchKey.SocialDataJobs, context)
-      ? null
-      : errorResponse(
-          403,
-          "FEATURE_NOT_AVAILABLE",
-          "Social data jobs are not enabled for this account.",
-        );
-  },
-);
-
 function ownerWhere(auth: Pick<Actor, "orgId" | "userId">, jobId: string) {
   return and(
     eq(socialDataJobs.id, jobId),
@@ -247,10 +222,6 @@ export const quoteSocialData$ = command(
     | ErrorResponse
   > => {
     const db = set(writeDb$);
-    const disabled = await set(requireEnabled$, args.auth, signal);
-    if (disabled) {
-      return disabled;
-    }
     const result = await settle(
       (async () => {
         const estimate = await inspectSocialDataProviderPlan(
@@ -440,10 +411,6 @@ export const createSocialDataJob$ = command(
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
     const db = set(writeDb$);
-    const disabled = await set(requireEnabled$, args.auth, signal);
-    if (disabled) {
-      return disabled;
-    }
     const [existing] = await db
       .select()
       .from(socialDataJobs)

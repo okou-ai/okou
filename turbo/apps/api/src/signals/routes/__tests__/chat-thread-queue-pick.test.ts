@@ -1,13 +1,13 @@
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
-import { setQueuedInputModelSelectionFixture } from "../../../test-fixtures/chat-input-model-selection";
+import { insertCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
@@ -20,6 +20,7 @@ import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { postConcurrencyEntitlementsInvoicePaid } from "./helpers/stripe-billing-webhook";
 
 /**
@@ -28,7 +29,7 @@ import { postConcurrencyEntitlementsInvoicePaid } from "./helpers/stripe-billing
  * organization's waiting threads oldest first, with no priority for the ending
  * run's thread) or after a concurrency entitlement changes.
  */
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   bdd,
@@ -646,19 +647,58 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("rejects a queued input whose recorded model is not in the catalog at its pick", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId, runnerGroup, providerId } =
+      await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const model = `queued-retired-${randomUUID()}`;
+    const restore = await insertCatalogModelFixture({
+      model,
+      displayName: "Queued model retired before pick",
+      sortOrder: 100_000,
+      builtInRoutes: [
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel: `queued-retired-upstream-${randomUUID()}`,
+          priority: 0,
+          efforts: [],
+          defaultEffort: null,
+        },
+      ],
+    });
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, model);
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const blocker = await sendChatRun(actor, {
       agentId,
       prompt: "occupy the only organization slot",
     });
-    const waiting = await sendWaiting(actor, agentId, "retired model input");
-    // The recorded model has no catalog row, so it resolves to nothing.
-    await setQueuedInputModelSelectionFixture(waiting.clientEventId, {
-      selectedModel: "model-outside-the-catalog",
-      codexServiceTier: null,
-      reasoningEffort: null,
-    });
+    const clientEventId = randomUUID();
+    const waiting = {
+      ...(await sendWaitingChatInput(actor, {
+        agentId,
+        prompt: "retired model input",
+        clientEventId,
+        model,
+      })),
+      clientEventId,
+    };
+    // The real input records a model that existed at enqueue. Removing only
+    // its owned catalog entry leaves that recorded model unknown at the pick.
+    await restore();
 
     await finishRun(runnerGroup, blocker.runId);
 

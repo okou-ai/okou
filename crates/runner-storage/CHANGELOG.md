@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.27...runner-storage-v0.2.0) (2026-10-04)
+
+
+### Features
+
+* **observability:** log r2 keys only in runner-local info ([#37687](https://github.com/okou-ai/okou/issues/37687)) ([193f547](https://github.com/okou-ai/okou/commit/193f5472860eab1725897d976f25f6b70f3cb1c4))
+
 ## [0.1.27](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.26...runner-storage-v0.1.27) (2026-10-02)
 
 

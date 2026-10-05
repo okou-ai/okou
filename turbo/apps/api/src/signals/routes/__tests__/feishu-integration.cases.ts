@@ -13,7 +13,7 @@ import {
 import { Buffer } from "node:buffer";
 
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import {
   chatThreadConnectorSelectionContract,
@@ -111,7 +111,7 @@ const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsUpdateRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
@@ -495,6 +495,54 @@ function uploadedSkillMarkdown(): string {
     }
   }
   throw new Error("Expected an uploaded SKILL.md");
+}
+
+function uploadedSkillVersion(firstCall: number): string {
+  const archives = context.mocks.s3.send.mock.calls
+    .slice(firstCall)
+    .flatMap(([command]) => {
+      const input = commandInput(command);
+      return typeof input.Key === "string" &&
+        input.Key.endsWith("/archive.tar.gz") &&
+        Buffer.isBuffer(input.Body) &&
+        extractFileFromTarGz(input.Body, "SKILL.md") !== null
+        ? [input.Key]
+        : [];
+    });
+  expect(archives).toHaveLength(1);
+  const version = requireValue(
+    archives[0]?.split("/").at(-2),
+    "Expected the actual published managed skill version",
+  );
+  expect(version).toMatch(/^[0-9a-f]{64}$/u);
+  return version;
+}
+
+function ownFeishuRun(
+  actor: ApiTestUser,
+  runId: string,
+  claimedSandboxToken?: () => string | undefined,
+) {
+  let cancelled = false;
+  const cancel = async () => {
+    if (!cancelled) {
+      await runsApi.requestCancelRun(actor, runId, [200]);
+      const sandboxToken = claimedSandboxToken?.();
+      if (sandboxToken !== undefined) {
+        // A claimed Run keeps its slot and thread recovery until the Runner
+        // acknowledges completion, even after public cancellation succeeds.
+        await webhooksApi.requestAgentComplete(
+          { runId, exitCode: 1 },
+          { authorization: `Bearer ${sandboxToken}` },
+          [200],
+        );
+      }
+      await flushWaitUntilForTest();
+      cancelled = true;
+    }
+  };
+  onTestFinished(cancel);
+  return cancel;
 }
 
 function legacyFeishuAppOAuthState(args: {
@@ -1178,6 +1226,49 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     };
   }
 
+  async function claimConnectedFeishuSource(
+    fixture: FeishuRunFixture,
+    customConnectorId: string,
+    options: {
+      readonly openId?: string;
+      readonly verificationToken?: string;
+    } = {},
+  ): Promise<string> {
+    const prompt = `inspect the connected Feishu identity ${randomUUID()}`;
+    const response = await postEvent(
+      fixture.callbackUrl,
+      directMessage(fixture.appId, prompt, options.openId ?? "ou_feishu_user", {
+        verificationToken: options.verificationToken ?? VERIFICATION_TOKEN,
+      }),
+      { encrypted: true },
+    );
+    expect(response.status).toBe(200);
+    await flushWaitUntilForTest();
+    const run = await findRun(fixture.actor, prompt);
+    const claimedRun: { sandboxToken?: string } = {};
+    const cancel = ownFeishuRun(fixture.actor, run.id, () => {
+      return claimedRun.sandboxToken;
+    });
+    await runsApi.heartbeatRunner(fixture.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.id);
+    claimedRun.sandboxToken = claim.sandboxToken;
+    const source = requireValue(
+      claim.connectorRuntimeTargets?.find((target) => {
+        return (
+          target.kind === "custom" &&
+          target.customConnectorId === customConnectorId
+        );
+      }),
+      "Expected the connected identity in the actual Runner claim",
+    );
+    const sourceId = requireValue(
+      source.sourceId,
+      "Expected the claimed connector source",
+    );
+    await cancel();
+    return sourceId;
+  }
+
   async function feishuAuthorizationUrlFromResponse(
     response: Response,
   ): Promise<URL> {
@@ -1510,6 +1601,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     fixtureState,
     setupFeishuInstallationFixture,
     setupFeishuRunFixture,
+    claimConnectedFeishuSource,
     feishuAuthorizationUrlFromResponse,
     completeFeishuAuthorization,
     requestFeishuConnectUrl,
@@ -1543,6 +1635,7 @@ export function registerFeishuIntegrationTests(
       fixtureState,
       setupFeishuInstallationFixture,
       setupFeishuRunFixture,
+      claimConnectedFeishuSource,
       feishuAuthorizationUrlFromResponse,
       completeFeishuAuthorization,
       requestFeishuConnectUrl,
@@ -3558,18 +3651,6 @@ export function registerFeishuIntegrationTests(
         async (phase) => {
           const fixture = await setupFeishuRunFixture();
           await connectFixtureUser(fixture);
-          const orgId = requireValue(
-            fixture.actor.orgId,
-            "Expected an organization",
-          );
-          const connectionBefore = await readFeishuMemberConnectorState(
-            context,
-            {
-              orgId,
-              userId: fixture.actor.userId,
-              installationId: fixture.installationId,
-            },
-          );
           const rotatedVerificationToken = `rotated-${randomUUID()}`;
           mocks.clerk.session(
             fixture.actor.userId,
@@ -3592,6 +3673,11 @@ export function registerFeishuIntegrationTests(
           const connectorBefore = requireValue(
             before.body.connectors[0],
             "Expected the managed Feishu connector",
+          );
+
+          const sourceBefore = await claimConnectedFeishuSource(
+            fixture,
+            connectorBefore.id,
           );
 
           const retried = await accept(
@@ -3633,13 +3719,12 @@ export function registerFeishuIntegrationTests(
                 }),
               }),
             ]);
-            await expect(
-              readFeishuMemberConnectorState(context, {
-                orgId,
-                userId: fixture.actor.userId,
-                installationId: fixture.installationId,
-              }),
-            ).resolves.toStrictEqual(connectionBefore);
+            const sourceAfter = await claimConnectedFeishuSource(
+              fixture,
+              connectorBefore.id,
+              { verificationToken: rotatedVerificationToken },
+            );
+            expect(sourceAfter).toBe(sourceBefore);
           } else {
             const prompt = `use the existing Feishu connection ${randomUUID()}`;
             const eventResponse = await postEvent(
@@ -3652,7 +3737,7 @@ export function registerFeishuIntegrationTests(
             expect(eventResponse.status).toBe(200);
             await flushWaitUntilForTest();
             const run = await findRun(fixture.actor, prompt);
-            await runsApi.requestCancelRun(fixture.actor, run.id, [200]);
+            await ownFeishuRun(fixture.actor, run.id)();
           }
           await accept(
             client.removeInstallation({
@@ -3991,14 +4076,19 @@ export function registerFeishuIntegrationTests(
           signal: context.signal,
           routes: feishuBrowserConnectRoutes,
         });
-        const memberState = await readFeishuMemberConnectorState(context, {
-          orgId: requireValue(actor.orgId, "Expected an organization"),
-          userId: actor.userId,
-          installationId: fixture.installationId,
-        });
-        const memberConnectorId = requireValue(
-          memberState.feishu_member_connection?.connector_id,
-          "Expected Feishu member connector linkage",
+        const customConnectors = await accept(
+          setupApp({ context, routes: customConnectorsRoutes })(
+            customConnectorsContract,
+          ).list({ headers: { authorization: "Bearer clerk-session" } }),
+          [200],
+        );
+        const customConnector = requireValue(
+          customConnectors.body.connectors[0],
+          "Expected the managed Feishu connector",
+        );
+        const memberConnectorId = await claimConnectedFeishuSource(
+          fixture,
+          customConnector.id,
         );
 
         const otherActor = authOrgApi.user({
@@ -4076,18 +4166,12 @@ export function registerFeishuIntegrationTests(
           replacementAuthorizationUrl,
           replacementOpenId,
         );
-        await expect(
-          readFeishuMemberConnectorState(context, {
-            orgId: requireValue(actor.orgId, "Expected an organization"),
-            userId: actor.userId,
-            installationId: fixture.installationId,
-          }),
-        ).resolves.toMatchObject({
-          feishu_member_connection: {
-            connector_id: memberConnectorId,
-            open_id: replacementOpenId,
-          },
-        });
+        const replacementSourceId = await claimConnectedFeishuSource(
+          fixture,
+          customConnector.id,
+          { openId: replacementOpenId },
+        );
+        expect(replacementSourceId).toBe(memberConnectorId);
         await flushWaitUntilForTest();
 
         fixtureState.outboundMessages = [];
@@ -4433,6 +4517,7 @@ export function registerFeishuIntegrationTests(
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "files-and-history") {
       it("runs a Feishu DM file with downloadable resource context", async () => {
+        const firstUploadCall = context.mocks.s3.send.mock.calls.length;
         const fixture = await setupFeishuRunFixture();
         const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
           fixture;
@@ -4452,10 +4537,7 @@ export function registerFeishuIntegrationTests(
           builtinConnectorList.body.connectors[0],
           "Expected connected Feishu custom connector",
         );
-        const managedSkill = await storagesApi.downloadStorage(actor, {
-          name: getCustomConnectorSkillStorageName(managedConnector.id),
-          owner: "organization",
-        });
+        const managedSkillVersion = uploadedSkillVersion(firstUploadCall);
         const customConnectorGrants = await accept(
           setupApp({ context, routes: agentsRoutes })(
             agentCustomConnectorsContract,
@@ -4484,13 +4566,14 @@ export function registerFeishuIntegrationTests(
         await flushWaitUntilForTest();
 
         const feishuFilePrompt = `[${provider.name} file] quarterly-report.pdf`;
-        const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+        const listed = await listActiveFeishuRuns(actor);
         const run = requireValue(
-          listed.runs.find((candidate) => {
+          listed.find((candidate) => {
             return candidate.prompt.includes(feishuFilePrompt);
           }),
           "Expected Feishu file run",
         );
+        const cancel = ownFeishuRun(actor, run.id);
         await runsApi.heartbeatRunner(runnerGroup);
         const claim = await runsApi.claimRunnerJob(run.id);
         expect(claim.prompt).toBe(run.prompt);
@@ -4623,7 +4706,7 @@ export function registerFeishuIntegrationTests(
             getCustomConnectorSkillStorageName(managedConnector.id)
           );
         });
-        expect(managedSkillMount?.versionId).toBe(managedSkill.versionId);
+        expect(managedSkillMount?.versionId).toBe(managedSkillVersion);
         expect(claim.prompt).toContain(feishuFilePrompt);
         expect(claim.prompt).toContain("   [MESSAGE_ID] om_file_message");
         expect(claim.prompt).toContain("   [TYPE] file");
@@ -4750,6 +4833,7 @@ export function registerFeishuIntegrationTests(
           },
         );
         expect(wrongRunResponse.status).toBe(400);
+        await cancel();
       });
 
       it.each(["p2p", "group"] as const)(
@@ -5753,11 +5837,9 @@ export function registerFeishuIntegrationTests(
           }),
         ).toBeTruthy();
         expect(
-          (await runsApi.listAgentRuns(secondActor, { limit: 20 })).runs.some(
-            (run) => {
-              return run.prompt === "@Nova unconnected group task";
-            },
-          ),
+          (await listActiveFeishuRuns(secondActor)).some((run) => {
+            return run.prompt === "@Nova unconnected group task";
+          }),
         ).toBeFalsy();
         await connectFixtureUser(fixture, secondActor, secondOpenId);
         await postEvent(
@@ -5788,11 +5870,9 @@ export function registerFeishuIntegrationTests(
             return messageContent(message).includes("Agent unavailable");
           }),
         ).toBeTruthy();
-        const controlRuns = await runsApi.listAgentRuns(secondActor, {
-          limit: 20,
-        });
+        const controlRuns = await listActiveFeishuRuns(secondActor);
         expect(
-          controlRuns.runs.some((run) => {
+          controlRuns.some((run) => {
             return [
               "@Nova unconnected group task",
               "@Nova /help",

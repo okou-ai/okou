@@ -98,7 +98,7 @@ export const markOrgOnboardingComplete$ = command(
         .from(orgMetadata)
         .where(eq(orgMetadata.orgId, args.orgId))
         .limit(1);
-      if (metadata?.mode === "auto") {
+      if (metadata?.mode !== "custom") {
         return true;
       }
       // Onboarding writes provider-less seed rows without coordinating other

@@ -7,7 +7,6 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { expect, test } from "vitest";
 
@@ -848,7 +847,6 @@ async function setupSingleMessageShare(conflict = false) {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ChatMessageShare]: true },
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -888,16 +886,4 @@ test("Revert the button and report a dead copied link when creation fails", asyn
   await waitFor(() => {
     expect(buttonsNamed("Share message")).toHaveLength(1);
   });
-});
-
-test("Hide single-message sharing while the switch is off", async () => {
-  mockConversation();
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText(ANSWER);
-  expect(buttonsNamed("Copy message").length).toBeGreaterThan(0);
-  expect(buttonsNamed("Share message")).toStrictEqual([]);
 });

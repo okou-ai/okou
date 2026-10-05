@@ -5,6 +5,7 @@ mod archive_size_mismatch;
 mod error;
 mod object_download_policy;
 pub mod r2_cache;
+pub mod r2_download;
 pub mod storage_cache;
 pub mod storage_fingerprints;
 pub mod storage_plan;

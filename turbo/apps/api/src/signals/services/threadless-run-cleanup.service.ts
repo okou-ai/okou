@@ -22,7 +22,7 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread } from "./agent-run-callback.service";
+import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent-run-callback.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { cancelRun$ } from "./agent-run-terminal-transition.service";
 import { dispatchCancelSideEffects$ } from "./run-cancel.service";
@@ -282,10 +282,9 @@ async function deleteIfStillEligible(
 const redriveTerminalLifecycle$ = command(
   async function redriveTerminalLifecycle(
     { set },
-    args: { readonly db: Db; readonly candidate: ThreadlessRunCandidate },
+    candidate: ThreadlessRunCandidate,
     signal: AbortSignal,
   ): Promise<void> {
-    const { db, candidate } = args;
     if (candidate.status === "cancelled") {
       const cancelResult = await set(
         cancelRun$,
@@ -319,9 +318,10 @@ const redriveTerminalLifecycle$ = command(
     );
     signal.throwIfAborted();
 
-    await failPendingInlineOnlyDeliveryCallbacksForDeletedThread(
-      db,
+    await set(
+      failPendingInlineOnlyDeliveryCallbacksForDeletedThread$,
       candidate.runId,
+      signal,
     );
     signal.throwIfAborted();
   },
@@ -382,7 +382,7 @@ export const cleanupThreadlessRuns$ = command(
             return;
           }
 
-          await set(redriveTerminalLifecycle$, { db, candidate }, signal);
+          await set(redriveTerminalLifecycle$, candidate, signal);
           signal.throwIfAborted();
           if (await deleteIfStillEligible(db, candidate, quietBefore)) {
             deleted++;

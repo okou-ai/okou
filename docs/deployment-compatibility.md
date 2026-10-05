@@ -1,5 +1,45 @@
 # Deployment Compatibility
 
+## Organization model mode defaults to Auto
+
+Migration 1320 changes only the `org_metadata.model_mode` column default to
+`auto`; existing explicit Auto/Custom rows and personal subscription data are
+unchanged. The new API treats missing metadata as Auto in policy listing,
+model selection, queued claims, subscription disconnect cleanup and workspace
+configuration guards. New metadata needs no mode backfill. Explicit Custom
+rows and the Debug mode-switch API remain supported in this incremental fix.
+
+Apply the default migration before the new API so writers that omit the mode
+create Auto rows. A new API with the old database can still read existing
+modes, but omitted-mode inserts retain the old Custom default. An old API with
+the migrated database supports Auto rows, but still treats missing metadata as
+Custom; all serving API versions must drain before relying on that case.
+App, CLI and Runner contracts and persisted Run snapshots are unchanged.
+Rolling back the API does not undo the database default or rewrite saved modes;
+old missing-metadata behavior returns until an Auto-default API serves again.
+This PR does not delete policies, backfill organization modes, modify billing,
+remove Custom configuration APIs, or authorize a production deployment.
+
+## Autonomous delegation budget expansion
+
+Migration 1319 widens the Run and workflow automation autonomy checks from
+`0..10` to `0..32` and changes the automation column default to 32. Apply it
+before the new API writes budgets above 10. Historical Run and automation
+budgets are preserved: this migration does not refill an exhausted chain or
+rewrite an explicitly smaller budget. New human inputs and default automation
+creation receive 32; delegated Runs and Run-finished watchers still inherit
+exactly their source budget minus one, and a zero-budget source is rejected.
+
+Old APIs remain compatible with the expanded database and continue assigning
+10 to human inputs. They can consume persisted budgets above 10 using the same
+integer decrement rule. An old Official Workflow validator can reject a new
+Blueprint budget above 10 until that API drains. No App, CLI or Runner wire
+shape changes. Rolling back the API retains the wider constraints and stored
+budgets; it must not restore the old database checks while rows above 10 exist.
+Existing automations retain their stored budget unless the normal authorized
+reconfiguration or reconciliation path changes it. This source PR does not
+resume rejected inputs, alter live automations, merge, deploy or release.
+
 ## Thread mute (staff organization rollout)
 
 `ChatThreadMuting` is independent of archiving and defaults to disabled with the
@@ -59,6 +99,34 @@ change the accepted rare rotating-token reconnect tradeoff. Parent #37668 stays
 open for incident request-level attribution and serving-version verification;
 synthetic coverage does not establish Notion old-token invalidation or resolve
 its reported 401s.
+
+## Runner-local INFO R2 keys
+
+Only existing ordinary Runner INFO events gain `r2_key` or a
+`r2_storage_sources` list containing keys and logical name/version/mount
+correlation. Event names, levels, counts and conditions are unchanged. These
+sources retain the original API identity when cache delivery rewrites URLs to
+`file://`; the list does not assert every source downloaded in every batch.
+Native R2 URL keys are decoded once and bounded to 1024 bytes, without signing
+parameters, fragments or userinfo. Unknown CDN/Worker/custom endpoints and local
+paths contribute no inferred key. Template keys use the SDK's key construction.
+
+Runner Start's existing formatter tees INFO to stderr and the local rolling
+Runner file, configured for daily rotation and seven-file retention per release
+prefix. This does not impose a global seven-day retention limit on earlier-release
+files or journal entries; other Runner commands use stderr. These events do not
+match the existing Axiom ingest filter. No new key fields
+are added to WARN/ERROR, Guest logs, addon network logs, sandbox-operation
+telemetry, API logs/contracts, Platform responses or metric labels. Existing URL
+and error-text policies are unchanged; this is not universal redaction.
+
+Keys can contain sensitive tenant identifiers or paths. Local file and journal
+access and retention remain relevant; omitting credentials does not make keys
+public. Missing fields do not imply no R2 download, and existing log-free paths
+remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration or
+Web floor is needed. A normal Runner rollout is needed to observe these fields;
+production activation or deployment is not included in this PR. Runner rollback
+removes the local attributes only, without changing download behavior.
 
 ## File transcription and Seedream 5 retirement
 
@@ -7040,9 +7108,17 @@ and CLI versions. Old Runner versions can consume the longer-lived URLs without
 a wire-format change. Older Guests retain their single-attempt history policy;
 both policies use unchanged prepare-history and checkpoint wire contracts.
 
-Storage URL caches are read on demand and reuse unexpired entries. Missing or
-expired entries are signed once during the normal API request. There is no
-proactive refresh or retry. The cron endpoint is now
+Storage URL caches are read on demand. Updated APIs reuse manifest archive
+URLs in `system_storage`, `workflow_skill_storage`, and `readonly_storage` only
+with at least four hours remaining at selection, including captured or
+prefetched snapshots; exactly four hours remains reusable. Missing, expired,
+or below-margin entries use the existing signing path during the normal API
+request. This margin does not shorten the two-day signature lifetime or change
+cache keys. Private artifact previews retain their strict one-hour margin, and
+presentation template previews retain expiry-only reuse. Old APIs retain their
+previous reuse cutoff until deployed; archive URLs already persisted in Run
+contexts are not retroactively renewed. There is no proactive refresh or
+retry. The cron endpoint is now
 `/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
 Cache keys include the lifetime, so new code does not reuse the previous shorter
 policy. The database's required `refresh_after` and `last_requested_at` columns
@@ -7492,31 +7568,31 @@ production drain or full resource coverage. Record that evidence under #34615 as
 ## Saved Social data jobs
 
 The new `social_data_jobs` table and nullable `usage_event` pricing snapshot
-columns must exist before the new API starts. Reconciliation and
-scoped usage cleanup reference the table even when `socialDataJobs` is off.
-Old APIs ignore the additive schema; old usage events keep null snapshots and
-continue using the existing tariff lookup.
+columns must exist before a saved-job API starts. Reconciliation and
+scoped usage cleanup also reference the table. Old APIs ignore the additive
+schema; old usage events keep null snapshots and continue using the existing
+tariff lookup.
 
-Keep `socialDataJobs` disabled until all serving API instances and account
-cleanup workers contain this implementation. Older instances reject the new
-job endpoints, and older account cleanup does not remove saved jobs. Setting
-the flag during that mixed-version window is unsupported. Credential
-provisioning and operational pricing configuration are separate activation
-steps. New job settlement commits the priced usage event and durable job
+Saved jobs are globally available and their rollout switch is removed. All
+serving API instances and account cleanup workers must support saved jobs;
+older instances reject the job endpoints and older account cleanup does not
+remove saved jobs. Credential provisioning and operational pricing
+configuration remain separate operational steps. New job settlement commits the priced usage event and durable job
 receipt together, so legacy settlement workers cannot observe its pending
 event between those writes.
 
 The new CLI uses the saved-job protocol only when job controls are provided.
 An old API rejects those endpoints instead of silently running a different
 collection. Existing commands without job controls keep their current routes.
-New APIs retain list/get/cancel and reconciliation after disabling creation,
-so admitted work can drain. The Usage presentation change reads the existing
+List/get/cancel and reconciliation remain available for admitted work to drain.
+This cleanup does not add an admission-pause control. The Usage presentation change reads the existing
 breakdown contract; stored provider IDs remain unchanged.
 
 After activation, do not roll the API or workers below this implementation
-while jobs or usage receipts remain outstanding. Disable new admissions,
-finish or cancel admitted jobs, and verify durable settlement receipts before
-such a rollback. Database expansion is retained. A merged PR does not prove
+while jobs or usage receipts remain outstanding. A rollback below the saved-job
+implementation requires separately stopping new admissions, finishing or
+cancelling admitted jobs, and verifying durable settlement receipts; the
+removed rollout switch is no longer an admission control. Database expansion is retained. A merged PR does not prove
 fleet parity, the drain, or paid-provider readiness.
 
 ## Browser native input foundation (#35821)

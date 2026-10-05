@@ -13,35 +13,46 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createPublicFirewallFixture,
+  type PublicFirewallFixture,
+} from "./helpers/public-firewall-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const AWS_TOKEN_URL = "https://us-east-1.signin.aws.amazon.com/v1/token";
 const AWS_STS_URL = "https://sts.us-east-1.amazonaws.com/";
 
-async function setupAwsFirewall() {
+async function setupAwsFirewall(publicFixture?: PublicFirewallFixture) {
   const bdd = createBddApi(context);
   const fw = createFirewallApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
-  const actor = bdd.user();
+  const actor = publicFixture?.actor ?? bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  await fw.provisionRunReadyOrg(actor);
+  if (publicFixture) {
+    await publicFixture.fund();
+  } else {
+    await fw.provisionRunReadyOrg(actor);
+  }
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "AWS refresh agent",
     description: "Exercises AWS refresh and reconnect.",
     visibility: "private",
   });
+  publicFixture?.registerAgent(agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve AWS firewall auth",
   });
+  publicFixture?.registerRun(run.runId);
   const headers = fw.sandboxHeaders(actor, run.runId);
   mockAwsExternalCodeProvider();
+  const ownedAccountIds = publicFixture?.registerBuiltinConnector("aws");
 
   async function connect(account: ConnectorAccountMutationIntent) {
     const session = await connectors.startExternalCode(
@@ -55,20 +66,23 @@ async function setupAwsFirewall() {
       sessionToken: session.sessionToken,
       code: awsVerificationCode(session.authorizationUrl),
     });
+    ownedAccountIds?.add(result.connector.id);
     return result.connector;
   }
 
   const account = await connect({ intent: "add" });
   const createdAccountIds = [account.id];
-  onTestFinished(async () => {
-    for (const connectionId of createdAccountIds) {
-      await connectors.deleteBuiltinConnectorAccount(
-        actor,
-        "aws",
-        connectionId,
-      );
-    }
-  });
+  if (!publicFixture) {
+    onTestFinished(async () => {
+      for (const connectionId of createdAccountIds) {
+        await connectors.deleteBuiltinConnectorAccount(
+          actor,
+          "aws",
+          connectionId,
+        );
+      }
+    });
+  }
 
   function request(connectionId: string, forceRefresh: boolean) {
     return fw.requestFirewallAuth(
@@ -170,85 +184,97 @@ describe("AWS Sign-In refresh expiry", () => {
   });
 
   it("keeps a healthy sibling account usable without substituting it for the expired account", async () => {
-    const aws = await setupAwsFirewall();
-    server.use(
-      http.get(AWS_STS_URL, () => {
-        return HttpResponse.xml(
-          "<GetCallerIdentityResponse><GetCallerIdentityResult>" +
-            "<UserId>AIDASIBLING</UserId><Account>123456789012</Account>" +
-            "<Arn>arn:aws:iam::123456789012:user/sibling</Arn>" +
-            "</GetCallerIdentityResult></GetCallerIdentityResponse>",
-        );
-      }),
-    );
-    const sibling = await aws.connect({ intent: "add" });
-    aws.createdAccountIds.push(sibling.id);
-    expect(sibling.id).not.toBe(aws.account.id);
-    let refreshCalls = 0;
-    server.use(
-      http.post(AWS_TOKEN_URL, () => {
-        refreshCalls += 1;
-        return HttpResponse.json({ code: "TOKEN_EXPIRED" }, { status: 401 });
-      }),
-    );
-    expect((await aws.request(aws.account.id, true)).status).toBe(502);
-    await aws.connectors.setDefaultBuiltinConnectorAccount(
-      aws.actor,
-      "aws",
-      sibling.id,
-    );
-    expect((await aws.request(aws.account.id, false)).status).toBe(502);
-    expect((await aws.request(sibling.id, false)).status).toBe(200);
-    expect(refreshCalls).toBe(1);
-    const accounts = await aws.connectors.listBuiltinConnectorAccounts(
-      aws.actor,
-      "aws",
-    );
-    expect(
-      accounts.find(({ id }) => {
-        return id === aws.account.id;
-      }),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connectionStatus: "reconnect-required",
-        reconnectReason: "credential_expired",
-      }),
-    );
-    expect(
-      accounts.find(({ id }) => {
-        return id === sibling.id;
-      }),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connectionStatus: "connected",
-        reconnectReason: null,
-      }),
-    );
+    const publicFixture = createPublicFirewallFixture(context);
+    await publicFixture.run(async () => {
+      const aws = await setupAwsFirewall(publicFixture);
+      server.use(
+        http.get(AWS_STS_URL, () => {
+          return HttpResponse.xml(
+            "<GetCallerIdentityResponse><GetCallerIdentityResult>" +
+              "<UserId>AIDASIBLING</UserId><Account>123456789012</Account>" +
+              "<Arn>arn:aws:iam::123456789012:user/sibling</Arn>" +
+              "</GetCallerIdentityResult></GetCallerIdentityResponse>",
+          );
+        }),
+      );
+      const sibling = await aws.connect({ intent: "add" });
+      aws.createdAccountIds.push(sibling.id);
+      expect(sibling.id).not.toBe(aws.account.id);
+      let refreshCalls = 0;
+      server.use(
+        http.post(AWS_TOKEN_URL, () => {
+          refreshCalls += 1;
+          return HttpResponse.json({ code: "TOKEN_EXPIRED" }, { status: 401 });
+        }),
+      );
+      expect((await aws.request(aws.account.id, true)).status).toBe(502);
+      await aws.connectors.setDefaultBuiltinConnectorAccount(
+        aws.actor,
+        "aws",
+        sibling.id,
+      );
+      expect((await aws.request(aws.account.id, false)).status).toBe(502);
+      expect((await aws.request(sibling.id, false)).status).toBe(200);
+      expect(refreshCalls).toBe(1);
+      const accounts = await aws.connectors.listBuiltinConnectorAccounts(
+        aws.actor,
+        "aws",
+      );
+      expect(
+        accounts.find(({ id }) => {
+          return id === aws.account.id;
+        }),
+      ).toStrictEqual(
+        expect.objectContaining({
+          connectionStatus: "reconnect-required",
+          reconnectReason: "credential_expired",
+        }),
+      );
+      expect(
+        accounts.find(({ id }) => {
+          return id === sibling.id;
+        }),
+      ).toStrictEqual(
+        expect.objectContaining({
+          connectionStatus: "connected",
+          reconnectReason: null,
+        }),
+      );
+    });
   });
 
   it("recognizes explicit expiry after an older generic reconnect state", async () => {
-    const aws = await setupAwsFirewall();
-    server.use(
-      http.post(AWS_TOKEN_URL, () => {
-        return HttpResponse.json({ error: "invalid_grant" }, { status: 401 });
-      }),
-    );
-    expect((await aws.request(aws.account.id, true)).status).toBe(502);
-    const generic = await aws.connectors.readConnectorBySlug(aws.actor, "aws");
-    expect(generic.reconnectReason).toBe("authorization_expired_or_revoked");
+    const publicFixture = createPublicFirewallFixture(context);
+    await publicFixture.run(async () => {
+      const aws = await setupAwsFirewall(publicFixture);
+      server.use(
+        http.post(AWS_TOKEN_URL, () => {
+          return HttpResponse.json({ error: "invalid_grant" }, { status: 401 });
+        }),
+      );
+      expect((await aws.request(aws.account.id, true)).status).toBe(502);
+      const generic = await aws.connectors.readConnectorBySlug(
+        aws.actor,
+        "aws",
+      );
+      expect(generic.reconnectReason).toBe("authorization_expired_or_revoked");
 
-    let refreshCalls = 0;
-    server.use(
-      http.post(AWS_TOKEN_URL, () => {
-        refreshCalls += 1;
-        return HttpResponse.json({ code: "TOKEN_EXPIRED" }, { status: 401 });
-      }),
-    );
-    expect((await aws.request(aws.account.id, true)).status).toBe(502);
-    expect((await aws.request(aws.account.id, true)).status).toBe(502);
-    expect(refreshCalls).toBe(1);
-    const expired = await aws.connectors.readConnectorBySlug(aws.actor, "aws");
-    expect(expired.reconnectReason).toBe("credential_expired");
+      let refreshCalls = 0;
+      server.use(
+        http.post(AWS_TOKEN_URL, () => {
+          refreshCalls += 1;
+          return HttpResponse.json({ code: "TOKEN_EXPIRED" }, { status: 401 });
+        }),
+      );
+      expect((await aws.request(aws.account.id, true)).status).toBe(502);
+      expect((await aws.request(aws.account.id, true)).status).toBe(502);
+      expect(refreshCalls).toBe(1);
+      const expired = await aws.connectors.readConnectorBySlug(
+        aws.actor,
+        "aws",
+      );
+      expect(expired.reconnectReason).toBe("credential_expired");
+    });
   });
 
   it.each([
@@ -264,36 +290,42 @@ describe("AWS Sign-In refresh expiry", () => {
   ])(
     "keeps HTTP $status $code actionable and recoverable",
     async ({ status, code, failureReason }) => {
-      const aws = await setupAwsFirewall();
-      server.use(
-        http.post(AWS_TOKEN_URL, () => {
-          return HttpResponse.json(
-            { code, message: "TOKEN_EXPIRED (The refresh token has expired.)" },
-            { status },
-          );
-        }),
-      );
-      const failed = await aws.request(aws.account.id, true);
-      expect(failed.status).toBe(502);
-      expect(failed.body).toStrictEqual({
-        error: expect.objectContaining({
-          code: "TOKEN_REFRESH_FAILED",
-          failureReason,
-        }),
-      });
-      const account = await aws.connectors.readConnectorBySlug(
-        aws.actor,
-        "aws",
-      );
-      expect(account.reconnectReason).not.toBe("credential_expired");
+      const publicFixture = createPublicFirewallFixture(context);
+      await publicFixture.run(async () => {
+        const aws = await setupAwsFirewall(publicFixture);
+        server.use(
+          http.post(AWS_TOKEN_URL, () => {
+            return HttpResponse.json(
+              {
+                code,
+                message: "TOKEN_EXPIRED (The refresh token has expired.)",
+              },
+              { status },
+            );
+          }),
+        );
+        const failed = await aws.request(aws.account.id, true);
+        expect(failed.status).toBe(502);
+        expect(failed.body).toStrictEqual({
+          error: expect.objectContaining({
+            code: "TOKEN_REFRESH_FAILED",
+            failureReason,
+          }),
+        });
+        const account = await aws.connectors.readConnectorBySlug(
+          aws.actor,
+          "aws",
+        );
+        expect(account.reconnectReason).not.toBe("credential_expired");
 
-      const provider = mockAwsExternalCodeProvider();
-      expect((await aws.request(aws.account.id, true)).status).toBe(200);
-      expect(provider.tokenRequests).toHaveLength(1);
-      expect(
-        (await aws.connectors.readConnectorBySlug(aws.actor, "aws"))
-          .connectionStatus,
-      ).toBe("connected");
+        const provider = mockAwsExternalCodeProvider();
+        expect((await aws.request(aws.account.id, true)).status).toBe(200);
+        expect(provider.tokenRequests).toHaveLength(1);
+        expect(
+          (await aws.connectors.readConnectorBySlug(aws.actor, "aws"))
+            .connectionStatus,
+        ).toBe("connected");
+      });
     },
   );
 });

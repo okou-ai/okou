@@ -36,7 +36,7 @@ import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-conn
 import { slackConnectRoutes } from "../slack-connect";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const API_ORIGIN = "https://api.okou.ai";

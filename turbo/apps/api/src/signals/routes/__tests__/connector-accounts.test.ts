@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import { HttpResponse, http } from "msw";
 
 import {
   CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
@@ -23,27 +24,34 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import {
   API_TEST_CONNECTOR_CATALOG,
   captureApiTestConnectorCatalogCleanup,
 } from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { settle } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
+import { createBddApi } from "./helpers/api-bdd";
 import {
-  seedConnectorStorageRow,
-  setBuiltinOAuthScopeFacts,
-  setConnectorDefaultState,
-} from "./helpers/connector-credential-storage-state";
+  createConnectorBddApi,
+  mockGitHubConnectorOAuth,
+} from "./helpers/api-bdd-connectors";
+import {
+  catalogWithAuthMethod,
+  catalogWithManualConnector,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...connectorAccountRoutes,
@@ -247,44 +255,76 @@ describe("connector account lifecycle routes", () => {
   it("reviews requested scopes for one exact account across default changes", async () => {
     const fixture = await seedFixture();
     const currentScopes = ["repo", "project", "workflow"] as const;
-    const staleId = await seedConnectorStorageRow(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorSlug: "github",
-      authMethod: "oauth",
-      storageVersion: 1,
+    const actor = createBddApi(context).user(fixture);
+    const connectors = createConnectorBddApi(context);
+    const catalog = createPublicConnectorCatalog(context);
+    const staleCatalog = catalogWithAuthMethod(
+      { connectorSlug: "github", authMethodId: "oauth" },
+      (method) => {
+        if (method.grant.kind !== "auth-code") {
+          throw new Error("Expected the GitHub authorization-code method");
+        }
+        return { ...method, grant: { ...method.grant, scopes: ["repo"] } };
+      },
+    );
+    const accountIds: string[] = [];
+    catalog.onCleanup(async () => {
+      const accounts = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "github",
+      );
+      for (const account of accounts) {
+        if (accountIds.includes(account.id)) {
+          await connectors.deleteBuiltinConnectorAccount(
+            actor,
+            "github",
+            account.id,
+          );
+        }
+      }
     });
-    await setConnectorDefaultState(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorId: staleId,
-      isDefault: false,
-    });
-    const currentId = await seedConnectorStorageRow(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorSlug: "github",
-      authMethod: "oauth",
-      storageVersion: 1,
-    });
-    await setBuiltinOAuthScopeFacts(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorSlug: "github",
-      connectorId: staleId,
-      oauthScopes: ["repo"],
-      oauthGrantedScopes: ["repo"],
-    });
-    await setBuiltinOAuthScopeFacts(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorSlug: "github",
-      connectorId: currentId,
-      oauthScopes: currentScopes,
-      // A provider may return fewer granted scopes than the app requested.
-      // Scope review must compare against the requested snapshot instead.
-      oauthGrantedScopes: ["repo"],
-    });
+    const connectAccount = async (userId: number) => {
+      mockGitHubConnectorOAuth({ userId, login: `scope-review-${userId}` });
+      // Grants can be narrower than the selected catalog's requested scopes.
+      server.use(
+        http.post("https://github.com/login/oauth/access_token", () => {
+          return HttpResponse.json({
+            access_token: `scope-review-${userId}`,
+            scope: "repo",
+          });
+        }),
+      );
+      const started = await connectors.startOauth(actor, "github", "oauth");
+      const state = new URL(started.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected GitHub OAuth state");
+      }
+      await connectors.completeOauthCallback("github", {
+        code: `scope-review-${userId}`,
+        state,
+      });
+      const accounts = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "github",
+      );
+      const account = accounts.find((candidate) => {
+        return candidate.externalId === String(userId);
+      });
+      if (!account) {
+        throw new Error("Expected the exact GitHub provider identity");
+      }
+      accountIds.push(account.id);
+      return account.id;
+    };
+    await catalog.publish(staleCatalog);
+    const staleId = await connectAccount(1001);
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
+    const currentId = await connectAccount(1002);
+    await connectors.setDefaultBuiltinConnectorAccount(
+      actor,
+      "github",
+      currentId,
+    );
 
     const legacyList = await accept(
       accountClient().connections({
@@ -427,6 +467,7 @@ describe("connector account lifecycle routes", () => {
       }),
       [404],
     );
+    await catalog.cleanup();
   });
 
   it("inspects only exact owned accounts without leaking credentials", async () => {
@@ -768,7 +809,162 @@ describe("connector account lifecycle routes", () => {
       displayName: "Work",
       isDefault: true,
     });
+    const remainingImpact = await accept(
+      accountClient().deletionImpact({
+        headers: authHeaders(),
+        params: { connectionId: first.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [200],
+    );
+    expect(remainingImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: false,
+    });
   });
+
+  it.each(["user", "organization"] as const)(
+    "renames only exact owned accounts across %s boundaries",
+    async (boundary) => {
+      const bdd = createBddApi(context);
+      const owner = bdd.user();
+      const foreign =
+        boundary === "user"
+          ? bdd.user({ orgId: owner.orgId })
+          : bdd.user({ userId: owner.userId });
+      if (!owner.orgId || !foreign.orgId) {
+        throw new Error("Account fixtures require an organization");
+      }
+      const ownerActor = { ...owner, orgId: owner.orgId };
+      const foreignActor = { ...foreign, orgId: foreign.orgId };
+      await track(Promise.resolve(foreignActor));
+      await track(Promise.resolve(ownerActor));
+      const activate = async (actor: typeof ownerActor) => {
+        await bdd.readMe(actor);
+        mockClerkMembership(context, actor, "org:admin");
+      };
+      const checks = await settle(
+        (async () => {
+          await bdd.completeOnboarding(ownerActor);
+          await bdd.completeOnboarding(foreignActor);
+          await activate(ownerActor);
+          const added = await accept(
+            connectorClient().connect({
+              headers: authHeaders(),
+              params: { connectorSlug: "openai" },
+              body: {
+                authMethod: "api-token",
+                account: { intent: "add", displayName: "Original" },
+                values: { apiKey: `sk-test-${randomUUID()}` },
+              },
+            }),
+            [200],
+          );
+          const connectionId = added.body.id;
+          const target = { kind: "builtin", connectorSlug: "openai" } as const;
+          const readOwned = () => {
+            return accept(
+              accountClient().connection({
+                headers: authHeaders(),
+                params: { connectionId },
+                query: target,
+              }),
+              [200],
+            );
+          };
+          const original = await readOwned();
+          const ownedImpact = await accept(
+            accountClient().deletionImpact({
+              headers: authHeaders(),
+              params: { connectionId },
+              query: target,
+            }),
+            [200],
+          );
+          expect(ownedImpact.body).toStrictEqual({
+            connectionId,
+            explicitSelectionCount: 0,
+            hasSibling: false,
+          });
+          const rejectedBodies: unknown[] = [];
+          for (const request of [
+            { actor: foreignActor, connectionId, target },
+            { actor: foreignActor, connectionId: randomUUID(), target },
+            {
+              actor: ownerActor,
+              connectionId,
+              target: { kind: "builtin", connectorSlug: "github" } as const,
+            },
+          ]) {
+            await activate(request.actor);
+            const rejected = await accept(
+              accountClient().rename({
+                headers: authHeaders(),
+                params: { connectionId: request.connectionId },
+                body: { target: request.target, displayName: "Rejected" },
+              }),
+              [404],
+            );
+            rejectedBodies.push(rejected.body);
+            const rejectedImpact = await accept(
+              accountClient().deletionImpact({
+                headers: authHeaders(),
+                params: { connectionId: request.connectionId },
+                query: request.target,
+              }),
+              [404],
+            );
+            expect(rejectedImpact.body).toStrictEqual(rejected.body);
+          }
+          const notFound = {
+            error: {
+              code: "NOT_FOUND",
+              message: "Connector account not found",
+            },
+          };
+          expect(rejectedBodies).toStrictEqual([notFound, notFound, notFound]);
+          await activate(ownerActor);
+          const unchanged = await readOwned();
+          expect(unchanged.body).toStrictEqual(original.body);
+          for (const displayName of ["Renamed", null]) {
+            const renamed = await accept(
+              accountClient().rename({
+                headers: authHeaders(),
+                params: { connectionId },
+                body: { target, displayName },
+              }),
+              [200],
+            );
+            expect(renamed.body.displayName).toBe(displayName);
+            const readBack = await readOwned();
+            expect(readBack.body).toStrictEqual(renamed.body);
+          }
+        })(),
+      );
+      const cleanupErrors: unknown[] = [];
+      for (const actor of [foreignActor, ownerActor]) {
+        const cleaned = await settle(
+          (async () => {
+            await activate(actor);
+            await cleanupFixture(actor);
+          })(),
+        );
+        if (!cleaned.ok) {
+          cleanupErrors.push(cleaned.error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [...(!checks.ok ? [checks.error] : []), ...cleanupErrors],
+          "Account rename fixture cleanup failed",
+        );
+      }
+      if (!checks.ok) {
+        throw checks.error;
+      }
+    },
+  );
 
   it("keeps concurrent sibling creation to exactly one default", async () => {
     await seedFixture();
@@ -1152,13 +1348,31 @@ describe("connector account lifecycle routes", () => {
 
   it("treats a removed built-in catalog target as absent", async () => {
     const fixture = await seedFixture();
-    const accountId = await seedConnectorStorageRow(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
+    const actor = createBddApi(context).user(fixture);
+    const connectors = createConnectorBddApi(context);
+    const catalog = createPublicConnectorCatalog(context);
+    const available = catalogWithManualConnector({
       connectorSlug: "retired-connector",
-      authMethod: "api-token",
-      storageVersion: 1,
+      authMethodId: "api-token",
     });
+    await catalog.publish(available);
+    const account = await connectors.connectManualGrant(
+      actor,
+      "retired-connector",
+      "api-token",
+      {
+        credential: "retired-connector-secret",
+      },
+    );
+    const accountId = account.id;
+    catalog.onCleanup(async () => {
+      await catalog.publish(available);
+      await connectors.deleteDefaultBuiltinConnectorAccount(
+        actor,
+        "retired-connector",
+      );
+    });
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
     const summary = await accept(
       accountClient().summaries({ headers: authHeaders() }),
@@ -1202,6 +1416,7 @@ describe("connector account lifecycle routes", () => {
       }),
       [404],
     );
+    await catalog.cleanup();
   });
 
   it.each([

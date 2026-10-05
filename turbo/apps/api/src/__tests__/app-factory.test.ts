@@ -151,7 +151,7 @@ const siblingTestContract = c.router({
 });
 
 describe("createApp", () => {
-  const context = testContext({ connectorCatalog: true });
+  const context = testContext();
 
   it.each([
     [

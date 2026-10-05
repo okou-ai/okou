@@ -32,6 +32,8 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { createRouteMocks } from "./helpers/route-test";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -451,7 +453,16 @@ describe("default Agent bootstrap", () => {
   });
 
   it("preserves a configured Custom policy while concurrently bootstrapping", async () => {
-    const orgId = authenticateAdmin();
+    const actor = createBddApi(context).user();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an organization for Custom bootstrap");
+    }
+    await seedOrgMetadata({ orgId, tier: "limited-free-1", credits: 0 });
+    mocks.clerk.session(actor.userId, orgId, "org:admin");
+    await ensureCustomModelModeForTest(context, actor, () => {
+      return headers;
+    });
     installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });
     const api = clients();
     const before = await accept(api.policies.list({ headers }), [200]);

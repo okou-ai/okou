@@ -351,7 +351,7 @@ export const modelProviderConnectionsForOrg = (orgId: string) => {
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, orgId))
       .limit(1);
-    if (org?.mode === "auto") {
+    if (org?.mode !== "custom") {
       return { connections: [] };
     }
     const connections = await db

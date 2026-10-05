@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.10...runner-executor-v0.5.0) (2026-10-04)
+
+
+### Features
+
+* **observability:** log r2 keys only in runner-local info ([#37687](https://github.com/okou-ai/okou/issues/37687)) ([193f547](https://github.com/okou-ai/okou/commit/193f5472860eab1725897d976f25f6b70f3cb1c4))
+
 ## [0.4.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.9...runner-executor-v0.4.10) (2026-10-03)
 
 ## [0.4.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.8...runner-executor-v0.4.9) (2026-10-03)

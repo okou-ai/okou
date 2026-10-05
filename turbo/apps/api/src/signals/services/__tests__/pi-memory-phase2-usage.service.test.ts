@@ -41,7 +41,7 @@ import {
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   PI_MEMORY_PHASE2_BYOK_MODEL,
 } from "../pi-memory-phase2-usage.service";
-import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
+import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import {
   createPhase2TestScope,
   insertPendingPhase2Job,
@@ -65,7 +65,7 @@ import {
 // Private maintenance has no public launch/control/ledger API. Seed only its
 // infrastructure-owned cron input and terminal faults; the real dispatcher
 // persists the binding, and the real proxy HTTP ingress owns all usage writes.
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 
 async function dispatchMaintenance(
   type?: Phase2ProviderType,
@@ -162,8 +162,8 @@ async function dispatchMaintenance(
   await insertPendingPhase2Job(scope, { updatedAt: currentTime });
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
   const result = await createStore().set(
-    executePiMemoryPhase2Work$,
-    { scope, currentTime },
+    createPiMemoryPhase2Worker(scope).execute$,
+    currentTime,
     context.signal,
   );
   if (result.outcome !== "dispatched") {
@@ -570,8 +570,8 @@ test("retains the committed Codex account and uses the current account for a new
   let retryRunId: string | undefined;
   await withMockNowForTest(new Date(retry.retryAt.getTime() + 1), async () => {
     const result = await createStore().set(
-      executePiMemoryPhase2Work$,
-      { scope: run.scope, currentTime: nowDate() },
+      createPiMemoryPhase2Worker(run.scope).execute$,
+      nowDate(),
       context.signal,
     );
     expect(result.outcome).toBe("dispatched");

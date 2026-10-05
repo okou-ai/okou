@@ -8,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/social-data";
 import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -31,7 +30,6 @@ import { testUsageStateRoutes } from "../test-usage-state";
 import { usageRecordRoutes } from "../usage-record";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { postUsageAllowanceInvoicePaid } from "./helpers/stripe-billing-webhook";
 
@@ -96,17 +94,9 @@ async function pricing(unitPrice = 7): Promise<UsagePricingFixture> {
   return fixture;
 }
 
-async function enable(actor: ApiTestUser & { readonly orgId: string }) {
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.SocialDataJobs]: true,
-  });
-}
-
 async function seedActor({
-  enabled = true,
   singleConnection = false,
 }: {
-  readonly enabled?: boolean;
   readonly singleConnection?: boolean;
 } = {}): Promise<SocialActor> {
   const actor = createBddApi(context).user();
@@ -115,9 +105,6 @@ async function seedActor({
   }
   const orgActor = { ...actor, orgId: actor.orgId };
   await createRunsApi(context).grantProEntitlement(orgActor);
-  if (enabled) {
-    await enable(orgActor);
-  }
   mockEnv("OKOU_SOCIAL_MONID_API_KEY", "test-social-source-key");
   if (singleConnection) {
     await flushWaitUntilForTest();
@@ -350,8 +337,8 @@ function tikhubPlanSource(options: {
 }
 
 describe("Social data jobs", () => {
-  it("requires authentication and the feature switch", async () => {
-    const actor = await seedActor({ enabled: false });
+  it("requires authentication", async () => {
+    const actor = await seedActor();
     const before = await credits(actor);
     await accept(
       client(actor)(socialDataContract).quote({
@@ -359,13 +346,6 @@ describe("Social data jobs", () => {
         body: COMMENT_REQUEST,
       }),
       [401],
-    );
-    await accept(
-      client(actor)(socialDataContract).quote({
-        headers: authenticate(actor),
-        body: COMMENT_REQUEST,
-      }),
-      [403],
     );
     await expect(credits(actor)).resolves.toBe(before);
   });
@@ -1146,7 +1126,6 @@ describe("Social data jobs", () => {
         orgId: identity.orgId,
         usagePricingResolution: owner.usagePricingResolution,
       };
-      await enable(foreign);
       const foreignClient = client(foreign)(socialDataContract);
       await accept(
         foreignClient.get({

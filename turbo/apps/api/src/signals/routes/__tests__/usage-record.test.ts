@@ -39,7 +39,7 @@ import {
   seedRun$,
 } from "./helpers/usage-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const billing = createBillingMediaApi(context);
