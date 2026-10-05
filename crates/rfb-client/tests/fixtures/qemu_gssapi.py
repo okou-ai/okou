@@ -63,6 +63,49 @@ def run(argv, env, data=None):
     return result.stdout
 
 
+def verify_runtime(runtime, multiarch, full_qemu):
+    # The producer must obtain these records from verified signed archives, not
+    # hash an arbitrary installed tree. Rechecking bytes does not attest loader
+    # resolution, transitive closure, host MIT or a historical runtime result.
+    manifest = runtime / "provider.json"
+    if not manifest.is_file() or manifest.is_symlink():
+        raise ValueError("independent fixture provider manifest required")
+    baseline = json.loads(manifest.read_text())
+    if baseline["multiarch"] != multiarch or baseline["mitVersion"] != "1.20.1-6ubuntu2":
+        raise ValueError("independent fixture MIT identity refused")
+    required = {name: "1.20.1-6ubuntu2" for name in (
+        "libgssapi-krb5-2", "libkrb5-3", "libk5crypto3", "libkrb5support0",
+        "krb5-user", "krb5-kdc", "krb5-admin-server")}
+    if full_qemu:
+        required.update({name: "2.1.28+dfsg1-5ubuntu3" for name in (
+            "libsasl2-2", "libsasl2-modules-gssapi-mit")})
+        required["libgnutls30t64"] = "3.8.3-1.1ubuntu3.6"
+    if any(name not in baseline["packages"] or baseline["packages"][name]["version"] != version
+           for name, version in required.items()):
+        raise ValueError("independent fixture package identity refused")
+    for name, digest in baseline["files"].items():
+        relative = pathlib.PurePosixPath(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("independent fixture file path refused")
+        path = runtime / relative
+        if path.is_symlink() or not path.is_file() or not path.resolve(strict=True).is_relative_to(runtime):
+            raise ValueError("independent fixture file escaped its runtime")
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError("independent fixture file digest refused")
+    libraries = ("libgssapi_krb5.so.2", "libkrb5.so.3", "libk5crypto.so.3", "libkrb5support.so.0")
+    if full_qemu:
+        libraries += ("libsasl2.so.2", "sasl2/libgssapiv2.so.2", "libgnutls.so.30")
+    used = [f"usr/lib/{multiarch}/{name}" for name in libraries]
+    used += ["usr/sbin/kdb5_util", "usr/sbin/kadmin.local", "usr/sbin/krb5kdc",
+             "usr/bin/kinit.mit", "usr/bin/kvno", "usr/bin/klist.mit"]
+    if full_qemu:
+        used += ["usr/share/seabios/bios.bin", "usr/share/seabios/vgabios-stdvga.bin"]
+    for name in used:
+        path = (runtime / name).resolve(strict=True)
+        if not path.is_relative_to(runtime) or str(path.relative_to(runtime)) not in baseline["files"]:
+            raise ValueError("independent fixture used input has no verified file record")
+
+
 def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86_64-linux-gnu"):
     work = parent / str(index)
     work.mkdir(mode=0o700)
@@ -221,22 +264,12 @@ def main():
     args = parser.parse_args()
     runtime = args.runtime_dir.resolve(strict=True)
     multiarch = {"x86_64": "x86_64-linux-gnu", "aarch64": "aarch64-linux-gnu"}[platform.machine()]
+    # Validate the actual private inputs in BOTH modes, before compiling,
+    # creating secret trees or starting any KDC/QEMU. Host dpkg metadata is not
+    # evidence for the private KDC/Cyrus/GnuTLS files used by the full fixture.
+    verify_runtime(runtime, multiarch, not args.controlled_peer_only)
     qemu = None
-    if args.controlled_peer_only:
-        # The CI recipe obtains these exact packages through signed Ubuntu Noble
-        # indexes and verifies archive hashes before extraction. No ambient GSS.
-        baseline = json.loads((runtime / "provider.json").read_text())
-        assert baseline["multiarch"] == multiarch and baseline["mitVersion"] == "1.20.1-6ubuntu2"
-        for name in ("libgssapi-krb5-2", "libkrb5-3", "libk5crypto3", "libkrb5support0"):
-            assert baseline["packages"][name]["version"] == "1.20.1-6ubuntu2"
-        for name, digest in baseline["files"].items():
-            path = runtime / name
-            assert path.resolve(strict=True).is_relative_to(runtime) and not path.is_symlink()
-            assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
-        for name in ("libgssapi_krb5.so.2", "libkrb5.so.3", "libk5crypto.so.3", "libkrb5support.so.0"):
-            library = (runtime / f"usr/lib/{multiarch}" / name).resolve(strict=True)
-            assert library.is_relative_to(runtime) and str(library.relative_to(runtime)) in baseline["files"]
-    else:
+    if not args.controlled_peer_only:
         qemu = args.qemu.resolve(strict=True)
         assert multiarch == "x86_64-linux-gnu" and hashlib.sha256(qemu.read_bytes()).hexdigest() == QEMU_SHA256
         versions = subprocess.check_output(["dpkg-query", "-W", "-f=${Package} ${Version}\\n", "libgssapi-krb5-2", "libkrb5-3", "libk5crypto3"], text=True)

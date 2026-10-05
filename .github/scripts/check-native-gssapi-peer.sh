@@ -7,6 +7,9 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 arch=$(uname -m)
 case "$arch" in x86_64|aarch64) ;; *) echo 'unsupported native GSSAPI architecture' >&2; exit 1 ;; esac
+# Inert input-integrity regressions run before provisioning or native execution.
+python3 -B -m unittest discover -s crates/rfb-client/tests/fixtures \
+  -p qemu_gssapi_runtime_test.py
 receipt="$PWD/crates/target/native-gssapi-peer-receipt"
 mkdir -p "$receipt"
 [[ ! -L "$receipt" && "$(realpath "$receipt")" == "$receipt" ]] || exit 1

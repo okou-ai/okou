@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Byte-integrity tests for fixture inputs, not Kerberos/QEMU runtime coverage.
+
+All file contents below are public inert canaries. Nothing is executed or loaded;
+no backend, native result, credential, signed archive or runtime receipt is faked.
+"""
+import hashlib
+import json
+import pathlib
+import platform
+import subprocess
+import sys
+import tempfile
+import unittest
+
+import qemu_gssapi
+
+
+class RuntimeInputs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.parent = qemu_gssapi.REPO / "crates/target/qemu-gssapi-runtime-tests"
+        cls.parent.mkdir(parents=True, exist_ok=True)
+        if cls.parent.is_symlink() or cls.parent.resolve() != cls.parent:
+            raise RuntimeError("unsafe fixture-test directory")
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(dir=self.parent)
+        self.addCleanup(self.temporary.cleanup)
+        self.root = pathlib.Path(self.temporary.name)
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir(mode=0o700)
+
+    def inputs(self, multiarch="x86_64-linux-gnu", full_qemu=False):
+        files = {}
+        libraries = ("libgssapi_krb5.so.2", "libkrb5.so.3", "libk5crypto.so.3", "libkrb5support.so.0")
+        if full_qemu:
+            libraries += ("libsasl2.so.2", "sasl2/libgssapiv2.so.2", "libgnutls.so.30")
+        for name in libraries:
+            alias = self.runtime / "usr/lib" / multiarch / name
+            actual = alias.with_name(alias.name + ".canary")
+            actual.parent.mkdir(parents=True, exist_ok=True)
+            actual.write_bytes(b"inert integrity canary: " + name.encode())
+            alias.symlink_to(actual.name)
+            files[str(actual.relative_to(self.runtime))] = hashlib.sha256(actual.read_bytes()).hexdigest()
+        tools = ("usr/sbin/kdb5_util", "usr/sbin/kadmin.local", "usr/sbin/krb5kdc",
+                 "usr/bin/kinit.mit", "usr/bin/kvno", "usr/bin/klist.mit")
+        if full_qemu:
+            tools += ("usr/share/seabios/bios.bin", "usr/share/seabios/vgabios-stdvga.bin")
+        for name in tools:
+            path = self.runtime / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"inert nonexecutable input canary: " + name.encode())
+            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        packages = {name: {"version": "1.20.1-6ubuntu2"} for name in (
+            "libgssapi-krb5-2", "libkrb5-3", "libk5crypto3", "libkrb5support0",
+            "krb5-user", "krb5-kdc", "krb5-admin-server")}
+        if full_qemu:
+            packages.update({name: {"version": "2.1.28+dfsg1-5ubuntu3"} for name in (
+                "libsasl2-2", "libsasl2-modules-gssapi-mit")})
+            packages["libgnutls30t64"] = {"version": "3.8.3-1.1ubuntu3.6"}
+        baseline = {"mitVersion": "1.20.1-6ubuntu2", "multiarch": multiarch,
+                    "packages": packages, "files": files}
+        self.save(baseline)
+        return baseline
+
+    def save(self, baseline):
+        (self.runtime / "provider.json").write_text(json.dumps(baseline))
+
+    def verify(self, full_qemu=False, multiarch="x86_64-linux-gnu"):
+        qemu_gssapi.verify_runtime(self.runtime, multiarch, full_qemu)
+
+    def test_valid_integrity_records_for_both_modes_and_architectures(self):
+        for multiarch in ("x86_64-linux-gnu", "aarch64-linux-gnu"):
+            for full_qemu in (False, True):
+                with self.subTest(multiarch=multiarch, full_qemu=full_qemu):
+                    self.runtime = self.root / (multiarch + str(full_qemu))
+                    self.runtime.mkdir(mode=0o700)
+                    self.inputs(multiarch, full_qemu)
+                    self.verify(full_qemu, multiarch)
+
+    def test_full_mode_refuses_changed_private_kdc_bytes(self):
+        self.inputs(full_qemu=True)
+        (self.runtime / "usr/sbin/krb5kdc").write_bytes(b"changed public canary")
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
+
+    def test_full_mode_refuses_missing_cyrus_record(self):
+        baseline = self.inputs(full_qemu=True)
+        del baseline["packages"]["libsasl2-modules-gssapi-mit"]
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
+
+    def test_full_mode_refuses_wrong_gnutls_version(self):
+        baseline = self.inputs(full_qemu=True)
+        baseline["packages"]["libgnutls30t64"]["version"] = "unverified-version"
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
+
+    def test_full_mode_refuses_escaped_cyrus_plugin_alias(self):
+        self.inputs(full_qemu=True)
+        alias = self.runtime / "usr/lib/x86_64-linux-gnu/sasl2/libgssapiv2.so.2"
+        alias.unlink()
+        outside = self.root / "outside.canary"
+        outside.write_bytes(b"public outside canary")
+        alias.symlink_to(outside)
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
+
+    def test_missing_record_for_used_kdc_tool_is_not_verified(self):
+        baseline = self.inputs()
+        del baseline["files"]["usr/sbin/kdb5_util"]
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify()
+
+    def test_mit_version_and_architecture_must_match(self):
+        baseline = self.inputs()
+        baseline["packages"]["libkrb5support0"]["version"] = "unverified-version"
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify()
+        baseline["packages"]["libkrb5support0"]["version"] = "1.20.1-6ubuntu2"
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify(multiarch="aarch64-linux-gnu")
+
+    def test_full_cli_checks_private_digest_before_qemu_or_provisioning(self):
+        multiarch = {"x86_64": "x86_64-linux-gnu", "aarch64": "aarch64-linux-gnu"}[platform.machine()]
+        self.inputs(multiarch, full_qemu=True)
+        (self.runtime / "usr/sbin/krb5kdc").write_bytes(b"changed public canary")
+        work_root = qemu_gssapi.REPO / "codex-work/tmp/issue-37612-native-fixture"
+        before = work_root.exists()
+        # The secondary executable path deliberately does not exist. It is a
+        # refused input, not a fake QEMU/helper; no executable can be launched.
+        result = subprocess.run([sys.executable, "-B", str(pathlib.Path(qemu_gssapi.__file__)),
+                                 "--runtime-dir", str(self.runtime), "--qemu", str(self.root / "absent-qemu")],
+                                cwd=qemu_gssapi.REPO, capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("independent fixture file digest refused", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(work_root.exists(), before)
+
+    def test_full_mode_requires_a_manifest(self):
+        self.inputs(full_qemu=True)
+        (self.runtime / "provider.json").unlink()
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
+
+    def test_full_mode_requires_verified_bios_inputs(self):
+        baseline = self.inputs(full_qemu=True)
+        del baseline["files"]["usr/share/seabios/bios.bin"]
+        self.save(baseline)
+        with self.assertRaises(ValueError):
+            self.verify(full_qemu=True)
+
+    def test_manifest_file_cannot_be_a_symlink(self):
+        self.inputs()
+        manifest = self.runtime / "provider.json"
+        outside = self.root / "outside.json"
+        manifest.rename(outside)
+        manifest.symlink_to(outside)
+        with self.assertRaises(ValueError):
+            self.verify()
+
+    def test_manifest_paths_cannot_traverse_or_be_absolute(self):
+        baseline = self.inputs()
+        for name in ("../outside.canary", str(self.runtime / "usr/sbin/krb5kdc")):
+            with self.subTest(name=name):
+                baseline["files"][name] = hashlib.sha256(b"public canary").hexdigest()
+                self.save(baseline)
+                with self.assertRaises(ValueError):
+                    self.verify()
+                del baseline["files"][name]
+
+
+if __name__ == "__main__":
+    unittest.main()
