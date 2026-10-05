@@ -209,9 +209,10 @@ struct ModelPreference: Decodable, Sendable {
   }
 }
 
-struct ModelPolicies: Decodable, Sendable {
-  let policies: [Policy]
-  struct Policy: Decodable, Sendable {
+struct AvailableRunModels: Decodable, Sendable {
+  let defaultModel: String
+  let models: [Model]
+  struct Model: Decodable, Sendable {
     let model: String
     let routeStatus: String
     let defaultProviderType: String?
@@ -228,8 +229,8 @@ struct ModelPolicies: Decodable, Sendable {
       let serviceTier: String?
     }
 
-    /// Matches the web client's configurable and plan-restricted selections.
-    /// Admission still determines whether the selected route can run now.
+    /// A member's connected subscription remains selectable when reconnecting.
+    /// Admission still validates the captured personal account before execution.
     func hasUsableRoute(catalog: ModelCatalog) -> Bool {
       guard let route = memberEffective else { return routeStatus == "valid" }
       switch route.availability {
@@ -253,10 +254,9 @@ struct ModelPolicies: Decodable, Sendable {
   }
 }
 
-/// Global run model catalog: the product authority for the system default and for
-/// retired models. Only the fields the app uses are decoded.
+/// Personal-subscription metadata and replacement identities. Auto's default
+/// comes from the available-model response, not the subscription catalog.
 struct ModelCatalog: Decodable, Sendable {
-  let systemDefaultModel: String
   let models: [Model]
   let routes: [Route]
 

@@ -65,10 +65,10 @@ final class ChatServiceTests: XCTestCase {
           body:
             "{\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"modelSettings\":{\"gpt-5.6-sol\":{\"effort\":\"high\"}},\"selectedImageModel\":null,\"updatedAt\":null}"
         )
-      case "/api/model-policies":
+      case "/api/run-models":
         return ChatHTTPResponse(
           body:
-            "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[{\"model\":\"gpt-5.6-sol\",\"routeStatus\":\"valid\"}]}"
+            "{\"defaultModel\":\"okou-1.0\",\"models\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"gpt-5.6-sol\",\"routeStatus\":\"valid\",\"defaultProviderType\":\"codex-oauth-token\"}]}"
         )
       case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
       case "/api/chat-threads":
@@ -93,7 +93,7 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high", "high"])
   }
 
-  func testCreateWithoutSavedModelUsesCatalogDefaultRegardlessOfRoute() async throws {
+  func testCreateWithoutSavedModelUsesAutoInsteadOfSubscriptionCatalogDefault() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let model: String
     }
@@ -111,11 +111,11 @@ final class ChatServiceTests: XCTestCase {
           body:
             "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
         )
-      case "/api/model-policies":
+      case "/api/run-models":
         let status = routeStatus.withLock { $0 }
         return ChatHTTPResponse(
           body:
-            "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"claude-sonnet-5\",\"routeStatus\":\"\(status)\"}]}"
+            "{\"defaultModel\":\"okou-1.0\",\"models\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"claude-sonnet-5\",\"routeStatus\":\"\(status)\"}]}"
         )
       case "/api/model-catalog":
         return modelCatalogResponse(systemDefaultModel: "claude-sonnet-5")
@@ -131,13 +131,13 @@ final class ChatServiceTests: XCTestCase {
       }
     }
     let created = try await ChatService(client: fixture.client).createThread()
-    XCTAssertEqual(created.selectedModel, "claude-sonnet-5")
-    XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5"])
+    XCTAssertEqual(created.selectedModel, "okou-1.0")
+    XCTAssertEqual(createdModels.withLock { $0 }, ["okou-1.0"])
 
     routeStatus.withLock { $0 = "missing_provider" }
     let needsProvider = try await ChatService(client: fixture.client).createThread()
-    XCTAssertEqual(needsProvider.selectedModel, "claude-sonnet-5")
-    XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5", "claude-sonnet-5"])
+    XCTAssertEqual(needsProvider.selectedModel, "okou-1.0")
+    XCTAssertEqual(createdModels.withLock { $0 }, ["okou-1.0", "okou-1.0"])
   }
 
   func testCreateResolvesRetiredSavedModelThroughCatalog() async throws {
@@ -160,11 +160,12 @@ final class ChatServiceTests: XCTestCase {
             "modelSettings":{"claude-opus-5-5":{"effort":"high"}},\
             "selectedImageModel":null,"updatedAt":null}
             """)
-      case "/api/model-policies":
+      case "/api/run-models":
         return ChatHTTPResponse(
           body: """
-            {"revision":"test","writePreconditionRequired":true,\
-            "policies":[{"model":"claude-opus-5-5","routeStatus":"valid"}]}
+            {"defaultModel":"okou-1.0",\
+            "models":[{"model":"okou-1.0","routeStatus":"valid"},\
+            {"model":"claude-opus-5-5","routeStatus":"valid","defaultProviderType":"claude-code-oauth-token"}]}
             """)
       case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
       case "/api/chat-threads":
@@ -185,7 +186,7 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"])
   }
 
-  func testCreateReplacesUnknownOrUnavailableSavedModelWithCatalogDefault() async throws {
+  func testCreateReplacesUnknownOrUnavailableSavedModelWithAuto() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let model: String
       let serviceTier: String?
@@ -204,10 +205,11 @@ final class ChatServiceTests: XCTestCase {
             body: """
               {"selectedModel":"\(savedModel)","serviceTier":"priority","modelSettings":{}}
               """)
-        case "/api/model-policies":
+        case "/api/run-models":
           return ChatHTTPResponse(
             body: """
-              {"policies":[{"model":"gpt-5.6-sol","routeStatus":"missing_provider"}]}
+              {"defaultModel":"okou-1.0","models":[{"model":"okou-1.0","routeStatus":"valid"},\
+              {"model":"gpt-5.6-sol","routeStatus":"missing_provider"}]}
               """)
         case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
         case "/api/chat-threads":
