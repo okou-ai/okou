@@ -9,6 +9,7 @@ import { env, mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { billingStatusRoutes } from "../../billing-status";
+import { settleIncludingAbort } from "../../../utils";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRunReadsApi } from "./api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
@@ -19,6 +20,9 @@ import { createRouteMocks } from "./route-test";
 export function createPublicUnfundedProFixture(
   context: TestContext,
   actor: ApiTestUser,
+  options: {
+    readonly beforeOrganizationCleanup?: () => Promise<void>;
+  } = {},
 ) {
   const orgId = actor.orgId;
   if (!orgId) {
@@ -52,6 +56,9 @@ export function createPublicUnfundedProFixture(
   }
 
   const owner = createFixtureOperationOwner(async () => {
+    const beforeCleanup = await settleIncludingAbort(
+      options.beforeOrganizationCleanup?.() ?? Promise.resolve(),
+    );
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
     mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
     context.mocks.s3.send.mockResolvedValue({
@@ -103,6 +110,9 @@ export function createPublicUnfundedProFixture(
         )
       ).body.data,
     ).toStrictEqual([]);
+    if (!beforeCleanup.ok) {
+      throw beforeCleanup.error;
+    }
   });
 
   return {

@@ -3,7 +3,10 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { randomUUID } from "node:crypto";
 
@@ -23,7 +26,8 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { buildArtifactKey } from "../../../lib/file-url";
-import { mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   createUsagePricingFixture,
@@ -33,12 +37,16 @@ import {
 } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { readUsageStorageCounts$ } from "./helpers/usage-state";
 import { openRouterModelContractError } from "./helpers/openrouter-model-contract";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { imageRecognitionRoutes } from "../image-recognition";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { usageRecordRoutes } from "../usage-record";
 
 const context = testContext();
@@ -139,6 +147,226 @@ async function seedImageRecognitionActor(): Promise<ThreadImageRecognitionActor>
   };
 }
 
+async function createPublicImageRecognitionActor() {
+  const bdd = createBddApi(context);
+  const api = createRunsApi(context);
+  const actor = bdd.user();
+  const orgId = actor.orgId;
+  if (!orgId) {
+    throw new Error("Image recognition tests require an organization");
+  }
+  const suffix = randomUUID();
+  const customerId = `cus_image_recognition_${suffix}`;
+  const subscriptionId = `sub_image_recognition_${suffix}`;
+  const invoiceId = `in_image_recognition_${suffix}`;
+  const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+  const agentIds: string[] = [];
+  const runIds: string[] = [];
+  const pricingCleanups: (() => Promise<void>)[] = [];
+  let featureSwitchCleanupNeeded = false;
+
+  const owner = createFixtureOperationOwner(async () => {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+    context.mocks.s3.send.mockResolvedValue({
+      Contents: [],
+      IsTruncated: false,
+    });
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const failures: unknown[] = [];
+    async function cleanup(operation: () => Promise<void>): Promise<void> {
+      const result = await settleIncludingAbort(operation());
+      if (!result.ok) {
+        failures.push(result.error);
+      }
+    }
+
+    await cleanup(async () => {
+      await flushWaitUntilForTest();
+      for (const runId of runIds) {
+        const run = await api.readRun(actor, runId);
+        if (run.status === "pending" || run.status === "running") {
+          await api.requestCancelRun(actor, runId, [200]);
+        }
+      }
+      await flushWaitUntilForTest();
+    });
+    await cleanup(async () => {
+      if (featureSwitchCleanupNeeded) {
+        await deleteFeatureSwitchesForUser(context, { ...actor, orgId });
+      }
+    });
+    for (const cleanupPricing of pricingCleanups) {
+      await cleanup(cleanupPricing);
+    }
+    await cleanup(async () => {
+      const webhooks = createWebhookCallbackApi(context);
+      webhooks.configureStripeBillingEnv();
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        id: subscriptionId,
+        status: "active",
+        metadata: {},
+      });
+      context.mocks.stripe.subscriptions.update.mockResolvedValue({
+        id: subscriptionId,
+      });
+      context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+        id: subscriptionId,
+        status: "canceled",
+      });
+      // The one-time credit purchase has no subscription invoice to refund.
+      context.mocks.stripe.invoices.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: "organization.deleted",
+        data: { id: orgId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      for (const agentId of agentIds) {
+        await bdd.requestReadAgent(actor, agentId, [404]);
+      }
+      expect((await api.readBillingStatus(actor)).credits).toBe(0);
+      expect(
+        (
+          await createRunReadsApi(context).requestListLogs(
+            actor,
+            { limit: 50 },
+            [200],
+          )
+        ).body.data,
+      ).toStrictEqual([]);
+      // Production retains billing and usage history under these unique IDs.
+    });
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        "Image recognition fixture cleanup failed",
+      );
+    }
+  });
+
+  const ownedActor = await owner.run(async () => {
+    bdd.acceptAgentStorageWrites();
+    api.configureRunnerGroup();
+    const completed = await bdd.completeOnboarding(actor);
+    expect(completed.status).toBe(200);
+    expect((await api.readBillingStatus(actor)).credits).toBe(0);
+
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureStripeBillingEnv();
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      metadata: { orgId },
+    });
+    const subscription = {
+      id: subscriptionId,
+      customer: customerId,
+      status: "active",
+      metadata: {},
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      items: { data: [{ price: { id: "price_bdd_pro" } }] },
+    };
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_image_recognition_created_${suffix}`,
+        type: "customer.subscription.created",
+        created: Math.floor(now() / 1000),
+        data: { object: subscription },
+      },
+      [200],
+    );
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_image_recognition_updated_${suffix}`,
+        type: "customer.subscription.updated",
+        created: Math.floor(now() / 1000),
+        data: { object: subscription },
+      },
+      [200],
+    );
+    await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
+      tier: "pro",
+      status: "active",
+      credits: 0,
+    });
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_image_recognition_paid_${suffix}`,
+        type: "invoice.paid",
+        created: Math.floor(now() / 1000),
+        data: {
+          object: {
+            id: invoiceId,
+            customer: customerId,
+            amount_paid: 100,
+            metadata: {
+              type: "auto_recharge",
+              orgId,
+              creditsAmount: String(STARTING_CREDITS),
+            },
+            parent: null,
+            lines: { has_more: false, data: [] },
+          },
+        },
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
+      tier: "pro",
+      status: "active",
+      credits: STARTING_CREDITS,
+    });
+
+    // Model configuration writes the user's Debug override through its real API.
+    featureSwitchCleanupNeeded = true;
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Image recognition agent",
+      visibility: "private",
+    });
+    agentIds.push(agent.agentId);
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "Recognize an uploaded image",
+    });
+    runIds.push(run.runId);
+    // This native Fable Run is pending; admission has performed no provider work.
+    expect((await api.readBillingStatus(actor)).credits).toBe(STARTING_CREDITS);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          role: actor.orgRole ?? "org:admin",
+          organization: { id: orgId },
+          publicUserData: { userId: actor.userId },
+        },
+      ],
+    });
+    return { ...actor, orgId, runId: run.runId, threadId: run.threadId };
+  });
+  return {
+    actor: ownedActor,
+    run: owner.run,
+    async pricing() {
+      return await createConfiguredImageRecognitionPricing((cleanupPricing) => {
+        pricingCleanups.push(cleanupPricing);
+      });
+    },
+  };
+}
+
 async function seedAdmittedImageRecognitionActor(): Promise<ImageRecognitionActor> {
   await seedBuiltInDefaultModelKey(context);
   const bdd = createBddApi(context);
@@ -224,13 +452,19 @@ function requestImageRecognition(
   return client.imageRecognition({ ...request, fetchOptions: { signal } });
 }
 
-async function createConfiguredImageRecognitionPricing(): Promise<UsagePricingFixture> {
+async function createConfiguredImageRecognitionPricing(
+  registerCleanup?: (cleanup: () => Promise<void>) => void,
+): Promise<UsagePricingFixture> {
   const pricing = await createUsagePricingFixture({
     configured: IMAGE_RECOGNITION_PRICING_ROWS,
   });
-  onTestFinished(async () => {
-    await pricing.cleanup();
-  });
+  if (registerCleanup) {
+    registerCleanup(pricing.cleanup);
+  } else {
+    onTestFinished(async () => {
+      await pricing.cleanup();
+    });
+  }
   return pricing;
 }
 
@@ -768,68 +1002,73 @@ describe("POST /api/image-recognition", () => {
   });
 
   it("settles completed provider work exactly once after the request disconnects", async () => {
-    const actor = await seedImageRecognitionActor();
-    const pricing = await seedImageRecognitionBilling(actor);
-    const fileId = randomUUID();
-    setStoredObjects([
-      { userId: actor.userId, id: fileId, filename: "image.png", size: 12 },
-    ]);
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    const controller = new AbortController();
-    onTestFinished(() => {
-      return controller.abort();
-    });
-    let calls = 0;
-    server.use(
-      http.post(OPENROUTER_URL, () => {
-        calls += 1;
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: "completed-provider-result" },
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      const actor = fixture.actor;
+      const pricing = await fixture.pricing();
+      const fileId = randomUUID();
+      setStoredObjects([
+        { userId: actor.userId, id: fileId, filename: "image.png", size: 12 },
+      ]);
+      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+      const controller = new AbortController();
+      onTestFinished(() => {
+        return controller.abort();
+      });
+      let calls = 0;
+      server.use(
+        http.post(OPENROUTER_URL, () => {
+          calls += 1;
+          return HttpResponse.json({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: { content: "completed-provider-result" },
+              },
+            ],
+            usage: {
+              prompt_tokens: 3000,
+              completion_tokens: 1000,
+              prompt_tokens_details: { cached_tokens: 1000 },
             },
-          ],
-          usage: {
-            prompt_tokens: 3000,
-            completion_tokens: 1000,
-            prompt_tokens_details: { cached_tokens: 1000 },
-          },
-        });
-      }),
-    );
-    // The HTTP client cannot select the gap after Response.text has consumed
-    // the body and before the service settles. Own that exact I/O boundary.
-    const restoreText = context.mocks.httpResponse.observeText((body) => {
-      if (body.includes("completed-provider-result")) {
-        controller.abort(new DOMException("Client disconnected", "AbortError"));
-      }
+          });
+        }),
+      );
+      // The HTTP client cannot select the gap after Response.text has consumed
+      // the body and before the service settles. Own that exact I/O boundary.
+      const restoreText = context.mocks.httpResponse.observeText((body) => {
+        if (body.includes("completed-provider-result")) {
+          controller.abort(
+            new DOMException("Client disconnected", "AbortError"),
+          );
+        }
+      });
+      onTestFinished(restoreText);
+      const result = await requestImageRecognition(
+        {
+          token: okouToken(actor),
+          fileId,
+          usagePricingResolution: pricing.resolution,
+        },
+        controller.signal,
+      );
+      restoreText();
+      expect(result.status).toBe(200);
+      expect(result.body).toStrictEqual({
+        text: "completed-provider-result",
+        metadata: { creditsCharged: EXPECTED_CHARGE },
+      });
+      expect(controller.signal.aborted).toBeTruthy();
+      expect(calls).toBe(1);
+      await expect(readUsageRecord(actor)).resolves.toStrictEqual([
+        expect.objectContaining({
+          title: null,
+          threadId: actor.threadId,
+          tokens: 4000,
+          credits: EXPECTED_CHARGE,
+        }),
+      ]);
     });
-    onTestFinished(restoreText);
-    const result = await requestImageRecognition(
-      {
-        token: okouToken(actor),
-        fileId,
-        usagePricingResolution: pricing.resolution,
-      },
-      controller.signal,
-    );
-    restoreText();
-    expect(result.status).toBe(200);
-    expect(result.body).toStrictEqual({
-      text: "completed-provider-result",
-      metadata: { creditsCharged: EXPECTED_CHARGE },
-    });
-    expect(controller.signal.aborted).toBeTruthy();
-    expect(calls).toBe(1);
-    await expect(readUsageRecord(actor)).resolves.toStrictEqual([
-      expect.objectContaining({
-        title: null,
-        threadId: actor.threadId,
-        tokens: 4000,
-        credits: EXPECTED_CHARGE,
-      }),
-    ]);
   });
 
   it.each([
@@ -1048,83 +1287,88 @@ describe("POST /api/image-recognition", () => {
 
   it("signs a private input for image recognition after creation is disabled", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    const actor = await seedImageRecognitionActor();
-    const pricing = await seedImageRecognitionBilling(actor);
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-    });
-    installSharedThreadStorage(context);
-    const uploads = setupApp({
-      context,
-      routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
-    })(uploadsContract);
-    const headers = { authorization: "Bearer clerk-session" };
-    const prepared = await accept(
-      uploads.prepare({
-        headers,
-        body: { filename: "screen.png", contentType: "image/png", size: 12 },
-      }),
-      [200],
-    );
-    if (!("uploadUrl" in prepared.body)) {
-      throw new Error("Expected single upload");
-    }
-    await fetch(prepared.body.uploadUrl, {
-      method: "PUT",
-      body: "image bytes!",
-    });
-    await accept(
-      uploads.complete({ headers, body: { id: prepared.body.id } }),
-      [200],
-    );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: false,
-    });
-    const requests: unknown[] = [];
-    server.use(
-      http.post(OPENROUTER_URL, async ({ request }) => {
-        requests.push(await request.json());
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: "A private screenshot" },
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      const actor = fixture.actor;
+      const pricing = await fixture.pricing();
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.PrivateArtifacts]: true,
+      });
+      installSharedThreadStorage(context);
+      const uploads = setupApp({
+        context,
+        routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+      })(uploadsContract);
+      const headers = { authorization: "Bearer clerk-session" };
+      const prepared = await accept(
+        uploads.prepare({
+          headers,
+          body: { filename: "screen.png", contentType: "image/png", size: 12 },
+        }),
+        [200],
+      );
+      if (!("uploadUrl" in prepared.body)) {
+        throw new Error("Expected single upload");
+      }
+      await fetch(prepared.body.uploadUrl, {
+        method: "PUT",
+        body: "image bytes!",
+      });
+      await accept(
+        uploads.complete({ headers, body: { id: prepared.body.id } }),
+        [200],
+      );
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.PrivateArtifacts]: false,
+      });
+      const requests: unknown[] = [];
+      server.use(
+        http.post(OPENROUTER_URL, async ({ request }) => {
+          requests.push(await request.json());
+          return HttpResponse.json({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: { content: "A private screenshot" },
+              },
+            ],
+            usage: {
+              prompt_tokens: 3000,
+              completion_tokens: 1000,
+              prompt_tokens_details: { cached_tokens: 1000 },
             },
-          ],
-          usage: {
-            prompt_tokens: 3000,
-            completion_tokens: 1000,
-            prompt_tokens_details: { cached_tokens: 1000 },
+          });
+        }),
+      );
+      const response = await requestImageRecognition({
+        token: okouToken(actor),
+        fileId: prepared.body.id,
+        prompt: "Describe",
+        usagePricingResolution: pricing.resolution,
+      });
+      expect(response.status).toBe(200);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Describe" },
+              {
+                type: "image_url",
+                image_url: {
+                  url: "https://attachment-storage.example/download",
+                },
+              },
+            ],
           },
-        });
-      }),
-    );
-    const response = await requestImageRecognition({
-      token: okouToken(actor),
-      fileId: prepared.body.id,
-      prompt: "Describe",
-      usagePricingResolution: pricing.resolution,
-    });
-    expect(response.status).toBe(200);
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Describe" },
-            {
-              type: "image_url",
-              image_url: { url: "https://attachment-storage.example/download" },
-            },
-          ],
-        },
-      ],
-    });
-    const signed = context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1];
-    expect(signed).toBeInstanceOf(GetObjectCommand);
-    expect(signed).toMatchObject({
-      input: { Bucket: "test-private-artifacts" },
+        ],
+      });
+      const signed = context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1];
+      expect(signed).toBeInstanceOf(GetObjectCommand);
+      expect(signed).toMatchObject({
+        input: { Bucket: "test-private-artifacts" },
+      });
     });
   });
 
@@ -1181,27 +1425,30 @@ describe("POST /api/image-recognition", () => {
   });
 
   it("enforces agent-only capability authorization before object access", async () => {
-    const actor = await seedImageRecognitionActor();
-    // Starting the actor's run reads storage; only recognition is asserted.
-    context.mocks.s3.send.mockClear();
-    const fileId = randomUUID();
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      const actor = fixture.actor;
+      // Starting the actor's run reads storage; only recognition is asserted.
+      context.mocks.s3.send.mockClear();
+      const fileId = randomUUID();
 
-    const unauthenticated = await requestImageRecognition({ fileId });
-    expect(unauthenticated.status).toBe(401);
+      const unauthenticated = await requestImageRecognition({ fileId });
+      expect(unauthenticated.status).toBe(401);
 
-    const missingCapability = await requestImageRecognition({
-      token: okouToken(actor, ["file:write"]),
-      fileId,
+      const missingCapability = await requestImageRecognition({
+        token: okouToken(actor, ["file:write"]),
+        fileId,
+      });
+      expect(missingCapability.status).toBe(403);
+
+      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+      const sessionResponse = await requestImageRecognition({
+        token: "clerk-session",
+        fileId,
+      });
+      expect(sessionResponse.status).toBe(403);
+      expect(context.mocks.s3.send).not.toHaveBeenCalled();
     });
-    expect(missingCapability.status).toBe(403);
-
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    const sessionResponse = await requestImageRecognition({
-      token: "clerk-session",
-      fileId,
-    });
-    expect(sessionResponse.status).toBe(403);
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
   it("rejects non-owned and invalid uploaded image metadata", async () => {

@@ -2965,222 +2965,226 @@ describe("POST /api/image-io/generate", () => {
       payloadBody,
       providerUnavailable = false,
     }) => {
-      const fixture = await seedImageFixture({ credits: 1000 });
+      const fixture = await publicFundedImageFixture({ credits: 1000 });
+      await fixture.run(async () => {
+        await useImageModel(fixture, "gpt-image-1");
+        const pricingFixture = await fixture.createPricing({
+          configured: GPT_IMAGE_1_PRICING,
+        });
+        mocks.clerk.session(fixture.userId, fixture.orgId);
+        let observedRequestUrl: string | null = null;
+        server.use(
+          http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+            observedRequestUrl = request.url;
+            return HttpResponse.json(falQueueHandle("unknown-failure"));
+          }),
+        );
+
+        const app = createImageIoTestApp(pricingFixture.resolution);
+        const response = await app.request("/api/image-io/generate", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ prompt: "private-unknown-failure-prompt" }),
+        });
+        expect(response.status).toBe(202);
+        const generationId = readAcceptedGenerationId(
+          await response.json(),
+          "image",
+          fixture.userId,
+        );
+
+        await postFalWebhookEnvelope(app, observedRequestUrl, {
+          status,
+          error,
+          request_id: "private-fal-request-id",
+          gateway_request_id: "private-fal-gateway-request-id",
+          [wrapper]: payloadBody ?? {
+            detail,
+            input: {
+              prompt: "private-unknown-failure-prompt",
+              image_url: "https://private.example/reference-unknown.png",
+            },
+          },
+        });
+        await flushWaitUntilForTest();
+
+        const expectedError = providerUnavailable
+          ? {
+              message:
+                "The image generation provider is temporarily unavailable.",
+              code: "GENERATION_PROVIDER_UNAVAILABLE",
+            }
+          : { message: "Image generation failed.", code: "GENERATION_FAILED" };
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+          `built-in-generation:${generationId}`,
+          expect.objectContaining({
+            generationId,
+            type: "image",
+            status: "failed",
+            error: expectedError,
+          }),
+        );
+        const statusResponse = await app.request(
+          `/api/built-in-generations/${generationId}`,
+          { headers: authHeaders() },
+        );
+        expect(statusResponse.status).toBe(200);
+        const statusBody: unknown = await statusResponse.json();
+        expect(statusBody).toMatchObject({
+          generationId,
+          type: "image",
+          status: "failed",
+          error: expectedError,
+        });
+
+        const publicSurfaces = JSON.stringify({
+          realtime: context.mocks.ably.publish.mock.calls,
+          status: statusBody,
+        });
+        for (const privateValue of [
+          "private-unknown-failure-prompt",
+          "private.example",
+          "Unexpected status code: 422",
+          "Invalid status code:",
+          "blocked by the safety filter",
+          "private-provider-message",
+          "private-provider-token",
+          "private-provider-location",
+          "private-fal-request-id",
+          "private-fal-gateway-request-id",
+        ]) {
+          expect(publicSurfaces).not.toContain(privateValue);
+        }
+        expect(statusBody).not.toHaveProperty("result");
+        expect(context.mocks.s3.send).not.toHaveBeenCalled();
+        await expect(orgCredits(fixture)).resolves.toBe(1000);
+        const usageResponse = await app.request("/api/usage/record", {
+          headers: authHeaders(),
+        });
+        expect(usageResponse.status).toBe(200);
+        await expect(usageResponse.json()).resolves.toMatchObject({
+          totalCredits: 0,
+          rows: [],
+        });
+      });
+    },
+  );
+
+  it("does not complete a job after the status route times it out", async () => {
+    const fixture = await publicFundedImageFixture({ credits: 1000 });
+    await fixture.run(async () => {
       await useImageModel(fixture, "gpt-image-1");
-      const pricingFixture = await createScopedImagePricing({
+      const pricingFixture = await fixture.createPricing({
         configured: GPT_IMAGE_1_PRICING,
       });
       mocks.clerk.session(fixture.userId, fixture.orgId);
+
+      const falStarted = createDeferredPromise<void>(context.signal);
+      const markFalStarted = (): void => {
+        if (!falStarted.settled()) {
+          falStarted.resolve(undefined);
+        }
+      };
+      let falCalls = 0;
+      let observedAuthorization: string | null = null;
+      let observedBody: unknown = null;
       let observedRequestUrl: string | null = null;
+
       server.use(
-        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+        http.post(FAL_GPT_IMAGE_1_URL, async ({ request }) => {
+          falCalls += 1;
+          observedAuthorization = request.headers.get("authorization");
           observedRequestUrl = request.url;
-          return HttpResponse.json(falQueueHandle("unknown-failure"));
+          observedBody = await request.json();
+          markFalStarted();
+          return HttpResponse.json(falQueueHandle("late-gpt-image-1-request"));
+        }),
+        http.get(FAL_GPT_MEDIA_URL, () => {
+          return new HttpResponse(IMAGE_BYTES, {
+            headers: { "Content-Type": "image/webp" },
+          });
         }),
       );
+
+      const staleTime = new Date("2026-05-15T12:00:00.000Z");
+      const timeoutTime = new Date(staleTime.getTime() + 16 * 60 * 1000);
+      mockNow(staleTime);
 
       const app = createImageIoTestApp(pricingFixture.resolution);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ prompt: "private-unknown-failure-prompt" }),
+        body: JSON.stringify({ prompt: "a late image" }),
       });
+
       expect(response.status).toBe(202);
       const generationId = readAcceptedGenerationId(
         await response.json(),
         "image",
         fixture.userId,
       );
-
-      await postFalWebhookEnvelope(app, observedRequestUrl, {
-        status,
-        error,
-        request_id: "private-fal-request-id",
-        gateway_request_id: "private-fal-gateway-request-id",
-        [wrapper]: payloadBody ?? {
-          detail,
-          input: {
-            prompt: "private-unknown-failure-prompt",
-            image_url: "https://private.example/reference-unknown.png",
-          },
-        },
+      await falStarted;
+      expect(falCalls).toBe(1);
+      expect(observedAuthorization).toBe("Key test-fal-key");
+      expect(observedBody).toStrictEqual({
+        prompt: "a late image",
+        image_size: "1024x1024",
+        num_images: 1,
+        output_format: "png",
+        quality: "medium",
+        background: "auto",
+        openai_api_key: "test-openai-key",
       });
-      await flushWaitUntilForTest();
 
-      const expectedError = providerUnavailable
-        ? {
-            message:
-              "The image generation provider is temporarily unavailable.",
-            code: "GENERATION_PROVIDER_UNAVAILABLE",
-          }
-        : { message: "Image generation failed.", code: "GENERATION_FAILED" };
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        `built-in-generation:${generationId}`,
-        expect.objectContaining({
-          generationId,
-          type: "image",
-          status: "failed",
-          error: expectedError,
-        }),
-      );
-      const statusResponse = await app.request(
+      mockNow(timeoutTime);
+      const timeoutResponse = await app.request(
         `/api/built-in-generations/${generationId}`,
         { headers: authHeaders() },
       );
-      expect(statusResponse.status).toBe(200);
-      const statusBody: unknown = await statusResponse.json();
-      expect(statusBody).toMatchObject({
+      expect(timeoutResponse.status).toBe(200);
+      await expect(timeoutResponse.json()).resolves.toMatchObject({
         generationId,
         type: "image",
         status: "failed",
-        error: expectedError,
-      });
-
-      const publicSurfaces = JSON.stringify({
-        realtime: context.mocks.ably.publish.mock.calls,
-        status: statusBody,
-      });
-      for (const privateValue of [
-        "private-unknown-failure-prompt",
-        "private.example",
-        "Unexpected status code: 422",
-        "Invalid status code:",
-        "blocked by the safety filter",
-        "private-provider-message",
-        "private-provider-token",
-        "private-provider-location",
-        "private-fal-request-id",
-        "private-fal-gateway-request-id",
-      ]) {
-        expect(publicSurfaces).not.toContain(privateValue);
-      }
-      expect(statusBody).not.toHaveProperty("result");
-      expect(context.mocks.s3.send).not.toHaveBeenCalled();
-      await expect(orgCredits(fixture)).resolves.toBe(1000);
-      const usageResponse = await app.request("/api/usage/record", {
-        headers: authHeaders(),
-      });
-      expect(usageResponse.status).toBe(200);
-      await expect(usageResponse.json()).resolves.toMatchObject({
-        totalCredits: 0,
-        rows: [],
-      });
-    },
-  );
-
-  it("does not complete a job after the status route times it out", async () => {
-    const fixture = await seedImageFixture({ credits: 1000 });
-    await useImageModel(fixture, "gpt-image-1");
-    const pricingFixture = await createScopedImagePricing({
-      configured: GPT_IMAGE_1_PRICING,
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const falStarted = createDeferredPromise<void>(context.signal);
-    const markFalStarted = (): void => {
-      if (!falStarted.settled()) {
-        falStarted.resolve(undefined);
-      }
-    };
-    let falCalls = 0;
-    let observedAuthorization: string | null = null;
-    let observedBody: unknown = null;
-    let observedRequestUrl: string | null = null;
-
-    server.use(
-      http.post(FAL_GPT_IMAGE_1_URL, async ({ request }) => {
-        falCalls += 1;
-        observedAuthorization = request.headers.get("authorization");
-        observedRequestUrl = request.url;
-        observedBody = await request.json();
-        markFalStarted();
-        return HttpResponse.json(falQueueHandle("late-gpt-image-1-request"));
-      }),
-      http.get(FAL_GPT_MEDIA_URL, () => {
-        return new HttpResponse(IMAGE_BYTES, {
-          headers: { "Content-Type": "image/webp" },
-        });
-      }),
-    );
-
-    const staleTime = new Date("2026-05-15T12:00:00.000Z");
-    const timeoutTime = new Date(staleTime.getTime() + 16 * 60 * 1000);
-    mockNow(staleTime);
-
-    const app = createImageIoTestApp(pricingFixture.resolution);
-    const response = await app.request("/api/image-io/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ prompt: "a late image" }),
-    });
-
-    expect(response.status).toBe(202);
-    const generationId = readAcceptedGenerationId(
-      await response.json(),
-      "image",
-      fixture.userId,
-    );
-    await falStarted;
-    expect(falCalls).toBe(1);
-    expect(observedAuthorization).toBe("Key test-fal-key");
-    expect(observedBody).toStrictEqual({
-      prompt: "a late image",
-      image_size: "1024x1024",
-      num_images: 1,
-      output_format: "png",
-      quality: "medium",
-      background: "auto",
-      openai_api_key: "test-openai-key",
-    });
-
-    mockNow(timeoutTime);
-    const timeoutResponse = await app.request(
-      `/api/built-in-generations/${generationId}`,
-      { headers: authHeaders() },
-    );
-    expect(timeoutResponse.status).toBe(200);
-    await expect(timeoutResponse.json()).resolves.toMatchObject({
-      generationId,
-      type: "image",
-      status: "failed",
-      error: {
-        message: "Generation timed out. Please try again.",
-        code: "GENERATION_TIMEOUT",
-      },
-    });
-
-    await postFalWebhook(app, observedRequestUrl, {
-      images: [
-        {
-          url: FAL_GPT_MEDIA_URL,
-          width: 1024,
-          height: 1024,
-          content_type: "image/webp",
+        error: {
+          message: "Generation timed out. Please try again.",
+          code: "GENERATION_TIMEOUT",
         },
-      ],
-      prompt: "A late robot paints a sunflower.",
-    });
-    await flushWaitUntilForTest();
-    releasePendingFalResponse = null;
+      });
 
-    const finalStatusResponse = await app.request(
-      `/api/built-in-generations/${generationId}`,
-      { headers: authHeaders() },
-    );
-    expect(finalStatusResponse.status).toBe(200);
-    await expect(finalStatusResponse.json()).resolves.toMatchObject({
-      generationId,
-      type: "image",
-      status: "failed",
-      error: {
-        message: "Generation timed out. Please try again.",
-        code: "GENERATION_TIMEOUT",
-      },
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+      await postFalWebhook(app, observedRequestUrl, {
+        images: [
+          {
+            url: FAL_GPT_MEDIA_URL,
+            width: 1024,
+            height: 1024,
+            content_type: "image/webp",
+          },
+        ],
+        prompt: "A late robot paints a sunflower.",
+      });
+      await flushWaitUntilForTest();
+      releasePendingFalResponse = null;
 
-    // No usage settles for a timed-out job: the org balance is unchanged.
-    await expect(orgCredits(fixture)).resolves.toBe(1000);
+      const finalStatusResponse = await app.request(
+        `/api/built-in-generations/${generationId}`,
+        { headers: authHeaders() },
+      );
+      expect(finalStatusResponse.status).toBe(200);
+      await expect(finalStatusResponse.json()).resolves.toMatchObject({
+        generationId,
+        type: "image",
+        status: "failed",
+        error: {
+          message: "Generation timed out. Please try again.",
+          code: "GENERATION_TIMEOUT",
+        },
+      });
+      expect(context.mocks.s3.send).not.toHaveBeenCalled();
+
+      // No usage settles for a timed-out job: the org balance is unchanged.
+      await expect(orgCredits(fixture)).resolves.toBe(1000);
+    });
   });
 
   it("rejects a Qwen Image 3 size above the provider's pixel cap", async () => {
