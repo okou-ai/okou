@@ -8,6 +8,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -656,14 +657,34 @@ describe("GET /api/home-task-recommendations", () => {
     let decisionsCalled = false;
     let textBeforeDecision = false;
     let decisionBody: unknown;
+    let workflowCandidateId: string | undefined;
     server.use(
       http.post(OPENROUTER_DECISIONS_URL, async ({ request }) => {
         decisionBody = await request.json();
+        const { state } = z
+          .object({
+            state: z.object({
+              untrustedCandidates: z.array(
+                z.object({
+                  id: z.string(),
+                  purpose: z.enum(["task", "workflow"]),
+                }),
+              ),
+            }),
+          })
+          .parse(decisionBody);
+        workflowCandidateId = state.untrustedCandidates.find((candidate) => {
+          return candidate.purpose === "workflow";
+        })?.id;
+        if (!workflowCandidateId) {
+          throw new Error(
+            "Expected completed requests to form a Workflow candidate",
+          );
+        }
         decisionsCalled = true;
         const answers = Object.fromEntries(
-          [1, 2, 3, 4].flatMap((index) => {
-            const id = `c${index.toString()}`;
-            const accepted = index === 4;
+          state.untrustedCandidates.flatMap(({ id, purpose }) => {
+            const accepted = purpose === "workflow";
             return [
               [
                 `${id}_actionability`,
@@ -695,7 +716,7 @@ describe("GET /api/home-task-recommendations", () => {
               message: {
                 content: JSON.stringify([
                   {
-                    candidateId: "c4",
+                    candidateId: workflowCandidateId,
                     title: "Assess a weekly sales Workflow",
                     prompt:
                       "Review the completed sales summaries below. Decide whether a reusable Workflow fits, check existing Workflows, and ask me for any missing constraints before creating one.",
@@ -879,15 +900,42 @@ describe("GET /api/home-task-recommendations", () => {
       ],
     });
 
-    mockNow(base + HOME_TASK_RECOMMENDATION_REFRESH_MS + 1);
     const nextRun = await fixture.sendChatRun(actor, {
       agentId,
       threadId: thread.id,
       prompt: "Update the follow-up with the latest details.",
     });
+    const busyCachedRead = await accept(
+      recommendationsClient().list({
+        headers: fixture.sessionHeaders(actor),
+        query: { agentId },
+      }),
+      [200],
+    );
+    expect(busyCachedRead.body).toMatchObject({
+      status: "unavailable",
+      recommendations: [],
+    });
+
     const nextClaim = await fixture.claimChatRun(runnerGroup, nextRun.runId);
     await fixture.completeChatRunOk(nextRun.runId, nextClaim.sandboxHeaders);
     await flushWaitUntilForTest();
+    // Completion releases the cached destination even before Runner shutdown.
+    // No cron refresh is needed to make the unchanged card visible again.
+    const completedCachedRead = await accept(
+      recommendationsClient().list({
+        headers: fixture.sessionHeaders(actor),
+        query: { agentId },
+      }),
+      [200],
+    );
+    expect(completedCachedRead.body).toMatchObject({
+      status: "available",
+      recommendations: generated.body.recommendations,
+      revision: generated.body.revision,
+    });
+
+    mockNow(base + HOME_TASK_RECOMMENDATION_REFRESH_MS + 1);
     const callsBeforeFailure = textCalls;
     writerOutputIsInvalid = true;
     const failedRefresh = await refresh({

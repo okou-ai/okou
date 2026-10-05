@@ -21,11 +21,17 @@ written by a draining old API; control.interrupt targets are not ownership.
 A direct backfilled association remains readable after its events leave the
 hot window. Catalog authorship still resolves the owning thread's user, and
 Drive export retains thread/file owner authorization and run-scoped identity.
+Artifact-change invalidation likewise resolves the live thread owner from file
+associations first, retaining the owning-event fallback and the existing topic.
+This includes uploads and preview completion after execution ends; a deleted
+thread is not notified and its files remain independently owned.
 
 Titles, notifications, follow-ups and Home evidence derive unfinished runs
 from active rows without a terminal chat event; terminal active rows retained
-while the Runner stops are not classified as unfinished. Completed Home
-examples require run.completed events inside the already authorized thread
+while the Runner stops are not classified as unfinished. Home uses that same
+predicate for fresh evidence and cached existing-thread destinations, retaining
+the separate pending-input exclusion. Completed Home examples require
+run.completed events inside the already authorized thread
 set, not a historical Run status. Final terminal publication is the boundary:
 a Run status change before its event is committed does not expose a completed
 example prematurely.
