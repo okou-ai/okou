@@ -1,12 +1,13 @@
-import {
-  mockCatalogBuiltInProvider,
-  mockCatalogDisplayName,
-} from "../../../mocks/handlers/api-model-catalog.ts";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import {
+  mockCatalogBuiltInProvider,
+  mockCatalogDisplayName,
+} from "../../../mocks/handlers/api-model-catalog.ts";
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import {
   click,
@@ -21,33 +22,29 @@ import {
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 
-const POLICY_DATE = "2026-09-28T09:00:00.000Z";
-
-function configurePolicies(
-  models: readonly string[],
-  directAstra = false,
-): void {
-  context.mocks.data.orgModelPolicies(
-    models.map((model, index): OrgModelPolicy => {
+function configureRunModels(models: readonly string[]): void {
+  installConnectedPersonalSubscriptions(context);
+  context.mocks.data.availableRunModels(
+    models.map((model): AvailableRunModel => {
       return {
-        id: `e1000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
         model,
         modelLabel: mockCatalogDisplayName(model),
         defaultProviderType:
-          directAstra && model === "gpt-6-astra"
-            ? "openai-api-key"
-            : "built-in",
+          model === "okou-1.0"
+            ? "built-in"
+            : model.startsWith("claude-")
+              ? "claude-code-oauth-token"
+              : "codex-oauth-token",
         runtimeProviderType:
-          directAstra && model === "gpt-6-astra"
-            ? "openai-api-key"
-            : mockCatalogBuiltInProvider(model),
-        credentialScope: "org",
+          model === "okou-1.0"
+            ? "openrouter-codex"
+            : model.startsWith("claude-")
+              ? "claude-code-oauth-token"
+              : "codex-oauth-token",
+        credentialScope: model === "okou-1.0" ? "org" : "member",
         modelProviderId: null,
-        modelProviderSurfaceId: null,
         routeStatus: "valid",
         routeStatusReason: null,
-        createdAt: POLICY_DATE,
-        updatedAt: POLICY_DATE,
       };
     }),
   );
@@ -81,7 +78,7 @@ async function setupPanel(
     selectedModel: models[0],
     ...(onThreadCreate ? { onThreadCreate } : {}),
   });
-  configurePolicies(models);
+  configureRunModels(models);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -106,14 +103,16 @@ function hasAutoModelTrigger(): boolean {
 
 async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
   installRunChat({ selectedModel: "okou-1.0" });
+  if (subscriptionModel) {
+    installConnectedPersonalSubscriptions(context);
+  }
   const auto = autoPolicy();
-  context.mocks.data.orgModelPolicies(
+  context.mocks.data.availableRunModels(
     subscriptionModel
       ? [
           auto,
           {
             ...auto,
-            id: "e1000000-0000-4000-a000-000000000099",
             model: subscriptionModel,
             modelLabel: mockCatalogDisplayName(subscriptionModel),
             defaultProviderType: "codex-oauth-token",
@@ -127,7 +126,7 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
         ]
       : [auto],
   );
-  context.mocks.data.orgModelMode("auto");
+
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -139,20 +138,16 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
   await screen.findByRole("textbox", { name: "Message" });
 }
 
-function autoPolicy(): OrgModelPolicy {
+function autoPolicy(): AvailableRunModel {
   return {
-    id: "e1000000-0000-4000-a000-000000000001",
     model: "okou-1.0",
     modelLabel: mockCatalogDisplayName("okou-1.0"),
     defaultProviderType: "built-in",
     runtimeProviderType: mockCatalogBuiltInProvider("okou-1.0"),
     credentialScope: "org",
     modelProviderId: null,
-    modelProviderSurfaceId: null,
     routeStatus: "valid",
     routeStatusReason: null,
-    createdAt: POLICY_DATE,
-    updatedAt: POLICY_DATE,
   };
 }
 
@@ -169,50 +164,20 @@ test("Auto shows the model picker once a subscription adds models", async () => 
   });
 });
 
-test("Ultrafast is absent for built-in Astra", async () => {
-  await setupPanel(["gpt-6-astra"]);
-  const panel = await openPanel("GPT 6 Astra, Max");
-  expect(
-    within(panel).queryByRole("switch", { name: "Ultrafast mode" }),
-  ).toBeNull();
-});
-
-test("Direct OpenAI Astra hides Ultrafast and sends Standard", async () => {
-  const creates: { serviceTier?: string | null }[] = [];
-  installRunChat({
-    selectedModel: "gpt-6-astra",
-    onThreadCreate: (body) => {
-      creates.push(body);
-    },
-  });
-  configurePolicies(["gpt-6-astra"], true);
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.ComposerModelPanel]: true,
-    },
-  });
-  await screen.findByRole("textbox", { name: "Message" });
-  const panel = await openPanel("GPT 6 Astra, Max");
-  expect(
-    within(panel).queryByRole("switch", { name: "Ultrafast mode" }),
-  ).toBeNull();
-  expect(
-    within(panel).getByRole("switch", { name: "Fast mode" }),
-  ).not.toBeChecked();
-  await userEvent.setup({ delay: null }).keyboard("{Escape}");
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fillComposer(composer, "Run this on Astra Standard");
-  click(await findButton("Send"));
+test("Choose a connected subscription model and return to Auto", async () => {
+  await setupAutoComposer("gpt-6-sol");
   await waitFor(() => {
-    expect(creates).toContainEqual(
-      expect.objectContaining({
-        model: "gpt-6-astra",
-        serviceTier: null,
-      }),
-    );
+    expect(hasAutoModelTrigger()).toBeTruthy();
+  });
+  const panel = await openPanel("Auto");
+  const user = userEvent.setup({ delay: null });
+  await user.click(modelRadio(panel, "GPT 6 Sol"));
+  await waitFor(() => {
+    expect(modelRadio(panel, "GPT 6 Sol")).toBeChecked();
+  });
+  await user.click(modelRadio(panel, "Auto"));
+  await waitFor(() => {
+    expect(modelRadio(panel, "Auto")).toBeChecked();
   });
 });
 
@@ -238,10 +203,12 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   expect(within(panel).queryByText("Max")).toBeNull();
   expect(within(panel).getByText("Fewer credits")).toBeVisible();
   expect(within(panel).getByText("More credits")).toBeVisible();
-  expect(within(panel).getByText("2× credit cost")).toBeInTheDocument();
+  expect(
+    within(panel).getByText("2.5× subscription usage"),
+  ).toBeInTheDocument();
   expect(
     within(panel).getByRole("switch", { name: "Fast mode" }),
-  ).toHaveAccessibleDescription("2× credit cost");
+  ).toHaveAccessibleDescription("2.5× subscription usage");
   // Only the model list scrolls; effort and Fast stay pinned below it.
   const viewport = models.closest('[data-slot="scroll-area-viewport"]');
   expect(viewport).not.toBeNull();

@@ -1,15 +1,16 @@
-import { isMemberModelPolicyAvailable } from "@okouai/api-contracts/contracts/member-model-policy";
+import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
+import { isMemberRunModelAvailable } from "@okouai/api-contracts/contracts/member-run-model";
+import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import chalk from "chalk";
 import { Command } from "commander";
-import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import {
   getChatThread,
   updateChatThreadModelSelection,
 } from "../../lib/api/domains/chat";
 import { getModelCatalog } from "../../lib/api/domains/model-catalog";
-import { listModelPolicies } from "../../lib/api/domains/model-policies";
+import { listRunModels } from "../../lib/api/domains/run-models";
+import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   formatCatalogThreadModel,
   getCatalogModelDisplayName,
@@ -19,13 +20,12 @@ import {
   resolveCatalogModel,
   sortByCatalogOrder,
 } from "../../lib/domain/model-catalog-display";
-import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   formatModelProviderRoute,
-  formatModelPolicyStatus,
-} from "../../lib/domain/model-policy-display";
-import { isUuid } from "../../lib/utils/uuid";
+  formatRunModelStatus,
+} from "../../lib/domain/run-model-display";
 import { getOkouChatThreadId } from "../../lib/okou-env";
+import { isUuid } from "../../lib/utils/uuid";
 import { parseChatEffort } from "./shared";
 
 interface ModelOptions {
@@ -47,14 +47,14 @@ function printUsageError(message: string, hint: string): never {
 /** Pickers only offer active catalog models the member can use. */
 function switchablePolicies(
   catalog: ModelCatalogResponse,
-  policies: readonly OrgModelPolicy[],
+  models: readonly AvailableRunModel[],
 ) {
   return sortByCatalogOrder(
     catalog,
-    policies.filter((policy) => {
+    models.filter((runModel) => {
       return (
-        isCatalogModelActive(catalog, policy.model) &&
-        isMemberModelPolicyAvailable(policy)
+        isCatalogModelActive(catalog, runModel.model) &&
+        isMemberRunModelAvailable(runModel)
       );
     }),
   );
@@ -66,23 +66,23 @@ function formatModelName(catalog: ModelCatalogResponse, model: string): string {
 
 function printSwitchableModels(
   catalog: ModelCatalogResponse,
-  policies: readonly OrgModelPolicy[],
+  models: readonly AvailableRunModel[],
 ): void {
-  const switchable = switchablePolicies(catalog, policies);
+  const switchable = switchablePolicies(catalog, models);
   if (switchable.length === 0) {
     console.log(chalk.dim("No switchable models are available for this user"));
     return;
   }
 
-  for (const policy of switchable) {
-    const defaultMarker = isCatalogSystemDefaultModel(catalog, policy.model)
+  for (const runModel of switchable) {
+    const defaultMarker = isCatalogSystemDefaultModel(catalog, runModel.model)
       ? chalk.dim(" (default)")
       : "";
-    const efforts = getCatalogModelEfforts(catalog, policy.model);
+    const efforts = getCatalogModelEfforts(catalog, runModel.model);
     console.log(
-      `  - ${formatModelName(catalog, policy.model)}${defaultMarker}`,
+      `  - ${formatModelName(catalog, runModel.model)}${defaultMarker}`,
     );
-    console.log(`    provider: ${formatModelProviderRoute(policy)}`);
+    console.log(`    provider: ${formatModelProviderRoute(runModel)}`);
     console.log(
       `    efforts: ${efforts.length > 0 ? efforts.join(", ") : "none"}`,
     );
@@ -105,13 +105,13 @@ function printCurrentModel(
 
 async function printModelHelp(command: Command): Promise<void> {
   const [result, catalog] = await Promise.all([
-    listModelPolicies(),
+    listRunModels(),
     getModelCatalog(),
   ]);
   console.log(command.helpInformation().trimEnd());
   console.log();
   console.log(chalk.bold("Switchable models:"));
-  printSwitchableModels(catalog, result.policies);
+  printSwitchableModels(catalog, result.models);
   console.log();
   console.log(
     "Effort levels depend on the model; Claude uses extra where Codex uses xhigh.",
@@ -130,14 +130,14 @@ async function printModelHelp(command: Command): Promise<void> {
 async function printCurrentModelAndChoices(threadId: string): Promise<void> {
   const [thread, result, catalog] = await Promise.all([
     getChatThread({ threadId }),
-    listModelPolicies(),
+    listRunModels(),
     getModelCatalog(),
   ]);
 
   printCurrentModel(thread, catalog);
   console.log();
   console.log(chalk.bold("Switchable models:"));
-  printSwitchableModels(catalog, result.policies);
+  printSwitchableModels(catalog, result.models);
   console.log();
   console.log("Switch models:");
   console.log(chalk.cyan(`  okou chat model --thread ${threadId} <model>`));
@@ -149,7 +149,7 @@ async function switchModel(
   effort?: string,
 ): Promise<void> {
   const [result, catalog] = await Promise.all([
-    listModelPolicies(),
+    listRunModels(),
     getModelCatalog(),
   ]);
   const resolved = resolveCatalogModel(catalog, model);
@@ -159,16 +159,16 @@ async function switchModel(
       `Use its replacement: okou chat model ${resolved}`,
     );
   }
-  const policy = result.policies.find((candidate) => {
+  const runModel = result.models.find((candidate) => {
     return candidate.model === model;
   });
 
-  if (!policy) {
+  if (!runModel) {
     printUsageError(`Unknown model: ${model}`, "Run: okou chat model --help");
   }
 
-  if (!isMemberModelPolicyAvailable(policy)) {
-    const status = formatModelPolicyStatus(policy);
+  if (!isMemberRunModelAvailable(runModel)) {
+    const status = formatRunModelStatus(runModel);
     const reason = status ? ` (${status})` : "";
     printUsageError(
       `Model is not switchable: ${model}${reason}`,

@@ -1,12 +1,4 @@
 import {
-  findModelMenuOption,
-  modelMenuOption,
-} from "./chat-model-menu-test-helpers.ts";
-import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
-import {
   claudeCodeDeviceAuthContract,
   type ClaudeCodeDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/claude-code-device-auth";
@@ -15,9 +7,9 @@ import {
   type CodexDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type {
+  AvailableRunModel,
   ModelProviderResponse,
   ModelProviderType,
-  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -31,7 +23,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
   findButton,
@@ -41,7 +32,7 @@ import {
   readyChat,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { fillComposer } from "./chat-test-helpers.ts";
 
 const FIXTURE_DATE = "2026-08-18T09:00:00.000Z";
 const ACTIVE_CODEX_ID = "f1000000-0000-4000-a000-000000000101";
@@ -56,67 +47,20 @@ type PersonalProviderType = Extract<
   "claude-code-oauth-token" | "codex-oauth-token"
 >;
 
-function policy(args: {
+function runModel(args: {
   readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
   readonly modelProviderId: string | null;
-}): OrgModelPolicy {
+}): AvailableRunModel {
   return {
-    id: crypto.randomUUID(),
     model: args.model,
     modelLabel: args.modelLabel,
     defaultProviderType: args.providerType,
     credentialScope: "member",
     modelProviderId: args.modelProviderId,
-    modelProviderSurfaceId: null,
     routeStatus: "valid",
     routeStatusReason: null,
-    createdAt: FIXTURE_DATE,
-    updatedAt: FIXTURE_DATE,
-  };
-}
-
-function builtInPolicy(model: string, modelLabel: string): OrgModelPolicy {
-  return {
-    id: crypto.randomUUID(),
-    model,
-    modelLabel,
-    defaultProviderType: "built-in",
-    credentialScope: "org",
-    modelProviderId: null,
-    modelProviderSurfaceId: null,
-    routeStatus: "valid",
-    routeStatusReason: null,
-    createdAt: FIXTURE_DATE,
-    updatedAt: FIXTURE_DATE,
-  };
-}
-
-function billingStatus(args: {
-  readonly restrictedBuiltInModels: boolean;
-  readonly supportByok: boolean;
-  readonly tier: "limited-free-1" | "pro";
-}): BillingStatusResponse {
-  return {
-    showUsagePack: false,
-    tier: args.tier,
-    ...billingPlanCapabilities(args.tier),
-    supportByok: args.supportByok,
-    restrictedBuiltInModels: args.restrictedBuiltInModels,
-    credits: 20_000,
-    onboardingPaymentPending: false,
-    subscriptionStatus: null,
-    currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: false,
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 0,
-    concurrencySubscriptions: [],
   };
 }
 
@@ -126,8 +70,8 @@ function configurePersonalRoute(args: {
   readonly providerType: PersonalProviderType;
   readonly modelProviderId?: string | null;
 }): void {
-  context.mocks.data.orgModelPolicies([
-    policy({
+  context.mocks.data.availableRunModels([
+    runModel({
       ...args,
       modelProviderId: args.modelProviderId ?? null,
     }),
@@ -462,57 +406,4 @@ test("Reconnect Claude Code for an existing chat", async () => {
     });
   });
   expect(dialog).not.toHaveTextContent("inactive.claude@example.com");
-});
-
-test("A billing upgrade unlocks Pro-gated built-in models", async () => {
-  const billing: { upgraded: boolean } = { upgraded: false };
-  installRunChat({ selectedModel: "gpt-5.6-luna" });
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna"),
-    builtInPolicy("claude-opus-5-5", "Claude Opus 5.5"),
-  ]);
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    if (billing.upgraded) {
-      return respond(
-        200,
-        billingStatus({
-          tier: "pro",
-          supportByok: true,
-          restrictedBuiltInModels: false,
-        }),
-      );
-    }
-    return respond(
-      200,
-      billingStatus({
-        tier: "limited-free-1",
-        supportByok: true,
-        restrictedBuiltInModels: true,
-      }),
-    );
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  const picker = await composerModelTrigger("GPT 5.6 Luna");
-  click(picker);
-  await expect(findModelMenuOption(/GPT 5\.6 Luna/iu)).resolves.toBeVisible();
-  const gatedBuiltInOption = await findModelMenuOption(/Claude Opus 5\.5/iu);
-  expect(within(gatedBuiltInOption).getByText("Pro")).toBeVisible();
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
-  });
-
-  billing.upgraded = true;
-  context.mocks.ably.trigger("billing:changed");
-
-  await waitFor(() => {
-    const builtInOption = modelMenuOption(/Claude Opus 5\.5/iu);
-    expect(builtInOption).toBeVisible();
-    expect(within(builtInOption).queryByText("Pro")).toBeNull();
-  });
 });

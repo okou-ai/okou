@@ -4831,21 +4831,9 @@
     },
     "models": {
       "actions": {
-        "addModel": "Modell hinzufügen",
-        "deleteModel": "Modell löschen",
-        "editModel": "Modell bearbeiten",
         "resetUsage": "Nutzung zurücksetzen",
         "upgradePro": "Aktualisieren Sie Pro, um es zu verwenden",
         "upgradeToPro": "Upgrade auf Pro"
-      },
-      "autoMode": {
-        "cancel": "Abbrechen",
-        "confirm": "Zu Auto Model wechseln",
-        "confirmDescription": "Dadurch werden Organisationsrichtlinien, Provider-Verbindungen und nicht mehr benötigte Zugangsdaten dauerhaft gelöscht. Als Organisationsrichtlinie bleibt nur Auto. Persönliche Abonnements der Mitglieder bleiben verbunden und können Modelle bereitstellen. Beim Wechsel zurück zu Custom werden die gelöschten Organisationseinstellungen nicht wiederhergestellt.",
-        "confirmTitle": "Diesen Workspace auf Auto Model umstellen?",
-        "description": "Auto als Organisationsrichtlinie nutzen; persönliche Abonnements ergänzen Modelle für Mitglieder.",
-        "failed": "Der Modellmodus konnte nicht geändert werden. Einstellungen aktualisieren und erneut versuchen.",
-        "title": "Auto Model"
       },
       "deviceAuth": {
         "claude": {
@@ -4888,40 +4876,6 @@
           "signIn": "Melden Sie sich mit ChatGPT an"
         }
       },
-      "gateways": {
-        "actions": "Gateway-Aktionen",
-        "add": "Anbieter hinzufügen",
-        "addTitle": "Modellanbieter hinzufügen",
-        "apiBaseUrl": "API-Basis-URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com/",
-        "apiKey": "API-Schlüssel",
-        "deleteConfirm": "Diese Modellanbieter-Verbindung löschen? Modellrouten, die sie verwenden, sind danach nicht mehr verfügbar.",
-        "description": "Verbinden Sie ein von Administratoren verwaltetes Gateway über Anthropic Messages, OpenAI Responses oder beide Protokolle.",
-        "dialogDescription": "Konfigurieren Sie jedes Protokoll mit der API-Basis-URL, die von Claude Code oder Codex verwendet wird.",
-        "editTitle": "Modellanbieter bearbeiten",
-        "errors": {
-          "invalidMappings": "Modellzuordnungen müssen ein JSON-Objekt sein, dessen Werte die Namen der Upstream-Modelle sind.",
-          "missingProtocol": "Aktivieren Sie mindestens ein Protokoll.",
-          "missingSecret": "Geben Sie einen API-Schlüssel ein."
-        },
-        "headerName": "Authentifizierungs-Header",
-        "headerValue": "Vorlage für den Header-Wert",
-        "keepKey": "Leer lassen, um den aktuellen Schlüssel beizubehalten",
-        "modelMappings": "Modellzuordnungen (JSON)",
-        "name": "Name",
-        "presets": {
-          "custom": "Benutzerdefiniert",
-          "fireworks": "Fireworks AI-Gateway",
-          "openrouter": "OpenRouter-Gateway",
-          "vercel": "Vercel AI-Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic-Messages-Protokoll",
-          "openaiResponses": "OpenAI-Responses-Protokoll"
-        },
-        "requestPreview": "Anfragen",
-        "title": "Anbieterverbindungen"
-      },
       "personal": {
         "accountFallback": "Konto {{number}}",
         "accountsDescription": "Wähle das Konto, das jeder Anbieter für neue Ausführungen verwendet.",
@@ -4953,7 +4907,6 @@
       },
       "picker": {
         "builtInModel": "Einbaumodell",
-        "byokHelp": "Verwendet Ihren konfigurierten Anbieter",
         "chatModels": "Chatmodelle",
         "effort": "Aufwand",
         "effortScale": {
@@ -4966,8 +4919,8 @@
         },
         "fast": "Schnell",
         "fastImpact": {
-          "creditCost": "{{multiplier}}× Credit-Kosten",
-          "providerUsage": "Verbrauch hängt vom Anbieter ab"
+          "providerUsage": "Verbrauch hängt vom Anbieter ab",
+          "subscriptionUsage": "{{multiplier}}× Abonnementnutzung"
         },
         "fastMode": "Schnellmodus",
         "generationPriceTiers": {
@@ -4981,56 +4934,11 @@
         "loading": "Modelle werden geladen...",
         "models": "Modelle",
         "noConfiguredModels": "Keine konfigurierten Modelle",
-        "priceTiers": {
-          "balanced": "Ausgewogene Kosten und Leistung",
-          "economy": "Economy-Stufe für alltägliche einfache Aufgaben",
-          "frontier": "Frontier-Flaggschiffmodell",
-          "premium": "Premium-Frontier-Modell für die schwierigsten Aufgaben"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure Foundry-Portal",
-          "claudeCodeOauth": "Claude Code (OAuth-Token)",
-          "deepseek": "Deepseek"
-        },
         "standard": "Standard",
         "ultrafast": "Ultraschnell",
         "ultrafastImpact": "Bis zu 8× Token-Geschwindigkeit · 6× OpenAI-API-Tokenpreis",
         "ultrafastMode": "Ultraschneller Modus"
-      },
-      "policies": {
-        "actionsFor": "Aktionen für {{model}}",
-        "apiKey": "API-Schlüssel",
-        "apiKeyDescription": "Ein gemeinsam genutzter Arbeitsbereichsschlüssel. Am besten ist es, wenn das Team über ein Konto abrechnet.",
-        "apiKeyPlaceholder": "Geben Sie Ihren API-Schlüssel ein",
-        "apiKeyRequired": "API-Schlüssel ist erforderlich",
-        "availableModels": "Verfügbare Modelle",
-        "builtIn": "Eingebaut",
-        "builtInDescription": "Arbeitsbereichs-Credits decken die Nutzung ab.",
-        "claudeSubscription": "Claude-Abonnement",
-        "claudeSubscriptionDescription": "Jedes Mitglied verbindet seinen eigenen Pro-, Max- oder Team-Plan.",
-        "codexSubscription": "Codex-Abonnement",
-        "codexSubscriptionDescription": "Jedes Mitglied verbindet seinen eigenen Pro- oder Team-Plan.",
-        "dialogDescription": "Entscheiden Sie, wie Mitglieder auf dieses Modell zugreifen.",
-        "gateway": "Benutzerdefiniertes Gateway",
-        "gatewayDescription": "Über eine vom Administrator definierte Anbieterverbindung weiterleiten.",
-        "gatewayProvider": "Anbieterverbindung",
-        "getKey": "Holen Sie sich einen Schlüssel",
-        "invalidRoute": "Ungültige Route",
-        "missingProvider": "Fehlender Anbieter",
-        "model": "Modell",
-        "noMappedGateway": "Diesem Modell ist keine Anbieterverbindung zugeordnet.",
-        "orgDefaultModelLocked": "Auto kann nicht entfernt werden",
-        "pricing": "Preise",
-        "providedBy": "Bereitgestellt von",
-        "provider": "Anbieter",
-        "providerApiKey": "{{provider}} API-Schlüssel",
-        "runsThrough": "Ausführung über",
-        "secretStored": "In den Workspace-Secrets gespeichert.",
-        "selectGateway": "Anbieterverbindung auswählen",
-        "selectModel": "Wählen Sie ein Modell aus",
-        "selectProvider": "Wählen Sie einen Anbieter aus",
-        "workspaceDescription": "Verfügbar für alle in diesem Arbeitsbereich."
       },
       "reset": {
         "confirmDescription": "Verwenden Sie einen {{provider}}-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
@@ -5056,7 +4964,6 @@
       "toasts": {
         "accountDisconnected": "Konto getrennt",
         "accountSwitched": "Aktives Konto gewechselt",
-        "policiesUpdated": "Modellanbietereinstellungen aktualisiert",
         "reset": "{{provider}}-Nutzung zurückgesetzt",
         "resetUnavailable": "Es sind keine {{provider}}-Nutzungs-Resets verfügbar",
         "resetUnneeded": "Die {{provider}}-Nutzung muss derzeit nicht zurückgesetzt werden"

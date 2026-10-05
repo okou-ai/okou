@@ -21,12 +21,12 @@ const GET_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/metadata`;
 const OTHER_GET_URL = `http://localhost:3000/api/chat-threads/${OTHER_THREAD_ID}/metadata`;
 const OTHER_MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${OTHER_THREAD_ID}/model-selection`;
 const MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/model-selection`;
-const MODEL_POLICIES_URL = "http://localhost:3000/api/model-policies";
+const MODEL_RUN_MODELS_URL = "http://localhost:3000/api/run-models";
 
-const MODEL_POLICIES_RESPONSE = {
-  policies: [
+const AVAILABLE_MODELS_RESPONSE = {
+  defaultModel: "okou-1.0",
+  models: [
     {
-      id: "00000000-0000-4000-8000-000000000101",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
       defaultProviderType: "claude-code-oauth-token",
@@ -34,11 +34,8 @@ const MODEL_POLICIES_RESPONSE = {
       modelProviderId: null,
       routeStatus: "valid",
       routeStatusReason: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
     },
     {
-      id: "00000000-0000-4000-8000-000000000102",
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
       defaultProviderType: "codex-oauth-token",
@@ -46,11 +43,8 @@ const MODEL_POLICIES_RESPONSE = {
       modelProviderId: null,
       routeStatus: "missing_provider",
       routeStatusReason: "No personal subscription connected",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
     },
     {
-      id: "00000000-0000-4000-8000-000000000103",
       model: "deepseek-v4-flash",
       modelLabel: "DeepSeek V4 Flash",
       defaultProviderType: "built-in",
@@ -58,11 +52,8 @@ const MODEL_POLICIES_RESPONSE = {
       modelProviderId: null,
       routeStatus: "valid",
       routeStatusReason: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
     },
     {
-      id: "00000000-0000-4000-8000-000000000109",
       model: "okou-1.0",
       modelLabel: "Auto",
       defaultProviderType: "built-in",
@@ -70,8 +61,6 @@ const MODEL_POLICIES_RESPONSE = {
       modelProviderId: null,
       routeStatus: "valid",
       routeStatusReason: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
     },
   ],
 };
@@ -103,8 +92,8 @@ describe("okou chat model command", () => {
   it("shows dynamic help with switchable models", async () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -137,8 +126,8 @@ describe("okou chat model command", () => {
           modelSettings: {},
         });
       }),
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -163,8 +152,8 @@ describe("okou chat model command", () => {
           selectedModel: null,
         });
       }),
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -185,8 +174,8 @@ describe("okou chat model command", () => {
           selectedModel: "claude-sonnet-5",
         });
       }),
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -206,8 +195,8 @@ describe("okou chat model command", () => {
   it("switches the model for --thread outside a web chat environment", async () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
       http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
@@ -235,12 +224,12 @@ describe("okou chat model command", () => {
 
   it("switches a model and effort together without a tier patch so the server preserves it", async () => {
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
+      http.get(MODEL_RUN_MODELS_URL, () => {
         return HttpResponse.json({
-          ...MODEL_POLICIES_RESPONSE,
-          policies: [
+          ...AVAILABLE_MODELS_RESPONSE,
+          models: [
             {
-              ...MODEL_POLICIES_RESPONSE.policies[0],
+              ...AVAILABLE_MODELS_RESPONSE.models[0],
               model: "claude-opus-5-5",
               modelLabel: "Claude Opus 5.5",
             },
@@ -321,12 +310,12 @@ describe("okou chat model command", () => {
   it("rejects an unsupported model-effort pair before sending a request", async () => {
     let requests = 0;
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
+      http.get(MODEL_RUN_MODELS_URL, () => {
         return HttpResponse.json({
-          ...MODEL_POLICIES_RESPONSE,
-          policies: [
+          ...AVAILABLE_MODELS_RESPONSE,
+          models: [
             {
-              ...MODEL_POLICIES_RESPONSE.policies[0],
+              ...AVAILABLE_MODELS_RESPONSE.models[0],
               model: "claude-opus-5-5",
               modelLabel: "Claude Opus 5.5",
             },
@@ -380,8 +369,8 @@ describe("okou chat model command", () => {
 
   it("rejects models that are not switchable for this user", async () => {
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -432,12 +421,11 @@ describe("okou chat model command", () => {
           ],
         });
       }),
-      http.get(MODEL_POLICIES_URL, () => {
+      http.get(MODEL_RUN_MODELS_URL, () => {
         return HttpResponse.json({
-          policies: [
-            ...MODEL_POLICIES_RESPONSE.policies,
+          models: [
+            ...AVAILABLE_MODELS_RESPONSE.models,
             {
-              id: "00000000-0000-4000-8000-000000000110",
               model,
               modelLabel: "Acme Nova",
               defaultProviderType: "built-in",
@@ -445,8 +433,6 @@ describe("okou chat model command", () => {
               modelProviderId: null,
               routeStatus: "valid",
               routeStatusReason: null,
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
             },
           ],
         });
@@ -503,12 +489,12 @@ describe("okou chat model command", () => {
 
   it("offers and switches a personal candidate despite a missing administrative provider", async () => {
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
+      http.get(MODEL_RUN_MODELS_URL, () => {
         return HttpResponse.json({
-          ...MODEL_POLICIES_RESPONSE,
-          policies: [
+          ...AVAILABLE_MODELS_RESPONSE,
+          models: [
             {
-              ...MODEL_POLICIES_RESPONSE.policies[1],
+              ...AVAILABLE_MODELS_RESPONSE.models[1],
               defaultProviderType: "openai-api-key",
               credentialScope: "org",
               memberEffective: {
@@ -551,12 +537,12 @@ describe("okou chat model command", () => {
     "rejects a %s member route despite a valid administrative provider",
     async (availability) => {
       server.use(
-        http.get(MODEL_POLICIES_URL, () => {
+        http.get(MODEL_RUN_MODELS_URL, () => {
           return HttpResponse.json({
-            ...MODEL_POLICIES_RESPONSE,
-            policies: [
+            ...AVAILABLE_MODELS_RESPONSE,
+            models: [
               {
-                ...MODEL_POLICIES_RESPONSE.policies[0],
+                ...AVAILABLE_MODELS_RESPONSE.models[0],
                 memberEffective: {
                   providerType: "claude-code-oauth-token",
                   runtimeProviderType: "claude-code-oauth-token",

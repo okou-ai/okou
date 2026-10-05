@@ -1,18 +1,18 @@
+import { Field } from "@base-ui/react/field";
+import { getMemberRunModelRoute } from "@okouai/api-contracts/contracts/member-run-model";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   type ReasoningEffort,
   withModelReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { Field } from "@base-ui/react/field";
-import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { Switch, cn } from "@okouai/ui";
 import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
 import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
+import { availableRunModels$ } from "../../../signals/external/run-models.ts";
 import {
   availableChatReasoningEfforts,
   effectiveChatReasoningEffort,
@@ -23,19 +23,17 @@ import type { ModelProviderSelection } from "./model-provider-picker.tsx";
 export function useChatEffort(
   selection: ModelProviderSelection | null | undefined,
 ) {
-  const policies = useLastResolved(orgModelPolicies$);
+  const models = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
-  const policy = policies?.policies.find((entry) => {
+  const runModel = models?.models.find((entry) => {
     return entry.model === selection?.selectedModel;
   });
   return {
-    efforts: availableChatReasoningEfforts(selection, policy, catalog),
-    effort: effectiveChatReasoningEffort(selection, policy, catalog),
+    efforts: availableChatReasoningEfforts(selection, runModel, catalog),
+    effort: effectiveChatReasoningEffort(selection, runModel, catalog),
     builtIn:
-      policy !== undefined &&
-      isBuiltInModelProviderType(
-        getMemberModelPolicyRoute(policy).providerType,
-      ),
+      runModel !== undefined &&
+      isBuiltInModelProviderType(getMemberRunModelRoute(runModel).providerType),
   };
 }
 

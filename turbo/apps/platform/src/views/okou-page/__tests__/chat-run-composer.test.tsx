@@ -1,18 +1,18 @@
-import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import {
+  buildRunModel,
+  composerModelTrigger,
+} from "./chat-composer-test-helpers.ts";
+import {
   mockPushBrowserSupport,
   setupPage,
 } from "./chat-lifecycle-test-helpers.ts";
-import {
-  buildModelPolicy,
-  composerModelTrigger,
-} from "./chat-composer-test-helpers.ts";
 import {
   assistantEvent,
   context,
@@ -176,8 +176,8 @@ test("Send a large image with a fallback-enabled text model", async () => {
       sentMessage = { model: body.model, userMessage: body.userMessage };
     },
   });
-  context.mocks.data.orgModelPolicies([
-    buildModelPolicy({
+  context.mocks.data.availableRunModels([
+    buildRunModel({
       model: "deepseek-v4-flash",
       modelLabel: "DeepSeek V4 Flash",
       defaultProviderType: "built-in",

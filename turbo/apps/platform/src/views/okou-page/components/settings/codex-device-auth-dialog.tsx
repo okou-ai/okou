@@ -1,25 +1,20 @@
+import { Button } from "@okouai/ui/components/ui/button";
+import { CopyButton } from "@okouai/ui/components/ui/copy-button";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui/components/ui/button";
-import { CopyButton } from "@okouai/ui/components/ui/copy-button";
 
+import { brandName$ } from "../../../../signals/branding.ts";
 import {
-  closeCodexDeviceAuthDialog$,
   closeCodexDeviceAuthDialogPersonal$,
-  codexDeviceAuthDialogState$,
   codexDeviceAuthDialogStatePersonal$,
-  codexDeviceAuthFlowState$,
   codexDeviceAuthFlowStatePersonal$,
-  openCodexDeviceAuthApprovalPage$,
   openCodexDeviceAuthApprovalPagePersonal$,
-  runCodexDeviceAuth$,
   runCodexDeviceAuthPersonal$,
   type CodexDeviceAuthFlowState,
 } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
-import { brandName$ } from "../../../../signals/branding.ts";
-import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   DeviceAuthDialogShell,
   DeviceAuthLoadingContent,
@@ -39,29 +34,9 @@ interface CodexDeviceAuthScopeBundle {
   run: (signal: AbortSignal) => Promise<boolean>;
 }
 
-export function CodexDeviceAuthDialog() {
-  const bundle = useOrgCodexDeviceAuthBundle();
-  return <CodexDeviceAuthDialogView bundle={bundle} />;
-}
-
 export function PersonalCodexDeviceAuthDialog() {
   const bundle = usePersonalCodexDeviceAuthBundle();
   return <CodexDeviceAuthDialogView bundle={bundle} />;
-}
-
-function useOrgCodexDeviceAuthBundle(): CodexDeviceAuthScopeBundle {
-  const dialog = useGet(codexDeviceAuthDialogState$);
-  const flow = useGet(codexDeviceAuthFlowState$);
-  const close = useSet(closeCodexDeviceAuthDialog$);
-  const openApprovalPage = useSet(openCodexDeviceAuthApprovalPage$);
-  const [, run] = useLoadableSet(runCodexDeviceAuth$);
-  return {
-    dialog,
-    flow,
-    close,
-    openApprovalPage,
-    run,
-  };
 }
 
 function usePersonalCodexDeviceAuthBundle(): CodexDeviceAuthScopeBundle {

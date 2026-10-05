@@ -5,57 +5,24 @@
  * Import handlers from individual files and combine them here.
  */
 
+import { resetAblySubscriptions } from "../ably.ts";
+import {
+  apiAgentsHandlers,
+  resetMockAgents,
+  resetMockUserConnectors,
+} from "./api-agents.ts";
+import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
+import { apiBuildInfoHandlers } from "./api-build-info.ts";
 import {
   apiConnectorsHandlers,
   resetMockConnectors,
 } from "./api-connectors.ts";
-import { apiOrgHandlers, resetMockOrg, resetMockOrgLogo } from "./api-org.ts";
 import {
-  apiOrgMembersHandlers,
-  resetMockOrgMembers,
-} from "./api-org-members.ts";
-import { apiUsageHandlers, resetMockUsageMembers } from "./api-usage.ts";
-import {
-  apiUsageRecordHandlers,
-  resetMockUsageRecord,
-} from "./api-usage-record.ts";
-import {
-  apiOrgModelProvidersHandlers,
-  resetMockOrgModelProviders,
-} from "./api-org-model-providers.ts";
-import {
-  apiModelCatalogHandlers,
-  resetMockModelCatalog,
-} from "./api-model-catalog.ts";
-import {
-  apiOrgModelPoliciesHandlers,
-  resetMockOrgModelPolicies,
-} from "./api-org-model-policies.ts";
-import {
-  apiPersonalModelProvidersHandlers,
-  resetMockPersonalModelProviders,
-} from "./api-personal-model-providers.ts";
-import {
-  apiPresentationTemplatesHandlers,
-  resetMockPresentationTemplates,
-} from "./api-presentation-templates.ts";
-import {
-  apiUserTemplatesHandlers,
-  resetMockUserTemplates,
-} from "./api-user-templates.ts";
-import { appLogsHandlers } from "./api-logs.ts";
-import {
-  apiIntegrationsSlackOrgHandlers,
-  resetMockSlackOrgIntegration,
-} from "./api-integrations-slack-org.ts";
-import {
-  apiIntegrationsTelegramHandlers,
-  resetMockTelegramIntegration,
-} from "./api-integrations-telegram.ts";
-import {
-  apiIntegrationsTeamsHandlers,
-  resetMockTeamsIntegration,
-} from "./api-integrations-teams.ts";
+  apiEmailSubscriptionHandlers,
+  resetMockEmailSubscription,
+} from "./api-email-subscription.ts";
+import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
+import { apiGetStartedHandlers } from "./api-get-started.ts";
 import {
   apiIntegrationsAgentPhoneHandlers,
   resetMockAgentPhoneIntegration,
@@ -65,55 +32,84 @@ import {
   resetMockGithubIntegration,
 } from "./api-integrations-github.ts";
 import {
-  apiAgentsHandlers,
-  resetMockAgents,
-  resetMockUserConnectors,
-} from "./api-agents.ts";
-import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
-import { apiSkillImportHandlers } from "./api-skill-import.ts";
-import { apiRunsHandlers } from "./api-runs.ts";
-import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
-import { apiPaidToolsHandlers, resetMockPaidTools } from "./api-paid-tools.ts";
-import { apiGetStartedHandlers } from "./api-get-started.ts";
-import { apiRealtimeHandlers } from "./api-realtime.ts";
-import { resetAblySubscriptions } from "../ably.ts";
+  apiIntegrationsSlackConnectHandlers,
+  resetMockSlackConnect,
+} from "./api-integrations-slack-connect.ts";
 import {
-  apiUserPreferencesHandlers,
-  resetMockUserPreferences,
-} from "./api-user-preferences.ts";
+  apiIntegrationsSlackOrgHandlers,
+  resetMockSlackOrgIntegration,
+} from "./api-integrations-slack-org.ts";
 import {
-  apiEmailSubscriptionHandlers,
-  resetMockEmailSubscription,
-} from "./api-email-subscription.ts";
+  apiIntegrationsTeamsHandlers,
+  resetMockTeamsIntegration,
+} from "./api-integrations-teams.ts";
+import {
+  apiIntegrationsTelegramHandlers,
+  resetMockTelegramIntegration,
+} from "./api-integrations-telegram.ts";
+import { appLogsHandlers } from "./api-logs.ts";
+import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
+import {
+  apiModelCatalogHandlers,
+  resetMockModelCatalog,
+} from "./api-model-catalog.ts";
 import {
   apiMorningBriefPreferenceHandlers,
   resetMockMorningBriefPreference,
 } from "./api-morning-brief-preference.ts";
 import {
+  apiOnboardingHandlers,
+  resetMockOnboardingStatus,
+} from "./api-onboarding.ts";
+import {
+  apiOrgMembersHandlers,
+  resetMockOrgMembers,
+} from "./api-org-members.ts";
+import { apiOrgHandlers, resetMockOrg, resetMockOrgLogo } from "./api-org.ts";
+import { apiPaidToolsHandlers, resetMockPaidTools } from "./api-paid-tools.ts";
+import {
+  apiPersonalModelProvidersHandlers,
+  resetMockPersonalModelProviders,
+} from "./api-personal-model-providers.ts";
+import {
+  apiPresentationTemplatesHandlers,
+  resetMockPresentationTemplates,
+} from "./api-presentation-templates.ts";
+import { apiRealtimeHandlers } from "./api-realtime.ts";
+import {
+  apiAvailableRunModelsHandlers,
+  resetMockAvailableRunModels,
+} from "./api-run-models.ts";
+import { apiRunsHandlers } from "./api-runs.ts";
+import { apiSkillImportHandlers } from "./api-skill-import.ts";
+import {
+  apiUsageRecordHandlers,
+  resetMockUsageRecord,
+} from "./api-usage-record.ts";
+import { apiUsageHandlers, resetMockUsageMembers } from "./api-usage.ts";
+import {
   apiUserModelPreferenceHandlers,
   resetMockUserModelPreference,
 } from "./api-user-model-preference.ts";
 import {
-  apiOnboardingHandlers,
-  resetMockOnboardingStatus,
-} from "./api-onboarding.ts";
-import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
-import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
-import { resetMockWorkflowAutomations } from "./workflow-automations-store.ts";
-import {
-  apiIntegrationsSlackConnectHandlers,
-  resetMockSlackConnect,
-} from "./api-integrations-slack-connect.ts";
-import {
   apiUserPermissionGrantsHandlers,
   resetMockUserPermissionGrants,
 } from "./api-user-permission-grants.ts";
+import {
+  apiUserPreferencesHandlers,
+  resetMockUserPreferences,
+} from "./api-user-preferences.ts";
+import {
+  apiUserTemplatesHandlers,
+  resetMockUserTemplates,
+} from "./api-user-templates.ts";
 import { apiVoiceIoHandlers } from "./api-voice-io.ts";
-import { apiBuildInfoHandlers } from "./api-build-info.ts";
 import { apiWebFilesHandlers } from "./api-web-files.ts";
-import { localeResourceHandlers } from "./locale-resources.ts";
+import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
 import { chatThreadEmojiHandlers } from "./chat-thread-emoji.ts";
 import { clerkLocalizationHandlers } from "./clerk-localizations.ts";
+import { localeResourceHandlers } from "./locale-resources.ts";
+import { resetMockWorkflowAutomations } from "./workflow-automations-store.ts";
 
 export const handlers = [
   ...apiMarketingEventsHandlers,
@@ -126,9 +122,8 @@ export const handlers = [
   ...apiOrgMembersHandlers,
   ...apiUsageHandlers,
   ...apiUsageRecordHandlers,
-  ...apiOrgModelProvidersHandlers,
   ...apiModelCatalogHandlers,
-  ...apiOrgModelPoliciesHandlers,
+  ...apiAvailableRunModelsHandlers,
   ...apiPersonalModelProvidersHandlers,
   ...apiPresentationTemplatesHandlers,
   ...apiUserTemplatesHandlers,
@@ -170,9 +165,8 @@ export function resetAllMockHandlers(): void {
   resetMockMorningBriefPreference();
   resetMockEmailSubscription();
   resetMockUserModelPreference();
-  resetMockOrgModelProviders();
   resetMockModelCatalog();
-  resetMockOrgModelPolicies();
+  resetMockAvailableRunModels();
   resetMockPersonalModelProviders();
   resetMockPresentationTemplates();
   resetMockUserTemplates();

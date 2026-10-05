@@ -1,92 +1,37 @@
-import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
-import { Command } from "commander";
 import chalk from "chalk";
-import { getModelCatalog } from "../../lib/api/domains/model-catalog";
-import { listModelPolicies } from "../../lib/api/domains/model-policies";
-import {
-  getCatalogModelDisplayName,
-  isCatalogModelActive,
-  isCatalogSystemDefaultModel,
-  sortByCatalogOrder,
-} from "../../lib/domain/model-catalog-display";
+import { Command } from "commander";
+import { listRunModels } from "../../lib/api/domains/run-models";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
-  formatModelPolicyStatus,
-  getModelProviderRouteKind,
-  getModelProviderTypeLabel,
-} from "../../lib/domain/model-policy-display";
-
-export const MODEL_PROVIDER_SET_GUIDANCE = [
-  "Model provider routing is configured in the web app.",
-  "",
-  "Organization admins: open https://app.okou.ai, use the top-left organization menu, choose Manage, then add, delete, or adjust model providers.",
-  "",
-  "Members: use the bottom-left user menu, choose Preferences / Personal Models, and connect or reconnect your personal subscription. `okou model-provider ls` shows your effective provider for each model.",
-].join("\n");
+  formatModelProviderRoute,
+  formatRunModelStatus,
+} from "../../lib/domain/run-model-display";
 
 const listCommand = new Command()
   .name("list")
   .alias("ls")
-  .description(
-    "List provider routing for each model allowed by the organization",
-  )
+  .description("List Auto and your connected personal subscription routes")
   .action(
     withErrorHandler(async () => {
-      const [result, catalog] = await Promise.all([
-        listModelPolicies(),
-        getModelCatalog(),
-      ]);
-      const policies = sortByCatalogOrder(
-        catalog,
-        result.policies.filter((policy) => {
-          return isCatalogModelActive(catalog, policy.model);
-        }),
+      const { models, defaultModel } = await listRunModels();
+      console.log(chalk.bold("Model Routes:"));
+      for (const model of models) {
+        console.log(
+          `  - ${model.modelLabel} (${model.model})${model.model === defaultModel ? " (default)" : ""}`,
+        );
+        console.log(`    provider: ${formatModelProviderRoute(model)}`);
+        const status = formatRunModelStatus(model);
+        if (status) console.log(chalk.yellow(`    status: ${status}`));
+      }
+      console.log(
+        chalk.dim(
+          "Connect or reconnect personal ChatGPT or Claude subscriptions in Settings / Models.",
+        ),
       );
-
-      if (policies.length === 0) {
-        console.log(
-          chalk.dim(
-            "No model provider routes are allowed for this organization",
-          ),
-        );
-        return;
-      }
-
-      console.log(chalk.bold("Model Provider Routes:"));
-      console.log();
-
-      for (const policy of policies) {
-        const defaultMarker = isCatalogSystemDefaultModel(catalog, policy.model)
-          ? chalk.dim(" (default)")
-          : "";
-        const name = getCatalogModelDisplayName(catalog, policy.model);
-        console.log(
-          `  - ${name} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
-        );
-        const route = getMemberModelPolicyRoute(policy);
-        console.log(`    provider: ${getModelProviderRouteKind(policy)}`);
-        console.log(
-          `    provider type: ${route.providerType} (${getModelProviderTypeLabel(route.providerType)})`,
-        );
-
-        const status = formatModelPolicyStatus(policy);
-        if (status) {
-          console.log(chalk.yellow(`    status: ${status}`));
-        }
-      }
     }),
   );
 
-export const setCommand = new Command()
-  .name("set")
-  .description("Show where to adjust model provider routing")
-  .addHelpText("after", `\n${MODEL_PROVIDER_SET_GUIDANCE}`)
-  .action(() => {
-    console.log(MODEL_PROVIDER_SET_GUIDANCE);
-  });
-
 export const modelProviderCommand = new Command()
   .name("model-provider")
-  .description("Inspect model provider routing")
-  .addCommand(listCommand)
-  .addCommand(setCommand);
+  .description("Inspect Auto and personal subscription routes")
+  .addCommand(listCommand);

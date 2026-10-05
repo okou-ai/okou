@@ -4813,21 +4813,9 @@
     },
     "models": {
       "actions": {
-        "addModel": "添加模型",
-        "deleteModel": "删除模型",
-        "editModel": "编辑模型",
         "resetUsage": "重置用量",
         "upgradePro": "升级Pro后可用",
         "upgradeToPro": "升级到Pro"
-      },
-      "autoMode": {
-        "cancel": "取消",
-        "confirm": "切换至 Auto Model",
-        "confirmDescription": "此操作会永久删除组织模型策略、组织 Provider Connections 及不再被引用的密钥，仅保留 Auto 组织策略。成员的个人订阅继续保留，并可带入模型。切回 Custom 不会恢复已删除的组织配置。",
-        "confirmTitle": "将此组织切换至 Auto Model？",
-        "description": "组织使用 Auto 策略；成员连接个人订阅后可增加可用模型。",
-        "failed": "切换模型模式失败。请刷新设置后重试。",
-        "title": "Auto Model"
       },
       "deviceAuth": {
         "claude": {
@@ -4870,40 +4858,6 @@
           "signIn": "使用ChatGPT登录"
         }
       },
-      "gateways": {
-        "actions": "网关操作",
-        "add": "添加服务商",
-        "addTitle": "添加模型服务商",
-        "apiBaseUrl": "API基础URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API密钥",
-        "deleteConfirm": "删除这个模型服务商连接？使用它的模型线路将不可用。",
-        "description": "通过Anthropic Messages、OpenAI Responses或两者，连接由管理员管理的网关。",
-        "dialogDescription": "为每个协议配置Claude Code或Codex使用的API基础URL。",
-        "editTitle": "编辑模型服务商",
-        "errors": {
-          "invalidMappings": "模型映射必须是一个JSON对象，其值为上游模型名称。",
-          "missingProtocol": "请至少启用一个协议。",
-          "missingSecret": "请输入API密钥。"
-        },
-        "headerName": "认证请求头",
-        "headerValue": "请求头取值模板",
-        "keepKey": "留空则保留当前密钥",
-        "modelMappings": "模型映射（JSON）",
-        "name": "名称",
-        "presets": {
-          "custom": "自定义",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "请求",
-        "title": "服务商连接"
-      },
       "personal": {
         "accountFallback": "账号{{number}}",
         "accountsDescription": "选择每个提供商在新任务中使用的账号。",
@@ -4935,7 +4889,6 @@
       },
       "picker": {
         "builtInModel": "内置模型",
-        "byokHelp": "使用你配置的服务商",
         "chatModels": "对话模型",
         "effort": "思考强度",
         "effortScale": {
@@ -4948,8 +4901,8 @@
         },
         "fast": "快速",
         "fastImpact": {
-          "creditCost": "{{multiplier}}× 积分消耗",
-          "providerUsage": "用量取决于服务商"
+          "providerUsage": "用量取决于服务商",
+          "subscriptionUsage": "{{multiplier}} 倍订阅用量"
         },
         "fastMode": "快速模式",
         "generationPriceTiers": {
@@ -4963,56 +4916,11 @@
         "loading": "正在加载模型…",
         "models": "模型",
         "noConfiguredModels": "没有已配置的模型",
-        "priceTiers": {
-          "balanced": "成本与性能均衡",
-          "economy": "经济档，适合日常简单任务",
-          "frontier": "前沿旗舰模型",
-          "premium": "顶级前沿模型，适合最难的任务"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure Foundry门户",
-          "claudeCodeOauth": "Claude Code（OAuth令牌）",
-          "deepseek": "Deepseek"
-        },
         "standard": "标准",
         "ultrafast": "极速",
         "ultrafastImpact": "Token 生成速度最高 8 倍 · OpenAI API Token 价格 6 倍",
         "ultrafastMode": "极速模式"
-      },
-      "policies": {
-        "actionsFor": "{{model}}的操作",
-        "apiKey": "API密钥",
-        "apiKeyDescription": "工作区共享密钥。适合团队用同一个账号结算。",
-        "apiKeyPlaceholder": "输入你的API密钥",
-        "apiKeyRequired": "请填写API密钥",
-        "availableModels": "可用模型",
-        "builtIn": "内置",
-        "builtInDescription": "用量由工作区积分支付。",
-        "claudeSubscription": "Claude订阅",
-        "claudeSubscriptionDescription": "每位成员连接自己的Pro、Max或Team套餐。",
-        "codexSubscription": "Codex订阅",
-        "codexSubscriptionDescription": "每位成员连接自己的Pro或Team套餐。",
-        "dialogDescription": "决定成员如何使用这个模型。",
-        "gateway": "自定义网关",
-        "gatewayDescription": "通过管理员配置的服务商连接转发。",
-        "gatewayProvider": "服务商连接",
-        "getKey": "获取密钥",
-        "invalidRoute": "线路无效",
-        "missingProvider": "缺少服务商",
-        "model": "模型",
-        "noMappedGateway": "没有服务商连接映射到这个模型。",
-        "orgDefaultModelLocked": "Auto 无法移除",
-        "pricing": "定价",
-        "providedBy": "提供方",
-        "provider": "服务商",
-        "providerApiKey": "{{provider}} API密钥",
-        "runsThrough": "运行线路",
-        "secretStored": "保存在工作区密钥中。",
-        "selectGateway": "选择服务商连接",
-        "selectModel": "选择模型",
-        "selectProvider": "选择服务商",
-        "workspaceDescription": "这个工作区的所有人都可以使用。"
       },
       "reset": {
         "confirmDescription": "消耗一次{{provider}}重置额度，重置当前的用量周期。你还有{{remaining}}。",
@@ -5037,7 +4945,6 @@
       "toasts": {
         "accountDisconnected": "账号已断开连接",
         "accountSwitched": "已切换当前账号",
-        "policiesUpdated": "模型服务商设置已更新",
         "reset": "{{provider}}用量已重置",
         "resetUnavailable": "没有可用的{{provider}}用量重置次数",
         "resetUnneeded": "{{provider}}用量当前不需要重置"

@@ -4831,21 +4831,9 @@
     },
     "models": {
       "actions": {
-        "addModel": "मॉडल जोड़ें",
-        "deleteModel": "मॉडल हटाएँ",
-        "editModel": "मॉडल संपादित करें",
         "resetUsage": "उपयोग रीसेट करें",
         "upgradePro": "उपयोग करने के लिए प्रो को अपग्रेड करें",
         "upgradeToPro": "प्रो में अपग्रेड"
-      },
-      "autoMode": {
-        "cancel": "रद्द करें",
-        "confirm": "Auto Model पर जाएँ",
-        "confirmDescription": "यह संगठन की मॉडल नीतियाँ, Provider Connections और अब उपयोग में नहीं आने वाले सीक्रेट स्थायी रूप से हटा देगा। संगठन की एकमात्र नीति Auto रहेगी। सदस्यों के निजी सब्सक्रिप्शन जुड़े रहेंगे और मॉडल जोड़ सकेंगे। Custom पर लौटने से हटाई गई संगठन सेटिंग्स वापस नहीं आएँगी।",
-        "confirmTitle": "इस कार्यस्थान को Auto Model पर बदलें?",
-        "description": "संगठन की नीति Auto रखें; निजी सब्सक्रिप्शन सदस्यों के लिए मॉडल जोड़ते हैं।",
-        "failed": "मॉडल मोड नहीं बदला जा सका। सेटिंग ताज़ा करके फिर प्रयास करें।",
-        "title": "Auto Model"
       },
       "deviceAuth": {
         "claude": {
@@ -4888,40 +4876,6 @@
           "signIn": "ChatGPT के साथ साइन इन करें"
         }
       },
-      "gateways": {
-        "actions": "गेटवे कार्रवाइयाँ",
-        "add": "प्रदाता जोड़ें",
-        "addTitle": "मॉडल प्रदाता जोड़ें",
-        "apiBaseUrl": "API बेस URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API कुंजी",
-        "deleteConfirm": "यह मॉडल प्रदाता कनेक्शन हटाएँ? इसका उपयोग करने वाले मॉडल रूट उपलब्ध नहीं रहेंगे।",
-        "description": "Anthropic Messages, OpenAI Responses या दोनों के माध्यम से एडमिन द्वारा प्रबंधित गेटवे कनेक्ट करें।",
-        "dialogDescription": "हर प्रोटोकॉल को Claude Code या Codex द्वारा उपयोग किए जाने वाले API बेस URL के साथ कॉन्फ़िगर करें।",
-        "editTitle": "मॉडल प्रदाता संपादित करें",
-        "errors": {
-          "invalidMappings": "मॉडल मैपिंग एक JSON ऑब्जेक्ट होना चाहिए, जिसके मान अपस्ट्रीम मॉडल नाम हों।",
-          "missingProtocol": "कम से कम एक प्रोटोकॉल चालू करें।",
-          "missingSecret": "API कुंजी दर्ज करें।"
-        },
-        "headerName": "प्रमाणीकरण हेडर",
-        "headerValue": "हेडर मान टेम्पलेट",
-        "keepKey": "मौजूदा कुंजी बनाए रखने के लिए खाली छोड़ें",
-        "modelMappings": "मॉडल मैपिंग (JSON)",
-        "name": "नाम",
-        "presets": {
-          "custom": "कस्टम",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "अनुरोध",
-        "title": "प्रदाता कनेक्शन"
-      },
       "personal": {
         "accountFallback": "खाता {{number}}",
         "accountsDescription": "नई रन के लिए हर प्रदाता द्वारा उपयोग किया जाने वाला खाता चुनें।",
@@ -4953,7 +4907,6 @@
       },
       "picker": {
         "builtInModel": "अंतर्निर्मित मॉडल",
-        "byokHelp": "आपके कॉन्फ़िगर किए गए प्रोवाइडर का उपयोग करता है",
         "chatModels": "चैट मॉडल",
         "effort": "प्रयास",
         "effortScale": {
@@ -4966,8 +4919,8 @@
         },
         "fast": "तेज़",
         "fastImpact": {
-          "creditCost": "{{multiplier}}× क्रेडिट लागत",
-          "providerUsage": "उपयोग प्रदाता पर निर्भर है"
+          "providerUsage": "उपयोग प्रदाता पर निर्भर है",
+          "subscriptionUsage": "{{multiplier}}× सदस्यता उपयोग"
         },
         "fastMode": "तेज़ मोड",
         "generationPriceTiers": {
@@ -4981,56 +4934,11 @@
         "loading": "मॉडल लोड हो रहे हैं...",
         "models": "मॉडल",
         "noConfiguredModels": "कोई कॉन्फ़िगर मॉडल नहीं",
-        "priceTiers": {
-          "balanced": "संतुलित लागत और प्रदर्शन",
-          "economy": "रोजमर्रा के सरल कार्यों के लिए इकोनॉमी टियर",
-          "frontier": "फ्रंटियर फ्लैगशिप मॉडल",
-          "premium": "सबसे कठिन कार्यों के लिए प्रीमियम फ्रंटियर मॉडल"
-        },
         "pro": "प्रो",
-        "providerLabels": {
-          "azureFoundryPortal": "एज़्योर फाउंड्री पोर्टल",
-          "claudeCodeOauth": "Claude Code (OAuth टोकन)",
-          "deepseek": "गहन खोज"
-        },
         "standard": "मानक",
         "ultrafast": "अल्ट्राफ़ास्ट",
         "ultrafastImpact": "टोकन गति 8× तक · OpenAI API टोकन मूल्य 6×",
         "ultrafastMode": "अल्ट्राफ़ास्ट मोड"
-      },
-      "policies": {
-        "actionsFor": "{{model}} के लिए क्रियाएँ",
-        "apiKey": "API कुंजी",
-        "apiKeyDescription": "एक साझा वर्कस्पेस कुंजी। सबसे अच्छा तब होता है जब टीम एक खाते के माध्यम से बिल देती है।",
-        "apiKeyPlaceholder": "अपनी API कुंजी दर्ज करें",
-        "apiKeyRequired": "API कुंजी आवश्यक है",
-        "availableModels": "उपलब्ध मॉडल",
-        "builtIn": "में निर्मित",
-        "builtInDescription": "वर्कस्पेस क्रेडिट उपयोग को कवर करता है।",
-        "claudeSubscription": "Claude सदस्यता",
-        "claudeSubscriptionDescription": "प्रत्येक सदस्य अपना स्वयं का प्रो, मैक्स या टीम प्लान जोड़ता है।",
-        "codexSubscription": "Codex सदस्यता",
-        "codexSubscriptionDescription": "प्रत्येक सदस्य अपनी स्वयं की प्रो या टीम योजना जोड़ता है।",
-        "dialogDescription": "तय करें कि सदस्य इस मॉडल तक कैसे पहुँचें।",
-        "gateway": "कस्टम गेटवे",
-        "gatewayDescription": "एडमिन द्वारा परिभाषित प्रदाता कनेक्शन से रूट करें।",
-        "gatewayProvider": "प्रदाता कनेक्शन",
-        "getKey": "एक कुंजी प्राप्त करें",
-        "invalidRoute": "अमान्य मार्ग",
-        "missingProvider": "प्रोवाइडर गायब है",
-        "model": "मॉडल",
-        "noMappedGateway": "कोई प्रदाता कनेक्शन इस मॉडल से मैप नहीं है।",
-        "orgDefaultModelLocked": "Auto को हटाया नहीं जा सकता",
-        "pricing": "मूल्य",
-        "providedBy": "द्वारा उपलब्ध कराया गया",
-        "provider": "प्रोवाइडर",
-        "providerApiKey": "{{provider}} API कुंजी",
-        "runsThrough": "रन का माध्यम",
-        "secretStored": "वर्कस्पेस में रहस्य संग्रहीत।",
-        "selectGateway": "प्रदाता कनेक्शन चुनें",
-        "selectModel": "एक मॉडल चुनें",
-        "selectProvider": "एक प्रोवाइडर चुनें",
-        "workspaceDescription": "इस वर्कस्पेस में सभी के लिए उपलब्ध है।"
       },
       "reset": {
         "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक {{provider}} रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
@@ -5056,7 +4964,6 @@
       "toasts": {
         "accountDisconnected": "खाता डिस्कनेक्ट हो गया",
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
-        "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",
         "reset": "{{provider}} उपयोग रीसेट",
         "resetUnavailable": "कोई {{provider}} उपयोग रीसेट उपलब्ध नहीं है",
         "resetUnneeded": "{{provider}} उपयोग को अभी रीसेट की आवश्यकता नहीं है"

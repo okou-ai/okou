@@ -1,8 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import type {
-  UserMessageDocument,
   GenerationTemplateRequest,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   presentationTemplatesContract,
@@ -10,6 +8,8 @@ import {
   type PresentationTemplatePreviewAsset,
   type PresentationTemplateSummary,
 } from "@okouai/api-contracts/contracts/presentation-templates";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect } from "vitest";
 
@@ -20,7 +20,7 @@ import {
   context,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
   tabByText,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
@@ -47,7 +47,7 @@ export function mockTemplateChat(options?: {
   const threadCreates: string[] = [];
 
   mockAgent({ selectedModel: "claude-sonnet-5" });
-  mockOrgModelRoutes();
+  mockPersonalModelRoutes();
   mockBillingCapabilities(
     { supportByok: true, restrictedBuiltInModels: false },
     options?.tier ?? "pro",

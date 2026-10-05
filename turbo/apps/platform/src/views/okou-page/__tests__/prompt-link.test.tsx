@@ -1,6 +1,3 @@
-import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatEventsContract,
@@ -8,7 +5,10 @@ import {
   type ChatEventSendBody,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -277,7 +277,7 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
     parts: [{ type: "text" as const, text: "Keep my unrelated draft" }],
   };
   const draftUpdates: unknown[] = [];
-  context.mocks.data.orgModelPolicies([]);
+  context.mocks.data.availableRunModels([]);
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: savedDraft,
