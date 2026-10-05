@@ -1,5 +1,45 @@
 # Deployment Compatibility
 
+## Chat-derived readers without historical Run joins
+
+Migration 1321 backfills existing run-backed files' nullable thread and org
+associations in UUID-keyset batches, preserving existing associations, owners,
+URLs and run IDs. Apply it before the new API. The migration is atomic and
+retains the normal lock timeout, with a bounded 120-second statement timeout
+for the complete batched backfill. A timeout rolls back the entire backfill;
+production execution and acceptance are separate from this source PR.
+
+New upload writers capture the thread and org in the existing file/queue
+transaction. The common writer covers hosted, web, Slack, Telegram, GitHub,
+Feishu, Teams and AgentPhone outputs; canonical published assets already save
+these associations. Run IDs, foreign keys, upsert identities, public response
+shapes and Runner/App/CLI protocols remain unchanged.
+
+New readers use direct file associations or owning chat events, never a live
+Run fallback. The event path preserves cross-thread associations and files
+written by a draining old API; control.interrupt targets are not ownership.
+A direct backfilled association remains readable after its events leave the
+hot window. Catalog authorship still resolves the owning thread's user, and
+Drive export retains thread/file owner authorization and run-scoped identity.
+
+Titles, notifications, follow-ups and Home evidence derive unfinished runs
+from active rows without a terminal chat event; terminal active rows retained
+while the Runner stops are not classified as unfinished. Completed Home
+examples require run.completed events inside the already authorized thread
+set, not a historical Run status. Final terminal publication is the boundary:
+a Run status change before its event is committed does not expose a completed
+example prematurely.
+
+Old API/new database continues using its historical Run reads and may omit
+file associations; the new reader's event path supports those writes. New
+API/old database retains the same schema, but historical files whose owning
+events were archived need the backfill before switching readers. Rollback
+restores the old reader behavior without discarding captured file associations.
+Drain old writers and reconcile remaining associations before a later contract
+PR removes the Run foreign key or the event compatibility path. No Run record,
+column, foreign key or artifact is deleted here; no deployment, release or
+production backfill is executed by this PR.
+
 ## Claude Code manual usage reset retirement
 
 Retire `claudeCodeUsageReset` and the Claude Code-only grant query and redeem

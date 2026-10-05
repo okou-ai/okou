@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 
 import { chatEventCompatibilityRole } from "@okouai/api-contracts/contracts/chat-events";
-import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, desc, eq, inArray, isNull, notExists } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, not } from "drizzle-orm";
 
 import { stripMarkdown } from "../../lib/strip-markdown";
 import { writeDb$ } from "../external/db";
@@ -15,6 +14,7 @@ import {
 } from "./canonical-chat-event-read.service";
 import { visibleChatEventPredicate } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
+import { unfinishedActiveChatRunExists } from "./chat-run-state-read.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import {
   projectUserMessage,
@@ -92,17 +92,7 @@ const recentThreads$ = command(async ({ set }, args: HomeTaskEvidenceScope) => {
         eq(chatThreads.userId, args.userId),
         eq(chatThreads.agentId, args.agentId),
         chatThreadOrganizationPredicate(args.orgId),
-        notExists(
-          db
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.chatThreadId, chatThreads.id),
-                inArray(agentRuns.status, ["pending", "running"]),
-              ),
-            ),
-        ),
+        not(unfinishedActiveChatRunExists({ chatThreadId: chatThreads.id })),
       ),
     )
     .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
@@ -265,20 +255,24 @@ export const collectHomeTaskEvidence$ = command(
       runIds.length === 0
         ? []
         : await db
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
+            .select({ runId: chatEvents.runId })
+            .from(chatEvents)
             .where(
               and(
-                inArray(agentRuns.id, runIds),
-                eq(agentRuns.userId, args.userId),
-                eq(agentRuns.orgId, args.orgId),
-                eq(agentRuns.status, "completed"),
+                inArray(chatEvents.runId, runIds),
+                inArray(
+                  chatEvents.chatThreadId,
+                  threadRows.map((thread) => {
+                    return thread.id;
+                  }),
+                ),
+                eq(chatEvents.eventType, "run.completed"),
               ),
             );
     signal.throwIfAborted();
     const completedRunIds = new Set(
       completedRuns.map((run) => {
-        return run.id;
+        return run.runId;
       }),
     );
     const seenCompletedRunIds = new Set<string>();

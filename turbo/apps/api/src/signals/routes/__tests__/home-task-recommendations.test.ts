@@ -636,6 +636,22 @@ describe("GET /api/home-task-recommendations", () => {
       const claim = await fixture.claimChatRun(runnerGroup, run.runId);
       await fixture.completeChatRunOk(run.runId, claim.sandboxHeaders);
     }
+    for (const outcome of ["failed", "cancelled"] as const) {
+      const run = await fixture.sendChatRun(actor, {
+        agentId,
+        prompt: `Prepare a weekly sales summary for team ${outcome}.`,
+      });
+      const claim = await fixture.claimChatRun(runnerGroup, run.runId);
+      if (outcome === "failed") {
+        await fixture.failChatRun(
+          run.runId,
+          claim.sandboxHeaders,
+          "Failed summary",
+        );
+      } else {
+        await fixture.cancelChatRun(actor, run.runId, claim.sandboxHeaders);
+      }
+    }
     await flushWaitUntilForTest();
     let decisionsCalled = false;
     let textBeforeDecision = false;
@@ -727,6 +743,12 @@ describe("GET /api/home-task-recommendations", () => {
     ]);
     expect(generated.body.recommendations[0]?.prompt).toContain(
       "Prepare a weekly sales summary for team Gamma.",
+    );
+    expect(generated.body.recommendations[0]?.prompt).not.toContain(
+      "Prepare a weekly sales summary for team failed.",
+    );
+    expect(generated.body.recommendations[0]?.prompt).not.toContain(
+      "Prepare a weekly sales summary for team cancelled.",
     );
     expect(textBeforeDecision).toBeFalsy();
     expect(decisionBody).toMatchObject({
