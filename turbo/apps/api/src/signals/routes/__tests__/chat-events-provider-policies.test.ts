@@ -203,15 +203,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       [200, 201],
     );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "gpt-6-astra");
 
     const run = await sendChatRun(actor, {
       agentId,
@@ -271,18 +263,11 @@ describe("CHAT-02: model-first provider policies", () => {
   });
 
   it("queues an existing-thread input with its model until the active run releases the thread", async () => {
-    const { actor, agentId, providerId, runnerGroup } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const thread = await chat.createThread(actor, {
       agentId,
@@ -589,15 +574,9 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -614,17 +593,13 @@ describe("CHAT-02: model-first provider policies", () => {
     await flushWaitUntilForTest();
 
     await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-    await seedBuiltInModelKey("gpt-6-astra");
+    await seedBuiltInModelKey("okou-1.0");
+    await authDeviceSupport.deletePersonalModelProviderAccount(
+      actor,
+      providerId,
+    );
     // The member preference does not replace an unavailable thread model.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "okou-1.0");
     await preparePiResourceHandoff(actor, agentId);
 
     const fallback = await sendChatRun(actor, {
@@ -645,25 +620,12 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it("keeps the enqueued model after thread and member defaults change", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey("gpt-6-astra");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await seedBuiltInModelKey("okou-1.0");
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -694,22 +656,8 @@ describe("CHAT-02: model-first provider policies", () => {
       expect.objectContaining({ runId: first.runId }),
     );
 
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "claude-fable-5-1",
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-    await chat.updateUserModelPreference(actor, "gpt-6-astra");
+    await api.updateUserModelPreference(actor, "okou-1.0");
+    await chat.updateUserModelPreference(actor, "okou-1.0");
     await chat.updateThreadModelSelection(actor, first.threadId, null);
     expect(
       (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
@@ -758,7 +706,7 @@ describe("CHAT-02: model-first provider policies", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId: first.threadId,
-        selectedModel: "gpt-6-astra",
+        selectedModel: "okou-1.0",
       }),
     );
 
@@ -766,38 +714,17 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it("does not overwrite a concurrent explicit thread model selection", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey("gpt-6-astra");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await seedBuiltInModelKey("okou-1.0");
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const thread = await chat.createThread(actor, {
       agentId,
       model: "claude-fable-5-1",
     });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "claude-fable-5-1",
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "okou-1.0");
 
     const racedEventId = randomUUID();
     const [sent, updated] = await Promise.all([
@@ -830,9 +757,8 @@ describe("CHAT-02: model-first provider policies", () => {
       throw new Error("Expected the concurrent send to create a run");
     }
     const racedClaim = await claimChatRun(runnerGroup, racedRunId);
-    const racedEnvironment = claimEnvironment(racedClaim.claim);
-    expect(["gpt-6-astra", "claude-fable-5-1"]).toContain(
-      racedEnvironment.OPENAI_MODEL ?? racedEnvironment.ANTHROPIC_MODEL,
+    expect(["okou-1.0", "claude-fable-5-1"]).toContain(
+      racedClaim.claim.modelUsageProvider,
     );
     await cancelChatRun(actor, racedRunId, racedClaim.sandboxHeaders);
 
@@ -864,7 +790,7 @@ describe("CHAT-02: model-first provider policies", () => {
         return (
           event.kind === "model_selection_updated" &&
           event.chatThreadId === thread.id &&
-          event.selectedModel === "gpt-6-astra"
+          event.selectedModel === "okou-1.0"
         );
       }).length,
     ).toBeLessThanOrEqual(1);
