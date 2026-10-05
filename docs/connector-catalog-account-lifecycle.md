@@ -136,6 +136,26 @@ rename/delete and selected-account behavior. They are not claimed rerun locally.
 Parent scheduling and ordinary per-case publication cleanup are neither fixed nor
 accepted by this child; no broader fixture cleanup is hidden in this ledger.
 
+## N5 typed-client assertion repair
+
+At original PR HEAD `63296e1f20a01a74bb27f53f5bc58eaa1c0b1a0f`, natural
+CI run `37354215755`, API8 job `111912535192`, failed in N5 after deleting a
+manifest-listed entry. The real account route returned HTTP500, but the typed
+client threw `Unknown response status 500 for GET /api/connector-accounts/connections`
+because the endpoint contract does not declare 500. Therefore the old
+response-status assertion was never reached. This is a business-body failure,
+not teardown or an external flake. Historical lint failure, cancelled shards
+and the derived failed gate remain separate evidence, not passes.
+
+| Changed assertions                                      | Retired test mechanism                                                                 | Replacement / preserved boundary                                                                                                                                                                                                                                                                                                                                      | Verification                                                                                                                                           |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| N5 account missing-entry and missing-current assertions | Reading `.status` from a typed response that cannot be returned for undeclared HTTP500 | Await the specific verified HTTP500/method/path rejection, using the unchanged real route, member token and account helper. Preserve subsequent unknown404, MCP responses, empty-selection/current error, seven SQL reads, no R2/legacy fallback, and all five-engine lifecycle assertions. No cases deleted/moved; no product response-contract/error-policy change. | Scoped ESLint/Oxlint, format and diff-check passed; test types recorded at handoff. Runtime validation is the new HEAD's natural CI, not local Vitest. |
+
+Independent review of the original owned diff remains pending; this author repair
+is not approval. The new minimal delta needs non-author review. Pi remains excluded
+for the transaction/identity reasons above; Preview remains pending separate
+coordinator authorization. No parent-generation lint cleanup is included.
+
 ## Verification and remaining gates
 
 Scoped ESLint/Oxlint (including type-aware production and test lint), format and

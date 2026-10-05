@@ -1012,14 +1012,18 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       [candidate.hash, slug],
     );
     expect((await mcpDirectory(actor)).status).toBe(500);
-    expect((await accountDirectory(actor)).status).toBe(500);
+    await expect(accountDirectory(actor)).rejects.toThrow(
+      "Unknown response status 500 for GET /api/connector-accounts/connections",
+    );
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
     expect((await accountDirectory(unknownActor)).status).toBe(404);
     await engine.exec("DELETE FROM connector_catalog");
     expect((await mcpDirectory(unknownActor)).status).toBe(500);
-    expect((await accountDirectory(unknownActor)).status).toBe(500);
+    await expect(accountDirectory(unknownActor)).rejects.toThrow(
+      "Unknown response status 500 for GET /api/connector-accounts/connections",
+    );
     await expect(
       createStore().get(
         immutableConnectorRuntimeSelection({
