@@ -1,8 +1,4 @@
 import { command } from "ccstate";
-import type {
-  ModelProviderListResponse,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -12,20 +8,6 @@ import { listPersonalModelProviderAccounts } from "../services/model-provider-ac
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 
-function isModelFirstPersonalProviderType(type: ModelProviderType): boolean {
-  return type === "claude-code-oauth-token" || type === "codex-oauth-token";
-}
-
-function visibleModelFirstProviders(
-  result: ModelProviderListResponse,
-): ModelProviderListResponse {
-  return {
-    modelProviders: result.modelProviders.filter((provider) => {
-      return isModelFirstPersonalProviderType(provider.type);
-    }),
-  };
-}
-
 const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const result = await listPersonalModelProviderAccounts({
@@ -34,13 +16,12 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userId: auth.userId,
   });
   signal.throwIfAborted();
-  const visible = visibleModelFirstProviders(result);
   const refreshed = await set(
     refreshPersonalModelProviderSubscriptionUsage$,
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      result: visible,
+      result,
     },
     signal,
   );

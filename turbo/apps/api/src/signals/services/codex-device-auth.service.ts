@@ -838,7 +838,6 @@ interface ImportedCodexPasteArgs {
     readonly CHATGPT_ACCOUNT_ID: string;
     readonly CHATGPT_ID_TOKEN: string;
   };
-  readonly selectedModel: string | undefined;
   readonly metadata: {
     readonly externalAccountId: string;
     readonly accountEmail: string | null;
@@ -869,7 +868,6 @@ const importCodexAuthJson$ = command(
     const common = {
       rawAuthJson: args.rawAuthJson,
       selectedModel: undefined,
-      signal,
       upsert: async (pasteArgs: ImportedCodexPasteArgs) => {
         if (args.scope === "org") {
           const result = await set(
@@ -903,7 +901,6 @@ const importCodexAuthJson$ = command(
             type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
             authMethod: pasteArgs.authMethod,
             secretValues: pasteArgs.secretValues,
-            selectedModel: pasteArgs.selectedModel,
             metadata: pasteArgs.metadata,
             mode: personalAccountMutation(args),
             featureSwitchContext,
@@ -921,7 +918,7 @@ const importCodexAuthJson$ = command(
               orgId: args.orgId,
               ...common,
             },
-            common.signal,
+            signal,
           )
         : await handleCodexAuthJsonPaste(
             {
@@ -930,7 +927,7 @@ const importCodexAuthJson$ = command(
               userId: args.userId,
               ...common,
             },
-            common.signal,
+            signal,
           );
 
     if (response.status === 400 || response.status === 404) {

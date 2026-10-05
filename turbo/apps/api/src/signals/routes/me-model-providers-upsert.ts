@@ -2,7 +2,6 @@ import { command } from "ccstate";
 import {
   hasAuthMethods,
   type ModelProviderResponse,
-  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -16,7 +15,7 @@ import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   upsertPersonalModelProviderAccount$,
-  type PersonalSubscriptionProviderType,
+  isPersonalSubscriptionProviderType,
 } from "../services/model-provider-account.service";
 
 function providerNotFound(type: string) {
@@ -29,12 +28,6 @@ function providerNotFound(type: string) {
       },
     },
   };
-}
-
-function isModelFirstPersonalProviderType(
-  type: ModelProviderType,
-): type is PersonalSubscriptionProviderType {
-  return type === "claude-code-oauth-token" || type === "codex-oauth-token";
 }
 
 function shapeAccountUpsertResult(
@@ -106,8 +99,8 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const { type, secret, authMethod, secrets, selectedModel } = bodyResult.data;
 
-  // Personal provider routes only support model-first provider types.
-  if (!isModelFirstPersonalProviderType(type)) {
+  // Personal provider routes only support subscription accounts.
+  if (!isPersonalSubscriptionProviderType(type)) {
     return providerNotFound(type);
   }
   const featureSwitchContext = await get(
