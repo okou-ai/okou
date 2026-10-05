@@ -1688,6 +1688,13 @@
       "when": 1791088990644,
       "tag": "1318_calm_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 1319,
+      "version": "7",
+      "when": 1791187530105,
+      "tag": "1319_retire_custom_model_configuration",
+      "breakpoints": true
     }
   ]
 }

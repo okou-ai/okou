@@ -3,199 +3,106 @@ import {
   isPiExecutionRoute,
   piCatalogModel,
   piRouteCatalogIdentities,
-  type PiCatalogSource,
-  type PiRouteClass,
 } from "../pi-execution";
 import { SEEDED_MODEL_CATALOG } from "./seeded-model-catalog";
 
-function catalogModel(model: string) {
-  return piCatalogModel(SEEDED_MODEL_CATALOG, model);
-}
+describe("Auto and personal-subscription Pi execution", () => {
+  it("runs Auto through OpenRouter without a model catalog", () => {
+    const args = {
+      catalogModel: piCatalogModel(null, "okou-1.0"),
+      modelProviderType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+      codexServiceTier: undefined,
+    } as const;
+    expect(isPiExecutionRoute(args)).toBe(true);
+    expect(args.catalogModel?.builtIn).toStrictEqual([
+      {
+        concreteProviderType: "openrouter-codex",
+        upstreamModel: "@preset/okou-1-0",
+        serviceTiers: [],
+      },
+    ]);
+    expect(piRouteCatalogIdentities(args)).toStrictEqual([
+      { provider: "openrouter", model: "okou-1.0" },
+    ]);
+  });
 
-describe("DeepSeek Pi admission", () => {
-  it.each([
-    ["built-in", "deepseek", true],
-    ["built-in", "openrouter-codex", true],
-    ["custom-openai-responses", "custom-openai-responses", true],
-    ["openrouter-codex", "openrouter-codex", true],
-    ["deepseek", "deepseek", false],
-    ["built-in", "openai-api-key", false],
-    ["openai-api-key", "openai-api-key", false],
-    ["vercel-ai-gateway-codex", "vercel-ai-gateway-codex", false],
-    ["custom-anthropic-messages", "custom-anthropic-messages", false],
-  ] as const)(
-    "keeps V4.1 policy for %s via %s",
-    (modelProviderType, runtimeProviderType, supported) => {
+  it.each(["built-in", "anthropic-api-key", "openai-api-key", "deepseek"])(
+    "does not offer old platform GPT models through %s",
+    (provider) => {
       expect(
         isPiExecutionRoute({
-          catalogModel: catalogModel("deepseek-v4.1-flash"),
-          modelProviderType,
-          runtimeProviderType,
-          codexServiceTier: undefined,
-        }),
-      ).toBe(supported);
-    },
-  );
-
-  it.each(["deepseek-v4-flash"] as const)(
-    "preserves existing routes for %s",
-    (selectedModel) => {
-      for (const modelProviderType of [
-        "built-in",
-        "deepseek",
-        "openrouter-codex",
-        "custom-openai-responses",
-      ]) {
-        expect(
-          isPiExecutionRoute({
-            catalogModel: catalogModel(selectedModel),
-            modelProviderType,
-            runtimeProviderType: "deepseek",
-            codexServiceTier: undefined,
-          }),
-        ).toBe(true);
-      }
-    },
-  );
-
-  it.each(["deepseek-v4.2-flash", "deepseek-v4-unknown", "deepseek-flash"])(
-    "rejects an unauthorized logical model %s",
-    (selectedModel) => {
-      expect(
-        isPiExecutionRoute({
-          catalogModel: catalogModel(selectedModel),
-          modelProviderType: "built-in",
-          runtimeProviderType: "deepseek",
+          catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "gpt-6-luna"),
+          modelProviderType: provider,
+          runtimeProviderType: provider,
           codexServiceTier: undefined,
         }),
       ).toBe(false);
     },
   );
-});
 
-describe("Okou preset Pi admission", () => {
-  it.each(["okou-1.0"] as const)(
-    "admits %s only on the built-in OpenRouter route",
-    (selectedModel) => {
+  it("retains personally connected Codex model choice and Fast", () => {
+    for (const tier of [undefined, "fast"] as const) {
       expect(
         isPiExecutionRoute({
-          catalogModel: catalogModel(selectedModel),
-          modelProviderType: "built-in",
-          runtimeProviderType: "openrouter-codex",
-          codexServiceTier: undefined,
+          catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "gpt-6-luna"),
+          modelProviderType: "codex-oauth-token",
+          runtimeProviderType: "codex-oauth-token",
+          codexServiceTier: tier,
         }),
       ).toBe(true);
-      for (const rejected of [
-        {
-          modelProviderType: "openrouter-codex",
-          runtimeProviderType: "openrouter-codex",
-          codexServiceTier: undefined,
-        },
-        {
-          modelProviderType: "built-in",
-          runtimeProviderType: "openai-api-key",
-          codexServiceTier: undefined,
-        },
-        {
-          modelProviderType: "built-in",
-          runtimeProviderType: "openrouter-codex",
-          codexServiceTier: "fast" as const,
-        },
-      ]) {
-        expect(
-          isPiExecutionRoute({
-            catalogModel: catalogModel(selectedModel),
-            ...rejected,
-          }),
-        ).toBe(false);
-      }
-    },
-  );
-});
-
-describe("catalog-driven Pi admission", () => {
-  it("admits a new catalog model through its catalog route alone", () => {
-    const catalog: PiCatalogSource = {
-      models: [{ model: "acme-luna-preview", piRouteClass: "gpt-codex" }],
-      routes: [
-        {
-          model: "acme-luna-preview",
-          providerType: "built-in",
-          concreteProviderType: "openai-api-key",
-          subscriptionType: null,
-          upstreamModel: "gpt-6-luna",
-          enabled: true,
-          priority: 0,
-          serviceTiers: ["priority"],
-        },
-      ],
-    };
-    const route = {
-      catalogModel: piCatalogModel(catalog, "acme-luna-preview"),
-      modelProviderType: "built-in",
-      runtimeProviderType: "openai-api-key",
-      codexServiceTier: undefined,
-    };
-    expect(isPiExecutionRoute(route)).toBe(true);
-    expect(piRouteCatalogIdentities(route)).toStrictEqual([
-      { provider: "openai", model: "gpt-6-luna" },
-    ]);
+    }
   });
 
-  function deepSeekV4Catalog(
-    piRouteClass: PiRouteClass,
-    openRouterUpstream: string,
-  ): PiCatalogSource {
-    return {
-      models: [{ model: "deepseek-v4-flash", piRouteClass }],
-      routes: SEEDED_MODEL_CATALOG.routes
-        .filter((route) => {
-          return route.model === "deepseek-v4-flash";
-        })
-        .map((route) => {
-          return route.providerType === "built-in" &&
-            route.concreteProviderType === "openrouter-codex"
-            ? { ...route, upstreamModel: openRouterUpstream }
-            : route;
-        }),
-    };
-  }
+  it("keeps personal Claude subscriptions on the vendor harness", () => {
+    expect(
+      isPiExecutionRoute({
+        catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "claude-opus-5-5"),
+        modelProviderType: "claude-code-oauth-token",
+        runtimeProviderType: "claude-code-oauth-token",
+        codexServiceTier: undefined,
+      }),
+    ).toBe(false);
+  });
 
-  it.each([
-    ["deepseek", true],
-    ["gpt-codex", false],
-  ] as const)(
-    "lets the %s route class decide the deepseek BYOK route",
-    (piRouteClass, admitted) => {
-      const catalog = deepSeekV4Catalog(
-        piRouteClass,
-        "deepseek/deepseek-v4-flash",
-      );
+  it.each(["fast", "ultrafast"] as const)(
+    "does not carry %s on the fixed Auto route",
+    (tier) => {
       expect(
         isPiExecutionRoute({
-          catalogModel: piCatalogModel(catalog, "deepseek-v4-flash"),
-          modelProviderType: "deepseek",
-          runtimeProviderType: "deepseek",
-          codexServiceTier: undefined,
+          catalogModel: piCatalogModel(null, "okou-1.0"),
+          modelProviderType: "built-in",
+          runtimeProviderType: "openrouter-codex",
+          codexServiceTier: tier,
         }),
-      ).toBe(admitted);
+      ).toBe(false);
     },
   );
 
-  it("follows the catalog route's upstream model for the runtime identity", () => {
-    const catalog = deepSeekV4Catalog(
-      "deepseek",
-      "deepseek/deepseek-v4.1-flash",
-    );
-    const route = {
-      catalogModel: piCatalogModel(catalog, "deepseek-v4-flash"),
-      modelProviderType: "built-in",
-      runtimeProviderType: "openrouter-codex",
-      codexServiceTier: undefined,
-    };
-    expect(piRouteCatalogIdentities(route)).toStrictEqual([
-      { provider: "openrouter", model: "deepseek/deepseek-v4.1-flash" },
-    ]);
-    expect(isPiExecutionRoute(route)).toBe(true);
+  it.each([
+    "openai-api-key",
+    "custom-openai-responses",
+    "custom-anthropic-messages",
+  ])("rejects the retired %s source even for Auto", (provider) => {
+    expect(
+      isPiExecutionRoute({
+        catalogModel: piCatalogModel(null, "okou-1.0"),
+        modelProviderType: provider,
+        runtimeProviderType: provider,
+        codexServiceTier: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses a mismatched concrete provider and unknown models", () => {
+    expect(
+      isPiExecutionRoute({
+        catalogModel: piCatalogModel(null, "okou-1.0"),
+        modelProviderType: "built-in",
+        runtimeProviderType: "openai-api-key",
+        codexServiceTier: undefined,
+      }),
+    ).toBe(false);
+    expect(piCatalogModel(null, "unknown")).toBeNull();
   });
 });
