@@ -15,11 +15,9 @@ import {
   workflowAutomationsContract,
   type WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { readWorkflowScheduleSkipsFixture } from "../../../test-fixtures/workflow-schedule-expiry";
 import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
@@ -728,11 +726,7 @@ describe("okou workflow automation scheduler", () => {
     "uses the second member automation owner's subscription and retains it from run creation (queued: %s)",
     async (queuedLaunch) => {
       const scenario = await setup();
-      const support = createAuthDeviceSupportApi(context);
       const misc = createMiscRoutesApi(context);
-      await support.updateFeatureSwitches(scenario.actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      });
       const configured = await runsApi.createOrgModelProvider(scenario.actor, {
         type: "openai-api-key",
         secret: "unused-scheduler-api-key",
@@ -823,9 +817,6 @@ describe("okou workflow automation scheduler", () => {
         }),
         [200],
       );
-      await support.updateFeatureSwitches(member, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      });
       const owner = await connectOwner(member, "automation-owner");
       // The automation thread starts from the owner's own model preference.
       await chatFilesApi.updateUserModelPreference(member, "gpt-6-astra");

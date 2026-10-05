@@ -124,6 +124,22 @@ describe("AUTH-03 agent user connectors", () => {
       new Set(["github", "slack"]),
     );
 
+    for (const operation of ["add", "remove"] as const) {
+      const unchanged = await cfg.updateUserBuiltinConnectors(
+        admin,
+        agent.agentId,
+        [],
+        operation,
+      );
+      expect(new Set(unchanged.enabledConnectorSlugs)).toStrictEqual(
+        new Set(["github", "slack"]),
+      );
+      const readUnchanged = await cfg.readUserConnectors(admin, agent.agentId);
+      expect(new Set(readUnchanged.enabledConnectorSlugs)).toStrictEqual(
+        new Set(["github", "slack"]),
+      );
+    }
+
     const added = await cfg.updateUserBuiltinConnectors(
       admin,
       agent.agentId,

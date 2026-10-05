@@ -74,19 +74,15 @@ test("Lab groups active feature switches", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  const released = featureSwitchGroup("Released");
   const beta = featureSwitchGroup("Beta");
   const alpha = featureSwitchGroup("Alpha");
   const internal = featureSwitchGroup("Internal");
-  const featureRows = [released, beta, alpha, internal].flatMap((group) => {
+  const featureRows = [beta, alpha, internal].flatMap((group) => {
     return Array.from(group.querySelectorAll("li"));
   });
 
   expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length);
   expect(screen.getAllByRole("switch")).toHaveLength(featureRows.length);
-  expect(
-    within(released).getByText(FeatureSwitchKey.HostedSiteDelete),
-  ).toBeVisible();
   expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
   expect(
     within(beta).getByText(FeatureSwitchKey.CustomTemplates),

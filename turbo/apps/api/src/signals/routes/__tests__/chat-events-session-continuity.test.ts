@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { mockEnv } from "../../../lib/env";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -65,9 +64,6 @@ describe("CHAT-02: run-level model overrides", () => {
       await entitledChatActor();
     const firewall = createFirewallApi(context);
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
 
     mockCodexDeviceAuthProvider({
       tokenScope: "personal",

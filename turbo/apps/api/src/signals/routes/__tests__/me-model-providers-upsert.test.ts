@@ -7,14 +7,12 @@ import {
   personalModelProvidersByTypeContract,
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { mockNow, now } from "../../../lib/time";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
@@ -154,14 +152,6 @@ function codexUsageResponse() {
   };
 }
 
-async function enablePersonalModelProviderAccounts(
-  fixture: UserModelProviderFixture,
-): Promise<void> {
-  await updateFeatureSwitchesForUser(context, fixture, {
-    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-  });
-}
-
 describe("POST /api/me/model-providers (upsert)", () => {
   it("returns 401 when unauthenticated", async () => {
     const client = setupApp({
@@ -217,34 +207,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
       },
       created: true,
     });
-  });
-
-  it("updates an existing personal provider with 200 under the legacy override", async () => {
-    const fixture = uniqueOrgUser("zmmp-single-update");
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "first" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [201],
-    );
-    const response = await accept(
-      client.upsert({
-        body: { type: "claude-code-oauth-token", secret: "second" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(response.body).toMatchObject({ created: false });
   });
 
   it("returns 400 when single-secret provider is missing the secret", async () => {
@@ -629,7 +591,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("does not consume a reset credit after terminal Codex refresh failure", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-reset-terminal");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const connectedAt = now();
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: 3600 });
     let refreshCalls = 0;
@@ -705,7 +667,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("retries reset after transient Codex refresh failure", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-reset-transient");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const connectedAt = now();
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: 3600 });
     const idempotencyKey = randomUUID();
@@ -781,7 +743,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("refreshes an expired Codex account once and reuses the rotated token", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-refresh");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
     const refreshedAccessToken = "fresh-chatgpt-access-token";
     const refreshedRefreshToken = "rotated-chatgpt-refresh-token";
@@ -857,7 +819,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("returns and short-circuits terminal Codex reconnect state", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-terminal");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
     let refreshCalls = 0;
     let usageCalls = 0;
@@ -917,7 +879,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("retries transient Codex refresh failure without false reconnect", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-transient");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
     let refreshCalls = 0;
     let usageCalls = 0;
@@ -993,7 +955,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("isolates Codex usage response failures to account enrichment", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-usage-errors");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     let usageCalls = 0;
     let refreshCalls = 0;
     server.use(
@@ -1057,7 +1019,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
   it("keeps the stored Codex provider on an upstream usage outage", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-usage-unavailable");
-    await enablePersonalModelProviderAccounts(fixture);
+    mocks.clerk.session(fixture.userId, fixture.orgId);
     let usageCalls = 0;
     let refreshCalls = 0;
     server.use(

@@ -74,7 +74,6 @@ async function openChat(
     path: NEW_CHAT_PATH,
     sharedWorkerTestTransport: transport,
     featureSwitches: {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });

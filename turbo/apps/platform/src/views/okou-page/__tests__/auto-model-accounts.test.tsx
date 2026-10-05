@@ -3,7 +3,6 @@ import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/cl
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -102,9 +101,6 @@ async function openSettings(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: "/agents?settings=model",
-    featureSwitches: {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-    },
   });
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   await within(settings).findByRole("heading", { name: "Use more models" });

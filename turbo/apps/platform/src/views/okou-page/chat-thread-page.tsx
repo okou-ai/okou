@@ -8658,7 +8658,6 @@ function PagedGroupPrimaryActions({
   const { t } = useTranslation();
   const switches = useGet(featureSwitch$);
   const showDebugActions = switches[FeatureSwitchKey.OkouDebug];
-  const showShare = switches[FeatureSwitchKey.ChatMessageShare] && onShare;
   const hasLeadingIconAction = Boolean(
     (showDebugActions && firstRunId) || hasContent,
   );
@@ -8716,7 +8715,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {showShare && <MessageShareAction onShare={showShare} />}
+      {onShare && <MessageShareAction onShare={onShare} />}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}

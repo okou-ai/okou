@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { testContext } from "../../../__tests__/test-context";
@@ -42,7 +41,6 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through runner poll/claim, and completion replies through
@@ -1580,14 +1578,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const integrations = createBddIntegrationApi(context);
     const { actor, phone, runnerGroup, sends, ap } =
       await entitledLinkedActor();
-    if (!actor.orgId) {
-      throw new Error("Expected group admission test user to have an org");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
-    );
 
     const conversationId = uniqueConversationId();
     await ap.postAgentPhoneInboundMessage({
@@ -2021,32 +2011,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const conversationId = uniqueConversationId();
     const stableGroupId = bddGroupId(conversationId);
-    if (!first.orgId) {
-      throw new Error("Expected group-history test user to have an org");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: first.userId, orgId: first.orgId, orgRole: first.orgRole },
-      { [FeatureSwitchKey.AgentPhoneGroupHistory]: false },
-    );
-    await expect(
-      integrations.requestAgentPhoneGroupHistory(
-        first,
-        { groupId: stableGroupId, limit: 100 },
-        [404],
-      ),
-    ).resolves.toMatchObject({ status: 404 });
-
-    for (const actor of [first, second, linkedLater]) {
-      if (!actor.orgId) {
-        throw new Error("Expected group-history test users to have an org");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-        { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
-      );
-    }
 
     const senderOnlyConversationId = uniqueConversationId();
     const senderOnlyMessageId = "ap-group-history-sender-only";
@@ -2467,14 +2431,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const integrations = createBddIntegrationApi(context);
     const { actor, phone, runnerGroup, sends, ap } =
       await entitledLinkedActor();
-    if (!actor.orgId) {
-      throw new Error("Expected group reply test user to have an org");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
-    );
 
     const conversationId = uniqueConversationId();
     const groupId = bddGroupId(conversationId);
@@ -2522,14 +2478,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   it("sends group connect replies when roster lookup fails and never archives them", async () => {
     const integrations = createBddIntegrationApi(context);
     const { actor, phone, sends, ap } = await entitledLinkedActor();
-    if (!actor.orgId) {
-      throw new Error("Expected group roster test user to have an org");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
-    );
 
     const conversationId = uniqueConversationId();
     const groupId = bddGroupId(conversationId);
@@ -2591,14 +2539,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const integrations = createBddIntegrationApi(context);
     const { actor, phone, runnerGroup, sends, ap } =
       await entitledLinkedActor();
-    if (!actor.orgId) {
-      throw new Error("Expected group identity test user to have an org");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
-    );
 
     const groupIds = [
       bddGroupId(uniqueConversationId()),

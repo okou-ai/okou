@@ -1,8 +1,6 @@
-import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical, Plus } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Badge,
   Button,
@@ -15,7 +13,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Tooltip,
   TooltipContent,
@@ -31,12 +28,10 @@ import type {
 import {
   activatePersonalOAuthCredentialAccount$,
   deletePersonalOAuthCredentialAccount$,
-  disconnectPersonalOAuthCredential$,
   personalAccountDisconnectDialog$,
   personalActionPromise$,
   personalConfiguredProviders$,
   resetPersonalCodexAccountSubscriptionUsage$,
-  resetPersonalCodexSubscriptionUsage$,
   setPersonalAccountDisconnectDialog$,
   setSettingsCodexResetDialog$,
   settingsCodexResetDialog$,
@@ -48,7 +43,6 @@ import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/oko
 import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { orgModelPolicies$ } from "../../../../signals/external/org-model-policies.ts";
 import { reloadPersonalModelProviders$ } from "../../../../signals/external/personal-model-providers.ts";
 import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
@@ -60,10 +54,8 @@ import { formatSubscriptionUsageReset } from "../../subscription-usage-format.ts
 import {
   CodexResetCreditsButton,
   CodexResetUsageDialog,
-  formatCodexResetCredits,
 } from "./codex-reset-usage-dialog.tsx";
 
-type OAuthStatus = "connected" | "stale" | "missing";
 type SubscriptionUsage = NonNullable<
   ModelProviderResponse["subscriptionUsage"]
 >;
@@ -72,22 +64,14 @@ type SubscriptionUsageWindow = NonNullable<SubscriptionUsage["fiveHour"]>;
 export function PersonalProvidersTab() {
   return (
     <div className="flex flex-col gap-8">
-      <OAuthCredentialsSection />
+      <OAuthAccountGroupsSection />
       <PersonalClaudeCodeDeviceAuthDialog />
       <PersonalCodexDeviceAuthDialog />
     </div>
   );
 }
 
-function PersonalModelsHeading({
-  accountTable = false,
-  auto = false,
-  action,
-}: {
-  readonly accountTable?: boolean;
-  readonly auto?: boolean;
-  readonly action?: ReactNode;
-}) {
+function PersonalModelsHeading({ auto = false }: { readonly auto?: boolean }) {
   const { t } = useTranslation();
   if (auto) {
     return (
@@ -104,35 +88,18 @@ function PersonalModelsHeading({
             })}
           </p>
         </div>
-        {action}
       </div>
     );
   }
   return (
     <SettingsSectionHeading
       title={t(($) => {
-        return accountTable
-          ? $.settings.models.personal.accountsSectionTitle
-          : $.settings.models.personal.sectionTitle;
+        return $.settings.models.personal.accountsSectionTitle;
       })}
       description={t(($) => {
-        return accountTable
-          ? $.settings.models.personal.accountsDescription
-          : $.settings.models.personal.description;
+        return $.settings.models.personal.accountsDescription;
       })}
-      action={action}
     />
-  );
-}
-
-function OAuthCredentialsSection() {
-  const featureSwitches = useGet(featureSwitch$);
-  const modelMode = useLastLoadable(orgModelPolicies$);
-  return featureSwitches[FeatureSwitchKey.PersonalModelProviderAccounts] ||
-    (modelMode.state === "hasData" && modelMode.data.modelMode === "auto") ? (
-    <OAuthAccountGroupsSection />
-  ) : (
-    <LegacyOAuthCredentialsSection />
   );
 }
 
@@ -222,7 +189,7 @@ function OAuthAccountGroupsSection() {
   }
   return (
     <section className="flex flex-col gap-4">
-      <PersonalModelsHeading accountTable auto={auto} />
+      <PersonalModelsHeading auto={auto} />
       <TooltipProvider delay={100}>
         <PersonalProviderAccountsTable
           showReconnectAction={auto}
@@ -252,10 +219,7 @@ function OAuthAccountGroupsSection() {
       <PersonalAccountDisconnectDialogController
         actionPending={actionPending}
       />
-      <CodexResetDialogController
-        actionPending={actionPending}
-        mode="account"
-      />
+      <CodexResetDialogController actionPending={actionPending} />
     </section>
   );
 }
@@ -792,14 +756,13 @@ function OAuthAccountMenu({
   readonly onDisconnect: () => void;
 }) {
   const { t } = useTranslation();
-  const menuItems: OAuthMenuItem[] = [
+  const menuItems = [
     {
       label: t(($) => {
         return $.settings.models.personal.reconnectAccount;
       }),
       disabled: actionPending,
       onSelect: onReconnect,
-      opensModal: true,
     },
     {
       label: t(($) => {
@@ -807,7 +770,6 @@ function OAuthAccountMenu({
       }),
       disabled: actionPending,
       onSelect: onDisconnect,
-      opensModal: true,
     },
   ];
 
@@ -829,12 +791,16 @@ function OAuthAccountMenu({
         <EllipsisVertical size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        {menuItems.map((item, index) => {
-          const key =
-            item.kind === "separator"
-              ? `separator-${index}`
-              : `${item.kind ?? "item"}-${item.label}`;
-          return <OAuthMenuEntry key={key} item={item} />;
+        {menuItems.map((item) => {
+          return (
+            <DropdownMenuItem
+              key={item.label}
+              disabled={item.disabled}
+              onClick={item.onSelect}
+            >
+              {item.label}
+            </DropdownMenuItem>
+          );
         })}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -939,152 +905,23 @@ function PersonalAccountDisconnectDialogController({
   );
 }
 
-function LegacyOAuthCredentialsSection() {
-  const { t } = useTranslation();
-  const providersLoadable = useLastLoadable(personalConfiguredProviders$);
-  const modelCapabilitiesLoadable = useLastLoadable(modelPlanCapabilities$);
-  const openBillingPlans = useSet(openSettingsBillingPlans$);
-  const openClaudeCodeDeviceAuthDialog = useSet(
-    openClaudeCodeDeviceAuthDialogPersonal$,
-  );
-  const openCodexDeviceAuthDialog = useSet(openCodexDeviceAuthDialogPersonal$);
-  const disconnectCredential = useSet(disconnectPersonalOAuthCredential$);
-  const setResetDialog = useSet(setSettingsCodexResetDialog$);
-  const actionLoadable = useLoadable(personalActionPromise$);
-  const pageSignal = useGet(pageSignal$);
-
-  const isLoading =
-    providersLoadable.state === "loading" ||
-    modelCapabilitiesLoadable.state === "loading";
-  const providers =
-    providersLoadable.state === "hasData" ? providersLoadable.data : [];
-  const supportByok =
-    modelCapabilitiesLoadable.state !== "hasData" ||
-    modelCapabilitiesLoadable.data.supportByok;
-  const claudeCode = findProvider(providers, "claude-code-oauth-token");
-  const openAI = findProvider(providers, "codex-oauth-token");
-  const openAIStatus = getOpenAIStatus(openAI);
-  const actionPending = actionLoadable.state === "loading";
-  const codexResetCredits = openAI?.subscriptionResetCredits ?? null;
-  // Undefined means this provider reports no reset grants at all, which is
-  // what hides the action; null only means the count could not be read.
-  const claudeResetCredits = claudeCode?.subscriptionResetCredits;
-  const providerActionLabel = supportByok
-    ? t(($) => {
-        return $.settings.shared.connect;
-      })
-    : t(($) => {
-        return $.settings.models.actions.upgradePro;
-      });
-
-  const connectProvider = (
-    provider: ModelProviderResponse | undefined,
-    openDeviceAuthDialog: typeof openClaudeCodeDeviceAuthDialog,
-  ) => {
-    if (!supportByok) {
-      openBillingPlans();
-      return;
-    }
-    const args = provider?.needsReconnect
-      ? { mode: "reconnect" as const, modelProviderId: provider.id }
-      : { mode: "connect" as const };
-    detach(openDeviceAuthDialog(args, pageSignal), Reason.DomCallback);
-  };
-  const openResetDialog = (
-    type: ModelProviderType,
-    resetCredits: number | null,
-  ) => {
-    setResetDialog({ open: true, resetCredits, accountId: null, type });
-  };
-
-  return (
-    <section className="flex flex-col gap-4">
-      <PersonalModelsHeading />
-      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-        {isLoading ? (
-          <>
-            <OAuthCredentialRowSkeleton />
-            <OAuthCredentialRowSkeleton />
-          </>
-        ) : (
-          <>
-            <ClaudeOAuthCredentialRow
-              actionPending={actionPending}
-              actionLabel={providerActionLabel}
-              provider={claudeCode}
-              resetCredits={claudeResetCredits}
-              status={getOpenAIStatus(claudeCode)}
-              onAction={() => {
-                connectProvider(claudeCode, openClaudeCodeDeviceAuthDialog);
-              }}
-              onDisconnect={() => {
-                detach(
-                  disconnectCredential("claude-code-oauth-token", pageSignal),
-                  Reason.DomCallback,
-                );
-              }}
-              onOpenReset={() => {
-                openResetDialog(
-                  "claude-code-oauth-token",
-                  claudeResetCredits ?? null,
-                );
-              }}
-            />
-            <CodexOAuthCredentialRow
-              actionPending={actionPending}
-              actionLabel={providerActionLabel}
-              provider={openAI}
-              resetCredits={codexResetCredits}
-              status={openAIStatus}
-              onAction={() => {
-                connectProvider(openAI, openCodexDeviceAuthDialog);
-              }}
-              onDisconnect={() => {
-                detach(
-                  disconnectCredential("codex-oauth-token", pageSignal),
-                  Reason.DomCallback,
-                );
-              }}
-              onOpenReset={() => {
-                openResetDialog("codex-oauth-token", codexResetCredits);
-              }}
-            />
-            <CodexResetDialogController
-              actionPending={actionPending}
-              mode="legacy"
-            />
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function CodexResetDialogController({
   actionPending,
-  mode,
 }: {
   readonly actionPending: boolean;
-  readonly mode: "account" | "legacy";
 }) {
   const resetDialog = useGet(settingsCodexResetDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
   const resetCodexAccount = useSet(resetPersonalCodexAccountSubscriptionUsage$);
-  const resetCodexSubscriptionUsage = useSet(
-    resetPersonalCodexSubscriptionUsage$,
-  );
   const pageSignal = useGet(pageSignal$);
 
   const confirmReset = () => {
-    const resetPromise =
-      mode === "account"
-        ? resetDialog.accountId
-          ? resetCodexAccount(
-              { type: resetDialog.type, account: resetDialog.accountId },
-              pageSignal,
-            )
-          : null
-        : resetCodexSubscriptionUsage(resetDialog.type, pageSignal);
+    const resetPromise = resetDialog.accountId
+      ? resetCodexAccount(
+          { type: resetDialog.type, account: resetDialog.accountId },
+          pageSignal,
+        )
+      : null;
     if (!resetPromise) {
       return;
     }
@@ -1117,183 +954,6 @@ function CodexResetDialogController({
   );
 }
 
-function ClaudeOAuthCredentialRow({
-  actionPending,
-  actionLabel,
-  provider,
-  resetCredits,
-  status,
-  onAction,
-  onDisconnect,
-  onOpenReset,
-}: {
-  actionPending: boolean;
-  actionLabel: string;
-  provider: ModelProviderResponse | undefined;
-  resetCredits: number | null | undefined;
-  status: OAuthStatus;
-  onAction: () => void;
-  onDisconnect: () => void;
-  onOpenReset: () => void;
-}) {
-  const { t } = useTranslation();
-  const resetItems =
-    resetCredits === undefined
-      ? []
-      : [
-          {
-            kind: "status" as const,
-            label: formatCodexResetCredits(
-              resetCredits,
-              provider?.subscriptionResetCreditsNextExpiresAt,
-            ),
-          },
-          {
-            kind: "separator" as const,
-          },
-          {
-            label: t(($) => {
-              return $.settings.models.actions.resetUsage;
-            }),
-            disabled: actionPending || resetCredits === 0,
-            onSelect: onOpenReset,
-            opensModal: true,
-          },
-        ];
-  return (
-    <OAuthCredentialRow
-      type="claude-code-oauth-token"
-      title={t(($) => {
-        return $.settings.models.personal.claudeTitle;
-      })}
-      description={t(($) => {
-        return $.settings.models.personal.claudeDescription;
-      })}
-      provider={provider}
-      status={status}
-      actionLabel={actionLabel}
-      menuItems={
-        provider
-          ? [
-              ...resetItems,
-              {
-                label: t(($) => {
-                  return $.settings.shared.replace;
-                }),
-                onSelect: onAction,
-                opensModal: true,
-              },
-              {
-                label: t(($) => {
-                  return $.settings.shared.disconnect;
-                }),
-                disabled: actionPending,
-                onSelect: onDisconnect,
-              },
-            ]
-          : []
-      }
-      onAction={onAction}
-      testId="oauth-card-claude-code-oauth-token"
-    />
-  );
-}
-
-function CodexOAuthCredentialRow({
-  actionPending,
-  actionLabel,
-  provider,
-  resetCredits,
-  status,
-  onAction,
-  onDisconnect,
-  onOpenReset,
-}: {
-  actionPending: boolean;
-  actionLabel: string;
-  provider: ModelProviderResponse | undefined;
-  resetCredits: number | null;
-  status: OAuthStatus;
-  onAction: () => void;
-  onDisconnect: () => void;
-  onOpenReset: () => void;
-}) {
-  const { t } = useTranslation();
-  const resetCreditLabel = formatCodexResetCredits(
-    resetCredits,
-    provider?.subscriptionResetCreditsNextExpiresAt,
-  );
-  return (
-    <OAuthCredentialRow
-      type="codex-oauth-token"
-      title={t(($) => {
-        return $.settings.models.personal.codexTitle;
-      })}
-      description={t(($) => {
-        return $.settings.models.personal.codexDescription;
-      })}
-      provider={provider}
-      status={status}
-      actionLabel={actionLabel}
-      menuItems={
-        provider
-          ? [
-              {
-                kind: "status",
-                label: resetCreditLabel,
-              },
-              {
-                kind: "separator",
-              },
-              {
-                label: t(($) => {
-                  return $.settings.models.actions.resetUsage;
-                }),
-                disabled: actionPending || resetCredits === 0,
-                onSelect: onOpenReset,
-                opensModal: true,
-              },
-              {
-                label: t(($) => {
-                  return $.settings.shared.replace;
-                }),
-                onSelect: onAction,
-                opensModal: true,
-              },
-              {
-                label: t(($) => {
-                  return $.settings.shared.disconnect;
-                }),
-                disabled: actionPending,
-                onSelect: onDisconnect,
-              },
-            ]
-          : []
-      }
-      onAction={onAction}
-      testId="oauth-card-codex-oauth-token"
-    />
-  );
-}
-
-function findProvider(
-  providers: ModelProviderResponse[],
-  type: ModelProviderType,
-): ModelProviderResponse | undefined {
-  return providers.find((provider) => {
-    return provider.type === type;
-  });
-}
-
-function getOpenAIStatus(
-  provider: ModelProviderResponse | undefined,
-): OAuthStatus {
-  if (provider?.needsReconnect) {
-    return "stale";
-  }
-  return provider ? "connected" : "missing";
-}
-
 function formatSubscriptionPlan(
   provider: ModelProviderResponse,
 ): string | null {
@@ -1302,21 +962,6 @@ function formatSubscriptionPlan(
     return null;
   }
   return plan.charAt(0).toUpperCase() + plan.slice(1);
-}
-
-function formatConnectedStatusDetail(
-  provider: ModelProviderResponse,
-): string | null {
-  const details = [formatSubscriptionPlan(provider)].filter(
-    (detail): detail is string => {
-      return detail !== null;
-    },
-  );
-
-  if (details.length === 0) {
-    return null;
-  }
-  return details.join(", ");
 }
 
 function formatUsagePercent(value: number | null): string | null {
@@ -1353,36 +998,28 @@ function fallbackSubscriptionUsage(
 }
 
 function usageTone(remainingPercent: number | null): {
-  readonly barClassName: string;
   readonly ringClassName: string;
   readonly ringTrackClassName: string;
   readonly textClassName: string;
-  readonly trackClassName: string;
 } {
   if (remainingPercent !== null && remainingPercent < 20) {
     return {
-      barClassName: "bg-red-500",
       ringClassName: "stroke-red-500",
       ringTrackClassName: "stroke-red-500/15",
       textClassName: "text-red-600 dark:text-red-400",
-      trackClassName: "bg-red-500/15",
     };
   }
   if (remainingPercent !== null && remainingPercent < 50) {
     return {
-      barClassName: "bg-amber-500",
       ringClassName: "stroke-amber-500",
       ringTrackClassName: "stroke-amber-500/15",
       textClassName: "text-amber-600 dark:text-amber-400",
-      trackClassName: "bg-amber-500/15",
     };
   }
   return {
-    barClassName: "bg-emerald-500",
     ringClassName: "stroke-emerald-500",
     ringTrackClassName: "stroke-emerald-500/15",
     textClassName: "text-emerald-600 dark:text-emerald-400",
-    trackClassName: "bg-emerald-500/15",
   };
 }
 
@@ -1555,320 +1192,6 @@ function SubscriptionUsageResetTooltip({
         {reset.tooltipTitle}
       </p>
       <p className="text-[10px] text-muted-foreground">{reset.absoluteText}</p>
-    </div>
-  );
-}
-
-function SubscriptionUsageMeter({
-  usage,
-}: {
-  usage: SubscriptionUsage | null | undefined;
-}) {
-  const { t } = useTranslation();
-  const windows = subscriptionUsageWindows(usage);
-
-  if (windows.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="w-full rounded-lg bg-muted/30 px-3 py-2.5">
-      <div className="space-y-2">
-        {windows.map(({ kind, window }) => {
-          const windowLabel =
-            kind === "week"
-              ? t(($) => {
-                  return $.settings.models.personal.status.week;
-                })
-              : t(($) => {
-                  return $.settings.models.personal.status.fiveHour;
-                });
-          const remainingPercent =
-            window.remainingPercent ??
-            (window.usedPercent === null ? null : 100 - window.usedPercent);
-          const displayPercent = formatUsagePercent(remainingPercent);
-          const reset = formatSubscriptionUsageReset(window.resetAt);
-          const tone = usageTone(remainingPercent);
-          return (
-            <div key={kind} className="space-y-1">
-              <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] leading-none">
-                <span className="font-medium text-foreground">
-                  {windowLabel}
-                </span>
-                {displayPercent ? (
-                  <span className={`font-medium ${tone.textClassName}`}>
-                    {t(
-                      ($) => {
-                        return $.settings.models.personal.status.left;
-                      },
-                      {
-                        percent: displayPercent,
-                      },
-                    )}
-                  </span>
-                ) : null}
-              </div>
-              <div
-                className={`h-1.5 overflow-hidden rounded-full ${tone.trackClassName}`}
-              >
-                <span
-                  className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
-                  style={{
-                    width:
-                      remainingPercent === null
-                        ? "0%"
-                        : `${Math.min(100, Math.max(0, remainingPercent))}%`,
-                  }}
-                />
-              </div>
-              {reset !== null ? (
-                "fallbackText" in reset ? (
-                  <div className="truncate text-[10px] leading-none text-muted-foreground">
-                    {reset.fallbackText}
-                  </div>
-                ) : (
-                  <div className="flex min-w-0 items-center justify-between gap-2 text-[10px] leading-none text-muted-foreground">
-                    <span className="min-w-0 truncate">
-                      {reset.absoluteResetText}
-                    </span>
-                    <span className="shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-medium text-muted-foreground shadow-[inset_0_0_0_1px_hsl(var(--border)/0.6)]">
-                      {reset.relativeText}
-                    </span>
-                  </div>
-                )
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-type OAuthMenuItem =
-  | {
-      readonly kind: "separator";
-    }
-  | {
-      readonly kind: "status";
-      readonly label: string;
-    }
-  | {
-      readonly kind?: "item";
-      readonly label: string;
-      readonly disabled?: boolean;
-      readonly onSelect?: () => void;
-      readonly opensModal?: boolean;
-    };
-
-function OAuthMenuEntry({ item }: { item: OAuthMenuItem }) {
-  if (item.kind === "separator") {
-    return <DropdownMenuSeparator />;
-  }
-  if (item.kind === "status") {
-    return (
-      <DropdownMenuItem
-        disabled
-        className="text-xs text-muted-foreground data-[disabled]:opacity-100"
-      >
-        {item.label}
-      </DropdownMenuItem>
-    );
-  }
-  if (item.opensModal && item.onSelect) {
-    return (
-      <DropdownMenuItem disabled={item.disabled} onClick={item.onSelect}>
-        {item.label}
-      </DropdownMenuItem>
-    );
-  }
-  return (
-    <DropdownMenuItem
-      disabled={item.disabled}
-      onClick={() => {
-        item.onSelect?.();
-      }}
-    >
-      {item.label}
-    </DropdownMenuItem>
-  );
-}
-
-function OAuthCredentialRow({
-  type,
-  title,
-  description,
-  provider,
-  status,
-  actionLabel,
-  disabled = false,
-  menuItems,
-  onAction,
-  testId,
-}: {
-  type: ModelProviderType;
-  title: string;
-  description: string;
-  provider: ModelProviderResponse | undefined;
-  status: OAuthStatus;
-  actionLabel: string;
-  disabled?: boolean;
-  menuItems: OAuthMenuItem[];
-  onAction: () => void;
-  testId: string;
-}) {
-  const { t } = useTranslation();
-  const connectedDetail = provider
-    ? formatConnectedStatusDetail(provider)
-    : null;
-  const usage = provider ? fallbackSubscriptionUsage(provider) : null;
-  return (
-    <div
-      data-testid={testId}
-      className="px-5 py-4 [&:not(:first-child)]:border-t [&:not(:first-child)]:border-border/50"
-    >
-      <div className="flex items-center gap-3">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-          <ProviderIcon type={type} size={20} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p
-            data-testid="connector-card-label"
-            className="truncate text-sm font-medium text-foreground"
-          >
-            {title}
-          </p>
-          <p
-            data-testid="connector-help-text"
-            className="mt-0.5 text-xs text-muted-foreground"
-          >
-            {description}
-          </p>
-        </div>
-        {status === "missing" ? (
-          <Button
-            type="button"
-            variant="neutral"
-            size="sm"
-            className="h-9 shrink-0 rounded-lg"
-            aria-label={t(
-              ($) => {
-                return $.settings.models.personal.actionForProvider;
-              },
-              {
-                action: actionLabel,
-                provider: title,
-              },
-            )}
-            disabled={disabled}
-            onClick={onAction}
-          >
-            {actionLabel}
-          </Button>
-        ) : (
-          <div className="ml-auto flex items-center justify-end gap-1.5">
-            <OAuthFooterStatus
-              status={status}
-              detail={status === "connected" ? connectedDetail : null}
-            />
-            {menuItems.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      showTooltip
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-hover hover:text-foreground"
-                      aria-label={t(($) => {
-                        return $.settings.shared.moreOptions;
-                      })}
-                    />
-                  }
-                >
-                  <EllipsisVertical size={14} />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  {menuItems.map((item) => {
-                    const key =
-                      item.kind === "separator" ? "separator" : item.label;
-                    return <OAuthMenuEntry key={key} item={item} />;
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        )}
-      </div>
-      {status === "connected" && subscriptionUsageWindows(usage).length > 0 ? (
-        <div className="mt-3">
-          <SubscriptionUsageMeter usage={usage} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function OAuthFooterStatus({
-  status,
-  detail,
-}: {
-  status: OAuthStatus;
-  detail: string | null;
-}) {
-  const { t } = useTranslation();
-  if (status === "connected") {
-    return (
-      <span className="flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-        <span className="min-w-0 truncate">
-          {detail
-            ? t(
-                ($) => {
-                  return $.settings.models.personal.status.connectedWithDetail;
-                },
-                {
-                  detail,
-                },
-              )
-            : t(($) => {
-                return $.settings.models.personal.status.connected;
-              })}
-        </span>
-      </span>
-    );
-  }
-  if (status === "stale") {
-    return (
-      <span className="flex min-w-0 items-center gap-2 truncate text-xs text-amber-600 dark:text-amber-400">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-        {t(($) => {
-          return $.settings.models.personal.status.stale;
-        })}
-      </span>
-    );
-  }
-  return (
-    <span className="flex items-center gap-2 text-xs text-muted-foreground truncate">
-      {t(($) => {
-        return $.settings.shared.connect;
-      })}
-    </span>
-  );
-}
-
-function OAuthCredentialRowSkeleton() {
-  return (
-    <div
-      data-testid="oauth-card-skeleton"
-      className="flex animate-pulse items-center gap-3 px-5 py-4 [&:not(:first-child)]:border-t [&:not(:first-child)]:border-border/50"
-    >
-      <span className="h-5 w-5 shrink-0 rounded bg-muted/50" />
-      <div className="min-w-0 flex-1">
-        <span className="block h-4 w-32 rounded bg-muted/50" />
-        <span className="mt-1.5 block h-3 w-48 rounded bg-muted/30" />
-      </div>
-      <span className="h-9 w-20 shrink-0 rounded bg-muted/30" />
     </div>
   );
 }
