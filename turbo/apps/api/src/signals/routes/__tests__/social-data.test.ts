@@ -352,6 +352,9 @@ function tikhubPlanSource(options: {
 describe("Social data jobs", () => {
   it("requires authentication and the feature switch", async () => {
     const actor = await seedActor({ enabled: false });
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.SocialDataJobs]: false,
+    });
     const before = await credits(actor);
     await accept(
       client(actor)(socialDataContract).quote({

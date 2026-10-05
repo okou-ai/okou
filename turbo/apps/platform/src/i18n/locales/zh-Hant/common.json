@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "無法載入智慧體",
+      "backToChats": "返回聊天列表",
+      "chatListUnavailable": "無法載入聊天",
+      "chats": "聊天",
+      "me": "我",
+      "navigation": "主導覽",
+      "searchAgents": "搜尋智慧體",
+      "switchAgent": "切換智慧體"
+    },
     "shortcutHelp": {
       "close": "關閉快捷鍵面板",
       "description": "當前頁面可用的快捷鍵",
@@ -4900,7 +4910,6 @@
         "accountsSectionTitle": "個人帳號",
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
-        "addAccount": "新增帳號",
         "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
         "claudeDescription": "使用你的 Claude 訂閱登入，透過 Claude Code 驅動的智慧代理使用 Claude 系列模型。",

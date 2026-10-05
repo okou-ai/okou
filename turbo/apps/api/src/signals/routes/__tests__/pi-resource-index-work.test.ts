@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
   prepareEmptyPiWritebackSnapshotFixture,
@@ -33,14 +34,120 @@ import {
 } from "../../../test-fixtures/pi-stable-context";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { workflowsRoutes } from "../workflows";
-import { createBddApi } from "./helpers/api-bdd";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  configureNativeCliArtifact,
+  createChatEventsFixture,
+} from "./helpers/chat-events-fixture";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const storages = createStoragesBddApi(context);
+
+interface PublicResourceOwner {
+  readonly actor: ApiTestUser;
+  readonly kmsKeyId: string | undefined;
+  readonly storageBucket: string;
+  readonly subscriptionId: string;
+  agentId: string | null;
+  runId: string | null;
+  sandboxToken: string | null;
+}
+
+async function deletePublicResourceOwner(
+  owned: PublicResourceOwner,
+): Promise<void> {
+  const { actor } = owned;
+  if (!actor.orgId) {
+    throw new Error("Expected the resource owner organization");
+  }
+  mockEnv("SECRETS_KMS_KEY_ID", owned.kmsKeyId);
+  mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  const runs = createRunsApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  if (owned.runId) {
+    const run = await runs.readRun(actor, owned.runId);
+    if (run.status === "pending" || run.status === "running") {
+      await runs.requestCancelRun(actor, owned.runId, [200]);
+    }
+    if (
+      owned.sandboxToken &&
+      ["pending", "running", "cancelled"].includes(run.status)
+    ) {
+      await webhooks.requestAgentComplete(
+        {
+          runId: owned.runId,
+          exitCode: 1,
+          error: "Resource snapshot carrier cancelled",
+        },
+        { authorization: `Bearer ${owned.sandboxToken}` },
+        [200],
+      );
+    }
+  }
+  await flushWaitUntilForTest();
+
+  context.mocks.s3.send.mockResolvedValue({
+    Contents: [],
+    IsTruncated: false,
+  });
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.subscriptions.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  context.mocks.stripe.invoices.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "active",
+    metadata: {},
+  });
+  context.mocks.stripe.subscriptions.update.mockResolvedValue({
+    id: owned.subscriptionId,
+  });
+  context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "canceled",
+  });
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.deleted",
+    data: { id: actor.orgId },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+  if (owned.agentId) {
+    await createBddApi(context).requestReadAgent(actor, owned.agentId, [404]);
+  }
+  expect(
+    (
+      await createRunReadsApi(context).requestListLogs(
+        actor,
+        { limit: 50 },
+        [200],
+      )
+    ).body.data,
+  ).toStrictEqual([]);
+  // Org deletion owns member Memory cleanup. Immutable snapshot cache entries
+  // retain their normal weekly TTL; UUID-owned billing history is retained too.
+}
 
 function skillArchive(content: string): Buffer {
   const bytes = Buffer.from(content);
@@ -96,6 +203,142 @@ async function publishStorage() {
     versionId: prepared.versionId,
   });
   return { versionId: prepared.versionId, archive, actor, storageName, files };
+}
+
+async function publishPublicMemory() {
+  const actor = bdd.user();
+  const owned: PublicResourceOwner = {
+    actor,
+    kmsKeyId: env("SECRETS_KMS_KEY_ID"),
+    storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    subscriptionId: `sub_resource_snapshot_${randomUUID()}`,
+    agentId: null,
+    runId: null,
+    sandboxToken: null,
+  };
+  const fixture = createChatEventsFixture(context);
+  fixture.chatCallbacks.acceptChatObjectStorage();
+  fixture.chatCallbacks.disableVapid();
+  fixture.api.acceptStorageDownloads();
+  fixture.api.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  configureNativeCliArtifact();
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  const runnerGroup = fixture.api.configureRunnerGroup();
+  const storageTransport = context.mocks.s3.send.getMockImplementation();
+  const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
+  const owner = createFixtureOperationOwner(async () => {
+    if (storageTransport) {
+      context.mocks.s3.send.mockImplementation(storageTransport);
+    }
+    if (presign) {
+      context.mocks.s3.getSignedUrl.mockImplementation(presign);
+    }
+    await deletePublicResourceOwner(owned);
+  });
+  return await owner.run(async () => {
+    await fixture.api.grantProEntitlement(actor, {
+      subscriptionId: owned.subscriptionId,
+    });
+    await fixture.api.ensureOrgModelProvider(actor, {
+      model: "claude-fable-5-1",
+    });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Resource snapshot carrier",
+    });
+    owned.agentId = agent.agentId;
+    const carrier = await fixture.sendChatRun(actor, {
+      agentId: agent.agentId,
+      model: "claude-fable-5-1",
+      prompt: "Publish the owned resource snapshot source",
+    });
+    owned.runId = carrier.runId;
+    const claimed = await fixture.claimChatRun(runnerGroup, carrier.runId);
+    owned.sandboxToken = claimed.claim.sandboxToken;
+    const manifest = expectCanonicalStorageManifest(
+      claimed.claim.storageManifest,
+    );
+    const memory = manifest?.storageMounts.find((mount) => {
+      return mount.name === "memory" && mount.storageId;
+    });
+    if (!memory) {
+      throw new Error("Expected the carrier's writable Memory mount");
+    }
+
+    const content =
+      "---\nname: index-work\ndescription: Index a committed Storage version\n---\n";
+    const archive = skillArchive(content);
+    const files = [storageTextFile("SKILL.md", content)];
+    const objects = new Map<string, Buffer>();
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/resource-index-upload",
+    );
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
+      if (
+        request instanceof GetObjectCommand ||
+        request instanceof HeadObjectCommand
+      ) {
+        const body = request.input.Key
+          ? objects.get(request.input.Key)
+          : undefined;
+        if (!body) {
+          throw Object.assign(new Error("Missing owned resource object"), {
+            name: "NotFound",
+            $metadata: { httpStatusCode: 404 },
+          });
+        }
+        return Promise.resolve({
+          ContentLength: body.length,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield body;
+            },
+          },
+        });
+      }
+      return Promise.resolve({});
+    });
+    const prepared = await fixture.webhooks.requestAgentStoragePrepare(
+      { runId: carrier.runId, storageId: memory.storageId, files },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    if (prepared.status !== 200 || !prepared.body.uploads) {
+      throw new Error("Expected public resource upload targets");
+    }
+    objects.set(prepared.body.uploads.archive.key, archive);
+    objects.set(
+      prepared.body.uploads.manifest.key,
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          files,
+          createdAt: new Date(0).toISOString(),
+        }),
+      ),
+    );
+    const committed = await fixture.webhooks.requestAgentStorageCommit(
+      {
+        runId: carrier.runId,
+        storageId: memory.storageId,
+        versionId: prepared.body.versionId,
+        files,
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    if (committed.status !== 200) {
+      throw new Error("Expected public resource commit success");
+    }
+    expect(committed.body.versionId).toBe(prepared.body.versionId);
+    return {
+      versionId: committed.body.versionId,
+      archive,
+      actor,
+      storageName: "memory",
+      files,
+    };
+  });
 }
 
 async function run(versionId: string) {
@@ -295,7 +538,9 @@ describe("Pi resource indexing of generic Storage commits", () => {
   });
 
   it("prepares a snapshot from a different gzip size and reuses the logical index", async () => {
-    const published = await publishStorage();
+    // #37440 key10 retains this exact production snapshot consumer. Ordinary
+    // ownership and publication now use the real claimed Run's Memory mount.
+    const published = await publishPublicMemory();
     if (!published.actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }

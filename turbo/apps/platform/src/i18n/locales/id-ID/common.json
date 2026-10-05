@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Tidak dapat memuat agen",
+      "backToChats": "Kembali ke obrolan",
+      "chatListUnavailable": "Tidak dapat memuat obrolan",
+      "chats": "Obrolan",
+      "me": "Saya",
+      "navigation": "Navigasi utama",
+      "searchAgents": "Cari agen",
+      "switchAgent": "Ganti agen"
+    },
     "shortcutHelp": {
       "close": "Tutup pintasan keyboard",
       "description": "Pintasan yang tersedia di halaman ini",
@@ -4900,7 +4910,6 @@
         "accountsSectionTitle": "Akun pribadi",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktif",
-        "addAccount": "Tambah akun",
         "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",
         "claudeDescription": "Masuk dengan langganan Claude Anda untuk menggunakan model Claude dengan agen berbasis Claude Code.",

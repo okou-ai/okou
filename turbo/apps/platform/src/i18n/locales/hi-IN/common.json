@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "एजेंट लोड नहीं हो सके",
+      "backToChats": "चैट पर वापस जाएँ",
+      "chatListUnavailable": "चैट लोड नहीं हो सकीं",
+      "chats": "चैट",
+      "me": "मैं",
+      "navigation": "मुख्य नेविगेशन",
+      "searchAgents": "एजेंट खोजें",
+      "switchAgent": "एजेंट बदलें"
+    },
     "shortcutHelp": {
       "close": "कुंजीपटल शॉर्टकट बंद करें",
       "description": "इस पृष्ठ पर उपलब्ध शॉर्टकट",
@@ -4918,7 +4928,6 @@
         "accountsSectionTitle": "व्यक्तिगत खाते",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "सक्रिय",
-        "addAccount": "खाता जोड़ें",
         "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
         "autoTitle": "और मॉडल इस्तेमाल करें",
         "claudeDescription": "Claude Code पर आधारित एजेंटों के साथ Claude मॉडल इस्तेमाल करने के लिए अपनी Claude सदस्यता से साइन इन करें।",

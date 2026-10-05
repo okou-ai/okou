@@ -8,10 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { seedPrivateRegistryResourceVersionFixture } from "../../../test-fixtures/private-registry-resource";
-import {
-  resolvePrivateRegistryResourceArchive,
-  registryResourceDownloadRoutes,
-} from "../registry-resources-download";
+import { registryResourceDownloadRoutes } from "../registry-resources-download";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -498,16 +495,7 @@ describe("registry resource download", () => {
         sha256: archive.sha256,
       });
 
-      expect(
-        resolvePrivateRegistryResourceArchive(
-          archive.id,
-          archive.sha256,
-          archive.sha256,
-        ),
-      ).toMatchObject({
-        versionId: archive.versionId,
-        sha256: archive.sha256,
-      });
+      await expectArchiveDownload(archive);
     }
   }, 15_000);
 

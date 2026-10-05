@@ -150,3 +150,22 @@ API/shared/App types, Knip, eight API shards and four required gates; skips do
 not substitute for types. Exact-head natural CI/job/public-suite evidence is
 reported in the PR handoff. Independent review/merge remain separate authority;
 this task stops at PR/CI handoff.
+
+## Main integration review boundary
+
+This normal merge integrates main `4844ec7dd63b7854700dc2eb43f5fcf9ba9b41b3`.
+The validated request computed constructs both the main completion graph and
+the independent required-chat graph from the same plain Run ID. Main D5
+post-commit observation is not shared with either D4b before/after node.
+The D4b query, DB schema/provider and existing dispatcher bytes are unchanged.
+Main also includes Pi recovery ownership; this integration preserves it without
+expanding D4b scope. SQL count, predicates and transaction delta remain unchanged.
+
+The old exact-head merge authorization is suspended. The previous single-commit
+check-types exclusion does not apply to this integration: complete normal types,
+Knip and actual hooks are required. Historical missing-path exit 2 and missing
+Lefthook/hooks were setup blockers, not successful checks. Official isolated
+Lefthook 2.1.16 setup is separately authorized; repository check configuration
+and resource settings are not changed. New-head CI and independent review are
+required before any protected merge decision. Exact post-read/AbortSignal
+interleaving and reliable/exactly-once delivery remain unproven.

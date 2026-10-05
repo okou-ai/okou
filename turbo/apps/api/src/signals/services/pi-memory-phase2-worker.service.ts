@@ -1,10 +1,10 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { startMaintenanceRun$ } from "./pi-memory-maintenance-execution.service";
 
@@ -18,11 +18,6 @@ import {
   type PiMemoryPhase2OwnerScope,
 } from "./pi-memory-phase2-job.service";
 const log = logger("PiMemoryPhase2Worker");
-
-interface PiMemoryPhase2WorkerInput {
-  readonly scope?: PiMemoryPhase2OwnerScope;
-  readonly currentTime: Date;
-}
 
 export type PiMemoryPhase2WorkerResult =
   | { readonly outcome: "no_work" }
@@ -58,13 +53,11 @@ async function failClaim(
     : { outcome: "stale" };
 }
 
-const recoverMaintenanceRun$ = command(
-  async (
-    { set },
-    db: Db,
-    input: PiMemoryPhase2WorkerInput,
-    signal: AbortSignal,
-  ): Promise<PiMemoryPhase2WorkerResult | undefined> => {
+function createPiMemoryPhase2RecoveryCandidate(
+  scope?: PiMemoryPhase2OwnerScope,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
     const [job] = await db
       .select({
         memoryStorageId: piMemoryPhase2Jobs.memoryStorageId,
@@ -81,31 +74,29 @@ const recoverMaintenanceRun$ = command(
         and(
           eq(piMemoryPhase2Jobs.status, "leased"),
           isNotNull(piMemoryPhase2Jobs.maintenanceRunId),
-          ...(input.scope
+          ...(scope
             ? [
-                eq(
-                  piMemoryPhase2Jobs.memoryStorageId,
-                  input.scope.memoryStorageId,
-                ),
-                eq(piMemoryPhase2Jobs.orgId, input.scope.orgId),
-                eq(piMemoryPhase2Jobs.userId, input.scope.userId),
+                eq(piMemoryPhase2Jobs.memoryStorageId, scope.memoryStorageId),
+                eq(piMemoryPhase2Jobs.orgId, scope.orgId),
+                eq(piMemoryPhase2Jobs.userId, scope.userId),
               ]
             : []),
         ),
       )
       .orderBy(asc(piMemoryPhase2Jobs.leaseExpiresAt))
       .limit(1);
-    signal.throwIfAborted();
-    if (
-      !job?.maintenanceRunId ||
-      !job.leaseToken ||
-      job.sandboxLeaseToken !== job.leaseToken ||
-      !job.claimedRevision ||
-      !job.claimedBaseVersionId
-    ) {
+    return job;
+  });
+}
+
+function createPiMemoryPhase2Recovery(scope?: PiMemoryPhase2OwnerScope) {
+  const leasedJob$ = createPiMemoryPhase2RecoveryCandidate(scope);
+  const recoveryRun$ = computed(async (get) => {
+    const db = get(db$);
+    const job = await get(leasedJob$);
+    if (!job?.maintenanceRunId) {
       return undefined;
     }
-
     const [run] = await db
       .select({ status: agentRuns.status })
       .from(agentRuns)
@@ -117,89 +108,130 @@ const recoverMaintenanceRun$ = command(
         ),
       )
       .limit(1);
-    signal.throwIfAborted();
-    if (!run) {
-      await failPiMemoryPhase2Job(db, {
-        memoryStorageId: job.memoryStorageId,
-        orgId: job.orgId,
-        userId: job.userId,
-        leaseToken: job.leaseToken,
-        claimedRevision: job.claimedRevision,
-        claimedBaseVersionId: job.claimedBaseVersionId,
-        currentTime: input.currentTime,
-        expectedMaintenanceRunId: job.maintenanceRunId,
-        allowExpiredLease: true,
-        errorClass: "maintenance_run_missing",
-      });
+    return run;
+  });
+
+  const recoverMaintenanceRun$ = command(
+    async (
+      { get, set },
+      currentTime: Date,
+      signal: AbortSignal,
+    ): Promise<PiMemoryPhase2WorkerResult | undefined> => {
+      const job = await get(leasedJob$);
       signal.throwIfAborted();
-      return { outcome: "failed", errorClass: "maintenance_run_missing" };
-    }
-    if (["queued", "pending", "running"].includes(run.status)) {
-      await db
-        .update(piMemoryPhase2Jobs)
-        .set({
-          leaseExpiresAt: new Date(
-            input.currentTime.getTime() + PI_MEMORY_PHASE2_LEASE_DURATION_MS,
-          ),
-          updatedAt: input.currentTime,
-        })
-        .where(
-          and(
-            eq(piMemoryPhase2Jobs.memoryStorageId, job.memoryStorageId),
-            eq(piMemoryPhase2Jobs.maintenanceRunId, job.maintenanceRunId),
-            eq(piMemoryPhase2Jobs.leaseToken, job.leaseToken),
-            eq(piMemoryPhase2Jobs.sandboxLeaseToken, job.leaseToken),
-          ),
-        );
+      if (
+        !job?.maintenanceRunId ||
+        !job.leaseToken ||
+        job.sandboxLeaseToken !== job.leaseToken ||
+        !job.claimedRevision ||
+        !job.claimedBaseVersionId
+      ) {
+        return undefined;
+      }
+      const run = await get(recoveryRun$);
       signal.throwIfAborted();
+      if (!run) {
+        const db = set(writeDb$);
+        await failPiMemoryPhase2Job(db, {
+          memoryStorageId: job.memoryStorageId,
+          orgId: job.orgId,
+          userId: job.userId,
+          leaseToken: job.leaseToken,
+          claimedRevision: job.claimedRevision,
+          claimedBaseVersionId: job.claimedBaseVersionId,
+          currentTime,
+          expectedMaintenanceRunId: job.maintenanceRunId,
+          allowExpiredLease: true,
+          errorClass: "maintenance_run_missing",
+        });
+        signal.throwIfAborted();
+        return { outcome: "failed", errorClass: "maintenance_run_missing" };
+      }
+      if (["queued", "pending", "running"].includes(run.status)) {
+        const db = set(writeDb$);
+        await db
+          .update(piMemoryPhase2Jobs)
+          .set({
+            leaseExpiresAt: new Date(
+              currentTime.getTime() + PI_MEMORY_PHASE2_LEASE_DURATION_MS,
+            ),
+            updatedAt: currentTime,
+          })
+          .where(
+            and(
+              eq(piMemoryPhase2Jobs.memoryStorageId, job.memoryStorageId),
+              eq(piMemoryPhase2Jobs.maintenanceRunId, job.maintenanceRunId),
+              eq(piMemoryPhase2Jobs.leaseToken, job.leaseToken),
+              eq(piMemoryPhase2Jobs.sandboxLeaseToken, job.leaseToken),
+            ),
+          );
+        signal.throwIfAborted();
+        return { outcome: "dispatched", runId: job.maintenanceRunId };
+      }
+
+      const db = set(writeDb$);
+      await set(
+        dispatchRunCallbacks$,
+        {
+          db,
+          runId: job.maintenanceRunId,
+          status: run.status === "completed" ? "completed" : "failed",
+          error:
+            run.status === "completed"
+              ? undefined
+              : `Run ended as ${run.status}`,
+        },
+        signal,
+      );
       return { outcome: "dispatched", runId: job.maintenanceRunId };
-    }
+    },
+  );
 
-    await set(
-      dispatchRunCallbacks$,
-      {
+  return recoverMaintenanceRun$;
+}
+
+// Each graph is consumed once per Store. Requests own fresh Stores; callers
+// executing another work unit in the same Store construct another graph first.
+export function createPiMemoryPhase2Worker(scope?: PiMemoryPhase2OwnerScope) {
+  const recoverMaintenanceRun$ = createPiMemoryPhase2Recovery(scope);
+  const execute$ = command(
+    async (
+      { set },
+      currentTime: Date,
+      signal: AbortSignal,
+    ): Promise<PiMemoryPhase2WorkerResult> => {
+      const db = set(writeDb$);
+      signal.throwIfAborted();
+      const recovered = await set(recoverMaintenanceRun$, currentTime, signal);
+      signal.throwIfAborted();
+      if (recovered) {
+        return recovered;
+      }
+      const claim = await claimPiMemoryPhase2Job(db, { scope, currentTime });
+      signal.throwIfAborted();
+      if (!claim) {
+        return { outcome: "no_work" };
+      }
+      const dispatched = await settle(
+        set(startMaintenanceRun$, claim, signal),
+        signal,
+      );
+      if (dispatched.ok) {
+        return typeof dispatched.value === "string"
+          ? { outcome: "dispatched", runId: dispatched.value }
+          : await failClaim(db, claim, nowDate(), dispatched.value.errorClass);
+      }
+      log.error("Pi memory maintenance run dispatch failed", {
+        memoryStorageId: claim.memoryStorageId,
+      });
+      return await failClaim(
         db,
-        runId: job.maintenanceRunId,
-        status: run.status === "completed" ? "completed" : "failed",
-        error:
-          run.status === "completed" ? undefined : `Run ended as ${run.status}`,
-      },
-      signal,
-    );
-    return { outcome: "dispatched", runId: job.maintenanceRunId };
-  },
-);
+        claim,
+        nowDate(),
+        "maintenance_dispatch_failed",
+      );
+    },
+  );
 
-export const executePiMemoryPhase2Work$ = command(
-  async (
-    { set },
-    input: PiMemoryPhase2WorkerInput,
-    signal: AbortSignal,
-  ): Promise<PiMemoryPhase2WorkerResult> => {
-    const db = set(writeDb$);
-    signal.throwIfAborted();
-    const recovered = await set(recoverMaintenanceRun$, db, input, signal);
-    signal.throwIfAborted();
-    if (recovered) {
-      return recovered;
-    }
-    const claim = await claimPiMemoryPhase2Job(db, input);
-    signal.throwIfAborted();
-    if (!claim) {
-      return { outcome: "no_work" };
-    }
-    const dispatched = await settle(
-      set(startMaintenanceRun$, claim, signal),
-      signal,
-    );
-    if (dispatched.ok) {
-      return typeof dispatched.value === "string"
-        ? { outcome: "dispatched", runId: dispatched.value }
-        : await failClaim(db, claim, nowDate(), dispatched.value.errorClass);
-    }
-    log.error("Pi memory maintenance run dispatch failed", {
-      memoryStorageId: claim.memoryStorageId,
-    });
-    return await failClaim(db, claim, nowDate(), "maintenance_dispatch_failed");
-  },
-);
+  return { execute$ };
+}

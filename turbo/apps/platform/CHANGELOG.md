@@ -12,6 +12,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.995.0](https://github.com/okou-ai/okou/compare/app-v0.994.0...app-v0.995.0) (2026-10-05)
+
+
+### Features
+
+* enable phone group history, message sharing and social jobs globally ([#37716](https://github.com/okou-ai/okou/issues/37716)) ([b1ec157](https://github.com/okou-ai/okou/commit/b1ec157db9ded38688563e0f153df0ab8364802e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.730.0
+
+## [0.994.0](https://github.com/okou-ai/okou/compare/app-v0.993.0...app-v0.994.0) (2026-10-05)
+
+
+### Features
+
+* **app:** add opt-in responsive mobile navigation ([#37713](https://github.com/okou-ai/okou/issues/37713)) ([507bc00](https://github.com/okou-ai/okou/commit/507bc00e3fd3570b866c66d21c47871512938859))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.729.0
+
 ## [0.993.0](https://github.com/okou-ai/okou/compare/app-v0.992.0...app-v0.993.0) (2026-10-04)
 
 

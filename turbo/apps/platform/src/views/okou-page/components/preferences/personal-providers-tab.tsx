@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, EllipsisVertical, Plus } from "lucide-react";
+import { EllipsisVertical, Plus } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Badge,
@@ -213,23 +213,6 @@ function OAuthAccountGroupsSection() {
     detach(request, Reason.DomCallback);
   };
 
-  const empty =
-    auto &&
-    accountGroups.every((group) => {
-      return group.accounts.length === 0;
-    });
-  const addAccountAction = (
-    <AddPersonalAccountAction
-      initialConnection={empty}
-      accountGroups={accountGroups}
-      actionPending={actionPending}
-      isLoading={isLoading}
-      supportByok={supportByok}
-      onAdd={openAccountAuth}
-      onUpgrade={openBillingPlans}
-    />
-  );
-
   if (auto && providersLoadable.state !== "hasData") {
     return (
       <AutoPersonalAccountsReadState
@@ -237,21 +220,16 @@ function OAuthAccountGroupsSection() {
       />
     );
   }
-  if (empty) {
-    return <AutoPersonalAccountsEmptyState action={addAccountAction} />;
-  }
-
   return (
     <section className="flex flex-col gap-4">
-      <PersonalModelsHeading
-        accountTable
-        auto={auto}
-        action={addAccountAction}
-      />
+      <PersonalModelsHeading accountTable auto={auto} />
       <TooltipProvider delay={100}>
         <PersonalProviderAccountsTable
           showReconnectAction={auto}
           accountGroups={accountGroups}
+          supportByok={supportByok}
+          onConnect={openAccountAuth}
+          onUpgrade={openBillingPlans}
           actionPending={actionPending}
           isLoading={isLoading}
           onActivate={(id) => {
@@ -278,43 +256,6 @@ function OAuthAccountGroupsSection() {
         actionPending={actionPending}
         mode="account"
       />
-    </section>
-  );
-}
-
-function AutoPersonalAccountsEmptyState({
-  action,
-}: {
-  readonly action: ReactNode;
-}) {
-  const { t } = useTranslation();
-  return (
-    <section className="flex min-h-96 flex-col items-center justify-center gap-6 py-12 text-center">
-      <div className="flex items-center gap-3" aria-hidden="true">
-        {PERSONAL_ACCOUNT_PROVIDER_TYPES.map((type) => {
-          return (
-            <span
-              key={type}
-              className="flex size-11 items-center justify-center rounded-xl bg-gray-50"
-            >
-              <ProviderIcon type={type} size={26} />
-            </span>
-          );
-        })}
-      </div>
-      <div className="max-w-md">
-        <h2 className="text-xl font-semibold tracking-tight text-foreground">
-          {t(($) => {
-            return $.settings.models.personal.autoTitle;
-          })}
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.personal.autoDescription;
-          })}
-        </p>
-      </div>
-      {action}
     </section>
   );
 }
@@ -365,17 +306,15 @@ function AutoPersonalAccountsReadState({
   );
 }
 
-function AddPersonalAccountAction({
-  initialConnection = false,
-  accountGroups,
+function ConnectPersonalAccountAction({
+  group,
   actionPending,
   isLoading,
   supportByok,
   onAdd,
   onUpgrade,
 }: {
-  readonly initialConnection?: boolean;
-  readonly accountGroups: readonly PersonalProviderAccountGroup[];
+  readonly group: PersonalProviderAccountGroup;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly supportByok: boolean;
@@ -403,55 +342,30 @@ function AddPersonalAccountAction({
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant={initialConnection ? "default" : "neutral"}
-            size="sm"
-            className="h-9 gap-2 rounded-lg"
-            disabled={
-              isLoading ||
-              actionPending ||
-              accountGroups.every((group) => {
-                return group.accounts.length >= 10;
-              })
-            }
-          />
-        }
-      >
-        {!initialConnection && <Plus size={14} />}
-        {t(($) => {
-          return initialConnection
-            ? $.settings.models.personal.connectAccount
-            : $.settings.models.personal.addAccount;
-        })}
-        {initialConnection && <ChevronDown size={14} />}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {accountGroups.map((group) => {
-          return (
-            <DropdownMenuItem
-              key={group.type}
-              disabled={actionPending || group.accounts.length >= 10}
-              onClick={() => {
-                onAdd(group.type);
-              }}
-            >
-              <ProviderIcon type={group.type} size={16} />
-              {group.title}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      type="button"
+      variant="neutral"
+      size="sm"
+      className="h-9 gap-2 rounded-lg"
+      disabled={isLoading || actionPending || group.accounts.length >= 10}
+      onClick={() => {
+        onAdd(group.type);
+      }}
+    >
+      <Plus size={14} />
+      {t(($) => {
+        return $.settings.models.personal.connectAccount;
+      })}
+    </Button>
   );
 }
 
 function PersonalProviderAccountsTable({
   showReconnectAction,
   accountGroups,
+  supportByok,
+  onConnect,
+  onUpgrade,
   actionPending,
   isLoading,
   onActivate,
@@ -461,6 +375,9 @@ function PersonalProviderAccountsTable({
 }: {
   readonly showReconnectAction: boolean;
   readonly accountGroups: readonly PersonalProviderAccountGroup[];
+  readonly supportByok: boolean;
+  readonly onConnect: (type: PersonalAccountProviderType) => void;
+  readonly onUpgrade: () => void;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly onActivate: (id: string) => void;
@@ -482,6 +399,9 @@ function PersonalProviderAccountsTable({
             showReconnectAction={showReconnectAction}
             key={group.type}
             group={group}
+            supportByok={supportByok}
+            onConnect={onConnect}
+            onUpgrade={onUpgrade}
             actionPending={actionPending}
             isLoading={isLoading}
             onActivate={onActivate}
@@ -498,6 +418,9 @@ function PersonalProviderAccountsTable({
 function PersonalProviderAccountTable({
   showReconnectAction,
   group,
+  supportByok,
+  onConnect,
+  onUpgrade,
   actionPending,
   isLoading,
   onActivate,
@@ -507,6 +430,9 @@ function PersonalProviderAccountTable({
 }: {
   readonly showReconnectAction: boolean;
   readonly group: PersonalProviderAccountGroup;
+  readonly supportByok: boolean;
+  readonly onConnect: (type: PersonalAccountProviderType) => void;
+  readonly onUpgrade: () => void;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly onActivate: (id: string) => void;
@@ -526,13 +452,24 @@ function PersonalProviderAccountTable({
   return (
     <section aria-labelledby={headingId}>
       <div className="overflow-hidden rounded-xl border border-surface-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-3 py-2.5">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-100">
             <ProviderIcon type={group.type} size={18} />
           </span>
-          <h4 id={headingId} className="text-sm font-medium text-foreground">
+          <h4
+            id={headingId}
+            className="flex-1 text-sm font-medium text-foreground"
+          >
             {group.title}
           </h4>
+          <ConnectPersonalAccountAction
+            group={group}
+            actionPending={actionPending}
+            isLoading={isLoading}
+            supportByok={supportByok}
+            onAdd={onConnect}
+            onUpgrade={onUpgrade}
+          />
         </div>
         <div role="table" aria-labelledby={headingId}>
           {isLoading ? (

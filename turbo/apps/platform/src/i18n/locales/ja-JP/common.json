@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "エージェントを読み込めませんでした",
+      "backToChats": "チャット一覧に戻る",
+      "chatListUnavailable": "チャットを読み込めませんでした",
+      "chats": "チャット",
+      "me": "自分",
+      "navigation": "メインナビゲーション",
+      "searchAgents": "エージェントを検索",
+      "switchAgent": "エージェントを切り替え"
+    },
     "shortcutHelp": {
       "close": "キーボードショートカットを閉じる",
       "description": "このページで利用可能なショートカット",
@@ -4900,7 +4910,6 @@
         "accountsSectionTitle": "個人アカウント",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "使用中",
-        "addAccount": "アカウントを追加",
         "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
         "claudeDescription": "Claudeのサブスクリプションでログインすると、Claude Codeを基盤とするエージェントでClaudeモデルを利用できます。",

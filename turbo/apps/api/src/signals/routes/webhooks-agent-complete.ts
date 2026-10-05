@@ -8,7 +8,7 @@ import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
-import { completeAgentRun$ } from "../services/agent-webhook-complete.service";
+import { createAgentRunCompletion } from "../services/agent-webhook-complete.service";
 import {
   createRequiredTerminalChatCallback,
   type RequiredTerminalChatCallbackResult,
@@ -29,6 +29,7 @@ const completeRequest$ = computed(async (get) => {
   }
   return {
     ...bodyResult,
+    completion: createAgentRunCompletion(bodyResult.data.runId),
     requiredChatCallback: createRequiredTerminalChatCallback(
       bodyResult.data.runId,
     ),
@@ -49,7 +50,11 @@ const completeAgentRunRoute$ = command(
       return unauthorizedRunMismatch;
     }
 
-    const result = await set(completeAgentRun$, { auth, body }, signal);
+    const result = await set(
+      bodyResult.completion.complete$,
+      { auth, body },
+      signal,
+    );
     if (result.status === 200) {
       set(scheduleReleasedSlotPicks$, result.releasedSlots, signal);
     }

@@ -84,7 +84,7 @@ export const reloadAccountMenuSubscriptionUsageRows$ = command(
   },
 );
 
-function accountMenuSubscriptionUsageRows(
+export function accountMenuSubscriptionUsageRows(
   providers: readonly ModelProviderResponse[],
 ): readonly AccountMenuSubscriptionUsageRow[] {
   return ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS.flatMap((definition) => {

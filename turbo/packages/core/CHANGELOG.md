@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.730.0](https://github.com/okou-ai/okou/compare/core-v8.729.0...core-v8.730.0) (2026-10-05)
+
+
+### Features
+
+* enable phone group history, message sharing and social jobs globally ([#37716](https://github.com/okou-ai/okou/issues/37716)) ([b1ec157](https://github.com/okou-ai/okou/commit/b1ec157db9ded38688563e0f153df0ab8364802e))
+
+## [8.729.0](https://github.com/okou-ai/okou/compare/core-v8.728.0...core-v8.729.0) (2026-10-05)
+
+
+### Features
+
+* **app:** add opt-in responsive mobile navigation ([#37713](https://github.com/okou-ai/okou/issues/37713)) ([507bc00](https://github.com/okou-ai/okou/commit/507bc00e3fd3570b866c66d21c47871512938859))
+
 ## [8.728.0](https://github.com/okou-ai/okou/compare/core-v8.727.2...core-v8.728.0) (2026-10-04)
 
 

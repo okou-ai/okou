@@ -45,6 +45,7 @@ export enum FeatureSwitchKey {
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
+  PwaNavigation = "pwaNavigation",
   PersonalModelProviderAccounts = "multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",

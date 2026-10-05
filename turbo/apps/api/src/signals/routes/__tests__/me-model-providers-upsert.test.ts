@@ -219,8 +219,11 @@ describe("POST /api/me/model-providers (upsert)", () => {
     });
   });
 
-  it("updates an existing personal provider with 200", async () => {
+  it("updates an existing personal provider with 200 under the legacy override", async () => {
     const fixture = uniqueOrgUser("zmmp-single-update");
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
+    });
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const client = setupApp({

@@ -59,7 +59,7 @@ import {
   advancePiMemoryPhase2InputRevision,
   notifyPiMemoryPhase2ExternalHeadChange,
 } from "../pi-memory-phase2-job.service";
-import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
+import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import { createModelSourceSnapshot } from "../execution-model-source.service";
 import { modelCatalog$ } from "../model-catalog.service";
 import { prepareManagedModelEnvironment } from "../model-provider.service";
@@ -292,11 +292,8 @@ async function assertHistoricalMissingAgentRetry(args: {
   }
   await expect(
     createStore().set(
-      executePiMemoryPhase2Work$,
-      {
-        scope: args.scope,
-        currentTime: new Date(args.dispatchTime.getTime() + 1),
-      },
+      createPiMemoryPhase2Worker(args.scope).execute$,
+      new Date(args.dispatchTime.getTime() + 1),
       context.signal,
     ),
   ).resolves.toStrictEqual({ outcome: "dispatched", runId: args.runId });
@@ -474,8 +471,8 @@ async function launch(
   await insertPendingPhase2Job(scope, phase2JobSeed(fault, dispatchTime));
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
   const result = await createStore().set(
-    executePiMemoryPhase2Work$,
-    { scope, currentTime: dispatchTime },
+    createPiMemoryPhase2Worker(scope).execute$,
+    dispatchTime,
     context.signal,
   );
   expect(result.outcome).toBe("dispatched");
@@ -1076,8 +1073,8 @@ describe("maintenance routing admission and captured authority", () => {
       const dispatchTime = nowDate();
       await insertPendingPhase2Job(scope, phase2JobSeed("none", dispatchTime));
       const result = await createStore().set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: dispatchTime },
+        createPiMemoryPhase2Worker(scope).execute$,
+        dispatchTime,
         context.signal,
       );
       expect(result).toStrictEqual({

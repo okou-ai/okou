@@ -50,8 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.SocialDataJobs]: {
     maintainer: "ethan@okou.ai",
     description: "Enable bounded public Social data jobs and saved results",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
@@ -362,6 +361,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PwaNavigation]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser. Enable manually to try it.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ClaudeCodeUsageReset]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -393,8 +398,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Allow personal Codex and Claude Code subscriptions to store and manually switch between multiple accounts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -406,8 +410,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Read locally archived iMessage group messages visible to the authenticated member.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -444,8 +447,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Share one assistant message and its user prompt from the message actions, copying the public link immediately.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",

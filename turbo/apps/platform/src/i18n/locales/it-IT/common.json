@@ -387,6 +387,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Impossibile caricare gli agenti",
+      "backToChats": "Torna alle chat",
+      "chatListUnavailable": "Impossibile caricare le chat",
+      "chats": "Chat",
+      "me": "Io",
+      "navigation": "Navigazione principale",
+      "searchAgents": "Cerca agenti",
+      "switchAgent": "Cambia agente"
+    },
     "shortcutHelp": {
       "close": "Chiudi le scorciatoie da tastiera",
       "description": "Scorciatoie disponibili in questa pagina",
@@ -4982,7 +4992,6 @@
         "accountsSectionTitle": "Account personali",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Attivo",
-        "addAccount": "Aggiungi account",
         "autoDescription": "Collega il tuo account Claude o ChatGPT per usare più modelli.",
         "autoTitle": "Usa più modelli",
         "claudeDescription": "Accedi con il tuo abbonamento Claude per usare i modelli Claude con agenti basati su Claude Code.",

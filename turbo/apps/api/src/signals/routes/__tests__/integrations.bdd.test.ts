@@ -2581,6 +2581,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const { chatThreadId: canonicalChatThreadId, agentId: defaultAgentId } =
       await ownedThreadWhere(actor, launchedBy(run1Id));
     const claim1 = await runs.claimRunnerJob(run1Id);
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
     const queuedWebMessage = await chat.requestSendEvent(
       actor,
       {
@@ -2661,20 +2663,20 @@ describe("INT-01: Slack app deep webhook flows", () => {
       runnerGroup,
       expectedSlackSessionId: `bdd-slack-cli-${run1Id}`,
     });
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
     const webRunId = queuedRuns.webRunId;
     await expect(readRunLog(actor, webRunId)).resolves.toMatchObject({
       triggerSource: "web",
     });
-    if (queuedRuns.run2Id === undefined) {
-      const webClaim = await runs.claimRunnerJob(webRunId);
-      await completeSlackTriggeredRun({
-        runId: webRunId,
-        sandboxToken: webClaim.sandboxToken,
-        cliAgentType: webClaim.cliAgentType,
-        assistantText: "Web answer stays off Slack",
-      });
-      await flushWaitUntilForTest();
-    }
+    const webClaim = await runs.claimRunnerJob(webRunId);
+    await completeSlackTriggeredRun({
+      runId: webRunId,
+      sandboxToken: webClaim.sandboxToken,
+      cliAgentType: webClaim.cliAgentType,
+      assistantText: "Web answer stays off Slack",
+    });
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
     const { run2Id, claim2 } = await ensureSlackRunClaimed({
       runnerGroup,
       run2Id: queuedRuns.run2Id,
@@ -2694,6 +2696,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(claim2.appendSystemPrompt).toContain(
       `Slack user ID: ${slackUserId}`,
     );
+    await completeSlackTriggeredRun({
+      runId: run2Id,
+      sandboxToken: claim2.sandboxToken,
+      cliAgentType: claim2.cliAgentType,
+      assistantText: "Canonical Slack answer two",
+    });
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
   });
 
   describe("queued Web and Slack sends on one canonical session", () => {
@@ -4663,6 +4673,18 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("delivers canonical Slack callbacks for progress, attribution footers, failures, and Slack errors", async () => {
     const actor = bdd.user();
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+    let notificationSummaryRequests = 0;
+    chatCallbacks.mockOpenRouterCompletions((body) => {
+      if (
+        body.messages[0]?.content.includes("one short notification sentence")
+      ) {
+        notificationSummaryRequests += 1;
+      }
+      return "Generated summary";
+    });
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     integrations.configureSlackAppMocks();
@@ -4758,6 +4780,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run1 = await runs.readRun(actor, run1Id);
     expect(run1.status).toBe("completed");
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+    expect(notificationSummaryRequests).toBe(0);
 
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -4849,6 +4874,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run4 = await runs.readRun(actor, run4Id);
     expect(run4.status).toBe("failed");
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
 
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -4906,6 +4933,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run6 = await runs.readRun(actor, run6Id);
     expect(run6.status).toBe("completed");
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+    expect(notificationSummaryRequests).toBe(0);
   }, 90_000);
 
   it("keeps canonical Slack callbacks visible when status updates fail and installs vanish", async () => {
@@ -5199,6 +5229,8 @@ describe("INT-02: Telegram integration", () => {
     const actor = integrations.user();
     await integrations.enableOkouDebug(actor);
     await configureFastCodexPreference(actor);
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
 
     const telegramBotId = randomInt(1_000_000_000, 9_999_999_999);
     const telegramBotToken = `${telegramBotId}:bdd-fast-token`;
@@ -5303,6 +5335,8 @@ describe("INT-02: Telegram integration", () => {
         }),
       ]);
     });
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
   it("refreshes telegram typing for pending webhook-dispatched runs", async () => {

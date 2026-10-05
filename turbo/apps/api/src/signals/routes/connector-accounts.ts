@@ -21,7 +21,7 @@ import {
   listConnectorAccountsByIds,
   listConnectorAccountsForTarget,
   listConnectorAccountSummaries,
-  renameConnectorAccount,
+  renameConnectorAccount$,
   setDefaultConnectorAccount,
   setDefaultGoogleFormsAccount$,
 } from "../services/connector-account-lifecycle.service";
@@ -205,8 +205,7 @@ const renameInner$ = command(
     if (!existing) {
       return notFound("Connector account not found");
     }
-    const writeDb = set(writeDb$);
-    const updatedAt = await renameConnectorAccount(writeDb, {
+    const updatedAt = await set(renameConnectorAccount$, {
       ...request,
       displayName: body.data.displayName,
     });

@@ -55,7 +55,7 @@
     },
     {
       "path": "/api/cron/compact-chat-thread-snapshots",
-      "schedule": "0 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/reconcile-artifact-catalog",

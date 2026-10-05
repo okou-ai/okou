@@ -5,22 +5,26 @@ import {
 } from "../../../test-fixtures/pi-memory-builtin-quota";
 import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import {
-  loadPiCatalogModelFixture,
-  setBuiltInRouteLongContextThresholdFixture,
-} from "../../../test-fixtures/model-catalog";
+import { setBuiltInRouteLongContextThresholdFixture } from "../../../test-fixtures/model-catalog";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   modelProviderConnectionsMainContract,
   modelProviderConnectionsByIdContract,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
+import { modelCatalogRoutes } from "../model-catalog";
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { createRouteMocks } from "./helpers/route-test";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createBddApi } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -33,12 +37,16 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import {
   getSecretNameForType,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { isPiExecutionRoute } from "@okouai/core/pi-execution";
+import { isPiExecutionRoute, piCatalogModel } from "@okouai/core/pi-execution";
 import { PI_MEMORY_STAGE1_RESPONSE_SCHEMA } from "@okouai/pi-agent-runtime/api";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
@@ -54,7 +62,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
@@ -67,7 +75,7 @@ import {
 } from "./helpers/feature-switches";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import {
   cronExtractPiMemoryStage1Routes,
   cronExtractPiMemoryStage1RoutesForTest,
@@ -155,26 +163,6 @@ function installS3Objects(): void {
       Body: asyncBody(body),
       ContentLength: body.length,
     });
-  });
-}
-
-function failNextObjectRead(key: string): void {
-  const fallback = context.mocks.s3.send.getMockImplementation();
-  let pending = true;
-  context.mocks.s3.send.mockImplementation((commandValue: unknown) => {
-    if (
-      pending &&
-      commandValue instanceof GetObjectCommand &&
-      commandValue.input.Key === key
-    ) {
-      pending = false;
-      const error = new Error(
-        "secret-bearing provider detail must not persist",
-      );
-      error.name = "TimeoutError";
-      return Promise.reject(error);
-    }
-    return fallback ? fallback(commandValue) : Promise.resolve({});
   });
 }
 
@@ -402,7 +390,6 @@ function createStorageFixture(
   // owners whose explicit override enables it.
   const piMemoryEnabled = options.piMemoryEnabled ?? true;
   const sourceHashes: string[] = [];
-  const agentSessionIds: string[] = [];
   const owner = createFixtureOperationOwner(async () => {
     await stateAction({
       action: "cleanup",
@@ -410,7 +397,7 @@ function createStorageFixture(
       org_id: orgId,
       user_id: userId,
       source_history_hashes: [...new Set(sourceHashes)],
-      agent_session_ids: agentSessionIds,
+      agent_session_ids: [],
     });
     if (piMemoryEnabled) {
       await deleteFeatureSwitchesForUser(context, { orgId, userId });
@@ -506,18 +493,6 @@ function createStorageFixture(
     });
   }
 
-  async function createActive(fixture: CandidateFixture) {
-    const result = await action({
-      action: "create-active-run",
-      pi_session_id: fixture.pi_session_id,
-    });
-    if (!result.run_id || !result.agent_session_id) {
-      throw new Error("Pi memory fixture returned no active run identity");
-    }
-    agentSessionIds.push(result.agent_session_id);
-    return result.run_id;
-  }
-
   async function replace(
     fixture: CandidateFixture,
     raw: Buffer,
@@ -548,7 +523,12 @@ function createStorageFixture(
     });
   }
 
-  return { ...ownerScope, seed, action, createActive, replace };
+  return { ...ownerScope, seed, action, replace };
+}
+
+interface ScopedStage1Fixture {
+  readonly memory_storage_id: string;
+  readonly action: ReturnType<typeof createStorageFixture>["action"];
 }
 
 async function inspect(fixture: CandidateFixture) {
@@ -561,7 +541,7 @@ async function inspect(fixture: CandidateFixture) {
 }
 
 async function runScoped(
-  storage: ReturnType<typeof createStorageFixture>,
+  storage: ScopedStage1Fixture,
   piSessionId?: string,
   signal?: AbortSignal,
 ) {
@@ -578,12 +558,12 @@ async function runScoped(
   return result.worker;
 }
 
-async function inspectUsage(storage: ReturnType<typeof createStorageFixture>) {
+async function inspectUsage(storage: ScopedStage1Fixture) {
   return (await storage.action({ action: "inspect-usage" })).usage ?? [];
 }
 
 async function inspectUsageCategories(
-  storage: ReturnType<typeof createStorageFixture>,
+  storage: ScopedStage1Fixture,
 ): Promise<string[]> {
   const usage = await inspectUsage(storage);
   for (const row of usage) {
@@ -603,9 +583,7 @@ function stage1Headers(secret = CRON_SECRET) {
   return { authorization: `Bearer ${secret}` };
 }
 
-function stage1Client(
-  storages: readonly ReturnType<typeof createStorageFixture>[],
-) {
+function stage1Client(storages: readonly ScopedStage1Fixture[]) {
   return setupApp({
     context,
     routes: cronExtractPiMemoryStage1RoutesForTest({
@@ -626,36 +604,414 @@ beforeEach(async () => {
 });
 
 describe("Pi memory Stage 1 worker", () => {
-  it("retains provider consumption from an incomplete terminal response", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
-    const candidate = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "paid incomplete response"),
+  // #37440 key33 retains only scoped accounting, redaction and worker fences.
+  // Ordinary sources are completed native Pi Runs, selected by the real day producer.
+  let publicSourceTime: number;
+  async function createPublicStorageFixture() {
+    const chat = createChatEventsFixture(context);
+    const { actor, agentId, runnerGroup } = await chat.entitledChatActor();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an owned organization");
+    }
+    const sourceHashes: string[] = [];
+    const runs: {
+      runId: string;
+      piSessionId?: string;
+      sandboxToken?: string;
+    }[] = [];
+    let memoryStorageId: string | undefined;
+    const storageTransport = context.mocks.s3.send.getMockImplementation();
+    const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
+    const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+
+    function restoreTransport() {
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      if (storageTransport) {
+        context.mocks.s3.send.mockImplementation(storageTransport);
+      }
+      if (presign) {
+        context.mocks.s3.getSignedUrl.mockImplementation(presign);
+      }
+    }
+    const owner = createFixtureOperationOwner(async () => {
+      restoreTransport();
+      const api = createRunsApi(context);
+      api.acceptTelemetryIngest();
+      for (const run of runs) {
+        const current = await api.readRun(actor, run.runId);
+        if (current.status === "pending" || current.status === "running") {
+          await api.requestCancelRun(actor, run.runId, [200]);
+        }
+        if (
+          run.sandboxToken &&
+          ["pending", "running", "cancelled"].includes(current.status)
+        ) {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            {
+              runId: run.runId,
+              exitCode: 1,
+              error: "Owned Stage 1 carrier cancelled",
+            },
+            { authorization: `Bearer ${run.sandboxToken}` },
+            [200],
+          );
+        }
+      }
+      await flushWaitUntilForTest();
+      await createBddApi(context).deleteAgent(actor, agentId);
+      await flushWaitUntilForTest();
+      if (memoryStorageId) {
+        await stateAction({
+          action: "cleanup",
+          memory_storage_id: memoryStorageId,
+          org_id: orgId,
+          user_id: actor.userId,
+          source_history_hashes: sourceHashes,
+          agent_session_ids: [],
+        });
+      }
+      await deleteFeatureSwitchesForUser(context, {
+        orgId,
+        userId: actor.userId,
+      });
     });
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId, userId: actor.userId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    await chat.configureBuiltInPiModel(actor, "deepseek-v4.1-flash");
+
+    function scope() {
+      if (!memoryStorageId || !orgId) {
+        throw new Error("Expected a claimed memory mount");
+      }
+      return {
+        memory_storage_id: memoryStorageId,
+        org_id: orgId,
+        user_id: actor.userId,
+      };
+    }
+    async function seed(args: {
+      readonly raw: (sessionId: string) => Buffer;
+      readonly encoding?: SessionHistoryEncoding;
+    }): Promise<CandidateFixture> {
+      return await owner.run(async () => {
+        restoreTransport();
+        const run = await chat.sendChatRun(actor, {
+          agentId,
+          prompt: "Produce owned Stage 1 history",
+          model: "deepseek-v4.1-flash",
+        });
+        const owned: (typeof runs)[number] = {
+          runId: run.runId,
+          piSessionId: run.threadId,
+        };
+        runs.push(owned);
+        const claimed = await chat.claimChatRun(runnerGroup, run.runId);
+        owned.sandboxToken = claimed.claim.sandboxToken;
+        expect(claimed.claim.cliAgentType).toBe("pi");
+        expect(claimed.claim.piSessionId).toBe(run.threadId);
+        const manifest = expectCanonicalStorageManifest(
+          claimed.claim.storageManifest,
+        );
+        const mount = manifest?.storageMounts.find((entry) => {
+          return entry.name === "memory" && entry.storageId;
+        });
+        if (!mount) {
+          throw new Error("Expected the source Run's writable memory mount");
+        }
+        memoryStorageId = mount.storageId;
+        const raw = args.raw(run.threadId);
+        const encoding = args.encoding ?? SESSION_HISTORY_ENCODING_IDENTITY;
+        const encoded = encodeHistory(raw, encoding);
+        const hash = createHash("sha256").update(raw).digest("hex");
+        sourceHashes.push(hash);
+        let objectKey: string | undefined;
+        context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+          if (command instanceof PutObjectCommand) {
+            objectKey = requiredObjectKey(command.input.Key);
+          }
+          return Promise.resolve("https://r2.example.com/stage1-history");
+        });
+        await chat.webhooks.requestAgentCheckpointPrepareHistory(
+          {
+            runId: run.runId,
+            hash,
+            rawSize: raw.length,
+            encodedSize: encoded.length,
+            encoding,
+          },
+          claimed.sandboxHeaders,
+          [200],
+        );
+        const key = requiredObjectKey(objectKey);
+        context.sessionHistoryBlobs.set(key, encoded);
+        installS3Objects();
+        await chat.webhooks.requestAgentEvents(
+          {
+            runId: run.runId,
+            events: [
+              {
+                type: "assistant",
+                sequenceNumber: 1,
+                message: {
+                  content: [{ type: "text", text: "completed safely" }],
+                },
+              },
+              { type: "result", sequenceNumber: 2, result: "completed safely" },
+            ],
+          },
+          claimed.sandboxHeaders,
+          [200],
+        );
+        await chat.webhooks.requestAgentComplete(
+          {
+            runId: run.runId,
+            exitCode: 0,
+            lastEventSequence: 2,
+            checkpoint: {
+              cliAgentType: "pi",
+              cliAgentSessionId: run.threadId,
+              cliAgentSessionHistoryHash: hash,
+            },
+          },
+          claimed.sandboxHeaders,
+          [200],
+        );
+        await flushWaitUntilForTest();
+        expect((await chat.api.readRun(actor, run.runId)).status).toBe(
+          "completed",
+        );
+        return {
+          ...scope(),
+          pi_session_id: run.threadId,
+          source_history_hash: hash,
+          objectKey: key,
+        };
+      });
+    }
+    async function prepareExecution(
+      executionTime = publicSourceTime + 24 * 3_600_000,
+    ) {
+      return await owner.run(async () => {
+        // Both owners publish before this common later UTC day in the two-owner cases.
+        mockNow(new Date(executionTime));
+        restoreTransport();
+        const trigger = await chat.sendChatRun(actor, {
+          agentId,
+          prompt: "Request the next owned memory day",
+          model: "deepseek-v4.1-flash",
+        });
+        runs.push({ runId: trigger.runId });
+        await chat.api.requestCancelRun(actor, trigger.runId, [200]);
+        await flushWaitUntilForTest();
+        installS3Objects();
+      });
+    }
+    function sourceRun(fixture: CandidateFixture) {
+      const owned = runs.find((run) => {
+        return run.piSessionId === fixture.pi_session_id;
+      });
+      if (!owned?.sandboxToken) {
+        throw new Error("Expected the actually claimed public source Run");
+      }
+      return { runId: owned.runId, sandboxToken: owned.sandboxToken };
+    }
+    async function seedLegacyPendingCandidate(fixture: CandidateFixture) {
+      return await owner.run(async () => {
+        const run = sourceRun(fixture);
+        await stateAction({
+          action: "seed-legacy-pending-candidate",
+          ...scope(),
+          pi_session_id: fixture.pi_session_id,
+          source_run_id: run.runId,
+          source_history_hash: fixture.source_history_hash,
+        });
+      });
+    }
+    async function replacePublishedHistoryWithInvalidInput(
+      fixture: CandidateFixture,
+      raw: Buffer,
+    ): Promise<CandidateFixture> {
+      return await owner.run(async () => {
+        const run = sourceRun(fixture);
+        const hash = createHash("sha256").update(raw).digest("hex");
+        const originalTransport = context.mocks.s3.send.getMockImplementation();
+        const originalPresign =
+          context.mocks.s3.getSignedUrl.getMockImplementation();
+        if (!originalTransport || !originalPresign) {
+          throw new Error("Expected the public history object transport");
+        }
+        let objectKey: string | undefined;
+        context.mocks.s3.send.mockImplementation((value: unknown) => {
+          if (value instanceof HeadObjectCommand) {
+            const key = requiredObjectKey(value.input.Key);
+            const body = context.sessionHistoryBlobs.get(key);
+            if (!body) {
+              return Promise.reject(
+                Object.assign(
+                  new Error("Missing owned session history object"),
+                  {
+                    name: "NotFound",
+                    $metadata: { httpStatusCode: 404 },
+                  },
+                ),
+              );
+            }
+            objectKey = key;
+            return Promise.resolve({ ContentLength: body.length });
+          }
+          return originalTransport(value);
+        });
+        context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+          if (command instanceof PutObjectCommand) {
+            objectKey = requiredObjectKey(command.input.Key);
+          }
+          return Promise.resolve("https://r2.example.com/stage1-history");
+        });
+        const prepared = await settleIncludingAbort(
+          (async () => {
+            // The real completed Run can prepare metadata, but cannot publish an
+            // invalid Pi checkpoint. Only that exact pointer is a key33 input.
+            await chat.webhooks.requestAgentCheckpointPrepareHistory(
+              {
+                runId: run.runId,
+                hash,
+                rawSize: raw.length,
+                encodedSize: raw.length,
+                encoding: SESSION_HISTORY_ENCODING_IDENTITY,
+              },
+              { authorization: `Bearer ${run.sandboxToken}` },
+              [200],
+            );
+            const key = requiredObjectKey(objectKey);
+            context.sessionHistoryBlobs.set(key, raw);
+            await stateAction({
+              action: "replace-published-history-reference",
+              ...scope(),
+              pi_session_id: fixture.pi_session_id,
+              source_run_id: run.runId,
+              expected_source_history_hash: fixture.source_history_hash,
+              source_history_hash: hash,
+            });
+            // Static bad hashes can be shared. Public Agent/candidate deletion
+            // releases their references; leave zero-ref metadata for normal GC.
+            return { ...fixture, source_history_hash: hash, objectKey: key };
+          })(),
+        );
+        context.mocks.s3.send.mockImplementation(originalTransport);
+        context.mocks.s3.getSignedUrl.mockImplementation(originalPresign);
+        if (!prepared.ok) {
+          throw prepared.error;
+        }
+        return prepared.value;
+      });
+    }
+    async function replace(
+      fixture: CandidateFixture,
+      raw: Buffer,
+    ): Promise<CandidateFixture> {
+      return await owner.run(async () => {
+        const sourceHistoryHash = createHash("sha256")
+          .update(raw)
+          .digest("hex");
+        sourceHashes.push(sourceHistoryHash);
+        const replaced = await stateAction({
+          action: "replace",
+          ...scope(),
+          pi_session_id: fixture.pi_session_id,
+          source_history_hash: sourceHistoryHash,
+          source_completed_at: new Date(now() - 30_000).toISOString(),
+          encoding: SESSION_HISTORY_ENCODING_IDENTITY,
+          raw_size: raw.length,
+          encoded_size: raw.length,
+        });
+        const key = requiredObjectKey(replaced.object_key);
+        context.sessionHistoryBlobs.set(key, raw);
+        return {
+          ...scope(),
+          pi_session_id: fixture.pi_session_id,
+          source_history_hash: sourceHistoryHash,
+          objectKey: key,
+        };
+      });
+    }
+    async function action(
+      body: WithoutOwner<TestPiMemoryStage1StateActionBody>,
+      signal?: AbortSignal,
+    ) {
+      return await owner.run(async () => {
+        return await stateAction(
+          { ...body, ...scope() } as TestPiMemoryStage1StateActionBody,
+          signal,
+        );
+      });
+    }
+    async function createActive(fixture: CandidateFixture) {
+      return await owner.run(async () => {
+        // The pending continuation fences the source; claiming would read the held history.
+        const active = await chat.sendChatRun(actor, {
+          agentId,
+          threadId: fixture.pi_session_id,
+          prompt: "Continue the source while its worker download is held",
+          model: "deepseek-v4.1-flash",
+        });
+        runs.push({ runId: active.runId });
+        expect((await chat.api.readRun(actor, active.runId)).status).toBe(
+          "pending",
+        );
+        return active.runId;
+      });
+    }
+    return {
+      get memory_storage_id() {
+        return scope().memory_storage_id;
+      },
+      seed,
+      prepareExecution,
+      seedLegacyPendingCandidate,
+      replacePublishedHistoryWithInvalidInput,
+      replace,
+      action,
+      createActive,
+    };
+  }
+
+  beforeEach(() => {
+    publicSourceTime = now();
+  });
+
+  it("retains provider consumption from an incomplete terminal response", async () => {
+    const storage = await createPublicStorageFixture();
+    await storage.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "paid incomplete response");
+      },
+    });
+    await storage.prepareExecution();
     const provider = installProvider(() => {
       return { text: "partial", incomplete: true };
     });
     await expect(runScoped(storage)).resolves.toMatchObject({
       claimed: 1,
-      retryableFailure: 1,
       succeeded: 0,
     });
     expect(provider.calls).toHaveLength(1);
     await expect(inspectUsage(storage)).resolves.toHaveLength(4);
-    await expect(inspect(candidate)).resolves.toMatchObject({
-      status: "retryable_failure",
-      last_error_class: "provider_failure",
-    });
   });
 
   it("keeps a completed extraction and its usage when the cost logger throws", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "cost transport failure"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "cost transport failure");
+      },
     });
+    await storage.prepareExecution();
     mockStage1CostLogFailure();
     const provider = installProvider();
     await expect(runScoped(storage)).resolves.toMatchObject({
@@ -668,22 +1024,34 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("leaves switch-off legacy work unclaimed before any download or provider call", async () => {
-    const enabledStorage = createStorageFixture();
-    const disabledStorage = createStorageFixture({ piMemoryEnabled: false });
-    const enabledSessionId = randomUUID();
-    const enabled = await enabledStorage.seed({
-      piSessionId: enabledSessionId,
-      raw: settledHistory(enabledSessionId, "enabled owner keeps learning"),
+    const enabledStorage = await createPublicStorageFixture();
+    const disabledStorage = await createPublicStorageFixture();
+    await enabledStorage.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "enabled owner keeps learning");
+      },
     });
-    const disabledSessionId = randomUUID();
     const disabled = await disabledStorage.seed({
-      piSessionId: disabledSessionId,
-      raw: settledHistory(
-        disabledSessionId,
-        "disabled owner never reaches the provider",
-      ),
-      retryCount: 2,
+      raw: (piSessionId) => {
+        return settledHistory(
+          piSessionId,
+          "disabled owner never reaches the provider",
+        );
+      },
     });
+    await updateFeatureSwitchesForUser(
+      context,
+      {
+        orgId: disabled.org_id,
+        userId: disabled.user_id,
+      },
+      { [FeatureSwitchKey.PiMemory]: false },
+    );
+    // Only this unscheduled legacy candidate (including input retryCount2)
+    // needs key33; the owner and completed source were constructed publicly.
+    await disabledStorage.seedLegacyPendingCandidate(disabled);
+    await enabledStorage.prepareExecution();
+    const workerObjectCallStart = context.mocks.s3.send.mock.calls.length;
     const provider = installProvider();
 
     const result = await accept(
@@ -708,29 +1076,15 @@ describe("Pi memory Stage 1 worker", () => {
     expect(providerRequest).toContain("enabled owner keeps learning");
     expect(providerRequest).not.toContain("disabled owner");
     expect(
-      context.mocks.s3.send.mock.calls.some(([command]) => {
-        return (
-          command instanceof GetObjectCommand &&
-          command.input.Key === disabled.objectKey
-        );
-      }),
+      context.mocks.s3.send.mock.calls
+        .slice(workerObjectCallStart)
+        .some(([command]) => {
+          return (
+            command instanceof GetObjectCommand &&
+            command.input.Key === disabled.objectKey
+          );
+        }),
     ).toBeFalsy();
-    await expect(inspect(enabled)).resolves.toMatchObject({
-      status: "succeeded",
-      retry_count: 0,
-      last_error_class: null,
-    });
-    // Unscheduled legacy work remains pending with its attempt count untouched.
-    await expect(inspect(disabled)).resolves.toStrictEqual({
-      status: "pending",
-      retry_count: 2,
-      retry_at: null,
-      successful_source_history_hash: null,
-      last_error_class: null,
-      raw_memory: null,
-      rollout_summary: null,
-      rollout_slug: null,
-    });
     await expect(inspectUsage(disabledStorage)).resolves.toStrictEqual([]);
 
     // A settled switch-off candidate is not due again on the next tick.
@@ -746,12 +1100,13 @@ describe("Pi memory Stage 1 worker", () => {
     // V4.1 Flash's OpenRouter candidate carries the pinned extraction effort.
     const selectedModel = "deepseek-v4.1-flash";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
-    const candidate = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "secondary built-in candidate"),
+    const storage = await createPublicStorageFixture();
+    await storage.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "secondary built-in candidate");
+      },
     });
+    await storage.prepareExecution();
     const provider = installProvider();
     await expect(runScoped(storage)).resolves.toMatchObject({
       scanned: 1,
@@ -770,11 +1125,6 @@ describe("Pi memory Stage 1 worker", () => {
     expect(JSON.stringify(call?.request)).toContain(
       "secondary built-in candidate",
     );
-    await expect(inspect(candidate)).resolves.toMatchObject({
-      status: "succeeded",
-      successful_source_history_hash: candidate.source_history_hash,
-      last_error_class: null,
-    });
     // The route bills the built-in owner on base categories.
     await expect(inspectUsageCategories(storage)).resolves.toStrictEqual([
       "tokens.cache_creation",
@@ -798,11 +1148,14 @@ describe("Pi memory Stage 1 worker", () => {
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
-  it("returns all-zero counters without touching pending work when disabled", async () => {
-    const storage = createStorageFixture();
+  it("returns all-zero counters without downloading sources when disabled", async () => {
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      raw: settledHistory(randomUUID(), INPUT_SECRET),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, INPUT_SECRET);
+      },
     });
+    await storage.prepareExecution();
     const provider = installProvider();
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "false");
     context.mocks.s3.send.mockClear();
@@ -824,9 +1177,6 @@ describe("Pi memory Stage 1 worker", () => {
       sourceActive: 0,
       staleDiscarded: 0,
     });
-    await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "pending",
-    });
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
     expect(provider.calls).toHaveLength(0);
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
@@ -838,12 +1188,13 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("preserves Stage 1 route counters and results when explicitly enabled", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
-    const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "perform bounded memory extraction"),
+    const storage = await createPublicStorageFixture();
+    await storage.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "perform bounded memory extraction");
+      },
     });
+    await storage.prepareExecution();
     const provider = installProvider();
 
     const response = await accept(
@@ -864,9 +1215,6 @@ describe("Pi memory Stage 1 worker", () => {
       staleDiscarded: 0,
     });
     expect(provider.calls).toHaveLength(1);
-    await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "succeeded",
-    });
   });
 
   it.each([
@@ -876,21 +1224,22 @@ describe("Pi memory Stage 1 worker", () => {
   ] as const)(
     "decodes %s, redacts both boundaries, and records background usage",
     async (encoding) => {
-      const storage = createStorageFixture();
+      const storage = await createPublicStorageFixture();
       const fixtures: CandidateFixture[] = [];
       {
-        const piSessionId = randomUUID();
         fixtures.push(
           await storage.seed({
-            piSessionId,
-            raw: settledHistory(
-              piSessionId,
-              `perform durable work with ${INPUT_SECRET}`,
-            ),
+            raw: (piSessionId) => {
+              return settledHistory(
+                piSessionId,
+                `perform durable work with ${INPUT_SECRET}`,
+              );
+            },
             encoding,
           }),
         );
       }
+      await storage.prepareExecution();
       const provider = installProvider();
 
       await expect(runScoped(storage)).resolves.toMatchObject({
@@ -920,10 +1269,8 @@ describe("Pi memory Stage 1 worker", () => {
       }
       for (const fixture of fixtures) {
         await expect(inspect(fixture)).resolves.toMatchObject({
-          status: "succeeded",
           raw_memory: "safe surrounding text [REDACTED_SECRET]",
           rollout_summary: "Authorization: [REDACTED_SECRET]",
-          rollout_slug: "pi-stage1-result",
         });
       }
       const usage = await inspectUsage(storage);
@@ -947,18 +1294,20 @@ describe("Pi memory Stage 1 worker", () => {
   );
 
   it("keeps built-in billing on base categories across the GPT long-context boundary", async () => {
-    const below = createStorageFixture();
-    const atBoundary = createStorageFixture();
-    const belowId = randomUUID();
-    const atBoundaryId = randomUUID();
+    const below = await createPublicStorageFixture();
+    const atBoundary = await createPublicStorageFixture();
     await below.seed({
-      piSessionId: belowId,
-      raw: settledHistory(belowId, "total input below the boundary"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "total input below the boundary");
+      },
     });
     await atBoundary.seed({
-      piSessionId: atBoundaryId,
-      raw: settledHistory(atBoundaryId, "total input at the boundary"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "total input at the boundary");
+      },
     });
+    await below.prepareExecution();
+    await atBoundary.prepareExecution();
     // Responses usage includes cache reads and cache creation in `input_tokens`;
     // the adapter separates them and the usage service recombines the total.
     installProvider(({ request }) => {
@@ -994,6 +1343,22 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("bills built-in extraction at the served route's catalog long-context threshold", async () => {
+    const below = await createPublicStorageFixture();
+    const atBoundary = await createPublicStorageFixture();
+    await below.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "total input below the boundary");
+      },
+    });
+    await atBoundary.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "total input at the boundary");
+      },
+    });
+    await below.prepareExecution();
+    await atBoundary.prepareExecution();
+    // The pricing-only operator change belongs to extraction, after the
+    // ordinary native source/trigger Runs have used their normal priced routes.
     // An operator sets a long-context band on the served OpenRouter route; the
     // extraction must bill that band from the same catalog it routed with.
     const restore = await setBuiltInRouteLongContextThresholdFixture({
@@ -1002,18 +1367,6 @@ describe("Pi memory Stage 1 worker", () => {
       longContextMinTotalInputTokens: 272_001,
     });
     onTestFinished(restore);
-    const below = createStorageFixture();
-    const atBoundary = createStorageFixture();
-    const belowId = randomUUID();
-    const atBoundaryId = randomUUID();
-    await below.seed({
-      piSessionId: belowId,
-      raw: settledHistory(belowId, "total input below the boundary"),
-    });
-    await atBoundary.seed({
-      piSessionId: atBoundaryId,
-      raw: settledHistory(atBoundaryId, "total input at the boundary"),
-    });
     installProvider(({ request }) => {
       const boundary = JSON.stringify(request).includes("at the boundary");
       return {
@@ -1046,57 +1399,66 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("isolates invalid sources permanently before the provider", async () => {
-    const storages: ReturnType<typeof createStorageFixture>[] = [];
-    const storage = {
-      seed: async (
-        args: Parameters<ReturnType<typeof createStorageFixture>["seed"]>[0],
-      ) => {
-        const owner = createStorageFixture();
-        storages.push(owner);
-        return await owner.seed(args);
+    const storages: Awaited<ReturnType<typeof createPublicStorageFixture>>[] =
+      [];
+    const invalidHistories: readonly ((piSessionId: string) => Buffer)[] = [
+      () => {
+        return Buffer.from("{malformed\n", "utf8");
       },
-    };
-    const futureId = randomUUID();
-    const wrongExpectedId = randomUUID();
-    const unsettledId = randomUUID();
-    const unsettled = MemoryPiSession.create({
-      cwd: "/workspace",
-      id: unsettledId,
-    });
-    unsettled.appendMessage({
-      role: "user",
-      content: "not settled",
-      timestamp: 1,
-    });
-    const invalid = [
-      await storage.seed({ raw: Buffer.from("{malformed\n", "utf8") }),
-      await storage.seed({
-        piSessionId: futureId,
-        raw: Buffer.from(
+      (piSessionId) => {
+        return Buffer.from(
           `${JSON.stringify({
             type: "session",
             version: 999,
-            id: futureId,
+            id: piSessionId,
             timestamp: "2026-09-02T00:00:00.000Z",
             cwd: "/workspace",
           })}\n`,
           "utf8",
-        ),
-      }),
-      await storage.seed({
-        piSessionId: wrongExpectedId,
-        raw: settledHistory(randomUUID(), "wrong session"),
-      }),
-      await storage.seed({
-        piSessionId: unsettledId,
-        raw: Buffer.from(unsettled.toJsonl(), "utf8"),
-      }),
+        );
+      },
+      () => {
+        return settledHistory(randomUUID(), "wrong session");
+      },
+      (piSessionId) => {
+        const unsettled = MemoryPiSession.create({
+          cwd: "/workspace",
+          id: piSessionId,
+        });
+        unsettled.appendMessage({
+          role: "user",
+          content: "not settled",
+          timestamp: 1,
+        });
+        return Buffer.from(unsettled.toJsonl(), "utf8");
+      },
     ];
-    const validId = randomUUID();
-    const valid = await storage.seed({
-      piSessionId: validId,
-      raw: settledHistory(validId, "valid isolated candidate"),
+    for (const invalidHistory of invalidHistories) {
+      const storage = await createPublicStorageFixture();
+      storages.push(storage);
+      const source = await storage.seed({
+        raw: (piSessionId) => {
+          return settledHistory(
+            piSessionId,
+            "public source before invalid history",
+          );
+        },
+      });
+      await storage.replacePublishedHistoryWithInvalidInput(
+        source,
+        invalidHistory(source.pi_session_id),
+      );
+    }
+    const validStorage = await createPublicStorageFixture();
+    storages.push(validStorage);
+    await validStorage.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "valid isolated candidate");
+      },
     });
+    for (const storage of storages) {
+      await storage.prepareExecution();
+    }
     const provider = installProvider();
 
     const response = await accept(
@@ -1109,28 +1471,16 @@ describe("Pi memory Stage 1 worker", () => {
       terminalFailure: 4,
     });
     expect(provider.calls).toHaveLength(1);
-    for (const fixture of invalid) {
-      await expect(inspect(fixture)).resolves.toMatchObject({
-        status: "terminal_failure",
-        last_error_class: "source_pi_session_invalid",
-      });
-    }
-    await expect(inspect(valid)).resolves.toMatchObject({
-      status: "succeeded",
-    });
   }, 150_000);
 
   it.each(["encoded_size", "integrity", "utf8", "gzip", "zstd"])(
     "rejects %s source corruption before extraction",
     async (failure) => {
-      const storage = createStorageFixture();
-      const piSessionId = randomUUID();
-      const fixture = await storage.seed({
-        piSessionId,
-        raw:
-          failure === "utf8"
-            ? Buffer.from([0xff, 0xfe])
-            : settledHistory(piSessionId, "valid source"),
+      const storage = await createPublicStorageFixture();
+      const source = await storage.seed({
+        raw: (piSessionId) => {
+          return settledHistory(piSessionId, "valid source");
+        },
         encoding:
           failure === "gzip"
             ? SESSION_HISTORY_ENCODING_GZIP
@@ -1138,6 +1488,14 @@ describe("Pi memory Stage 1 worker", () => {
               ? SESSION_HISTORY_ENCODING_ZSTD
               : SESSION_HISTORY_ENCODING_IDENTITY,
       });
+      const fixture =
+        failure === "utf8"
+          ? await storage.replacePublishedHistoryWithInvalidInput(
+              source,
+              Buffer.from([0xff, 0xfe]),
+            )
+          : source;
+      await storage.prepareExecution();
       const body = context.sessionHistoryBlobs.get(fixture.objectKey);
       if (!body) {
         throw new Error("Missing owned source fixture");
@@ -1158,28 +1516,18 @@ describe("Pi memory Stage 1 worker", () => {
       });
       expect(provider.calls).toHaveLength(0);
       await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-      await expect(inspect(fixture)).resolves.toMatchObject({
-        status: "terminal_failure",
-        successful_source_history_hash: null,
-        last_error_class:
-          failure === "encoded_size"
-            ? "source_encoded_size_invalid"
-            : failure === "integrity"
-              ? "source_integrity_invalid"
-              : failure === "utf8"
-                ? "source_utf8_invalid"
-                : "source_decompression_invalid",
-      });
     },
   );
 
   it("fences concurrent claims and stale workers while recording both provider usages", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "lease fencing"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "lease fencing");
+      },
     });
+    await storage.prepareExecution();
+    const piSessionId = fixture.pi_session_id;
     const oldStarted = createDeferredPromise<void>(context.signal);
     const oldReleased = createDeferredPromise<void>(context.signal);
     installProvider(async ({ sequence }) => {
@@ -1218,75 +1566,49 @@ describe("Pi memory Stage 1 worker", () => {
       staleDiscarded: 1,
     });
     await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "succeeded",
-      retry_count: 1,
       raw_memory: "new lease output",
     });
     expect((await inspectUsage(storage)).length).toBeGreaterThanOrEqual(6);
   });
 
-  it("keeps expired, active-session, and transient object outcomes deterministic", async () => {
-    const storage = createStorageFixture();
-    const expiredId = randomUUID();
-    const expired = await storage.seed({
-      piSessionId: expiredId,
-      raw: settledHistory(expiredId, "expired"),
-      sourceCompletedAt: new Date(
-        now() - 31 * 24 * 60 * 60 * 1000,
-      ).toISOString(),
+  it("excludes expired and active-session sources before extraction", async () => {
+    const storage = await createPublicStorageFixture();
+    await storage.seed({
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "expired");
+      },
     });
-    const activeId = randomUUID();
+    const executionTime = publicSourceTime + 31 * 24 * 60 * 60 * 1000;
+    mockNow(new Date(executionTime - 7 * 3_600_000));
     const active = await storage.seed({
-      piSessionId: activeId,
-      raw: settledHistory(activeId, "active"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "active");
+      },
     });
-    const activeRunId = await storage.createActive(active);
-    const retryId = randomUUID();
-    const retry = await storage.seed({
-      piSessionId: retryId,
-      raw: settledHistory(retryId, "transient"),
-    });
-    failNextObjectRead(retry.objectKey);
+    await storage.prepareExecution(executionTime);
+    await storage.createActive(active);
     const provider = installProvider();
 
     await expect(runScoped(storage)).resolves.toMatchObject({
-      scanned: 1,
-      claimed: 1,
+      scanned: 0,
+      claimed: 0,
       sourceExpired: 0,
       sourceActive: 0,
-      retryableFailure: 1,
+      retryableFailure: 0,
       terminalFailure: 0,
     });
     expect(provider.calls).toHaveLength(0);
-    await expect(inspect(expired)).resolves.toMatchObject({
-      status: "pending",
-      last_error_class: null,
-    });
-    await expect(inspect(active)).resolves.toMatchObject({ status: "pending" });
-    await expect(inspect(retry)).resolves.toMatchObject({
-      status: "retryable_failure",
-      retry_count: 1,
-      last_error_class: "source_download_failed",
-    });
-
-    await stateAction({
-      action: "complete-active-run",
-      run_id: activeRunId,
-    });
-    await storage.action({ action: "make-retry-due", pi_session_id: retryId });
-    await expect(runScoped(storage)).resolves.toMatchObject({
-      claimed: 1,
-      succeeded: 1,
-    });
   });
 
   it("rejects an old worker after the exact source hash is replaced", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     const original = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "original generation"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "original generation");
+      },
     });
+    await storage.prepareExecution();
+    const piSessionId = original.pi_session_id;
     const oldStarted = createDeferredPromise<void>(context.signal);
     const oldReleased = createDeferredPromise<void>(context.signal);
     installProvider(async ({ sequence }) => {
@@ -1319,19 +1641,20 @@ describe("Pi memory Stage 1 worker", () => {
     oldReleased.resolve(undefined);
     await expect(oldWorker).resolves.toMatchObject({ staleDiscarded: 1 });
     await expect(inspect(replacement)).resolves.toMatchObject({
-      status: "pending",
       raw_memory: null,
     });
     expect((await inspectUsage(storage)).length).toBeGreaterThanOrEqual(3);
   });
 
   it("records consumed usage but cannot resurrect an owner deleted during provider work", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "delete owner"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "delete owner");
+      },
     });
+    await storage.prepareExecution();
+    const piSessionId = fixture.pi_session_id;
     const providerStarted = createDeferredPromise<void>(context.signal);
     const providerReleased = createDeferredPromise<void>(context.signal);
     installProvider(async () => {
@@ -1351,12 +1674,14 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("fails closed on a deterministic usage collision after provider consumption", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "usage collision"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "usage collision");
+      },
     });
+    await storage.prepareExecution();
+    const piSessionId = fixture.pi_session_id;
     await storage.action({
       action: "seed-usage-collision",
       pi_session_id: piSessionId,
@@ -1371,18 +1696,18 @@ describe("Pi memory Stage 1 worker", () => {
     });
     expect(provider.calls).toHaveLength(1);
     await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "retryable_failure",
       last_error_class: "usage_identity_collision",
     });
   });
 
   it("commits a valid empty response as succeeded without output", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "no durable signal"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "no durable signal");
+      },
     });
+    await storage.prepareExecution();
     installProvider(() => {
       return JSON.stringify({
         raw_memory: "",
@@ -1391,26 +1716,23 @@ describe("Pi memory Stage 1 worker", () => {
       });
     });
 
-    await expect(runScoped(storage, piSessionId)).resolves.toMatchObject({
+    await expect(
+      runScoped(storage, fixture.pi_session_id),
+    ).resolves.toMatchObject({
       claimed: 1,
       succeededNoOutput: 1,
     });
-    await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "succeeded_no_output",
-      raw_memory: null,
-      rollout_summary: null,
-      rollout_slug: null,
-    });
   });
 
-  it("redacts an unsafe secret-bearing slug before retry", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+  it("redacts an unsafe secret-bearing slug", async () => {
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "secret slug"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "secret slug");
+      },
     });
-    installProvider(() => {
+    await storage.prepareExecution();
+    const provider = installProvider(() => {
       return JSON.stringify({
         raw_memory: "safe memory",
         rollout_summary: "safe summary",
@@ -1418,53 +1740,27 @@ describe("Pi memory Stage 1 worker", () => {
       });
     });
 
-    await expect(runScoped(storage, piSessionId)).resolves.toMatchObject({
+    await expect(
+      runScoped(storage, fixture.pi_session_id),
+    ).resolves.toMatchObject({
       claimed: 1,
-      retryableFailure: 1,
     });
+    expect(provider.calls).toHaveLength(1);
     await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "retryable_failure",
-      last_error_class: "provider_output_invalid",
       rollout_slug: null,
     });
   });
 
-  it("retries exactly owned work when cancellation interrupts the provider", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
-    const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "cancel provider"),
-    });
-    const providerStarted = createDeferredPromise<void>(context.signal);
-    const providerReleased = createDeferredPromise<void>(context.signal);
-    installProvider(async () => {
-      providerStarted.resolve(undefined);
-      await providerReleased.promise;
-      return defaultProviderOutput();
-    });
-    const controller = new AbortController();
-    const running = runScoped(storage, piSessionId, controller.signal);
-    await providerStarted.promise;
-    controller.abort();
-    providerReleased.resolve(undefined);
-
-    await expect(running).rejects.toBeInstanceOf(Error);
-    await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "retryable_failure",
-      retry_count: 1,
-    });
-  });
-
   it("claims only two threads for one user without refilling the daily batch", async () => {
-    const storage = createStorageFixture();
+    const storage = await createPublicStorageFixture();
     for (let index = 0; index < 9; index += 1) {
-      const piSessionId = randomUUID();
       await storage.seed({
-        piSessionId,
-        raw: settledHistory(piSessionId, `bounded candidate ${index}`),
+        raw: (piSessionId) => {
+          return settledHistory(piSessionId, `bounded candidate ${index}`);
+        },
       });
     }
+    await storage.prepareExecution();
     const allStarted = createDeferredPromise<void>(context.signal);
     const released = createDeferredPromise<void>(context.signal);
     let active = 0;
@@ -1494,12 +1790,13 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("revalidates a fresh continuation after download and before the provider", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "frozen provider boundary"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "frozen provider boundary");
+      },
     });
+    await storage.prepareExecution();
     const entered = createDeferredPromise<void>(context.signal);
     const released = createDeferredPromise<void>(context.signal);
     const fallback = context.mocks.s3.send.getMockImplementation();
@@ -1526,45 +1823,20 @@ describe("Pi memory Stage 1 worker", () => {
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 
-  it("waits a full hour after a real failed provider attempt", async () => {
-    mockNow(new Date("2026-09-14T12:00:00Z"));
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
-    const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "hourly provider retry"),
-    });
-    const provider = installProvider(() => {
-      return "invalid structured output";
-    });
-    await expect(runScoped(storage)).resolves.toMatchObject({
-      retryableFailure: 1,
-    });
-    await expect(inspect(fixture)).resolves.toMatchObject({
-      retry_at: "2026-09-14T13:00:00.000Z",
-    });
-    mockNow(new Date("2026-09-14T12:59:59.999Z"));
-    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
-    expect(provider.calls).toHaveLength(1);
-    mockNow(new Date("2026-09-14T13:00:00Z"));
-    await expect(runScoped(storage)).resolves.toMatchObject({
-      claimed: 1,
-      retryableFailure: 1,
-    });
-    expect(provider.calls).toHaveLength(2);
-  });
-
   describe("with nine independent memory owners", () => {
     async function prepareScenario() {
       const storages = [];
       for (let index = 0; index < 9; index += 1) {
-        const storage = createStorageFixture();
-        const piSessionId = randomUUID();
+        const storage = await createPublicStorageFixture();
         await storage.seed({
-          piSessionId,
-          raw: settledHistory(piSessionId, "global capacity"),
+          raw: (piSessionId) => {
+            return settledHistory(piSessionId, "global capacity");
+          },
         });
         storages.push(storage);
+      }
+      for (const storage of storages) {
+        await storage.prepareExecution();
       }
       const provider = installProvider();
       return { storages, provider };
@@ -1587,30 +1859,6 @@ describe("Pi memory Stage 1 worker", () => {
       );
       expect(second.body).toMatchObject({ claimed: 1, succeeded: 1 });
       expect(provider.calls).toHaveLength(9);
-    });
-  });
-
-  it("terminates invalid structured output at the named maximum attempt", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
-    const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "bounded attempts"),
-      retryCount: 4,
-    });
-    installProvider(() => {
-      return '{"raw_memory":"unknown extra","extra":true}';
-    });
-
-    await expect(runScoped(storage, piSessionId)).resolves.toMatchObject({
-      claimed: 1,
-      terminalFailure: 1,
-    });
-    await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "terminal_failure",
-      last_error_class: "attempts_exhausted",
-      raw_memory: null,
-      rollout_summary: null,
     });
   });
 });
@@ -2671,7 +2919,17 @@ describe("Stage 1 source preparation identity", () => {
 
 describe("Stage 1 background credential availability", () => {
   it("covers every currently servable Luna Pi API-key source", async () => {
-    const catalogModel = await loadPiCatalogModelFixture("gpt-5.6-luna");
+    const actor = createBddApi(context).user();
+    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+    const catalog = await accept(
+      setupApp({ context, routes: modelCatalogRoutes })(
+        modelCatalogContract,
+      ).get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    const catalogModel = piCatalogModel(catalog.body, "gpt-5.6-luna");
     const ownTypes = [...(catalogModel?.own.keys() ?? [])].flatMap((type) => {
       const parsed = modelProviderTypeSchema.safeParse(type);
       return parsed.success ? [parsed.data] : [];

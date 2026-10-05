@@ -173,7 +173,9 @@ function mockBillingCapabilities(modelCapabilities: {
 
 async function openModelSettings(
   heading = "Models",
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
+  },
   locale?: SupportedLocale,
 ): Promise<void> {
   await setupPage({
@@ -224,7 +226,11 @@ function closeClaudeCodeDialogs(): void {
 
 function connectButtonInRow(row: HTMLElement, label: string): HTMLElement {
   const button = queryAllByRoleFast("button", row).find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
+    return (
+      (
+        candidate.getAttribute("aria-label") ?? candidate.textContent
+      )?.trim() === label
+    );
   });
   if (!button) {
     throw new Error(`${label} button not found`);
@@ -582,7 +588,43 @@ test("Offer Pro from personal account groups when BYOK is unavailable", async ()
   ).resolves.toBeInTheDocument();
 });
 
-test("Start and close personal Claude login from the account menu", async () => {
+test("View personal account groups by default in an external workspace", async () => {
+  context.mocks.data.org({
+    id: "org_external",
+    name: "External workspace",
+    role: "member",
+  });
+  context.mocks.data.personalModelProviders([]);
+  await setupPage({
+    context,
+    path: "/?settings=model",
+    auth: {
+      user: { id: "user_external", fullName: "External member" },
+      organization: {
+        activeOrg: {
+          id: "org_external",
+          name: "External workspace",
+        },
+        memberships: [{ id: "org_external" }],
+      },
+    },
+  });
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  for (const name of ["Claude", "ChatGPT (Codex)"]) {
+    const section = within(settings)
+      .getByRole("heading", { name })
+      .closest("section");
+    if (!section) {
+      throw new Error(`Provider section not found: ${name}`);
+    }
+    expect(connectButtonInRow(section, "Connect account")).toBeEnabled();
+    expect(
+      within(section).getByText("No accounts connected."),
+    ).toBeInTheDocument();
+  }
+});
+
+test("Start and close personal Claude login directly from its account group", async () => {
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
@@ -605,15 +647,18 @@ test("Start and close personal Claude login from the account menu", async () => 
     [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
   });
 
-  const addAccountButton = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Add account";
-  });
-  if (!addAccountButton) {
-    throw new Error("Add account button not found");
+  const claudeSection = screen
+    .getByRole("heading", { name: "Claude" })
+    .closest("section");
+  if (!claudeSection) {
+    throw new Error("Claude account group not found");
   }
-  click(addAccountButton);
-  const addAccountMenu = await screen.findByRole("menu");
-  click(within(addAccountMenu).getByText("Claude"));
+  const connectAccountButton = connectButtonInRow(
+    claudeSection,
+    "Connect account",
+  );
+  click(connectAccountButton);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
   const authorizationCodeInputs = await screen.findAllByTestId(
     "claude-code-device-auth-code",
@@ -633,7 +678,7 @@ test("Start and close personal Claude login from the account menu", async () => 
     expect(
       screen.queryAllByTestId("claude-code-device-auth-code"),
     ).toHaveLength(0);
-    expect(addAccountButton).toBeEnabled();
+    expect(connectAccountButton).toBeEnabled();
   });
 });
 
