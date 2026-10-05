@@ -1063,6 +1063,9 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
+      '@okouai/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@okouai/core':
         specifier: workspace:*
         version: link:../core

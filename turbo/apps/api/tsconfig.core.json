@@ -218,6 +218,8 @@
     "src/signals/services/connector-catalog-reader.service.ts",
     "src/signals/services/connector-catalog-runtime-projection.service.ts",
     "src/signals/services/connector-catalog-runtime.service.ts",
+    "src/signals/services/connector-catalog-entries.service.ts",
+    "src/signals/services/connector-catalog-view.ts",
     "src/signals/services/connector-catalog-slug-source.service.ts",
     "src/signals/services/connector-catalog-source.ts",
     "src/signals/services/connector-catalog-validator-authority.ts",

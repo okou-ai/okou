@@ -49,6 +49,7 @@ import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
@@ -70,10 +71,9 @@ import {
 } from "./connector-catalog-reader.service";
 import {
   getConnectorRuntimeConnector,
-  loadConnectorRuntimeSelection,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
+  type ConnectorRuntimeLookup,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
@@ -328,34 +328,24 @@ export const loadStoredBuiltinConnectorRuntimeSnapshot$ = command(
 
 /**
  * Loads only the catalog entries for the given stored connectors from the
- * per-connector runtime projection, instead of decoding the full catalog.
- * Catalog unavailability follows the same null contract as
- * `loadStoredBuiltinConnectorRuntimeSnapshot`.
+ * immutable entries, instead of decoding the full catalog. Empty stored
+ * sets retain the local null contract; missing current/manifest rows fail fast.
  */
-async function loadStoredBuiltinConnectorRuntimeSelection(
-  db: ReadonlyDb,
+function loadStoredBuiltinConnectorRuntimeSelection(
   connectorSlugs: readonly string[],
-): Promise<ConnectorRuntimeSelection | null> {
-  const requestedConnectorSlugs = connectorSlugs.flatMap((connectorSlug) => {
-    const slug = connectorSlugSchema.safeParse(connectorSlug);
-    return slug.success ? [slug.data] : [];
+): Computed<Promise<ConnectorRuntimeLookup | null>> {
+  return computed(async (get) => {
+    const requestedConnectorSlugs = connectorSlugs.flatMap((connectorSlug) => {
+      const slug = connectorSlugSchema.safeParse(connectorSlug);
+      return slug.success ? [slug.data] : [];
+    });
+    if (requestedConnectorSlugs.length === 0) {
+      return null;
+    }
+    return await get(
+      immutableConnectorRuntimeSelection({ requestedConnectorSlugs }),
+    );
   });
-  if (requestedConnectorSlugs.length === 0) {
-    return null;
-  }
-  const result = await settle(
-    loadConnectorRuntimeSelection(db, { requestedConnectorSlugs }),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (!isConnectorCatalogUnavailableError(result.error)) {
-    throw result.error;
-  }
-  log.warn("Connector catalog unavailable while resolving stored connectors", {
-    error: result.error,
-  });
-  return null;
 }
 
 function parseOauthScopes(value: string | null): string[] | null {
@@ -424,7 +414,7 @@ function storedBuiltinConnectorRowWithRuntimeMethod(args: {
   readonly connectorSlug: string;
   readonly now: Date;
   readonly row: StoredConnectorRow;
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeLookup;
 }): BuiltinConnectorWithRuntimeMethod | null {
   const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
     snapshot: args.snapshot,
@@ -655,11 +645,12 @@ function builtinConnectorListState(args: {
           eq(connectors.isDefault, true),
         ),
       );
-    const snapshot = await loadStoredBuiltinConnectorRuntimeSelection(
-      db,
-      storedRows.map((row) => {
-        return row.connectorSlug;
-      }),
+    const snapshot = await get(
+      loadStoredBuiltinConnectorRuntimeSelection(
+        storedRows.map((row) => {
+          return row.connectorSlug;
+        }),
+      ),
     );
     const now = nowDate();
     const storedConnectors: BuiltinConnectorWithRuntimeMethod[] =
@@ -720,7 +711,7 @@ export function builtinConnectorCatalogConnectionList(args: {
 
 function builtinConnectorProvidedBindingsForStoredConnectors(
   storedConnectors: readonly BuiltinConnectorWithRuntimeMethod[],
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: ConnectorRuntimeLookup,
 ): ConnectorProvidedBinding[] {
   const provided: ConnectorProvidedBinding[] = [];
   for (const connector of storedConnectors) {
@@ -779,7 +770,7 @@ function storedBuiltinConnector(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorSlug: string;
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeLookup;
   readonly selection: StoredBuiltinConnectorSelection;
 }): Computed<Promise<BuiltinConnectorWithRuntimeMethod | null>> {
   return computed(
@@ -836,7 +827,7 @@ export function builtinConnectorBySlug(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorSlug: string;
-  readonly snapshot?: ConnectorRuntimeSelection;
+  readonly snapshot?: ConnectorRuntimeLookup;
 }): Computed<Promise<BuiltinConnectorResponse | null>> {
   return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
     const snapshot =
@@ -861,7 +852,7 @@ export function builtinConnectorById(args: {
   readonly userId: string;
   readonly connectorSlug: string;
   readonly connectorId: string;
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeLookup;
 }): Computed<Promise<BuiltinConnectorResponse | null>> {
   return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
     const connector = await get(

@@ -1,8 +1,12 @@
 /* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
-/* oxlint-disable vitest/warn-todo -- N1/N4/N5 belong to later pointer/reader stages. */
+/* oxlint-disable vitest/warn-todo -- N1 belongs to the later publisher pointer stage. */
 import { readFile, readdir } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { signSandboxJwtForTests } from "../../auth/tokens";
+import { mcpConnectorsRoutes } from "../mcp-connectors";
+import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
 import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { PGlite } from "@electric-sql/pglite";
@@ -28,6 +32,7 @@ import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockedEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
 import { db$, writeDb$ } from "../../external/db";
@@ -237,7 +242,7 @@ beforeEach(async () => {
 });
 
 afterAll(() => {
-  assert.equal(engineTraces.length, 3);
+  assert.equal(engineTraces.length, 5);
   for (const trace of engineTraces) {
     assert.deepEqual(trace.events, [
       "owner-aborted",
@@ -337,6 +342,61 @@ async function sync() {
   ).sync({ headers: { authorization: "Bearer test-cron-secret" } });
 }
 
+// Only this per-case engine can construct missing immutable rows/captured
+// generations. Exercise the real authenticated MCP consumer, not a test route.
+async function ownedMcpRun(candidate: ReturnType<typeof release>) {
+  if (!engine) {
+    throw new Error("Missing case engine");
+  }
+  const connector = candidate.artifact.connectors[0];
+  const method = connector?.authMethods[0];
+  if (!connector?.mcp || !method) {
+    throw new Error("Missing fixed MCP connector");
+  }
+  const userId = `catalog-user-${randomUUID()}`;
+  const orgId = `catalog-org-${randomUUID()}`;
+  const agentId = randomUUID();
+  const sessionId = randomUUID();
+  const runId = randomUUID();
+  const connectionId = randomUUID();
+  await engine.query(
+    "INSERT INTO agents (id, org_id, owner, name) VALUES ($1, $2, $3, 'catalog-mcp')",
+    [agentId, orgId, userId],
+  );
+  await engine.query(
+    "INSERT INTO agent_sessions (id, user_id, org_id, agent_id) VALUES ($1, $2, $3, $4)",
+    [sessionId, userId, orgId, agentId],
+  );
+  await engine.query(
+    "INSERT INTO agent_runs (id, status, prompt, user_id, org_id, runner_group, session_id) VALUES ($1, 'running', 'catalog lifecycle', $2, $3, 'catalog-n4', $4)",
+    [runId, userId, orgId, sessionId],
+  );
+  await engine.query(
+    "INSERT INTO connectors (id, auth_method, user_id, org_id, storage_version, connector_slug) VALUES ($1, $2, $3, $4, 1, $5)",
+    [connectionId, method.id, userId, orgId, connector.slug],
+  );
+  return { userId, orgId, runId, connectionId, connectorSlug: connector.slug };
+}
+
+async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+  const seconds = Math.floor(now() / 1000);
+  const token = signSandboxJwtForTests({
+    scope: "okou",
+    userId: actor.userId,
+    orgId: actor.orgId,
+    runId: actor.runId,
+    capabilities: ["connector:read"],
+    builtinConnectorSourceIds: { [actor.connectorSlug]: actor.connectionId },
+    iat: seconds,
+    exp: seconds + 3600,
+  });
+  return await setupApp({ context, routes: mcpConnectorsRoutes })(
+    mcpConnectorsContract,
+  ).list({
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
 describe("immutable connector catalog real-entry lifecycle", () => {
   it.fails("engine closes after initial SQL failure", () => {
     expect.unreachable(
@@ -396,6 +456,10 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       ).rows,
     ).toStrictEqual([{ hash: next.hash }]);
     await directory(next);
+    const mcpActor = await ownedMcpRun(next);
+    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
+      connectors: [{ displayName: "Next lifecycle catalog" }],
+    });
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
     // Start with a genuinely accepted legacy directory and no new-table mirror.
     // This is per-case test fixture state only, never a preview database write.
@@ -420,6 +484,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
     );
     await directory(next);
+    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
+      connectors: [{ displayName: "Next lifecycle catalog" }],
+    });
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: next.hash }]);
@@ -439,6 +506,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       active: { catalogVersion: failed.artifact.catalogVersion },
     });
     await directory(failed);
+    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
+      connectors: [{ displayName: "Prepared retry catalog" }],
+    });
     expect(
       (
         await engine.query(
@@ -749,8 +819,140 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
   });
-  it.todo("n4: reads old immutable entries after switching back to their hash");
-  it.todo(
-    "n5: distinguishes unknown slugs from missing entries without fallback",
-  );
+  it("n4: real MCP consumer follows hash switches while captured entries retain their hash", async () => {
+    const first = release("2099-01-02.old", "Old MCP catalog");
+    const next = release("2099-01-02.new", "New MCP catalog");
+    serve(first);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    const actor = await ownedMcpRun(first);
+    expect((await mcpDirectory(actor)).body).toMatchObject({
+      connectors: [
+        { displayName: "Old MCP catalog", connectionId: actor.connectionId },
+      ],
+    });
+    const slug = first.artifact.connectors[0]?.slug;
+    if (!slug) {
+      throw new Error("Missing MCP connector");
+    }
+    statements = [];
+    const captured = await createStore().get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: [slug],
+      }),
+    );
+    expect(statements).toHaveLength(1);
+    expect(captured.catalogIdentity.hash).toBe(first.hash);
+    serve(next);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect((await mcpDirectory(actor)).body).toMatchObject({
+      connectors: [
+        { displayName: "New MCP catalog", connectionId: actor.connectionId },
+      ],
+    });
+    statements = [];
+    const retained = await createStore().get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: [slug],
+        capturedCatalog: captured.capturedCatalog,
+      }),
+    );
+    expect(retained.connectors.get(slug)?.catalogConnector.label).toBe(
+      "Old MCP catalog",
+    );
+    expect(retained.catalogIdentity.hash).toBe(first.hash);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).not.toContain('from "connector_catalog"');
+    serve(first);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect((await mcpDirectory(actor)).body).toMatchObject({
+      connectors: [
+        { displayName: "Old MCP catalog", connectionId: actor.connectionId },
+      ],
+    });
+    const metadata = await createStore().get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: [],
+        metadataConnectorSlugs: [slug],
+      }),
+    );
+    expect(metadata.connectors.size).toBe(0);
+    expect(metadata.serverFirewalls.has(slug)).toBeFalsy();
+    expect(metadata.serverFirewallMetadata.has(slug)).toBeTruthy();
+    expect(metadata.catalogIdentity.hash).toBe(first.hash);
+    const configured = await createStore().get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: ["github"],
+      }),
+    );
+    clearMockedEnv();
+    const unconfigured = await createStore().get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: ["github"],
+      }),
+    );
+    expect(unconfigured.catalogIdentity.hash).toBe(
+      configured.catalogIdentity.hash,
+    );
+    expect(unconfigured.catalogIdentity.capabilityDigest).not.toBe(
+      configured.catalogIdentity.capabilityDigest,
+    );
+    expect(unconfigured.connectors.get("github")?.methods.size).toBeLessThan(
+      configured.connectors.get("github")?.methods.size ?? 0,
+    );
+  });
+  it("n5: real MCP consumer distinguishes unknown from missing rows without legacy or R2 fallback", async () => {
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    const candidate = release("2099-01-03.missing", "Missing-row catalog");
+    serve(candidate);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    const actor = await ownedMcpRun(candidate);
+    expect((await mcpDirectory(actor)).status).toBe(200);
+    const slug = candidate.artifact.connectors[0]?.slug;
+    if (!slug) {
+      throw new Error("Missing MCP connector");
+    }
+    const unknown = "unknown-catalog-connector";
+    const unknownActor = { ...actor, connectorSlug: unknown };
+    expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
+      connectors: [],
+    });
+    const empty = await createStore().get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: [],
+      }),
+    );
+    expect(empty.catalogIdentity.hash).toBe(candidate.hash);
+    expect(empty.connectors.size).toBe(0);
+    context.mocks.s3.send.mockClear();
+    statements = [];
+    await engine.query(
+      "DELETE FROM connector_catalog_entries WHERE hash = $1 AND slug = $2",
+      [candidate.hash, slug],
+    );
+    expect((await mcpDirectory(actor)).status).toBe(500);
+    expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
+      connectors: [],
+    });
+    await engine.exec("DELETE FROM connector_catalog");
+    expect((await mcpDirectory(unknownActor)).status).toBe(500);
+    await expect(
+      createStore().get(
+        immutableConnectorRuntimeSelection({
+          requestedConnectorSlugs: [],
+        }),
+      ),
+    ).rejects.toThrow("Immutable connector catalog current is missing");
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    const catalogReads = statements.filter((query) => {
+      return query.includes("connector_catalog");
+    });
+    expect(catalogReads).toHaveLength(4);
+    for (const query of catalogReads) {
+      expect(query).not.toContain("connector_catalog_active_snapshot");
+      expect(query).not.toContain("connector_catalog_runtime_projection");
+      expect(query).not.toContain("connector_catalog_compatibility_evaluation");
+    }
+  });
 });

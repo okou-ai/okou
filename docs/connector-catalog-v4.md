@@ -62,6 +62,38 @@ Pi or replay wakeups. Only a committed serving-digest switch attempts the
 existing best-effort wakeups after commit. Wakeup failure does not undo the
 committed catalog, and a same-hash retry is not a delivery replay.
 
+## Scoped immutable readers (P4a first batch)
+
+The selection branches for executable-slug checks, stored builtin connector
+lists and Run MCP discovery now read the immutable tables. One statement
+captures the supported current schema/hash, raw header, exact slug manifest
+and the union of runtime and metadata dependencies. A later read may supply
+that plain capture and queries entries at its fixed hash, never current again.
+Unknown manifest slugs retain the existing unknown/absent behavior; a missing
+current or a missing manifest member fails fast. There is no R2, gzip snapshot,
+compatibility-table or runtime-projection fallback on these branches.
+
+Raw JSONB column contracts describe the publisher/sync-owned schema shape;
+the reader does not recompile relationships or recompute hashes. The bounded
+process-local raw cache uses only `(hash, slug)`. Each selection derives code
+capability filtering afresh; no derived cache crosses capability or request
+boundaries. Features, exact accounts, credential versions and grants remain
+with their existing request owners. Metadata-only dependencies do not enter
+the executable connector map or runtime firewall selection. The statement
+still checks actual manifest-member presence on a raw-cache hit.
+
+This is not the full reader cutover. Account lifecycle's legacy helper graph,
+the transaction-bound runtime-sync reads, Pi stable-context recapture's legacy
+source identity, independent chat capture, full-directory/firewall consumers
+and permission baselines remain on their existing paths. Subsequent batches
+must migrate those contracts without fabricating a legacy identity/validator.
+The P2 schema and P3 prepare/activate writer are stacked prerequisites. The
+first batch neither drops legacy tables nor introduces an old-API rollback
+window or garbage collection. N4/N5 exercise real cron and authenticated MCP
+consumer behavior in the sole per-case PGlite suite, including fixed-hash reads,
+back-to-old-hash reuse and missing-vs-unknown fail-fast behavior. N1 remains
+unimplemented for its later publisher-pointer stage.
+
 ## Identity and failure behavior
 
 The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`.

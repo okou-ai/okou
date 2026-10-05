@@ -15,18 +15,21 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import type { ConnectorCatalogCompatibilityEvaluationPayload } from "@okouai/db/jsonb-contracts/connector-catalog";
-import type {
-  JsonObject,
-  JsonReadonlyStringArray,
-} from "@okouai/db/jsonb-contracts/shared";
+import type { JsonReadonlyStringArray } from "@okouai/db/jsonb-contracts/shared";
 
-// The immutable catalog reader is not connected until the subsequent migration.
+import type {
+  ImmutableConnectorCatalogHeader,
+  ImmutableConnectorCatalogEntry,
+} from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
+
 export const connectorCatalog = pgTable("connector_catalog", {
   schemaVersion: integer("schema_version").primaryKey(),
   hash: text("hash").notNull(),
   activatedAt: timestamp("activated_at").notNull(),
   catalogVersion: text("catalog_version"),
-  catalogHeader: jsonb("catalog_header").$type<JsonObject>().notNull(),
+  catalogHeader: jsonb("catalog_header")
+    .$type<ImmutableConnectorCatalogHeader>()
+    .notNull(),
   entrySlugs: jsonb("entry_slugs").$type<JsonReadonlyStringArray>().notNull(),
 });
 
@@ -35,7 +38,7 @@ export const connectorCatalogEntries = pgTable(
   {
     hash: text("hash").notNull(),
     slug: text("slug").notNull(),
-    payload: jsonb("payload").$type<JsonObject>().notNull(),
+    payload: jsonb("payload").$type<ImmutableConnectorCatalogEntry>().notNull(),
   },
   (table) => {
     return [primaryKey({ columns: [table.hash, table.slug] })];

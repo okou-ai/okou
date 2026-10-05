@@ -75,6 +75,7 @@
     "@aws-sdk/client-s3": "^3.1136.0",
     "@clerk/backend": "^3.13.1",
     "@okouai/api-contracts": "workspace:*",
+    "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9"
