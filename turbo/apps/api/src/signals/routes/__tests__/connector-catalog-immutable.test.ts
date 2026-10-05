@@ -1,6 +1,7 @@
 /* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
 /* oxlint-disable vitest/warn-todo -- N1/N4/N5 belong to later pointer/reader stages. */
 import { readFile, readdir } from "node:fs/promises";
+import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
@@ -8,7 +9,15 @@ import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
 import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   connectorCatalogArtifactSchema,
@@ -20,10 +29,10 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockedEnv } from "../../../lib/env";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
 import { db$, writeDb$ } from "../../external/db";
 import { createStore } from "ccstate";
-import { settle } from "../../utils";
+import { createDeferredPromise, settle } from "../../utils";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 import { createExecutionStorageObjects } from "../../services/execution-storage.service";
@@ -49,6 +58,47 @@ vi.mock("../../../lib/db", () => {
 });
 let engine: PGlite | undefined;
 let statements: string[] = [];
+interface EngineTrace {
+  readonly name: string;
+  readonly engine: PGlite;
+  readonly signal: AbortSignal;
+  readonly events: string[];
+  setupFailureObserved: boolean;
+}
+const engineTraces: EngineTrace[] = [];
+let caseTrace: EngineTrace | undefined;
+
+// Register FIRST: locked Vitest's stack order runs this AFTER testContext's
+// owner abort/shared detached cleanup. Never flush abort-dependent work first.
+afterEach(async () => {
+  const ownedEngine = engine;
+  const trace = caseTrace;
+  const drained = await settle(
+    (async () => {
+      if (trace) {
+        assert.equal(trace.signal.aborted, true);
+        assert.deepEqual(trace.events, ["owner-aborted", "native-drained"]);
+      }
+      await flushWaitUntilForTest();
+      trace?.events.push("waitUntil-drained");
+    })(),
+  );
+  binding.database = undefined;
+  const released = await settle(ownedEngine?.close() ?? Promise.resolve());
+  if (released.ok) {
+    trace?.events.push("closed");
+  }
+  engine = undefined;
+  caseTrace = undefined;
+  clearMockedEnv();
+  resetApiTestMocks();
+  if (!drained.ok) {
+    throw drained.error;
+  }
+  if (!released.ok) {
+    throw released.error;
+  }
+});
 const context = testContext();
 const routeMocks = createRouteMocks(context);
 
@@ -60,6 +110,46 @@ const migrationDir = new URL(
 beforeEach(async () => {
   resetApiTestMocks();
   engine = new PGlite({ extensions: { pgcrypto, btree_gin } });
+  const ownedEngine = engine;
+  const signal = context.signal;
+  const trace: EngineTrace = {
+    name: expect.getState().currentTestName ?? "Missing test name",
+    engine: ownedEngine,
+    signal,
+    events: [],
+    setupFailureObserved: false,
+  };
+  caseTrace = trace;
+  engineTraces.push(trace);
+  const aborted = createDeferredPromise<void>(signal);
+  // Existing shared trackers own real work that cannot finish until abort.
+  // Native SQL must finish while this case's engine is still alive.
+  waitUntil(
+    aborted.promise.then(
+      () => {
+        throw new Error("Cleanup probe unexpectedly resolved before abort");
+      },
+      async (error: unknown) => {
+        assert.equal(signal.aborted, true);
+        assert.equal(error, signal.reason);
+        trace.events.push("owner-aborted");
+        assert.deepEqual((await ownedEngine.query("SELECT 1 AS alive")).rows, [
+          { alive: 1 },
+        ]);
+        trace.events.push("native-drained");
+      },
+    ),
+  );
+  if (trace.name.endsWith("engine closes after initial SQL failure")) {
+    const failure = await settle(
+      ownedEngine.exec("CREATE TABLE invalid_initial_sql ("),
+    );
+    if (!failure.ok) {
+      trace.setupFailureObserved = true;
+      throw failure.error;
+    }
+    throw new Error("The invalid initial SQL unexpectedly succeeded");
+  }
   const files = (await readdir(migrationDir))
     .filter((name) => {
       return /^\d+.*\.sql$/.test(name);
@@ -144,13 +234,23 @@ beforeEach(async () => {
   mockApiTestConnectorProviderConfiguration();
 });
 
-afterEach(async () => {
-  await flushWaitUntilForTest();
-  binding.database = undefined;
-  await engine?.close();
-  engine = undefined;
-  clearMockedEnv();
-  resetApiTestMocks();
+afterAll(() => {
+  assert.equal(engineTraces.length, 3);
+  for (const trace of engineTraces) {
+    assert.deepEqual(trace.events, [
+      "owner-aborted",
+      "native-drained",
+      "waitUntil-drained",
+      "closed",
+    ]);
+    assert.equal(trace.engine.closed, true);
+  }
+  assert.equal(
+    engineTraces.find((trace) => {
+      return trace.name.endsWith("engine closes after initial SQL failure");
+    })?.setupFailureObserved,
+    true,
+  );
 });
 
 function release(version: string, label: string, runtimeChange = false) {
@@ -236,6 +336,11 @@ async function sync() {
 }
 
 describe("immutable connector catalog real-entry lifecycle", () => {
+  it.fails("engine closes after initial SQL failure", () => {
+    expect.unreachable(
+      "The deliberately failing initial SQL must prevent the body",
+    );
+  });
   it.todo("n1: rejects downloaded bytes whose hash differs from the pointer");
   it("n2: binds all existing gateways to the case engine and accepts the publisher-shaped digest through cron", async () => {
     if (!engine || !binding.database) {

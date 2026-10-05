@@ -33,7 +33,6 @@ import {
   downloadS3BufferWithMaxBytes,
   downloadS3BufferWithMaxBytesIfChanged,
   S3ObjectSizeLimitError,
-  type ConditionalS3BufferDownload,
 } from "../external/s3";
 import { safeSync, settle } from "../utils";
 import {
@@ -47,12 +46,12 @@ import {
   connectorCatalogArtifactFailureCode,
   connectorCatalogArtifactRelationshipRule,
   encodeConnectorCatalogSnapshot,
-  loadConnectorCatalogCandidate,
+  validateConnectorCatalogCandidateBytes,
   parseConnectorCatalogActivePointer,
   type ConnectorCatalogActivePointer,
-  type ConnectorCatalogArtifactReader,
   type ValidatedConnectorCatalogCandidate,
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
+import { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 import type { ConnectorCatalogRelationshipRule } from "@okouai/connectors/connector-catalog/artifacts/relationship-error";
 import {
   connectorCatalogExecutableCapabilityState,
@@ -1099,16 +1098,17 @@ async function rejectCandidate(args: {
   });
 }
 
-interface ConnectorCatalogSyncRuntime {
+interface ConnectorCatalogSyncConfiguration {
   readonly capability: ExecutableCapabilityState;
-  readonly db: Db;
-  readonly reader: ConnectorCatalogArtifactReader;
-  readonly readActivePointer: (
-    ifNoneMatch: string | null,
-  ) => Promise<ConditionalS3BufferDownload>;
   readonly source: ConnectorCatalogSource;
   readonly rejectionValidator: ConnectorCatalogRejectionValidatorIdentity;
   readonly validator: ConnectorCatalogValidatorIdentity;
+}
+
+// Only existing legacy helpers retain this local handle contract. New commands
+// receive plain configuration/captured facts, not reader/accessor callbacks.
+interface ConnectorCatalogSyncRuntime extends ConnectorCatalogSyncConfiguration {
+  readonly db: Db;
 }
 
 type SyncAttemptResult =
@@ -1171,92 +1171,120 @@ async function rejectSyncAttempt(
   return response ? { kind: "complete", response } : { kind: "retry" };
 }
 
-async function loadPointerForSync(
-  runtime: ConnectorCatalogSyncRuntime,
-  baseline: SyncStateSnapshot | undefined,
-  signal: AbortSignal,
-): Promise<PointerLoadResult> {
-  const conditionalEtag =
-    baseline?.lastObservedPointerEtag &&
-    (observedPointerFromState(baseline) ||
-      cachedRejectionForObservedEtag(baseline, runtime.rejectionValidator))
-      ? baseline.lastObservedPointerEtag
-      : null;
-  const downloaded = await settle(
-    runtime.readActivePointer(conditionalEtag),
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!downloaded.ok) {
-    const pointerObservation =
-      downloaded.error instanceof S3ObjectSizeLimitError &&
-      downloaded.error.etag !== null
-        ? { pointer: null, etag: downloaded.error.etag }
-        : undefined;
-    return await rejectSyncAttempt(
-      runtime,
-      baseline,
-      classifySyncFailure(downloaded.error),
-      { pointerObservation },
-      signal,
-    );
-  }
-  if (downloaded.value.kind === "not-modified") {
-    return downloaded.value;
-  }
-
-  const { buffer, etag } = downloaded.value;
-  const parsed = safeSync(() => {
-    return parseConnectorCatalogActivePointer(buffer);
-  });
-  if (!("ok" in parsed)) {
-    return await rejectSyncAttempt(
-      runtime,
-      baseline,
-      classifySyncFailure(parsed.error),
-      { pointerObservation: { pointer: null, etag } },
-      signal,
-    );
-  }
-  return {
-    kind: "loaded",
-    pointer: parsed.ok,
-    etag,
-  };
-}
-
-async function loadCandidateForSync(
-  runtime: ConnectorCatalogSyncRuntime,
-  baseline: SyncStateSnapshot | undefined,
-  pointerObservation: PointerObservation & {
-    readonly pointer: ConnectorCatalogActivePointer;
-  },
-  signal: AbortSignal,
-): Promise<CandidateLoadResult> {
-  const result = await settle(
-    loadConnectorCatalogCandidate({
-      reader: runtime.reader,
-      pointer: pointerObservation.pointer,
-    }),
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!result.ok) {
-    return await rejectSyncAttempt(
-      runtime,
-      baseline,
-      classifySyncFailure(result.error),
-      {
-        pointerObservation,
-        relationshipRule: connectorCatalogArtifactRelationshipRule(
-          result.error,
+const loadPointerForSync$ = command(
+  async (
+    { get, set },
+    input: ConnectorCatalogSyncConfiguration,
+    baseline: SyncStateSnapshot | undefined,
+    signal: AbortSignal,
+  ): Promise<PointerLoadResult> => {
+    const runtime = { ...input, db: set(writeDb$) };
+    const conditionalEtag =
+      baseline?.lastObservedPointerEtag &&
+      (observedPointerFromState(baseline) ||
+        cachedRejectionForObservedEtag(baseline, runtime.rejectionValidator))
+        ? baseline.lastObservedPointerEtag
+        : null;
+    const downloaded = await settle(
+      get(
+        downloadS3BufferWithMaxBytesIfChanged(
+          input.source.bucket,
+          CONNECTOR_CATALOG_ACTIVE_KEY,
+          CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
+          conditionalEtag,
+          signal,
         ),
-      },
+      ),
       signal,
     );
-  }
-  return { kind: "loaded", candidate: result.value };
-}
+    signal.throwIfAborted();
+    if (!downloaded.ok) {
+      const pointerObservation =
+        downloaded.error instanceof S3ObjectSizeLimitError &&
+        downloaded.error.etag !== null
+          ? { pointer: null, etag: downloaded.error.etag }
+          : undefined;
+      return await rejectSyncAttempt(
+        runtime,
+        baseline,
+        classifySyncFailure(downloaded.error),
+        { pointerObservation },
+        signal,
+      );
+    }
+    if (downloaded.value.kind === "not-modified") {
+      return downloaded.value;
+    }
+
+    const { buffer, etag } = downloaded.value;
+    const parsed = safeSync(() => {
+      return parseConnectorCatalogActivePointer(buffer);
+    });
+    if (!("ok" in parsed)) {
+      return await rejectSyncAttempt(
+        runtime,
+        baseline,
+        classifySyncFailure(parsed.error),
+        { pointerObservation: { pointer: null, etag } },
+        signal,
+      );
+    }
+    return {
+      kind: "loaded",
+      pointer: parsed.ok,
+      etag,
+    };
+  },
+);
+
+const loadCandidateForSync$ = command(
+  async (
+    { get, set },
+    input: ConnectorCatalogSyncConfiguration,
+    baseline: SyncStateSnapshot | undefined,
+    pointerObservation: PointerObservation & {
+      readonly pointer: ConnectorCatalogActivePointer;
+    },
+    signal: AbortSignal,
+  ): Promise<CandidateLoadResult> => {
+    const runtime = { ...input, db: set(writeDb$) };
+    const downloaded = await settle(
+      get(
+        downloadS3BufferWithMaxBytes(
+          input.source.bucket,
+          pointerObservation.pointer.catalogKey,
+          CONNECTOR_CATALOG_MAX_RAW_BYTES,
+          signal,
+        ),
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    const result = downloaded.ok
+      ? safeSync(() => {
+          return validateConnectorCatalogCandidateBytes({
+            pointer: pointerObservation.pointer,
+            rawBytes: downloaded.value,
+          });
+        })
+      : { error: downloaded.error };
+    if (!("ok" in result)) {
+      return await rejectSyncAttempt(
+        runtime,
+        baseline,
+        classifySyncFailure(result.error),
+        {
+          pointerObservation,
+          relationshipRule: connectorCatalogArtifactRelationshipRule(
+            result.error,
+          ),
+        },
+        signal,
+      );
+    }
+    return { kind: "loaded", candidate: result.ok };
+  },
+);
 
 async function completeUnchangedSync(
   runtime: ConnectorCatalogSyncRuntime,
@@ -1287,7 +1315,7 @@ async function completeUnchangedSync(
 const commitValidatedCandidate$ = command(
   async (
     { set },
-    input: Omit<ConnectorCatalogSyncRuntime, "db">,
+    input: ConnectorCatalogSyncConfiguration,
     args: {
       readonly baseline: SyncStateSnapshot | undefined;
       readonly candidate: ValidatedConnectorCatalogCandidate;
@@ -1427,13 +1455,18 @@ async function prepareCandidateSkillsForSync(
 const syncConnectorCatalogAttempt$ = command(
   async (
     { set },
-    input: Omit<ConnectorCatalogSyncRuntime, "db">,
+    input: ConnectorCatalogSyncConfiguration,
     signal: AbortSignal,
   ): Promise<SyncAttemptResult> => {
     const runtime = { ...input, db: set(writeDb$) };
     const baseline = await readSyncState(runtime.db, runtime.source.sourceId);
     signal.throwIfAborted();
-    const pointerResult = await loadPointerForSync(runtime, baseline, signal);
+    const pointerResult = await set(
+      loadPointerForSync$,
+      input,
+      baseline,
+      signal,
+    );
     if (pointerResult.kind === "retry" || pointerResult.kind === "complete") {
       return pointerResult;
     }
@@ -1442,19 +1475,9 @@ const syncConnectorCatalogAttempt$ = command(
       readonly pointer: ConnectorCatalogActivePointer;
     };
     if (pointerResult.kind === "not-modified") {
-      if (!baseline) {
-        return await rejectSyncAttempt(
-          runtime,
-          baseline,
-          "source-unavailable",
-          undefined,
-          signal,
-        );
-      }
-      const cachedFailure = cachedRejectionForObservedEtag(
-        baseline,
-        runtime.rejectionValidator,
-      );
+      const cachedFailure = baseline
+        ? cachedRejectionForObservedEtag(baseline, runtime.rejectionValidator)
+        : undefined;
       if (cachedFailure) {
         return await rejectSyncAttempt(
           runtime,
@@ -1466,8 +1489,8 @@ const syncConnectorCatalogAttempt$ = command(
           signal,
         );
       }
-      const observedPointer = observedPointerFromState(baseline);
-      if (!observedPointer) {
+      const observedPointer = baseline && observedPointerFromState(baseline);
+      if (!baseline || !observedPointer) {
         return await rejectSyncAttempt(
           runtime,
           baseline,
@@ -1492,9 +1515,7 @@ const syncConnectorCatalogAttempt$ = command(
       if (!baseline) {
         throw new Error("Connector catalog active snapshot disappeared");
       }
-      // An already-serving legacy catalog still needs the additive mirror on
-      // first deployment. Keep the unchanged shortcut only after that bridge is
-      // complete; otherwise validate and prepare this same captured pointer.
+      // Bridge the already-serving identity before taking the unchanged shortcut.
       const mirroredHash = await set(immutableCatalogHash$, signal);
       signal.throwIfAborted();
       if (mirroredHash === pointer.catalogDigest) {
@@ -1525,8 +1546,9 @@ const syncConnectorCatalogAttempt$ = command(
       );
     }
 
-    const candidateResult = await loadCandidateForSync(
-      runtime,
+    const candidateResult = await set(
+      loadCandidateForSync$,
+      input,
       baseline,
       pointerObservation,
       signal,
@@ -1572,42 +1594,24 @@ export const connectorCatalogStatus$ = command(
 
 export const syncConnectorCatalog$ = command(
   async (
-    { get, set },
+    { set },
     signal: AbortSignal,
   ): Promise<ConnectorCatalogRawSyncResponse> => {
     const source = connectorCatalogSource();
-    const runtime: Omit<ConnectorCatalogSyncRuntime, "db"> = {
+    const configuration: ConnectorCatalogSyncConfiguration = {
       capability: connectorCatalogExecutableCapabilityState(),
       source,
       rejectionValidator: currentConnectorCatalogRejectionIdentity(),
       validator: currentConnectorCatalogValidatorIdentity(),
-      readActivePointer: async (ifNoneMatch) => {
-        const result = await get(
-          downloadS3BufferWithMaxBytesIfChanged(
-            source.bucket,
-            CONNECTOR_CATALOG_ACTIVE_KEY,
-            CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
-            ifNoneMatch,
-            signal,
-          ),
-        );
-        signal.throwIfAborted();
-        return result;
-      },
-      reader: {
-        readArtifact: async (key, maxBytes) => {
-          const bytes = await get(
-            downloadS3BufferWithMaxBytes(source.bucket, key, maxBytes, signal),
-          );
-          signal.throwIfAborted();
-          return bytes;
-        },
-      },
     };
 
     while (true) {
       signal.throwIfAborted();
-      const result = await set(syncConnectorCatalogAttempt$, runtime, signal);
+      const result = await set(
+        syncConnectorCatalogAttempt$,
+        configuration,
+        signal,
+      );
       signal.throwIfAborted();
       if (result.kind === "retry") {
         continue;

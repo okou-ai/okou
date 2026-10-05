@@ -44,6 +44,13 @@ insert conflicts, rejects conflicting canonical bytes, and verifies the exact
 manifest slug set. Failed preparation leaves the serving snapshot unchanged;
 completed immutable work remains reusable on retry.
 
+Sync subcommands receive source/capability/validator values and captured facts,
+not reader callbacks, DB handles, accessors or signals in runtime objects.
+Pointer conditional downloads and bounded artifact downloads run inside their
+owning commands through existing S3 gateways. A shared pure byte validator keeps
+the original size, digest, schema and relationship checks; existing reader clients
+retain their loader API. Retry attempts re-observe the baseline and pointer.
+
 Stable commands obtain the existing DB gateways internally. The owning sync
 command keeps legacy acceptance, new `connector_catalog` hash CAS and Pi
 stable-context invalidation in one transaction callback. New helpers build
