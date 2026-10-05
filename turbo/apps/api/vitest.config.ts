@@ -52,7 +52,13 @@ export default defineConfig({
           environment: "node",
           env: { TZ: "UTC" },
           include: immutableCatalogTests,
-          setupFiles: ["./src/__tests__/env-stub.ts"],
+          // Complete shared SDK mock registration before collecting any
+          // production import in the native suite; do not load real-PG setup.
+          setupFiles: [
+            "./src/__tests__/env-stub.ts",
+            "./src/__tests__/mocks.ts",
+          ],
+          sequence: { setupFiles: "list" },
           benchmark: { enabled: false, include: [], exclude: ["**/*"] },
         },
       },
