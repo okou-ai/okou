@@ -135,6 +135,7 @@ import {
 } from "../../signals/external/model-catalog.ts";
 import { emptyChatImg, thinkingSpinnerImg } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { ChatLastReadMarker } from "../../signals/chat-page/chat-last-read-marker.ts";
 import { ChatThreadPinButton } from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
@@ -3458,6 +3459,7 @@ function ChatThreadEventGroups({
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
   // keeps the stack from springing open the moment a run finishes.
+  const lastReadMarker = useGet(thread.lastReadMarker$);
   let previousVisibleGroup: ChatEventGroup | undefined;
   const groupKeys = chatEventGroupKeys(groups, runWorkFolding);
 
@@ -3476,6 +3478,10 @@ function ChatThreadEventGroups({
           group.beginEventId === statusRowGroupId ? statusRow : undefined;
         return (
           <div key={groupKeys[index]} className="contents">
+            {lastReadMarker &&
+              group.events.some((event) => {
+                return event.id === lastReadMarker.eventId;
+              }) && <ChatLastReadDivider marker={lastReadMarker} />}
             <SelectablePagedGroupRow
               group={group}
               thread={thread}
@@ -3497,6 +3503,27 @@ function ChatThreadEventGroups({
         );
       })}
     </>
+  );
+}
+
+function ChatLastReadDivider({ marker }: { marker: ChatLastReadMarker }) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return marker.previouslyRead
+      ? $.chat.lastReadMarker.previouslyRead
+      : $.chat.lastReadMarker.unread;
+  });
+  return (
+    <div
+      role="separator"
+      aria-label={label}
+      data-chat-last-read-marker-event-id={marker.eventId}
+      className="flex items-center gap-3 py-2 text-xs text-muted-foreground"
+    >
+      <span className="flex-1 border-t border-divider" />
+      <span>{label}</span>
+      <span className="flex-1 border-t border-divider" />
+    </div>
   );
 }
 

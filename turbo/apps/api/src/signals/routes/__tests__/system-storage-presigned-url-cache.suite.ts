@@ -17,7 +17,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
+import { mockNow, nowDate } from "../../../lib/time";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import { cronPruneStoragePresignedUrlsRoutes } from "../cron-prune-storage-presigned-urls";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
@@ -479,6 +479,62 @@ describe("system storage presigned URL cache", () => {
       expectedCacheRow({ fixture, versionId, presignedUrl: archiveUrl }),
     ]);
   });
+
+  it.each([
+    { remainingMs: 4 * 60 * 60 * 1000 - 1, refresh: true },
+    { remainingMs: 4 * 60 * 60 * 1000, refresh: false },
+    { remainingMs: 4 * 60 * 60 * 1000 + 1, refresh: false },
+  ])(
+    "enforces the four-hour system archive margin at $remainingMs ms remaining",
+    async ({ remainingMs, refresh }) => {
+      const fixture = createOwnedSystemStorageFixture("lifetime-margin");
+      const versionId = createVersionId("lifetime-margin");
+      await claimOwnedStorage(fixture);
+      registerOwnedStorageCleanup(fixture);
+      await seedOwnedStorageVersion({ fixture, versionId, archiveSize: 1024 });
+      const runFixture = await entitledDirectRunActor();
+      mockUniquePresignedUrls();
+      const issuedAt = nowDate();
+      mockNow(issuedAt);
+      const cachedUrl = `https://r2.example.com/cached-${fixture.storageId}`;
+      // Only signing infrastructure controls a cached URL's expiration; no
+      // production API lets a caller choose it. Seed this owned deadline to
+      // test the Runner-visible boundary without aging unrelated run leases.
+      await seedOwnedStorageCacheRow({
+        fixture,
+        versionId,
+        presignedUrl: cachedUrl,
+        expiresAt: new Date(issuedAt.getTime() + remainingMs),
+        refreshAfter: new Date(issuedAt.getTime() + remainingMs),
+      });
+
+      const first = await createAndClaimOwnedSystemStorage({
+        ...runFixture,
+        fixture,
+        prompt: "select a cached system archive near the lifetime boundary",
+      });
+      const objectKey = storageArchiveKey(fixture, versionId);
+      expect(first.mount.archiveUrl).toBe(
+        refresh ? expectedPresignedUrl(objectKey, 1) : cachedUrl,
+      );
+      if (refresh) {
+        expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            input: expect.objectContaining({ Key: objectKey }),
+          }),
+          expect.objectContaining({ expiresIn: CACHE_TTL_SECONDS }),
+        );
+      }
+      await flushWaitUntilForTest();
+      const second = await createAndClaimOwnedSystemStorage({
+        ...runFixture,
+        fixture,
+        prompt: "reuse the selected system archive URL",
+      });
+      expect(second.mount.archiveUrl).toBe(first.mount.archiveUrl);
+    },
+  );
 
   it("preserves a 52-mount manifest across mixed-scope cache reuse", async () => {
     const fixture = createOwnedSystemStorageFixture("mixed-batch");

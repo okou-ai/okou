@@ -478,6 +478,7 @@ describe("workflows", () => {
   it("runs a workflow slash command with workflow timing attribution", async () => {
     const actor = user({ orgRole: "org:admin" });
     await api.grantProEntitlement(actor);
+    await miscApi.configureCustomModelMode(actor);
     const provider = await miscApi.upsertOrgModelProvider(
       actor,
       { type: "openai-api-key", secret: "workflow-openai-key" },

@@ -1967,6 +1967,10 @@
       "newThread": "新增聊天",
       "reload": "重新載入任務"
     },
+    "lastReadMarker": {
+      "previouslyRead": "你上次讀到這裡",
+      "unread": "未讀訊息"
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",

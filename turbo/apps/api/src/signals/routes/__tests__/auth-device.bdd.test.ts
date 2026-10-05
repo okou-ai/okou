@@ -18,6 +18,7 @@ import {
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -820,6 +821,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
   it("completes org-scope Codex device auth and exposes the imported provider", async () => {
     const calls = mockCodexDeviceAuthProvider({ tokenScope: "org" });
     const admin = bdd.user();
+    await createMiscRoutesApi(context).configureCustomModelMode(admin);
 
     const started = await authDevice.requestCodexStart(admin, "org", [200]);
     if (started.status !== 200) {
@@ -1489,6 +1491,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
   it("completes org-scope Claude Code device auth with a pasted code fragment", async () => {
     const calls = mockClaudeCodeTokenEndpoint();
     const admin = bdd.user();
+    await createMiscRoutesApi(context).configureCustomModelMode(admin);
 
     const started = await authDevice.requestClaudeCodeStart(
       admin,

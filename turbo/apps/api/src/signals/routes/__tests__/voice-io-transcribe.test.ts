@@ -183,6 +183,7 @@ interface FundedVoiceActor {
   readonly storageBucket: string;
   readonly kmsKeyId: string | undefined;
   readonly resetFeatureSwitches: boolean;
+  readonly limitedFree: boolean;
 }
 
 async function cleanupFundedVoiceActor(owned: FundedVoiceActor): Promise<void> {
@@ -249,7 +250,8 @@ async function cleanupFundedVoiceActor(owned: FundedVoiceActor): Promise<void> {
 
 async function publicVoiceActor({
   debug = false,
-}: { readonly debug?: boolean } = {}) {
+  limitedFree = false,
+}: { readonly debug?: boolean; readonly limitedFree?: boolean } = {}) {
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Voice test actor must belong to an organization");
@@ -264,6 +266,7 @@ async function publicVoiceActor({
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
     resetFeatureSwitches: debug,
+    limitedFree,
   };
   const owner = createFixtureOperationOwner(async () => {
     await cleanupFundedVoiceActor(owned);
@@ -353,6 +356,28 @@ async function publicVoiceActor({
       status: "active",
       credits: 10_000,
     });
+    // Subscription cancellation restores free Voice limits and retains purchased cash.
+    if (owned.limitedFree) {
+      await webhooks.postStripeEvent(
+        {
+          id: `evt_voice_deleted_${suffix}`,
+          type: "customer.subscription.deleted",
+          created: Math.floor(now() / 1000),
+          data: { object: { ...subscription, status: "canceled" } },
+        },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const downgraded = await accept(
+        voiceBillingClient().get({ headers: voiceAuthHeaders(actor) }),
+        [200],
+      );
+      expect(downgraded.body).toMatchObject({
+        tier: "limited-free-1",
+        status: "active",
+        credits: 10_000,
+      });
+    }
     if (debug) {
       await updateFeatureSwitchesForUser(
         context,
@@ -1329,56 +1354,183 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     "unfinished segments",
     "a failed final attempt followed by a successful retry",
   ])("counts free-tier recordings correctly for %s", async (phase) => {
-    const actor = await voiceActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 10_000,
+    const owner = await publicVoiceActor({ limitedFree: true });
+    await owner.run(async () => {
+      const headers = { authorization: "Bearer clerk-session" };
+      const readQuota = async () => {
+        const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+          voiceIoQuotaContract,
+        );
+        return (await accept(quota.get({ headers }), [200])).body;
+      };
+      let failFinal = true;
+      server.use(
+        http.post(VERTEX_VOICE_URL, async ({ request }) => {
+          const body = (await request.json()) as VertexVoiceRequest;
+          const polishing = body.contents[0]?.parts.every((part) => {
+            return part.inlineData === undefined;
+          });
+          if (polishing && failFinal) {
+            return new HttpResponse(null, { status: 503 });
+          }
+          return HttpResponse.json({
+            candidates: [
+              {
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify(
+                        polishing
+                          ? {
+                              polishedText: "First part. Second part.",
+                              language: "en",
+                            }
+                          : { transcript: "Recorded part.", language: "en" },
+                      ),
+                    },
+                  ],
+                },
+              },
+            ],
+          });
+        }),
+      );
+      if (phase === "unfinished segments") {
+        await accept(
+          client().segment({
+            headers,
+            body: segmentForm([audioFile(1, 60)], "", false, 60),
+          }),
+          [200],
+        );
+        await accept(
+          client().segment({
+            headers,
+            body: segmentForm([audioFile(2, 60)], "First part.", false, 120),
+          }),
+          [200],
+        );
+        await expect(readQuota()).resolves.toMatchObject({
+          allowed: true,
+          count: 0,
+        });
+        return;
+      }
+
+      // Finalization receives the accumulated transcript from the client; it
+      // does not depend on server-owned state from the earlier segment requests.
+      await accept(
+        client().segment({
+          headers,
+          body: segmentForm([], "First part. Second part.", true, 120),
+        }),
+        [503],
+      );
+      await expect(readQuota()).resolves.toMatchObject({
+        allowed: true,
+        count: 0,
+      });
+      failFinal = false;
+      await accept(
+        client().segment({
+          headers,
+          body: segmentForm([], "First part. Second part.", true, 120),
+        }),
+        [200],
+      );
+      await expect(readQuota()).resolves.toMatchObject({
+        allowed: true,
+        count: 1,
+      });
     });
-    const headers = { authorization: "Bearer clerk-session" };
-    const readQuota = async () => {
+  });
+
+  it("reports daily request exhaustion through quota and rejects further segments", async () => {
+    mockNow(new Date("2026-10-02T12:00:00Z"));
+    const owner = await publicVoiceActor({ limitedFree: true });
+    await owner.run(async () => {
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          return vertexVoiceResponse(
+            JSON.stringify({ transcript: "New speech.", language: "en" }),
+          );
+        }),
+      );
+      const headers = { authorization: "Bearer clerk-session" };
       const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
         voiceIoQuotaContract,
       );
-      return (await accept(quota.get({ headers }), [200])).body;
-    };
-    let failFinal = true;
-    server.use(
-      http.post(VERTEX_VOICE_URL, async ({ request }) => {
-        const body = (await request.json()) as VertexVoiceRequest;
-        const polishing = body.contents[0]?.parts.every((part) => {
-          return part.inlineData === undefined;
-        });
-        if (polishing && failFinal) {
-          return new HttpResponse(null, { status: 503 });
-        }
-        return HttpResponse.json({
-          candidates: [
-            {
-              finishReason: "STOP",
-              content: {
-                parts: [
-                  {
-                    text: JSON.stringify(
-                      polishing
-                        ? {
-                            polishedText: "First part. Second part.",
-                            language: "en",
-                          }
-                        : { transcript: "Recorded part.", language: "en" },
-                    ),
-                  },
-                ],
+      const initial = await accept(quota.get({ headers }), [200]);
+      expect(initial.body).toMatchObject({ allowed: true, count: 0 });
+
+      for (let index = 0; index < 10; index += 1) {
+        await accept(
+          client().segment({
+            headers,
+            body: segmentForm([audioFile(index + 1)], "", false, 1),
+          }),
+          [200],
+        );
+      }
+      const exhausted = await accept(quota.get({ headers }), [200]);
+      expect(exhausted.body).toStrictEqual({
+        allowed: false,
+        count: 10,
+        limit: 10,
+      });
+      const rejected = await accept(
+        client().segment({
+          headers,
+          body: segmentForm([audioFile(11)], "", false, 1),
+        }),
+        [429],
+      );
+      expect(rejected.body.error.code).toBe("DAILY_RATE_LIMIT_EXCEEDED");
+    });
+  });
+
+  it("meters unique recording time without charging the boundary overlap twice", async () => {
+    const owner = await publicVoiceActor({ limitedFree: true });
+    await owner.run(async () => {
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          return HttpResponse.json({
+            candidates: [
+              {
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        transcript: "New speech.",
+                        language: "en",
+                      }),
+                    },
+                  ],
+                },
               },
-            },
-          ],
-        });
-      }),
-    );
-    if (phase === "unfinished segments") {
+            ],
+          });
+        }),
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      // Accumulate 482 seconds through the API while leaving room under the
+      // free daily request limit for the two overlapping segments below.
+      for (const durationSeconds of [75, 75, 75, 75, 75, 75, 32]) {
+        await accept(
+          client().segment({
+            headers,
+            body: segmentForm(
+              [audioFile(1, durationSeconds)],
+              "",
+              false,
+              durationSeconds,
+            ),
+          }),
+          [200],
+        );
+      }
       await accept(
         client().segment({
           headers,
@@ -1389,173 +1541,34 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       await accept(
         client().segment({
           headers,
-          body: segmentForm([audioFile(2, 60)], "First part.", false, 120),
-        }),
-        [200],
-      );
-      await expect(readQuota()).resolves.toMatchObject({
-        allowed: true,
-        count: 0,
-      });
-      return;
-    }
-
-    // Finalization receives the accumulated transcript from the client; it
-    // does not depend on server-owned state from the earlier segment requests.
-    await accept(
-      client().segment({
-        headers,
-        body: segmentForm([], "First part. Second part.", true, 120),
-      }),
-      [503],
-    );
-    await expect(readQuota()).resolves.toMatchObject({
-      allowed: true,
-      count: 0,
-    });
-    failFinal = false;
-    await accept(
-      client().segment({
-        headers,
-        body: segmentForm([], "First part. Second part.", true, 120),
-      }),
-      [200],
-    );
-    await expect(readQuota()).resolves.toMatchObject({
-      allowed: true,
-      count: 1,
-    });
-  });
-
-  it("reports daily request exhaustion through quota and rejects further segments", async () => {
-    mockNow(new Date("2026-10-02T12:00:00Z"));
-    const actor = await voiceActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 10_000,
-    });
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse(
-          JSON.stringify({ transcript: "New speech.", language: "en" }),
-        );
-      }),
-    );
-    const headers = { authorization: "Bearer clerk-session" };
-    const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-      voiceIoQuotaContract,
-    );
-    const initial = await accept(quota.get({ headers }), [200]);
-    expect(initial.body).toMatchObject({ allowed: true, count: 0 });
-
-    for (let index = 0; index < 10; index += 1) {
-      await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(index + 1)], "", false, 1),
-        }),
-        [200],
-      );
-    }
-    const exhausted = await accept(quota.get({ headers }), [200]);
-    expect(exhausted.body).toStrictEqual({
-      allowed: false,
-      count: 10,
-      limit: 10,
-    });
-    const rejected = await accept(
-      client().segment({
-        headers,
-        body: segmentForm([audioFile(11)], "", false, 1),
-      }),
-      [429],
-    );
-    expect(rejected.body.error.code).toBe("DAILY_RATE_LIMIT_EXCEEDED");
-  });
-
-  it("meters unique recording time without charging the boundary overlap twice", async () => {
-    const actor = await voiceActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 10_000,
-    });
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return HttpResponse.json({
-          candidates: [
-            {
-              finishReason: "STOP",
-              content: {
-                parts: [
-                  {
-                    text: JSON.stringify({
-                      transcript: "New speech.",
-                      language: "en",
-                    }),
-                  },
-                ],
-              },
-            },
-          ],
-        });
-      }),
-    );
-    const headers = { authorization: "Bearer clerk-session" };
-    // Accumulate 482 seconds through the API while leaving room under the
-    // free daily request limit for the two overlapping segments below.
-    for (const durationSeconds of [75, 75, 75, 75, 75, 75, 32]) {
-      await accept(
-        client().segment({
-          headers,
           body: segmentForm(
-            [audioFile(1, durationSeconds)],
-            "",
+            [audioFile(2, 60)],
+            "Earlier speech.",
             false,
-            durationSeconds,
+            118,
+            2,
           ),
         }),
         [200],
       );
-    }
-    await accept(
-      client().segment({
-        headers,
-        body: segmentForm([audioFile(1, 60)], "", false, 60),
-      }),
-      [200],
-    );
-    await accept(
-      client().segment({
-        headers,
-        body: segmentForm([audioFile(2, 60)], "Earlier speech.", false, 118, 2),
-      }),
-      [200],
-    );
-    const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-      voiceIoQuotaContract,
-    );
-    const result = await accept(quota.get({ headers }), [200]);
-    expect(result.body).toMatchObject({
-      allowed: false,
-      count: 600,
-      limit: 600,
+      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+        voiceIoQuotaContract,
+      );
+      const result = await accept(quota.get({ headers }), [200]);
+      expect(result.body).toMatchObject({
+        allowed: false,
+        count: 600,
+        limit: 600,
+      });
+      const rejected = await accept(
+        client().segment({
+          headers,
+          body: segmentForm([audioFile(3)], "", false, 1),
+        }),
+        [429],
+      );
+      expect(rejected.body.error.code).toBe("DAILY_DURATION_LIMIT_EXCEEDED");
     });
-    const rejected = await accept(
-      client().segment({
-        headers,
-        body: segmentForm([audioFile(3)], "", false, 1),
-      }),
-      [429],
-    );
-    expect(rejected.body.error.code).toBe("DAILY_DURATION_LIMIT_EXCEEDED");
   });
 
   it("uses the saved prefix as context and combines only the final segment with whole-recording polish", async () => {
@@ -1854,20 +1867,42 @@ describe("POST /api/voice-io/transcribe/segment", () => {
   });
 });
 
-describe("voice provider capacity recovery", () => {
-  beforeEach(() => {
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-  });
-
+describe("voice provider immediate failures", () => {
   it.each([GOOGLE_STS_URL, GOOGLE_IMPERSONATION_URL, VERTEX_VOICE_URL])(
     "returns provider-unavailability for a connection failure at %s",
     async (url) => {
-      await voiceActor();
-      let calls = 0;
+      const owner = await publicVoiceActor();
+      await owner.run(async () => {
+        let calls = 0;
+        server.use(
+          http.post(url, () => {
+            calls += 1;
+            return HttpResponse.error();
+          }),
+        );
+        const response = await accept(
+          client().segment({
+            headers: { authorization: "Bearer clerk-session" },
+            body: form([audioFile(1)]),
+          }),
+          [503],
+        );
+        expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+        expect(calls).toBe(1);
+      });
+    },
+  );
+
+  it("reports invalid structured Google output as a transcription failure", async () => {
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
       server.use(
-        http.post(url, () => {
-          calls += 1;
-          return HttpResponse.error();
+        http.post(VERTEX_VOICE_URL, () => {
+          return vertexVoiceResponse(
+            JSON.stringify({
+              transcript: "private transcript without required fields",
+            }),
+          );
         }),
       );
       const response = await accept(
@@ -1875,32 +1910,16 @@ describe("voice provider capacity recovery", () => {
           headers: { authorization: "Bearer clerk-session" },
           body: form([audioFile(1)]),
         }),
-        [503],
+        [502],
       );
-      expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-      expect(calls).toBe(1);
-    },
-  );
+      expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
+    });
+  });
+});
 
-  it("reports invalid structured Google output as a transcription failure", async () => {
-    await voiceActor();
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse(
-          JSON.stringify({
-            transcript: "private transcript without required fields",
-          }),
-        );
-      }),
-    );
-    const response = await accept(
-      client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)]),
-      }),
-      [502],
-    );
-    expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
+describe("voice provider capacity recovery", () => {
+  beforeEach(() => {
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
   });
 
   it.each([

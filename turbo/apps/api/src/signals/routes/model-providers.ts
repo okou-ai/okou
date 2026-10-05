@@ -70,7 +70,7 @@ const listModelProvidersInner$ = computed(async (get) => {
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, auth.orgId))
     .limit(1);
-  if (org?.mode === "auto") {
+  if (org?.mode !== "custom") {
     return { status: 200 as const, body: { modelProviders: [] } };
   }
   const result = await get(modelProviders(auth.orgId));
@@ -209,7 +209,7 @@ const upsertModelProviderInner$ = command(
       .where(eq(orgMetadata.orgId, auth.orgId))
       .limit(1);
     signal.throwIfAborted();
-    if (org?.mode === "auto") {
+    if (org?.mode !== "custom") {
       return badRequestMessage(
         "Provider connections cannot be configured in Auto mode",
       );

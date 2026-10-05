@@ -14,6 +14,7 @@ import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { createRouteMocks } from "./helpers/route-test";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -79,7 +80,9 @@ describe("model policy invalidation", () => {
   });
 
   it("publishes organization surface changes after successful mutations", async () => {
-    const { orgId } = identity();
+    const actor = identity();
+    const { orgId } = actor;
+    await ensureCustomModelModeForTest(context, actor, authHeaders);
     const clients = setupApp({ context, routes: modelProviderGatewayRoutes });
     const main = clients(modelProviderConnectionsMainContract);
     const byId = clients(modelProviderConnectionsByIdContract);

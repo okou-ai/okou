@@ -1967,6 +1967,10 @@
       "newThread": "새 채팅",
       "reload": "작업 새로고침"
     },
+    "lastReadMarker": {
+      "previouslyRead": "마지막으로 여기까지 읽었어요",
+      "unread": "읽지 않은 메시지"
+    },
     "mail": {
       "bcc": "숨은 참조",
       "cc": "참조",

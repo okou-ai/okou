@@ -994,7 +994,7 @@ async function loadOrgModelMode(db: Db, orgId: string) {
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
     .limit(1);
-  return org?.modelMode === "auto" ? "auto" : "custom";
+  return org?.modelMode === "custom" ? "custom" : "auto";
 }
 
 export interface OrgModelPolicyListing {
@@ -1379,7 +1379,7 @@ export const updateOrgModelPolicies$ = command(
         .from(orgMetadata)
         .where(eq(orgMetadata.orgId, params.orgId))
         .limit(1);
-      if (org?.mode === "auto") {
+      if (org?.mode !== "custom") {
         return bad<OrgModelPoliciesResponse>(
           "Model policies are managed automatically in Auto mode",
         );

@@ -377,7 +377,7 @@ const modelRoutingFacts$ = command(
       providers,
       surfaces,
       preference: preference ?? null,
-      modelMode: org?.mode === "auto" ? "auto" : "custom",
+      modelMode: org?.mode === "custom" ? "custom" : "auto",
     };
   },
 );
@@ -633,7 +633,7 @@ export const resolveModelSelectionPin$ = command(
         .where(eq(orgMetadata.orgId, orgId))
         .limit(1);
       signal.throwIfAborted();
-      if (org?.mode === "auto") {
+      if (org?.mode !== "custom") {
         return badRequestMessage("Use the available models for this workspace");
       }
       const capabilities = modelRouteCapabilities(

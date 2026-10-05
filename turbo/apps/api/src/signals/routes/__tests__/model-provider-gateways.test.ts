@@ -12,6 +12,7 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 
 const context = testContext();
@@ -23,9 +24,11 @@ function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
 
-function useSession(role: "org:admin" | "org:member" = "org:admin") {
+async function useSession(role: "org:admin" | "org:member" = "org:admin") {
   const orgId = `org_gateway_${randomUUID()}`;
   const userId = `user_gateway_${randomUUID()}`;
+  mocks.clerk.session(userId, orgId, "org:admin");
+  await ensureCustomModelModeForTest(context, { orgId, userId }, authHeaders);
   mocks.clerk.session(userId, orgId, role);
   return { orgId, userId };
 }
@@ -84,7 +87,7 @@ describe("custom model provider gateway routes", () => {
     );
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
-    useSession("org:member");
+    await useSession("org:member");
     const forbidden = await accept(
       mainClient().create({
         headers: authHeaders(),
@@ -113,7 +116,7 @@ describe("custom model provider gateway routes", () => {
   });
 
   it("creates, normalizes, updates, lists, and deletes a connection", async () => {
-    useSession();
+    await useSession();
     const created = await accept(
       mainClient().create({
         headers: authHeaders(),
@@ -324,7 +327,7 @@ describe("custom model provider gateway routes", () => {
       },
     },
   ])("rejects $name", async ({ surface }) => {
-    useSession();
+    await useSession();
     const response = await accept(
       mainClient().create({
         headers: authHeaders(),
@@ -358,6 +361,7 @@ describe("custom model provider gateway routes", () => {
       visibility: "private",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+    await ensureCustomModelModeForTest(context, actor, authHeaders);
 
     const created = await accept(
       mainClient().create({

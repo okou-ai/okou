@@ -809,6 +809,19 @@ describe("connector account lifecycle routes", () => {
       displayName: "Work",
       isDefault: true,
     });
+    const remainingImpact = await accept(
+      accountClient().deletionImpact({
+        headers: authHeaders(),
+        params: { connectionId: first.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [200],
+    );
+    expect(remainingImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: false,
+    });
   });
 
   it.each(["user", "organization"] as const)(
@@ -861,6 +874,19 @@ describe("connector account lifecycle routes", () => {
             );
           };
           const original = await readOwned();
+          const ownedImpact = await accept(
+            accountClient().deletionImpact({
+              headers: authHeaders(),
+              params: { connectionId },
+              query: target,
+            }),
+            [200],
+          );
+          expect(ownedImpact.body).toStrictEqual({
+            connectionId,
+            explicitSelectionCount: 0,
+            hasSibling: false,
+          });
           const rejectedBodies: unknown[] = [];
           for (const request of [
             { actor: foreignActor, connectionId, target },
@@ -881,6 +907,15 @@ describe("connector account lifecycle routes", () => {
               [404],
             );
             rejectedBodies.push(rejected.body);
+            const rejectedImpact = await accept(
+              accountClient().deletionImpact({
+                headers: authHeaders(),
+                params: { connectionId: request.connectionId },
+                query: request.target,
+              }),
+              [404],
+            );
+            expect(rejectedImpact.body).toStrictEqual(rejected.body);
           }
           const notFound = {
             error: {

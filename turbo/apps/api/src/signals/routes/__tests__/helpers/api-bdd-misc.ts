@@ -37,6 +37,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
+import { ensureCustomModelModeForTest } from "./org-model-policy-write";
 import { emailUnsubscribeRoutes } from "../../email-unsubscribe";
 import { userExportRoutes } from "../../user-export";
 import { logsRoutes } from "../../logs";
@@ -503,6 +504,12 @@ export function createMiscRoutesApi(context: TestContext) {
         }),
         [200],
       );
+    },
+
+    async configureCustomModelMode(actor: ApiTestUser): Promise<void> {
+      await ensureCustomModelModeForTest(context, actor, () => {
+        return authenticate(context, actor);
+      });
     },
 
     async upsertBuiltInProvider(

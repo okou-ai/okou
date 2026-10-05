@@ -331,7 +331,7 @@ const deletionImpactInner$ = computed(async (get) => {
   if (!(await getConnectorAccount(get(db$), request))) {
     return notFound("Connector account not found");
   }
-  const impact = await connectorAccountDeletionImpact(get(db$), request);
+  const impact = await get(connectorAccountDeletionImpact(request));
   if (!impact) {
     return notFound("Connector account not found");
   }

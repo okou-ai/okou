@@ -1914,6 +1914,7 @@ async function apiKeySource(
 ) {
   const actor = actorFor(storage);
   const misc = createMiscRoutesApi(context);
+  await misc.configureCustomModelMode(actor);
   const result = await misc.upsertOrgModelProvider(
     actor,
     { type, secret: key },

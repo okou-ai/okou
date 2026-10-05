@@ -295,6 +295,7 @@ describe("MISC-03: workflows lifecycle through public API", () => {
 describe("MISC-04: model providers, policies, and logs visible state", () => {
   it("chains model provider setup, policy read/update, provider delete, and empty logs", async () => {
     const { api, admin, member } = testActors();
+    await api.configureCustomModelMode(admin);
 
     const initialProviders = await api.listModelProviders(admin);
     expect(initialProviders.body.modelProviders).toStrictEqual([]);
@@ -342,6 +343,7 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
 
   it("creates the built-in provider once when upserts race", async () => {
     const { api, admin } = testActors();
+    await api.configureCustomModelMode(admin);
 
     const results = await Promise.all([
       api.upsertBuiltInProvider(admin, [200, 201]),

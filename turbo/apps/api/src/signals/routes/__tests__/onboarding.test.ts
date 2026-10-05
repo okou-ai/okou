@@ -15,6 +15,8 @@ import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { modelPoliciesRoutes } from "../model-policies";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -70,6 +72,16 @@ interface OrgActor {
   readonly userId: string;
   readonly orgId: string;
   readonly role: "org:admin" | "org:member";
+}
+
+async function configureCustomWorkspace(actor: OrgActor): Promise<void> {
+  await seedOrgMetadata({
+    orgId: actor.orgId,
+    tier: "pro",
+    credits: 0,
+  });
+  mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+  await ensureCustomModelModeForTest(context, actor, authHeaders);
 }
 
 /** A second person in `admin`'s organization, without admin rights. */
@@ -344,6 +356,7 @@ describe("POST /api/onboarding/complete", () => {
     "seeds $provider subscription models for a Custom organization even when the default seed was read first",
     async ({ provider, models, route }) => {
       const actor = orgActor();
+      await configureCustomWorkspace(actor);
       mocks.clerk.session(actor.userId, actor.orgId, actor.role);
       const policies = modelPoliciesClient();
       const before = await accept(
@@ -409,6 +422,7 @@ describe("POST /api/onboarding/complete", () => {
 
   it("applies a subscription choice after the previous untouched model seed", async () => {
     const actor = orgActor();
+    await configureCustomWorkspace(actor);
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
     const policies = modelPoliciesClient();
     const before = await accept(
@@ -465,7 +479,7 @@ describe("POST /api/onboarding/complete", () => {
     ]);
   });
 
-  it("seeds the chosen models when no model policies were read before completion", async () => {
+  it("keeps a new workspace in Auto when onboarding requests a subscription before connecting it", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
 
@@ -485,16 +499,13 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "claude-sonnet-5",
-    ]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+    expect(policies.body.modelMode).toBe("auto");
   });
 
   it("keeps a customized model policy when onboarding completes", async () => {
     const actor = orgActor();
+    await configureCustomWorkspace(actor);
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
     const policies = modelPoliciesClient();
     const before = await accept(
