@@ -53,7 +53,6 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   disconnectPersonalModelProviderAccounts$,
   isPersonalSubscriptionProviderType,
-  visiblePersonalModelProviderCondition,
 } from "./model-provider-account.service";
 import {
   type BuiltInModelRuntimeRoute,
