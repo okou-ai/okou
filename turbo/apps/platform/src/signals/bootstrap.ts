@@ -116,6 +116,11 @@ import {
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
 import {
+  pwaNavigationEnabled$,
+  setupPwaNavigation$,
+} from "./okou-page/pwa-navigation.ts";
+import { setupPwaMePage$ } from "./okou-page/pwa-me-page-setup.ts";
+import {
   initBootstrapPhaseTiming$,
   markBootstrapLocaleInitCompleted$,
   markBootstrapLocaleInitStarted$,
@@ -168,6 +173,18 @@ function setupAuthSidebarPageWrapper(
 ) {
   return setupAuthPageWrapper(setupSettingsParamAfterStableRoute(setupPage));
 }
+
+const setupAuthenticatedPwaMePage$ =
+  setupAuthSidebarPageWrapper(setupPwaMePage$);
+
+const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
+  await set(
+    get(pwaNavigationEnabled$)
+      ? setupAuthenticatedPwaMePage$
+      : setupNotFoundPage$,
+    signal,
+  );
+});
 
 const SOURCES_FIRST_ONBOARDING_PAGE_GROUP = "sources-first-onboarding";
 
@@ -315,6 +332,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectors,
     setup: setupAuthSidebarPageWrapper(setupConnectorsPage$),
+  },
+  {
+    path: ROUTES.me,
+    setup: setupPwaMeRoute$,
   },
   {
     path: ROUTES.agentIdeas,
@@ -578,6 +599,7 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
     set(markBootstrapLocaleInitCompleted$);
     set(initTheme$, signal);
+    set(setupPwaNavigation$, signal);
 
     render();
 

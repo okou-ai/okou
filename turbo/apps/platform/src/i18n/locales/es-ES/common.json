@@ -387,6 +387,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "No se pudieron cargar los agentes",
+      "backToChats": "Volver a los chats",
+      "chatListUnavailable": "No se pudieron cargar los chats",
+      "chats": "Chats",
+      "me": "Yo",
+      "navigation": "Navegación principal",
+      "searchAgents": "Buscar agentes",
+      "switchAgent": "Cambiar agente"
+    },
     "shortcutHelp": {
       "close": "Cerrar atajos de teclado",
       "description": "Atajos disponibles en esta página",
@@ -2000,6 +2010,10 @@
       "newTasksAvailable": "Hay nuevas tareas",
       "newThread": "Chat nuevo",
       "reload": "Recargar tareas"
+    },
+    "lastReadMarker": {
+      "previouslyRead": "La última vez leíste hasta aquí",
+      "unread": "Mensajes no leídos"
     },
     "mail": {
       "bcc": "BCC",
@@ -4980,14 +4994,10 @@
         "accountFallback": "Cuenta {{number}}",
         "accountsDescription": "Elige la cuenta que usa cada proveedor para las nuevas ejecuciones.",
         "accountsSectionTitle": "Cuentas personales",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Activa",
-        "addAccount": "Añadir cuenta",
         "autoDescription": "Conecta tu cuenta de Claude o ChatGPT para usar más modelos.",
         "autoTitle": "Usa más modelos",
-        "claudeDescription": "Inicia sesión con tu suscripción a Claude para usar modelos Claude con agentes basados en Claude Code.",
         "claudeTitle": "Claude",
-        "codexDescription": "Conecta tu cuenta de ChatGPT para usar modelos GPT.",
         "codexTitle": "ChatGPT (Codex)",
         "connectAccount": "Conectar cuenta",
         "description": "Solo se usa en tus ejecuciones y con tus propias credenciales.",
@@ -5000,10 +5010,8 @@
         "noAccounts": "No hay cuentas conectadas.",
         "reconnectAccount": "Volver a conectar",
         "retry": "Reintentar",
-        "sectionTitle": "Personal",
         "status": {
           "connected": "Conectado",
-          "connectedWithDetail": "Conectado ({{detail}})",
           "fiveHour": "5h",
           "left": "{{percent}} restante",
           "stale": "Atención",
@@ -5118,7 +5126,6 @@
       "toasts": {
         "accountDisconnected": "Cuenta desconectada",
         "accountSwitched": "Cuenta activa cambiada",
-        "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configuración del proveedor de modelos actualizada",
         "reset": "Uso de {{provider}} restablecido",
         "resetUnavailable": "No hay reinicios de uso de {{provider}} disponibles",
@@ -5391,17 +5398,14 @@
     "shared": {
       "cancel": "Cancelar",
       "close": "Cerrar",
-      "connect": "Conectar",
       "connecting": "Conectando...",
       "delete": "Eliminar",
       "discard": "Descartar",
-      "disconnect": "Desconectar",
       "edit": "Editar",
       "loading": "Cargando",
       "moreOptions": "Más opciones",
       "reconnect": "Volver a conectar",
       "remove": "Eliminar",
-      "replace": "Reemplazar",
       "save": "Guardar",
       "saveChanges": "Guardar cambios",
       "saving": "Guardando..."

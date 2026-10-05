@@ -30,6 +30,7 @@ import {
   captureApiTestConnectorCatalogCleanup,
 } from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { settle } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
@@ -808,7 +809,162 @@ describe("connector account lifecycle routes", () => {
       displayName: "Work",
       isDefault: true,
     });
+    const remainingImpact = await accept(
+      accountClient().deletionImpact({
+        headers: authHeaders(),
+        params: { connectionId: first.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [200],
+    );
+    expect(remainingImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: false,
+    });
   });
+
+  it.each(["user", "organization"] as const)(
+    "renames only exact owned accounts across %s boundaries",
+    async (boundary) => {
+      const bdd = createBddApi(context);
+      const owner = bdd.user();
+      const foreign =
+        boundary === "user"
+          ? bdd.user({ orgId: owner.orgId })
+          : bdd.user({ userId: owner.userId });
+      if (!owner.orgId || !foreign.orgId) {
+        throw new Error("Account fixtures require an organization");
+      }
+      const ownerActor = { ...owner, orgId: owner.orgId };
+      const foreignActor = { ...foreign, orgId: foreign.orgId };
+      await track(Promise.resolve(foreignActor));
+      await track(Promise.resolve(ownerActor));
+      const activate = async (actor: typeof ownerActor) => {
+        await bdd.readMe(actor);
+        mockClerkMembership(context, actor, "org:admin");
+      };
+      const checks = await settle(
+        (async () => {
+          await bdd.completeOnboarding(ownerActor);
+          await bdd.completeOnboarding(foreignActor);
+          await activate(ownerActor);
+          const added = await accept(
+            connectorClient().connect({
+              headers: authHeaders(),
+              params: { connectorSlug: "openai" },
+              body: {
+                authMethod: "api-token",
+                account: { intent: "add", displayName: "Original" },
+                values: { apiKey: `sk-test-${randomUUID()}` },
+              },
+            }),
+            [200],
+          );
+          const connectionId = added.body.id;
+          const target = { kind: "builtin", connectorSlug: "openai" } as const;
+          const readOwned = () => {
+            return accept(
+              accountClient().connection({
+                headers: authHeaders(),
+                params: { connectionId },
+                query: target,
+              }),
+              [200],
+            );
+          };
+          const original = await readOwned();
+          const ownedImpact = await accept(
+            accountClient().deletionImpact({
+              headers: authHeaders(),
+              params: { connectionId },
+              query: target,
+            }),
+            [200],
+          );
+          expect(ownedImpact.body).toStrictEqual({
+            connectionId,
+            explicitSelectionCount: 0,
+            hasSibling: false,
+          });
+          const rejectedBodies: unknown[] = [];
+          for (const request of [
+            { actor: foreignActor, connectionId, target },
+            { actor: foreignActor, connectionId: randomUUID(), target },
+            {
+              actor: ownerActor,
+              connectionId,
+              target: { kind: "builtin", connectorSlug: "github" } as const,
+            },
+          ]) {
+            await activate(request.actor);
+            const rejected = await accept(
+              accountClient().rename({
+                headers: authHeaders(),
+                params: { connectionId: request.connectionId },
+                body: { target: request.target, displayName: "Rejected" },
+              }),
+              [404],
+            );
+            rejectedBodies.push(rejected.body);
+            const rejectedImpact = await accept(
+              accountClient().deletionImpact({
+                headers: authHeaders(),
+                params: { connectionId: request.connectionId },
+                query: request.target,
+              }),
+              [404],
+            );
+            expect(rejectedImpact.body).toStrictEqual(rejected.body);
+          }
+          const notFound = {
+            error: {
+              code: "NOT_FOUND",
+              message: "Connector account not found",
+            },
+          };
+          expect(rejectedBodies).toStrictEqual([notFound, notFound, notFound]);
+          await activate(ownerActor);
+          const unchanged = await readOwned();
+          expect(unchanged.body).toStrictEqual(original.body);
+          for (const displayName of ["Renamed", null]) {
+            const renamed = await accept(
+              accountClient().rename({
+                headers: authHeaders(),
+                params: { connectionId },
+                body: { target, displayName },
+              }),
+              [200],
+            );
+            expect(renamed.body.displayName).toBe(displayName);
+            const readBack = await readOwned();
+            expect(readBack.body).toStrictEqual(renamed.body);
+          }
+        })(),
+      );
+      const cleanupErrors: unknown[] = [];
+      for (const actor of [foreignActor, ownerActor]) {
+        const cleaned = await settle(
+          (async () => {
+            await activate(actor);
+            await cleanupFixture(actor);
+          })(),
+        );
+        if (!cleaned.ok) {
+          cleanupErrors.push(cleaned.error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [...(!checks.ok ? [checks.error] : []), ...cleanupErrors],
+          "Account rename fixture cleanup failed",
+        );
+      }
+      if (!checks.ok) {
+        throw checks.error;
+      }
+    },
+  );
 
   it("keeps concurrent sibling creation to exactly one default", async () => {
     await seedFixture();

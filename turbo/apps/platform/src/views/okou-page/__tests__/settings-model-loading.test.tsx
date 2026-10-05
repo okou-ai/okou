@@ -9,7 +9,6 @@ import type {
   OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -142,14 +141,13 @@ async function setupLoadedModelsSettings() {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.PersonalModelProviderAccounts]: true },
   });
   await findButton("GPT 5.6 Sol");
   const menu = await openAccountMenu();
   responses.holdPoliciesAndBilling = true;
   const settings = await openModelsSettings(menu);
   await expect(
-    findEnabledButton("Add account", settings),
+    findEnabledButton("Connect account", settings),
   ).resolves.toBeEnabled();
   responses.holdSubscriptions = true;
   return { settings, responses, release };
@@ -176,7 +174,7 @@ test("Keep loaded model controls usable when switching Settings sections", async
   await within(settings).findByRole("heading", { name: "Preference" });
   await showModels(settings);
   await expect(
-    findEnabledButton("Add account", settings),
+    findEnabledButton("Connect account", settings),
   ).resolves.toBeEnabled();
 });
 
@@ -184,7 +182,7 @@ test("Keep loaded model controls usable after reopening Settings", async () => {
   const { settings, responses } = await setupLoadedModelsSettings();
   const reopened = await reopenModelsSettings(settings, responses);
   await expect(
-    findEnabledButton("Add account", reopened),
+    findEnabledButton("Connect account", reopened),
   ).resolves.toBeEnabled();
 });
 
@@ -192,7 +190,7 @@ test("Apply realtime model policy changes after reopening Settings", async () =>
   const { settings, responses, release } = await setupLoadedModelsSettings();
   const reopened = await reopenModelsSettings(settings, responses);
   await expect(
-    findEnabledButton("Add account", reopened),
+    findEnabledButton("Connect account", reopened),
   ).resolves.toBeEnabled();
   responses.holdPoliciesAndBilling = false;
   responses.holdSubscriptions = false;
@@ -223,7 +221,7 @@ test("Apply realtime billing changes after reopening Settings", async () => {
   const { settings, responses, release } = await setupLoadedModelsSettings();
   const reopened = await reopenModelsSettings(settings, responses);
   await expect(
-    findEnabledButton("Add account", reopened),
+    findEnabledButton("Connect account", reopened),
   ).resolves.toBeEnabled();
   responses.holdPoliciesAndBilling = false;
   responses.holdSubscriptions = false;
@@ -255,7 +253,6 @@ test("Keep the Models header without organization loading UI while the initial m
   const page = await startPage({
     context,
     path: "/agents?settings=model",
-    featureSwitches: { [FeatureSwitchKey.PersonalModelProviderAccounts]: true },
   });
   await page.content;
   const settings = await screen.findByRole("dialog", { name: "Settings" });

@@ -1,15 +1,13 @@
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  getModelProviderPresentationLabel,
-  type ModelProviderResponse,
-  type ModelProviderType,
+import type {
+  ModelProviderResponse,
+  ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ResetPersonalModelProviderSubscriptionUsageResponse } from "@okouai/api-contracts/contracts/personal-model-providers";
 import {
   activatePersonalModelProviderAccount$,
   deletePersonalModelProviderAccount$,
-  deletePersonalModelProvider$,
   personalModelProviders$,
   resetPersonalCodexAccountSubscriptionUsage$ as resetPersonalCodexAccountSubscriptionUsageRequest$,
   resetPersonalCodexSubscriptionUsage$ as resetPersonalCodexSubscriptionUsageRequest$,
@@ -115,35 +113,6 @@ export const personalConfiguredProviders$ = computed(async (get) => {
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 });
-
-export const disconnectPersonalOAuthCredential$ = command(
-  async ({ set }, providerType: ModelProviderType, signal: AbortSignal) => {
-    const providerLabel = getModelProviderPresentationLabel(providerType);
-
-    const promise = (async () => {
-      await set(deletePersonalModelProvider$, providerType, signal);
-      signal.throwIfAborted();
-      toast.success(
-        i18n.t(
-          ($) => {
-            return $.settings.models.toasts.disconnected;
-          },
-          {
-            provider: providerLabel,
-          },
-        ),
-      );
-    })();
-
-    set(internalPersonalActionPromise$, promise);
-    signal.addEventListener("abort", () => {
-      set(internalPersonalActionPromise$, null);
-    });
-
-    await promise;
-    signal.throwIfAborted();
-  },
-);
 
 export const activatePersonalOAuthCredentialAccount$ = command(
   async ({ set }, id: string, signal: AbortSignal) => {

@@ -185,7 +185,7 @@ export async function resetStaleAutoMemberSelection(
   ]);
   const selectedModel = member?.selectedModel;
   if (
-    org?.mode !== "auto" ||
+    org?.mode === "custom" ||
     !selectedModel ||
     policies.some((policy) => {
       return policy.model === selectedModel;

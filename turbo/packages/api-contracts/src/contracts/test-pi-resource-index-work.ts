@@ -19,11 +19,6 @@ export const testPiResourceIndexWorkContract = c.router({
           agentId: z.string().uuid(),
         })
         .optional(),
-      removeStableContextResourceIndexes: z
-        .object({
-          ownedStorageNames: z.array(z.string().min(1)).min(1).max(16),
-        })
-        .optional(),
     }),
     responses: {
       200: cronMaterializePiResourceIndexesContract.materialize.responses[200],

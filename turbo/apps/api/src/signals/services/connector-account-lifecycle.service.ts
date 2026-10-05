@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 
 import {
   connectorAccountTargetKey,
@@ -46,7 +46,7 @@ import {
 } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
@@ -885,69 +885,88 @@ export async function listConnectorAccountsByIds(
   });
 }
 
-async function exactOwnedAccountExists(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
+export const renameConnectorAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly target: ConnectorAccountTarget;
+      readonly connectionId: string;
+      readonly displayName: string | null;
+    },
+  ): Promise<Date | null> => {
+    return await set(writeDb$).transaction(async (tx) => {
+      if (args.target.kind === "custom") {
+        const [definition] = await tx
+          .select({
+            providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+          })
+          .from(orgCustomConnectors)
+          .leftJoin(
+            orgCustomConnectorOauthConfigs,
+            and(
+              eq(
+                orgCustomConnectorOauthConfigs.connectorId,
+                orgCustomConnectors.id,
+              ),
+              eq(
+                orgCustomConnectorOauthConfigs.orgId,
+                orgCustomConnectors.orgId,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(orgCustomConnectors.id, args.target.customConnectorId),
+              eq(orgCustomConnectors.orgId, args.orgId),
+            ),
+          )
+          .limit(1);
+        if (
+          definition === undefined ||
+          isIntegrationManagedCustomConnectorProviderAdapter(
+            definition.providerAdapter,
+          )
+        ) {
+          return null;
+        }
+      }
+      const [row] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (row === undefined) {
+        return null;
+      }
+      const [updated] = await tx
+        .update(connectors)
+        .set({
+          displayName: args.displayName,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .returning({ updatedAt: connectors.updatedAt });
+      return updated?.updatedAt ?? null;
+    });
   },
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  return row !== undefined;
-}
-
-export async function renameConnectorAccount(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
-    readonly displayName: string | null;
-  },
-): Promise<Date | null> {
-  return await db.transaction(async (tx) => {
-    if (
-      args.target.kind === "custom" &&
-      !(await customTargetIsVisible(tx, {
-        orgId: args.orgId,
-        customConnectorId: args.target.customConnectorId,
-      }))
-    ) {
-      return null;
-    }
-    if (!(await exactOwnedAccountExists(tx, args))) {
-      return null;
-    }
-    const [updated] = await tx
-      .update(connectors)
-      .set({ displayName: args.displayName, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(connectors.id, args.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      )
-      .returning({ updatedAt: connectors.updatedAt });
-    return updated?.updatedAt ?? null;
-  });
-}
+);
 
 function connectorAccountOwnerCondition(args: {
   readonly orgId: string;
@@ -1085,55 +1104,61 @@ export async function setDefaultConnectorAccount(
   );
 }
 
-export async function connectorAccountDeletionImpact(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
-  },
-): Promise<{
-  readonly explicitSelectionCount: number;
-  readonly hasSibling: boolean;
-} | null> {
-  const [account] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .limit(1);
-  if (!account) {
-    return null;
-  }
-  const [[selectionCount], [sibling]] = await Promise.all([
-    db
-      .select({ value: count() })
-      .from(chatThreadConnectorSelections)
-      .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId)),
-    db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-          ne(connectors.id, args.connectionId),
-        ),
-      )
-      .limit(1),
-  ]);
-  return {
-    explicitSelectionCount: selectionCount?.value ?? 0,
-    hasSibling: sibling !== undefined,
-  };
+export function connectorAccountDeletionImpact(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly connectionId: string;
+}) {
+  return computed(
+    async (
+      get,
+    ): Promise<{
+      readonly explicitSelectionCount: number;
+      readonly hasSibling: boolean;
+    } | null> => {
+      const db = get(db$);
+      const [account] = await db
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .limit(1);
+      if (!account) {
+        return null;
+      }
+      const [[selectionCount], [sibling]] = await Promise.all([
+        db
+          .select({ value: count() })
+          .from(chatThreadConnectorSelections)
+          .where(
+            eq(chatThreadConnectorSelections.connectorId, args.connectionId),
+          ),
+        db
+          .select({ id: connectors.id })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.orgId, args.orgId),
+              eq(connectors.userId, args.userId),
+              targetCondition(args.target),
+              ne(connectors.id, args.connectionId),
+            ),
+          )
+          .limit(1),
+      ]);
+      return {
+        explicitSelectionCount: selectionCount?.value ?? 0,
+        hasSibling: sibling !== undefined,
+      };
+    },
+  );
 }
 
 type PreparedConnectorAccountDeletion =

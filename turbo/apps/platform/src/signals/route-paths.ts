@@ -27,6 +27,7 @@ export const ROUTES = {
   browserAuthorize: "/browser/authorize/:requestToken",
   ideas: "/ideas",
   connectors: "/connectors",
+  me: "/me",
   computerUseAuthorize: "/computer-use/authorize/:requestToken",
   bankingConnectReturn: "/banking/connect/return",
   bankingConnectReturnResult: "/banking/connect/return/:bankingConnectStatus",

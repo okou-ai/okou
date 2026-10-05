@@ -295,6 +295,7 @@ describe("MISC-03: workflows lifecycle through public API", () => {
 describe("MISC-04: model providers, policies, and logs visible state", () => {
   it("chains model provider setup, policy read/update, provider delete, and empty logs", async () => {
     const { api, admin, member } = testActors();
+    await api.configureCustomModelMode(admin);
 
     const initialProviders = await api.listModelProviders(admin);
     expect(initialProviders.body.modelProviders).toStrictEqual([]);
@@ -342,6 +343,7 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
 
   it("creates the built-in provider once when upserts race", async () => {
     const { api, admin } = testActors();
+    await api.configureCustomModelMode(admin);
 
     const results = await Promise.all([
       api.upsertBuiltInProvider(admin, [200, 201]),
@@ -375,7 +377,7 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
     ).toHaveLength(1);
   });
 
-  it("chains personal model provider create, update, list, and delete through public API", async () => {
+  it("chains personal subscription account create, replace, list, and delete through public API", async () => {
     const { api, admin } = testActors();
 
     const unauthenticatedList = await api.listPersonalModelProviders(
@@ -430,6 +432,8 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
         type: "claude-code-oauth-token",
         secretName: "CLAUDE_CODE_OAUTH_TOKEN",
         selectedModel: "claude-sonnet-5",
+        modelProviderId: expect.any(String),
+        isActive: true,
       },
     });
     if (!("provider" in created.body)) {
@@ -448,21 +452,40 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       selectedModel: "claude-sonnet-5",
     });
 
-    const updated = await api.upsertPersonalModelProvider(
+    // Tokens without a resolved upstream identity replace the concrete account,
+    // while the logical provider remains the same.
+    const replaced = await api.upsertPersonalModelProvider(
       admin,
       {
         type: "claude-code-oauth-token",
         secret: "bdd-updated-claude-oauth-token",
         selectedModel: "claude-opus-5",
       },
-      [200],
+      [201],
     );
-    expect(updated.body).toMatchObject({
-      created: false,
+    expect(replaced.body).toMatchObject({
+      created: true,
       provider: {
         type: "claude-code-oauth-token",
         selectedModel: "claude-opus-5",
+        modelProviderId: created.body.provider.modelProviderId,
+        isActive: true,
       },
+    });
+    if (!("provider" in replaced.body)) {
+      throw new Error("Expected personal subscription account response");
+    }
+    expect(replaced.body.provider.id).not.toBe(created.body.provider.id);
+    const afterReplace = await api.listPersonalModelProviders(admin, [200]);
+    if (!("modelProviders" in afterReplace.body)) {
+      throw new Error("Expected personal model provider list response");
+    }
+    expect(afterReplace.body.modelProviders).toHaveLength(1);
+    expect(afterReplace.body.modelProviders[0]).toMatchObject({
+      id: replaced.body.provider.id,
+      modelProviderId: created.body.provider.modelProviderId,
+      selectedModel: "claude-opus-5",
+      isActive: true,
     });
 
     await api.deletePersonalModelProvider(

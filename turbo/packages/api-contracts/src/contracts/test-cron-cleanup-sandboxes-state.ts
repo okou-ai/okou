@@ -13,7 +13,6 @@ export const testCronCleanupSandboxesStateActionBodySchema = z
       "attach-run-thread",
       "delete-run",
       "delete-run-ownership",
-      "delete-run-thread",
       "get-run",
       "get-run-ownership",
       "get-connector-diagnostic-registration",

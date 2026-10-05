@@ -16,6 +16,7 @@ import {
   setChatThreadUnreadFilter$,
   toggleChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
+import { pwaNavigationEnabled$ } from "./pwa-navigation.ts";
 
 type PinnedAgentShortcutDirection = "prev" | "next";
 
@@ -34,6 +35,9 @@ const navigateToNewChat$ = command(
     }
     set(detachedNavigateTo$, "/agents/:agentId/chat", {
       pathParams: { agentId },
+      searchParams: get(pwaNavigationEnabled$)
+        ? new URLSearchParams({ compose: "1" })
+        : undefined,
     });
   },
 );

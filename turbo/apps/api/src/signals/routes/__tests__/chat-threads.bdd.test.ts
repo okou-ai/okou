@@ -447,7 +447,8 @@ async function sendNoCreditMessageResult(
   actor: ApiTestUser,
   body: NoCreditMessageBody,
 ): Promise<{ readonly threadId: string; readonly createdAt: number }> {
-  await api.ensureOrgModelProvider(actor);
+  // An unconfigured Auto workspace has no credits and needs no paid Custom
+  // provider fixture to persist a rejected message for search assertions.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (
     sent.status !== 201 ||

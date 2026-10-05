@@ -109,6 +109,7 @@ import {
   subscribeChatThreadRealtime$,
 } from "./chat-thread-remote-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
+import { createChatLastReadMarkerSignals } from "./chat-last-read-marker.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { unreadThroughAt } from "./unread-through-at.ts";
@@ -2163,6 +2164,7 @@ function createEventChangeEffects({
   chatEvents,
   projections,
   scroll,
+  lastReadMarker,
   syncVisibleEventTrees$,
 }: {
   readonly threadId: string;
@@ -2172,6 +2174,7 @@ function createEventChangeEffects({
     "rawEvents$" | "latestRunFinishCreatedAt$"
   >;
   readonly scroll: ChatThreadScrollSignals;
+  readonly lastReadMarker: ReturnType<typeof createChatLastReadMarkerSignals>;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
     [boolean, AbortSignal]
@@ -2186,13 +2189,18 @@ function createEventChangeEffects({
   });
   const updateEventPresentation$ = command(
     async (
-      { set },
+      { get, set },
       scrollPosition: ThreadScrollPosition | null,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(syncVisibleEventTrees$, true, signal);
       signal.throwIfAborted();
-      await set(scroll.autoScroll$, scrollPosition, signal);
+      const initialPosition = set(
+        lastReadMarker.initialScrollPosition$,
+        scrollPosition,
+        get(chatEvents.hasOptimisticUserMessage$),
+      );
+      await set(scroll.autoScroll$, initialPosition, signal);
     },
   );
   const afterEventsChange$ = command(
@@ -2243,6 +2251,7 @@ function createChatEventPresentationLifecycle({
   syncVisibleEventTrees$,
   enableSidebarEntryAnimations$,
   initialEventsReady$,
+  lastReadMarker,
 }: {
   readonly chatEvents: ChatEventSignals;
   readonly usage: ReturnType<typeof createChatRunUsageSignals>;
@@ -2253,9 +2262,12 @@ function createChatEventPresentationLifecycle({
   >;
   readonly enableSidebarEntryAnimations$: Command<void, []>;
   readonly initialEventsReady$: State<boolean>;
+  readonly lastReadMarker: ReturnType<typeof createChatLastReadMarkerSignals>;
 }) {
   const setup$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
+      await set(lastReadMarker.initialize$, signal);
+      signal.throwIfAborted();
       set(
         registerChatEventChangeHandler$,
         chatEvents.chatEvents$,
@@ -2276,6 +2288,7 @@ function createChatEventPresentationLifecycle({
   const catchUp$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
       const result = await settle(set(chatEvents.catchUp$, signal), signal);
+      set(lastReadMarker.finishInitialScroll$);
       set(initialEventsReady$, true);
       if (!result.ok) {
         throw result.error;
@@ -2311,6 +2324,22 @@ function createReadyScrollAfterRenderRequest(
   });
 }
 
+function createLoadMoreRenderedChatGroups(
+  scroll: ChatThreadScrollSignals,
+  loadMoreGroups$: Command<Promise<boolean>, [AbortSignal]>,
+) {
+  return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
+    const didPrepend = await set(loadMoreGroups$, signal);
+    signal.throwIfAborted();
+    if (didPrepend) {
+      await set(scroll.autoScroll$, scrollPosition, signal);
+      signal.throwIfAborted();
+    }
+    return didPrepend;
+  });
+}
+
 interface ChatThreadMessagePipelineOptions {
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
@@ -2319,6 +2348,9 @@ interface ChatThreadMessagePipelineOptions {
   previewCatalogReady$: Computed<boolean>;
   connector: ComposerConnectorSignals;
   thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
+  threadDetail$: ReturnType<
+    typeof createCancellationRecoverySignals
+  >["detail$"];
 }
 
 function createChatThreadMessagePipeline({
@@ -2329,6 +2361,7 @@ function createChatThreadMessagePipeline({
   previewCatalogReady$,
   connector,
   thinkingSummaries$,
+  threadDetail$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
   // Position is created before scroll writers are wired to the render window.
@@ -2353,6 +2386,11 @@ function createChatThreadMessagePipeline({
     registeredEvents$: resources.registeredEvents$,
     eventTrees$: resources.eventTrees$,
     eventTreeErrors$: resources.eventTreeErrors$,
+  });
+  const lastReadMarker = createChatLastReadMarkerSignals({
+    threadDetail$,
+    allChatGroups$: projections.allChatGroups$,
+    threadScrollPosition$: position.threadScrollPosition$,
   });
   const initialEventsReady$ = state(false);
   const initialEventsReadyView$ = computed((get): boolean => {
@@ -2401,6 +2439,7 @@ function createChatThreadMessagePipeline({
     chatEvents,
     projections,
     scroll,
+    lastReadMarker,
     syncVisibleEventTrees$,
   });
   const lifecycle = createChatEventPresentationLifecycle({
@@ -2410,6 +2449,7 @@ function createChatThreadMessagePipeline({
     syncVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
     initialEventsReady$,
+    lastReadMarker,
   });
   const assistantErrorRecovery = createAssistantErrorRecoverySignals({
     threadId,
@@ -2420,26 +2460,16 @@ function createChatThreadMessagePipeline({
     scroll.pendingScrollAfterRenderRequest$,
     renderWindow.visibleRenderedChatGroups$,
   );
-  const loadMoreRenderedChatGroups$ = command(
-    async ({ set }, signal: AbortSignal): Promise<boolean> => {
-      const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
-      const didPrepend = await set(
-        renderWindow.loadMoreRenderedChatGroups$,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (didPrepend) {
-        await set(scroll.autoScroll$, scrollPosition, signal);
-        signal.throwIfAborted();
-      }
-      return didPrepend;
-    },
+  const loadMoreRenderedChatGroups$ = createLoadMoreRenderedChatGroups(
+    scroll,
+    renderWindow.loadMoreRenderedChatGroups$,
   );
   return {
     scroll,
     sidebar: effects.sidebar,
     ...lifecycle,
     initialEventsReady$: initialEventsReadyView$,
+    lastReadMarker$: lastReadMarker.marker$,
     ...assistantErrorRecovery,
     ...projections,
     ...resources.publicSignals,
@@ -3489,6 +3519,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     visibleRenderedChatGroupsReady$: events.visibleRenderedChatGroupsReady$,
     readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
+    lastReadMarker$: events.lastReadMarker$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
     retryAssistantError$: events.retryAssistantError$,
@@ -3800,6 +3831,7 @@ export function createChatPanelSignals(
     previewCatalogReady$,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
+    threadDetail$: cancellationRecovery.detail$,
   });
   const messages: MessageListSignals = {
     ...messagePipeline,

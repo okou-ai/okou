@@ -1,5 +1,5 @@
 {
-  "id": "be19a01e-2f3b-4817-b5f9-8c3eb4e03776",
+  "id": "ce71672a-b62d-47a4-b332-cefae69ae172",
   "prevId": "033c85f6-80fa-40d4-8fbe-8b7e7ff8e31f",
   "version": "7",
   "dialect": "postgresql",
@@ -959,7 +959,7 @@
       "checkConstraints": {
         "agent_runs_autonomy_budget_check": {
           "name": "agent_runs_autonomy_budget_check",
-          "value": "\"agent_runs\".\"autonomy_budget\" >= 0 AND \"agent_runs\".\"autonomy_budget\" <= 10"
+          "value": "\"agent_runs\".\"autonomy_budget\" >= 0 AND \"agent_runs\".\"autonomy_budget\" <= 32"
         },
         "agent_runs_runner_cancellation_mode_check": {
           "name": "agent_runs_runner_cancellation_mode_check",
@@ -10171,55 +10171,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.connector_catalog": {
-      "name": "connector_catalog",
-      "schema": "",
-      "columns": {
-        "schema_version": {
-          "name": "schema_version",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "hash": {
-          "name": "hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "activated_at": {
-          "name": "activated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "catalog_version": {
-          "name": "catalog_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "catalog_header": {
-          "name": "catalog_header",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entry_slugs": {
-          "name": "entry_slugs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.connector_catalog_active_snapshot": {
       "name": "connector_catalog_active_snapshot",
       "schema": "",
@@ -10427,45 +10378,6 @@
           "value": "(\n          \"connector_catalog_compatibility_evaluation\".\"catalog_validation_backend_version\" IS NULL\n          AND \"connector_catalog_compatibility_evaluation\".\"catalog_validation_build_commit_sha\" IS NULL\n        ) OR (\n          \"connector_catalog_compatibility_evaluation\".\"catalog_validation_backend_version\" IS NOT NULL\n          AND \"connector_catalog_compatibility_evaluation\".\"catalog_validation_backend_version\" ~ '^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n          AND (\n            \"connector_catalog_compatibility_evaluation\".\"catalog_validation_build_commit_sha\" IS NULL\n            OR \"connector_catalog_compatibility_evaluation\".\"catalog_validation_build_commit_sha\" ~ '^[a-f0-9]{40}$'\n          )\n        )"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.connector_catalog_entries": {
-      "name": "connector_catalog_entries",
-      "schema": "",
-      "columns": {
-        "hash": {
-          "name": "hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "connector_catalog_entries_hash_slug_pk": {
-          "name": "connector_catalog_entries_hash_slug_pk",
-          "columns": [
-            "hash",
-            "slug"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.connector_catalog_runtime_projection_sets": {
@@ -37627,7 +37539,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 10
+          "default": 32
         },
         "official_blueprint_key": {
           "name": "official_blueprint_key",
@@ -37829,7 +37741,7 @@
         },
         "workflow_automations_autonomy_budget_check": {
           "name": "workflow_automations_autonomy_budget_check",
-          "value": "\"workflow_automations\".\"autonomy_budget\" BETWEEN 0 AND 10"
+          "value": "\"workflow_automations\".\"autonomy_budget\" BETWEEN 0 AND 32"
         },
         "workflow_automations_official_binding_check": {
           "name": "workflow_automations_official_binding_check",

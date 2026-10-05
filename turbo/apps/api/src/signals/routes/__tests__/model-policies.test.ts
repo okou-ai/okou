@@ -140,12 +140,22 @@ async function putRawModelPolicies(body: string): Promise<{
   };
 }
 
-function seedFixture(): ModelPolicyFixture {
+function seedUnconfiguredFixture(): ModelPolicyFixture {
   const actor = authOrgApi.user();
   if (!actor.orgId) {
     throw new Error("Expected model policy fixture to have an organization");
   }
   return { ...actor, orgId: actor.orgId };
+}
+
+async function seedFixture(): Promise<ModelPolicyFixture> {
+  const fixture = seedUnconfiguredFixture();
+  await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+  await switchModelMode(fixture, "custom");
+  await updateFeatureSwitchesForUser(context, fixture, {
+    [FeatureSwitchKey.OkouDebug]: false,
+  });
+  return fixture;
 }
 
 async function createOrgProvider(
@@ -214,7 +224,7 @@ async function listSeededLimitedFreePolicies(): Promise<{
   readonly fixture: ModelPolicyFixture;
   readonly stored: OrgModelPoliciesResponse;
 }> {
-  const fixture = seedFixture();
+  const fixture = seedUnconfiguredFixture();
   await makeLimitedFreeWorkspace(fixture);
   await switchModelMode(fixture, "custom");
   await stagePreAddabilityModelPolicyFixture({
@@ -235,9 +245,85 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
+  it.each(["missing metadata", "new metadata"] as const)(
+    "defaults to Auto with %s and offers the system default",
+    async (state) => {
+      const fixture = seedUnconfiguredFixture();
+      if (state === "new metadata") {
+        await seedOrgMetadata({
+          orgId: fixture.orgId,
+          tier: "pro",
+          credits: 0,
+        });
+      }
+      useSession(fixture);
+      const client = apiClient();
+      const listed = await accept(
+        client.list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(listed.body.modelMode).toBe("auto");
+      expect(
+        listed.body.policies.map((policy) => {
+          return policy.model;
+        }),
+      ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+      expect(listed.body.modelsAvailableToAdd).toStrictEqual([]);
+      const written = await accept(
+        client.update({
+          headers: authHeaders(),
+          body: { revision: listed.body.revision, policies: [] },
+        }),
+        [400],
+      );
+      expect(written.body.error.message).toBe(
+        "Model policies are managed automatically in Auto mode",
+      );
+    },
+  );
+
+  it("offers and selects personal subscriptions in Auto before metadata is created", async () => {
+    const fixture = seedUnconfiguredFixture();
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      fixture,
+      { type: "claude-code-oauth-token", secret: "sk-ant-oat-auto-default" },
+      [200, 201],
+    );
+    await connectCodexSubscription(fixture);
+    const listed = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listed.body.modelMode).toBe("auto");
+    expect(
+      listed.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([
+        SEEDED_SYSTEM_DEFAULT_MODEL,
+        "claude-sonnet-5-5",
+        "gpt-6-astra",
+      ]),
+    );
+    const preferenceClient = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    for (const selectedModel of ["claude-sonnet-5-5", "gpt-6-astra"] as const) {
+      const selected = await accept(
+        preferenceClient.update({
+          headers: authHeaders(),
+          body: { selectedModel, serviceTier: null },
+        }),
+        [200],
+      );
+      expect(selected.body.selectedModel).toBe(selectedModel);
+    }
+  });
+
   it("keeps the org mode separate from policies and exposes Auto policies to members without the switch", async () => {
-    const fixture = seedFixture();
-    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
     const initial = await accept(
@@ -350,7 +436,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("projects the seven subscription catalog entries only for the connected Auto member", async () => {
-    const fixture = seedFixture();
+    const fixture = seedUnconfiguredFixture();
     // Plan state is infrastructure-owned; Auto admits subscriptions on limited-free.
     await seedOrgMetadata({
       orgId: fixture.orgId,
@@ -467,7 +553,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("returns an Auto member to the system default after disconnecting the subscription", async () => {
-    const fixture = seedFixture();
+    const fixture = seedUnconfiguredFixture();
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     await switchModelMode(fixture, "auto");
     await connectCodexSubscription(fixture);
@@ -500,7 +586,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("returns subscription members to organization policies when Auto switches back to Custom", async () => {
-    const fixture = seedFixture();
+    const fixture = seedUnconfiguredFixture();
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     await switchModelMode(fixture, "auto");
     await connectCodexSubscription(fixture);
@@ -565,7 +651,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("offers active catalog models to add", async () => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     const initial = await accept(
       apiClient().list({ headers: authHeaders() }),
@@ -579,7 +665,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("can re-add GPT 6 Luna after removing it", async () => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
     const replaced = await accept(
@@ -619,7 +705,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("admits active Sonnet 5.5 subject to the organization plan", async () => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     await seedBuiltInModelCandidateKeys(context, "claude-sonnet-5-5");
     const client = apiClient();
@@ -646,7 +732,7 @@ describe("GET/PUT /api/model-policies", () => {
       }),
     );
 
-    const free = seedFixture();
+    const free = seedUnconfiguredFixture();
     await makeLimitedFreeWorkspace(free);
     await switchModelMode(free, "custom");
     const freePolicies = await accept(
@@ -686,7 +772,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("keeps a stored model configurable and lets it be re-added while active", async () => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
     const listed = await accept(client.list({ headers: authHeaders() }), [200]);
@@ -762,7 +848,7 @@ describe("GET/PUT /api/model-policies", () => {
   ] as const)(
     "stores a %s preference as its replacement %s",
     async (retiredModel, replacement) => {
-      const fixture = seedFixture();
+      const fixture = await seedFixture();
       useSession(fixture);
       const client = apiClient();
       const existing = await accept(
@@ -886,7 +972,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("advertises the current built-in provider for route-specific effort controls", async () => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     // A test-owned mirror of DeepSeek V4 Flash keeps candidate cooldowns
     // isolated from concurrent tests that route the real model.
@@ -1020,7 +1106,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("starts a new limited-free-1 workspace in Auto with only the fixed default", async () => {
-    const fixture = await seedFixture();
+    const fixture = seedUnconfiguredFixture();
     await makeLimitedFreeWorkspace(fixture);
     useSession(fixture);
 
@@ -1044,10 +1130,11 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("starts in Auto when the policy list was read before the workspace bootstrap", async () => {
-    const fixture = await seedFixture();
+    const fixture = seedUnconfiguredFixture();
     useSession(fixture);
     const client = apiClient();
-    await accept(client.list({ headers: authHeaders() }), [200]);
+    const before = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(before.body.modelMode).toBe("auto");
 
     await makeLimitedFreeWorkspace(fixture);
     useSession(fixture);
@@ -1376,7 +1463,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("asks a limited-free-1 workspace for a paid plan or a subscription before an organization API-key route", async () => {
-    const fixture = await seedFixture();
+    const fixture = seedUnconfiguredFixture();
     await makeLimitedFreeWorkspace(fixture);
     await switchModelMode(fixture, "custom");
     const openAiProviderId = await createOrgProvider(fixture, "openai-api-key");
@@ -1911,7 +1998,7 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("stores Fast for the effective personal route when the organization API provider is missing", async () => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     const providerId = await createOrgProvider(fixture, "openai-api-key");
     await accept(
@@ -2392,7 +2479,7 @@ test.each([
 ] as const)(
   "rejects an unmapped cloud $type $selectedModel through the public policy API",
   async ({ type, selectedModel }) => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     const { providerId } = await runsApi.createOrgModelProvider(fixture, {
       type,
@@ -2435,7 +2522,7 @@ test.each([
 
 describe("conditional organization model policy writes", () => {
   it("rejects missing and stale snapshots without erasing another admin's model or preference", async () => {
-    const fixture = seedFixture();
+    const fixture = await seedFixture();
     useSession(fixture);
     // Full responses include live runtime routes. Retain each policy's keys so
     // another fixture's acquisition or cleanup cannot change either snapshot.
@@ -2575,7 +2662,7 @@ describe("conditional organization model policy writes", () => {
   ] as const)(
     "adds and edits $subscription policies with the current revision without changing unrelated settings",
     async ({ model, addedModel, subscription, api }) => {
-      const fixture = seedFixture();
+      const fixture = await seedFixture();
       useSession(fixture);
       // Keep the built-in policy's live route stable across response snapshots.
       await seedBuiltInModelCandidateKeys(context, "gpt-5.6-luna");

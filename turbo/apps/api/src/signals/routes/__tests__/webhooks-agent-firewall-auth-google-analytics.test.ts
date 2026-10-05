@@ -11,32 +11,42 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createPublicFirewallFixture,
+  type PublicFirewallFixture,
+} from "./helpers/public-firewall-fixture";
 
 const context = testContext();
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-async function setupAnalyticsFirewall() {
+async function setupAnalyticsFirewall(publicFixture?: PublicFirewallFixture) {
   const bdd = createBddApi(context);
   const fw = createFirewallApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
-  const actor = bdd.user();
+  const actor = publicFixture?.actor ?? bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  await fw.provisionRunReadyOrg(actor);
+  if (publicFixture) {
+    await publicFixture.fund();
+  } else {
+    await fw.provisionRunReadyOrg(actor);
+  }
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Analytics refresh agent",
     description: "Exercises Analytics refresh and reconnect.",
     visibility: "private",
   });
+  publicFixture?.registerAgent(agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve Analytics firewall auth",
   });
+  publicFixture?.registerRun(run.runId);
   const headers = fw.sandboxHeaders(actor, run.runId);
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
@@ -60,6 +70,8 @@ async function setupAnalyticsFirewall() {
       return HttpResponse.json({ id: identity, name: identity, email: null });
     }),
   );
+  const ownedAccountIds =
+    publicFixture?.registerBuiltinConnector("google-analytics");
 
   async function connect(
     code: string,
@@ -91,6 +103,7 @@ async function setupAnalyticsFirewall() {
     if (!connected) {
       throw new Error("Expected the authorized Analytics account");
     }
+    ownedAccountIds?.add(connected.id);
     return connected;
   }
 
@@ -323,53 +336,57 @@ describe("Google Analytics quiet refresh recovery", () => {
   ])(
     "keeps $name observable and recoverable",
     async ({ status, error, subtype, failureReason }) => {
-      const analytics = await setupAnalyticsFirewall();
-      let refreshCalls = 0;
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, () => {
-          refreshCalls += 1;
-          return HttpResponse.json(
-            { error, ...(subtype ? { error_subtype: subtype } : {}) },
-            { status },
-          );
-        }),
-      );
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const failed = await analytics.request(analytics.account.id, true);
-        expect(failed.status).toBe(502);
-        if (failed.status !== 502) {
-          throw new Error("Expected Analytics refresh failure");
+      const publicFixture = createPublicFirewallFixture(context);
+      await publicFixture.run(async () => {
+        const analytics = await setupAnalyticsFirewall(publicFixture);
+        let refreshCalls = 0;
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, () => {
+            refreshCalls += 1;
+            return HttpResponse.json(
+              { error, ...(subtype ? { error_subtype: subtype } : {}) },
+              { status },
+            );
+          }),
+        );
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const failed = await analytics.request(analytics.account.id, true);
+          expect(failed.status).toBe(502);
+          if (failed.status !== 502) {
+            throw new Error("Expected Analytics refresh failure");
+          }
+          expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
+          expect(failed.body.error.failureReason).toBe(failureReason);
         }
-        expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-        expect(failed.body.error.failureReason).toBe(failureReason);
-      }
-      expect(refreshCalls).toBe(2);
-      const accounts = await analytics.connectors.listBuiltinConnectorAccounts(
-        analytics.actor,
-        "google-analytics",
-      );
-      expect(accounts).toContainEqual(
-        expect.objectContaining({
-          id: analytics.account.id,
-          reconnectReason:
-            error === "invalid_grant" && !subtype
-              ? "authorization_expired_or_revoked"
-              : null,
-        }),
-      );
-      server.use(
-        http.post(GOOGLE_TOKEN_URL, () => {
-          return HttpResponse.json({
-            access_token: "analytics-recovered",
-            expires_in: 3600,
-            token_type: "Bearer",
-          });
-        }),
-      );
-      const recovered = await analytics.request(analytics.account.id, true);
-      expect(recovered.status).toBe(200);
-      expect(recovered.body).toMatchObject({
-        headers: { Authorization: "Bearer analytics-recovered" },
+        expect(refreshCalls).toBe(2);
+        const accounts =
+          await analytics.connectors.listBuiltinConnectorAccounts(
+            analytics.actor,
+            "google-analytics",
+          );
+        expect(accounts).toContainEqual(
+          expect.objectContaining({
+            id: analytics.account.id,
+            reconnectReason:
+              error === "invalid_grant" && !subtype
+                ? "authorization_expired_or_revoked"
+                : null,
+          }),
+        );
+        server.use(
+          http.post(GOOGLE_TOKEN_URL, () => {
+            return HttpResponse.json({
+              access_token: "analytics-recovered",
+              expires_in: 3600,
+              token_type: "Bearer",
+            });
+          }),
+        );
+        const recovered = await analytics.request(analytics.account.id, true);
+        expect(recovered.status).toBe(200);
+        expect(recovered.body).toMatchObject({
+          headers: { Authorization: "Bearer analytics-recovered" },
+        });
       });
     },
   );

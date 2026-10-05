@@ -1,6 +1,5 @@
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -111,9 +110,6 @@ describe("CHAT-02: run-level model overrides", () => {
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: identity,
         accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
-      });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       });
       await configureOrganizationGptModel(actor);
       mockPiResourceArchiveDownloads();

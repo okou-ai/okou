@@ -12,7 +12,6 @@ import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   createUsagePricingFixture,
-  seedOrgMetadata,
   type UsagePricingFixture,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
@@ -23,6 +22,7 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 import { billingStatusRoutes } from "../billing-status";
 import { seoRoutes } from "../seo";
@@ -78,17 +78,19 @@ async function seedActor(): Promise<OrgApiTestUser> {
   return { ...orgActor, usagePricingResolution: pricing.resolution };
 }
 
-async function seedUnfundedActor(): Promise<OrgApiTestUser> {
+async function createUnfundedActor() {
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("SEO test actor must belong to an organization");
   }
   const orgActor = { ...actor, orgId: actor.orgId };
-  const onboarding = await createBddApi(context).completeOnboarding(orgActor);
-  expect(onboarding.status).toBe(200);
-  await seedOrgMetadata({ orgId: orgActor.orgId, tier: "pro", credits: 0 });
   const pricing = await seedSeoPricing();
-  return { ...orgActor, usagePricingResolution: pricing.resolution };
+  const fixture = createPublicUnfundedProFixture(context, orgActor);
+  await fixture.initialize();
+  return {
+    actor: { ...orgActor, usagePricingResolution: pricing.resolution },
+    run: fixture.run,
+  };
 }
 
 async function credits(actor: OrgApiTestUser): Promise<number> {
@@ -373,38 +375,40 @@ describe("SEO routes", () => {
   });
 
   it("rejects insufficient credits before calling the provider", async () => {
-    const actor = await seedUnfundedActor();
-    configureProviders();
-    let providerRequests = 0;
-    server.use(
-      http.post(
-        `${DATAFORSEO_BASE_URL}/v3/serp/google/organic/live/advanced`,
-        () => {
-          providerRequests += 1;
-          return HttpResponse.json({});
-        },
-      ),
-    );
+    const { actor, run } = await createUnfundedActor();
+    await run(async () => {
+      configureProviders();
+      let providerRequests = 0;
+      server.use(
+        http.post(
+          `${DATAFORSEO_BASE_URL}/v3/serp/google/organic/live/advanced`,
+          () => {
+            providerRequests += 1;
+            return HttpResponse.json({});
+          },
+        ),
+      );
 
-    const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).serp({
-        headers: authenticate(actor),
-        body: {
-          query: "technical seo",
-          provider: "dataforseo",
-          engine: "google",
-          location: "United States",
-          languageCode: "en",
-          device: "desktop",
-          limit: 10,
-        },
-      }),
-      [402],
-    );
+      const response = await accept(
+        client(actor.usagePricingResolution)(seoContract).serp({
+          headers: authenticate(actor),
+          body: {
+            query: "technical seo",
+            provider: "dataforseo",
+            engine: "google",
+            location: "United States",
+            languageCode: "en",
+            device: "desktop",
+            limit: 10,
+          },
+        }),
+        [402],
+      );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(providerRequests).toBe(0);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expect(providerRequests).toBe(0);
+    });
   });
 
   it("does not charge DataForSEO authorization failures", async () => {

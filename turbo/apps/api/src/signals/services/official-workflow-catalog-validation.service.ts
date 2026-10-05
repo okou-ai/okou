@@ -20,6 +20,7 @@ import {
 import { parseScheduledAtTime } from "@okouai/core/timezone";
 
 import { isValidTimeZone, safeSync, safeUrlParse } from "../utils";
+import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
 import { calculateNextRun } from "./time-automation";
 
 export const OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH =
@@ -673,7 +674,7 @@ function validateBlueprintDesiredState(
     typeof desiredState.autonomyBudget === "number" &&
     (!Number.isInteger(desiredState.autonomyBudget) ||
       desiredState.autonomyBudget < 0 ||
-      desiredState.autonomyBudget > 10)
+      desiredState.autonomyBudget > INITIAL_AUTONOMY_BUDGET)
   ) {
     args.diagnostics.push(
       diagnostic(

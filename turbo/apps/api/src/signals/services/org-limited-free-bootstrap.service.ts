@@ -478,7 +478,7 @@ async function finalizeBootstrap(
           onboardingComplete: false,
           // A policy can be configured before metadata exists. Preserve the
           // Custom policy contract on INSERT as well as on conflict. Unconfigured
-          // new organizations use Auto; the schema's Custom default is unchanged.
+          // new organizations use Auto, matching the schema default.
           modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN 'custom' ELSE 'auto' END`,
           updatedAt: nowDate(),
         })

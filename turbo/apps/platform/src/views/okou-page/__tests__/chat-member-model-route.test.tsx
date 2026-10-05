@@ -3,7 +3,6 @@ import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-d
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -297,9 +296,6 @@ test("Refreshes the account target on explicit reconnect after a remote account 
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    },
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fillComposer(composer, "Preserve this draft during reconnect");

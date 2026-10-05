@@ -16,11 +16,7 @@ import {
   officialWorkflowDefinitionRevisions,
   officialWorkflowReconciliationWork,
 } from "@okouai/db/schema/official-workflow-catalog";
-import {
-  officialWorkflowAutomationIdentities,
-  workflowAutomations,
-  workflows,
-} from "@okouai/db/schema/workflow";
+import { officialWorkflowAutomationIdentities } from "@okouai/db/schema/workflow";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { and, asc, count, eq, inArray, like, or, sql } from "drizzle-orm";
@@ -39,9 +35,7 @@ import {
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
 import {
   clearAutomationStructureTransitionPreparedHookForTest,
-  clearDormantMaterializationReservedHookForTest,
   setAutomationStructureTransitionPreparedHookForTest,
-  setDormantMaterializationReservedHookForTest,
 } from "../services/official-workflow-reconciliation.service";
 import { createDeferredPromise } from "../utils";
 import {
@@ -63,50 +57,16 @@ const PREVIOUS_SCHEMA_REVISION = "e".repeat(64);
 const PREVIOUS_SCHEMA_STORAGE_VERSION = "d".repeat(64);
 const PREVIOUS_SCHEMA_BLUEPRINT_FINGERPRINT = "c".repeat(64);
 
-interface DormantMaterializationPause {
+interface StructureTransitionPromotionPause {
   readonly reached: ReturnType<typeof createDeferredPromise<void>>;
   readonly resume: ReturnType<typeof createDeferredPromise<void>>;
 }
 
-const dormantMaterializationPause = testOverride<
-  DormantMaterializationPause | undefined
->(() => {
-  return undefined;
-});
-
 const structureTransitionPromotionPause = testOverride<
-  DormantMaterializationPause | undefined
+  StructureTransitionPromotionPause | undefined
 >(() => {
   return undefined;
 });
-
-function releaseDormantMaterializationPause(): void {
-  const pause = dormantMaterializationPause.get();
-  if (pause && !pause.resume.settled()) {
-    pause.resume.resolve(undefined);
-  }
-  dormantMaterializationPause.clear();
-  clearDormantMaterializationReservedHookForTest();
-}
-
-function pauseNextDormantMaterialization(signal: AbortSignal): void {
-  releaseDormantMaterializationPause();
-  const pause = {
-    reached: createDeferredPromise<void>(signal),
-    resume: createDeferredPromise<void>(signal),
-  };
-  dormantMaterializationPause.set(pause);
-  setDormantMaterializationReservedHookForTest(async () => {
-    const current = dormantMaterializationPause.get();
-    if (!current) {
-      return;
-    }
-    if (!current.reached.settled()) {
-      current.reached.resolve(undefined);
-    }
-    await current.resume.promise;
-  });
-}
 
 function releaseStructureTransitionPromotionPause(): void {
   const pause = structureTransitionPromotionPause.get();
@@ -136,25 +96,12 @@ function pauseNextStructureTransitionPromotion(signal: AbortSignal): void {
   });
 }
 
-function crashNextStructureTransitionPromotion(): void {
-  releaseStructureTransitionPromotionPause();
-  setAutomationStructureTransitionPreparedHookForTest(() => {
-    clearAutomationStructureTransitionPreparedHookForTest();
-    return Promise.reject(
-      new Error(
-        "Simulated hard crash after Official structure-transition watch preparation",
-      ),
-    );
-  });
-}
-
 type ReadAction = Extract<
   TestOfficialWorkflowCatalogStateActionBody,
   { readonly action: "read" }
 >;
 
 async function cleanupTestState(db: Db, signal: AbortSignal): Promise<void> {
-  releaseDormantMaterializationPause();
   releaseStructureTransitionPromotionPause();
   // This route is test-only; clearing the singleton projection is the only way
   // to exercise independent initial-release scenarios through the public sync
@@ -470,101 +417,6 @@ async function stateResponse(
   };
 }
 
-async function upsertExpiredReconciliationWork(
-  db: Db,
-  definitionName: string,
-  requestedReleaseId: string,
-  currentTime: Date,
-  leaseId: string,
-): Promise<void> {
-  await db
-    .insert(officialWorkflowReconciliationWork)
-    .values({
-      definitionName,
-      requestedReleaseId,
-      state: "running",
-      leaseId,
-      leaseExpiresAt: new Date(currentTime.getTime() - 1),
-      availableAt: currentTime,
-      attemptCount: 0,
-      lastError: null,
-      updatedAt: currentTime,
-    })
-    .onConflictDoUpdate({
-      target: officialWorkflowReconciliationWork.definitionName,
-      set: {
-        requestedReleaseId,
-        cursorWorkflowId: null,
-        state: "running",
-        leaseId,
-        leaseExpiresAt: new Date(currentTime.getTime() - 1),
-        availableAt: currentTime,
-        attemptCount: 0,
-        lastError: null,
-        updatedAt: currentTime,
-      },
-    });
-}
-
-async function simulateStructureTransitionCrash(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly definitionName: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const currentTime = nowDate();
-  await db.transaction(async (tx) => {
-    const [catalogState] = await tx
-      .select({
-        acceptedReleaseId: officialWorkflowCatalogState.acceptedReleaseId,
-      })
-      .from(officialWorkflowCatalogState)
-      .where(eq(officialWorkflowCatalogState.authority, "official"))
-      .limit(1);
-    const [automation] = await tx
-      .select({
-        id: workflowAutomations.id,
-        workflowDefinitionName: workflows.officialDefinitionName,
-        officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-        officialReconciliationStatus:
-          workflowAutomations.officialReconciliationStatus,
-      })
-      .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .where(eq(workflowAutomations.id, args.automationId))
-      .for("update")
-      .limit(1);
-    if (
-      !catalogState ||
-      !automation ||
-      automation.workflowDefinitionName !== args.definitionName ||
-      automation.officialBlueprintKey === null ||
-      automation.officialReconciliationStatus !== "current"
-    ) {
-      throw new Error("Cannot simulate an Official structure-transition crash");
-    }
-    await tx
-      .update(workflowAutomations)
-      .set({
-        enabled: false,
-        nextRunAt: null,
-        officialReconciliationStatus: "reconciling",
-        updatedAt: currentTime,
-      })
-      .where(eq(workflowAutomations.id, automation.id));
-    await upsertExpiredReconciliationWork(
-      tx,
-      args.definitionName,
-      catalogState.acceptedReleaseId,
-      currentTime,
-      randomUUID(),
-    );
-  });
-  signal.throwIfAborted();
-}
-
 async function simulateReconciliationWorkerCrash(
   db: Db,
   definitionName: string,
@@ -595,17 +447,6 @@ async function handleLifecycleSimulationAction(
     await simulateReconciliationWorkerCrash(db, body.definitionName, signal);
     return true;
   }
-  if (body.action === "simulate-structure-transition-crash") {
-    await simulateStructureTransitionCrash(
-      db,
-      {
-        automationId: body.automationId,
-        definitionName: body.definitionName,
-      },
-      signal,
-    );
-    return true;
-  }
   return false;
 }
 
@@ -613,29 +454,8 @@ async function handleLifecycleControlAction(
   body: TestOfficialWorkflowCatalogStateActionBody,
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (body.action === "pause-next-dormant-materialization") {
-    pauseNextDormantMaterialization(signal);
-    return true;
-  }
-  if (body.action === "wait-for-dormant-materialization-pause") {
-    const pause = dormantMaterializationPause.get();
-    if (!pause) {
-      throw new Error("Dormant materialization pause is not configured");
-    }
-    await pause.reached.promise;
-    signal.throwIfAborted();
-    return true;
-  }
-  if (body.action === "resume-dormant-materialization") {
-    releaseDormantMaterializationPause();
-    return true;
-  }
   if (body.action === "pause-next-structure-transition-promotion") {
     pauseNextStructureTransitionPromotion(signal);
-    return true;
-  }
-  if (body.action === "crash-next-structure-transition-promotion") {
-    crashNextStructureTransitionPromotion();
     return true;
   }
   if (body.action === "wait-for-structure-transition-promotion-pause") {

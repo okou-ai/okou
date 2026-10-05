@@ -8,6 +8,8 @@
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "./tsconfig.gateways.json" },
+    { "path": "./tsconfig.foundation.json" },
+    { "path": "./tsconfig.admission.json" },
     { "path": "./tsconfig.core.json" },
     { "path": "./tsconfig.routes.json" },
     { "path": "./tsconfig.bootstrap.json" }
