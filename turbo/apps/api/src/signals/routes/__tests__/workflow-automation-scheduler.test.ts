@@ -55,6 +55,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext({ connectorCatalog: true });
+const api = createRunsApi(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
@@ -131,16 +132,10 @@ async function setup(
   }
   // Scheduler scenarios that claim and complete a Runner job use a native
   // default; explicit Pi cases select their own model policy below.
-  const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await wf.createAgent(actor, {
     displayName: "Scheduler Agent",
   });
@@ -1195,15 +1190,9 @@ describe("okou workflow automation scheduler", () => {
     async (scheduleType) => {
       const scenario = await setup();
       await seedBuiltInModelKey(context, "claude-fable-5-1");
-      await runsApi.updateOrgModelPolicies(scenario.actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
+      await api.ensurePersonalSubscriptionModel(scenario.actor, {
+        model: "claude-fable-5-1",
+      });
       const created = await accept(
         automationsClient().create({
           headers: authHeaders(),

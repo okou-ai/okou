@@ -118,21 +118,9 @@ describe("CHAT-02: run-level model overrides", () => {
       },
       [200, 201],
     );
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-opus-5",
-        preferred: true,
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-      {
-        model: "claude-sonnet-5",
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-opus-5",
+    });
 
     const firstPrompt = "first turn on the default opus policy";
     const first = await sendChatRun(actor, {

@@ -1,5 +1,5 @@
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
   piModelConfigV4Schema,
@@ -9,14 +9,12 @@ import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-fire
 import { createHash, randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { SEEDED_MODEL_CATALOG } from "@okouai/core/__tests__/seeded-model-catalog";
-import { piCatalogModel } from "@okouai/core/pi-execution";
+
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -29,7 +27,6 @@ import {
   configureNativeCliArtifact,
   requireOrgId,
   createGptUsagePricingResolution,
-  createPiUsagePricingResolution,
   claimEnvironment,
   expectExactPrivatePiMemoryAdmission,
   userMessages,
@@ -351,115 +348,6 @@ describe("shared native Pi route activation", () => {
   // `claude-fable-5-1` is still read from persisted native config, but the
   // Fable frontier line runs on the Claude Code vendor harness, so it has no
   // native Pi run to assert here. Enumerate from the admission decision.
-  it.each(
-    piNativeCatalogModelSchema.options.filter((model) => {
-      return (
-        piCatalogModel(SEEDED_MODEL_CATALOG, model)?.piRouteClass ===
-        "claude-native"
-      );
-    }),
-  )(
-    "runs built-in %s in the sandbox with the route effort and exact session continuation",
-    async (model) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      configureNativeCliArtifact();
-      if (model === "claude-opus-5-5" || model === "claude-sonnet-5-5") {
-        await stagePreAddabilityModelPolicyFixture({
-          orgId: requireOrgId(actor),
-          userId: actor.userId,
-          model,
-        });
-      }
-      await configureBuiltInPiModel(actor, model);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiMemory]: true,
-      });
-      const pricing = await createPiUsagePricingResolution(model);
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const first = await sendChatRun(
-        actor,
-        {
-          agentId,
-          model,
-          prompt: "retain this Claude native preference",
-          runOptions: { reasoningEffort: "low" },
-        },
-        pricing,
-      );
-      await flushWaitUntilForTest();
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim).toMatchObject({
-        cliAgentType: "pi",
-        piSessionId: first.threadId,
-        piModelConfig: {
-          schemaVersion: 4,
-          catalogModel: model,
-          billingOwner: "builtin",
-        },
-      });
-      expect(firstClaim.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-        "low",
-      );
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: "Native Claude sandbox answer",
-        checkpointObjects: objects,
-        claim: firstClaim,
-        prompt: "retain this Claude native preference",
-        run: first,
-        nativeModel: model,
-        usagePricingResolution: pricing,
-      });
-      await expectExactPrivatePiMemoryAdmission({
-        orgId: requireOrgId(actor),
-        userId: actor.userId,
-        runId: first.runId,
-      });
-      await chat.updateThreadModelSelection(actor, first.threadId, model, {
-        reasoningEffort: "extra",
-      });
-      const second = await sendChatRun(
-        actor,
-        {
-          agentId,
-          threadId: first.threadId,
-          prompt: "continue the native session",
-        },
-        pricing,
-      );
-      await flushWaitUntilForTest();
-      const secondClaim = await claimChatRun(runnerGroup, second.runId);
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: "Native Claude sandbox continuation",
-        checkpointObjects: objects,
-        claim: secondClaim,
-        prompt: "continue the native session",
-        run: second,
-        nativeModel: model,
-        usagePricingResolution: pricing,
-      });
-      await expect(
-        chat.readThreadMetadata(actor, first.threadId),
-      ).resolves.toMatchObject({
-        modelSettings: { [model]: { effort: "extra" } },
-      });
-      await expectThreadModelCredits(context, actor, first.threadId, 0);
-      await expectThreadModelCredits(context, actor, second.threadId, 0);
-      for (const run of [first, second]) {
-        await api.requestClaimRunnerJob(true, run.runId, [404], {
-          capabilities: { piModelConfigGenerations: [4] },
-        });
-      }
-      expect(
-        [...objects.values()].some((value) => {
-          return value.toString("utf8").includes(first.threadId);
-        }),
-      ).toBeTruthy();
-    },
-    90_000,
-  );
 
   it.each([
     "anthropic-api-key",

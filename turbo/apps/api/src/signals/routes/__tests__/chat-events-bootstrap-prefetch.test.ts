@@ -145,25 +145,12 @@ describe("chat agent bootstrap prefetch", () => {
   });
   it("preserves a non-default member model preference through prefetch and an independent pick", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    const { providerId } = await api.ensurePersonalSubscriptionModel(actor, {
+    await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "claude-sonnet-5",
-        preferred: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await api.updateUserModelPreference(actor, "claude-sonnet-5");
     const first = await sendChatRun(actor, {
       agentId,
@@ -570,22 +557,14 @@ describe("chat agent bootstrap prefetch", () => {
     });
     await entered.promise;
     // Attachment metadata is an external response awaited after model capture.
-    // Change the real policy through its API before enqueue and admission.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    // Change the member preference through its API before enqueue and admission.
+    await api.updateUserModelPreference(actor, "okou-1.0");
     release.resolve(undefined);
     const sent = await sending;
     expect((await api.readRun(actor, sent.runId)).source).toMatchObject({
       model: "claude-fable-5-1",
-      providerType: "anthropic-api-key",
-      credentialScope: "org",
+      providerType: "claude-code-oauth-token",
+      credentialScope: "member",
     });
     const claimed = await claimChatRun(runnerGroup, sent.runId);
     await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);

@@ -42,6 +42,7 @@ import {
 import { chatThreadRoutes } from "../chat-threads";
 
 const context = testContext();
+const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -407,15 +408,9 @@ async function setupConnectedTeamsActor(
   ]);
   // Queued Teams callbacks inspect and complete the Runner claim. Fable keeps
   // this native fixture claimable while eligible Pi routes remain enabled.
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   if (options.okouDebug) {
     await updateFeatureSwitchesForUser(
       context,

@@ -58,6 +58,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
+const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -124,16 +125,10 @@ async function setup(): Promise<Scenario> {
   }
   // Queue ordering uses claimable native runs; Pi route tests set their
   // own model policy instead of inheriting this fixture's default.
-  const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await wf.createAgent(actor, {
     displayName: "Workflow Queue Agent",
   });
@@ -1400,18 +1395,10 @@ describe("workflow queue", () => {
     expect(rejectedEvent.userMessage).toStrictEqual(admittedEvent.userMessage);
     expect(chatEventDisplayText(admittedEvent)).toBe(rejectedDisplayPrompt);
     // Reconnect the thread's model so the next trigger can launch.
-    const { providerId } = await runsApi.ensurePersonalSubscriptionModel(
-      scenario.actor,
-    );
-    await runsApi.updateOrgModelPolicies(scenario.actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await runsApi.ensurePersonalSubscriptionModel(scenario.actor);
+    await api.ensurePersonalSubscriptionModel(scenario.actor, {
+      model: "claude-fable-5-1",
+    });
     const runId = await expectAcceptedRunId(
       await postWorkflowWebhook(automation, "next trigger"),
       automation.threadId,

@@ -1,34 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { accept, testContext } from "../../../__tests__/test-context";
+
+import { testContext } from "../../../__tests__/test-context";
 import { withAgentBootstrapFailureFixture } from "../../../test-fixtures/agent-bootstrap-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  createChatEventsFixture,
-  userMessages,
-  claimEnvironment,
-} from "./helpers/chat-events-fixture";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
 const {
-  api,
   bdd,
   chat,
-  misc,
   entitledNativeChatActor,
-  seedBuiltInModelKey,
   sendChatRun,
   claimChatRun,
   cancelChatRun,
-  waitForThreadMessages,
-  modelProviderConnectionsClient,
-  sessionHeaders,
   requestSendEventRaw,
 } = createChatEventsFixture(context);
-const MODEL = "claude-fable-5-1";
+
 describe("identity model source context through real sends", () => {
   it.each(["missing-agent", "thread-agent-mismatch"] as const)(
     "preserves %s authorization rejection while early preload fails",

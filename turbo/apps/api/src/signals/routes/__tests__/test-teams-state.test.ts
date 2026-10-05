@@ -34,6 +34,7 @@ import {
 } from "./helpers/teams-connect";
 
 const context = testContext();
+const api = createRunsApi(context);
 const TEAMS_STATE_ROUTE = "/api/test/teams-state";
 const TEAMS_DISPATCH_PROBE_ROUTE = "/api/test/teams-dispatch-probe";
 const TEAMS_SERVICE_URL = "https://teams.service.test/";
@@ -309,16 +310,10 @@ async function dispatchTeamsMessage(args: {
       orgId: args.fixture.orgId,
     });
     await runs.grantProEntitlement(actor);
-    const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
-    await runs.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await runs.ensurePersonalSubscriptionModel(actor);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
   }
   const response = await requestApp(TEAMS_DISPATCH_PROBE_ROUTE, {
     method: "POST",
