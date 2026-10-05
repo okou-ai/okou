@@ -1,13 +1,13 @@
 import type {
-OnboardingIndustry,
-OnboardingSubscriptionProvider,
+  OnboardingIndustry,
+  OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and,eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";

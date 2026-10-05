@@ -1,94 +1,95 @@
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
-getModelProviderFirewall,
-isBuiltInModelProviderType,
-modelProviderTypeSchema,
+  getModelProviderFirewall,
+  isBuiltInModelProviderType,
+  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
-DEFAULT_PROFILE,
-PI_MEMORY_ROOT,
-PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-agentRunConnectorDiagnosticRegistrationPayloadSchema,
-type PiInstalledCliRequirement,
-type PiLaunchConfig,
-type PiModelConfig,
-type StoredExecutionContext,
-type StoredStorageMountEntry,
+  DEFAULT_PROFILE,
+  PI_MEMORY_ROOT,
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  agentRunConnectorDiagnosticRegistrationPayloadSchema,
+  type PiInstalledCliRequirement,
+  type PiLaunchConfig,
+  type PiModelConfig,
+  type StoredExecutionContext,
+  type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
 import {
-canonicalizeFirewallBaseUrlVarsForExecution,
-extractSecretNamesFromApis,
-type ExecutionFirewallEntry,
+  canonicalizeFirewallBaseUrlVarsForExecution,
+  extractSecretNamesFromApis,
+  type ExecutionFirewallEntry,
 } from "@okouai/connectors/firewall-types";
 import {
-getAllFeatureStates,
-isFeatureEnabled,
-type FeatureSwitchContext,
+  getAllFeatureStates,
+  isFeatureEnabled,
+  type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-DEFAULT_IMAGE_MODEL,
-IMAGE_MODEL_CONFIGS,
-type ImageModel,
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODEL_CONFIGS,
+  type ImageModel,
 } from "@okouai/core/image-model-catalog";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
-import { command,computed } from "ccstate";
+import { command, computed } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
-import { now,nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { db$,writeDb$,type Db,type ReadonlyDb } from "../external/db";
-import { safeSync,settle } from "../utils";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { safeSync, settle } from "../utils";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import type {
-AgentRunModelPin,
-PermissionManifest,
-ResolvedModelProviderEnvironment,
+  AgentRunModelPin,
+  PermissionManifest,
+  ResolvedModelProviderEnvironment,
 } from "./agent-run-contracts";
 import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
 import {
-ApiDispatchPhaseCollector,
-ApiDispatchTimingCollector,
-measureApiDispatchTiming,
+  ApiDispatchPhaseCollector,
+  ApiDispatchTimingCollector,
+  measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import {
-prepareModelUsageContext,
-runRoutePricing,
-type BuiltInRoutePricing,
+  prepareModelUsageContext,
+  runRoutePricing,
+  type BuiltInRoutePricing,
 } from "./built-in-route-pricing";
 import {
-collectPermissionNames,
-compactRecord,
-runtimeFirewall,
+  collectPermissionNames,
+  compactRecord,
+  runtimeFirewall,
 } from "./connector-runtime-preparation.service";
 import { createExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
-createModelSourceSnapshot,
-type ModelSourceIdentity,
+  createModelSourceSnapshot,
+  type ModelSourceIdentity,
 } from "./execution-model-source.service";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
-createExecutionStorageObjects,
-updateExecutionStoragePresignedUrlCache$,
-type PreparedExecutionStorageMount,
+  createExecutionStorageObjects,
+  updateExecutionStoragePresignedUrlCache$,
+  type PreparedExecutionStorageMount,
 } from "./execution-storage.service";
 import {
-frameworkForProviderSelection,
-loadModelCatalog$,
-type ModelCatalog,
+  frameworkForProviderSelection,
+  loadModelCatalog$,
+  type ModelCatalog,
 } from "./model-catalog.service";
 import {
-prepareManagedModelEnvironment,
-prepareRegisteredModelEnvironment,
+  prepareManagedModelEnvironment,
+  prepareRegisteredModelEnvironment,
 } from "./model-provider.service";
 import { readDisabledPaidTools } from "./paid-tools.service";
 import {
-materializePreparedPiProvider,
-resolvePreparedPiModelConfig,
+  materializePreparedPiProvider,
+  resolvePlatformMemoryPiModelConfig,
+  resolvePreparedPiModelConfig,
 } from "./pi-sandbox-config";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 
@@ -104,59 +105,59 @@ import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import {
-PI_AGENT_RUNTIME_VERSION,
-PI_SESSION_CONSTRUCTION_DIGEST
+  PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
 } from "@okouai/pi-agent-runtime";
-import { and,eq,isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
-import { env,optionalEnv } from "../../lib/env";
+import { env, optionalEnv } from "../../lib/env";
 import { isPiLangfuseDebugRunEnvironment } from "../../lib/pi-langfuse-debug";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
-import { getDatasetName,ingestToAxiom } from "../external/axiom";
+import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import {
-loadOrgPlanCapabilities,
-type OrgPlanCapabilities,
+  loadOrgPlanCapabilities,
+  type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import {
-allowanceSnapshotSchema,
-pendingRunAllowancePlan,
-pendingRunAllowanceWindowsPlan,
+  allowanceSnapshotSchema,
+  pendingRunAllowancePlan,
+  pendingRunAllowanceWindowsPlan,
 } from "./pending-launch-allowance-plan";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
-PiMemoryPhase2CredentialError,
-resolvePiMemoryPhase2Credential,
+  PiMemoryPhase2CredentialError,
+  resolvePiMemoryPhase2Credential,
 } from "./pi-memory-phase2-credential.service";
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
-PiMemoryQuotaError,
-checkPiMemoryQuota,
+  PiMemoryQuotaError,
+  checkPiMemoryQuota,
 } from "./pi-memory-quota.service";
 import { PiModelConfigurationError } from "./pi-model-configuration-error";
 import {
-checkOrgCreditsForRunAdmission$,
-isFreePlanForCreditAdmission,
+  checkOrgCreditsForRunAdmission$,
+  isFreePlanForCreditAdmission,
 } from "./run-admission.service";
 import {
-environmentRecordToEntries,
-executionFirewallsToAxiomEntries,
-featureFlagsRecordToEntries,
-networkPoliciesRecordToEntries,
-type RunContextAxiomSnapshot,
+  environmentRecordToEntries,
+  executionFirewallsToAxiomEntries,
+  featureFlagsRecordToEntries,
+  networkPoliciesRecordToEntries,
+  type RunContextAxiomSnapshot,
 } from "./run-context-snapshot.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
 import { entitlementQuery } from "./usage-allowance-settlement-plan";
 import {
-createUsageAllowanceRefreshObject,
-type PreparedUsageAllowanceRefresh,
+  createUsageAllowanceRefreshObject,
+  type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
 
 const log = logger("PiMemoryMaintenanceExecution");
@@ -214,7 +215,10 @@ function pinnedSourceIdentity(
   if (!pin.modelProviderId) {
     throw new PiMaintenanceDispositionError("credential_unavailable");
   }
-  if (pin.modelProvider === "codex-oauth-token" && pin.modelProviderCredentialScope === "member") {
+  if (
+    pin.modelProvider === "codex-oauth-token" &&
+    pin.modelProviderCredentialScope === "member"
+  ) {
     return { kind: "member", accountId: pin.modelProviderId };
   }
   throw new PiMaintenanceDispositionError("credential_unavailable");
@@ -354,22 +358,27 @@ async function prepareMaintenanceModel(
   const { catalog, credential, selectedModel, framework } = admitted;
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
     source.identity.kind === "built-in"
-        ? await prepareManagedModelEnvironment(source, {
-            builtInModelRuntimeRoute: credential.route ?? undefined,
-            selectedModelOverride: selectedModel,
-            catalog,
-            framework,
-            featureSwitchContext: admitted.featureSwitchContext,
-          })
-        : await prepareRegisteredModelEnvironment(source, selectedModel, {
-            catalog,
-            userId: job.userId,
-            sourceId: credential.pin.modelProviderId ?? "",
-            piExecution: true,
-          });
+      ? await prepareManagedModelEnvironment(source, {
+          builtInModelRuntimeRoute: credential.route ?? undefined,
+          selectedModelOverride: selectedModel,
+          catalog,
+          framework,
+          featureSwitchContext: admitted.featureSwitchContext,
+        })
+      : await prepareRegisteredModelEnvironment(source, selectedModel, {
+          catalog,
+          userId: job.userId,
+          sourceId: credential.pin.modelProviderId ?? "",
+          piExecution: true,
+        });
   const piInput = { catalog, piExecution: true };
   const modelProvider = resolvedProvider
-    ? await materializePreparedPiProvider(piInput, resolvedProvider)
+    ? credential.pin.modelProvider === "built-in"
+      ? {
+          ...resolvedProvider,
+          piModelConfig: resolvePlatformMemoryPiModelConfig(resolvedProvider),
+        }
+      : materializePreparedPiProvider(piInput, resolvedProvider)
     : null;
   if (!modelProvider) {
     throw new PiMaintenanceDispositionError("credential_unavailable");

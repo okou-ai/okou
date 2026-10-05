@@ -1,46 +1,46 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
-FEISHU_PLATFORMS,
-type FeishuPlatform,
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { command } from "ccstate";
-import { and,eq,isNull,or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
-buildFeishuHelpMessage,
-buildFeishuLoginMessage,
-buildFeishuNoticeMessage,
+  buildFeishuHelpMessage,
+  buildFeishuLoginMessage,
+  buildFeishuNoticeMessage,
 } from "../../lib/feishu-message-card";
 import {
-formatFeishuMessageContent,
-parseFeishuMessageContent,
-type FeishuPromptFile,
+  formatFeishuMessageContent,
+  parseFeishuMessageContent,
+  type FeishuPromptFile,
 } from "../../lib/feishu-message-content";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import {
-addFeishuMessageReaction,
-listFeishuMessages,
-replyWithFeishuMessage,
-type FeishuHistoryMessage,
-type FeishuOutboundMessage,
+  addFeishuMessageReaction,
+  listFeishuMessages,
+  replyWithFeishuMessage,
+  type FeishuHistoryMessage,
+  type FeishuOutboundMessage,
 } from "../external/feishu-client";
 import { tapError } from "../utils";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import {
-feishuRouteThreadId,
-findFeishuRoutedChatThreadId$,
+  feishuRouteThreadId,
+  findFeishuRoutedChatThreadId$,
 } from "./feishu-chat-ingress.service";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
 import {
-readIntegrationChatThreadModel$,
-updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
 

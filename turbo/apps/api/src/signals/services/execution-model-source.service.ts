@@ -1,12 +1,12 @@
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
-modelProviderAccounts,
-modelProviderAccountSecrets,
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { computed,type Computed } from "ccstate";
-import { and,eq,isNull } from "drizzle-orm";
-import { db$,type ReadonlyDb } from "../external/db";
+import { computed, type Computed } from "ccstate";
+import { and, eq, isNull } from "drizzle-orm";
+import { db$, type ReadonlyDb } from "../external/db";
 import type { MemberModelBootstrap } from "./model-bootstrap.service";
 import { managedSourceFromSnapshot } from "./model-source-context.service";
 

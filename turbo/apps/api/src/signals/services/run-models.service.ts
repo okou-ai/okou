@@ -44,8 +44,8 @@ export const listAvailableRunModels$ = command(
       defaultModel: AUTO_RUN_MODEL,
       models: [
         auto,
-        ...subscriptions.map(
-          (entry): AvailableRunModel => ({
+        ...subscriptions.map((entry): AvailableRunModel => {
+          return {
             model: entry.model,
             modelLabel: entry.displayName,
             defaultProviderType: entry.providerType,
@@ -67,8 +67,8 @@ export const listAvailableRunModels$ = command(
                 : "available",
               accountSelection: "capture_required",
             },
-          }),
-        ),
+          };
+        }),
       ],
     };
   },

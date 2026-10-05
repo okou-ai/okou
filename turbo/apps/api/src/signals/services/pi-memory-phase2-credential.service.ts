@@ -2,12 +2,12 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
-modelProviderAccounts,
-modelProviderAccountSecrets,
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { and,asc,desc,eq,inArray,isNotNull,isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-contracts";
@@ -15,18 +15,16 @@ import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import {
-featureSwitchContextFromRows,
-userFeatureSwitchRowCondition,
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
-import type {
-ModelCatalog,
-} from "./model-catalog.service";
+import type { ModelCatalog } from "./model-catalog.service";
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import {
-PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-piMemoryPhase2Model,
+  PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  piMemoryPhase2Model,
 } from "./pi-memory-phase2-usage.service";
 type ReadDb = Pick<Db, "select">;
 

@@ -1,15 +1,15 @@
 import {
-getMemberRunModelRoute,
-isMemberRunModelConfigurable,
+  getMemberRunModelRoute,
+  isMemberRunModelConfigurable,
 } from "@okouai/api-contracts/contracts/member-run-model";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import {
-type UpdateUserModelPreferenceRequest,
-userModelPreferenceContract,
+  type UpdateUserModelPreferenceRequest,
+  userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { command,computed } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { badRequestMessage } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -18,21 +18,21 @@ import { bodyResultOf } from "../context/request";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import {
-memberRunModelCatalog,
-type ModelCatalog,
-modelCatalog$,
-resolveCatalogRunModel,
+  memberRunModelCatalog,
+  type ModelCatalog,
+  modelCatalog$,
+  resolveCatalogRunModel,
 } from "../services/model-catalog.service";
 import { listAvailableRunModels$ } from "../services/run-models.service";
 
 import {
-isCatalogFastServiceTierSupported,
-isCatalogRouteEffortSupported,
-isCatalogUltrafastServiceTierSupported,
+  isCatalogFastServiceTierSupported,
+  isCatalogRouteEffortSupported,
+  isCatalogUltrafastServiceTierSupported,
 } from "../services/model-route-capabilities.service";
 import {
-updateUserModelPreference$,
-userModelPreference,
+  updateUserModelPreference$,
+  userModelPreference,
 } from "../services/user-data.service";
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);

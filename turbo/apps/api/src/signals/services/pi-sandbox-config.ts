@@ -1,33 +1,36 @@
 import {
-getModelProviderPiEndpoint,
-getSecretNameForType,
-isBuiltInModelProviderType,
-modelProviderTypeSchema,
-type ModelProviderType,
+  getModelProviderPiEndpoint,
+  getSecretNameForType,
+  isBuiltInModelProviderType,
+  modelProviderTypeSchema,
+  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
-piThinkingLevelForEffort,
-type ReasoningEffort,
+  piThinkingLevelForEffort,
+  type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
 import {
-PI_MODEL_CONFIG_CURRENT_GENERATION,
-PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-type PiModelConfig,
-type PiModelConfigLegacy,
+  PI_MODEL_CONFIG_CURRENT_GENERATION,
+  PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
+  type PiModelConfig,
+  type PiModelConfigLegacy,
 } from "@okouai/api-contracts/contracts/runners";
 import {
-isPiExecutionRoute,
-isPresetUpstreamModel,
-piCatalogModel,
-type PiCatalogModel,
-type PiRouteClass,
+  isPiExecutionRoute,
+  isPresetUpstreamModel,
+  piCatalogModel,
+  type PiCatalogModel,
+  type PiRouteClass,
 } from "@okouai/core/pi-execution";
-import {
-isPiAgentModelSupported
-} from "@okouai/pi-agent-runtime";
+import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
+import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 
-import { AUTO_RUN_MODEL,AUTO_RUN_PROVIDER,AUTO_RUN_UPSTREAM_MODEL } from "@okouai/core/auto-run-model";
+import {
+  AUTO_RUN_MODEL,
+  AUTO_RUN_PROVIDER,
+  AUTO_RUN_UPSTREAM_MODEL,
+} from "@okouai/core/auto-run-model";
 import { env } from "../../lib/env";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
@@ -225,7 +228,14 @@ function resolvePiRouteModelConfig(
       codexServiceTier,
     );
   }
-  if (!isBuiltInModelProviderType(provider.type) || provider.selectedModel !== AUTO_RUN_MODEL || provider.concreteType !== AUTO_RUN_PROVIDER || provider.upstreamModel !== AUTO_RUN_UPSTREAM_MODEL) { return null; }
+  if (
+    !isBuiltInModelProviderType(provider.type) ||
+    provider.selectedModel !== AUTO_RUN_MODEL ||
+    provider.concreteType !== AUTO_RUN_PROVIDER ||
+    provider.upstreamModel !== AUTO_RUN_UPSTREAM_MODEL
+  ) {
+    return null;
+  }
   return resolveResponsesPiModelConfig(
     { ...provider, selectedModel: provider.selectedModel },
     routeClass,
@@ -395,6 +405,38 @@ export function materializePreparedPiProvider(
     assertCurrentPiCliArtifact();
   }
   return { ...provider, piModelConfig: config };
+}
+
+/** Maintenance has its own platform-funded extraction model, not a chat model choice. */
+export function resolvePlatformMemoryPiModelConfig(
+  provider: ResolvedModelProviderEnvironment,
+): PiModelConfig {
+  const route = provider.builtInModelRuntimeRoute;
+  if (
+    !isBuiltInModelProviderType(provider.type) ||
+    provider.credentialOwner !== "builtin" ||
+    provider.selectedModel !== PI_MEMORY_STAGE1_BUILT_IN_MODEL ||
+    !route ||
+    route.selectedModel !== provider.selectedModel ||
+    route.upstreamModel !== provider.upstreamModel ||
+    route.providerType !== provider.concreteType
+  ) {
+    throw new PiModelConfigurationError(
+      "Invalid platform memory model binding",
+    );
+  }
+  assertCurrentPiCliArtifact();
+  const config = resolveResponsesPiModelConfig(
+    { ...provider, selectedModel: provider.selectedModel },
+    "deepseek",
+    undefined,
+  );
+  if (!config) {
+    throw new PiModelConfigurationError(
+      "Platform memory model configuration is unavailable",
+    );
+  }
+  return config;
 }
 
 export function resolvePreparedPiModelConfig(args: {

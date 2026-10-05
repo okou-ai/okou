@@ -4,7 +4,7 @@ import {
   onboardingCompleteContract,
   onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -13,7 +13,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
-import { modelPoliciesRoutes } from "../model-policies";
+import { runModelsRoutes } from "../run-models";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
@@ -37,10 +37,8 @@ function onboardingCompleteClient() {
   );
 }
 
-function modelPoliciesClient() {
-  return setupApp({ context, routes: modelPoliciesRoutes })(
-    modelPoliciesMainContract,
-  );
+function runModelsClient() {
+  return setupApp({ context, routes: runModelsRoutes })(runModelsMainContract);
 }
 
 /**
@@ -196,11 +194,11 @@ describe("member source-first onboarding", () => {
     });
     mocks.clerk.session(admin.userId, admin.orgId, admin.role);
     const policies = await accept(
-      modelPoliciesClient().list({ headers: authHeaders() }),
+      runModelsClient().list({ headers: authHeaders() }),
       [200],
     );
     expect(
-      policies.body.policies.map((policy) => {
+      policies.body.models.map((policy) => {
         return policy.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
@@ -287,19 +285,19 @@ describe("POST /api/onboarding/complete", () => {
       defaultAgentId: before.body.defaultAgentId,
     });
     const policies = await accept(
-      modelPoliciesClient().list({ headers: authHeaders() }),
+      runModelsClient().list({ headers: authHeaders() }),
       [200],
     );
     expect(
-      policies.body.policies.map((policy) => {
+      policies.body.models.map((policy) => {
         return policy.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
     // A new organization starts in Auto.
-    expect(policies.body.modelMode).toBe("auto");
+    expect(policies.body.defaultModel).toBe("okou-1.0");
   });
 
-  it("lists only the system default policy for a new Auto organization after a subscription choice", async () => {
+  it("lists only the system default model for a new organization after a subscription choice", async () => {
     const actor = orgActor();
     mockDefaultAgentStorage();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
@@ -316,232 +314,17 @@ describe("POST /api/onboarding/complete", () => {
       [200],
     );
     const response = await accept(
-      modelPoliciesClient().list({ headers: authHeaders() }),
+      runModelsClient().list({ headers: authHeaders() }),
       [200],
     );
-    expect(response.body.modelMode).toBe("auto");
-    expect(response.body.policies).toStrictEqual([
+    expect(response.body.defaultModel).toBe("okou-1.0");
+    expect(response.body.models).toStrictEqual([
       expect.objectContaining({
         model: SEEDED_SYSTEM_DEFAULT_MODEL,
         defaultProviderType: "built-in",
         credentialScope: "org",
       }),
     ]);
-  });
-
-  it.each([
-    {
-      provider: "codex" as const,
-      models: ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"],
-      route: "codex-oauth-token",
-    },
-    {
-      provider: "claudeCode" as const,
-      models: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"],
-      route: "claude-code-oauth-token",
-    },
-  ])(
-    "seeds $provider subscription models for a Custom organization even when the default seed was read first",
-    async ({ provider, models, route }) => {
-      const actor = orgActor();
-      mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-      const policies = modelPoliciesClient();
-      const before = await accept(
-        policies.list({ headers: authHeaders() }),
-        [200],
-      );
-      expect(before.body.modelMode).toBe("custom");
-      expect(
-        before.body.policies.map((policy) => {
-          return policy.model;
-        }),
-      ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
-
-      await accept(
-        onboardingCompleteClient().complete({
-          headers: authHeaders(),
-          query: { modelProvider: provider },
-          body: {},
-        }),
-        [200],
-      );
-      const after = await accept(
-        policies.list({ headers: authHeaders() }),
-        [200],
-      );
-      expect(
-        after.body.policies.map((policy) => {
-          return policy.model;
-        }),
-      ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, ...models]);
-      for (const model of models) {
-        expect(
-          after.body.policies.find((policy) => {
-            return policy.model === model;
-          }),
-        ).toMatchObject({
-          defaultProviderType: route,
-          credentialScope: "member",
-        });
-      }
-
-      await accept(
-        onboardingCompleteClient().complete({
-          headers: authHeaders(),
-          query: {
-            modelProvider: provider === "codex" ? "claudeCode" : "codex",
-          },
-          body: {},
-        }),
-        [200],
-      );
-      const repeated = await accept(
-        policies.list({ headers: authHeaders() }),
-        [200],
-      );
-      expect(
-        repeated.body.policies.map((policy) => {
-          return policy.model;
-        }),
-      ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, ...models]);
-    },
-  );
-
-  it("applies a subscription choice after the previous untouched model seed", async () => {
-    const actor = orgActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    const policies = modelPoliciesClient();
-    const before = await accept(
-      policies.list({ headers: authHeaders() }),
-      [200],
-    );
-    // The seed an older API wrote, plus the fixed default this API adds.
-    await accept(
-      policies.update({
-        headers: authHeaders(),
-        body: {
-          revision: before.body.revision,
-          policies: (
-            [
-              SEEDED_SYSTEM_DEFAULT_MODEL,
-              "claude-fable-5-1",
-              "gpt-6-astra",
-              "gpt-5.6-luna",
-            ] as const
-          ).map((model) => {
-            return {
-              model,
-              defaultProviderType: "built-in" as const,
-              credentialScope: "org" as const,
-              modelProviderId: null,
-            };
-          }),
-        },
-      }),
-      [200],
-    );
-
-    await accept(
-      onboardingCompleteClient().complete({
-        headers: authHeaders(),
-        query: { modelProvider: "codex" },
-        body: {},
-      }),
-      [200],
-    );
-    const after = await accept(
-      policies.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(
-      after.body.policies.map((policy) => {
-        return [policy.model, policy.defaultProviderType];
-      }),
-    ).toStrictEqual([
-      [SEEDED_SYSTEM_DEFAULT_MODEL, "built-in"],
-      ["gpt-6-astra", "codex-oauth-token"],
-      ["gpt-6-sol", "codex-oauth-token"],
-      ["gpt-6-luna", "codex-oauth-token"],
-    ]);
-  });
-
-  it("seeds the chosen models when no model policies were read before completion", async () => {
-    const actor = orgActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-
-    await accept(
-      onboardingCompleteClient().complete({
-        headers: authHeaders(),
-        query: { modelProvider: "claudeCode" },
-        body: {},
-      }),
-      [200],
-    );
-    const policies = await accept(
-      modelPoliciesClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(
-      policies.body.policies.map((policy) => {
-        return policy.model;
-      }),
-    ).toStrictEqual([
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "claude-sonnet-5",
-    ]);
-  });
-
-  it("keeps a customized model policy when onboarding completes", async () => {
-    const actor = orgActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    const policies = modelPoliciesClient();
-    const before = await accept(
-      policies.list({ headers: authHeaders() }),
-      [200],
-    );
-    await accept(
-      policies.update({
-        headers: authHeaders(),
-        body: {
-          revision: before.body.revision,
-          policies: [
-            {
-              model: SEEDED_SYSTEM_DEFAULT_MODEL,
-              defaultProviderType: "built-in",
-              credentialScope: "org",
-              modelProviderId: null,
-            },
-            {
-              model: "gpt-5.6-luna",
-              defaultProviderType: "built-in",
-              credentialScope: "org",
-              modelProviderId: null,
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-
-    await accept(
-      onboardingCompleteClient().complete({
-        headers: authHeaders(),
-        query: { modelProvider: "claudeCode" },
-        body: {},
-      }),
-      [200],
-    );
-    const after = await accept(
-      policies.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(
-      after.body.policies.map((policy) => {
-        return policy.model;
-      }),
-    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-5.6-luna"]);
   });
 
   it("completes an admin's onboarding with the field the source-first flow answered", async () => {

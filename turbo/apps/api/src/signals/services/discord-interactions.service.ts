@@ -1,27 +1,27 @@
 import {
-discordInteractionSchema,
-type DiscordCommandInteraction,
-type DiscordComponentInteraction,
+  discordInteractionSchema,
+  type DiscordCommandInteraction,
+  type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { command } from "ccstate";
-import { and,eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { delay } from "signal-timers";
 
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import {
-discordAccountLabel,
-discordAccountMessage,
-discordAccountPicker,
-type DiscordAccountMessage,
+  discordAccountLabel,
+  discordAccountMessage,
+  discordAccountPicker,
+  type DiscordAccountMessage,
 } from "../../lib/discord-interaction-messages";
 import {
-parseDiscordPickerCustomId,
-resolveDiscordInteractionActor,
-verifyDiscordInteractionSignature,
-type DiscordInteractionActor,
-type DiscordPickerState,
+  parseDiscordPickerCustomId,
+  resolveDiscordInteractionActor,
+  verifyDiscordInteractionSignature,
+  type DiscordInteractionActor,
+  type DiscordPickerState,
 } from "../../lib/discord-interaction-protocol";
 import { env } from "../../lib/env";
 import { monotonicNow } from "../../lib/time";
@@ -29,33 +29,33 @@ import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
 import {
-discordClient,
-type DiscordApiResult,
+  discordClient,
+  type DiscordApiResult,
 } from "../external/discord-client";
 import {
-safeJsonParse,
-safeSync,
-settle,
-settleIncludingAbort,
+  safeJsonParse,
+  safeSync,
+  settle,
+  settleIncludingAbort,
 } from "../utils";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { findDiscordInteractionChatThreadId } from "./discord-chat-ingress.service";
 import {
-discordIntegrationEnabledForOwner$,
-getDiscordAppConfig,
+  discordIntegrationEnabledForOwner$,
+  getDiscordAppConfig,
 } from "./discord-config";
 import {
-disconnectDiscordBinding$,
-discordDmBinding,
-discordEffectiveAgent,
-discordGuildUserBinding,
-discordSenderBindings,
-selectDiscordDmBinding$,
-type DiscordVerifiedBinding,
+  disconnectDiscordBinding$,
+  discordDmBinding,
+  discordEffectiveAgent,
+  discordGuildUserBinding,
+  discordSenderBindings,
+  selectDiscordDmBinding$,
+  type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import {
-readIntegrationChatThreadModel$,
-updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { listAvailableRunModels$ } from "./run-models.service";
 

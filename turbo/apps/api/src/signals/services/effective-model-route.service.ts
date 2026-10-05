@@ -1,8 +1,14 @@
-import type { ModelProviderCredentialScope,ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import type {
+  ModelProviderCredentialScope,
+  ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { and,eq,inArray,isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { ReadonlyDb } from "../external/db";
-import { isCatalogModelRunnable,type ModelCatalog } from "./model-catalog.service";
+import {
+  isCatalogModelRunnable,
+  type ModelCatalog,
+} from "./model-catalog.service";
 const ORG_SENTINEL_USER_ID = "__org__";
 const PERSONAL_TYPES = [
   "claude-code-oauth-token",
@@ -53,7 +59,6 @@ export interface PreparedMemberModelRouteContext {
         readonly load: () => Promise<LoadedPersonalModelRouteMetadata>;
       };
 }
-
 
 export function prepareMemberModelRouteContext(
   db: ReadonlyDb,
@@ -228,4 +233,3 @@ export function memberModelRouteContextFromAccounts(
     }),
   };
 }
-

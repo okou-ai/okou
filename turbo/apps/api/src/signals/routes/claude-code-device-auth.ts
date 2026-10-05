@@ -1,16 +1,16 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import { command } from "ccstate";
 
-import { badRequestMessage,notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
-cancelClaudeCodeDeviceAuth$,
-claudeCodeDeviceAuthUnavailable,
-completeClaudeCodeDeviceAuth$,
-startClaudeCodeDeviceAuth$,
+  cancelClaudeCodeDeviceAuth$,
+  claudeCodeDeviceAuthUnavailable,
+  completeClaudeCodeDeviceAuth$,
+  startClaudeCodeDeviceAuth$,
 } from "../services/claude-code-device-auth.service";
 
 const modelProviderWriteAuth = {

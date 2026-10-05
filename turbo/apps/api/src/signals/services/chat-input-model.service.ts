@@ -2,6 +2,7 @@ import {
   chatInputModelSelectionSchema,
   type ChatInputModelSelection,
 } from "@okouai/api-contracts/contracts/chat-input-model";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   modelSettingsSchema,
@@ -113,7 +114,8 @@ export const resolveChatInputModelSelection$ = command(
     const selectedIsReplacement =
       selected !== null &&
       !("status" in selected) &&
-      selectedModel !== args.selectedModel;
+      selectedModel !== args.selectedModel &&
+      selectedModel !== AUTO_RUN_MODEL;
     const effort = resolveChatReasoningEffort({
       catalog,
       selectedModel,

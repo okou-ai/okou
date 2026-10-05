@@ -1,7 +1,5 @@
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
-import type {
-BuiltInModelRouteProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { BuiltInModelRouteProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -9,33 +7,33 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
-isPiAgentModelSupported,
-type PiAgentModelConfig,
+  isPiAgentModelSupported,
+  type PiAgentModelConfig,
 } from "@okouai/pi-agent-runtime";
 import {
-PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-PI_MEMORY_STAGE1_BYOK_MODEL,
-type PiMemoryStage1Model,
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_BYOK_MODEL,
+  type PiMemoryStage1Model,
 } from "@okouai/pi-agent-runtime/api";
 import { eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolveBuiltInModelRuntimeRouteFromCatalog } from "./built-in-model-runtime-route.service";
 import {
-featureSwitchContextFromRows,
-userFeatureSwitchRowCondition,
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
 import {
-catalogBuiltInCandidates,
-catalogBuiltInRoute,
-type ModelCatalog,
-ModelCatalogInvariantError,
+  catalogBuiltInCandidates,
+  catalogBuiltInRoute,
+  type ModelCatalog,
+  ModelCatalogInvariantError,
 } from "./model-catalog.service";
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 
 import {
-personalModelProviderAccountById,
-readPersonalSubscriptionCredentialBundle,
+  personalModelProviderAccountById,
+  readPersonalSubscriptionCredentialBundle,
 } from "./model-provider-account.service";
 
 export type PiMemoryStage1CredentialSkip =

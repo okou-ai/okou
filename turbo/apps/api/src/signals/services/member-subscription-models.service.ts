@@ -1,18 +1,18 @@
 import {
-reasoningEffortSchema,
-type ReasoningEffort,
+  reasoningEffortSchema,
+  type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import { and,asc,eq,inArray,isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import {
-loadMemberModelRouteContext,
-type MemberModelRouteContext,
-type PreparedMemberModelRouteContext,
+  loadMemberModelRouteContext,
+  type MemberModelRouteContext,
+  type PreparedMemberModelRouteContext,
 } from "./effective-model-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
 export type MemberSubscriptionModel = Readonly<{
@@ -161,10 +161,20 @@ export async function resetStaleAutoMemberSelection(
   orgId: string,
   userId: string,
 ): Promise<void> {
-  const [member] = await db.select({ selectedModel: orgMembersMetadata.selectedModel })
-    .from(orgMembersMetadata).where(and(eq(orgMembersMetadata.orgId, orgId), eq(orgMembersMetadata.userId, userId))).limit(1);
+  const [member] = await db
+    .select({ selectedModel: orgMembersMetadata.selectedModel })
+    .from(orgMembersMetadata)
+    .where(
+      and(
+        eq(orgMembersMetadata.orgId, orgId),
+        eq(orgMembersMetadata.userId, userId),
+      ),
+    )
+    .limit(1);
   const selectedModel = member?.selectedModel;
-  if (!selectedModel || selectedModel === AUTO_RUN_MODEL) { return; }
+  if (!selectedModel || selectedModel === AUTO_RUN_MODEL) {
+    return;
+  }
   const remaining = await loadMemberSubscriptionModels(
     db,
     await loadMemberModelRouteContext(db, orgId, userId),

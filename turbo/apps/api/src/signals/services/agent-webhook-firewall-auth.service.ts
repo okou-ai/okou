@@ -6,10 +6,7 @@ import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
-import {
-  publishModelPoliciesChangedForOrgSafely,
-  publishPersonalModelProvidersChangedSafely,
-} from "../external/realtime";
+import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import {
   isPersonalSubscriptionProviderType,
   personalSubscriptionAccountAccessCondition,
@@ -77,14 +74,13 @@ import {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { connectors } from "@okouai/db/schema/connector";
-import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
@@ -768,7 +764,6 @@ interface BasicArgContext extends BasicAuthTemplateArg {
 }
 
 const L = logger("webhook:firewall-auth");
-const ORG_SENTINEL_USER_ID = "__org__";
 const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
 const REFRESH_BUFFER_SECS = 60;
 const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS = 15 * 60;
@@ -835,9 +830,10 @@ function resolveSecretUserId(
   userId: string,
   sourceUserId?: string,
 ): string {
-  return sourceType === "model-provider"
-    ? (sourceUserId ?? ORG_SENTINEL_USER_ID)
-    : userId;
+  if (sourceType === "model-provider" && sourceUserId !== userId) {
+    throw new Error("Personal subscription credential owner mismatch");
+  }
+  return userId;
 }
 
 function resolveRefreshMetadata(
@@ -1154,6 +1150,9 @@ async function getSecretValue(args: {
         )
       : null;
   }
+  if (args.type === "model-provider") {
+    return null;
+  }
   const [row] = await args.db
     .select({ encryptedValue: secretsTable.encryptedValue })
     .from(secretsTable)
@@ -1253,29 +1252,7 @@ async function upsertModelProviderSecretValue(
       });
     return;
   }
-  await db
-    .insert(secretsTable)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      name: args.name,
-      encryptedValue,
-      type: "model-provider",
-      description: `Model provider secret: ${args.name}`,
-    })
-    .onConflictDoUpdate({
-      target: [
-        secretsTable.orgId,
-        secretsTable.userId,
-        secretsTable.name,
-        secretsTable.type,
-      ],
-      targetWhere: isNull(secretsTable.connectorId),
-      set: {
-        encryptedValue,
-        updatedAt: nowDate(),
-      },
-    });
+  throw new Error("Personal subscription refresh requires an account identity");
 }
 
 function modelProviderRuntimeSecretName(args: {
@@ -1682,57 +1659,6 @@ async function loadModelProviderSourceStates(args: {
     }
   }
 
-  const lookupsByUserId = new Map<string, ModelProviderSourceLookup[]>();
-  for (const lookup of sourceLookups) {
-    if (lookup.sourceId) {
-      continue;
-    }
-    const lookups = lookupsByUserId.get(lookup.userId) ?? [];
-    lookups.push(lookup);
-    lookupsByUserId.set(lookup.userId, lookups);
-  }
-
-  const stateEntries = await Promise.all(
-    [...lookupsByUserId].map(async ([sourceUserId, lookups]) => {
-      const providerTypes = [
-        ...new Set(
-          lookups.map((lookup) => {
-            return lookup.providerType;
-          }),
-        ),
-      ];
-      const rows = await args.db
-        .select({
-          type: modelProviders.type,
-          tokenExpiresAt: modelProviders.tokenExpiresAt,
-          needsReconnect: modelProviders.needsReconnect,
-        })
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.orgId, args.orgId),
-            eq(modelProviders.userId, sourceUserId),
-            inArray(modelProviders.type, providerTypes),
-          ),
-        );
-
-      const stateByType = new Map<string, RefreshSourceState>();
-      for (const row of rows) {
-        stateByType.set(row.type, refreshSourceStateFromRow(row));
-      }
-
-      return lookups.flatMap((lookup) => {
-        const state = stateByType.get(lookup.providerType);
-        return state ? [[lookup.providerKey, state] as const] : [];
-      });
-    }),
-  );
-
-  for (const entries of stateEntries) {
-    for (const [providerKey, state] of entries) {
-      result.set(providerKey, state);
-    }
-  }
   return result;
 }
 
@@ -2096,32 +2022,7 @@ async function loadModelProviderRefreshStateRow(
       .limit(1);
     return rows[0] ?? null;
   }
-  const query = db
-    .select({
-      authMethod: sql`NULL`.mapWith(pgNullDecoder),
-      connectorId: sql`NULL`.mapWith(pgNullDecoder),
-      storageVersion: sql`NULL`.mapWith(pgNullDecoder),
-      tokenExpiresAt: modelProviders.tokenExpiresAt,
-      needsReconnect: modelProviders.needsReconnect,
-      lastRefreshErrorCode: modelProviders.lastRefreshErrorCode,
-      reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-    })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, context.secretUserId),
-        eq(
-          modelProviders.type,
-          requiredModelProviderMetadataKey({
-            providerKey: args.accessSourceKey,
-            metadataKey: args.metadataKey,
-          }),
-        ),
-      ),
-    );
-  const rows = await query.limit(1);
-  return rows[0] ?? null;
+  return null;
 }
 
 async function loadConnectorRefreshStateRow(
@@ -2329,28 +2230,9 @@ async function markRefreshSuccess(
         );
       return Object.fromEntries(returnedSecretValues);
     }
-    await args.db
-      .update(modelProviders)
-      .set({
-        tokenExpiresAt: expiresAt,
-        needsReconnect: false,
-        lastRefreshErrorCode: null,
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(
-        and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, context.secretUserId),
-          eq(
-            modelProviders.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
-        ),
-      );
-    return Object.fromEntries(returnedSecretValues);
+    throw new Error(
+      "Personal subscription refresh requires an account identity",
+    );
   }
 
   await args.db
@@ -2409,23 +2291,9 @@ async function markRefreshFailure(
         );
       return;
     }
-    await args.db
-      .update(modelProviders)
-      .set(updates)
-      .where(
-        and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, context.secretUserId),
-          eq(
-            modelProviders.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
-        ),
-      );
-    return;
+    throw new Error(
+      "Personal subscription failure requires an account identity",
+    );
   }
 
   const connectorSlug = args.accessSourceKey;
@@ -2895,13 +2763,9 @@ async function refreshAccessTokenForSource(
     ((result.ok && result.status === "refreshed") ||
       (!result.ok && result.failureReason === "reconnect_required"))
   ) {
-    if (prepared.context.secretUserId === ORG_SENTINEL_USER_ID) {
-      await publishModelPoliciesChangedForOrgSafely(args.orgId);
-    } else {
-      await publishPersonalModelProvidersChangedSafely(
-        prepared.context.secretUserId,
-      );
-    }
+    await publishPersonalModelProvidersChangedSafely(
+      prepared.context.secretUserId,
+    );
   }
   return result;
 }
@@ -2944,8 +2808,12 @@ function hasForbiddenModelProviderOwner(
     }
     const providerKey = accessSourceKey;
 
-    const ownerUserId = metadata.sourceUserId ?? ORG_SENTINEL_USER_ID;
-    if (ownerUserId !== auth.userId && ownerUserId !== ORG_SENTINEL_USER_ID) {
+    const ownerUserId = metadata.sourceUserId;
+    if (
+      ownerUserId !== auth.userId ||
+      !metadata.sourceId ||
+      !isPersonalSubscriptionProviderType(metadata.metadataKey ?? providerKey)
+    ) {
       L.warn(`[${auth.runId}] Rejected forbidden model-provider owner`, {
         ownerUserId,
         providerKey,
@@ -3286,55 +3154,7 @@ async function getModelProviderRuntimeSecretValue(args: {
         )
       : null;
   }
-  const singleSecretName = getSecretNameForType(args.providerType);
-  if (singleSecretName && args.secretName === singleSecretName) {
-    const [row] = await args.db
-      .select({ encryptedValue: secretsTable.encryptedValue })
-      .from(modelProviders)
-      .leftJoin(secretsTable, eq(modelProviders.secretId, secretsTable.id))
-      .where(
-        and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, args.userId),
-          eq(modelProviders.type, args.providerType),
-          eq(secretsTable.orgId, args.orgId),
-          eq(secretsTable.userId, args.userId),
-          eq(secretsTable.name, args.secretName),
-          eq(secretsTable.type, "model-provider"),
-        ),
-      )
-      .limit(1);
-    return row?.encryptedValue
-      ? await decryptStoredSecretValue(
-          row.encryptedValue,
-          args.featureSwitchContext,
-        )
-      : null;
-  }
-
-  const [provider] = await args.db
-    .select({ id: modelProviders.id })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.userId),
-        eq(modelProviders.type, args.providerType),
-      ),
-    )
-    .limit(1);
-  if (!provider) {
-    return null;
-  }
-
-  return await getSecretValue({
-    db: args.db,
-    orgId: args.orgId,
-    userId: args.userId,
-    name: args.secretName,
-    type: "model-provider",
-    featureSwitchContext: args.featureSwitchContext,
-  });
+  return null;
 }
 
 interface ModelProviderRuntimeSecretForApiArgs {
@@ -3443,22 +3263,7 @@ async function loadModelProviderRuntimeRefreshState(args: {
     return row ?? null;
   }
 
-  const [row] = await args.db
-    .select({
-      tokenExpiresAt: modelProviders.tokenExpiresAt,
-      needsReconnect: modelProviders.needsReconnect,
-      lastRefreshErrorCode: modelProviders.lastRefreshErrorCode,
-    })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.lookup.userId),
-        eq(modelProviders.type, args.lookup.providerType),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
+  return null;
 }
 
 async function readModelProviderRuntimeSecretForApi(

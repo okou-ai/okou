@@ -1,16 +1,16 @@
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { command } from "ccstate";
 
-import { badRequestMessage,notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
-cancelCodexDeviceAuth$,
-codexDeviceAuthUnavailable,
-completeCodexDeviceAuth$,
-startCodexDeviceAuth$,
+  cancelCodexDeviceAuth$,
+  codexDeviceAuthUnavailable,
+  completeCodexDeviceAuth$,
+  startCodexDeviceAuth$,
 } from "../services/codex-device-auth.service";
 
 const modelProviderWriteAuth = {
