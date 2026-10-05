@@ -45,7 +45,8 @@ upstream reset operation.
 The fixed outer chat-card frame remains mounted across loading, unavailable,
 error, refresh and terminal states. The card shows five-hour and weekly
 remaining usage and reset times, available reset credits, and their next
-expiry. Unknown quota disables a new reset until a fresh read is available.
+expiry. Unknown reset-credit availability, or a pending or failed account read,
+disables a new reset. Retrying an uncertain request retains its original key.
 Unavailable, disconnected, or foreign accounts cannot be used through the link.
 
 Claude Code exposes usage and natural recovery times, but does not support

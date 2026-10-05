@@ -213,11 +213,55 @@ test("the direct URL opens an authenticated reset page and still requires a clic
   });
   await screen.findByText("Remaining resets: 3");
   expect(submitted).toBeFalsy();
+  expect(button("Reset")).toHaveAccessibleDescription(
+    expect.stringContaining("Reset uses one reset credit."),
+  );
   click(button("Reset"));
   await expect(
     screen.findByText("This reset request has already been redeemed."),
   ).resolves.toBeInTheDocument();
   expect(submitted).toBeTruthy();
+});
+
+test("the standalone Claude Code page exposes natural recovery without manual-credit confirmation", async () => {
+  mockRead(
+    subscription({
+      type: "claude-code-oauth-token",
+      framework: "claude-code",
+      subscriptionResetSupported: false,
+    }),
+  );
+  await setupPage({
+    context,
+    path: PATH,
+    host: "app.okou.ai",
+    featureSwitches: { subscriptionControls: true },
+  });
+  await expect(
+    screen.findByText(
+      "Manual reset is not supported; usage recovers naturally.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").filter((candidate) => {
+      return candidate.getAttribute("aria-label") === "Reset";
+    }),
+  ).toHaveLength(0);
+  expect(screen.queryByText("Remaining resets: 3")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Only clicking Reset submits the request/),
+  ).not.toBeInTheDocument();
+  click(button("original@example.test 5h remaining"));
+  const details = within(await screen.findByRole("dialog"));
+  expect(details.getByText("0% left")).toBeInTheDocument();
+  expect(
+    details.getByText(
+      "Manual reset is not supported; usage recovers naturally.",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Only clicking Reset submits the request/),
+  ).not.toBeInTheDocument();
 });
 
 test("an uncertain last-credit request can be retried only with its original idempotency key", async () => {

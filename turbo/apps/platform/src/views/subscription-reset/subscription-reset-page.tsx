@@ -18,11 +18,6 @@ export function SubscriptionResetPage() {
           })}
         </p>
       )}
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.subscriptionReset.confirmation;
-        })}
-      </p>
     </main>
   );
 }
