@@ -1,1 +1,1 @@
-export const INITIAL_AUTONOMY_BUDGET = 10;
+export const INITIAL_AUTONOMY_BUDGET = 32;

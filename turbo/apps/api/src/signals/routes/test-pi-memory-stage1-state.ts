@@ -28,10 +28,11 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { storages } from "@okouai/db/schema/storage";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { nowDate } from "../../lib/time";
+import type { Tx } from "../../lib/db-types";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
@@ -71,6 +72,10 @@ const ownerSchema = z.object({
 const candidateScopeSchema = ownerSchema.extend({
   pi_session_id: z.string().uuid(),
 });
+const completedSourceSchema = candidateScopeSchema.extend({
+  source_run_id: z.string().uuid(),
+  source_history_hash: z.string().regex(/^[0-9a-f]{64}$/u),
+});
 const sourceBindingSchema = z.object({
   modelProvider: z.string().nullable(),
   modelProviderId: z.uuid().nullable(),
@@ -102,6 +107,13 @@ const actionBodySchema = z.discriminatedUnion("action", [
     raw_size: z.number().int().positive(),
     encoded_size: z.number().int().positive(),
   }),
+  completedSourceSchema.extend({
+    action: z.literal("seed-legacy-pending-candidate"),
+  }),
+  completedSourceSchema.extend({
+    action: z.literal("replace-published-history-reference"),
+    expected_source_history_hash: z.string().regex(/^[0-9a-f]{64}$/u),
+  }),
   candidateScopeSchema.extend({ action: z.literal("inspect") }),
   candidateScopeSchema.extend({
     action: z.literal("source-binding"),
@@ -127,11 +139,6 @@ const actionBodySchema = z.discriminatedUnion("action", [
   }),
   candidateScopeSchema.extend({ action: z.literal("expire-lease") }),
   candidateScopeSchema.extend({ action: z.literal("make-retry-due") }),
-  candidateScopeSchema.extend({ action: z.literal("create-active-run") }),
-  z.object({
-    action: z.literal("complete-active-run"),
-    run_id: z.string().uuid(),
-  }),
   candidateScopeSchema.extend({
     action: z.literal("seed-usage-collision"),
     source_history_hash: z.string().regex(/^[0-9a-f]{64}$/u),
@@ -185,7 +192,6 @@ const responseSchema = z.object({
   state: candidateStateSchema.nullable().optional(),
   worker: workerResultSchema.optional(),
   run_id: z.string().uuid().optional(),
-  agent_session_id: z.string().uuid().optional(),
   usage: z
     .array(
       z.object({
@@ -220,6 +226,7 @@ const actionBody$ = bodyResultOf(testPiMemoryStage1StateContract.action);
 
 type CandidateScope = z.infer<typeof candidateScopeSchema>;
 type OwnerScope = z.infer<typeof ownerSchema>;
+type CompletedSourceScope = z.infer<typeof completedSourceSchema>;
 
 function actionOk(extra: Record<string, unknown> = {}) {
   return { status: 200 as const, body: { ok: true as const, ...extra } };
@@ -484,42 +491,182 @@ async function updateCandidateTime(
   return actionOk();
 }
 
-async function createActiveRun(
-  db: Db,
-  scope: CandidateScope,
+async function requireOwnedCompletedSource(
+  tx: Tx,
+  scope: CompletedSourceScope,
+  expectedHash: string,
   signal: AbortSignal,
 ) {
-  const [source] = await db
+  const [memory] = await tx
+    .select({ id: storages.id })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.id, scope.memory_storage_id),
+        eq(storages.orgId, scope.org_id),
+        eq(storages.userId, scope.user_id),
+        eq(storages.name, MEMORY_ARTIFACT_NAME),
+      ),
+    )
+    .for("no key update");
+  signal.throwIfAborted();
+  if (!memory) {
+    throw new Error("Missing owned public Memory source");
+  }
+  const [source] = await tx
     .select({
-      sessionId: agentRuns.sessionId,
-      chatThreadId: agentRuns.chatThreadId,
+      completedAt: agentRuns.completedAt,
+      launchSnapshot: agentRuns.launchSnapshot,
+      conversationId: conversations.id,
     })
     .from(agentRuns)
+    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+    .innerJoin(agents, eq(agents.id, agentSessions.agentId))
     .innerJoin(
-      piMemoryStage1Candidates,
-      eq(piMemoryStage1Candidates.sourceRunId, agentRuns.id),
+      chatThreads,
+      and(
+        eq(chatThreads.id, agentRuns.chatThreadId),
+        eq(chatThreads.agentId, agents.id),
+      ),
     )
-    .where(candidateCondition(scope));
-  if (!source) {
-    throw new Error("Missing active source fixture");
-  }
-  const runId = randomUUID();
-  await db.transaction(async (tx) => {
-    await tx.insert(agentRuns).values({
-      id: runId,
-      orgId: scope.org_id,
-      userId: scope.user_id,
-      sessionId: source.sessionId,
-      chatThreadId: source.chatThreadId,
-      status: "pending",
-      prompt: "fresh continuation without a checkpoint",
-      triggerSource: "web",
-      autonomyBudget: 0,
-    });
-    await captureFixtureRunBilling(tx, runId);
-  });
+    .innerJoin(conversations, eq(conversations.runId, agentRuns.id))
+    .where(
+      and(
+        eq(agentRuns.id, scope.source_run_id),
+        eq(agentRuns.orgId, scope.org_id),
+        eq(agentRuns.userId, scope.user_id),
+        eq(agentRuns.status, "completed"),
+        eq(agentSessions.orgId, scope.org_id),
+        eq(agentSessions.userId, scope.user_id),
+        eq(agents.orgId, scope.org_id),
+        eq(agents.owner, scope.user_id),
+        eq(chatThreads.id, scope.pi_session_id),
+        eq(chatThreads.userId, scope.user_id),
+        eq(conversations.cliAgentType, "pi"),
+        eq(conversations.cliAgentSessionId, scope.pi_session_id),
+        eq(conversations.cliAgentSessionHistoryHash, expectedHash),
+      ),
+    )
+    .for("update", { of: agentRuns });
   signal.throwIfAborted();
-  return actionOk({ run_id: runId, agent_session_id: source.sessionId });
+  if (!source?.completedAt || source.launchSnapshot?.framework !== "pi") {
+    throw new Error("Missing exact completed public Pi source");
+  }
+  return {
+    completedAt: source.completedAt,
+    conversationId: source.conversationId,
+  };
+}
+
+// #37440 key33: only the historical unscheduled candidate is impossible to
+// publish. Its owner, Memory, Run, Session, Thread and history already exist.
+async function seedLegacyPendingCandidate(
+  db: Db,
+  body: CompletedSourceScope,
+  signal: AbortSignal,
+) {
+  await db.transaction(async (tx) => {
+    const source = await requireOwnedCompletedSource(
+      tx,
+      body,
+      body.source_history_hash,
+      signal,
+    );
+    signal.throwIfAborted();
+    const inserted = await insertPiMemoryStage1Candidates(tx, [
+      {
+        memoryStorageId: body.memory_storage_id,
+        orgId: body.org_id,
+        userId: body.user_id,
+        piSessionId: body.pi_session_id,
+        sourceRunId: body.source_run_id,
+        sourceHistoryHash: body.source_history_hash,
+        sourceCompletedAt: source.completedAt,
+        eligibleAt: new Date(source.completedAt.getTime() + 1),
+        status: "pending",
+        retryCount: 2,
+      },
+    ]);
+    if (inserted.length !== 1) {
+      throw new Error("Expected one owned historical pending candidate");
+    }
+    signal.throwIfAborted();
+  });
+  return actionOk();
+}
+
+// #37440 key33: completed Pi checkpoint validation rejects these exact bad
+// inputs. Metadata and ordinary source state are public; only this pointer
+// bypasses validation, with both conversation references transferred atomically.
+async function replacePublishedHistoryReference(
+  db: Db,
+  body: Extract<
+    TestPiMemoryStage1StateActionBody,
+    { action: "replace-published-history-reference" }
+  >,
+  signal: AbortSignal,
+) {
+  if (body.expected_source_history_hash === body.source_history_hash) {
+    throw new Error("Expected a different prepared invalid history");
+  }
+  await db.transaction(async (tx) => {
+    const source = await requireOwnedCompletedSource(
+      tx,
+      body,
+      body.expected_source_history_hash,
+      signal,
+    );
+    const locked = await tx
+      .select({ hash: blobs.hash })
+      .from(blobs)
+      .where(
+        inArray(blobs.hash, [
+          body.expected_source_history_hash,
+          body.source_history_hash,
+        ]),
+      )
+      .orderBy(asc(blobs.hash))
+      .for("update");
+    if (locked.length !== 2) {
+      throw new Error("Expected both publicly prepared history blobs");
+    }
+    const [retained] = await tx
+      .update(blobs)
+      .set({ refCount: sql`${blobs.refCount} + 1` })
+      .where(eq(blobs.hash, body.source_history_hash))
+      .returning({ hash: blobs.hash });
+    const [released] = await tx
+      .update(blobs)
+      .set({ refCount: sql`${blobs.refCount} - 1` })
+      .where(
+        and(
+          eq(blobs.hash, body.expected_source_history_hash),
+          gte(blobs.refCount, 1),
+        ),
+      )
+      .returning({ hash: blobs.hash });
+    if (!retained || !released) {
+      throw new Error("Missing retained public conversation history");
+    }
+    const [changed] = await tx
+      .update(conversations)
+      .set({ cliAgentSessionHistoryHash: body.source_history_hash })
+      .where(
+        and(
+          eq(conversations.id, source.conversationId),
+          eq(
+            conversations.cliAgentSessionHistoryHash,
+            body.expected_source_history_hash,
+          ),
+        ),
+      )
+      .returning({ id: conversations.id });
+    if (!changed) {
+      throw new Error("Public source history changed during fixture input");
+    }
+    signal.throwIfAborted();
+  });
+  return actionOk();
 }
 
 async function inspectUsage(db: Db, owner: OwnerScope, signal: AbortSignal) {
@@ -747,6 +894,12 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
     case "replace": {
       return await replaceCandidate(db, body, signal);
     }
+    case "seed-legacy-pending-candidate": {
+      return await seedLegacyPendingCandidate(db, body, signal);
+    }
+    case "replace-published-history-reference": {
+      return await replacePublishedHistoryReference(db, body, signal);
+    }
     case "inspect": {
       return await inspectCandidate(db, body, signal);
     }
@@ -758,17 +911,6 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
     case "make-retry-due": {
       return await updateCandidateTime(db, body, "retryAt", signal);
-    }
-    case "create-active-run": {
-      return await createActiveRun(db, body, signal);
-    }
-    case "complete-active-run": {
-      await db
-        .update(agentRuns)
-        .set({ status: "completed", completedAt: nowDate() })
-        .where(eq(agentRuns.id, body.run_id));
-      signal.throwIfAborted();
-      return actionOk();
     }
     case "seed-usage-collision": {
       await recordPiMemoryStage1Usage(db, {

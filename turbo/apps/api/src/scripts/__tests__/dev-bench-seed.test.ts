@@ -90,7 +90,7 @@ describe("dev bench seed profile rows", () => {
         expect(runMetadata(runRow)).toStrictEqual(
           expect.objectContaining({
             triggerSource: expect.any(String),
-            autonomyBudget: 10,
+            autonomyBudget: 32,
             selectedImageModel: null,
           }),
         );

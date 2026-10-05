@@ -243,7 +243,7 @@ Run one Vitest process at a time.
 
 ### API type-check projects
 
-The API checks seven programs, one native compiler process at a time. Each
+The API checks ten programs, one native compiler process at a time. Each
 compiler exits before the next starts. The declaration-producing projects use
 `composite`, `emitDeclarationOnly` and independent build information. Downstream
 projects set `disableSourceOfProjectReferenceRedirect` and consume those `.d.ts`
@@ -255,22 +255,24 @@ the first nonzero exit or signal. This avoids launching a new pnpm process for
 every stage. Commands have one definition; dispatch never evaluates command text
 from configuration or arguments.
 
-| Project              | Root ownership                                                   | Declaration dependencies          |
-| -------------------- | ---------------------------------------------------------------- | --------------------------------- |
-| `gateways`           | The explicit SDK gateway files                                   | Pi runtime build                  |
-| `core`               | Foundation, services, libraries, mocks and production scripts    | Gateways                          |
-| `routes`             | Production files under `src/signals/routes`                      | Gateways, core                    |
-| `bootstrap`          | The four production entry/registration modules                   | Gateways, core, routes            |
-| `tests-0`, `tests-1` | The canonical test, bench and fixture roots, partitioned by path | Gateways, core, routes            |
-| `bootstrap-wiring`   | The dedicated bootstrap wiring test                              | Gateways, core, routes, bootstrap |
+| Project                         | Root ownership                                                                              | Declaration dependencies                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `gateways`                      | The explicit SDK gateway files                                                              | Pi runtime build                                         |
+| `foundation`                    | The explicit database, billing, artifact and remote-access dependency closure               | Gateways                                                 |
+| `admission`                     | The explicit execution admission, queued-launch and integration callback dependency closure | Gateways, foundation                                     |
+| `core`                          | Remaining services, libraries, mocks and production scripts                                 | Gateways, foundation, admission                          |
+| `routes`                        | Production files under `src/signals/routes`                                                 | Gateways, foundation, admission, core                    |
+| `bootstrap`                     | The four production entry/registration modules                                              | Gateways, foundation, admission, core, routes            |
+| `tests-0`, `tests-1`, `tests-2` | The canonical test, bench and fixture roots, partitioned by path                            | Gateways, foundation, admission, core, routes            |
+| `bootstrap-wiring`              | The dedicated bootstrap wiring test                                                         | Gateways, foundation, admission, core, routes, bootstrap |
 
 `tsconfig.tests.json` is the authoritative test-root manifest; it is not an
 additional checked program. `scripts/prepare-typecheck-tests.mjs` parses it with
 the installed TypeScript compiler API, normalizes package-relative paths to
-`/`, sorts them, and assigns each root with `sha256(path)[0] % 2`. It writes
-`.typecheck/tsconfig.tests-0.json` and `tsconfig.tests-1.json` with exact `files`,
+`/`, sorts them, and assigns each root with `sha256(path)[0] % 3`. It writes
+`.typecheck/tsconfig.tests-{0,1,2}.json` with exact `files`,
 `include: []`, package-root `rootDir`, rebased explicit project references and
-separate `tests-0.tsbuildinfo` / `tests-1.tsbuildinfo`. References do not inherit
+separate `tests-{0,1,2}.tsbuildinfo` files. References do not inherit
 through `extends`. Unchanged configs are not rewritten; additions, deletions and
 renames regenerate membership without maintaining lists by hand.
 
@@ -279,10 +281,14 @@ collect `node:test` registrations as an empty Vitest suite. It still runs on
 every boundary check through the explicit `node --test` command.
 
 The boundary gate runs small Node temporary-file regression tests, prepares the
-test configs, then checks the seven actual root sets against the complete API
-manifest. It also checks production JSON ownership across core and routes,
-rejects stale or modified generated test configs, and retains the import and
-Drizzle guards. JSON needs explicit include patterns in composite projects;
+test configs, then checks the ten actual root sets against the complete API
+manifest. It also checks production JSON ownership across foundation, admission,
+core and routes, rejects stale or modified generated test configs, and retains the
+import and Drizzle guards. Foundation imports may reach only its own roots and
+gateways; admission imports may additionally reach foundation. Imports of downstream
+implementations, including type-only imports, re-exports and dynamic imports, fail
+the gate. New dependencies must preserve these declaration boundaries, not silently
+reload core implementations. JSON needs explicit include patterns in composite projects;
 `**/*` alone does not preserve it. Root counts are derived from current sources,
 never pinned to a historical count.
 
@@ -290,10 +296,11 @@ From `turbo`, the public commands remain:
 
 ```shell
 # Pi declarations -> regression tests/preparation/boundaries -> gateways ->
-# foundation -> routes -> bootstrap -> test 0 -> test 1 -> bootstrap wiring
+# foundation -> admission -> core -> routes -> bootstrap -> tests 0/1/2 -> bootstrap wiring
 TSC_CHECKERS=2 pnpm --filter api run check-types
 
-# Standalone aggregate core: prepare both declaration prerequisites first.
+# Standalone aggregate core: prepare Pi and gateway prerequisites first.
+# This command checks foundation, admission, core and routes in order.
 TSC_CHECKERS=2 pnpm --filter api run check-types:deps
 TSC_CHECKERS=2 pnpm --filter api run check-types:gateways
 TSC_CHECKERS=2 pnpm --filter api run check-types:core
@@ -326,8 +333,9 @@ Measure these three subjects separately, serially:
 1. Standalone API: remove `apps/api/.typecheck` and
    `packages/pi-agent-runtime/dist`, then run the complete API command above.
 2. Aggregate core: prepare Pi and gateway declarations first, then remove
-   `.typecheck/core`, `.typecheck/routes` and their two `.tsbuildinfo` files before
-   running `check-types:core`. Keep prerequisite preparation outside this sample.
+   `.typecheck/foundation`, `.typecheck/admission`, `.typecheck/core`,
+   `.typecheck/routes` and their four `.tsbuildinfo` files before running `check-types:core`. Keep prerequisite
+   preparation outside this sample.
 3. Full cold repository: remove workspace-local `.typecheck`, `.tsbuildinfo` and
    `.turbo` outputs, plus Pi `dist`, then run
    `TURBO_FORCE=true TSC_CHECKERS=2 pnpm check-types`. Verify zero cache hits.
@@ -344,5 +352,5 @@ The acceptance targets are peak process-tree RSS at most 2858.6 MiB for each
 subject and a full cold wall time at most 300 seconds, with no OOM event delta.
 Also validate clean/incremental checks, source and declaration edits, file
 addition/deletion/rename, and representative seeded errors across the declaration
-boundary and in both test groups. Inspect compiler `--listFilesOnly` output to
+boundary and in all three test groups. Inspect compiler `--listFilesOnly` output to
 confirm downstream programs consume upstream declarations.

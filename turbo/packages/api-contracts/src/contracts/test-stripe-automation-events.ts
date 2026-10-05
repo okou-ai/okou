@@ -8,7 +8,6 @@ export const testStripeAutomationEventFixtureActionSchema = z.enum([
   "corrupt-latest-snapshot",
   "hold-latest-claim",
   "expire-latest-retry-window",
-  "make-latest-due",
   "clear-automation-account-projection",
 ]);
 export type TestStripeAutomationEventFixtureAction = z.infer<

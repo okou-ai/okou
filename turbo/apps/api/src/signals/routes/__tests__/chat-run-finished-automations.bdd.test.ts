@@ -551,7 +551,7 @@ function slackThreadDeliveryCount(run: SplitSlackWatchedRun): number {
   }).length;
 }
 
-/** Terminal push notifications are post-marker deferred completion work. */
+/** Slack-originated callbacks never send Web push, including on recovery. */
 function threadPushNotificationCount(run: SplitSlackWatchedRun): number {
   return context.mocks.webpush.sendNotification.mock.calls.filter((call) => {
     const payload = z
@@ -635,7 +635,7 @@ describe("chat-run-finished workflow automations", () => {
           expect(failedAcknowledgement.status).toBe(500);
           await expectAutomationFired(automationId);
           await flushWaitUntilForTest();
-          expect(threadPushNotificationCount(run)).toBe(1);
+          expect(threadPushNotificationCount(run)).toBe(0);
         },
       );
       const admitted = await automationInputsForSourceRun(run);
@@ -718,7 +718,7 @@ describe("chat-run-finished workflow automations", () => {
       await webhooks.requestAgentComplete(completion, run.headers, [200]);
       await expectAutomationFired(run.automationId);
       await flushWaitUntilForTest();
-      expect(threadPushNotificationCount(run)).toBe(1);
+      expect(threadPushNotificationCount(run)).toBe(0);
 
       await webhooks.requestAgentComplete(completion, run.headers, [200]);
       await flushWaitUntilForTest();
@@ -727,7 +727,7 @@ describe("chat-run-finished workflow automations", () => {
       });
       await expect(lifecycleMarkerCount(run, "completed")).resolves.toBe(1);
       expect(slackThreadDeliveryCount(run)).toBe(1);
-      expect(threadPushNotificationCount(run)).toBe(1);
+      expect(threadPushNotificationCount(run)).toBe(0);
     },
   );
 
@@ -762,7 +762,7 @@ describe("chat-run-finished workflow automations", () => {
       await flushWaitUntilForTest();
       await expectAutomationFired(run.automationId);
       expect(slackThreadDeliveryCount(run)).toBe(1);
-      expect(threadPushNotificationCount(run)).toBe(1);
+      expect(threadPushNotificationCount(run)).toBe(0);
 
       await api.requestCancelRun(run.fixture.actor, run.runId, [200]);
       await flushWaitUntilForTest();
@@ -770,7 +770,7 @@ describe("chat-run-finished workflow automations", () => {
       expect(admitted.inputs).toHaveLength(1);
       await expect(lifecycleMarkerCount(run, "cancelled")).resolves.toBe(1);
       expect(slackThreadDeliveryCount(run)).toBe(1);
-      expect(threadPushNotificationCount(run)).toBe(1);
+      expect(threadPushNotificationCount(run)).toBe(0);
     },
   );
 
@@ -919,7 +919,7 @@ describe("chat-run-finished workflow automations", () => {
         context,
         patternMatch,
       );
-      expect(fireAlwaysState).toMatchObject({ autonomyBudget: 10 });
+      expect(fireAlwaysState).toMatchObject({ autonomyBudget: 32 });
       expect(patternMatchState).toMatchObject({ autonomyBudget: 0 });
       await expect(
         readLatestWorkflowAutomationRunFixture(context, fireAlways),

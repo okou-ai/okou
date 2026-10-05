@@ -21,8 +21,8 @@ import { settle, tapError, throwIfAbort } from "../utils";
 
 /**
  * Shape of an upserted provider row that the paste handler serializes into the
- * REST response. Subset of the internal `ModelProviderInfo` (drops `userId`,
- * `tokenExpiresAt`) — kept here so both org and personal routes share one DTO.
+ * REST response. Organization writes provide Date timestamps and personal
+ * account writes provide ISO strings; both routes share this response DTO.
  */
 interface UpsertedProvider {
   id: string;
@@ -91,9 +91,9 @@ function serializeUpsertedProvider(provider: UpsertedProvider) {
 
 /**
  * Caller-supplied upsert. Org route binds this to
- * `upsertOrgMultiAuthModelProvider`, personal route binds it to a closure
- * over `upsertUserMultiAuthModelProvider(orgId, userId, ...)`. Both signatures
- * normalize to the same shape from the handler's perspective.
+ * `upsertOrgMultiAuthModelProvider$`; personal routes bind it to
+ * `upsertPersonalModelProviderAccount$`. Both callbacks normalize to the same
+ * shape from the handler's perspective.
  */
 type UpsertCodexProvider = (args: {
   authMethod: "auth_json";

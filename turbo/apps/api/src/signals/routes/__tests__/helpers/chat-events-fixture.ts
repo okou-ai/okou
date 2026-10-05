@@ -28,7 +28,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { createStore } from "ccstate";
@@ -728,9 +727,6 @@ export function createChatEventsFixture(context: TestContext) {
     options: Parameters<typeof mockCodexDeviceAuthProvider>[0] = {},
     selectedModel: PiGptBddModel = "gpt-6-luna",
   ) {
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-    });
     const oauth = mockCodexDeviceAuthProvider({
       tokenScope: "personal",
       ...options,

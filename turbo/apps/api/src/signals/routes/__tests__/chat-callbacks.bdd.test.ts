@@ -4525,7 +4525,7 @@ describe("CHAT-02: failed chat callbacks", () => {
             type: "claude-code-oauth-token",
             secret: "sk-ant-oat-reconnected-bdd",
           },
-          [200],
+          [201],
         );
         const retry = await startChatRun(fixture.actor, {
           agentId: fixture.agentId,

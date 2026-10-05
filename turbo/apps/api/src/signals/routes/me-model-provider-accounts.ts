@@ -1,7 +1,5 @@
 import { modelCatalog$ } from "../services/model-catalog.service";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { isNotFoundResponse, notFound } from "../../lib/error";
@@ -22,7 +20,6 @@ import {
   consumePersonalCodexRateLimitResetCredit$,
   refreshPersonalModelProviderSubscriptionUsage$,
 } from "../services/model-provider-subscription-usage.service";
-import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
 import {
   failedRunAccountIdentity,
   personalSubscriptionAccountIdentity,
@@ -92,22 +89,6 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const featureSwitchContext = await get(
-    userFeatureSwitchContext(auth.orgId, auth.userId),
-  );
-  signal.throwIfAborted();
-  if (
-    !(await personalAccountsEnabledForOrg(
-      set(writeDb$),
-      auth.orgId,
-      isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
-      ),
-    ))
-  ) {
-    return notFound("Resource not found");
-  }
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
@@ -130,18 +111,6 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );
   signal.throwIfAborted();
-  if (
-    !(await personalAccountsEnabledForOrg(
-      set(writeDb$),
-      auth.orgId,
-      isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
-      ),
-    ))
-  ) {
-    return notFound("Resource not found");
-  }
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.delete),
   );
@@ -178,23 +147,6 @@ function resetAccountSubscriptionUsage(
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(route));
     const runId = "runId" in params ? params.runId : undefined;
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    if (
-      !(await personalAccountsEnabledForOrg(
-        set(writeDb$),
-        auth.orgId,
-        isFeatureEnabled(
-          FeatureSwitchKey.PersonalModelProviderAccounts,
-          featureSwitchContext,
-        ),
-      )) &&
-      !runId
-    ) {
-      return notFound("Resource not found");
-    }
     const body = await get(bodyResultOf(route));
     signal.throwIfAborted();
     if (!body.ok) {

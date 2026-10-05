@@ -1692,8 +1692,15 @@
     {
       "idx": 1319,
       "version": "7",
-      "when": 1791118744492,
-      "tag": "1319_fair_doctor_spectrum",
+      "when": 1791184868198,
+      "tag": "1319_expand_autonomy_budget_to_32",
+      "breakpoints": true
+    },
+    {
+      "idx": 1320,
+      "version": "7",
+      "when": 1791193701863,
+      "tag": "1320_wandering_living_mummy",
       "breakpoints": true
     }
   ]

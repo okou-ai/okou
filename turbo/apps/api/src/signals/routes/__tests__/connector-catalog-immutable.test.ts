@@ -15,7 +15,7 @@ beforeEach(async () => {
   postgres = new PGlite();
   const migration = await readFile(
     new URL(
-      "../../../../../../packages/db/src/migrations/1319_fair_doctor_spectrum.sql",
+      "../../../../../../packages/db/src/migrations/1320_wandering_living_mummy.sql",
       import.meta.url,
     ),
     "utf8",

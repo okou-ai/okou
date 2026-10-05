@@ -47,12 +47,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SocialDataJobs]: {
-    maintainer: "ethan@okou.ai",
-    description: "Enable bounded public Social data jobs and saved results",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -362,6 +356,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PwaNavigation]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser. Enable manually to try it.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ClaudeCodeUsageReset]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -376,12 +376,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.HostedSiteDelete]: {
-    maintainer: "linghan@okou.ai",
-    description:
-      "Let a hosted site's owner take the site and all of its versions offline with okou host delete; redeploying restores it.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ComposerModelPanel]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -389,23 +383,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.PersonalModelProviderAccounts]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Allow personal Codex and Claude Code subscriptions to store and manually switch between multiple accounts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.AgentPhoneGroupHistory]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Read locally archived iMessage group messages visible to the authenticated member.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -437,13 +417,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Pin chats from the desktop title and keep Pin, Share, and More visible in the mobile thread header.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatMessageShare]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Share one assistant message and its user prompt from the message actions, copying the public link immediately.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -885,69 +885,88 @@ export async function listConnectorAccountsByIds(
   });
 }
 
-async function exactOwnedAccountExists(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
+export const renameConnectorAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly target: ConnectorAccountTarget;
+      readonly connectionId: string;
+      readonly displayName: string | null;
+    },
+  ): Promise<Date | null> => {
+    return await set(writeDb$).transaction(async (tx) => {
+      if (args.target.kind === "custom") {
+        const [definition] = await tx
+          .select({
+            providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+          })
+          .from(orgCustomConnectors)
+          .leftJoin(
+            orgCustomConnectorOauthConfigs,
+            and(
+              eq(
+                orgCustomConnectorOauthConfigs.connectorId,
+                orgCustomConnectors.id,
+              ),
+              eq(
+                orgCustomConnectorOauthConfigs.orgId,
+                orgCustomConnectors.orgId,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(orgCustomConnectors.id, args.target.customConnectorId),
+              eq(orgCustomConnectors.orgId, args.orgId),
+            ),
+          )
+          .limit(1);
+        if (
+          definition === undefined ||
+          isIntegrationManagedCustomConnectorProviderAdapter(
+            definition.providerAdapter,
+          )
+        ) {
+          return null;
+        }
+      }
+      const [row] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (row === undefined) {
+        return null;
+      }
+      const [updated] = await tx
+        .update(connectors)
+        .set({
+          displayName: args.displayName,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .returning({ updatedAt: connectors.updatedAt });
+      return updated?.updatedAt ?? null;
+    });
   },
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  return row !== undefined;
-}
-
-export async function renameConnectorAccount(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
-    readonly displayName: string | null;
-  },
-): Promise<Date | null> {
-  return await db.transaction(async (tx) => {
-    if (
-      args.target.kind === "custom" &&
-      !(await customTargetIsVisible(tx, {
-        orgId: args.orgId,
-        customConnectorId: args.target.customConnectorId,
-      }))
-    ) {
-      return null;
-    }
-    if (!(await exactOwnedAccountExists(tx, args))) {
-      return null;
-    }
-    const [updated] = await tx
-      .update(connectors)
-      .set({ displayName: args.displayName, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(connectors.id, args.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      )
-      .returning({ updatedAt: connectors.updatedAt });
-    return updated?.updatedAt ?? null;
-  });
-}
+);
 
 function connectorAccountOwnerCondition(args: {
   readonly orgId: string;

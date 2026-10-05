@@ -405,7 +405,7 @@ function affectedCodexExpiryBindings(
   ];
 }
 
-export type UpsertPersonalAccountArgs = {
+type UpsertPersonalAccountArgs = {
   readonly authSession?: DeviceAuthSessionPublication;
   readonly orgId: string;
   readonly userId: string;
@@ -1012,19 +1012,6 @@ export function personalSubscriptionAccountAccessCondition(runId?: string) {
       );
 }
 
-export function visiblePersonalModelProviderCondition() {
-  return sql`(
-    NOT EXISTS (
-      SELECT 1 FROM ${modelProviderAccounts}
-      WHERE ${modelProviderAccounts.modelProviderId} = ${modelProviders.id}
-    ) OR EXISTS (
-      SELECT 1 FROM ${modelProviderAccounts}
-      WHERE ${modelProviderAccounts.modelProviderId} = ${modelProviders.id}
-        AND ${modelProviderAccounts.disconnectedAt} IS NULL
-    )
-  )`;
-}
-
 /** The caller executes the statement in its terminal transaction. A retained
  * account is deleted once no live run references it, then its logical provider
  * once no account references it. */
@@ -1169,8 +1156,6 @@ async function credentialValues(
   }
   return values;
 }
-
-/** Exact connected account observation; no lock or sibling substitution. */
 
 /** Organization subscriptions remain singleton `model_providers` + `secrets`
  * credentials. */

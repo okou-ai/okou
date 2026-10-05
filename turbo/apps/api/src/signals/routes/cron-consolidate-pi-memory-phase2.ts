@@ -7,17 +7,12 @@ import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import {
-  executePiMemoryPhase2Work$,
+  createPiMemoryPhase2Worker,
   type PiMemoryPhase2WorkerResult,
 } from "../services/pi-memory-phase2-worker.service";
+import type { PiMemoryPhase2OwnerScope } from "../services/pi-memory-phase2-job.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 import { admitsPiMemoryBackgroundWorkerInvocation } from "./pi-memory-background-worker-breaker";
-
-interface PiMemoryPhase2RouteScope {
-  readonly memoryStorageId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}
 
 const ZERO_PHASE2_RESPONSE: CronConsolidatePiMemoryPhase2Response =
   Object.freeze({
@@ -48,8 +43,9 @@ function responseForPhase2Result(
 }
 
 function consolidatePiMemoryPhase2Routes(
-  scope: PiMemoryPhase2RouteScope | undefined,
+  scope: PiMemoryPhase2OwnerScope | undefined,
 ): readonly RouteEntry[] {
+  const { execute$ } = createPiMemoryPhase2Worker(scope);
   const consolidatePiMemoryPhase2Route$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       if (!get(hasValidCronSecret$)) {
@@ -59,11 +55,7 @@ function consolidatePiMemoryPhase2Routes(
         return { status: 200 as const, body: ZERO_PHASE2_RESPONSE };
       }
       signal.throwIfAborted();
-      const result = await set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime: nowDate() },
-        signal,
-      );
+      const result = await set(execute$, nowDate(), signal);
       signal.throwIfAborted();
       return { status: 200 as const, body: responseForPhase2Result(result) };
     },

@@ -1533,7 +1533,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     await client.query(
       `UPDATE "agent_runs"
-       SET "trigger_source" = 'chat', "autonomy_budget" = 10
+       SET "trigger_source" = 'chat', "autonomy_budget" = 32
        WHERE "id" = $1`,
       [fixture.productRunId],
     );
@@ -1564,7 +1564,7 @@ async function validatePermanentAgentRunMetadataState(
       query: `INSERT INTO "agent_runs" (
         "id", "user_id", "session_id", "status", "prompt", "org_id",
         "trigger_source", "autonomy_budget"
-      ) VALUES ($1, $2, $3, 'failed', 'invalid budget', $4, 'chat', 11)`,
+      ) VALUES ($1, $2, $3, 'failed', 'invalid budget', $4, 'chat', 33)`,
       values: [
         fixture.outOfRangeRunId,
         fixture.userId,
@@ -1623,7 +1623,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     assert.deepEqual(validStates.rows, [
       {
-        autonomyBudget: 10,
+        autonomyBudget: 32,
         id: fixture.productRunId,
         summary: null,
         triggerSource: "chat",

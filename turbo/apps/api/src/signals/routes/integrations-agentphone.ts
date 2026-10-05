@@ -1,6 +1,5 @@
 import { linkAgentPhoneIdentity$ } from "../services/agentphone-link.service";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
@@ -22,7 +21,6 @@ import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   consumeAgentPhoneConnectionCode$,
   createAgentPhoneConnectionCode$,
@@ -1445,16 +1443,6 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
 const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(groupHistoryQuery$);
-  const featureContext = await get(
-    userFeatureSwitchContext(auth.orgId, auth.userId),
-  );
-  signal.throwIfAborted();
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.AgentPhoneGroupHistory, featureContext)
-  ) {
-    return notFound("iMessage group history is not available");
-  }
-
   const config = getAgentPhoneConfig();
   if (!config.agentphoneAgentId) {
     return notFound("iMessage group history is not available");

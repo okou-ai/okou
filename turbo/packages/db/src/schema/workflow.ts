@@ -266,7 +266,7 @@ export const workflowAutomations = pgTable(
     lastRunAt: timestamp("last_run_at"),
     lastRunId: uuid("last_run_id"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
-    autonomyBudget: integer("autonomy_budget").notNull().default(10),
+    autonomyBudget: integer("autonomy_budget").notNull().default(32),
     officialBlueprintKey: varchar("official_blueprint_key", { length: 64 }),
     officialAppliedFingerprint: varchar("official_applied_fingerprint", {
       length: 64,
@@ -333,7 +333,7 @@ export const workflowAutomations = pgTable(
       ),
       check(
         "workflow_automations_autonomy_budget_check",
-        sql`${table.autonomyBudget} BETWEEN 0 AND 10`,
+        sql`${table.autonomyBudget} BETWEEN 0 AND 32`,
       ),
       uniqueIndex("idx_workflow_automations_official_blueprint_unique")
         .on(table.workflowId, table.officialBlueprintKey)

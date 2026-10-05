@@ -373,6 +373,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "에이전트를 불러올 수 없습니다",
+      "backToChats": "채팅 목록으로 돌아가기",
+      "chatListUnavailable": "채팅을 불러올 수 없습니다",
+      "chats": "채팅",
+      "me": "나",
+      "navigation": "기본 탐색",
+      "searchAgents": "에이전트 검색",
+      "switchAgent": "에이전트 전환"
+    },
     "shortcutHelp": {
       "close": "단축키 닫기",
       "description": "이 페이지에서 사용 가능한 단축키",
@@ -4898,14 +4908,10 @@
         "accountFallback": "계정 {{number}}",
         "accountsDescription": "새 실행에 각 공급자가 사용할 계정을 선택하세요.",
         "accountsSectionTitle": "개인 계정",
-        "actionForProvider": "{{provider}} {{action}}",
         "activeAccount": "활성",
-        "addAccount": "계정 추가",
         "autoDescription": "Claude 또는 ChatGPT 계정을 연결하여 더 많은 모델을 사용하세요.",
         "autoTitle": "더 많은 모델 사용하기",
-        "claudeDescription": "Claude 구독으로 로그인하여 Claude Code 기반 에이전트에서 Claude 모델을 사용하세요.",
         "claudeTitle": "Claude",
-        "codexDescription": "ChatGPT 계정을 연결하여 GPT 모델을 사용하세요.",
         "codexTitle": "ChatGPT (Codex)",
         "connectAccount": "계정 연결",
         "description": "본인의 자격 증명으로 실행 시에만 사용됩니다.",
@@ -4918,10 +4924,8 @@
         "noAccounts": "연결된 계정이 없습니다.",
         "reconnectAccount": "다시 연결",
         "retry": "다시 시도",
-        "sectionTitle": "개인",
         "status": {
           "connected": "연결됨",
-          "connectedWithDetail": "연결됨 ({{detail}})",
           "fiveHour": "5시간",
           "left": "{{percent}} 남음",
           "stale": "주의 필요",
@@ -5033,7 +5037,6 @@
       "toasts": {
         "accountDisconnected": "계정 연결이 해제되었습니다",
         "accountSwitched": "활성 계정이 변경되었습니다",
-        "disconnected": "{{provider}} 연결 해제됨",
         "policiesUpdated": "모델 공급자 설정이 업데이트되었습니다.",
         "reset": "{{provider}} 사용량이 재설정되었습니다.",
         "resetUnavailable": "사용 가능한 {{provider}} 사용량 재설정이 없습니다.",
@@ -5305,17 +5308,14 @@
     "shared": {
       "cancel": "취소",
       "close": "닫기",
-      "connect": "연결",
       "connecting": "연결 중...",
       "delete": "삭제",
       "discard": "버리기",
-      "disconnect": "연결 해제",
       "edit": "편집",
       "loading": "로딩 중",
       "moreOptions": "더 보기",
       "reconnect": "재연결",
       "remove": "제거",
-      "replace": "교체",
       "save": "저장",
       "saveChanges": "변경 사항 저장",
       "saving": "저장 중..."

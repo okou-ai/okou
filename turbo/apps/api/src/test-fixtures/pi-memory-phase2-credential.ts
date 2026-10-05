@@ -137,7 +137,6 @@ export async function createPhase2Provider(
   if (type === "codex-oauth-token") {
     await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.PiMemory]: true,
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
     });
     const account = subscription?.accountId ?? `account-${randomUUID()}`;
     const token = makeCodexJwt({

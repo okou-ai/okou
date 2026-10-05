@@ -113,7 +113,7 @@ const expectedVercelCrons = [
   },
   {
     path: cronCompactChatThreadSnapshotsContract.compact.path,
-    schedule: "0 * * * *",
+    schedule: "*/10 * * * *",
   },
   {
     path: cronReconcileArtifactCatalogContract.reconcile.path,

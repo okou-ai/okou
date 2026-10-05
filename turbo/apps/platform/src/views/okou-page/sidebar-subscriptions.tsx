@@ -17,7 +17,10 @@ import {
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
 import { subscriptionUsageWindows } from "../../lib/subscription-usage-windows.ts";
-import { CodexResetCreditsMenuItem } from "./components/preferences/codex-reset-usage-dialog.tsx";
+import {
+  CodexResetCreditsButton,
+  CodexResetCreditsMenuItem,
+} from "./components/preferences/codex-reset-usage-dialog.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 
@@ -47,6 +50,7 @@ export function AccountMenuSubscriptionsPanel({
   rows,
   onResetCodexUsage,
   resetPending = false,
+  resetControl = "menu",
 }: {
   readonly loading: boolean;
   readonly rows: readonly AccountMenuSubscriptionUsageRow[];
@@ -55,6 +59,7 @@ export function AccountMenuSubscriptionsPanel({
     resetCredits: number | null,
   ) => void;
   readonly resetPending?: boolean;
+  readonly resetControl?: "menu" | "button";
 }) {
   const { t } = useTranslation();
   return (
@@ -85,6 +90,7 @@ export function AccountMenuSubscriptionsPanel({
                   resetCredits={row.resetCredits}
                   resetCreditsNextExpiresAt={row.resetCreditsNextExpiresAt}
                   resetPending={resetPending}
+                  resetControl={resetControl}
                   onResetCodexUsage={onResetCodexUsage}
                 />
               );
@@ -137,6 +143,7 @@ function AccountMenuSubscriptionProviderSection({
   resetCredits,
   resetCreditsNextExpiresAt,
   resetPending,
+  resetControl,
   onResetCodexUsage,
 }: {
   readonly divided: boolean;
@@ -146,6 +153,7 @@ function AccountMenuSubscriptionProviderSection({
   readonly resetCredits?: number | null;
   readonly resetCreditsNextExpiresAt?: string | null;
   readonly resetPending: boolean;
+  readonly resetControl: "menu" | "button";
   readonly onResetCodexUsage?: (
     type: AccountMenuSubscriptionUsageRow["type"],
     resetCredits: number | null,
@@ -153,6 +161,10 @@ function AccountMenuSubscriptionProviderSection({
 }) {
   const { t } = useTranslation();
   const windows = subscriptionUsageWindows(usage);
+  const ResetControl =
+    resetControl === "menu"
+      ? CodexResetCreditsMenuItem
+      : CodexResetCreditsButton;
 
   return (
     <section
@@ -170,7 +182,7 @@ function AccountMenuSubscriptionProviderSection({
           {label}
         </h3>
         {resetCredits === undefined ? null : (
-          <CodexResetCreditsMenuItem
+          <ResetControl
             className="ml-auto -me-1"
             resetCredits={resetCredits}
             resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}

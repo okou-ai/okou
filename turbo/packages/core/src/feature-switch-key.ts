@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  SocialDataJobs = "socialDataJobs",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
@@ -45,10 +44,9 @@ export enum FeatureSwitchKey {
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
-  PersonalModelProviderAccounts = "multipleSubscriptions",
+  PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
-  AgentPhoneGroupHistory = "agentPhoneGroupHistory",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   PiMemory = "piMemory",
@@ -60,7 +58,6 @@ export enum FeatureSwitchKey {
   AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
-  ChatMessageShare = "chatMessageShare",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ComposerTemplateChipCover = "composerTemplateChipCover",
@@ -74,6 +71,5 @@ export enum FeatureSwitchKey {
   HomeTaskRecommendations = "homeTaskRecommendations",
   ClaudeCodeUsageReset = "claudeCodeUsageReset",
   AgentResponsibilitySetup = "agentResponsibilitySetup",
-  HostedSiteDelete = "hostedSiteDelete",
   ComposerModelPanel = "composerModelPanel",
 }

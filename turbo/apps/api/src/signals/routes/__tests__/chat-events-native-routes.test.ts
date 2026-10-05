@@ -903,9 +903,6 @@ describe("shared native Pi route activation", () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     configureNativeCliArtifact();
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-    });
     const model = "claude-sonnet-5";
     await api.updateOrgModelPolicies(actor, [
       {

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -7,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/scrape";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { server } from "../../../mocks/server";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
@@ -21,6 +23,7 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { createDeferredPromise } from "../../utils";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { billingStatusRoutes } from "../billing-status";
 import { scrapeRoutes } from "../scrape";
@@ -33,6 +36,10 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 
@@ -133,6 +140,180 @@ async function setActorCredits(
 async function fundActor(actor: ApiTestUser): Promise<void> {
   await bootstrapOnboarding(actor);
   await setActorCredits(actor, 1000);
+}
+
+interface FundedScrapeActor {
+  readonly actor: ApiTestUser;
+  readonly orgId: string;
+  readonly customerId: string;
+  readonly subscriptionId: string;
+  readonly invoiceId: string;
+  readonly storageBucket: string;
+  readonly kmsKeyId: string | undefined;
+}
+
+async function cleanupFundedScrapeActor(
+  owned: FundedScrapeActor,
+): Promise<void> {
+  mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
+  mockEnv("SECRETS_KMS_KEY_ID", owned.kmsKeyId);
+  context.mocks.s3.send.mockResolvedValue({
+    Contents: [],
+    IsTruncated: false,
+  });
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  await flushWaitUntilForTest();
+
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.subscriptions.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "active",
+    metadata: {},
+  });
+  context.mocks.stripe.subscriptions.update.mockResolvedValue({
+    id: owned.subscriptionId,
+  });
+  context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "canceled",
+  });
+  // This one-time credit invoice has no subscription invoice to refund.
+  context.mocks.stripe.invoices.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.deleted",
+    data: { id: owned.orgId },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+
+  // Public deletion removes the wallet and active work. Production retains
+  // immutable billing and usage history under this fixture's unique IDs.
+  await expect(credits(owned.actor)).resolves.toBe(0);
+  expect(
+    (
+      await createRunReadsApi(context).requestListLogs(
+        owned.actor,
+        { limit: 50 },
+        [200],
+      )
+    ).body.data,
+  ).toStrictEqual([]);
+}
+
+async function fundActorWithSubscription(actor: ApiTestUser) {
+  if (!actor.orgId) {
+    throw new Error("Scrape test actor must belong to an organization");
+  }
+  const suffix = randomUUID();
+  const owned = {
+    actor,
+    orgId: actor.orgId,
+    customerId: `cus_scrape_${suffix}`,
+    subscriptionId: `sub_scrape_${suffix}`,
+    invoiceId: `in_scrape_${suffix}`,
+    storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    kmsKeyId: env("SECRETS_KMS_KEY_ID"),
+  };
+  const owner = createFixtureOperationOwner(async () => {
+    await cleanupFundedScrapeActor(owned);
+  });
+  await owner.run(async () => {
+    await bootstrapOnboarding(actor);
+    await expect(credits(actor)).resolves.toBe(0);
+
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureStripeBillingEnv();
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: owned.customerId,
+      metadata: { orgId: owned.orgId },
+    });
+    const subscription = {
+      id: owned.subscriptionId,
+      customer: owned.customerId,
+      status: "active",
+      metadata: {},
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      items: { data: [{ price: { id: "price_bdd_pro" } }] },
+    };
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_scrape_created_${suffix}`,
+        type: "customer.subscription.created",
+        created: Math.floor(now() / 1000),
+        data: { object: subscription },
+      },
+      [200],
+    );
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_scrape_updated_${suffix}`,
+        type: "customer.subscription.updated",
+        created: Math.floor(now() / 1000),
+        data: { object: subscription },
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const subscribed = await accept(
+      client()(billingStatusContract).get({
+        headers: authenticate(actor),
+      }),
+      [200],
+    );
+    expect(subscribed.body).toMatchObject({
+      tier: "pro",
+      status: "active",
+      credits: 0,
+    });
+
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_scrape_paid_${suffix}`,
+        type: "invoice.paid",
+        created: Math.floor(now() / 1000),
+        data: {
+          object: {
+            id: owned.invoiceId,
+            customer: owned.customerId,
+            amount_paid: 100,
+            metadata: {
+              type: "auto_recharge",
+              orgId: owned.orgId,
+              creditsAmount: "1000",
+            },
+            parent: null,
+            lines: { has_more: false, data: [] },
+          },
+        },
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const funded = await accept(
+      client()(billingStatusContract).get({
+        headers: authenticate(actor),
+      }),
+      [200],
+    );
+    expect(funded.body).toMatchObject({
+      tier: "pro",
+      status: "active",
+      credits: 1000,
+    });
+  });
+  return owner;
 }
 
 async function createAdmittedScrapeRun(actor: ApiTestUser): Promise<string> {
@@ -610,30 +791,32 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await bootstrapOnboarding(actor);
-    await setActorCredits(actor, 0);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        firecrawlRequests += 1;
-        return HttpResponse.json({ success: true, data: {} });
-      }),
-    );
+    const owner = createPublicUnfundedProFixture(context, actor);
+    await owner.initialize();
+    await owner.run(async () => {
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          firecrawlRequests += 1;
+          return HttpResponse.json({ success: true, data: {} });
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
-        },
-      }),
-      [402],
-    );
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
+          },
+        }),
+        [402],
+      );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(firecrawlRequests).toBe(0);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expect(firecrawlRequests).toBe(0);
+    });
   });
 
   it("continues an admitted run after credits are exhausted", async () => {
@@ -733,61 +916,63 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Example page",
-            metadata: {
-              sourceURL: "https://example.com/page",
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Example page",
+              metadata: {
+                sourceURL: "https://example.com/page",
+              },
             },
+          });
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
           },
-        });
-      }),
-    );
+        }),
+        [200],
+      );
+      const afterCredits = await credits(actor);
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
+      expect(requestBody).toStrictEqual({
+        url: "https://example.com/page",
+        formats: ["markdown"],
+        parsers: [],
+        proxy: "basic",
+        skipTlsVerification: false,
+        maxAge: 0,
+        storeInCache: false,
+        timeout: 25_000,
+      });
+      expect(response.body).toMatchObject({
+        requestedUrl: "https://example.com/page",
+        finalUrl: "https://example.com/page",
+        format: "markdown",
+        mode: "standard",
+        provider: "firecrawl",
+        creditsCharged: 4,
+        billingCategory: "standard.markdown",
+        billingQuantity: 1,
+        result: {
+          markdown: "# Example page",
         },
-      }),
-      [200],
-    );
-    const afterCredits = await credits(actor);
-
-    expect(requestBody).toStrictEqual({
-      url: "https://example.com/page",
-      formats: ["markdown"],
-      parsers: [],
-      proxy: "basic",
-      skipTlsVerification: false,
-      maxAge: 0,
-      storeInCache: false,
-      timeout: 25_000,
+      });
+      expect(beforeCredits - afterCredits).toBe(4);
     });
-    expect(response.body).toMatchObject({
-      requestedUrl: "https://example.com/page",
-      finalUrl: "https://example.com/page",
-      format: "markdown",
-      mode: "standard",
-      provider: "firecrawl",
-      creditsCharged: 4,
-      billingCategory: "standard.markdown",
-      billingQuantity: 1,
-      result: {
-        markdown: "# Example page",
-      },
-    });
-    expect(beforeCredits - afterCredits).toBe(4);
   });
 
   it("records usage when the request aborts after Firecrawl succeeds", async () => {
@@ -798,46 +983,48 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    let providerCompleted = false;
-    context.mocks.dns.lookupOverrides.set("final.example.test", () => {
-      controller.abort(abortError);
-      return [{ address: "93.184.216.35", family: 4 }];
-    });
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
+      let providerCompleted = false;
+      context.mocks.dns.lookupOverrides.set("final.example.test", () => {
+        controller.abort(abortError);
+        return [{ address: "93.184.216.35", family: 4 }];
+      });
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        providerCompleted = true;
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Example page",
-            metadata: {
-              url: "https://final.example.test/page",
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          providerCompleted = true;
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Example page",
+              metadata: {
+                url: "https://final.example.test/page",
+              },
             },
-          },
-        });
-      }),
-    );
+          });
+        }),
+      );
 
-    const response = await rawScrapeRequest(
-      actor,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      {
-        requestSignal: controller.signal,
-        usagePricingResolution: pricing.resolution,
-      },
-    );
-    const afterCredits = await credits(actor);
+      const response = await rawScrapeRequest(
+        actor,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        {
+          requestSignal: controller.signal,
+          usagePricingResolution: pricing.resolution,
+        },
+      );
+      const afterCredits = await credits(actor);
 
-    expect(response.status).toBe(200);
-    expect(providerCompleted).toBeTruthy();
-    expect(beforeCredits - afterCredits).toBe(4);
+      expect(response.status).toBe(200);
+      expect(providerCompleted).toBeTruthy();
+      expect(beforeCredits - afterCredits).toBe(4);
+    });
   });
 
   it("does not start Firecrawl when the request aborts before provider launch", async () => {
@@ -848,42 +1035,44 @@ describe("okou scrape route", () => {
     let firecrawlRequests = 0;
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    context.mocks.dns.lookupOverrides.set("example.com", () => {
-      controller.abort(abortError);
-      return [{ address: "93.184.216.34", family: 4 }];
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
+      context.mocks.dns.lookupOverrides.set("example.com", () => {
+        controller.abort(abortError);
+        return [{ address: "93.184.216.34", family: 4 }];
+      });
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          firecrawlRequests += 1;
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Example page",
+              metadata: { url: "https://example.com/page" },
+            },
+          });
+        }),
+      );
+
+      const response = await rawScrapeRequest(
+        actor,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        {
+          requestSignal: controller.signal,
+          usagePricingResolution: pricing.resolution,
+        },
+      );
+      const afterCredits = await credits(actor);
+
+      expect(response.status).toBe(500);
+      expect(firecrawlRequests).toBe(0);
+      expect(afterCredits).toBe(beforeCredits);
     });
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        firecrawlRequests += 1;
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Example page",
-            metadata: { url: "https://example.com/page" },
-          },
-        });
-      }),
-    );
-
-    const response = await rawScrapeRequest(
-      actor,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      {
-        requestSignal: controller.signal,
-        usagePricingResolution: pricing.resolution,
-      },
-    );
-    const afterCredits = await credits(actor);
-
-    expect(response.status).toBe(500);
-    expect(firecrawlRequests).toBe(0);
-    expect(afterCredits).toBe(beforeCredits);
   });
 
   it("cancels Firecrawl when the request aborts while it is in flight", async () => {
@@ -897,47 +1086,55 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
-        providerStarted.resolve(undefined);
-        controller.abort(abortError);
-        providerSignalAborted = request.signal.aborted;
-        await providerResponse.promise;
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Example page",
-            metadata: {
-              url: "https://example.com/page",
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
+          providerStarted.resolve(undefined);
+          controller.abort(abortError);
+          providerSignalAborted = request.signal.aborted;
+          await providerResponse.promise;
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Example page",
+              metadata: {
+                url: "https://example.com/page",
+              },
             },
+          });
+        }),
+      );
+
+      const responsePromise = owner.run(async () => {
+        return await rawScrapeRequest(
+          actor,
+          {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
           },
-        });
-      }),
-    );
+          {
+            requestSignal: controller.signal,
+            usagePricingResolution: pricing.resolution,
+          },
+        );
+      });
+      const [response] = await Promise.all([
+        responsePromise,
+        (async () => {
+          await providerStarted.promise;
+          providerResponse.resolve(undefined);
+        })(),
+      ]);
+      const afterCredits = await credits(actor);
 
-    const responsePromise = rawScrapeRequest(
-      actor,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      {
-        requestSignal: controller.signal,
-        usagePricingResolution: pricing.resolution,
-      },
-    );
-    await providerStarted.promise;
-    providerResponse.resolve(undefined);
-    const response = await responsePromise;
-    const afterCredits = await credits(actor);
-
-    expect(response.status).toBe(500);
-    expect(providerSignalAborted).toBeTruthy();
-    expect(afterCredits).toBe(beforeCredits);
+      expect(response.status).toBe(500);
+      expect(providerSignalAborted).toBeTruthy();
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 
   it("stops in-flight Firecrawl work when the instance lifecycle aborts", async () => {
@@ -949,40 +1146,42 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, ({ request }) => {
-        controller.abort(abortError);
-        providerSignalAborted = request.signal.aborted;
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Example page",
-            metadata: { url: "https://example.com/page" },
-          },
-        });
-      }),
-    );
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, ({ request }) => {
+          controller.abort(abortError);
+          providerSignalAborted = request.signal.aborted;
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Example page",
+              metadata: { url: "https://example.com/page" },
+            },
+          });
+        }),
+      );
 
-    const response = await rawScrapeRequest(
-      actor,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      {
-        instanceSignal: controller.signal,
-        usagePricingResolution: pricing.resolution,
-      },
-    );
-    const afterCredits = await credits(actor);
+      const response = await rawScrapeRequest(
+        actor,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        {
+          instanceSignal: AbortSignal.any([controller.signal, context.signal]),
+          usagePricingResolution: pricing.resolution,
+        },
+      );
+      const afterCredits = await credits(actor);
 
-    expect(response.status).toBe(500);
-    expect(providerSignalAborted).toBeTruthy();
-    expect(afterCredits).toBe(beforeCredits);
+      expect(response.status).toBe(500);
+      expect(providerSignalAborted).toBeTruthy();
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 
   it("records both concurrent same-org scrape requests", async () => {
@@ -991,56 +1190,62 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
-        firecrawlRequests += 1;
-        const body = (await request.json()) as { readonly url?: string };
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: `# ${body.url ?? "unknown"}`,
-            metadata: {
-              sourceURL: body.url ?? "https://example.com/page",
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
+          firecrawlRequests += 1;
+          const body = (await request.json()) as { readonly url?: string };
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: `# ${body.url ?? "unknown"}`,
+              metadata: {
+                sourceURL: body.url ?? "https://example.com/page",
+              },
             },
-          },
-        });
-      }),
-    );
-
-    const scrapeClient = client(pricing.resolution);
-    const [first, second] = await Promise.all([
-      accept(
-        scrapeClient(scrapeContract).scrape({
-          headers: authenticate(actor),
-          body: {
-            url: "https://example.com/one",
-            format: "markdown",
-            mode: "standard",
-          },
+          });
         }),
-        [200],
-      ),
-      accept(
-        scrapeClient(scrapeContract).scrape({
-          headers: authenticate(actor),
-          body: {
-            url: "https://example.com/two",
-            format: "markdown",
-            mode: "standard",
-          },
-        }),
-        [200],
-      ),
-    ]);
-    const afterCredits = await credits(actor);
+      );
 
-    expect(first.body.creditsCharged).toBe(4);
-    expect(second.body.creditsCharged).toBe(4);
-    expect(firecrawlRequests).toBe(2);
-    expect(beforeCredits - afterCredits).toBe(8);
+      const scrapeClient = client(pricing.resolution);
+      const [first, second] = await Promise.all([
+        owner.run(async () => {
+          return await accept(
+            scrapeClient(scrapeContract).scrape({
+              headers: authenticate(actor),
+              body: {
+                url: "https://example.com/one",
+                format: "markdown",
+                mode: "standard",
+              },
+            }),
+            [200],
+          );
+        }),
+        owner.run(async () => {
+          return await accept(
+            scrapeClient(scrapeContract).scrape({
+              headers: authenticate(actor),
+              body: {
+                url: "https://example.com/two",
+                format: "markdown",
+                mode: "standard",
+              },
+            }),
+            [200],
+          );
+        }),
+      ]);
+      const afterCredits = await credits(actor);
+
+      expect(first.body.creditsCharged).toBe(4);
+      expect(second.body.creditsCharged).toBe(4);
+      expect(firecrawlRequests).toBe(2);
+      expect(beforeCredits - afterCredits).toBe(8);
+    });
   });
 
   it("returns successful content when usage processing records a billing error", async () => {
@@ -1048,41 +1253,43 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, async () => {
-        await pricing.cleanup();
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Example page",
-            metadata: {
-              sourceURL: "https://example.com/page",
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, async () => {
+          await pricing.cleanup();
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Example page",
+              metadata: {
+                sourceURL: "https://example.com/page",
+              },
             },
-          },
-        });
-      }),
-    );
+          });
+        }),
+      );
 
-    const response = await rawScrapeRequest(
-      actor,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      { usagePricingResolution: pricing.resolution },
-    );
-    const afterCredits = await credits(actor);
+      const response = await rawScrapeRequest(
+        actor,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        { usagePricingResolution: pricing.resolution },
+      );
+      const afterCredits = await credits(actor);
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      creditsCharged: null,
-      result: { markdown: "# Example page" },
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        creditsCharged: null,
+        result: { markdown: "# Example page" },
+      });
+      expect(afterCredits).toBe(beforeCredits);
     });
-    expect(afterCredits).toBe(beforeCredits);
   });
 
   it("scrapes public IPv6 literal targets without DNS lookup", async () => {
@@ -1090,41 +1297,43 @@ describe("okou scrape route", () => {
     let requestBody: unknown;
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# IPv6 page",
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# IPv6 page",
+            },
+          });
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://[2606:4700:4700::1111]/page",
+            format: "markdown",
+            mode: "standard",
           },
-        });
-      }),
-    );
+        }),
+        [200],
+      );
+      const afterCredits = await credits(actor);
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://[2606:4700:4700::1111]/page",
-          format: "markdown",
-          mode: "standard",
-        },
-      }),
-      [200],
-    );
-    const afterCredits = await credits(actor);
-
-    expect(requestBody).toMatchObject({
-      url: "https://[2606:4700:4700::1111]/page",
-      formats: ["markdown"],
-      proxy: "basic",
+      expect(requestBody).toMatchObject({
+        url: "https://[2606:4700:4700::1111]/page",
+        formats: ["markdown"],
+        proxy: "basic",
+      });
+      expect(response.body.result).toStrictEqual({ markdown: "# IPv6 page" });
+      expect(beforeCredits - afterCredits).toBe(4);
     });
-    expect(response.body.result).toStrictEqual({ markdown: "# IPv6 page" });
-    expect(beforeCredits - afterCredits).toBe(4);
   });
 
   it("scrapes links through enhanced Firecrawl proxy and records usage", async () => {
@@ -1134,70 +1343,72 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
 
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
-        requestBody = await request.json();
-        authorization = request.headers.get("authorization");
-        return HttpResponse.json({
-          success: true,
-          data: {
-            links: ["https://example.com/a", "https://example.com/b"],
-            metadata: {
-              title: "Example page",
-              sourceURL: "https://example.com/page",
-              url: "https://example.com/final",
-              statusCode: 200,
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, async ({ request }) => {
+          requestBody = await request.json();
+          authorization = request.headers.get("authorization");
+          return HttpResponse.json({
+            success: true,
+            data: {
+              links: ["https://example.com/a", "https://example.com/b"],
+              metadata: {
+                title: "Example page",
+                sourceURL: "https://example.com/page",
+                url: "https://example.com/final",
+                statusCode: 200,
+              },
             },
+          });
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "links",
+            mode: "enhanced",
           },
-        });
-      }),
-    );
+        }),
+        [200],
+      );
+      const afterCredits = await credits(actor);
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "links",
-          mode: "enhanced",
+      expect(requestBody).toStrictEqual({
+        url: "https://example.com/page",
+        formats: ["links"],
+        parsers: [],
+        proxy: "enhanced",
+        skipTlsVerification: false,
+        maxAge: 0,
+        storeInCache: false,
+        timeout: 25_000,
+      });
+      expect(authorization).toBe("Bearer test-firecrawl-token");
+      expect(response.body).toMatchObject({
+        requestedUrl: "https://example.com/page",
+        finalUrl: "https://example.com/final",
+        format: "links",
+        mode: "enhanced",
+        provider: "firecrawl",
+        creditsCharged: 20,
+        billingCategory: "enhanced.links",
+        billingQuantity: 1,
+        result: {
+          links: ["https://example.com/a", "https://example.com/b"],
         },
-      }),
-      [200],
-    );
-    const afterCredits = await credits(actor);
-
-    expect(requestBody).toStrictEqual({
-      url: "https://example.com/page",
-      formats: ["links"],
-      parsers: [],
-      proxy: "enhanced",
-      skipTlsVerification: false,
-      maxAge: 0,
-      storeInCache: false,
-      timeout: 25_000,
+        metadata: {
+          title: "Example page",
+          statusCode: 200,
+        },
+      });
+      expect(beforeCredits - afterCredits).toBe(20);
     });
-    expect(authorization).toBe("Bearer test-firecrawl-token");
-    expect(response.body).toMatchObject({
-      requestedUrl: "https://example.com/page",
-      finalUrl: "https://example.com/final",
-      format: "links",
-      mode: "enhanced",
-      provider: "firecrawl",
-      creditsCharged: 20,
-      billingCategory: "enhanced.links",
-      billingQuantity: 1,
-      result: {
-        links: ["https://example.com/a", "https://example.com/b"],
-      },
-      metadata: {
-        title: "Example page",
-        statusCode: 200,
-      },
-    });
-    expect(beforeCredits - afterCredits).toBe(20);
   });
 
   it("rejects unsafe final URLs when the source URL is public", async () => {
@@ -1205,39 +1416,41 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Internal redirect",
-            metadata: {
-              sourceURL: "https://example.com/page",
-              url: "http://127.0.0.1/secret",
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Internal redirect",
+              metadata: {
+                sourceURL: "https://example.com/page",
+                url: "http://127.0.0.1/secret",
+              },
             },
+          });
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
           },
-        });
-      }),
-    );
+        }),
+        [502],
+      );
+      const afterCredits = await credits(actor);
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
-        },
-      }),
-      [502],
-    );
-    const afterCredits = await credits(actor);
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("UNSAFE_FINAL_URL");
-    expect(afterCredits).toBe(beforeCredits);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("UNSAFE_FINAL_URL");
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 
   it("returns Firecrawl success false errors without recording usage", async () => {
@@ -1245,34 +1458,38 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        return HttpResponse.json({
-          success: false,
-          error: "Firecrawl rejected this scrape",
-        });
-      }),
-    );
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          return HttpResponse.json({
+            success: false,
+            error: "Firecrawl rejected this scrape",
+          });
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
-        },
-      }),
-      [502],
-    );
-    const afterCredits = await credits(actor);
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
+          },
+        }),
+        [502],
+      );
+      const afterCredits = await credits(actor);
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FIRECRAWL_ERROR");
-    expect(response.body.error.message).toBe("Firecrawl rejected this scrape");
-    expect(afterCredits).toBe(beforeCredits);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("FIRECRAWL_ERROR");
+      expect(response.body.error.message).toBe(
+        "Firecrawl rejected this scrape",
+      );
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 
   it("bounds provider error messages without recording usage", async () => {
@@ -1280,35 +1497,37 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        return HttpResponse.json({
-          success: false,
-          error: "x".repeat(5000),
-        });
-      }),
-    );
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          return HttpResponse.json({
+            success: false,
+            error: "x".repeat(5000),
+          });
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
-        },
-      }),
-      [502],
-    );
-    const afterCredits = await credits(actor);
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
+          },
+        }),
+        [502],
+      );
+      const afterCredits = await credits(actor);
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FIRECRAWL_ERROR");
-    expect(response.body.error.message).toHaveLength(4096);
-    expect(response.body.error.message.endsWith("...")).toBeTruthy();
-    expect(afterCredits).toBe(beforeCredits);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("FIRECRAWL_ERROR");
+      expect(response.body.error.message).toHaveLength(4096);
+      expect(response.body.error.message.endsWith("...")).toBeTruthy();
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 
   it("rejects provider data without an explicit success marker", async () => {
@@ -1316,44 +1535,46 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        return HttpResponse.json({
-          status: 400,
-          body: {
-            error: {
-              message: "Provider controlled error",
-              code: "PROVIDER_CONTROLLED",
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          return HttpResponse.json({
+            status: 400,
+            body: {
+              error: {
+                message: "Provider controlled error",
+                code: "PROVIDER_CONTROLLED",
+              },
             },
-          },
-          data: {
-            markdown: "# Provider controlled content",
-          },
-        });
-      }),
-    );
+            data: {
+              markdown: "# Provider controlled content",
+            },
+          });
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
-        },
-      }),
-      [502],
-    );
-    const afterCredits = await credits(actor);
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
+          },
+        }),
+        [502],
+      );
+      const afterCredits = await credits(actor);
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FIRECRAWL_ERROR");
-    expect(response.body.error.message).toBe(
-      "Firecrawl response did not include scrape data",
-    );
-    expect(afterCredits).toBe(beforeCredits);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("FIRECRAWL_ERROR");
+      expect(response.body.error.message).toBe(
+        "Firecrawl response did not include scrape data",
+      );
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 
   it("rejects oversized Firecrawl responses without recording usage", async () => {
@@ -1361,29 +1582,31 @@ describe("okou scrape route", () => {
     allowExampleDotCom();
     configureProvider();
     const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        return HttpResponse.text("x".repeat(4 * 1024 * 1024 + 1));
-      }),
-    );
+    const owner = await fundActorWithSubscription(actor);
+    await owner.run(async () => {
+      const beforeCredits = await credits(actor);
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          return HttpResponse.text("x".repeat(4 * 1024 * 1024 + 1));
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(scrapeContract).scrape({
-        headers: authenticate(actor),
-        body: {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
-        },
-      }),
-      [502],
-    );
-    const afterCredits = await credits(actor);
+      const response = await accept(
+        client(pricing.resolution)(scrapeContract).scrape({
+          headers: authenticate(actor),
+          body: {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
+          },
+        }),
+        [502],
+      );
+      const afterCredits = await credits(actor);
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("SCRAPE_OUTPUT_TOO_LARGE");
-    expect(afterCredits).toBe(beforeCredits);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("SCRAPE_OUTPUT_TOO_LARGE");
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 });

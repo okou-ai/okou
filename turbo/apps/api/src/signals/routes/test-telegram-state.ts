@@ -4,44 +4,33 @@ import {
 } from "../services/model-catalog.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
   testTelegramStateContract,
   type TestTelegramStateActionBody,
 } from "@okouai/api-contracts/contracts/test-telegram-state";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { telegramMessages } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
-import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import {
   acquireBuiltInModelKeyFixture,
   releaseBuiltInModelKeyFixture,
 } from "../services/built-in-model-key-fixture";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
-import {
-  normalizeRunMetadata,
-  writeRunMetadata$,
-} from "../services/agent-run-metadata-write.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -279,66 +268,6 @@ async function seedAgentRunCallbackForAction(
     .returning({ id: agentRunCallbacks.id });
   signal.throwIfAborted();
   return actionOk({ callback_id: row?.id ?? null });
-}
-
-const updateRunForAction$ = command(
-  async ({ set }, body: Record<string, unknown>, signal: AbortSignal) => {
-    const runId = readActionString(body, "run_id");
-    if (!runId) {
-      return actionBadRequest("run_id is required");
-    }
-    await set(
-      writeRunMetadata$,
-      {
-        patch: {
-          selectedModel:
-            readActionNullableString(body, "selected_model") ?? null,
-        },
-        where: eq(agentRuns.id, runId),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return actionOk();
-  },
-);
-
-async function getRunForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readActionString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [run] = await db
-    .select({
-      sessionId: agentRuns.sessionId,
-      conversationId: agentSessions.conversationId,
-      selectedModel: agentRuns.selectedModel,
-      chatThreadId: agentRuns.chatThreadId,
-      chatThreadAgentSessionId: chatThreads.agentSessionId,
-      chatThreadAgentSessionRunId: chatThreads.agentSessionRunId,
-    })
-    .from(agentRuns)
-    .leftJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .leftJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({
-    run: run
-      ? {
-          session_id: run.sessionId,
-          conversation_id: run.conversationId,
-          selected_model: run.selectedModel,
-          chat_thread_id: run.chatThreadId,
-          chat_thread_agent_session_id: run.chatThreadAgentSessionId,
-          chat_thread_agent_session_run_id: run.chatThreadAgentSessionRunId,
-        }
-      : null,
-  });
 }
 
 async function deleteTelegramFixtureForAction(
@@ -683,165 +612,6 @@ async function getTelegramPostRunStateForAction(
   });
 }
 
-async function getTelegramLinkIdForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const required = requiredActionStrings(body, ["org_id", "user_id"]);
-  if (!required) {
-    return actionBadRequest("org_id and user_id are required");
-  }
-  const [link] = await db
-    .select({ id: telegramOfficialUserLinks.id })
-    .from(telegramOfficialUserLinks)
-    .where(
-      and(
-        eq(telegramOfficialUserLinks.orgId, required.org_id!),
-        eq(telegramOfficialUserLinks.userId, required.user_id!),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ link_id: link?.id ?? null });
-}
-
-async function findChatThreadRouteForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const required = requiredActionStrings(body, [
-    "user_link_id",
-    "chat_id",
-    "root_message_id",
-  ]);
-  if (!required) {
-    return actionBadRequest(
-      "user_link_id, chat_id, and root_message_id are required",
-    );
-  }
-  const [route] = await db
-    .select({
-      telegramOfficialUserLinkId:
-        telegramChatThreadRoutes.telegramOfficialUserLinkId,
-      chatId: telegramChatThreadRoutes.chatId,
-      rootMessageId: telegramChatThreadRoutes.rootMessageId,
-      chatThreadId: telegramChatThreadRoutes.chatThreadId,
-    })
-    .from(telegramChatThreadRoutes)
-    .where(
-      and(
-        eq(
-          telegramChatThreadRoutes.telegramOfficialUserLinkId,
-          required.user_link_id!,
-        ),
-        eq(telegramChatThreadRoutes.chatId, required.chat_id!),
-        eq(telegramChatThreadRoutes.rootMessageId, required.root_message_id!),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ route: route ?? null });
-}
-
-async function insertAgentSessionForAction(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const [session] = await db
-    .insert(agentSessions)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-    })
-    .returning({ id: agentSessions.id });
-  signal.throwIfAborted();
-  return session?.id ?? null;
-}
-
-async function seedRunningRunForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const required = requiredActionStrings(body, [
-    "org_id",
-    "user_id",
-    "version_id",
-    "compose_id",
-  ]);
-  if (!required) {
-    return actionBadRequest(
-      "org_id, user_id, version_id, and compose_id are required",
-    );
-  }
-  const sessionId = await insertAgentSessionForAction(
-    db,
-    {
-      orgId: required.org_id!,
-      userId: required.user_id!,
-      agentId: required.compose_id!,
-    },
-    signal,
-  );
-  if (!sessionId) {
-    return actionBadRequest("failed to seed agent session");
-  }
-  const startedAt = nowDate();
-  const metadata = normalizeRunMetadata({ triggerSource: "telegram" });
-  const run = await db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(agentRuns)
-      .values({
-        userId: required.user_id!,
-        orgId: required.org_id!,
-        sessionId,
-        status: "running",
-        prompt: "existing running telegram run",
-        startedAt,
-        ...metadata,
-      })
-      .returning({
-        id: agentRuns.id,
-        orgId: agentRuns.orgId,
-        userId: agentRuns.userId,
-        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
-        triggerSource: agentRuns.triggerSource,
-        threadId: agentRuns.chatThreadId,
-      });
-    signal.throwIfAborted();
-    if (!created) {
-      return undefined;
-    }
-    const capture = billingRunAttributionWrite(created);
-    await tx
-      .insert(billingRunAttribution)
-      .values(capture.values)
-      .onConflictDoNothing();
-    signal.throwIfAborted();
-    return created;
-  });
-  signal.throwIfAborted();
-  if (!run) {
-    return actionBadRequest("failed to seed running agent run");
-  }
-  await db.insert(activeAgentRuns).values({
-    runId: run.id,
-    orgId: required.org_id!,
-    userId: required.user_id!,
-    lastHeartbeatAt: startedAt,
-  });
-  signal.throwIfAborted();
-  return actionOk({ agent_session_id: sessionId });
-}
-
 async function seedModelPoliciesForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -908,63 +678,6 @@ async function seedModelPoliciesForAction(
   return actionOk();
 }
 
-async function getSelectedModelForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const required = requiredActionStrings(body, ["org_id", "user_id"]);
-  if (!required) {
-    return actionBadRequest("org_id and user_id are required");
-  }
-  const [row] = await db
-    .select({ selectedModel: orgMembersMetadata.selectedModel })
-    .from(orgMembersMetadata)
-    .where(
-      and(
-        eq(orgMembersMetadata.orgId, required.org_id!),
-        eq(orgMembersMetadata.userId, required.user_id!),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ selected_model: row?.selectedModel ?? null });
-}
-
-async function updateRunCallbackForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readActionString(body, "run_id");
-  const callbackId = readActionString(body, "callback_id");
-  const callbackCondition = callbackId
-    ? eq(agentRunCallbacks.id, callbackId)
-    : runId
-      ? eq(agentRunCallbacks.runId, runId)
-      : null;
-  if (!callbackCondition) {
-    return actionBadRequest("run_id or callback_id is required");
-  }
-  const encryptedSecret = await encryptPersistentSecretValue(
-    readActionOptionalString(body, "secret") ?? "test-callback-secret",
-    {},
-  );
-  signal.throwIfAborted();
-  const [callback] = await db
-    .update(agentRunCallbacks)
-    .set({
-      url: readActionNullableString(body, "url") ?? null,
-      internalKind: readActionNullableString(body, "internal_kind") ?? null,
-      payload: readActionRecord(body, "payload"),
-      encryptedSecret,
-    })
-    .where(callbackCondition)
-    .returning({ callbackId: agentRunCallbacks.id });
-  signal.throwIfAborted();
-  return actionOk({ callback_id: callback?.callbackId ?? null });
-}
-
 type TelegramStateActionHandler = (
   db: Db,
   body: Record<string, unknown>,
@@ -977,19 +690,10 @@ const telegramStateActionHandlers = {
   "seed-agent-run-callback": seedAgentRunCallbackForAction,
   "delete-post-fixture": deleteTelegramPostFixtureForAction,
   "get-post-run-state": getTelegramPostRunStateForAction,
-  "get-telegram-link-id": getTelegramLinkIdForAction,
-  "seed-running-run": seedRunningRunForAction,
   "seed-model-policies": seedModelPoliciesForAction,
-  "get-selected-model": getSelectedModelForAction,
-  "update-run-callback": updateRunCallbackForAction,
-  "get-run": getRunForAction,
-  "find-chat-thread-route": findChatThreadRouteForAction,
   "delete-fixture": deleteTelegramFixtureForAction,
 } satisfies Record<
-  Exclude<
-    TestTelegramStateActionBody["action"],
-    "seed-post-fixture" | "update-run"
-  >,
+  Exclude<TestTelegramStateActionBody["action"], "seed-post-fixture">,
   TelegramStateActionHandler
 >;
 
@@ -997,7 +701,7 @@ async function mutateTestTelegramStateAction(
   catalogSnapshot: ModelCatalog,
   db: Db,
   body: Record<string, unknown>,
-  action: Exclude<TestTelegramStateActionBody["action"], "update-run">,
+  action: TestTelegramStateActionBody["action"],
   signal: AbortSignal,
 ) {
   if (action === "seed-post-fixture") {
@@ -1024,9 +728,6 @@ const mutateTestTelegramState$ = command(
     }
 
     const body = bodyResult.data as Record<string, unknown>;
-    if (bodyResult.data.action === "update-run") {
-      return await set(updateRunForAction$, body, signal);
-    }
     return await mutateTestTelegramStateAction(
       await get(modelCatalog$),
       set(writeDb$),
