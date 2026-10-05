@@ -2010,6 +2010,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const conversationId = uniqueConversationId();
     const stableGroupId = bddGroupId(conversationId);
+    if (!first.orgId) {
+      throw new Error("Expected group-history test user to have an org");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: first.userId, orgId: first.orgId, orgRole: first.orgRole },
+      { [FeatureSwitchKey.AgentPhoneGroupHistory]: false },
+    );
     await expect(
       integrations.requestAgentPhoneGroupHistory(
         first,

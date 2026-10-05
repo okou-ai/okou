@@ -896,6 +896,7 @@ test("Hide single-message sharing while the switch is off", async () => {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ChatMessageShare]: false },
   });
   await screen.findByText(ANSWER);
   expect(buttonsNamed("Copy message").length).toBeGreaterThan(0);
