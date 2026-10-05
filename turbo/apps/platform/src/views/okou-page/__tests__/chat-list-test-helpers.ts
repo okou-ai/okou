@@ -1,3 +1,4 @@
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
@@ -188,9 +189,10 @@ export function installChatListAgent(
 }
 
 export function installChatListRunModels(context: TestContext): void {
+  installConnectedPersonalSubscriptions(context);
   const modelEntries = [
     ["claude-sonnet-5", "Claude Sonnet 5"],
-    ["claude-sonnet-5", "Claude Sonnet 5"],
+    ["gpt-6-sol", "GPT 6 Sol"],
     ["gpt-5.6-sol", "GPT 5.6 Sol"],
     ["gpt-5.6-luna", "GPT 5.6 Luna"],
   ] as const;

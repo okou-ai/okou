@@ -45,15 +45,6 @@ const AVAILABLE_MODELS_RESPONSE = {
       routeStatusReason: "No personal subscription connected",
     },
     {
-      model: "deepseek-v4-flash",
-      modelLabel: "DeepSeek V4 Flash",
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-      routeStatus: "valid",
-      routeStatusReason: null,
-    },
-    {
       model: "okou-1.0",
       modelLabel: "Auto",
       defaultProviderType: "built-in",
@@ -408,7 +399,7 @@ describe("okou chat model command", () => {
             ...MODEL_CATALOG_RESPONSE.routes,
             {
               model,
-              providerType: "built-in",
+              providerType: "codex-oauth-token",
               concreteProviderType: "openrouter-codex",
               upstreamModel: "openai/gpt-6-luna",
               enabled: true,
@@ -428,8 +419,8 @@ describe("okou chat model command", () => {
             {
               model,
               modelLabel: "Acme Nova",
-              defaultProviderType: "built-in",
-              credentialScope: "org",
+              defaultProviderType: "codex-oauth-token",
+              credentialScope: "member",
               modelProviderId: null,
               routeStatus: "valid",
               routeStatusReason: null,
@@ -487,7 +478,7 @@ describe("okou chat model command", () => {
     );
   });
 
-  it("offers and switches a personal candidate despite a missing administrative provider", async () => {
+  it("offers and switches a connected personal subscription model", async () => {
     server.use(
       http.get(MODEL_RUN_MODELS_URL, () => {
         return HttpResponse.json({
@@ -496,7 +487,7 @@ describe("okou chat model command", () => {
             {
               ...AVAILABLE_MODELS_RESPONSE.models[1],
               defaultProviderType: "openai-api-key",
-              credentialScope: "org",
+              credentialScope: "member",
               memberEffective: {
                 providerType: "codex-oauth-token",
                 runtimeProviderType: "codex-oauth-token",

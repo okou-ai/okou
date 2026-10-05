@@ -5,10 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, fill } from "../../../__tests__/page-helper.ts";
-import {
-  buildRunModel,
-  composerModelTrigger,
-} from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-composer-test-helpers.ts";
 import {
   mockPushBrowserSupport,
   setupPage,
@@ -162,7 +159,7 @@ test("Queue a visual attachment without requiring text", async () => {
   expect(document.body).not.toHaveTextContent("(see attached files)");
 });
 
-test("Send a large image with a fallback-enabled text model", async () => {
+test("Send a large image with Auto", async () => {
   const user = userEvent.setup({ delay: null });
   let sentMessage:
     | {
@@ -171,15 +168,15 @@ test("Send a large image with a fallback-enabled text model", async () => {
       }
     | undefined;
   installRunChat({
-    selectedModel: "deepseek-v4-flash",
+    selectedModel: "okou-1.0",
     onRunCreate(body) {
       sentMessage = { model: body.model, userMessage: body.userMessage };
     },
   });
   context.mocks.data.availableRunModels([
     buildRunModel({
-      model: "deepseek-v4-flash",
-      modelLabel: "DeepSeek V4 Flash",
+      model: "okou-1.0",
+      modelLabel: "Auto",
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -196,9 +193,6 @@ test("Send a large image with a fallback-enabled text model", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   await readyChat();
-  await expect(
-    composerModelTrigger("DeepSeek V4 Flash"),
-  ).resolves.toBeVisible();
   await uploadFile(
     user,
     new File([new Uint8Array(12_000_000)], "launch-board.png", {
