@@ -26,12 +26,13 @@ import {
 } from "../../../test-fixtures/model-catalog";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { readRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatEvents = createChatEventsFixture(context);
+const runReads = createRunReadsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const billing = createBillingMediaApi(context);
 function authHeaders() {
@@ -384,9 +385,8 @@ describe("model catalog authority", () => {
       prompt: "bill the new catalog model",
       model,
     });
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({ selectedModel: model });
+    const log = await runReads.requestReadLogById(actor, run.runId, [200]);
+    expect(log.body).toMatchObject({ selectedModel: model });
     const { claim, sandboxHeaders } = await chatEvents.claimChatRun(
       runnerGroup,
       run.runId,
@@ -737,9 +737,8 @@ describe("model catalog authority", () => {
       prompt: "bill long-context usage",
       model,
     });
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({
+    const log = await runReads.requestReadLogById(actor, run.runId, [200]);
+    expect(log.body).toMatchObject({
       selectedModel: model,
       modelRuntimeProvider: "openai-api-key",
       modelRuntimeModel: upstreamModel,

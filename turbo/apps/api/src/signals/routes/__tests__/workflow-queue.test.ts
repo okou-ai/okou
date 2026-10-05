@@ -39,8 +39,8 @@ import {
 } from "./helpers/chat-event";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
+import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import {
-  coolDownBuiltInCandidatesFixture,
   seedBuiltInModelCandidateKeys,
   seedBuiltInModelKey,
 } from "./helpers/runtime-state";
@@ -493,6 +493,7 @@ async function releaseStaleRunAndPickWorkflowQueue(args: {
 describe("workflow queue", () => {
   it("rejects a workflow automation when every built-in route is unavailable", async () => {
     const scenario = await setup();
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", scenario.runnerGroup);
     // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
     // isolated from concurrent tests that route the real model.
     const { model, restore } =
@@ -511,16 +512,22 @@ describe("workflow queue", () => {
     // The automation thread pins the preferred Built-in model.
     const automation = await createWebhookAutomation(scenario);
     // Provider failures cool down every Built-in candidate of the model.
-    await coolDownBuiltInCandidatesFixture(context, model, [
-      {
-        provider_type: "anthropic-api-key",
-        upstream_model: "claude-fable-5-1",
-      },
-      {
-        provider_type: "openrouter-api-key",
-        upstream_model: "anthropic/claude-fable-5.1",
-      },
-    ]);
+    await coolDownBuiltInRoutesThroughReports(context, {
+      actor: scenario.actor,
+      agentId: scenario.agentId,
+      runnerGroup: scenario.runnerGroup,
+      model,
+      routes: [
+        {
+          providerType: "anthropic-api-key",
+          upstreamModel: "claude-fable-5-1",
+        },
+        {
+          providerType: "openrouter-api-key",
+          upstreamModel: "anthropic/claude-fable-5.1",
+        },
+      ],
+    });
 
     const response = await postWorkflowWebhook(
       automation,

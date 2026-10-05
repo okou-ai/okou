@@ -33,7 +33,9 @@ import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
@@ -118,6 +120,7 @@ async function fixture(overrides: Partial<RuntimeBody> = {}) {
 }
 
 describe("live chat SSH Run inventory", () => {
+  const publicRuns = createPublicRemoteAccessRunApi(context);
   const ordinary = createClaimedSshRuntimeApi(context, {
     runnerHeaders: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
     authenticate,
@@ -125,6 +128,7 @@ describe("live chat SSH Run inventory", () => {
   const claimedRunCleanups: (() => Promise<void>)[] = [];
 
   afterEach(async () => {
+    await publicRuns.cleanup();
     await ordinary.cleanup();
     for (const cleanup of claimedRunCleanups.splice(0)) {
       await cleanup();
@@ -563,11 +567,44 @@ describe("live chat SSH Run inventory", () => {
   });
 
   it("rejects completed Runs despite an enabled host default", async () => {
-    const f = await fixture({ status: "completed" });
+    const owner = {
+      userId: `user_ssh_completed_${randomUUID()}`,
+      orgId: `org_ssh_completed_${randomUUID()}`,
+    };
+    const secret = "c".repeat(64);
+    mockEnv("OFFICIAL_RUNNER_SECRET", secret);
+    const run = await publicRuns.start(owner);
+    const f = await publicRuns.claim(run, {
+      authorization: `Bearer vm0_official_${secret}`,
+    });
+    await publicRuns.finish(f, "completed");
+    const chat = createChatFilesBddApi(context);
+    // Deleting the terminal Run's Thread preserves its original no-chat premise.
+    await chat.deleteThread(f.actor, f.threadId);
+    await flushWaitUntilForTest();
+    await chat.requestReadThreadMetadata(f.actor, f.threadId, [404]);
+    await expect(
+      createRunsApi(context).readRun(f.actor, f.runId),
+    ).resolves.toMatchObject({
+      status: "completed",
+    });
+    authenticate(f);
     const host = await createHost();
     await enableChatDefault(host.body.id);
+    const seconds = Math.floor(now() / 1000);
+    const agentHeaders = {
+      authorization: `Bearer ${signSandboxJwtForTests({
+        scope: "okou",
+        userId: f.userId,
+        orgId: f.orgId,
+        runId: f.runId,
+        capabilities: ["ssh:read"],
+        iat: seconds,
+        exp: seconds + 3600,
+      })}`,
+    };
     expect(
-      (await accept(inventory().list({ headers: f.token() }), [404])).status,
+      (await accept(inventory().list({ headers: agentHeaders }), [404])).status,
     ).toBe(404);
   });
 });

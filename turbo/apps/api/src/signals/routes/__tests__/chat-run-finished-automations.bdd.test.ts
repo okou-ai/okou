@@ -1,3 +1,4 @@
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
@@ -41,6 +42,7 @@ import {
 
 const context = testContext();
 const bdd = createBddApi(context);
+const publicResults = createPublicAutomationResultEmailApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
@@ -121,7 +123,7 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
  * would not record `lastRunAt` until the prior automation run completes.
  */
 async function createChatRunFinishedAutomation(
-  fixture: ChatAutomationFixture,
+  fixture: Pick<ChatAutomationFixture, "actor" | "agentId">,
   eventConfig: {
     readonly chatThreadId: string;
     readonly runStatuses?: readonly ("completed" | "failed" | "cancelled")[];
@@ -952,15 +954,30 @@ describe("chat-run-finished workflow automations", () => {
     "shows an error instead of firing when the watched run exhausts its budget",
     { timeout: 30_000 },
     async () => {
-      const fixture = await setupChatAutomationFixture();
-      const run = await startWatchedChatRun(fixture, "exhausted watched run");
+      const scenario = await publicResults.setupOfficial({
+        budget: 0,
+        resultEmail: false,
+      });
+      if (!scenario.actor.orgId) {
+        throw new Error("Expected an owned organization");
+      }
+      const fixture = {
+        ...scenario,
+        actor: { ...scenario.actor, orgId: scenario.actor.orgId },
+      };
+      const run = await publicResults.start(
+        fixture.actor,
+        fixture.automationId,
+        fixture.runnerGroup,
+      );
       const automationId = await createChatRunFinishedAutomation(fixture, {
         chatThreadId: run.threadId,
       });
-      await setRunAutonomyBudgetFixture(context, run.runId, 0);
-
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      await completeChatRunOk(run.runId, sandboxHeaders);
+      await publicResults.complete(
+        fixture.actor,
+        run.runId,
+        fixture.runnerGroup,
+      );
 
       let automationThreadId: string | null = null;
       await flushWaitUntilForTest();
@@ -997,13 +1014,25 @@ describe("chat-run-finished workflow automations", () => {
         eventType: "output.error",
         error: "AUTONOMY_BUDGET_EXHAUSTED",
       });
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, automationId),
-      ).resolves.toMatchObject({
-        autonomyBudget: 10,
-        enabled: true,
-        lastRunId: null,
-      });
+      const current = await accept(
+        automationsClient().get({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      expect(current.body).toMatchObject({ enabled: true });
+      const events = await chat.listThreadEvents(
+        fixture.actor,
+        exhaustedAutomationThreadId,
+      );
+      expect(
+        events.events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" && event.runId !== undefined
+          );
+        }),
+      ).toStrictEqual([]);
       await expect(automationLastRunAt(automationId)).resolves.toBeNull();
     },
   );

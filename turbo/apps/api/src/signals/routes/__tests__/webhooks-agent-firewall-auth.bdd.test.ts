@@ -40,6 +40,11 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
 import {
+  API_TEST_CONNECTOR_CATALOG,
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
+import {
   createAuthDeviceApiActions,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
@@ -50,10 +55,7 @@ import {
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  setConnectorCredentialStorageState,
-  setBuiltinOAuthScopeFacts,
-} from "./helpers/connector-credential-storage-state";
+import { setBuiltinOAuthScopeFacts } from "./helpers/connector-credential-storage-state";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
@@ -850,20 +852,32 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("does not call the provider for a known storage version mismatch", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "test-oauth",
-      authMethod: "oauth",
+    const connectors = createConnectorBddApi(context);
+    const catalog = createPublicConnectorCatalog(context);
+    const versionTwo = catalogWithAuthMethod(
+      { connectorSlug: "test-oauth", authMethodId: "oauth" },
+      (method) => {
+        return { ...method, storage: { ...method.storage, version: 2 } };
+      },
+    );
+    await catalog.publish(versionTwo);
+    const { actor, headers } = await publicConnections.run();
+    catalog.onCleanup(async () => {
+      await publicConnections.cleanup();
+      await catalog.publish(versionTwo);
+      await connectors.deleteDefaultBuiltinConnectorAccount(
+        actor,
+        "test-oauth",
+      );
+      await connectors.deleteFeatureSwitches(actor);
+    });
+    await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,
     });
-    await setConnectorCredentialStorageState(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-      connectorSlug: "test-oauth",
-      storageVersion: 2,
-    });
+    // Publishing changes the selected method, not the account's stored version.
+    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
     let providerCalls = 0;
     fw.mockTestOauthTokenRefresh(() => {
       providerCalls += 1;
@@ -893,6 +907,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(response.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
     expect(providerCalls).toBe(0);
+    await catalog.cleanup();
   });
 
   it("defaults the refreshed expiry when the provider omits expires_in", async () => {

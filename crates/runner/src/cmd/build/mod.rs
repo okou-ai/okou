@@ -246,13 +246,26 @@ impl TemplateMaterializationTarget<'_> {
             Self::RootfsStaging(staging) => {
                 move_file_sync(downloaded_template, staging, "materialize template")?;
                 tracing::info!(
+                    r2_key = input
+                        .cache
+                        .as_cache()
+                        .map(|cache| cache.template_download_key(input.template_hash))
+                        .as_deref(),
                     "[OK] template downloaded from R2 into staging: {}",
                     staging.display()
                 );
                 Ok(())
             }
             Self::RemoteCacheOnly => {
-                tracing::info!("[OK] template already in R2: {}", input.template_hash);
+                tracing::info!(
+                    r2_key = input
+                        .cache
+                        .as_cache()
+                        .map(|cache| cache.template_download_key(input.template_hash))
+                        .as_deref(),
+                    "[OK] template already in R2: {}",
+                    input.template_hash
+                );
                 Ok(())
             }
         }
@@ -714,11 +727,16 @@ async fn ensure_template_cached_under_lock_with_scripts(
 
     match cache.template_exists(input.template_hash).await {
         Ok(true) => {
-            tracing::info!("[OK] template already in R2: {}", input.template_hash);
+            tracing::info!(
+                r2_key = ?cache.template_download_key(input.template_hash),
+                "[OK] template already in R2: {}",
+                input.template_hash
+            );
             return Ok(());
         }
         Ok(false) => {
             tracing::info!(
+                r2_key = ?cache.template_download_key(input.template_hash),
                 "R2 template cache miss for {} — building locally",
                 input.template_hash
             );
@@ -990,6 +1008,7 @@ async fn resolve_remote_template(
         },
         Ok(false) => {
             tracing::info!(
+                r2_key = ?cache.template_download_key(input.template_hash),
                 "R2 template cache miss for {} — building locally",
                 input.template_hash
             );

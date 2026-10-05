@@ -11,7 +11,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
@@ -39,7 +39,6 @@ import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 /*
 helper gap:
@@ -1962,6 +1961,29 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 });
 
 describe("INT-01: Slack app deep webhook flows", () => {
+  function cleanUpCanonicalSlackScenario(actor: ApiTestUser): void {
+    onTestFinished(async () => {
+      integrations.configureSlackAppMocks();
+      const response = await runReads.requestListLogs(
+        actor,
+        { limit: 50 },
+        [200],
+      );
+      for (const run of response.body.data) {
+        if (
+          run.status === "queued" ||
+          run.status === "pending" ||
+          run.status === "running"
+        ) {
+          await runs.requestCancelRun(actor, run.id, [200, 400]);
+        }
+      }
+      await flushWaitUntilForTest();
+      await integrations.requestSlackDisconnect(actor, "uninstall", [200]);
+      await flushWaitUntilForTest();
+    });
+  }
+
   async function prepareCanonicalSlackContextFailureScenario() {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
@@ -1991,7 +2013,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         channel_type: "mpim",
       },
     });
-    return { teamId, eventBody };
+    return { actor, teamId, eventBody };
   }
 
   async function postCanonicalSlackScenario(
@@ -2015,28 +2037,23 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("processes the current Slack message without unauthorized optional context", async () => {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
+    cleanUpCanonicalSlackScenario(scenario.actor);
     context.mocks.slack.conversations.replies.mockRejectedValueOnce(
       slackPlatformError("missing_scope"),
     );
 
     await postCanonicalSlackScenario(scenario);
 
-    const state = await integrations.readSlackTestState(scenario.teamId);
-    expect(state.chat_ingress).toHaveLength(1);
-    expect(state.chat_ingress[0]).toMatchObject({
-      status: "processed",
-      processingAttemptCount: 1,
-      retryAt: null,
-      lastErrorClass: null,
-      lastError: null,
-    });
-    expect(state.recent_runs).toStrictEqual(
+    const response = await runReads.requestListLogs(
+      scenario.actor,
+      { limit: 50 },
+      [200],
+    );
+    expect(response.body.data).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
           triggerSource: "slack",
-          promptPreview: expect.stringContaining(
-            "preserve this current message",
-          ),
+          prompt: expect.stringContaining("preserve this current message"),
         }),
       ]),
     );
@@ -2045,23 +2062,26 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   async function expectPermanentSlackFailureTerminal(): Promise<void> {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
+    cleanUpCanonicalSlackScenario(scenario.actor);
     context.mocks.slack.conversations.replies.mockRejectedValue(
       slackPlatformError("invalid_auth"),
     );
 
     await postCanonicalSlackScenario(scenario);
+    const first = await runReads.requestListLogs(
+      scenario.actor,
+      { limit: 50 },
+      [200],
+    );
+    expect(first.body.data).toStrictEqual([]);
     await postCanonicalSlackScenario(scenario, 1);
 
-    const state = await integrations.readSlackTestState(scenario.teamId);
-    expect(state.chat_ingress).toHaveLength(1);
-    expect(state.chat_ingress[0]).toMatchObject({
-      status: "terminal",
-      retryCount: 1,
-      processingAttemptCount: 1,
-      retryAt: null,
-      lastErrorClass: "slack:invalid_auth",
-      lastError: "Slack platform error: invalid_auth",
-    });
+    const retried = await runReads.requestListLogs(
+      scenario.actor,
+      { limit: 50 },
+      [200],
+    );
+    expect(retried.body.data).toStrictEqual([]);
     expect(context.mocks.slack.conversations.replies).toHaveBeenCalledOnce();
   }
 
@@ -3395,6 +3415,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
     });
+    cleanUpCanonicalSlackScenario(actor);
     const threadTs = "2900.000300";
     const channelId = "C_BDD_RETRY_INGRESS";
     const retryEventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
@@ -3421,20 +3442,37 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     await flushWaitUntilForTest();
 
-    const state = await integrations.readSlackTestState(teamId);
-    expect(state.chat_thread_routes).toHaveLength(1);
-    expect(state.chat_thread_routes[0]).toMatchObject({
-      channelId,
-      threadTs,
-      chatThreadId: expect.any(String),
+    const { chatThreadId } = await ownedThreadWhere(actor, hasSlackSource);
+    const { events } = await chat.listThreadEvents(actor, chatThreadId);
+    const input = events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        typeof event.runId === "string" &&
+        hasSlackSource(event)
+      );
     });
-    expect(state.chat_ingress).toStrictEqual([
-      expect.objectContaining({
-        eventId: retryEventId,
-        status: "processed",
-        retryCount: 1,
-      }),
-    ]);
+    expect(input).toMatchObject({
+      eventType: "input.prompt",
+      runId: expect.any(String),
+      userMessage: {
+        parts: expect.arrayContaining([
+          expect.objectContaining({
+            type: "source",
+            kind: "slack",
+            href: "https://vm0.slack.com/archives/C_BDD_RETRY_INGRESS/p2900000300",
+          }),
+        ]),
+      },
+    });
+    if (!input?.runId) {
+      throw new Error("Expected the retry-only Slack input to launch a Run");
+    }
+    await expect(readRunLog(actor, input.runId)).resolves.toMatchObject({
+      triggerSource: "slack",
+      prompt: expect.stringContaining(
+        "retry this route through canonical ingress",
+      ),
+    });
     expect(
       context.mocks.slack.assistant.threads.setStatus,
     ).toHaveBeenCalledWith({
@@ -5405,6 +5443,25 @@ describe("INT-02: Telegram integration", () => {
 });
 
 describe("INT-03: GitHub and AgentPhone integrations", () => {
+  const ownedGithubOAuthActors: ApiTestUser[] = [];
+
+  afterEach(async () => {
+    const cleanup = createConnectorBddApi(context);
+    for (const actor of ownedGithubOAuthActors.splice(0)) {
+      for (const account of await cleanup.listBuiltinConnectorAccounts(
+        actor,
+        "github",
+      )) {
+        await cleanup.deleteBuiltinConnectorAccount(
+          actor,
+          "github",
+          account.id,
+        );
+      }
+      await flushWaitUntilForTest();
+    }
+  });
+
   it("keeps GitHub OAuth install and connect-start errors visible through redirects", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -5545,6 +5602,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     mockOptionalEnv("GH_OAUTH_CLIENT_SECRET", "bdd-github-client-secret");
 
     const actor = integrations.user();
+    ownedGithubOAuthActors.push(actor);
     const response = await integrations.requestGithubOauthConnect(
       actor,
       {},
@@ -5570,10 +5628,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       throw new Error("Expected GitHub authorization state");
     }
     await expect(
-      readConnectorOAuthAccountMutation(context, state),
-    ).resolves.toMatchObject({
-      account_mutation: { intent: "add" },
-    });
+      connectors.listBuiltinConnectorAccounts(actor, "github"),
+    ).resolves.toStrictEqual([]);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const callback = await connectors.completeOauthCallback(
       "github",
@@ -5587,6 +5643,18 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
 
     expect(tokenRedirectUris).toStrictEqual([
       "https://api.okou.ai/api/connectors/github/callback",
+    ]);
+    await expect(
+      connectors.listBuiltinConnectorAccounts(actor, "github"),
+    ).resolves.toMatchObject([
+      {
+        target: { kind: "builtin", connectorSlug: "github" },
+        authMethod: "oauth",
+        connectionStatus: "connected",
+        externalId: "4242",
+        externalUsername: "bdd-github-user",
+        externalEmail: null,
+      },
     ]);
   });
 
