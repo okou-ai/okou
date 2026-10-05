@@ -32,7 +32,7 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
   const db = get(db$);
   const [summaries, customConnectors, preferences, hosts, overrides] =
     await Promise.all([
-      listConnectorAccountSummaries(db, owner),
+      get(listConnectorAccountSummaries(owner)),
       get(customConnectorList(owner)),
       get(userPreferences(owner)),
       set(listComputerUseHosts$, owner, signal),

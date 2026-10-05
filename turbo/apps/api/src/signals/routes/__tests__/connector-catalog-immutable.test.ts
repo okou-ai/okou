@@ -4,6 +4,8 @@ import { readFile, readdir } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountRoutes } from "../connector-accounts";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
@@ -382,7 +384,7 @@ async function ownedMcpRun(candidate: ReturnType<typeof release>) {
   return { userId, orgId, runId, connectionId, connectorSlug: connector.slug };
 }
 
-async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+function actorToken(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
   // Real agent tokens still resolve the owner's organization membership.
   // Bound only this owned actor; unrelated users receive a valid empty list.
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
@@ -416,7 +418,7 @@ async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
     },
   );
   const seconds = Math.floor(now() / 1000);
-  const token = signSandboxJwtForTests({
+  return signSandboxJwtForTests({
     scope: "okou",
     userId: actor.userId,
     orgId: actor.orgId,
@@ -426,10 +428,24 @@ async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
     iat: seconds,
     exp: seconds + 3600,
   });
+}
+
+async function accountDirectory(
+  actor: Awaited<ReturnType<typeof ownedMcpRun>>,
+) {
+  return await setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
+  ).connections({
+    headers: { authorization: `Bearer ${actorToken(actor)}` },
+    query: { kind: "builtin", connectorSlug: actor.connectorSlug },
+  });
+}
+
+async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
   return await setupApp({ context, routes: mcpConnectorsRoutes })(
     mcpConnectorsContract,
   ).list({
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${actorToken(actor)}` },
   });
 }
 
@@ -496,6 +512,11 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect((await mcpDirectory(mcpActor)).body).toMatchObject({
       connectors: [{ displayName: "Next lifecycle catalog" }],
     });
+    expect((await accountDirectory(mcpActor)).body).toMatchObject({
+      connections: [
+        { id: mcpActor.connectionId, connectionStatus: "connected" },
+      ],
+    });
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
     // Start with a genuinely accepted legacy directory and no new-table mirror.
     // This is per-case test fixture state only, never a preview database write.
@@ -523,6 +544,11 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect((await mcpDirectory(mcpActor)).body).toMatchObject({
       connectors: [{ displayName: "Next lifecycle catalog" }],
     });
+    expect((await accountDirectory(mcpActor)).body).toMatchObject({
+      connections: [
+        { id: mcpActor.connectionId, connectionStatus: "connected" },
+      ],
+    });
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: next.hash }]);
@@ -544,6 +570,11 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await directory(failed);
     expect((await mcpDirectory(mcpActor)).body).toMatchObject({
       connectors: [{ displayName: "Prepared retry catalog" }],
+    });
+    expect((await accountDirectory(mcpActor)).body).toMatchObject({
+      connections: [
+        { id: mcpActor.connectionId, connectionStatus: "connected" },
+      ],
     });
     expect(
       (
@@ -866,6 +897,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         { displayName: "Old MCP catalog", connectionId: actor.connectionId },
       ],
     });
+    expect((await accountDirectory(actor)).body).toMatchObject({
+      connections: [{ id: actor.connectionId, connectionStatus: "connected" }],
+    });
     const slug = first.artifact.connectors[0]?.slug;
     if (!slug) {
       throw new Error("Missing MCP connector");
@@ -884,6 +918,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       connectors: [
         { displayName: "New MCP catalog", connectionId: actor.connectionId },
       ],
+    });
+    expect((await accountDirectory(actor)).body).toMatchObject({
+      connections: [{ id: actor.connectionId, connectionStatus: "connected" }],
     });
     statements = [];
     const retained = await createStore().get(
@@ -904,6 +941,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       connectors: [
         { displayName: "Old MCP catalog", connectionId: actor.connectionId },
       ],
+    });
+    expect((await accountDirectory(actor)).body).toMatchObject({
+      connections: [{ id: actor.connectionId, connectionStatus: "connected" }],
     });
     const metadata = await createStore().get(
       immutableConnectorRuntimeSelection({
@@ -945,12 +985,16 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect((await sync()).body).toMatchObject({ outcome: "accepted" });
     const actor = await ownedMcpRun(candidate);
     expect((await mcpDirectory(actor)).status).toBe(200);
+    expect((await accountDirectory(actor)).body).toMatchObject({
+      connections: [{ id: actor.connectionId }],
+    });
     const slug = candidate.artifact.connectors[0]?.slug;
     if (!slug) {
       throw new Error("Missing MCP connector");
     }
     const unknown = "unknown-catalog-connector";
     const unknownActor = { ...actor, connectorSlug: unknown };
+    expect((await accountDirectory(unknownActor)).status).toBe(404);
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
@@ -968,11 +1012,14 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       [candidate.hash, slug],
     );
     expect((await mcpDirectory(actor)).status).toBe(500);
+    expect((await accountDirectory(actor)).status).toBe(500);
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
+    expect((await accountDirectory(unknownActor)).status).toBe(404);
     await engine.exec("DELETE FROM connector_catalog");
     expect((await mcpDirectory(unknownActor)).status).toBe(500);
+    expect((await accountDirectory(unknownActor)).status).toBe(500);
     await expect(
       createStore().get(
         immutableConnectorRuntimeSelection({
@@ -984,7 +1031,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const catalogReads = statements.filter((query) => {
       return query.includes("connector_catalog");
     });
-    expect(catalogReads).toHaveLength(4);
+    // Four existing MCP/empty-selection reads plus three account reads.
+    // Every consumer still captures current and entries in one statement.
+    expect(catalogReads).toHaveLength(7);
     for (const query of catalogReads) {
       expect(query).not.toContain("connector_catalog_active_snapshot");
       expect(query).not.toContain("connector_catalog_runtime_projection");
