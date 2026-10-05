@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.731.0](https://github.com/okou-ai/okou/compare/core-v8.730.2...core-v8.731.0) (2026-10-05)
+
+
+### Features
+
+* **platform:** add a feature-gated last-read divider and entry positioning ([#37740](https://github.com/okou-ai/okou/issues/37740)) ([52fbc35](https://github.com/okou-ai/okou/commit/52fbc351e258b79ac0e9a104a46247d695ac959e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.2
+
 ## [8.730.2](https://github.com/okou-ai/okou/compare/core-v8.730.1...core-v8.730.2) (2026-10-05)
 
 
