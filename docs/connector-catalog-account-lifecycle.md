@@ -151,10 +151,62 @@ and the derived failed gate remain separate evidence, not passes.
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | N5 account missing-entry and missing-current assertions | Reading `.status` from a typed response that cannot be returned for undeclared HTTP500 | Await the specific verified HTTP500/method/path rejection, using the unchanged real route, member token and account helper. Preserve subsequent unknown404, MCP responses, empty-selection/current error, seven SQL reads, no R2/legacy fallback, and all five-engine lifecycle assertions. No cases deleted/moved; no product response-contract/error-policy change. | Scoped ESLint/Oxlint, format and diff-check passed; test types recorded at handoff. Runtime validation is the new HEAD's natural CI, not local Vitest. |
 
-Independent review of the original owned diff remains pending; this author repair
-is not approval. The new minimal delta needs non-author review. Pi remains excluded
-for the transaction/identity reasons above; Preview remains pending separate
-coordinator authorization. No parent-generation lint cleanup is included.
+At the N5 repair handoff, independent review was pending; that historical status
+is not rewritten as runtime acceptance. L subsequently delivered source Scoped
+LGTM for the original nine-file/resolution scope and the two awaited N5 rejection
+assertions. N5 still has no new execution PASS: exact-f31 API8 was cancelled.
+Pi remains excluded for the transaction/identity reasons above; Preview remains
+pending separate coordinator authorization.
+
+## API1 public-selection contract repair and parent alignment
+
+Exact `f31dc4c13ca43339744adebdfc00cacbb8be77f2` natural Turbo
+`37357974440`, API1 job `111925267781`, failed at
+`chat-events-connectors.test.ts:927`: the selected-account list contained the
+owned OpenAI account as well as Runtime, while the old assertion expected only
+Runtime. The job recorded one failed / 1,027 passed tests and one failed / 52
+passed files. Other cancelled shards, including API8, are not passes. The
+original632 N5 typed-client business failure remains separately recorded above.
+
+The first source-contract divergence is the old test's inference from
+`replaceApiTestConnectorCatalogStoredBytes`: it updates only the owned legacy
+compatibility evaluation and active snapshot. It does not change immutable
+current/header/manifest/entries. The migrated account-by-ID projection therefore
+still returns both owned accounts, and the public selection list retains both
+persisted selections. Run execution and new-selection validation still consume
+the live legacy runtime snapshot. Their exclusion/rejection does not authorize
+removing a valid account from the immutable public projection. No production
+selection policy or fallback is changed.
+
+| Existing case                                                 | Retired assertion                                                                                                | Replacement public coverage                                                                                                                                                                                                                                                | Preserved boundary                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CHAT-02 selected built-in omitted from the legacy Run catalog | Public selection GET omits an immutable-valid account solely because an owned legacy snapshot no longer lists it | Rename the same case to identify the legacy/immutable split; assert both exact account selections before and after the real Run claim, and both connected public account projections. After public clear, assert only Runtime remains before and after legacy restoration. | Real Run send/claim succeeds; OpenAI secret metadata, runtime registration and account-bound firewall remain absent; Runtime secret metadata retains its exact selected account ID. Both existing selection-update and thread-create400 checks remain, as do clear204, restoration and cancellation. All custom/builtin ownership/permission cases are unchanged. |
+
+No case is deleted, moved or skipped. No mock, database fixture, catalog
+publisher, internal reader adapter or new install is added; the pre-existing
+owned legacy mutation/install remains limited to its original case. Actual
+immutable absent-entry/current fail-fast and no-fallback behavior remains native
+N5, not this legacy-only mutation. Its two exact awaited HTTP500 rejection
+assertions, subsequent checks/read7 and five-engine cleanup remain unchanged;
+N2/N4 public accounts and N3 concurrency are also unchanged.
+
+One normal parent merge is now integrated at
+`7c41e0afc06b6ed4f0b71b754ac1cdab6ddebebc`, with ordered parents
+`f31dc4c13ca43339744adebdfc00cacbb8be77f2` and
+`f5e5829c9cd6e30e7604d4b9fc00baf5d78674f1`. It merged automatically with no
+conflict or handwritten resolution. The exact ten-file parent cleanup, all ten
+generation files/group barriers and full migration tree are retained. The child
+native/account source blobs remain unchanged by that merge. This author's prior
+independent parent review does not approve the new child integration/repair;
+non-author delta review and natural new-head CI are required.
+
+No local Vitest/native/full-suite or PG/environment repair is performed. Scoped
+ESLint, Oxlint with deny-warnings, test type-aware Oxlint, Prettier, diff-check
+and the complete API aggregate types/boundary/acceptance pipeline passed. The
+Node boundary regressions are part of that authorized type pipeline, not an
+API business/native Vitest replay. These static results remain separate from
+natural new-head CI, non-author delta review and pending Preview. The PR remains
+Draft with autoMerge off.
 
 ## Verification and remaining gates
 
