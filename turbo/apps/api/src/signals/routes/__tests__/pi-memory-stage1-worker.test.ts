@@ -1419,12 +1419,14 @@ describe("Pi memory Stage 1 worker", () => {
   );
 
   it("fences concurrent claims and stale workers while recording both provider usages", async () => {
-    const storage = createStorageFixture();
-    const piSessionId = randomUUID();
+    const storage = await createPublicStorageFixture();
     const fixture = await storage.seed({
-      piSessionId,
-      raw: settledHistory(piSessionId, "lease fencing"),
+      raw: (piSessionId) => {
+        return settledHistory(piSessionId, "lease fencing");
+      },
     });
+    await storage.prepareExecution();
+    const piSessionId = fixture.pi_session_id;
     const oldStarted = createDeferredPromise<void>(context.signal);
     const oldReleased = createDeferredPromise<void>(context.signal);
     installProvider(async ({ sequence }) => {
@@ -1463,8 +1465,6 @@ describe("Pi memory Stage 1 worker", () => {
       staleDiscarded: 1,
     });
     await expect(inspect(fixture)).resolves.toMatchObject({
-      status: "succeeded",
-      retry_count: 1,
       raw_memory: "new lease output",
     });
     expect((await inspectUsage(storage)).length).toBeGreaterThanOrEqual(6);

@@ -37,7 +37,7 @@ import {
   type UsagePricingFixture,
   type UsagePricingKey,
 } from "../../../test-fixtures/system-config-seeds";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { restoreLegacyDownloadMetadataFixture } from "../../../test-fixtures/socialkit-download";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { mockNow, now } from "../../../lib/time";
@@ -55,7 +55,9 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRouteMocks } from "./helpers/route-test";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { reconcileSocialKitDownloadsForTest } from "./helpers/runtime-state";
 
 const context = testContext();
@@ -151,6 +153,174 @@ async function setActorCredits(
 async function fundActor(actor: ApiTestUser): Promise<void> {
   await bootstrapOnboarding(actor);
   await setActorCredits(actor, 10_000);
+}
+
+interface FundedSocialActor {
+  readonly actor: ApiTestUser;
+  readonly orgId: string;
+  readonly customerId: string;
+  readonly subscriptionId: string;
+  readonly invoiceId: string;
+  readonly storageBucket: string;
+}
+
+async function cleanupFundedSocialActor(
+  owned: FundedSocialActor,
+): Promise<void> {
+  mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
+  context.mocks.s3.send.mockResolvedValue({
+    Contents: [],
+    IsTruncated: false,
+  });
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  await flushWaitUntilForTest();
+
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.subscriptions.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "active",
+    metadata: {},
+  });
+  context.mocks.stripe.subscriptions.update.mockResolvedValue({
+    id: owned.subscriptionId,
+  });
+  context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+    id: owned.subscriptionId,
+    status: "canceled",
+  });
+  // The one-time credit invoice has no subscription invoice to refund.
+  context.mocks.stripe.invoices.list.mockResolvedValue({
+    data: [],
+    has_more: false,
+  });
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.deleted",
+    data: { id: owned.orgId },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+
+  // Production retains billing history under this fixture's unique IDs.
+  // Public cleanup removes the wallet and active work, not that history.
+  await expect(credits(owned.actor)).resolves.toBe(0);
+  expect(
+    (
+      await createRunReadsApi(context).requestListLogs(
+        owned.actor,
+        { limit: 50 },
+        [200],
+      )
+    ).body.data,
+  ).toStrictEqual([]);
+}
+
+const trackFundedSocialActor = createFixtureTracker(cleanupFundedSocialActor);
+
+async function fundActorWithSubscription(actor: ApiTestUser): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Social test actor must belong to an organization");
+  }
+  const suffix = randomUUID();
+  const owned = await trackFundedSocialActor(
+    Promise.resolve({
+      actor,
+      orgId: actor.orgId,
+      customerId: `cus_social_${suffix}`,
+      subscriptionId: `sub_social_${suffix}`,
+      invoiceId: `in_social_${suffix}`,
+      storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    }),
+  );
+  await bootstrapOnboarding(actor);
+  await expect(credits(actor)).resolves.toBe(0);
+
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.customers.retrieve.mockResolvedValue({
+    id: owned.customerId,
+    metadata: { orgId: owned.orgId },
+  });
+  const subscription = {
+    id: owned.subscriptionId,
+    customer: owned.customerId,
+    status: "active",
+    metadata: {},
+    cancel_at_period_end: false,
+    cancel_at: null,
+    schedule: null,
+    trial_end: null,
+    items: { data: [{ price: { id: "price_bdd_pro" } }] },
+  };
+  await webhooks.postStripeEvent(
+    {
+      id: `evt_social_created_${suffix}`,
+      type: "customer.subscription.created",
+      created: Math.floor(now() / 1000),
+      data: { object: subscription },
+    },
+    [200],
+  );
+  await webhooks.postStripeEvent(
+    {
+      id: `evt_social_updated_${suffix}`,
+      type: "customer.subscription.updated",
+      created: Math.floor(now() / 1000),
+      data: { object: subscription },
+    },
+    [200],
+  );
+  const subscribed = await accept(
+    client()(billingStatusContract).get({
+      headers: authenticate(actor),
+    }),
+    [200],
+  );
+  expect(subscribed.body).toMatchObject({
+    tier: "pro",
+    status: "active",
+    credits: 0,
+  });
+
+  await webhooks.postStripeEvent(
+    {
+      id: `evt_social_paid_${suffix}`,
+      type: "invoice.paid",
+      created: Math.floor(now() / 1000),
+      data: {
+        object: {
+          id: owned.invoiceId,
+          customer: owned.customerId,
+          amount_paid: 1000,
+          metadata: {
+            type: "auto_recharge",
+            orgId: owned.orgId,
+            creditsAmount: "10000",
+          },
+          parent: null,
+          lines: { has_more: false, data: [] },
+        },
+      },
+    },
+    [200],
+  );
+  await flushWaitUntilForTest();
+  const funded = await accept(
+    client()(billingStatusContract).get({
+      headers: authenticate(actor),
+    }),
+    [200],
+  );
+  expect(funded.body).toMatchObject({
+    tier: "pro",
+    status: "active",
+    credits: 10_000,
+  });
 }
 
 async function credits(actor: ApiTestUser): Promise<number> {
@@ -283,7 +453,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     server.use(
       http.get(`${SOCIALKIT_BASE}/youtube/transcript`, async () => {
         await pricing.cleanup();
@@ -337,7 +507,7 @@ describe("managed SocialKit route", () => {
     let providerRequests = 0;
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     server.use(
       providerHandler("GET", "/youtube/transcript", () => {
         providerRequests += 1;
@@ -366,7 +536,7 @@ describe("managed SocialKit route", () => {
       }
       configureProvider();
       const pricing = await setupConfiguredPricing();
-      await fundActor(actor);
+      await fundActorWithSubscription(actor);
       const beforeCredits = await credits(actor);
       const seconds = Math.floor(now() / 1000);
       const headers =
@@ -441,7 +611,7 @@ describe("managed SocialKit route", () => {
       const actor = createBddApi(context).user();
       configureProvider();
       const pricing = await setupConfiguredPricing();
-      await fundActor(actor);
+      await fundActorWithSubscription(actor);
       const beforeCredits = await credits(actor);
       const observed: (string | null)[] = [];
       server.use(
@@ -477,7 +647,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const missingViews =
       "Instagram view count is temporarily unavailable. Please retry.";
@@ -563,7 +733,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     let providerRequests = 0;
     server.use(
@@ -633,7 +803,7 @@ describe("managed SocialKit route", () => {
       const actor = createBddApi(context).user();
       configureProvider();
       const pricing = await setupConfiguredPricing();
-      await fundActor(actor);
+      await fundActorWithSubscription(actor);
       const requests: Record<string, string>[] = [];
       server.use(
         http.get(
@@ -712,7 +882,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const refreshParameters: (string | null)[] = [];
     server.use(
@@ -751,7 +921,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const observed: { readonly path: string; readonly limit: string | null }[] =
       [];
@@ -896,7 +1066,7 @@ describe("managed SocialKit route", () => {
     }
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const seconds = Math.floor(now() / 1000);
     const token = signSandboxJwtForTests({
@@ -1009,7 +1179,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     let providerRequests = 0;
     server.use(
@@ -1182,7 +1352,7 @@ describe("managed SocialKit route", () => {
           }
         | undefined;
       configureProvider();
-      await fundActor(actor);
+      await fundActorWithSubscription(actor);
       const pricing = await setupConfiguredPricing();
       server.use(
         http.get(/^https:\/\/api\.socialkit\.dev\//u, ({ request }) => {
@@ -1240,7 +1410,7 @@ describe("managed SocialKit route", () => {
   it("rejects invalid Instagram searches before provider work or billing", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupConfiguredPricing();
     const beforeCredits = await credits(actor);
     let providerRequests = 0;
@@ -1275,7 +1445,7 @@ describe("managed SocialKit route", () => {
   it("normalizes Instagram queries and reports every anonymous batch as source-limited", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupConfiguredPricing();
     const beforeCredits = await credits(actor);
     const observed: URL[] = [];
@@ -1342,7 +1512,7 @@ describe("managed SocialKit route", () => {
   ])("accepts the documented Instagram stats URL %s", async (url) => {
     const actor = createBddApi(context).user();
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupConfiguredPricing();
     let observedUrl: string | null = null;
     server.use(
@@ -1370,7 +1540,7 @@ describe("managed SocialKit route", () => {
     let observedAccessKey: string | null = null;
     let observedBody = "";
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupConfiguredPricing();
     const beforeCredits = await credits(actor);
     server.use(
@@ -1508,7 +1678,7 @@ describe("managed SocialKit route", () => {
       offerCount: 0,
     };
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupConfiguredPricing();
     server.use(
       http.get(/^https:\/\/api\.socialkit\.dev\//u, ({ request }) => {
@@ -1852,7 +2022,7 @@ describe("managed SocialKit route", () => {
   it("rejects contradictory Instagram comment continuation without billing", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupConfiguredPricing();
     const beforeCredits = await credits(actor);
 
@@ -2039,7 +2209,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const cases = [
       {
@@ -2239,7 +2409,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     let providerRequests = 0;
     configureProvider();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const pricing = await setupMissingPricing();
     server.use(
       providerHandler("GET", "/youtube/transcript", () => {
@@ -2322,7 +2492,7 @@ describe("managed SocialKit route", () => {
       const actor = createBddApi(context).user();
       configureProvider();
       const pricing = await setupConfiguredPricing();
-      await fundActor(actor);
+      await fundActorWithSubscription(actor);
       const beforeCredits = await credits(actor);
       let providerRequests = 0;
       server.use(
@@ -2563,7 +2733,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     mockNow(Date.parse("2026-09-14T12:00:00.000Z"));
     server.use(
       providerHandler("GET", "/youtube/transcript", () => {
@@ -2591,7 +2761,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const cases = [
       [400, "raw invalid input payload", 400, "SOCIALKIT_INVALID_INPUT"],
@@ -2757,7 +2927,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const invalidResponses: (() => Response)[] = [
       () => {
@@ -2798,7 +2968,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     const responses: (() => Response)[] = [
       () => {
@@ -2845,7 +3015,7 @@ describe("managed SocialKit route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
 
     server.use(
@@ -2895,7 +3065,7 @@ describe("managed SocialKit route", () => {
     let providerSignalAborted = false;
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       http.get(`${SOCIALKIT_BASE}/youtube/transcript`, async ({ request }) => {
@@ -2927,7 +3097,7 @@ describe("managed SocialKit route", () => {
     abortError.name = "AbortError";
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       providerHandler("GET", "/youtube/transcript", () => {
@@ -2969,7 +3139,7 @@ describe("managed SocialKit route", () => {
     let providerRequests = 0;
     configureProvider();
     const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
+    await fundActorWithSubscription(actor);
     const beforeCredits = await credits(actor);
     server.use(
       providerHandler("GET", "/youtube/search", () => {
