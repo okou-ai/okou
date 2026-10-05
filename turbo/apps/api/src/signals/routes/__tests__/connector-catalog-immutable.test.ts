@@ -75,12 +75,14 @@ afterEach(async () => {
   const trace = caseTrace;
   const drained = await settle(
     (async () => {
-      if (trace) {
-        assert.equal(trace.signal.aborted, true);
-        assert.deepEqual(trace.events, ["owner-aborted", "native-drained"]);
-      }
+      const beforeFlush = [...(trace?.events ?? [])];
       await flushWaitUntilForTest();
       trace?.events.push("waitUntil-drained");
+      // Diagnostics must not skip drainage if their own assertion fails.
+      if (trace) {
+        assert.equal(trace.signal.aborted, true);
+        assert.deepEqual(beforeFlush, ["owner-aborted", "native-drained"]);
+      }
     })(),
   );
   binding.database = undefined;
