@@ -1,42 +1,40 @@
-import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
+import { getMemberRunModelRoute } from "@okouai/api-contracts/contracts/member-run-model";
 import {
   getModelProviderPresentationLabel,
   isBuiltInModelProviderType,
+  type AvailableRunModel,
   type ModelProviderType,
-  type OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 
-type ModelProviderRouteKind = "built-in" | "api key" | "subscription";
+type ModelProviderRouteKind = "built-in" | "subscription";
 
 export function getModelProviderRouteKind(
-  policy: OrgModelPolicy,
+  runModel: AvailableRunModel,
 ): ModelProviderRouteKind {
-  const route = getMemberModelPolicyRoute(policy);
+  const route = getMemberRunModelRoute(runModel);
   if (isBuiltInModelProviderType(route.providerType)) {
     return "built-in";
   }
 
-  if (route.credentialScope === "member") {
-    return "subscription";
-  }
-
-  return "api key";
+  return "subscription";
 }
 
 export function getModelProviderTypeLabel(type: ModelProviderType): string {
   return getModelProviderPresentationLabel(type);
 }
 
-export function formatModelProviderRoute(policy: OrgModelPolicy): string {
-  const kind = getModelProviderRouteKind(policy);
-  const route = getMemberModelPolicyRoute(policy);
+export function formatModelProviderRoute(runModel: AvailableRunModel): string {
+  const kind = getModelProviderRouteKind(runModel);
+  const route = getMemberRunModelRoute(runModel);
   const label = getModelProviderTypeLabel(route.providerType);
   return `${kind} (${label}; ${route.providerType})`;
 }
 
-export function formatModelPolicyStatus(policy: OrgModelPolicy): string | null {
-  if (policy.memberEffective) {
-    switch (policy.memberEffective.availability) {
+export function formatRunModelStatus(
+  runModel: AvailableRunModel,
+): string | null {
+  if (runModel.memberEffective) {
+    switch (runModel.memberEffective.availability) {
       case "available":
         return null;
       case "reconnect_required":
@@ -44,16 +42,16 @@ export function formatModelPolicyStatus(policy: OrgModelPolicy): string | null {
       case "plan_restricted":
         return "plan_restricted: Review your organization's plan in Billing.";
       case "unavailable":
-        return policy.memberEffective.credentialScope === "member"
+        return runModel.memberEffective.credentialScope === "member"
           ? "unavailable: Connect your personal subscription in Preferences / Personal Models."
-          : "unavailable: Ask an organization admin to review this model provider.";
+          : "unavailable: Auto is unavailable. Try again later.";
     }
   }
-  if (policy.routeStatus === "valid") {
+  if (runModel.routeStatus === "valid") {
     return null;
   }
 
-  return policy.routeStatusReason
-    ? `${policy.routeStatus}: ${policy.routeStatusReason}`
-    : policy.routeStatus;
+  return runModel.routeStatusReason
+    ? `${runModel.routeStatus}: ${runModel.routeStatusReason}`
+    : runModel.routeStatus;
 }

@@ -1,9 +1,11 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
-import { useTranslation } from "react-i18next";
-import { EllipsisVertical, Plus } from "lucide-react";
+import type {
+  ModelProviderResponse,
+  ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
 import {
   Badge,
   Button,
+  cn,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -14,17 +16,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Skeleton,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  Skeleton,
-  cn,
 } from "@okouai/ui";
-import type {
-  ModelProviderResponse,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { EllipsisVertical, Plus } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { subscriptionUsageWindows } from "../../../../lib/subscription-usage-windows.ts";
+import { reloadPersonalModelProviders$ } from "../../../../signals/external/personal-model-providers.ts";
+import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/claude-code-device-auth.ts";
+import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
 import {
   activatePersonalOAuthCredentialAccount$,
   deletePersonalOAuthCredentialAccount$,
@@ -36,21 +40,13 @@ import {
   setSettingsCodexResetDialog$,
   settingsCodexResetDialog$,
 } from "../../../../signals/okou-page/settings/personal-model-providers.ts";
-import { subscriptionUsageWindows } from "../../../../lib/subscription-usage-windows.ts";
-import { modelPlanCapabilities$ } from "../../../../signals/okou-page/model-plan-capabilities.ts";
-import { openSettingsBillingPlans$ } from "../../../../signals/okou-page/settings/settings-dialog.ts";
-import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/claude-code-device-auth.ts";
-import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
-import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import { orgModelPolicies$ } from "../../../../signals/external/org-model-policies.ts";
-import { reloadPersonalModelProviders$ } from "../../../../signals/external/personal-model-providers.ts";
-import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
-import { ProviderIcon } from "../settings/provider-icons.tsx";
+import { detach, Reason } from "../../../../signals/utils.ts";
+import { formatSubscriptionUsageReset } from "../../subscription-usage-format.ts";
 import { PersonalClaudeCodeDeviceAuthDialog } from "../settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "../settings/codex-device-auth-dialog.tsx";
-import { SettingsSectionHeading } from "../settings/settings-section-heading.tsx";
-import { formatSubscriptionUsageReset } from "../../subscription-usage-format.ts";
+import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
+import { ProviderIcon } from "../settings/provider-icons.tsx";
 import {
   CodexResetCreditsButton,
   CodexResetUsageDialog,
@@ -71,35 +67,23 @@ export function PersonalProvidersTab() {
   );
 }
 
-function PersonalModelsHeading({ auto = false }: { readonly auto?: boolean }) {
+function PersonalModelsHeading() {
   const { t } = useTranslation();
-  if (auto) {
-    return (
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">
-            {t(($) => {
-              return $.settings.models.personal.autoTitle;
-            })}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.settings.models.personal.autoDescription;
-            })}
-          </p>
-        </div>
-      </div>
-    );
-  }
   return (
-    <SettingsSectionHeading
-      title={t(($) => {
-        return $.settings.models.personal.accountsSectionTitle;
-      })}
-      description={t(($) => {
-        return $.settings.models.personal.accountsDescription;
-      })}
-    />
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">
+          {t(($) => {
+            return $.settings.models.personal.autoTitle;
+          })}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.settings.models.personal.autoDescription;
+          })}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -120,29 +104,19 @@ type PersonalProviderAccountGroup = {
 function OAuthAccountGroupsSection() {
   const { t } = useTranslation();
   const providersLoadable = useLastLoadable(personalConfiguredProviders$);
-  const modelCapabilitiesLoadable = useLastLoadable(modelPlanCapabilities$);
   const actionLoadable = useLoadable(personalActionPromise$);
-  const openBillingPlans = useSet(openSettingsBillingPlans$);
   const openClaudeCodeDeviceAuthDialog = useSet(
     openClaudeCodeDeviceAuthDialogPersonal$,
   );
   const openCodexDeviceAuthDialog = useSet(openCodexDeviceAuthDialogPersonal$);
   const activateAccount = useSet(activatePersonalOAuthCredentialAccount$);
-  const mode = useLastLoadable(orgModelPolicies$);
   const setDisconnectDialog = useSet(setPersonalAccountDisconnectDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
   const pageSignal = useGet(pageSignal$);
 
-  const auto = mode.state === "hasData" && mode.data.modelMode === "auto";
-  const isLoading =
-    providersLoadable.state === "loading" ||
-    (!auto && modelCapabilitiesLoadable.state === "loading");
+  const isLoading = providersLoadable.state === "loading";
   const providers =
     providersLoadable.state === "hasData" ? providersLoadable.data : [];
-  const supportByok =
-    auto ||
-    modelCapabilitiesLoadable.state !== "hasData" ||
-    modelCapabilitiesLoadable.data.supportByok;
   const actionPending = actionLoadable.state === "loading";
   const accountGroups: readonly PersonalProviderAccountGroup[] =
     PERSONAL_ACCOUNT_PROVIDER_TYPES.map((type) => {
@@ -166,10 +140,6 @@ function OAuthAccountGroupsSection() {
     type: PersonalAccountProviderType,
     modelProviderId?: string,
   ) => {
-    if (!supportByok) {
-      openBillingPlans();
-      return;
-    }
     const args = modelProviderId
       ? { mode: "reconnect" as const, modelProviderId }
       : { mode: "connect" as const };
@@ -180,7 +150,7 @@ function OAuthAccountGroupsSection() {
     detach(request, Reason.DomCallback);
   };
 
-  if (auto && providersLoadable.state !== "hasData") {
+  if (providersLoadable.state !== "hasData") {
     return (
       <AutoPersonalAccountsReadState
         failed={providersLoadable.state === "hasError"}
@@ -189,14 +159,12 @@ function OAuthAccountGroupsSection() {
   }
   return (
     <section className="flex flex-col gap-4">
-      <PersonalModelsHeading auto={auto} />
+      <PersonalModelsHeading />
       <TooltipProvider delay={100}>
         <PersonalProviderAccountsTable
-          showReconnectAction={auto}
+          showReconnectAction
           accountGroups={accountGroups}
-          supportByok={supportByok}
           onConnect={openAccountAuth}
-          onUpgrade={openBillingPlans}
           actionPending={actionPending}
           isLoading={isLoading}
           onActivate={(id) => {
@@ -234,7 +202,7 @@ function AutoPersonalAccountsReadState({
   const providers = useLoadable(personalConfiguredProviders$);
   return (
     <section className="flex flex-col gap-6">
-      <PersonalModelsHeading auto />
+      <PersonalModelsHeading />
       {failed ? (
         <div className="flex flex-col items-start gap-4" role="alert">
           <p className="text-sm text-muted-foreground">
@@ -274,36 +242,14 @@ function ConnectPersonalAccountAction({
   group,
   actionPending,
   isLoading,
-  supportByok,
   onAdd,
-  onUpgrade,
 }: {
   readonly group: PersonalProviderAccountGroup;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
-  readonly supportByok: boolean;
   readonly onAdd: (type: PersonalAccountProviderType) => void;
-  readonly onUpgrade: () => void;
 }) {
   const { t } = useTranslation();
-  if (!supportByok) {
-    return (
-      <Button
-        type="button"
-        variant="neutral"
-        size="sm"
-        className="h-9 rounded-lg"
-        disabled={isLoading || actionPending}
-        onClick={() => {
-          onUpgrade();
-        }}
-      >
-        {t(($) => {
-          return $.settings.models.actions.upgradePro;
-        })}
-      </Button>
-    );
-  }
 
   return (
     <Button
@@ -327,9 +273,7 @@ function ConnectPersonalAccountAction({
 function PersonalProviderAccountsTable({
   showReconnectAction,
   accountGroups,
-  supportByok,
   onConnect,
-  onUpgrade,
   actionPending,
   isLoading,
   onActivate,
@@ -339,9 +283,7 @@ function PersonalProviderAccountsTable({
 }: {
   readonly showReconnectAction: boolean;
   readonly accountGroups: readonly PersonalProviderAccountGroup[];
-  readonly supportByok: boolean;
   readonly onConnect: (type: PersonalAccountProviderType) => void;
-  readonly onUpgrade: () => void;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly onActivate: (id: string) => void;
@@ -363,9 +305,7 @@ function PersonalProviderAccountsTable({
             showReconnectAction={showReconnectAction}
             key={group.type}
             group={group}
-            supportByok={supportByok}
             onConnect={onConnect}
-            onUpgrade={onUpgrade}
             actionPending={actionPending}
             isLoading={isLoading}
             onActivate={onActivate}
@@ -382,9 +322,7 @@ function PersonalProviderAccountsTable({
 function PersonalProviderAccountTable({
   showReconnectAction,
   group,
-  supportByok,
   onConnect,
-  onUpgrade,
   actionPending,
   isLoading,
   onActivate,
@@ -394,9 +332,7 @@ function PersonalProviderAccountTable({
 }: {
   readonly showReconnectAction: boolean;
   readonly group: PersonalProviderAccountGroup;
-  readonly supportByok: boolean;
   readonly onConnect: (type: PersonalAccountProviderType) => void;
-  readonly onUpgrade: () => void;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly onActivate: (id: string) => void;
@@ -430,9 +366,7 @@ function PersonalProviderAccountTable({
             group={group}
             actionPending={actionPending}
             isLoading={isLoading}
-            supportByok={supportByok}
             onAdd={onConnect}
-            onUpgrade={onUpgrade}
           />
         </div>
         <div role="table" aria-labelledby={headingId}>

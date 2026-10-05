@@ -2,7 +2,7 @@ import {
   modelCatalogContract,
   type ModelCatalogResponse,
 } from "@okouai/api-contracts/contracts/model-catalog";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { mockApi } from "../msw-contract.ts";
 
 type MockCatalogModel = ModelCatalogResponse["models"][number];
@@ -172,6 +172,7 @@ function routesFor(model: string): MockCatalogRoute[] {
     routes.push({
       ...base,
       providerType: profile.subscription,
+      subscriptionType: profile.subscription,
       concreteProviderType: profile.subscription,
       serviceTiers: [...profile.serviceTiers],
       defaultServiceTier: null,
@@ -188,7 +189,7 @@ function resolveReplacement(model: string): string {
   return row?.[3] ? resolveReplacement(row[3]) : model;
 }
 
-// Plan policy seeded by migration 1300.
+// Plan runModel seeded by migration 1300.
 /** Seeded `run_model_catalog.built_in_on_restricted_plans` (migration 1300). */
 const RESTRICTED_PLAN_BUILT_IN_MODELS: ReadonlySet<string> = new Set([
   "okou-1.0",
@@ -237,7 +238,12 @@ export function createMockModelCatalog(
     systemDefaultModel,
     models,
     routes: MODEL_ROWS.flatMap(([model]) => {
-      return routesFor(model);
+      return routesFor(model).filter((route) => {
+        return model === systemDefaultModel
+          ? route.providerType === "built-in"
+          : route.providerType === "codex-oauth-token" ||
+              route.providerType === "claude-code-oauth-token";
+      });
     }),
   };
 }
@@ -275,17 +281,17 @@ export function mockCatalogActiveModels(): string[] {
 
 export function mockCatalogBuiltInProvider(
   model: string,
-): OrgModelPolicy["runtimeProviderType"] {
+): AvailableRunModel["runtimeProviderType"] {
   return (mockModelCatalog.routes.find((route) => {
     return route.model === model && route.providerType === "built-in";
-  })?.concreteProviderType ?? null) as OrgModelPolicy["runtimeProviderType"];
+  })?.concreteProviderType ?? null) as AvailableRunModel["runtimeProviderType"];
 }
 
 export function setMockModelCatalogSystemDefault(model: string): void {
   mockModelCatalog = createMockModelCatalog(model);
 }
 
-/** Operators change a model's plan policy for restricted plans. */
+/** Operators change a model's plan runModel for restricted plans. */
 export function setMockModelCatalogRestrictedPlanAccess(
   model: string,
   access: Pick<MockCatalogModel, "builtInOnRestrictedPlans">,

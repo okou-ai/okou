@@ -1,16 +1,21 @@
-import { command, computed, state } from "ccstate";
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { searchParams$, updateSearchParams$ } from "../../route.ts";
-import { usagePackManagementAsync$ } from "../billing.ts";
-import { isOrgAdmin$ } from "../../org.ts";
+import { command, computed, state } from "ccstate";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
-import { resetSignal } from "../../utils.ts";
-import { reloadConnectorCatalogDiagnostics$ } from "./connector-catalog-diagnostics.ts";
-import { reloadBuiltInModelCooldownDiagnostics$ } from "./built-in-model-cooldown-diagnostics.ts";
-import { retryEmailSubscription$ } from "./email-subscription.ts";
-import { setAutoModelConfirmationOpen$ } from "./org-model-mode.ts";
+import { isOrgAdmin$ } from "../../org.ts";
+import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
+import { resetSignal } from "../../utils.ts";
+import { usagePackManagementAsync$ } from "../billing.ts";
+import { reloadBuiltInModelCooldownDiagnostics$ } from "./built-in-model-cooldown-diagnostics.ts";
+import { reloadConnectorCatalogDiagnostics$ } from "./connector-catalog-diagnostics.ts";
+import { retryEmailSubscription$ } from "./email-subscription.ts";
+import {
+  managedUsagePackSelection,
+  resetUsagePackPricing$,
+  setMemberUsageSelections$,
+  setSelectedUsagePackPlan$,
+} from "./usage-pack-pricing-state.ts";
 import {
   billingPlansStandalone$,
   billingSubPage$,
@@ -22,12 +27,6 @@ import {
   setBillingPlansStandalone$,
   setBillingSubPage$,
 } from "./workspace-settings-state.ts";
-import {
-  managedUsagePackSelection,
-  resetUsagePackPricing$,
-  setMemberUsageSelections$,
-  setSelectedUsagePackPlan$,
-} from "./usage-pack-pricing-state.ts";
 
 // `usage` is the credit balance surface and keeps its id so existing
 // `?settings=usage` links stay valid; `usage-records` is the usage history that
@@ -196,7 +195,6 @@ export const openSettingsUsagePackUpgrade$ = command(
 
 const releaseSettingsDialogSession$ = command(({ set }) => {
   set(internalSettingsDialogSignal$, null);
-  set(setAutoModelConfirmationOpen$, false);
   set(internalSettingsDialogSessionActive$, false);
   set(clearPendingLogo$);
   set(resetDeleteConfirm$);

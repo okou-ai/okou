@@ -1,7 +1,7 @@
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -12,14 +12,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  chatListAuth,
-  fastButton,
-  installActiveChatBoundaries,
-  installChatListAgent,
-  installChatListModelPolicies,
-  installChatListStream,
-} from "./chat-list-test-helpers.ts";
-import {
   continuityAttachment,
   continuityDraft,
   continuitySidebarLink,
@@ -28,6 +20,14 @@ import {
   installContinuityWorkspace,
   textContinuityDraft,
 } from "./chat-continuity-test-helpers.ts";
+import {
+  chatListAuth,
+  fastButton,
+  installActiveChatBoundaries,
+  installChatListAgent,
+  installChatListRunModels,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 
@@ -126,7 +126,7 @@ test("Protect local edits while a saved draft is loading", async () => {
   const oldAttachment = continuityAttachment(2, 1, "older-notes.txt");
   let draftResponseCompleted = false;
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, { caseId: 2, snapshot: [] });
   installActiveChatBoundaries(context);
   context.mocks.api(agentDraftContract.get, async ({ respond }) => {

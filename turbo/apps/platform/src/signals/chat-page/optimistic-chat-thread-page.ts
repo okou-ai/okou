@@ -1,6 +1,4 @@
-import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { command, computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   chatThreadsContract,
   type GenerationTemplateRequest,
@@ -9,55 +7,57 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
-import type { OrgModelPoliciesResponse } from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserModelPreferenceResponse } from "@okouai/api-contracts/contracts/user-model-preference";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { command, computed } from "ccstate";
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { startChatNavigationTiming$ } from "../../lib/posthog.ts";
 import { nowDate } from "../../lib/time.ts";
-import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { currentChatThreadId$ } from "../agent-chat.ts";
-import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { loadRightThread$ } from "./chat-thread-panes.ts";
-import { talkDraft$, type DraftSignals } from "../okou-page/chat-draft.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
+import { userModelPreference$ } from "../external/user-model-preference.ts";
+import { logger } from "../log.ts";
 import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
-import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
+import { talkDraft$, type DraftSignals } from "../okou-page/chat-draft.ts";
+import { chatPageModelSelection$ } from "../okou-page/chat-page.ts";
 import {
-  appendOptimisticChatEvent$,
-  createOptimisticChatEventEntry,
-  type OptimisticChatEventInput,
-} from "./optimistic-chat-events.ts";
-import { sendChatEvent } from "./chat-event-api.ts";
+  rememberComposerTaskForThread$,
+  type ComposerTaskSelection,
+} from "../okou-page/composer-task-handoff.ts";
 import {
   isCodexFastModeAvailableForSelection,
   resolveDefaultModelSelection,
 } from "../okou-page/model-default-selection.ts";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
-import { userModelPreference$ } from "../external/user-model-preference.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { logger } from "../log.ts";
+import { selectedModelAvailable$ } from "../okou-page/model-first-personal-oauth.ts";
+import {
+  textToMessageDocument,
+  type EditorDocumentSnapshot,
+} from "../okou-page/user-message-document-codec.ts";
+import { detachedNavigateTo$, searchParams$ } from "../route.ts";
+import { sendChatEvent } from "./chat-event-api.ts";
+import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
+import type { ChatForwardContext } from "./chat-forward.ts";
+import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
+import { loadRightThread$ } from "./chat-thread-panes.ts";
 import {
   apiServiceTierFromSelection,
   runOptionsFromModelProviderSelection,
   withSelectedModelAnnotation,
 } from "./model-selection-request.ts";
-import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
-import { chatPageModelSelection$ } from "../okou-page/chat-page.ts";
-import { selectedModelAvailable$ } from "../okou-page/model-first-personal-oauth.ts";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { i18n } from "../../i18n/index.ts";
 import {
-  textToMessageDocument,
-  type EditorDocumentSnapshot,
-} from "../okou-page/user-message-document-codec.ts";
-import {
-  rememberComposerTaskForThread$,
-  type ComposerTaskSelection,
-} from "../okou-page/composer-task-handoff.ts";
-import type { ChatForwardContext } from "./chat-forward.ts";
-import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
+  appendOptimisticChatEvent$,
+  createOptimisticChatEventEntry,
+  type OptimisticChatEventInput,
+} from "./optimistic-chat-events.ts";
+import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 
 export type NewChatThreadPane = "main" | "sidebar";
 
@@ -214,7 +214,7 @@ function newThreadSendBody({
 function resolveNewThreadModelSelection(
   modelSelection: ModelProviderSelection | null,
   args: {
-    readonly policies: OrgModelPoliciesResponse | null | undefined;
+    readonly models: AvailableRunModelsResponse | null | undefined;
     readonly userPreference: UserModelPreferenceResponse | null | undefined;
     readonly catalog: ModelCatalog;
   },
@@ -222,7 +222,7 @@ function resolveNewThreadModelSelection(
   if (modelSelection) {
     return modelSelection.codexServiceTier === "fast" &&
       !isCodexFastModeAvailableForSelection({
-        policies: args.policies,
+        models: args.models,
         catalog: args.catalog,
         selectedModel: modelSelection.selectedModel,
       })
@@ -231,23 +231,24 @@ function resolveNewThreadModelSelection(
   }
   return resolveDefaultModelSelection({
     userPreference: args.userPreference,
-    policies: args.policies,
+    models: args.models,
     catalog: args.catalog,
   });
 }
 
 const resolveCurrentNewThreadModelSelection$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const [modelSelection, policies, userPreference, catalog] =
-      await Promise.all([
+    const [modelSelection, models, userPreference, catalog] = await Promise.all(
+      [
         get(chatPageModelSelection$),
-        get(orgModelPolicies$),
+        get(availableRunModels$),
         get(userModelPreference$),
         get(modelCatalog$),
-      ]);
+      ],
+    );
     signal.throwIfAborted();
     const resolved = resolveNewThreadModelSelection(modelSelection, {
-      policies,
+      models,
       userPreference,
       catalog,
     });
@@ -413,14 +414,14 @@ const startNewChatThreadCreate$ = command(
   }> => {
     const threadId = crypto.randomUUID();
     const eventId = crypto.randomUUID();
-    const policies = await get(orgModelPolicies$);
+    const models = await get(availableRunModels$);
     signal.throwIfAborted();
     const userPreference = await get(userModelPreference$);
     signal.throwIfAborted();
     const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const modelSelection = resolveNewThreadModelSelection(null, {
-      policies,
+      models,
       userPreference,
       catalog,
     });

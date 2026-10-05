@@ -4813,21 +4813,9 @@
     },
     "models": {
       "actions": {
-        "addModel": "モデルの追加",
-        "deleteModel": "モデルの削除",
-        "editModel": "モデルの編集",
         "resetUsage": "使用量をリセットする",
         "upgradePro": "Pro をアップグレードして使用する",
         "upgradeToPro": "プロにアップグレード"
-      },
-      "autoMode": {
-        "cancel": "キャンセル",
-        "confirm": "Auto Model に切り替える",
-        "confirmDescription": "組織のモデルポリシー、Provider Connections、不要になったシークレットを完全に削除します。組織ポリシーは Auto のみになります。メンバーの個人サブスクリプションは接続されたままで、モデルを追加できます。Custom に戻しても削除された組織設定は復元されません。",
-        "confirmTitle": "ワークスペースを Auto Model に切り替えますか？",
-        "description": "組織ポリシーに Auto を使用します。個人サブスクリプションからメンバーのモデルを追加できます。",
-        "failed": "モデルモードを変更できませんでした。設定を更新して再試行してください。",
-        "title": "Auto Model"
       },
       "deviceAuth": {
         "claude": {
@@ -4870,40 +4858,6 @@
           "signIn": "ChatGPT でサインインする"
         }
       },
-      "gateways": {
-        "actions": "ゲートウェイの操作",
-        "add": "プロバイダーを追加",
-        "addTitle": "モデルプロバイダーを追加",
-        "apiBaseUrl": "API ベース URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API キー",
-        "deleteConfirm": "このモデルプロバイダー接続を削除しますか？これを使用しているモデルルートは利用できなくなります。",
-        "description": "Anthropic Messages、OpenAI Responses、またはその両方を介して、管理者が管理するゲートウェイに接続します。",
-        "dialogDescription": "Claude Code または Codex で使用する API ベース URL をプロトコルごとに設定します。",
-        "editTitle": "モデルプロバイダーを編集",
-        "errors": {
-          "invalidMappings": "モデルマッピングは、値がアップストリームのモデル名である JSON オブジェクトである必要があります。",
-          "missingProtocol": "少なくとも 1 つのプロトコルを有効にしてください。",
-          "missingSecret": "API キーを入力してください。"
-        },
-        "headerName": "認証ヘッダー",
-        "headerValue": "ヘッダー値テンプレート",
-        "keepKey": "現在のキーを保持する場合は空欄にしてください",
-        "modelMappings": "モデルマッピング（JSON）",
-        "name": "名前",
-        "presets": {
-          "custom": "カスタム",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "リクエスト",
-        "title": "プロバイダー接続"
-      },
       "personal": {
         "accountFallback": "アカウント {{number}}",
         "accountsDescription": "新しい実行で各プロバイダーが使用するアカウントを選択します。",
@@ -4935,7 +4889,6 @@
       },
       "picker": {
         "builtInModel": "内蔵モデル",
-        "byokHelp": "設定されたプロバイダーを使用します",
         "chatModels": "チャットモデル",
         "effort": "強度",
         "effortScale": {
@@ -4948,8 +4901,8 @@
         },
         "fast": "速い",
         "fastImpact": {
-          "creditCost": "クレジット消費 {{multiplier}}×",
-          "providerUsage": "使用量はプロバイダーに依存"
+          "providerUsage": "使用量はプロバイダーに依存",
+          "subscriptionUsage": "サブスクリプション使用量 {{multiplier}} 倍"
         },
         "fastMode": "高速モード",
         "generationPriceTiers": {
@@ -4963,56 +4916,11 @@
         "loading": "モデルをロード中...",
         "models": "モデル",
         "noConfiguredModels": "設定されたモデルはありません",
-        "priceTiers": {
-          "balanced": "バランスの取れたコストとパフォーマンス",
-          "economy": "日常の単純なタスク向けのエコノミー層",
-          "frontier": "フロンティアフラッグシップモデル",
-          "premium": "最も困難なタスクに対応するプレミアムフロンティアモデル"
-        },
         "pro": "プロ",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure ファウンドリ ポータル",
-          "claudeCodeOauth": "Claude Code（OAuthトークン）",
-          "deepseek": "ディープシーク"
-        },
         "standard": "標準",
         "ultrafast": "ウルトラファスト",
         "ultrafastImpact": "トークン生成速度が最大8倍 · OpenAI APIのトークン料金は6倍",
         "ultrafastMode": "ウルトラファストモード"
-      },
-      "policies": {
-        "actionsFor": "{{model}} のアクション",
-        "apiKey": "APIキー",
-        "apiKeyDescription": "共有ワークスペースキー。チームが 1 つのアカウントを通じて請求する場合に最適です。",
-        "apiKeyPlaceholder": "API キーを入力してください",
-        "apiKeyRequired": "APIキーが必要です",
-        "availableModels": "利用可能なモデル",
-        "builtIn": "内蔵",
-        "builtInDescription": "ワークスペース クレジットで使用量がカバーされます。",
-        "claudeSubscription": "Claude サブスクリプション",
-        "claudeSubscriptionDescription": "各メンバーは、独自の Pro、Max、または Team プランを接続します。",
-        "codexSubscription": "Codex サブスクリプション",
-        "codexSubscriptionDescription": "各メンバーは独自のプロまたはチーム プランを接続します。",
-        "dialogDescription": "メンバーがこのモデルにアクセスする方法を決定します。",
-        "gateway": "カスタムゲートウェイ",
-        "gatewayDescription": "管理者が定義したプロバイダー接続を経由してルーティングします。",
-        "gatewayProvider": "プロバイダー接続",
-        "getKey": "鍵を入手する",
-        "invalidRoute": "無効なルート",
-        "missingProvider": "プロバイダーがありません",
-        "model": "モデル",
-        "noMappedGateway": "このモデルにマッピングされたプロバイダー接続はありません。",
-        "orgDefaultModelLocked": "Auto は削除できません",
-        "pricing": "料金",
-        "providedBy": "提供元",
-        "provider": "プロバイダー",
-        "providerApiKey": "{{provider}} API キー",
-        "runsThrough": "実行経路",
-        "secretStored": "ワークスペースのシークレットに保存されます。",
-        "selectGateway": "プロバイダー接続を選択してください",
-        "selectModel": "モデルを選択してください",
-        "selectProvider": "プロバイダーを選択してください",
-        "workspaceDescription": "このワークスペース内の全員が利用できます。"
       },
       "reset": {
         "confirmDescription": "{{provider}}リセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
@@ -5037,7 +4945,6 @@
       "toasts": {
         "accountDisconnected": "アカウントの接続を解除しました",
         "accountSwitched": "使用するアカウントを切り替えました",
-        "policiesUpdated": "モデルプロバイダーの設定が更新されました",
         "reset": "{{provider}} 使用量のリセット",
         "resetUnavailable": "{{provider}} 使用状況のリセットは利用できません",
         "resetUnneeded": "{{provider}} の使用状況は現時点ではリセットする必要はありません"

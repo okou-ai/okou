@@ -1,23 +1,22 @@
-import { command, computed, state, type Command, type State } from "ccstate";
-import { delay } from "signal-timers";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   codexDeviceAuthContract,
   type CodexDeviceAuthMode,
   type CodexDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { command, computed, state, type Command, type State } from "ccstate";
+import { delay } from "signal-timers";
 
-import { accept } from "../../../lib/accept.ts";
 import { i18n } from "../../../i18n/index.ts";
+import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { brandName$, type BrandName } from "../../branding.ts";
-import { reloadOrgModelProviders$ } from "../../external/org-model-providers.ts";
 import {
   bestEffort,
   resetSignal,
-  waitLoopUntil,
   tapError,
+  waitLoopUntil,
 } from "../../utils.ts";
 import { writeToClipboard } from "../clipboard.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
@@ -239,7 +238,7 @@ const cancelCodexDeviceAuth$ = command(
 );
 
 interface CodexDeviceAuthSignalContext {
-  scope: CodexDeviceAuthScope;
+  scope: "personal";
   reloadProviders$: Command<void, []>;
   internalDialogState$: State<CodexDeviceAuthDialogState>;
   internalFlowState$: State<CodexDeviceAuthFlowState>;
@@ -352,16 +351,13 @@ function createCodexRunFlow$(
         readonly scope: CodexDeviceAuthScope;
         readonly mode?: CodexDeviceAuthMode;
         readonly modelProviderId?: string;
-      } =
-        ctx.scope === "personal"
-          ? {
-              scope: ctx.scope,
-              mode: dialog.mode === "reconnect" ? "reconnect" : "add",
-              ...(dialog.modelProviderId
-                ? { modelProviderId: dialog.modelProviderId }
-                : {}),
-            }
-          : { scope: ctx.scope };
+      } = {
+        scope: "personal",
+        mode: dialog.mode === "reconnect" ? "reconnect" : "add",
+        ...(dialog.modelProviderId
+          ? { modelProviderId: dialog.modelProviderId }
+          : {}),
+      };
 
       const started = await tapError(
         set(startCodexDeviceAuth$, startArgs, signal),
@@ -489,7 +485,7 @@ function createCodexClose$(ctx: CodexDeviceAuthSignalContext) {
 }
 
 function createCodexDeviceAuthSignals(
-  scope: CodexDeviceAuthScope,
+  scope: "personal",
   reloadProviders$: Command<void, []>,
 ) {
   const ctx: CodexDeviceAuthSignalContext = {
@@ -516,15 +512,6 @@ function createCodexDeviceAuthSignals(
     run$,
   };
 }
-
-export const {
-  dialogState$: codexDeviceAuthDialogState$,
-  flowState$: codexDeviceAuthFlowState$,
-  open$: openCodexDeviceAuthDialog$,
-  openApprovalPage$: openCodexDeviceAuthApprovalPage$,
-  close$: closeCodexDeviceAuthDialog$,
-  run$: runCodexDeviceAuth$,
-} = createCodexDeviceAuthSignals("org", reloadOrgModelProviders$);
 
 const personalCodexDeviceAuthSignals = createCodexDeviceAuthSignals(
   "personal",

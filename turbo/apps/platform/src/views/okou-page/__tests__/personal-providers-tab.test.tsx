@@ -1,24 +1,19 @@
-import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
-import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
   click,
-  setupPage,
   fill,
   queryAllByRoleFast,
+  setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import type { SupportedLocale } from "../../../i18n/resources.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -137,37 +132,6 @@ function connectedPersonalClaudeCodeProvider(): ModelProviderResponse {
     createdAt: "2026-03-01T00:00:00Z",
     updatedAt: "2026-03-20T00:00:00Z",
   };
-}
-
-function mockBillingCapabilities(modelCapabilities: {
-  readonly supportByok: boolean;
-  readonly restrictedBuiltInModels: boolean;
-}): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    const status: BillingStatusResponse = {
-      showUsagePack: false,
-      tier: "pro",
-      ...billingPlanCapabilities("pro"),
-      ...modelCapabilities,
-      credits: 20_000,
-      onboardingPaymentPending: false,
-      subscriptionStatus: null,
-      currentPeriodEnd: null,
-      cancelAtPeriodEnd: false,
-      scheduledChange: null,
-      hasSubscription: false,
-      autoRecharge: { enabled: false, threshold: null, amount: null },
-      creditExpiry: {
-        expiringNextCycle: 0,
-        nextExpiryDate: null,
-      },
-      creditBreakdown: [],
-      creditGrants: [],
-      concurrencyLimit: 0,
-      concurrencySubscriptions: [],
-    };
-    return respond(200, status);
-  });
 }
 
 async function openModelSettings(
@@ -501,33 +465,6 @@ test("Review personal subscriptions through account switching", async () => {
       ),
     ).toHaveAttribute("aria-pressed", "false");
   });
-});
-
-test("Offer Pro from personal account groups when BYOK is unavailable", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "admin",
-  });
-  context.mocks.data.personalModelProviders([]);
-  mockBillingCapabilities({
-    supportByok: false,
-    restrictedBuiltInModels: false,
-  });
-
-  await openModelSettings("Models");
-
-  const upgradeButton = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Upgrade Pro to use";
-  });
-  if (!upgradeButton) {
-    throw new Error("Upgrade Pro button not found");
-  }
-  click(upgradeButton);
-
-  await expect(
-    screen.findByRole("heading", { name: "Choose a plan" }),
-  ).resolves.toBeInTheDocument();
 });
 
 test("View personal account groups by default in an external workspace", async () => {

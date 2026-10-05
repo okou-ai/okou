@@ -1,4 +1,8 @@
 import {
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
+import {
   chatThreadByIdContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
@@ -10,25 +14,21 @@ import {
   type UserMessageInputDocument,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  chatEventRowSchema,
-  type ChatEventRow,
-} from "@okouai/api-contracts/contracts/chat-event-rows";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 
 import type { SetupPageAuth } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 import {
-  chatListAuth,
   cachedChatListEvents,
+  chatListAuth,
   chatListThread,
   installActiveChatBoundaries,
   installChatListAgent,
-  installChatListModelPolicies,
+  installChatListRunModels,
   installChatListStream,
   sidebarThreadLinks,
 } from "./chat-list-test-helpers.ts";
-import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 
 interface ContinuityDraftPatch {
   readonly threadId: string;
@@ -203,7 +203,7 @@ export function installContinuityWorkspace(
 ): ContinuityWorkspace {
   const auth = chatListAuth(200 + options.caseId);
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: options.caseId,
     snapshot: options.threads,

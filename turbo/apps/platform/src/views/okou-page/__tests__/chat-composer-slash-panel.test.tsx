@@ -1,17 +1,16 @@
+import { workflowsCollectionContract } from "@okouai/api-contracts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { workflowsCollectionContract } from "@okouai/api-contracts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import {
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   AGENT_ID,
   composerWorkflow,
@@ -20,9 +19,10 @@ import {
   findComposerEditor,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
   tabByText,
 } from "./chat-composer-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
@@ -30,7 +30,7 @@ const THIRD_WORKFLOW_NAME = "axiom-traces";
 
 function setupModels(): void {
   mockAgent();
-  mockOrgModelRoutes();
+  mockPersonalModelRoutes();
   mockBillingCapabilities({
     supportByok: true,
     restrictedBuiltInModels: false,

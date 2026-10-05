@@ -1,8 +1,8 @@
-import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -73,15 +73,11 @@ function mockAutoMode(): void {
       expiresIn: 30,
     });
   });
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, {
-      modelMode: "auto",
-      revision: "revision-auto",
-      writePreconditionRequired: false,
-      modelsAvailableToAdd: [],
-      policies: [
+      defaultModel: "okou-1.0",
+      models: [
         {
-          id: "e7000000-0000-4000-a000-000000000001",
           model: "okou-1.0",
           modelLabel: "Auto",
           defaultProviderType: "built-in",
@@ -89,8 +85,6 @@ function mockAutoMode(): void {
           modelProviderId: null,
           routeStatus: "valid",
           routeStatusReason: null,
-          createdAt: "2026-09-15T00:00:00.000Z",
-          updatedAt: "2026-09-15T00:00:00.000Z",
         },
       ],
     });

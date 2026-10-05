@@ -4813,21 +4813,9 @@
     },
     "models": {
       "actions": {
-        "addModel": "Tambah model",
-        "deleteModel": "Hapus model",
-        "editModel": "Edit model",
         "resetUsage": "Reset penggunaan",
         "upgradePro": "Upgrade ke Pro untuk menggunakan",
         "upgradeToPro": "Upgrade ke Pro"
-      },
-      "autoMode": {
-        "cancel": "Batal",
-        "confirm": "Beralih ke Auto Model",
-        "confirmDescription": "Tindakan ini menghapus permanen kebijakan model organisasi, koneksi penyedia, dan rahasia yang tidak lagi digunakan. Hanya Auto yang menjadi kebijakan organisasi. Langganan pribadi anggota tetap terhubung dan dapat menambahkan model. Beralih kembali ke Custom tidak memulihkan pengaturan organisasi yang dihapus.",
-        "confirmTitle": "Beralih ke Auto Model untuk ruang kerja ini?",
-        "description": "Gunakan Auto sebagai kebijakan organisasi; langganan pribadi menambahkan model untuk anggota.",
-        "failed": "Mode model tidak dapat diubah. Segarkan pengaturan dan coba lagi.",
-        "title": "Auto Model"
       },
       "deviceAuth": {
         "claude": {
@@ -4870,40 +4858,6 @@
           "signIn": "Masuk dengan ChatGPT"
         }
       },
-      "gateways": {
-        "actions": "Tindakan gateway",
-        "add": "Tambahkan penyedia",
-        "addTitle": "Tambahkan penyedia model",
-        "apiBaseUrl": "URL dasar API",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "Kunci API",
-        "deleteConfirm": "Hapus koneksi penyedia model ini? Rute model yang menggunakannya tidak akan tersedia.",
-        "description": "Hubungkan gateway yang dikelola admin melalui Anthropic Messages, OpenAI Responses, atau keduanya.",
-        "dialogDescription": "Konfigurasikan setiap protokol dengan URL dasar API yang digunakan oleh Claude Code atau Codex.",
-        "editTitle": "Edit penyedia model",
-        "errors": {
-          "invalidMappings": "Pemetaan model harus berupa objek JSON dengan nilai berupa nama model upstream.",
-          "missingProtocol": "Aktifkan setidaknya satu protokol.",
-          "missingSecret": "Masukkan kunci API."
-        },
-        "headerName": "Header autentikasi",
-        "headerValue": "Templat nilai header",
-        "keepKey": "Biarkan kosong untuk mempertahankan kunci saat ini",
-        "modelMappings": "Pemetaan model (JSON)",
-        "name": "Nama",
-        "presets": {
-          "custom": "Kustom",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "Permintaan",
-        "title": "Koneksi penyedia"
-      },
       "personal": {
         "accountFallback": "Akun {{number}}",
         "accountsDescription": "Pilih akun yang digunakan setiap penyedia untuk eksekusi baru.",
@@ -4935,7 +4889,6 @@
       },
       "picker": {
         "builtInModel": "Model bawaan",
-        "byokHelp": "Menggunakan provider yang Anda atur",
         "chatModels": "Model chat",
         "effort": "Upaya",
         "effortScale": {
@@ -4948,8 +4901,8 @@
         },
         "fast": "Cepat",
         "fastImpact": {
-          "creditCost": "{{multiplier}}× biaya kredit",
-          "providerUsage": "Penggunaan bergantung pada penyedia"
+          "providerUsage": "Penggunaan bergantung pada penyedia",
+          "subscriptionUsage": "{{multiplier}}× penggunaan langganan"
         },
         "fastMode": "Mode cepat",
         "generationPriceTiers": {
@@ -4963,56 +4916,11 @@
         "loading": "Memuat model...",
         "models": "Model",
         "noConfiguredModels": "Tidak ada model yang dikonfigurasi",
-        "priceTiers": {
-          "balanced": "Biaya dan performa seimbang",
-          "economy": "Tingkat ekonomis untuk tugas sederhana sehari-hari",
-          "frontier": "Model andalan terdepan",
-          "premium": "Model terdepan premium untuk tugas tersulit"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "portal Azure foundry",
-          "claudeCodeOauth": "Claude Code (token OAuth)",
-          "deepseek": "Deepseek"
-        },
         "standard": "Standar",
         "ultrafast": "Ultracepat",
         "ultrafastImpact": "Kecepatan token hingga 8× · Harga token API OpenAI 6×",
         "ultrafastMode": "Mode ultracepat"
-      },
-      "policies": {
-        "actionsFor": "Tindakan untuk {{model}}",
-        "apiKey": "Kunci API",
-        "apiKeyDescription": "Kunci ruang kerja bersama. Paling cocok saat tim menagih melalui satu akun.",
-        "apiKeyPlaceholder": "Masukkan kunci API Anda",
-        "apiKeyRequired": "Kunci API wajib diisi",
-        "availableModels": "Model yang tersedia",
-        "builtIn": "Bawaan",
-        "builtInDescription": "Kredit ruang kerja menanggung penggunaan.",
-        "claudeSubscription": "Langganan Claude",
-        "claudeSubscriptionDescription": "Setiap anggota menghubungkan paket Pro, Max, atau Team miliknya sendiri.",
-        "codexSubscription": "Langganan Codex",
-        "codexSubscriptionDescription": "Setiap anggota menghubungkan paket Pro atau Team miliknya sendiri.",
-        "dialogDescription": "Tentukan bagaimana anggota mengakses model ini.",
-        "gateway": "Gateway kustom",
-        "gatewayDescription": "Rutekan melalui koneksi penyedia yang ditentukan admin.",
-        "gatewayProvider": "Koneksi penyedia",
-        "getKey": "Dapatkan kunci",
-        "invalidRoute": "Rute tidak valid",
-        "missingProvider": "Provider tidak ada",
-        "model": "Model",
-        "noMappedGateway": "Tidak ada koneksi penyedia yang memetakan model ini.",
-        "orgDefaultModelLocked": "Auto tidak dapat dihapus",
-        "pricing": "Harga",
-        "providedBy": "Disediakan oleh",
-        "provider": "Provider",
-        "providerApiKey": "Kunci API {{provider}}",
-        "runsThrough": "Dijalankan melalui",
-        "secretStored": "Disimpan di rahasia ruang kerja.",
-        "selectGateway": "Pilih koneksi penyedia",
-        "selectModel": "Pilih model",
-        "selectProvider": "Pilih provider",
-        "workspaceDescription": "Tersedia untuk semua orang di ruang kerja ini."
       },
       "reset": {
         "confirmDescription": "Gunakan satu reset {{provider}} untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
@@ -5037,7 +4945,6 @@
       "toasts": {
         "accountDisconnected": "Akun diputuskan",
         "accountSwitched": "Akun aktif diganti",
-        "policiesUpdated": "Pengaturan provider model diperbarui",
         "reset": "Penggunaan {{provider}} direset",
         "resetUnavailable": "Tidak ada reset penggunaan {{provider}} yang tersedia",
         "resetUnneeded": "Penggunaan {{provider}} tidak perlu direset saat ini"

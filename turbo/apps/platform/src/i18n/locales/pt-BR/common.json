@@ -4895,21 +4895,9 @@
     },
     "models": {
       "actions": {
-        "addModel": "Adicionar modelo",
-        "deleteModel": "Excluir modelo",
-        "editModel": "Editar modelo",
         "resetUsage": "Redefinir uso",
         "upgradePro": "Faça upgrade para o Pro para usar",
         "upgradeToPro": "Fazer upgrade para o Pro"
-      },
-      "autoMode": {
-        "cancel": "Cancelar",
-        "confirm": "Mudar para Auto Model",
-        "confirmDescription": "Esta ação exclui permanentemente as políticas de modelos da organização, as conexões com provedores e os segredos que não são mais usados. Auto será a única política da organização. As assinaturas pessoais dos membros continuam conectadas e podem adicionar modelos. Voltar para Custom não restaurará as configurações excluídas.",
-        "confirmTitle": "Mudar este espaço de trabalho para Auto Model?",
-        "description": "Use Auto como política da organização; assinaturas pessoais adicionam modelos para os membros.",
-        "failed": "Não foi possível mudar o modo de modelos. Atualize as configurações e tente novamente.",
-        "title": "Auto Model"
       },
       "deviceAuth": {
         "claude": {
@@ -4952,40 +4940,6 @@
           "signIn": "Entrar com o ChatGPT"
         }
       },
-      "gateways": {
-        "actions": "Ações do gateway",
-        "add": "Adicionar provedor",
-        "addTitle": "Adicionar provedor de modelo",
-        "apiBaseUrl": "URL base da API",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "Chave de API",
-        "deleteConfirm": "Excluir esta conexão de provedor de modelo? As rotas de modelo que a utilizam ficarão indisponíveis.",
-        "description": "Conecte um gateway gerenciado pelo administrador via Anthropic Messages, OpenAI Responses ou ambos.",
-        "dialogDescription": "Configure cada protocolo com a URL base da API usada pelo Claude Code ou Codex.",
-        "editTitle": "Editar provedor de modelo",
-        "errors": {
-          "invalidMappings": "Os mapeamentos de modelo devem ser um objeto JSON cujos valores sejam nomes de modelos upstream.",
-          "missingProtocol": "Ative pelo menos um protocolo.",
-          "missingSecret": "Insira uma chave de API."
-        },
-        "headerName": "Cabeçalho de autenticação",
-        "headerValue": "Modelo do valor do cabeçalho",
-        "keepKey": "Deixe em branco para manter a chave atual",
-        "modelMappings": "Mapeamentos de modelo (JSON)",
-        "name": "Nome",
-        "presets": {
-          "custom": "Personalizado",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "Requisições",
-        "title": "Conexões de provedor"
-      },
       "personal": {
         "accountFallback": "Conta {{number}}",
         "accountsDescription": "Escolha a conta que cada provedor usa para novas execuções.",
@@ -5017,7 +4971,6 @@
       },
       "picker": {
         "builtInModel": "Modelo integrado",
-        "byokHelp": "Usa seu provedor configurado",
         "chatModels": "Modelos de chat",
         "effort": "Esforço",
         "effortScale": {
@@ -5030,8 +4983,8 @@
         },
         "fast": "Rápido",
         "fastImpact": {
-          "creditCost": "{{multiplier}}× o custo em créditos",
-          "providerUsage": "O consumo depende do provedor"
+          "providerUsage": "O consumo depende do provedor",
+          "subscriptionUsage": "{{multiplier}}× uso da assinatura"
         },
         "fastMode": "Modo rápido",
         "generationPriceTiers": {
@@ -5045,56 +4998,11 @@
         "loading": "Carregando modelos...",
         "models": "Modelos",
         "noConfiguredModels": "Nenhum modelo configurado",
-        "priceTiers": {
-          "balanced": "Custo e desempenho equilibrados",
-          "economy": "Nível econômico para tarefas simples do dia a dia",
-          "frontier": "Modelo principal de ponta",
-          "premium": "Modelo premium de ponta para as tarefas mais difíceis"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Portal do Azure Foundry",
-          "claudeCodeOauth": "Claude Code (token OAuth)",
-          "deepseek": "Deepseek"
-        },
         "standard": "Padrão",
         "ultrafast": "Ultrarrápido",
         "ultrafastImpact": "Velocidade de tokens até 8× · Preço dos tokens da API OpenAI 6×",
         "ultrafastMode": "Modo ultrarrápido"
-      },
-      "policies": {
-        "actionsFor": "Ações para {{model}}",
-        "apiKey": "Chave de API",
-        "apiKeyDescription": "Uma chave compartilhada do espaço de trabalho. Ideal quando a equipe fatura o uso por uma única conta.",
-        "apiKeyPlaceholder": "Insira sua chave de API",
-        "apiKeyRequired": "A chave de API é obrigatória",
-        "availableModels": "Modelos disponíveis",
-        "builtIn": "Integrado",
-        "builtInDescription": "Os créditos do espaço de trabalho cobrem o uso.",
-        "claudeSubscription": "Assinatura do Claude",
-        "claudeSubscriptionDescription": "Cada membro conecta seu próprio plano Pro, Max ou Team.",
-        "codexSubscription": "Assinatura do Codex",
-        "codexSubscriptionDescription": "Cada membro conecta seu próprio plano Pro ou Team.",
-        "dialogDescription": "Defina como os membros acessam este modelo.",
-        "gateway": "Gateway personalizado",
-        "gatewayDescription": "Direcione por uma conexão de provedor definida pelo administrador.",
-        "gatewayProvider": "Conexão de provedor",
-        "getKey": "Obter uma chave",
-        "invalidRoute": "Rota inválida",
-        "missingProvider": "Provedor ausente",
-        "model": "Modelo",
-        "noMappedGateway": "Nenhuma conexão de provedor mapeia este modelo.",
-        "orgDefaultModelLocked": "Auto não pode ser removido",
-        "pricing": "Preços",
-        "providedBy": "Disponibilizado por",
-        "provider": "Provedor",
-        "providerApiKey": "Chave de API da {{provider}}",
-        "runsThrough": "Executado por",
-        "secretStored": "Armazenado nos segredos do espaço de trabalho.",
-        "selectGateway": "Selecionar uma conexão de provedor",
-        "selectModel": "Selecionar um modelo",
-        "selectProvider": "Selecionar um provedor",
-        "workspaceDescription": "Disponível para todos neste espaço de trabalho."
       },
       "reset": {
         "confirmDescription": "Use uma redefinição do {{provider}} para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
@@ -5122,7 +5030,6 @@
       "toasts": {
         "accountDisconnected": "Conta desconectada",
         "accountSwitched": "Conta ativa alterada",
-        "policiesUpdated": "Configurações dos provedores de modelo atualizadas",
         "reset": "Uso do {{provider}} redefinido",
         "resetUnavailable": "Nenhuma redefinição de uso do {{provider}} disponível",
         "resetUnneeded": "O uso do {{provider}} não precisa ser redefinido agora"

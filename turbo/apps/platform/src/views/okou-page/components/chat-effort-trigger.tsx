@@ -1,12 +1,12 @@
-import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
 import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
-import { isPolicyFastModeAvailable } from "../../../signals/okou-page/model-default-selection.ts";
-import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
+import { availableRunModels$ } from "../../../signals/external/run-models.ts";
+import { isRunModelFastModeAvailable } from "../../../signals/okou-page/model-default-selection.ts";
 import {
   ChatEffortSettings,
   ChatFastSetting,
@@ -40,9 +40,9 @@ export function ChatEffortTrigger({
 }) {
   const { t } = useTranslation();
   const { efforts, effort } = useChatEffort(value);
-  const policies = useLastResolved(orgModelPolicies$);
+  const models = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
-  const policy = policies?.policies.find((entry) => {
+  const runModel = models?.models.find((entry) => {
     return entry.model === value.selectedModel;
   });
   if (efforts.length === 0 || effort === undefined) {
@@ -54,8 +54,8 @@ export function ChatEffortTrigger({
   const displayValue = formatChatEffort(effort);
   const fast = value.codexServiceTier === "fast";
   const disabled =
-    policy === undefined || !isMemberModelPolicyConfigurable(policy, catalog);
-  const fastAvailable = isPolicyFastModeAvailable(policy, catalog);
+    runModel === undefined || !isMemberRunModelConfigurable(runModel, catalog);
+  const fastAvailable = isRunModelFastModeAvailable(runModel, catalog);
   return (
     <Popover>
       {/* A real composer control, not a bare trigger: the shared button owns
@@ -101,11 +101,11 @@ export function ChatEffortTrigger({
           disabled={disabled}
           onChange={onChange}
         />
-        {fastAvailable && policy ? (
+        {fastAvailable && runModel ? (
           <ChatFastSetting
             selection={value}
             disabled={disabled}
-            fastImpact={<ModelFastImpact policy={policy} />}
+            fastImpact={<ModelFastImpact runModel={runModel} />}
             onChange={onChange}
           />
         ) : null}

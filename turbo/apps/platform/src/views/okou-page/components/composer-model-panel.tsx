@@ -1,6 +1,6 @@
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import {
   Button,
   MENU_ROW_HEIGHT_CLASS,
@@ -16,11 +16,11 @@ import { ChevronDown, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
 import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
+import { availableRunModels$ } from "../../../signals/external/run-models.ts";
 import {
-  isPolicyFastModeAvailable,
-  isPolicyUltrafastAvailable,
+  isRunModelFastModeAvailable,
+  isRunModelUltrafastAvailable,
 } from "../../../signals/okou-page/model-default-selection.ts";
 import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
@@ -36,7 +36,7 @@ import {
 } from "./chat-effort-controls.tsx";
 import { ModelFastImpact } from "./model-fast-impact.tsx";
 import {
-  ModelFirstPolicyRowContent,
+  ModelFirstRunModelRowContent,
   ModelFirstTriggerLabel,
   resolveModelFirstModelPickerState,
   useExplicitModelSelectionChange,
@@ -67,9 +67,9 @@ function ComposerModelPanelBody({
   placeholder,
 }: Pick<ComposerModelPanelProps, "value" | "onChange" | "placeholder">) {
   const { t } = useTranslation();
-  const policiesLoadable = useLastLoadable(orgModelPolicies$);
+  const policiesLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
-  const policyResponse = useLastResolved(orgModelPolicies$);
+  const modelsResponse = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
@@ -77,7 +77,7 @@ function ComposerModelPanelBody({
   const chatModelsLabel = t(($) => {
     return $.settings.models.picker.chatModels;
   });
-  if (policyResponse === undefined || catalog === undefined) {
+  if (modelsResponse === undefined || catalog === undefined) {
     return (
       <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
         {policiesLoadable.state === "loading" ||
@@ -93,7 +93,7 @@ function ComposerModelPanelBody({
   }
   const state = resolveModelFirstModelPickerState({
     value,
-    policyResponse,
+    modelsResponse,
     catalog,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
@@ -101,17 +101,17 @@ function ComposerModelPanelBody({
       return $.settings.models.picker.fast;
     }),
   });
-  const selectedPolicy = state.policies.find((policy) => {
-    return policy.model === value.selectedModel;
+  const selectedRunModel = state.models.find((runModel) => {
+    return runModel.model === value.selectedModel;
   });
   const configurable =
-    selectedPolicy !== undefined &&
-    isMemberModelPolicyConfigurable(selectedPolicy, catalog);
+    selectedRunModel !== undefined &&
+    isMemberRunModelConfigurable(selectedRunModel, catalog);
   const ultrafastAvailable =
-    selectedPolicy !== undefined &&
+    selectedRunModel !== undefined &&
     configurable &&
-    isPolicyUltrafastAvailable(selectedPolicy, catalog);
-  const fastAvailable = isPolicyFastModeAvailable(selectedPolicy, catalog);
+    isRunModelUltrafastAvailable(selectedRunModel, catalog);
+  const fastAvailable = isRunModelFastModeAvailable(selectedRunModel, catalog);
   return (
     <>
       {/*
@@ -144,21 +144,21 @@ function ComposerModelPanelBody({
               }}
               className="flex flex-col gap-0.5 py-1"
             >
-              {state.policies.length === 0 && (
+              {state.models.length === 0 && (
                 <p className="px-2 py-2 text-sm text-muted-foreground">
                   {t(($) => {
                     return $.settings.models.picker.noConfiguredModels;
                   })}
                 </p>
               )}
-              {state.policies.map((policy) => {
+              {state.models.map((runModel) => {
                 const selected =
-                  state.selection?.selectedModel === policy.model;
+                  state.selection?.selectedModel === runModel.model;
                 return (
                   <RadioPrimitive.Root
-                    key={policy.model}
-                    value={policy.model}
-                    disabled={!isMemberModelPolicyConfigurable(policy, catalog)}
+                    key={runModel.model}
+                    value={runModel.model}
+                    disabled={!isMemberRunModelConfigurable(runModel, catalog)}
                     nativeButton
                     render={<button type="button" />}
                     className={cn(
@@ -166,8 +166,8 @@ function ComposerModelPanelBody({
                       MENU_ROW_HEIGHT_CLASS,
                     )}
                   >
-                    <ModelFirstPolicyRowContent
-                      policy={policy}
+                    <ModelFirstRunModelRowContent
+                      runModel={runModel}
                       modelCapabilities={modelCapabilities}
                       selected={selected}
                       showSelectedIndicator
@@ -180,13 +180,15 @@ function ComposerModelPanelBody({
         </ScrollArea.Viewport>
         <ScrollBar data-testid="composer-model-panel-scrollbar" />
       </ScrollArea.Root>
-      {selectedPolicy !== undefined && (
+      {selectedRunModel !== undefined && (
         <ComposerModelPanelOptions
           value={value}
           onChange={onChange}
           disabled={!configurable}
           fastImpact={
-            fastAvailable ? <ModelFastImpact policy={selectedPolicy} /> : null
+            fastAvailable ? (
+              <ModelFastImpact runModel={selectedRunModel} />
+            ) : null
           }
           ultrafastAvailable={ultrafastAvailable}
         />

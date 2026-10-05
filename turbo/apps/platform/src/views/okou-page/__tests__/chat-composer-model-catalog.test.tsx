@@ -1,7 +1,8 @@
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import {
   queryAllByRoleFast,
@@ -19,26 +20,28 @@ import {
 
 const POLICY_DATE = "2026-09-30T09:00:00.000Z";
 
-function builtInPolicy(model: string, index: number): OrgModelPolicy {
+function personalRunModel(model: string): AvailableRunModel {
   return {
-    id: `e5000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
     modelLabel: model,
-    defaultProviderType: "built-in",
-    credentialScope: "org",
+    defaultProviderType:
+      model === "okou-1.0"
+        ? "built-in"
+        : model.startsWith("claude-")
+          ? "claude-code-oauth-token"
+          : "codex-oauth-token",
+    credentialScope: model === "okou-1.0" ? "org" : "member",
     modelProviderId: null,
-    modelProviderSurfaceId: null,
     routeStatus: "valid",
     routeStatusReason: null,
-    createdAt: POLICY_DATE,
-    updatedAt: POLICY_DATE,
   };
 }
 
-function configurePolicies(models: readonly string[]): void {
-  context.mocks.data.orgModelPolicies(
-    models.map((model, index) => {
-      return builtInPolicy(model, index + 1);
+function configureRunModels(models: readonly string[]): void {
+  installConnectedPersonalSubscriptions(context);
+  context.mocks.data.availableRunModels(
+    models.map((model) => {
+      return personalRunModel(model);
     }),
   );
 }
@@ -61,7 +64,7 @@ async function readyComposer(): Promise<void> {
 
 test("Offer the active catalog models in catalog order with catalog names", async () => {
   const user = userEvent.setup({ delay: null });
-  configurePolicies([
+  configureRunModels([
     "gpt-6-luna",
     "claude-fable-5",
     "claude-sonnet-5",
@@ -76,13 +79,16 @@ test("Offer the active catalog models in catalog order with catalog names", asyn
   const names = queryAllByRoleFast("menuitemradio").map((option) => {
     return option.getAttribute("aria-label") ?? option.textContent?.trim();
   });
-  // Each row carries its catalog display price tier.
-  expect(names).toStrictEqual(["Auto$", "Claude Sonnet 5$$", "GPT 6 Luna$"]);
+  expect(names).toStrictEqual([
+    "Auto",
+    "Claude Sonnet 5Claude Code (OAuth Token)",
+    "GPT 6 LunaChatGPT (Codex)",
+  ]);
 });
 
 test("Show the replacement for a thread pinned to a retired model", async () => {
   installRunChat({ selectedModel: "claude-fable-5" });
-  configurePolicies(["okou-1.0", "claude-fable-5-1"]);
+  configureRunModels(["okou-1.0", "claude-fable-5-1"]);
 
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
@@ -91,7 +97,7 @@ test("Show the replacement for a thread pinned to a retired model", async () => 
 });
 
 test("Resolve a member preference of a retired model to its replacement", async () => {
-  configurePolicies(["okou-1.0", "gpt-6-luna", "claude-sonnet-5"]);
+  configureRunModels(["okou-1.0", "gpt-6-luna", "claude-sonnet-5"]);
   preference("deepseek-v4-pro");
 
   await setupPage({ context, path: NEW_CHAT_PATH });
@@ -102,7 +108,7 @@ test("Resolve a member preference of a retired model to its replacement", async 
 
 test("Default a new chat to the catalog system default", async () => {
   context.mocks.data.modelCatalogSystemDefault("claude-sonnet-5");
-  configurePolicies(["okou-1.0", "claude-sonnet-5", "gpt-6-luna"]);
+  configureRunModels(["okou-1.0", "claude-sonnet-5", "gpt-6-luna"]);
 
   await setupPage({ context, path: NEW_CHAT_PATH });
   await readyComposer();
