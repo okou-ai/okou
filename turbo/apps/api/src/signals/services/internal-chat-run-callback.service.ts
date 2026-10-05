@@ -1251,7 +1251,9 @@ const insertAssistantErrorEvent$ = command(
         unarchive:
           args.lifecycleEvent === "failed" &&
           !hasExternalNotificationDeliveryChannel(args),
-        markRead: hasExternalNotificationDeliveryChannel(args),
+        markRead:
+          args.lifecycleEvent === "failed" &&
+          hasExternalNotificationDeliveryChannel(args),
       },
       signal,
     );
@@ -1582,7 +1584,9 @@ const insertRunLifecycleMarker$ = command(
         unarchive:
           args.event === "completed" &&
           !hasExternalNotificationDeliveryChannel(args),
-        markRead: hasExternalNotificationDeliveryChannel(args),
+        markRead:
+          args.event === "completed" &&
+          hasExternalNotificationDeliveryChannel(args),
       },
       signal,
     );
