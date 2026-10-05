@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -65,7 +65,10 @@ function button(
   container: ParentNode = document.body,
 ): HTMLElement {
   const found = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.textContent?.trim() === name;
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
   });
   if (!found) {
     throw new Error(`Missing button ${name}`);
@@ -105,7 +108,11 @@ function mockRead(account = subscription()) {
   );
 }
 
-test("A reset link displays live exact-account usage and never resets before a click", async () => {
+function frame() {
+  return screen.getByTestId("subscription-reset-card-shell");
+}
+
+test("a reset link displays exact-account usage and never resets before a click", async () => {
   mockRead();
   let submitted = false;
   context.mocks.api(
@@ -119,29 +126,31 @@ test("A reset link displays live exact-account usage and never resets before a c
   );
   await setupChat(`Before reset\n\n[Review reset](${URL})\n\nAfter reset`);
   await expect(
-    screen.findByText("5-hour window: 0% remaining"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Weekly window: 60% remaining")).toBeInTheDocument();
-  expect(screen.getByText("Remaining resets: 3")).toBeInTheDocument();
-  expect(screen.getByText(/original@example.test/)).toBeInTheDocument();
+    screen.findByRole("progressbar", {
+      name: "original@example.test 5h remaining",
+    }),
+  ).resolves.toHaveAttribute("aria-valuenow", "0");
+  expect(
+    screen.getByRole("progressbar", {
+      name: "original@example.test Week remaining",
+    }),
+  ).toHaveAttribute("aria-valuenow", "60");
+  expect(button("Reset")).toHaveAccessibleDescription(
+    expect.stringContaining("Remaining resets: 3"),
+  );
+  expect(screen.getByText(/Codex · original@example.test/)).toBeInTheDocument();
   expect(submitted).toBeFalsy();
-  const frame = screen
-    .getByRole("heading", { name: "Reset Card" })
-    .closest('[data-slot="chat-card"]');
+  const originalFrame = frame();
   click(button("Reset"));
   await expect(
     screen.findByText("Usage reset successfully."),
   ).resolves.toBeInTheDocument();
   expect(submitted).toBeTruthy();
   expect(button("Reset")).toBeDisabled();
-  expect(
-    screen
-      .getByRole("heading", { name: "Reset Card" })
-      .closest('[data-slot="chat-card"]'),
-  ).toBe(frame);
+  expect(frame()).toBe(originalFrame);
 });
 
-test("Repeated cards share the in-flight request and refreshed remaining credits", async () => {
+test("repeated cards share the in-flight request and refreshed remaining credits", async () => {
   let redeemed = false;
   let submissions = 0;
   const gate = context.mocks.deferred<void>();
@@ -166,12 +175,16 @@ test("Repeated cards share the in-flight request and refreshed remaining credits
     expect(screen.getAllByText("Remaining resets: 3")).toHaveLength(2);
   });
   const buttons = queryAllByRoleFast("button").filter((candidate) => {
-    return candidate.textContent?.trim() === "Reset";
+    return candidate.getAttribute("aria-label") === "Reset";
   });
   click(buttons[0]);
   click(buttons[1]);
   await waitFor(() => {
-    expect(screen.getAllByText("Resetting…")).toHaveLength(2);
+    expect(
+      queryAllByRoleFast("button").filter((candidate) => {
+        return candidate.getAttribute("aria-label") === "Resetting…";
+      }),
+    ).toHaveLength(2);
   });
   gate.resolve();
   await waitFor(() => {
@@ -181,7 +194,7 @@ test("Repeated cards share the in-flight request and refreshed remaining credits
   expect(screen.getAllByText("Usage reset successfully.")).toHaveLength(2);
 });
 
-test("The direct URL opens an authenticated reset page and still requires a click", async () => {
+test("the direct URL opens an authenticated reset page and still requires a click", async () => {
   mockRead();
   let submitted = false;
   context.mocks.api(
@@ -198,9 +211,7 @@ test("The direct URL opens an authenticated reset page and still requires a clic
     host: "app.okou.ai",
     featureSwitches: { subscriptionControls: true },
   });
-  await expect(
-    screen.findByText("Remaining resets: 3"),
-  ).resolves.toBeInTheDocument();
+  await screen.findByText("Remaining resets: 3");
   expect(submitted).toBeFalsy();
   click(button("Reset"));
   await expect(
@@ -209,7 +220,7 @@ test("The direct URL opens an authenticated reset page and still requires a clic
   expect(submitted).toBeTruthy();
 });
 
-test("An uncertain last-credit request can be retried only with its original idempotency key", async () => {
+test("an uncertain last-credit request can be retried only with its original idempotency key", async () => {
   const keys: string[] = [];
   context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
     return respond(
@@ -231,9 +242,9 @@ test("An uncertain last-credit request can be retried only with its original ide
   await setupChat(URL);
   await screen.findByText("Remaining resets: 1");
   click(button("Reset"));
-  await expect(
-    screen.findByText("Reset failed. Refresh or retry with the same request."),
-  ).resolves.toBeInTheDocument();
+  await screen.findByText(
+    "Reset failed. Refresh or retry with the same request.",
+  );
   await screen.findByText("Remaining resets: 0");
   await waitFor(() => {
     expect(button("Reset")).toBeEnabled();
@@ -269,23 +280,23 @@ test.each([
     hasButton: true,
   },
 ])(
-  "The $name state cannot submit a reset",
+  "the $name state cannot submit a reset",
   async ({ overrides, notice, hasButton }) => {
     mockRead(subscription(overrides));
     await setupChat(URL);
     await expect(screen.findByText(notice)).resolves.toBeInTheDocument();
-    const resetButtons = queryAllByRoleFast("button").filter((candidate) => {
-      return candidate.textContent?.trim() === "Reset";
+    const resets = queryAllByRoleFast("button").filter((candidate) => {
+      return candidate.getAttribute("aria-label") === "Reset";
     });
     expect(
-      resetButtons.map((candidate) => {
+      resets.map((candidate) => {
         return candidate.hasAttribute("disabled");
       }),
     ).toStrictEqual(hasButton ? [true] : []);
   },
 );
 
-test("A delayed unavailable read keeps the mounted card frame and allows refresh", async () => {
+test("a delayed unavailable read keeps the mounted frame and content row through refresh", async () => {
   const gate = context.mocks.deferred<void>();
   let missing = true;
   context.mocks.api(
@@ -300,45 +311,132 @@ test("A delayed unavailable read keeps the mounted card frame and allows refresh
     },
   );
   await setupChat(`Before\n\n${URL}\n\nAfter`);
-  const loading = await screen.findByText("Loading subscription…");
-  const frame = loading.closest('[data-slot="chat-card"]');
+  await screen.findByText("Loading subscription…");
+  const originalFrame = frame();
+  const row = screen.getByTestId("subscription-reset-card");
+  expect(row).toHaveAttribute("aria-busy", "true");
+  expect(originalFrame).toHaveClass("h-[136px]", "@[640px]:h-[88px]");
   gate.resolve();
-  const unavailable = await screen.findByText(
+  await screen.findByText(
     "This subscription is unavailable in the current workspace.",
   );
-  expect(unavailable.closest('[data-slot="chat-card"]')).toBe(frame);
+  expect(frame()).toBe(originalFrame);
+  expect(screen.getByTestId("subscription-reset-card")).toBe(row);
   missing = false;
-  click(button("Refresh", frame ?? document.body));
-  await expect(
-    screen.findByText("Remaining resets: 3"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen
-      .getByRole("heading", { name: "Reset Card" })
-      .closest('[data-slot="chat-card"]'),
-  ).toBe(frame);
+  click(button("Refresh"));
+  await screen.findByText("Remaining resets: 3");
+  expect(frame()).toBe(originalFrame);
+  expect(screen.getByTestId("subscription-reset-card")).toBe(row);
 });
 
-test("Disabled rollout renders an inert card rather than performing a reset", async () => {
-  await setupChat(URL, false);
-  await expect(
-    screen.findByText(
-      "This subscription is unavailable in the current workspace.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").some((candidate) => {
-      return candidate.textContent?.trim() === "Reset";
+test("usage rings open accessible recovery and expiry details outside the fixed frame", async () => {
+  mockRead(
+    subscription({
+      subscriptionResetCreditsNextExpiresAt: "2030-10-12T00:00:00.000Z",
     }),
-  ).toBeFalsy();
+  );
+  await setupChat(URL);
+  await screen.findByText("Remaining resets: 3");
+  const originalFrame = frame();
+  click(button("original@example.test 5h remaining"));
+  await screen.findByText("0% left");
+  expect(screen.getByText(/Credits expire:/)).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("dialog")).getByText(
+      /Only clicking Reset submits the request/,
+    ),
+  ).toBeInTheDocument();
+  expect(originalFrame.contains(screen.getByText("0% left"))).toBeFalsy();
+  expect(frame()).toBe(originalFrame);
 });
 
-test("Untrusted reset URLs and code examples stay ordinary message content", async () => {
+test("unknown usage still exposes credit details without inventing zero quota", async () => {
+  mockRead(subscription({ subscriptionUsage: null }));
+  await setupChat(URL);
+  await screen.findByText("Remaining resets: 3");
+  for (const ring of screen.getAllByRole("progressbar")) {
+    expect(ring).not.toHaveAttribute("aria-valuenow");
+  }
+  click(button("original@example.test 5h remaining"));
+  await expect(screen.findByText("--")).resolves.toBeInTheDocument();
+  expect(
+    within(screen.getByRole("dialog")).getByText("Remaining resets: 3"),
+  ).toBeInTheDocument();
+});
+
+test("pending reset and failed usage refresh retain the same row and prevent unsafe submission", async () => {
+  const gate = context.mocks.deferred<void>();
+  let failure = false;
+  context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
+    return failure
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Usage lookup unavailable",
+          },
+        })
+      : respond(200, subscription());
+  });
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    async ({ respond, withSignal }) => {
+      await withSignal(gate.promise);
+      return respond(200, { outcome: "nothingToReset" });
+    },
+  );
+  await setupChat(URL);
+  await screen.findByText("Remaining resets: 3");
+  const originalFrame = frame();
+  const row = screen.getByTestId("subscription-reset-card");
+  failure = true;
+  click(button("Refresh"));
+  await screen.findByText("Could not read subscription usage.");
+  expect(
+    queryAllByRoleFast("button").filter((candidate) => {
+      return candidate.getAttribute("aria-label") === "Reset";
+    }),
+  ).toHaveLength(0);
+  expect(frame()).toBe(originalFrame);
+  expect(screen.getByTestId("subscription-reset-card")).toBe(row);
+  failure = false;
+  click(button("Refresh"));
+  await waitFor(() => {
+    expect(button("Reset")).toBeEnabled();
+  });
+  click(button("Reset"));
+  await waitFor(() => {
+    expect(button("Resetting…")).toBeDisabled();
+  });
+  expect(row).toHaveAttribute("aria-busy", "true");
+  expect(frame()).toBe(originalFrame);
+  gate.resolve();
+  await waitFor(() => {
+    expect(row).toHaveAttribute("aria-busy", "false");
+  });
+  await screen.findByText("There is no exhausted usage window to reset.");
+  expect(row).toHaveAttribute("aria-busy", "false");
+  expect(frame()).toBe(originalFrame);
+  expect(screen.getByTestId("subscription-reset-card")).toBe(row);
+});
+
+test("disabled rollout renders an inert card rather than performing a reset", async () => {
+  await setupChat(URL, false);
+  await screen.findByText(
+    "This subscription is unavailable in the current workspace.",
+  );
+  expect(
+    queryAllByRoleFast("button").filter((candidate) => {
+      return candidate.getAttribute("aria-label") === "Reset";
+    }),
+  ).toHaveLength(0);
+});
+
+test("untrusted reset URLs and code examples stay ordinary message content", async () => {
   await setupChat(
     `Example only\n\n\`${URL}\`\n\nhttps://evil.example/subscriptions/${ACCOUNT_ID}/reset?idempotencyKey=${REQUEST_ID}`,
   );
-  await expect(screen.findByText("Example only")).resolves.toBeInTheDocument();
+  await screen.findByText("Example only");
   expect(
-    screen.queryByRole("heading", { name: "Reset Card" }),
+    screen.queryByTestId("subscription-reset-card-shell"),
   ).not.toBeInTheDocument();
 });

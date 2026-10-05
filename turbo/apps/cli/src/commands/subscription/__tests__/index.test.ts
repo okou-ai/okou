@@ -128,9 +128,9 @@ describe("okou subscription", () => {
   it("creates an exact-account user-confirmed link without calling reset", async () => {
     let resetRequests = 0;
     server.use(
-      http.get(`http://localhost:3000/api/me/subscriptions/${A}`, () =>
-        {return HttpResponse.json(account())},
-      ),
+      http.get(`http://localhost:3000/api/me/subscriptions/${A}`, () => {
+        return HttpResponse.json(account());
+      }),
       http.post(
         "http://localhost:3000/api/me/model-provider-accounts/:id/subscription-reset",
         () => {
@@ -186,14 +186,14 @@ describe("okou subscription", () => {
       throw new Error("process-exit");
     });
     server.use(
-      http.get(`http://localhost:3000/api/me/subscriptions/${A}`, () =>
-        {return HttpResponse.json(
+      http.get(`http://localhost:3000/api/me/subscriptions/${A}`, () => {
+        return HttpResponse.json(
           account(A, {
             type: "claude-code-oauth-token",
             subscriptionResetSupported: false,
           }),
-        )},
-      ),
+        );
+      }),
     );
     try {
       await expect(
@@ -210,9 +210,9 @@ describe("okou subscription", () => {
 
   it("guides an empty subscription list to Personal Models", async () => {
     server.use(
-      http.get("http://localhost:3000/api/me/model-providers", () =>
-        {return HttpResponse.json({ modelProviders: [] })},
-      ),
+      http.get("http://localhost:3000/api/me/model-providers", () => {
+        return HttpResponse.json({ modelProviders: [] });
+      }),
     );
     await subscriptionCommand.parseAsync(["node", "okou", "list"]);
     expect(output()).toContain("Subscriptions: 0");

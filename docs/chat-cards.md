@@ -243,8 +243,16 @@ and retries retain the URL's original idempotency key. The existing server
 checks account ownership and organization; agent credentials cannot execute
 reset. Claude Code shows natural recovery information without a reset button.
 
-The outer `SubscriptionResetCard` frame remains mounted with fixed responsive
-geometry through loading, error, unavailable, refresh and completion. See
+The outer `SubscriptionResetCard` frame remains mounted through loading,
+error, unavailable, refresh, submission and completion. It mirrors Permission
+Cards: 88px at an available container width of at least 640px, and 136px below
+that width, independently of the window viewport. One common content row owns
+the provider icon, account identity, compact status, usage rings and controls.
+The usage rings are shared with personal account settings; their card popovers
+expose recovery times, remaining credits, expiry and confirmation copy outside
+the fixed frame, including on keyboard and touch. Inner copy uses div/span
+slots rather than Markdown headings or paragraphs, preventing transcript
+margins from squeezing required content. See
 [subscription controls](subscription-controls.md) for CLI commands and rollout.
 
 ## Failure Recovery Classification
