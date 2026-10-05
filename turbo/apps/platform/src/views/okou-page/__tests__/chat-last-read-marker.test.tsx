@@ -60,8 +60,19 @@ function history(turnCount = 15): MockChatEventInput[] {
   }).flat();
 }
 
-function mockConversation(lastReadAt: string | null) {
-  const events = history();
+function lateFollowups(turn: number): MockChatEventInput {
+  return {
+    id: `read-marker-followups-${turn.toString()}`,
+    role: "assistant",
+    content: null,
+    runId: `read-marker-run-${turn.toString()}`,
+    seqId: 46,
+    createdAt: "2026-08-20T12:16:03.000Z",
+    followups: [{ prompt: "Review the next steps.", kind: "talk" }],
+  };
+}
+
+function mockConversation(lastReadAt: string | null, events = history()) {
   mockChatLifecycleWithoutBrowserSession({
     threadId: THREAD_ID,
     chatEvents: events,
@@ -70,7 +81,12 @@ function mockConversation(lastReadAt: string | null) {
     return respond(200, { lastReadAt, cancellationRecoveryPending: false });
   });
   context.mocks.api(chatThreadMarkReadContract.markRead, ({ respond }) => {
-    lastReadAt = events.at(-1)?.createdAt ?? null;
+    lastReadAt =
+      events
+        .filter((event) => {
+          return event.runLifecycleEvent !== undefined;
+        })
+        .at(-1)?.createdAt ?? null;
     return respond(200, { lastReadAt });
   });
   const rowsSince = (seqId: number) => {
@@ -103,7 +119,21 @@ function mockConversation(lastReadAt: string | null) {
   return {
     appendTurn() {
       turnCount++;
-      events.push(...history(turnCount).slice(-3));
+      const lastSeqId = events.at(-1)?.seqId ?? 0;
+      events.push(
+        ...history(turnCount)
+          .slice(-3)
+          .map((event, index) => {
+            return { ...event, seqId: lastSeqId + index + 1 };
+          }),
+      );
+      createChatEvent(THREAD_ID);
+    },
+    appendFollowups(turn: number) {
+      events.push({
+        ...lateFollowups(turn),
+        seqId: (events.at(-1)?.seqId ?? 0) + 1,
+      });
       createChatEvent(THREAD_ID);
     },
   };
@@ -343,6 +373,75 @@ test("An already-read thread stays at the tail when a new result arrives", async
   await waitFor(() => {
     expectAtBottom(container);
   });
+});
+
+test.each(["completed", "failed", "cancelled"] as const)(
+  "Late follow-ups on a read %s run do not move the unread boundary backward",
+  async (terminal) => {
+    const events = history().map((event) => {
+      return event.runLifecycleEvent !== undefined &&
+        event.runId === "read-marker-run-2"
+        ? { ...event, runLifecycleEvent: terminal }
+        : event;
+    });
+    events.push(lateFollowups(2));
+    mockConversation("2026-08-20T12:02:02.000Z", events);
+    await openThread();
+    const marker = await screen.findByRole("separator", { name: MARKER_LABEL });
+    expect(marker).toHaveAttribute(
+      "data-chat-last-read-marker-event-id",
+      "read-marker-user-3",
+    );
+    await waitFor(() => {
+      expect(marker.getBoundingClientRect().top).toBe(0);
+    });
+  },
+);
+
+test.each(["completed", "failed", "cancelled"] as const)(
+  "A read %s run with late follow-ups does not create a divider on entry",
+  async (terminal) => {
+    const events = history().map((event) => {
+      return event.runLifecycleEvent !== undefined &&
+        event.runId === "read-marker-run-15"
+        ? { ...event, runLifecycleEvent: terminal }
+        : event;
+    });
+    events.push(lateFollowups(15));
+    mockConversation("2026-08-20T12:15:02.000Z", events);
+    const container = await openThread();
+    await waitFor(() => {
+      expectAtBottom(container);
+    });
+    expect(
+      screen.queryByRole("separator", { name: MARKER_LABEL }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Review the next steps.")).toBeInTheDocument();
+  },
+);
+
+test("A late follow-up received while reading does not move the entry divider or viewport", async () => {
+  const conversation = mockConversation("2026-08-20T12:02:02.000Z");
+  const container = await openThread();
+  const marker = await screen.findByRole("separator", { name: MARKER_LABEL });
+  await waitFor(() => {
+    expect(marker.getBoundingClientRect().top).toBe(0);
+  });
+  container.scrollTop += ROW_HEIGHT;
+  fireEvent.scroll(container);
+  const offset = marker.getBoundingClientRect().top;
+  act(() => {
+    conversation.appendFollowups(2);
+    conversation.appendFollowups(15);
+  });
+  await expect(
+    screen.findByText("Review the next steps."),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByRole("separator", { name: MARKER_LABEL })).toHaveAttribute(
+    "data-chat-last-read-marker-event-id",
+    "read-marker-user-3",
+  );
+  expect(marker.getBoundingClientRect().top).toBe(offset);
 });
 
 test("A divider in the current render window gets a top inset", async () => {

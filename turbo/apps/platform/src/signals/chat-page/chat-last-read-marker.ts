@@ -14,11 +14,32 @@ function firstUnreadGroup(
   groups: readonly ChatEventGroup[],
   readAt: string | null,
 ): ChatEventGroup | undefined {
+  // Mark Read advances to a Run's terminal timestamp, not the timestamp of
+  // its last event. Late output and follow-ups still belong to that read Run.
+  const readRunIds = new Set<string>();
+  if (readAt !== null) {
+    for (const group of groups) {
+      for (const event of group.events) {
+        if (
+          event.seqId !== undefined &&
+          !event.isQueued &&
+          event.runId !== undefined &&
+          (event.eventType === "run.completed" ||
+            event.eventType === "run.failed" ||
+            event.eventType === "run.cancelled") &&
+          compareCreatedAt(event.createdAt, readAt) <= 0
+        ) {
+          readRunIds.add(event.runId);
+        }
+      }
+    }
+  }
   const unreadGroup = groups.find((group) => {
     return group.events.some((event) => {
       return (
         event.seqId !== undefined &&
         !event.isQueued &&
+        (event.runId === undefined || !readRunIds.has(event.runId)) &&
         (readAt === null || compareCreatedAt(event.createdAt, readAt) > 0)
       );
     });
