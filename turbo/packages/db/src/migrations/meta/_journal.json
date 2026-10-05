@@ -1702,6 +1702,13 @@
       "when": 1791189960227,
       "tag": "1320_retire_custom_model_configuration",
       "breakpoints": true
+    },
+    {
+      "idx": 1321,
+      "version": "7",
+      "when": 1791202438061,
+      "tag": "1321_prune_retired_model_routes",
+      "breakpoints": true
     }
   ]
 }

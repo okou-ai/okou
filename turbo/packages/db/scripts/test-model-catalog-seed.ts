@@ -55,6 +55,7 @@ interface RouteRow {
   provider_type: string;
   concrete_provider_type: string;
   subscription_type: string | null;
+  upstream_model: string;
   enabled: boolean;
   priority: number;
   service_tiers: string[];
@@ -152,18 +153,30 @@ function assertRoutes(
     assert.ok(row, `${route.model}: route without a catalog model`);
     assert.equal(row.replaced_by, null, `${route.model}: retired model route`);
     assertRoute(route);
+    assert.ok(
+      (route.provider_type === route.subscription_type &&
+        ["claude-code-oauth-token", "codex-oauth-token"].includes(
+          route.provider_type,
+        )) ||
+        (route.provider_type === "built-in" &&
+          route.concrete_provider_type === "openrouter-codex" &&
+          route.subscription_type === null &&
+          ((route.model === "okou-1.0" &&
+            route.upstream_model === "@preset/okou-1-0") ||
+            (route.model === "deepseek-v4.1-flash" &&
+              route.upstream_model === "deepseek/deepseek-v4.1-flash"))),
+      `${route.model}/${route.provider_type}: retired execution route`,
+    );
   }
+  assert.ok(
+    routes.some((route) => {
+      return route.model === "deepseek-v4.1-flash" && route.enabled;
+    }),
+    "internal memory needs its enabled independent binding",
+  );
   for (const row of catalog) {
-    // Every active row is a real model with at least one route; a routeless
-    // row must be retired into its replacement instead.
-    if (row.replaced_by === null) {
-      assert.ok(
-        routes.some((route) => {
-          return route.model === row.model;
-        }),
-        `${row.model}: active model without a route`,
-      );
-    }
+    // Routeless metadata remains for historical names and replacement chains;
+    // it no longer grants platform or organization API-key execution.
     const builtIn = routes.filter((route) => {
       return route.model === row.model && route.provider_type === "built-in";
     });
@@ -218,7 +231,7 @@ export async function validateModelCatalogSeed(
     assertRestrictedPlanFlags(catalog.rows);
     const routes = await client.query<RouteRow>(
       `SELECT model, provider_type, concrete_provider_type, subscription_type,
-         enabled, priority, service_tiers, default_service_tier, efforts,
+         upstream_model, enabled, priority, service_tiers, default_service_tier, efforts,
          default_effort, price_tier, pricing_kind, pricing_provider
        FROM model_routes`,
     );
