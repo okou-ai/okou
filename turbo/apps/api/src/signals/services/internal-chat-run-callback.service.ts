@@ -1376,7 +1376,15 @@ interface RunLifecycleDeliveryCallbacks {
 }
 
 function hasCanonicalIntegrationDelivery(
-  args: RunLifecycleMarkerArgs,
+  args: Pick<
+    RunLifecycleMarkerArgs,
+    | "slackDelivery"
+    | "feishuDelivery"
+    | "teamsDelivery"
+    | "discordDelivery"
+    | "telegramDelivery"
+    | "agentphoneDelivery"
+  >,
 ): boolean {
   return Boolean(
     args.slackDelivery ||
@@ -1883,6 +1891,7 @@ const runCompletedChatCallbackSideEffects$ = command(
       readonly chatThread: ChatThreadForRunRow;
       readonly lastResultText: string | null;
       readonly followupContext: readonly ChatCompletionContextMessage[];
+      readonly sendWebPush: boolean;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1921,6 +1930,9 @@ const runCompletedChatCallbackSideEffects$ = command(
     })();
 
     const pushStep = (async () => {
+      if (!args.sendWebPush) {
+        return;
+      }
       let summary: string | null = null;
       if (args.lastResultText) {
         summary = await generateChatNotificationSummary(
@@ -2031,7 +2043,11 @@ async function runFailedChatCallbackSideEffects(args: {
   readonly run: ChatRunInfo;
   readonly chatThread: ChatThreadForRunRow;
   readonly displayErrorMessage: string;
+  readonly sendWebPush: boolean;
 }): Promise<void> {
+  if (!args.sendWebPush) {
+    return;
+  }
   await sendUserPushNotifications({
     db: args.db,
     userId: args.chatThread.userId,
@@ -3299,6 +3315,11 @@ const finishTerminalChatCallbackAfterProjection$ = command(
       (args.work.outcome === "written" || args.work.outcome === "replayed")
     ) {
       const backgroundSignal = new AbortController().signal;
+      // Use this Run's persisted delivery targets, not thread history or
+      // delivery success. Channel failures must not fall back to Web push.
+      const sendWebPush = !hasCanonicalIntegrationDelivery(
+        args.callback.payload,
+      );
       waitUntil(
         runTerminalChatCallbackSideEffects({
           runId: args.runId,
@@ -3314,6 +3335,7 @@ const finishTerminalChatCallbackAfterProjection$ = command(
                     run: deferredSideEffects.run,
                     lastResultText: deferredSideEffects.lastResultText,
                     followupContext: deferredSideEffects.followupContext,
+                    sendWebPush,
                   },
                   backgroundSignal,
                 )
@@ -3322,6 +3344,7 @@ const finishTerminalChatCallbackAfterProjection$ = command(
                   run: deferredSideEffects.run,
                   chatThread: args.chatThread,
                   displayErrorMessage: deferredSideEffects.displayErrorMessage,
+                  sendWebPush,
                 }),
         }),
       );

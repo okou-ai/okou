@@ -32,6 +32,7 @@ import {
   expectIntegrationInputPreview,
   listIntegrationInputFileParts,
 } from "./helpers/integration-input-assets";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -1105,6 +1106,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   it("reuses the linked iMessage session for follow-up messages", async () => {
     const ap = createAgentPhoneBddApi(context);
     const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const chatCallbacks = createChatCallbacksApi(context);
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
     const conversationId = uniqueConversationId();
 
     const beforeFirstCompletion = sends.messages.length;
@@ -1142,6 +1146,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await waitForSendCount(sends, beforeRun2Completion + 1);
     expect(lastSend(sends).body).toBe("Task completed successfully.");
     await waitForRunSessionId(actor, run2.runId, session1);
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
   it("forwards unrecognized slash commands as agent prompts", async () => {
@@ -1162,7 +1168,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
   it("replies to failed linked iMessage runs", async () => {
     const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const chatCallbacks = createChatCallbacksApi(context);
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
     const conversationId = uniqueConversationId();
 
     await ap.postAgentPhoneInboundMessage({
@@ -1181,6 +1190,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(lastSend(sends).body).toBe(
       "Oops, something went wrong. Please try again later.",
     );
+    await flushWaitUntilForTest();
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
   describe.each(modelResumeScenarios)(
