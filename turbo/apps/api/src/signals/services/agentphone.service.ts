@@ -1,78 +1,78 @@
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { command } from "ccstate";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { v5 as uuidv5 } from "uuid";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
-import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-group-message-receipt";
+import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { command } from "ccstate";
+import { and,desc,eq,isNull,or } from "drizzle-orm";
+import { createHash,createHmac,timingSafeEqual } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
-import { inferMimetype } from "../../lib/mimetype";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { now, nowDate } from "../../lib/time";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-  publishUserSignal,
-} from "../external/realtime";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import {
-  sendAgentPhoneMessage,
-  sendAgentPhoneTypingIndicator,
-} from "../external/agentphone-client";
-import { bestEffort, safeUrlParse, settle } from "../utils";
+import { inferMimetype } from "../../lib/mimetype";
+import { now,nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import {
-  agentPhoneChannelForLinkedHandle,
-  agentPhoneReplyDestination,
-  describeAgentPhoneHandleShape,
-  isAgentPhoneChannel,
-  isValidAgentPhoneHandle,
-  normalizeAgentPhoneHandle,
-  resolveAgentPhoneConversationVisibilityRecipients,
-  resolveAgentPhoneMessageVisibilityRecipients,
-  resolveAgentPhoneUserLink,
-  type AgentPhoneMessageVisibilityRecipient,
-  resolveOrgDefaultComposeId,
-  storeOutboundAgentPhoneMessage,
-  type AgentPhoneChannel,
-  type AgentPhoneUserLink,
-} from "./agentphone-shared.service";
+sendAgentPhoneMessage,
+sendAgentPhoneTypingIndicator,
+} from "../external/agentphone-client";
+import { writeDb$,type Db,type ReadonlyDb } from "../external/db";
 import {
-  findAgentPhoneRoutedChatThreadId$,
-  ensureAgentPhoneChatThreadRoute$,
+publishChatThreadMessageCreatedSafely,
+publishThreadListChangedSafely,
+publishUserSignal,
+} from "../external/realtime";
+import { bestEffort,safeUrlParse,settle } from "../utils";
+import {
+ensureAgentPhoneChatThreadRoute$,
+findAgentPhoneRoutedChatThreadId$,
 } from "./agentphone-chat-ingress.service";
 import {
-  updateIntegrationChatThreadModel$,
-  readIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
+agentPhoneChannelForLinkedHandle,
+agentPhoneReplyDestination,
+describeAgentPhoneHandleShape,
+isAgentPhoneChannel,
+isValidAgentPhoneHandle,
+normalizeAgentPhoneHandle,
+resolveAgentPhoneConversationVisibilityRecipients,
+resolveAgentPhoneMessageVisibilityRecipients,
+resolveAgentPhoneUserLink,
+resolveOrgDefaultComposeId,
+storeOutboundAgentPhoneMessage,
+type AgentPhoneChannel,
+type AgentPhoneMessageVisibilityRecipient,
+type AgentPhoneUserLink,
+} from "./agentphone-shared.service";
+import { InputFileImportError } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import {
-  pickEnqueuedChatThread$,
-  enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput$,
-} from "./chat-thread-queue-drain.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
-import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
-import { InputFileImportError } from "./canonical-asset.service";
 import {
-  canonicalInputFilePrompt,
-  integrationInputMessageFiles,
-  materializeIntegrationInputAssets$,
-  readyIntegrationInputAsset,
-  type IntegrationInputFile,
-} from "./integration-input-assets.service";
+enqueuedChatQueueWaitReason$,
+notifyRunningChatRunOfPendingInput$,
+pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import {
+readIntegrationChatThreadModel$,
+updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import {
+canonicalInputFilePrompt,
+integrationInputMessageFiles,
+materializeIntegrationInputAssets$,
+readyIntegrationInputAsset,
+type IntegrationInputFile,
+} from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -89,13 +89,13 @@ const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
 const AGENTPHONE_DM_ROOT_MESSAGE_ID = "dm";
 
 export {
-  agentPhoneChannelForLinkedHandle,
-  describeAgentPhoneHandleShape,
-  isAgentPhoneChannel,
-  isValidAgentPhoneHandle,
-  normalizeAgentPhoneHandle,
-  storeOutboundAgentPhoneMessage,
-  type AgentPhoneChannel,
+agentPhoneChannelForLinkedHandle,
+describeAgentPhoneHandleShape,
+isAgentPhoneChannel,
+isValidAgentPhoneHandle,
+normalizeAgentPhoneHandle,
+storeOutboundAgentPhoneMessage,
+type AgentPhoneChannel
 };
 
 export interface AgentPhoneRecentHistoryMessage {
@@ -1205,13 +1205,13 @@ const handleModelCommand$ = command(
       return;
     }
     const { response: policies, systemDefaultModel } = await set(
-      listOrgModelPoliciesWithSystemDefault$,
+      listAvailableRunModelsWithDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
 
-    const options = policies.policies.flatMap((policy) => {
+    const options = policies.models.flatMap((policy) => {
       if (policy.routeStatus !== "valid") {
         return [];
       }

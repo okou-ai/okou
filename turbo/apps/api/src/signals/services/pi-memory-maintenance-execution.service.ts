@@ -1,166 +1,163 @@
-import { randomUUID } from "node:crypto";
-import { command, computed } from "ccstate";
+import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-  getAllFeatureStates,
+getModelProviderFirewall,
+isBuiltInModelProviderType,
+modelProviderTypeSchema,
+} from "@okouai/api-contracts/contracts/model-providers";
+import {
+DEFAULT_PROFILE,
+PI_MEMORY_ROOT,
+PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+agentRunConnectorDiagnosticRegistrationPayloadSchema,
+type PiInstalledCliRequirement,
+type PiLaunchConfig,
+type PiModelConfig,
+type StoredExecutionContext,
+type StoredStorageMountEntry,
+} from "@okouai/api-contracts/contracts/runners";
+import {
+canonicalizeFirewallBaseUrlVarsForExecution,
+extractSecretNamesFromApis,
+type ExecutionFirewallEntry,
+} from "@okouai/connectors/firewall-types";
+import {
+getAllFeatureStates,
+isFeatureEnabled,
+type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  PI_MEMORY_ROOT,
-  type StoredStorageMountEntry,
-  DEFAULT_PROFILE,
-  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  type PiInstalledCliRequirement,
-  type PiLaunchConfig,
-  type PiModelConfig,
-  type StoredExecutionContext,
-} from "@okouai/api-contracts/contracts/runners";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import {
-  getModelProviderFirewall,
-  isBuiltInModelProviderType,
-  modelProviderTypeSchema,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  canonicalizeFirewallBaseUrlVarsForExecution,
-  extractSecretNamesFromApis,
-  type ExecutionFirewallEntry,
-} from "@okouai/connectors/firewall-types";
-import type { PersistedStorageMount } from "@okouai/db/types";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import {
-  DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_CONFIGS,
-  type ImageModel,
+DEFAULT_IMAGE_MODEL,
+IMAGE_MODEL_CONFIGS,
+type ImageModel,
 } from "@okouai/core/image-model-catalog";
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { now, nowDate } from "../../lib/time";
+import type { PersistedStorageMount } from "@okouai/db/types";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
+import { command,computed } from "ccstate";
+import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { now,nowDate } from "../../lib/time";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { settle, safeSync } from "../utils";
-import {
-  ApiDispatchTimingCollector,
-  ApiDispatchPhaseCollector,
-  measureApiDispatchTiming,
-} from "./api-dispatch-timing.service";
-import {
-  collectPermissionNames,
-  compactRecord,
-  runtimeFirewall,
-} from "./connector-runtime-preparation.service";
-import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
+import { db$,writeDb$,type Db,type ReadonlyDb } from "../external/db";
+import { safeSync,settle } from "../utils";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
-import { createExecutionMemberMetadata } from "./execution-member-metadata.service";
-import { readDisabledPaidTools } from "./paid-tools.service";
+import type {
+AgentRunModelPin,
+PermissionManifest,
+ResolvedModelProviderEnvironment,
+} from "./agent-run-contracts";
+import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
 import {
-  createModelSourceSnapshot,
-  type ModelSourceIdentity,
-} from "./execution-model-source.service";
+ApiDispatchPhaseCollector,
+ApiDispatchTimingCollector,
+measureApiDispatchTiming,
+} from "./api-dispatch-timing.service";
 import {
-  prepareGatewayModelEnvironment,
-  prepareManagedModelEnvironment,
-  prepareRegisteredModelEnvironment,
-} from "./model-provider.service";
-import {
-  frameworkForProviderSelection,
-  loadModelCatalog$,
-  type ModelCatalog,
-} from "./model-catalog.service";
-import {
-  runRoutePricing,
-  type BuiltInRoutePricing,
-  prepareModelUsageContext,
+prepareModelUsageContext,
+runRoutePricing,
+type BuiltInRoutePricing,
 } from "./built-in-route-pricing";
 import {
-  materializePreparedPiProvider,
-  resolvePreparedPiModelConfig,
-  nativeCredentialEnvironment,
-} from "./pi-sandbox-config";
-import type {
-  PermissionManifest,
-  ResolvedModelProviderEnvironment,
-  AgentRunModelPin,
-} from "./agent-run-contracts";
+collectPermissionNames,
+compactRecord,
+runtimeFirewall,
+} from "./connector-runtime-preparation.service";
+import { createExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
-  createExecutionStorageObjects,
-  updateExecutionStoragePresignedUrlCache$,
-  type PreparedExecutionStorageMount,
-} from "./execution-storage.service";
-import { normalizeMountOverlay } from "./storage-mount-overlay";
+createModelSourceSnapshot,
+type ModelSourceIdentity,
+} from "./execution-model-source.service";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
+import {
+createExecutionStorageObjects,
+updateExecutionStoragePresignedUrlCache$,
+type PreparedExecutionStorageMount,
+} from "./execution-storage.service";
+import {
+frameworkForProviderSelection,
+loadModelCatalog$,
+type ModelCatalog,
+} from "./model-catalog.service";
+import {
+prepareManagedModelEnvironment,
+prepareRegisteredModelEnvironment,
+} from "./model-provider.service";
+import { readDisabledPaidTools } from "./paid-tools.service";
+import {
+materializePreparedPiProvider,
+resolvePreparedPiModelConfig,
+} from "./pi-sandbox-config";
+import { normalizeMountOverlay } from "./storage-mount-overlay";
 
-import {
-  loadOrgPlanCapabilities,
-  type OrgPlanCapabilities,
-} from "./org-plan-entitlement-read.service";
-import {
-  type PreparedUsageAllowanceRefresh,
-  createUsageAllowanceRefreshObject,
-} from "./usage-allowance.service";
-import { and, eq, isNull } from "drizzle-orm";
-import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { entitlementQuery } from "./usage-allowance-settlement-plan";
-import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
-import {
-  pendingRunAllowancePlan,
-  pendingRunAllowanceWindowsPlan,
-  allowanceSnapshotSchema,
-} from "./pending-launch-allowance-plan";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import {
-  checkOrgCreditsForRunAdmission$,
-  isFreePlanForCreditAdmission,
-} from "./run-admission.service";
-import {
-  checkPiMemoryQuota,
-  PiMemoryQuotaError,
-} from "./pi-memory-quota.service";
-import {
-  PiMemoryPhase2CredentialError,
-  resolvePiMemoryPhase2Credential,
-} from "./pi-memory-phase2-credential.service";
-import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
-import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
-import {
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-  normalizePiExecutionRoute,
-} from "@okouai/pi-agent-runtime";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
+import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { expandVariables } from "@okouai/core/variable-expander";
 import type { AgentRunFullLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { env, optionalEnv } from "../../lib/env";
-import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
-import type { Tx } from "../../lib/db-types";
-import { isPiLangfuseDebugRunEnvironment } from "../../lib/pi-langfuse-debug";
-import { getDatasetName, ingestToAxiom } from "../external/axiom";
-import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
-import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
-import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {
-  type RunContextAxiomSnapshot,
-  environmentRecordToEntries,
-  executionFirewallsToAxiomEntries,
-  featureFlagsRecordToEntries,
-  networkPoliciesRecordToEntries,
-} from "./run-context-snapshot.service";
+PI_AGENT_RUNTIME_VERSION,
+PI_SESSION_CONSTRUCTION_DIGEST
+} from "@okouai/pi-agent-runtime";
+import { and,eq,isNull } from "drizzle-orm";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import type { Tx } from "../../lib/db-types";
+import { env,optionalEnv } from "../../lib/env";
+import { isPiLangfuseDebugRunEnvironment } from "../../lib/pi-langfuse-debug";
+import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
+import { getDatasetName,ingestToAxiom } from "../external/axiom";
+import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
+import {
+loadOrgPlanCapabilities,
+type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
+import {
+allowanceSnapshotSchema,
+pendingRunAllowancePlan,
+pendingRunAllowanceWindowsPlan,
+} from "./pending-launch-allowance-plan";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
+import {
+PiMemoryPhase2CredentialError,
+resolvePiMemoryPhase2Credential,
+} from "./pi-memory-phase2-credential.service";
+import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
+import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
+import {
+PiMemoryQuotaError,
+checkPiMemoryQuota,
+} from "./pi-memory-quota.service";
+import { PiModelConfigurationError } from "./pi-model-configuration-error";
+import {
+checkOrgCreditsForRunAdmission$,
+isFreePlanForCreditAdmission,
+} from "./run-admission.service";
+import {
+environmentRecordToEntries,
+executionFirewallsToAxiomEntries,
+featureFlagsRecordToEntries,
+networkPoliciesRecordToEntries,
+type RunContextAxiomSnapshot,
+} from "./run-context-snapshot.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
+import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
+import { entitlementQuery } from "./usage-allowance-settlement-plan";
+import {
+createUsageAllowanceRefreshObject,
+type PreparedUsageAllowanceRefresh,
+} from "./usage-allowance.service";
 
 const log = logger("PiMemoryMaintenanceExecution");
 
@@ -217,17 +214,10 @@ function pinnedSourceIdentity(
   if (!pin.modelProviderId) {
     throw new PiMaintenanceDispositionError("credential_unavailable");
   }
-  if (pin.modelProvider === "custom-openai-responses") {
-    return { kind: "gateway", surfaceId: pin.modelProviderId };
+  if (pin.modelProvider === "codex-oauth-token" && pin.modelProviderCredentialScope === "member") {
+    return { kind: "member", accountId: pin.modelProviderId };
   }
-  if (pin.modelProvider === "codex-oauth-token") {
-    return pin.modelProviderCredentialScope === "org"
-      ? { kind: "organization", modelProviderId: pin.modelProviderId }
-      : { kind: "member", accountId: pin.modelProviderId };
-  }
-  return pin.modelProviderCredentialScope === "member"
-    ? { kind: "member-provider", modelProviderId: pin.modelProviderId }
-    : { kind: "organization", modelProviderId: pin.modelProviderId };
+  throw new PiMaintenanceDispositionError("credential_unavailable");
 }
 
 function maintenancePayload(
@@ -363,13 +353,7 @@ async function prepareMaintenanceModel(
 ) {
   const { catalog, credential, selectedModel, framework } = admitted;
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
-    source.identity.kind === "gateway"
-      ? await prepareGatewayModelEnvironment(source, {
-          selectedModel,
-          framework,
-          modelProviderType: credential.pin.modelProvider,
-        })
-      : source.identity.kind === "built-in"
+    source.identity.kind === "built-in"
         ? await prepareManagedModelEnvironment(source, {
             builtInModelRuntimeRoute: credential.route ?? undefined,
             selectedModelOverride: selectedModel,
@@ -1263,7 +1247,7 @@ function assertNoAmbientProviderAuth(
   }
   for (const key of AMBIENT_PROVIDER_AUTH_KEYS) {
     if (effectiveEnvironment[key]) {
-      throw new PiNativeConfigurationError(
+      throw new PiModelConfigurationError(
         "Native Pi context cannot carry ambient provider authentication",
       );
     }
@@ -1310,14 +1294,8 @@ function buildMaintenanceExecutionContext(
 ) {
   const permissions = args.permissionManifest;
   const executionSecrets = maintenanceExecutionSecrets(args.modelProvider);
-  const nativeEnvironment = nativeCredentialEnvironment(
-    args.modelProvider.piModelConfig
-      ? normalizePiExecutionRoute(args.modelProvider.piModelConfig)
-      : undefined,
-  );
   const platformEnvironment = {
     [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(args.disabledPaidTools),
-    ...nativeEnvironment,
     CLI_PKG_URL: env("CLI_PKG_URL"),
   };
   const modelEnvironment = maintenanceModelEnvironment({
@@ -1325,10 +1303,7 @@ function buildMaintenanceExecutionContext(
     secrets: executionSecrets.secrets,
     placeholders: permissions?.environmentSecretPlaceholders,
   });
-  const environment =
-    Object.keys(nativeEnvironment).length > 0
-      ? { ...modelEnvironment, ...nativeEnvironment }
-      : modelEnvironment;
+  const environment = modelEnvironment;
   const effectiveEnvironment = { ...environment, ...platformEnvironment };
   if (args.modelProvider.piModelConfig) {
     assertNoAmbientProviderAuth(

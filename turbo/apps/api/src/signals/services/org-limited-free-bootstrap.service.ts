@@ -1,52 +1,50 @@
-import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
-import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { randomUUID } from "node:crypto";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 
-import { command } from "ccstate";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import {
-  getInstructionsStorageName,
-  VOLUME_ORG_USER_ID,
+getInstructionsStorageName,
+VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { agents } from "@okouai/db/schema/agent";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, eq, exists, ne, notInArray, sql } from "drizzle-orm";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { storages,storageVersions } from "@okouai/db/schema/storage";
+import { command } from "ccstate";
+import { and,eq,notInArray,sql } from "drizzle-orm";
+import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
+import { onRejection,settleIncludingAbort } from "../utils";
 import { prepareAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
-import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import {
-  storageObjectCleanupJobValues,
-  executeStorageObjectCleanupWork$,
+DEFAULT_AGENT_AVATAR_URL,
+DEFAULT_AGENT_DISPLAY_NAME,
+DEFAULT_AGENT_NAME,
+DEFAULT_AGENT_SOUND,
+} from "./default-agent-profile";
+import { modelCatalog$,type ModelCatalog } from "./model-catalog.service";
+import {
+grantOnboardingCredits,
+LIMITED_FREE_ONBOARDING_CREDITS,
+onboardingCreditsExpiresAt,
+} from "./onboarding-credit-grants.service";
+import {
+upsertOrgPlanEntitlement,
+writeOrgMetadataWithPlanEntitlements,
+} from "./org-plan-entitlements.service";
+import {
+executeStorageObjectCleanupWork$,
+storageObjectCleanupJobValues,
 } from "./storage-object-cleanup.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
-import {
-  grantOnboardingCredits,
-  LIMITED_FREE_ONBOARDING_CREDITS,
-  onboardingCreditsExpiresAt,
-} from "./onboarding-credit-grants.service";
-import { upsertOrgNoSecretModelProvider$ } from "./model-provider.service";
-import {
-  DEFAULT_AGENT_AVATAR_URL,
-  DEFAULT_AGENT_DISPLAY_NAME,
-  DEFAULT_AGENT_NAME,
-  DEFAULT_AGENT_SOUND,
-} from "./default-agent-profile";
-import {
-  upsertOrgPlanEntitlement,
-  writeOrgMetadataWithPlanEntitlements,
-} from "./org-plan-entitlements.service";
-import type { Tx } from "../../lib/db-types";
-import { onRejection, settleIncludingAbort } from "../utils";
-import { modelCatalog$, type ModelCatalog } from "./model-catalog.service";
+import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 
 const L = logger("org-limited-free-bootstrap.service");
 const PAID_TIERS = ["pro", "team", "custom"] as const;
@@ -454,18 +452,6 @@ async function finalizeBootstrap(
     return { bootstrapped: true, agentId: agentRow.id };
   }
 
-  const systemDefaultModel = catalogSnapshot.systemDefaultModel;
-  const hasConfiguredPolicies = exists(
-    tx
-      .select({ id: orgModelPolicies.id })
-      .from(orgModelPolicies)
-      .where(
-        and(
-          eq(orgModelPolicies.orgId, args.orgId),
-          ne(orgModelPolicies.model, systemDefaultModel),
-        ),
-      ),
-  );
   const initialized = await writeOrgMetadataWithPlanEntitlements(tx, {
     writeOrgMetadata: async (writeTx) => {
       return await writeTx
@@ -479,7 +465,6 @@ async function finalizeBootstrap(
           // A policy can be configured before metadata exists. Preserve the
           // Custom policy contract on INSERT as well as on conflict. Unconfigured
           // new organizations use Auto; the schema's Custom default is unchanged.
-          modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN 'custom' ELSE 'auto' END`,
           updatedAt: nowDate(),
         })
         .onConflictDoUpdate({
@@ -491,7 +476,6 @@ async function finalizeBootstrap(
             // Another writer may have created the row first. Only an org with
             // no configured non-default model becomes Auto; configured models
             // keep the stored mode.
-            modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN ${orgMetadataCanonicalWrites.modelMode} ELSE 'auto' END`,
             updatedAt: nowDate(),
           },
           // The earlier tier read is not write authority. Stripe can commit
@@ -552,17 +536,6 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
     if (reservation.status === "skipped") {
       return { bootstrapped: false, agentId: reservation.agentId };
     }
-
-    await set(
-      upsertOrgNoSecretModelProvider$,
-      {
-        orgId: args.orgId,
-        type: "built-in",
-        selectedModel: (await get(modelCatalog$)).systemDefaultModel,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
 
     const location = newStorageS3Location(args.orgId);
     const candidate = { id: location.storageId, s3Prefix: location.s3Prefix };

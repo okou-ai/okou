@@ -1,21 +1,20 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { modelRoutes } from "@okouai/db/schema/model-route";
-import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import type { ModelCatalog } from "./model-catalog.service";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { nowDate } from "../../lib/time";
 import {
-  reasoningEffortSchema,
-  type ReasoningEffort,
+reasoningEffortSchema,
+type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { modelRoutes } from "@okouai/db/schema/model-route";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import { and,asc,eq,inArray,isNull } from "drizzle-orm";
+import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import {
-  loadMemberModelRouteContext,
-  type MemberModelRouteContext,
-  type PreparedMemberModelRouteContext,
+loadMemberModelRouteContext,
+type MemberModelRouteContext,
+type PreparedMemberModelRouteContext,
 } from "./effective-model-route.service";
+import type { ModelCatalog } from "./model-catalog.service";
 export type MemberSubscriptionModel = Readonly<{
   id: string;
   model: string;
@@ -157,42 +156,15 @@ export async function loadMemberSubscriptionModels(
  * still offers the saved model.
  */
 export async function resetStaleAutoMemberSelection(
-  catalogSnapshot: ModelCatalog,
+  _catalogSnapshot: ModelCatalog,
   db: Db,
   orgId: string,
   userId: string,
 ): Promise<void> {
-  const [[org], [member], policies] = await Promise.all([
-    db
-      .select({ mode: orgMetadata.modelMode })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1),
-    db
-      .select({ selectedModel: orgMembersMetadata.selectedModel })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1),
-    db
-      .select({ model: orgModelPolicies.model })
-      .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, orgId)),
-  ]);
+  const [member] = await db.select({ selectedModel: orgMembersMetadata.selectedModel })
+    .from(orgMembersMetadata).where(and(eq(orgMembersMetadata.orgId, orgId), eq(orgMembersMetadata.userId, userId))).limit(1);
   const selectedModel = member?.selectedModel;
-  if (
-    org?.mode !== "auto" ||
-    !selectedModel ||
-    policies.some((policy) => {
-      return policy.model === selectedModel;
-    })
-  ) {
-    return;
-  }
+  if (!selectedModel || selectedModel === AUTO_RUN_MODEL) { return; }
   const remaining = await loadMemberSubscriptionModels(
     db,
     await loadMemberModelRouteContext(db, orgId, userId),
@@ -207,7 +179,7 @@ export async function resetStaleAutoMemberSelection(
   await db
     .update(orgMembersMetadata)
     .set({
-      selectedModel: await catalogSnapshot.systemDefaultModel,
+      selectedModel: AUTO_RUN_MODEL,
       serviceTier: null,
       updatedAt: nowDate(),
     })

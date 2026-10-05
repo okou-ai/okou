@@ -1,90 +1,90 @@
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { createHash, randomBytes } from "node:crypto";
-import { command } from "ccstate";
-import { waitUntil } from "../context/wait-until";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { v5 as uuidv5 } from "uuid";
 import type {
-  ChatTeamsMessageFile,
-  ChatTeamsMessageFiles,
+TeamsInboundActivity,
+TeamsInboundAttachment,
+} from "@okouai/api-contracts/contracts/teams-bot";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import type {
+ChatTeamsMessageFile,
+ChatTeamsMessageFiles,
 } from "@okouai/db/jsonb-contracts/chat-teams-context";
+import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { agents } from "@okouai/db/schema/agent";
-import type {
-  TeamsInboundActivity,
-  TeamsInboundAttachment,
-} from "@okouai/api-contracts/contracts/teams-bot";
-import { and, eq, or } from "drizzle-orm";
+import { command } from "ccstate";
+import { and,eq,or } from "drizzle-orm";
 import { convert } from "html-to-text";
+import { createHash,randomBytes } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
-import { inferMimetype } from "../../lib/mimetype";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+import { inferMimetype } from "../../lib/mimetype";
+import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
-import { writeDb$, type Db } from "../external/db";
+import { nowDate } from "../../lib/time";
+import { waitUntil } from "../context/wait-until";
+import { writeDb$,type Db } from "../external/db";
 import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
+publishChatThreadMessageCreatedSafely,
+publishThreadListChangedSafely,
 } from "../external/realtime";
 import {
-  fetchTeamsChannelMessage,
-  fetchTeamsChannelMessageReplies,
-  fetchTeamsChannelMessages,
-  fetchTeamsFile,
-  fetchTeamsUsers,
-  fetchTeamsPersonalChatMessages,
-  sendTeamsMessageReply,
-  sendTeamsReaction,
-  sendTeamsTypingActivity,
-  type TeamsAdaptiveCard,
-  type TeamsGraphAttachment,
-  type TeamsGraphMessage,
-  type TeamsGraphUserInfo,
+fetchTeamsChannelMessage,
+fetchTeamsChannelMessageReplies,
+fetchTeamsChannelMessages,
+fetchTeamsFile,
+fetchTeamsPersonalChatMessages,
+fetchTeamsUsers,
+sendTeamsMessageReply,
+sendTeamsReaction,
+sendTeamsTypingActivity,
+type TeamsAdaptiveCard,
+type TeamsGraphAttachment,
+type TeamsGraphMessage,
+type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
-import { bestEffort, safeJsonParse, settle } from "../utils";
-import {
-  pickEnqueuedChatThread$,
-  enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput$,
-} from "./chat-thread-queue-drain.service";
+import { bestEffort,safeJsonParse,settle } from "../utils";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import { InputFileImportError } from "./canonical-asset.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import {
-  ensureTeamsChatThreadRoute$,
-  findTeamsRoutedChatThreadId$,
-} from "./teams-chat-ingress.service";
-import {
-  updateIntegrationChatThreadModel$,
-  readIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { formatTeamsFileForContext } from "./teams-prompt";
-import { InputFileImportError } from "./canonical-asset.service";
-import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
-import {
-  integrationInputMessageFiles,
-  materializeIntegrationInputAssets$,
-  readyIntegrationInputAsset,
-  type IntegrationInputFile,
-  type IntegrationInputAsset,
-} from "./integration-input-assets.service";
-import type { TeamsFileTokenPayload } from "./teams-file-token";
-import {
-  buildTeamsConnectUrlForActivity,
-  disconnectTeamsConnection$,
-  publishTeamsChanged$,
-} from "./teams-connect.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
+enqueuedChatQueueWaitReason$,
+notifyRunningChatRunOfPendingInput$,
+pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import {
+readIntegrationChatThreadModel$,
+updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import {
+integrationInputMessageFiles,
+materializeIntegrationInputAssets$,
+readyIntegrationInputAsset,
+type IntegrationInputAsset,
+type IntegrationInputFile,
+} from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import {
+ensureTeamsChatThreadRoute$,
+findTeamsRoutedChatThreadId$,
+} from "./teams-chat-ingress.service";
+import {
+buildTeamsConnectUrlForActivity,
+disconnectTeamsConnection$,
+publishTeamsChanged$,
+} from "./teams-connect.service";
+import type { TeamsFileTokenPayload } from "./teams-file-token";
+import { formatTeamsFileForContext } from "./teams-prompt";
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT =
   "`help`, `connect`, `disconnect`, `model`";
@@ -797,7 +797,7 @@ const teamsModelPickerState$ = command(
     readonly currentSelectedModel: string | null;
   }> => {
     const { response: policies, systemDefaultModel } = await set(
-      listOrgModelPoliciesWithSystemDefault$,
+      listAvailableRunModelsWithDefault$,
       { orgId, userId },
       signal,
     );
@@ -805,7 +805,7 @@ const teamsModelPickerState$ = command(
 
     return {
       enabled: true,
-      options: policies.policies
+      options: policies.models
         .flatMap((policy) => {
           if (policy.routeStatus !== "valid") {
             return [];

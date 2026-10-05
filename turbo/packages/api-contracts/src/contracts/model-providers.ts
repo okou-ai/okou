@@ -1,36 +1,34 @@
 import { z } from "zod";
 
 import DEEPSEEK_V4_FLASH_MODEL_CATALOG from "./deepseek-model-catalog.json" with { type: "json" };
-import {
-  OKOU_MODEL_CODEX_CATALOG,
-  OKOU_RUN_MODELS,
-  type OkouRunModel,
-} from "./okou-model-metadata";
 import type { ModelPriceTier } from "./model-price-tiers";
 import {
-  MODEL_PROVIDER_TYPE_IDS,
-  isBuiltInModelProviderType,
-  type ModelProviderFramework,
-  type ModelProviderType,
+MODEL_PROVIDER_TYPE_IDS,
+isBuiltInModelProviderType,
+type ModelProviderFramework,
+type ModelProviderType,
 } from "./model-provider-types";
-export { isBuiltInModelProviderType } from "./model-provider-types";
+import {
+OKOU_MODEL_CODEX_CATALOG,
+OKOU_RUN_MODELS,
+type OkouRunModel,
+} from "./okou-model-metadata";
 export {
-  getModelProviderFirewall,
-  getModelProviderPiChatCompletionsUrl,
-  getModelProviderPiEndpoint,
-  MODEL_PROVIDER_PI_APIS,
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  MODEL_PROVIDER_FIREWALL_CONFIGS,
+MODEL_PROVIDER_ENV_PLACEHOLDERS,
+MODEL_PROVIDER_FIREWALL_CONFIGS,MODEL_PROVIDER_PI_APIS,getModelProviderFirewall,
+getModelProviderPiChatCompletionsUrl,
+getModelProviderPiEndpoint
 } from "./model-provider-firewalls";
 export type {
-  ModelProviderPiApi,
-  ModelProviderPiEndpoint,
+ModelProviderPiApi,
+ModelProviderPiEndpoint
 } from "./model-provider-firewalls";
+export { isBuiltInModelProviderType } from "./model-provider-types";
 export type {
-  BuiltInModelProviderType,
-  ModelProviderFramework,
-  ModelProviderType,
-  ModelProviderWriteType,
+BuiltInModelProviderType,
+ModelProviderFramework,
+ModelProviderType,
+ModelProviderWriteType
 } from "./model-provider-types";
 
 const deepseekV4FlashCatalogModel = DEEPSEEK_V4_FLASH_MODEL_CATALOG.models[0];
@@ -163,7 +161,7 @@ export type ModelProviderCredentialScope = z.infer<
   typeof modelProviderCredentialScopeSchema
 >;
 
-export { OKOU_RUN_MODELS, type OkouRunModel };
+export { OKOU_RUN_MODELS,type OkouRunModel };
 
 const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(OKOU_RUN_MODELS);
 
@@ -1131,18 +1129,15 @@ export type UpsertModelProviderResponse = z.infer<
   typeof upsertModelProviderResponseSchema
 >;
 
-export const orgModelPolicyRouteStatusSchema = z.enum([
+export const runModelRouteStatusSchema = z.enum([
   "valid",
   "missing_provider",
   "invalid",
 ]);
 
-export type OrgModelPolicyRouteStatus = z.infer<
-  typeof orgModelPolicyRouteStatusSchema
->;
+export type RunModelRouteStatus = z.infer<typeof runModelRouteStatusSchema>;
 
-export const orgModelPolicySchema = z.object({
-  id: z.uuid(),
+export const availableRunModelSchema = z.object({
   model: runModelIdSchema,
   modelLabel: z.string(),
   defaultProviderType: modelProviderTypeSchema,
@@ -1150,8 +1145,7 @@ export const orgModelPolicySchema = z.object({
   runtimeProviderType: modelProviderTypeSchema.nullable().optional(),
   credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),
-  modelProviderSurfaceId: z.uuid().nullable().optional(),
-  routeStatus: orgModelPolicyRouteStatusSchema,
+  routeStatus: runModelRouteStatusSchema,
   routeStatusReason: z.string().nullable(),
   // Caller-specific, response-only routing. Optional across the B/C rollout.
   // A candidate has not captured a concrete subscription account for a run.
@@ -1187,42 +1181,15 @@ export const orgModelPolicySchema = z.object({
       accountSelection: z.enum(["capture_required", "not_applicable"]),
     })
     .optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
 });
 
-export type OrgModelPolicy = z.infer<typeof orgModelPolicySchema>;
+export type AvailableRunModel = z.infer<typeof availableRunModelSchema>;
 
-export const updateOrgModelPolicySchema = z.object({
-  model: runModelIdSchema,
-  defaultProviderType: modelProviderWriteTypeSchema,
-  credentialScope: modelProviderCredentialScopeSchema,
-  modelProviderId: z.uuid().nullable(),
-  modelProviderSurfaceId: z.uuid().nullable().optional(),
+export const availableRunModelsResponseSchema = z.object({
+  defaultModel: z.string(),
+  models: z.array(availableRunModelSchema),
 });
 
-export type UpdateOrgModelPolicy = z.infer<typeof updateOrgModelPolicySchema>;
-
-export const orgModelModeSchema = z.enum(["auto", "custom"]);
-export type OrgModelMode = z.infer<typeof orgModelModeSchema>;
-
-export const orgModelPoliciesResponseSchema = z.object({
-  modelMode: orgModelModeSchema,
-  revision: z.string(),
-  writePreconditionRequired: z.boolean(),
-  policies: z.array(orgModelPolicySchema),
-  modelsAvailableToAdd: z.array(runModelIdSchema),
-});
-
-export type OrgModelPoliciesResponse = z.infer<
-  typeof orgModelPoliciesResponseSchema
->;
-
-export const updateOrgModelPoliciesRequestSchema = z.object({
-  revision: z.string().optional(),
-  policies: z.array(updateOrgModelPolicySchema),
-});
-
-export type UpdateOrgModelPoliciesRequest = z.infer<
-  typeof updateOrgModelPoliciesRequestSchema
+export type AvailableRunModelsResponse = z.infer<
+  typeof availableRunModelsResponseSchema
 >;

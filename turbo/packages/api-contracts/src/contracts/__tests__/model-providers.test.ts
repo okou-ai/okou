@@ -23,11 +23,9 @@ import {
   isBuiltInModelProviderType,
   modelProviderCredentialScopeSchema,
   modelProviderResponseSchema,
-  orgModelPolicySchema,
+  availableRunModelSchema,
   modelProviderWriteTypeSchema,
   upsertModelProviderRequestSchema,
-  updateOrgModelPolicySchema,
-  updateOrgModelPoliciesRequestSchema,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
@@ -38,8 +36,6 @@ import {
   findMatchingPermissions,
   matchFirewallRequestDecision,
 } from "@okouai/connectors/firewall-rule-matcher";
-import { getModelProviderTypeForSurfaceProtocol } from "../model-provider-gateways";
-import { modelProvidersByTypeContract } from "../model-provider-routes";
 
 describe("model-first canonical catalog", () => {
   it("exposes canonical model provider env placeholders", () => {
@@ -74,21 +70,6 @@ describe("model-first canonical catalog", () => {
     expect(
       modelProviderCredentialScopeSchema.safeParse("personal").success,
     ).toBe(false);
-  });
-
-  it("preserves an omitted surface id for active policy requests", () => {
-    const parsed = updateOrgModelPoliciesRequestSchema.parse({
-      policies: [
-        {
-          model: "claude-sonnet-5",
-          defaultProviderType: "vercel-ai-gateway",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ],
-    });
-    expect(parsed.policies).toHaveLength(1);
-    expect(parsed.policies[0]).not.toHaveProperty("modelProviderSurfaceId");
   });
 
   it("normalizes provider aliases without accepting unsupported models", () => {
@@ -1025,15 +1006,6 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
 });
 
 describe("custom model gateway provider types", () => {
-  it("mirror the surface protocol instead of an unrelated vendor", () => {
-    expect(getModelProviderTypeForSurfaceProtocol("anthropic-messages")).toBe(
-      "custom-anthropic-messages",
-    );
-    expect(getModelProviderTypeForSurfaceProtocol("openai-responses")).toBe(
-      "custom-openai-responses",
-    );
-  });
-
   it("resolve the framework the runtime adapter needs", () => {
     expect(getFrameworkForType("custom-anthropic-messages")).toBe(
       "claude-code",
@@ -1102,8 +1074,8 @@ describe("built-in provider discriminator contract", () => {
   } as const;
   const policyResponse = {
     id: "22222222-2222-4222-8222-222222222222",
-    model: "gpt-5.6-sol",
-    modelLabel: "GPT 5.6 Sol",
+    model: "okou-1.0",
+    modelLabel: "Auto",
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -1122,33 +1094,9 @@ describe("built-in provider discriminator contract", () => {
     expect(modelProviderResponseSchema.parse(providerResponse).type).toBe(
       "built-in",
     );
-    expect(orgModelPolicySchema.parse(policyResponse).defaultProviderType).toBe(
+    expect(availableRunModelSchema.parse(policyResponse).defaultProviderType).toBe(
       "built-in",
     );
-  });
-
-  it("accepts built-in in write contracts", () => {
-    expect(modelProviderWriteTypeSchema.parse("built-in")).toBe("built-in");
-    expect(
-      upsertModelProviderRequestSchema.parse({ type: "built-in" }).type,
-    ).toBe("built-in");
-    expect(
-      modelProvidersByTypeContract.delete.pathParams.parse({
-        type: "built-in",
-      }).type,
-    ).toBe("built-in");
-
-    const policy = {
-      model: "gpt-5.6-sol",
-      credentialScope: "org",
-      modelProviderId: null,
-    } as const;
-    expect(
-      updateOrgModelPolicySchema.parse({
-        ...policy,
-        defaultProviderType: "built-in",
-      }).defaultProviderType,
-    ).toBe("built-in");
   });
 
   it("exposes built-in exactly once without a firewall", () => {

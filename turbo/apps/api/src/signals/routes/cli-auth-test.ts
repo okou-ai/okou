@@ -46,7 +46,8 @@ import {
   getConnectorRuntimeConnector,
   loadConnectorRuntimeSnapshot,
 } from "../services/connector-catalog-runtime.service";
-import { upsertOrgMultiAuthModelProvider$ } from "../services/model-provider.service";
+import { upsertPersonalModelProviderAccount$ } from "../services/model-provider-account.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   isCodexAuthJsonFreePlanError,
   isCodexAuthJsonShapeError,
@@ -54,7 +55,6 @@ import {
 } from "../services/codex-auth-json-parser";
 import { safeSync } from "../utils";
 
-const ORG_SENTINEL_USER_ID = "__org__";
 
 const testTokenQuery$ = queryOf(cliAuthTestTokenContract.create);
 const testConnectorBody$ = bodyResultOf(cliAuthTestConnectorContract.create);
@@ -524,6 +524,8 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     return stringError(400, "Test user has no org — run test-token first");
   }
 
+  const featureSwitchContext = await get(userFeatureSwitchContext(orgId, userId));
+  signal.throwIfAborted();
   if ("authJson" in bodyResult.data) {
     const { authJson } = bodyResult.data;
     const parsedResult = safeSync(() => {
@@ -545,9 +547,12 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
 
     const parsed = parsedResult.ok;
     await set(
-      upsertOrgMultiAuthModelProvider$,
+      upsertPersonalModelProviderAccount$,
       {
         orgId,
+        userId,
+        mode: { kind: "replace-active" },
+        featureSwitchContext,
         type: "codex-oauth-token",
         authMethod: "auth_json",
         secretValues: {
@@ -579,9 +584,12 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     nowDate().getTime() + (bodyResult.data.expiresIn ?? 600) * 1000,
   );
   await set(
-    upsertOrgMultiAuthModelProvider$,
+    upsertPersonalModelProviderAccount$,
     {
       orgId,
+      userId,
+      mode: { kind: "replace-active" },
+      featureSwitchContext,
       type: "codex-oauth-token",
       authMethod: "auth_json",
       secretValues: {
@@ -596,8 +604,7 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  const writeDb = set(writeDb$);
-  await writeDb
+  await set(writeDb$)
     .update(modelProviders)
     .set({
       tokenExpiresAt,
@@ -608,7 +615,7 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+        eq(modelProviders.userId, userId),
         eq(modelProviders.type, "codex-oauth-token"),
       ),
     );

@@ -1,12 +1,12 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
+import { authHeadersSchema,initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { modelProviderResponseSchema } from "./model-providers";
 
 const c = initContract();
 
-export const claudeCodeDeviceAuthScopeSchema = z.enum(["org", "personal"]);
+export const claudeCodeDeviceAuthScopeSchema = z.literal("personal");
 export const claudeCodeDeviceAuthModeSchema = z.enum(["add", "reconnect"]);
 
 const claudeCodeDeviceAuthStartResponseSchema = z.object({

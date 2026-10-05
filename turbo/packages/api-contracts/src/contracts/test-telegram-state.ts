@@ -19,7 +19,6 @@ export const testTelegramStateActionBodySchema = z
       "get-post-run-state",
       "get-telegram-link-id",
       "seed-running-run",
-      "seed-model-policies",
       "get-selected-model",
       "update-run-callback",
       "update-run",

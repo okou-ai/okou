@@ -1,18 +1,19 @@
-import { asc, sql } from "drizzle-orm";
+import type { MemberRunModelCatalog } from "@okouai/api-contracts/contracts/member-run-model";
 import {
-  getBuiltInRouteProviderVendor,
-  isBuiltInModelProviderType,
-  modelProviderTypeSchema,
-  type ModelProviderType,
-  getFrameworkForType,
-  MODEL_PROVIDER_TYPES,
+getBuiltInRouteProviderVendor,
+getFrameworkForType,
+isBuiltInModelProviderType,
+MODEL_PROVIDER_TYPES,
+modelProviderTypeSchema,
+type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { MemberModelPolicyCatalog } from "@okouai/api-contracts/contracts/member-model-policy";
+import { AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,AUTO_RUN_MODEL,AUTO_RUN_PRICING_PROVIDER,AUTO_RUN_PROVIDER,AUTO_RUN_UPSTREAM_MODEL } from "@okouai/core/auto-run-model";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import { command, computed, type Computed } from "ccstate";
+import { command,computed,type Computed } from "ccstate";
+import { asc,sql } from "drizzle-orm";
 import { db$ } from "../external/db";
-import type { SupportedFramework } from "@okouai/core/frameworks";
 
 /** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
 const MODEL_USAGE_PRICING_KIND = "model";
@@ -55,6 +56,15 @@ export type CatalogRoute = Readonly<{
    */
   longContextMinTotalInputTokens: number | null;
 }>;
+
+export const AUTO_CATALOG_ROUTE: CatalogRoute = {
+  model: AUTO_RUN_MODEL, providerType: "built-in", concreteProviderType: AUTO_RUN_PROVIDER,
+  subscriptionType: null, upstreamModel: AUTO_RUN_UPSTREAM_MODEL, enabled: true, priority: 0,
+  serviceTiers: [], defaultServiceTier: null, efforts: [], defaultEffort: null, priceTier: null,
+  pricingKind: MODEL_USAGE_PRICING_KIND, pricingProvider: AUTO_RUN_PRICING_PROVIDER,
+  longContextMinTotalInputTokens: AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
+};
+const AUTO_CATALOG_MODEL: CatalogModel = { model: AUTO_RUN_MODEL, displayName: "Auto", sortOrder: 0, isSystemDefault: true, replacedBy: null, builtInOnRestrictedPlans: true, piRouteClass: "gpt-codex" };
 
 export type ModelCatalog = Readonly<{
   models: readonly CatalogModel[];
@@ -130,38 +140,12 @@ export function validateModelCatalog(
   for (const row of models) {
     followReplacementChain(byModel, row);
   }
-  const defaults = models.filter((row) => {
-    return row.isSystemDefault;
-  });
-  const [systemDefault] = defaults;
-  if (!systemDefault || defaults.length !== 1) {
-    throw new ModelCatalogInvariantError(
-      `expected exactly one system default, found ${defaults.length}`,
-    );
-  }
-  if (systemDefault.replacedBy !== null) {
-    throw new ModelCatalogInvariantError(
-      `system default ${systemDefault.model} is retired`,
-    );
-  }
-  for (const route of routes) {
-    validateRoutePricingLink(route);
-  }
-  const hasBuiltInRoute = routes.some((route) => {
-    return (
-      route.model === systemDefault.model &&
-      route.providerType === "built-in" &&
-      isCatalogRouteExecutable(route)
-    );
-  });
-  if (!hasBuiltInRoute) {
-    throw new ModelCatalogInvariantError(
-      `system default ${systemDefault.model} has no enabled Built-in route with a runtime adapter`,
-    );
-  }
+  const systemDefault = AUTO_CATALOG_MODEL;
+  byModel.set(AUTO_RUN_MODEL, systemDefault);
+  for (const route of routes) { validateRoutePricingLink(route); }
   return {
-    models,
-    routes,
+    models: [AUTO_CATALOG_MODEL, ...models.filter((model) => model.model !== AUTO_RUN_MODEL)],
+    routes: [AUTO_CATALOG_ROUTE, ...routes.filter((route) => route.model !== AUTO_RUN_MODEL)],
     systemDefault,
     systemDefaultModel: systemDefault.model,
     byModel,
@@ -218,6 +202,7 @@ export function catalogBuiltInRoute(
   model: string,
   concreteProviderType: string,
 ): CatalogRoute | null {
+  if (model === AUTO_RUN_MODEL) { return concreteProviderType === AUTO_RUN_PROVIDER ? AUTO_CATALOG_ROUTE : null; }
   return (
     catalogRoutesFor(catalog, model, "built-in").find((candidate) => {
       return candidate.concreteProviderType === concreteProviderType;
@@ -312,6 +297,7 @@ export function catalogBuiltInCandidates(
   catalog: ModelCatalog,
   model: string,
 ): readonly CatalogRoute[] {
+  if (model === AUTO_RUN_MODEL) { return [AUTO_CATALOG_ROUTE]; }
   return [...catalogRoutesFor(catalog, model, "built-in")].sort((a, b) => {
     return a.priority - b.priority;
   });
@@ -372,9 +358,9 @@ export function catalogHasProviderRoute(
 }
 
 /** The catalog lookups member policy configurability reads. */
-export function memberModelPolicyCatalog(
+export function memberRunModelCatalog(
   catalog: ModelCatalog,
-): MemberModelPolicyCatalog {
+): MemberRunModelCatalog {
   return {
     resolve(model) {
       const resolution = resolveCatalogModel(catalog, model);
