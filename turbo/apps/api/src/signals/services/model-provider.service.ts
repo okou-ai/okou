@@ -149,9 +149,8 @@ function modelProviderResponse(row: {
   };
 }
 
-function modelProvidersForUser(
+export function modelProviders(
   orgId: string,
-  ownerUserId: string,
 ): Computed<Promise<ModelProviderListResponse>> {
   return computed(async (get): Promise<ModelProviderListResponse> => {
     const rows = await get(db$)
@@ -176,7 +175,7 @@ function modelProvidersForUser(
       .where(
         and(
           eq(modelProvidersTable.orgId, orgId),
-          eq(modelProvidersTable.userId, ownerUserId),
+          eq(modelProvidersTable.userId, ORG_SENTINEL_USER_ID),
         ),
       )
       .orderBy(modelProvidersTable.type);
@@ -188,12 +187,6 @@ function modelProvidersForUser(
       }),
     };
   });
-}
-
-export function modelProviders(
-  orgId: string,
-): Computed<Promise<ModelProviderListResponse>> {
-  return modelProvidersForUser(orgId, ORG_SENTINEL_USER_ID);
 }
 
 type NotFoundResponse = ReturnType<typeof notFound>;
@@ -447,7 +440,6 @@ type MultiAuthInsertValues = typeof modelProvidersTable.$inferInsert;
 
 function buildMultiAuthInsertValues(args: {
   type: ModelProviderWriteType;
-  userId: string;
   authMethod: string;
   selectedModel: string | undefined;
   orgId: string;
@@ -455,7 +447,7 @@ function buildMultiAuthInsertValues(args: {
 }): MultiAuthInsertValues {
   return {
     type: args.type,
-    userId: args.userId,
+    userId: ORG_SENTINEL_USER_ID,
     authMethod: args.authMethod,
     isDefault: false,
     selectedModel: args.selectedModel ?? null,
@@ -541,7 +533,6 @@ const persistSingleAuthModelProvider$ = command(
     { set },
     args: {
       readonly orgId: string;
-      readonly userId: string;
       readonly type: ModelProviderWriteType;
       readonly secretName: string;
       readonly encryptedValue: string;
@@ -563,7 +554,7 @@ const persistSingleAuthModelProvider$ = command(
         .insert(modelProvidersTable)
         .values({
           type: args.type,
-          userId: args.userId,
+          userId: ORG_SENTINEL_USER_ID,
           secretId: null,
           isDefault: false,
           selectedModel: args.selectedModel ?? null,
@@ -599,7 +590,7 @@ const persistSingleAuthModelProvider$ = command(
       const [upsertedSecret] = await tx
         .insert(secrets)
         .values({
-          userId: args.userId,
+          userId: ORG_SENTINEL_USER_ID,
           name: args.secretName,
           encryptedValue: args.encryptedValue,
           type: "model-provider",
@@ -653,7 +644,7 @@ const persistSingleAuthModelProvider$ = command(
 export const upsertOrgModelProvider$ = command(
   async (
     { set },
-    orgArgs: {
+    args: {
       readonly orgId: string;
       readonly type: ModelProviderWriteType;
       readonly secret: string;
@@ -666,7 +657,6 @@ export const upsertOrgModelProvider$ = command(
     | BadRequestResponse
     | { readonly provider: ModelProviderInfo; readonly created: boolean }
   > => {
-    const args = { ...orgArgs, userId: ORG_SENTINEL_USER_ID };
     if (hasAuthMethods(args.type)) {
       return badRequestMessage(
         `Provider "${args.type}" requires multiple secrets. Use the multi-auth API instead.`,
@@ -695,7 +685,7 @@ export const upsertOrgModelProvider$ = command(
     );
     signal.throwIfAborted();
 
-    await publishProviderChanged(args);
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
     signal.throwIfAborted();
 
     return {
@@ -738,7 +728,6 @@ const persistMultiAuthModelProvider$ = command(
     { set },
     args: {
       readonly orgId: string;
-      readonly userId: string;
       readonly type: ModelProviderWriteType;
       readonly authMethod: string;
       readonly selectedModel?: string;
@@ -806,7 +795,7 @@ const persistMultiAuthModelProvider$ = command(
           .where(
             and(
               eq(secrets.orgId, args.orgId),
-              eq(secrets.userId, args.userId),
+              eq(secrets.userId, ORG_SENTINEL_USER_ID),
               eq(secrets.type, "model-provider"),
               isNull(secrets.connectorId),
               inArray(secrets.name, obsoleteNames),
@@ -819,7 +808,7 @@ const persistMultiAuthModelProvider$ = command(
           .insert(secrets)
           .values({
             orgId: args.orgId,
-            userId: args.userId,
+            userId: ORG_SENTINEL_USER_ID,
             type: "model-provider",
             ...secret,
           })
@@ -907,7 +896,7 @@ function validateMultiAuthUpsertInput(args: {
 export const upsertOrgMultiAuthModelProvider$ = command(
   async (
     { get, set },
-    orgArgs: {
+    args: {
       readonly orgId: string;
       readonly type: ModelProviderWriteType;
       readonly authMethod: string;
@@ -921,7 +910,6 @@ export const upsertOrgMultiAuthModelProvider$ = command(
     | BadRequestResponse
     | { readonly provider: ModelProviderInfo; readonly created: boolean }
   > => {
-    const args = { ...orgArgs, userId: ORG_SENTINEL_USER_ID };
     const validationError = validateMultiAuthUpsertInput({
       type: args.type,
       authMethod: args.authMethod,
@@ -932,7 +920,7 @@ export const upsertOrgMultiAuthModelProvider$ = command(
     }
 
     const featureSwitchContext = await get(
-      userFeatureSwitchContext(args.orgId, args.userId),
+      userFeatureSwitchContext(args.orgId, ORG_SENTINEL_USER_ID),
     );
     signal.throwIfAborted();
 
@@ -961,7 +949,7 @@ export const upsertOrgMultiAuthModelProvider$ = command(
     signal.throwIfAborted();
 
     const { provider } = result;
-    await publishProviderChanged(args);
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
     signal.throwIfAborted();
 
     return {
