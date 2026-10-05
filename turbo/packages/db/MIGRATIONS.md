@@ -112,6 +112,13 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-file-thread-associations.ts` protects migration
+  `1322_backfill_file_thread_associations`: keyset writes across more than two
+  batches, preservation of existing thread/org/owner/file identity, unrelated
+  and threadless files, and idempotent reruns. Retain it through the file
+  association expand/contract rollout; this does not authorize production
+  backfill execution or removal of the Run foreign key.
+
 - `scripts/test-legacy-free-retirement.ts` protects migration
   `1316_retire_legacy_free_tier`: safe legacy and entitlement-only normalization,
   unchanged credits/configuration/billing provenance/suspension, paid pending

@@ -109,6 +109,28 @@ async function recordRunUploadedFileWrite(
     db.transaction(async (tx) => {
       const [row] = await write(tx);
       if (row) {
+        // Capture the association at write time so lists never need Run history.
+        const [run] = await tx
+          .select({
+            chatThreadId: agentRuns.chatThreadId,
+            orgId: agentRuns.orgId,
+          })
+          .from(agentRuns)
+          .where(
+            and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (run) {
+          await tx
+            .update(runUploadedFiles)
+            .set({
+              chatThreadId: run.chatThreadId,
+              orgId: run.orgId,
+            })
+            .where(eq(runUploadedFiles.id, row.id));
+          signal.throwIfAborted();
+        }
         await queueArtifactCatalogFile(tx, row.id, signal);
       }
       return row;

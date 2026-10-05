@@ -582,13 +582,12 @@ function chatThreadArtifactRows(args: {
         createdAt: runUploadedFiles.createdAt,
       })
       .from(runUploadedFiles)
-      .innerJoin(agentRuns, eq(agentRuns.id, runUploadedFiles.runId))
       .where(
         and(
           eq(runUploadedFiles.userId, args.userId),
-          isNotNull(agentRuns.triggerSource),
+          isNotNull(runUploadedFiles.runId),
           or(
-            eq(agentRuns.chatThreadId, args.threadId),
+            eq(runUploadedFiles.chatThreadId, args.threadId),
             exists(
               db
                 .select({ id: chatEvents.id })
@@ -603,7 +602,7 @@ function chatThreadArtifactRows(args: {
           ),
         ),
       )
-      .orderBy(asc(agentRuns.createdAt), asc(runUploadedFiles.createdAt));
+      .orderBy(asc(runUploadedFiles.createdAt), asc(runUploadedFiles.id));
   });
 }
 

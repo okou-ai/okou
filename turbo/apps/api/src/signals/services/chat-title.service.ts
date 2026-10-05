@@ -1,4 +1,3 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import {
   chatEventCompatibilityRole,
@@ -14,8 +13,6 @@ import {
   and,
   desc,
   eq,
-  exists,
-  inArray,
   isNotNull,
   isNull,
   not,
@@ -25,7 +22,6 @@ import {
 import { logger } from "../../lib/log";
 import { stripMarkdown } from "../../lib/strip-markdown";
 import { command } from "ccstate";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   AUXILIARY_TEXT_MAX_TOKENS,
   FAST_PATH_MODEL,
@@ -49,6 +45,7 @@ import {
 } from "./chat-recommended-followups.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { queuedUserMessageExists } from "./chat-queued-event.service";
+import { unfinishedActiveChatRunExists } from "./chat-run-state-read.service";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
@@ -151,22 +148,7 @@ interface ChatCompletionContextRow {
 function completedConversationContextMessageCondition() {
   return and(
     not(queuedUserMessageExists()),
-    not(
-      and(
-        isNotNull(chatEvents.runId),
-        exists(
-          new QueryBuilder()
-            .select({ one: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.id, chatEvents.runId),
-                inArray(agentRuns.status, ["pending", "running"]),
-              ),
-            ),
-        ),
-      ) as SQL,
-    ),
+    not(unfinishedActiveChatRunExists({ runId: chatEvents.runId })),
   ) as SQL;
 }
 
@@ -329,7 +311,6 @@ const loadTitleContext$ = command(
         sequenceNumber: chatEvents.runEventSequenceNumber,
       })
       .from(chatEvents)
-      .leftJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
       .where(
         and(
           eq(chatEvents.chatThreadId, threadId),

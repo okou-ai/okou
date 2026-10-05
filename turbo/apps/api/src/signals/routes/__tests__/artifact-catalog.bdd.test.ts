@@ -455,6 +455,54 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
+  it("keeps completed file lists and catalog filters scoped to their owning thread", async () => {
+    const owner = await catalogActor("File association owner");
+    const outsider = await catalogActor("File association outsider");
+    const first = await uploadFile({
+      owner,
+      prompt: "Publish the first report",
+      filename: "first-thread-report.txt",
+      contentType: "text/plain",
+    });
+    const second = await uploadFile({
+      owner,
+      prompt: "Publish the second report",
+      filename: "second-thread-report.txt",
+      contentType: "text/plain",
+    });
+
+    const files = await chat.listThreadArtifacts(owner.actor, first.threadId);
+    expect(
+      files.runs.flatMap((run) => {
+        return run.files.map((file) => {
+          return file.filename;
+        });
+      }),
+    ).toStrictEqual(["first-thread-report.txt"]);
+    const firstCatalog = await chat.listArtifactCatalog(owner.actor, {
+      chatThreadId: first.threadId,
+    });
+    expect(firstCatalog.artifacts).toStrictEqual([
+      expect.objectContaining({ title: "first-thread-report.txt" }),
+    ]);
+    const secondCatalog = await chat.listArtifactCatalog(owner.actor, {
+      chatThreadId: second.threadId,
+    });
+    expect(secondCatalog.artifacts).toStrictEqual([
+      expect.objectContaining({ title: "second-thread-report.txt" }),
+    ]);
+    const outsiderFiles = await chat.requestListThreadArtifacts(
+      outsider.actor,
+      first.threadId,
+      [404],
+    );
+    expectApiError(outsiderFiles.body);
+    const outsiderCatalog = await chat.listArtifactCatalog(outsider.actor, {
+      chatThreadId: first.threadId,
+    });
+    expect(outsiderCatalog.artifacts).toStrictEqual([]);
+  });
+
   it("catalogues an artifact upload but never a chat attachment", async () => {
     const owner = await catalogActor("Artifact catalog attachment owner");
     await createBillingMediaApi(context).updateFeatureSwitches(owner.actor, {
