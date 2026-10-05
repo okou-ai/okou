@@ -107,7 +107,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import {
   readOfficialWorkflowRunStateFixture,
   readWorkflowAutomationAutonomyFixture,
-  seedBuiltInModelKey,
 } from "./helpers/runtime-state";
 import { readExportText } from "./helpers/user-export-storage";
 
@@ -174,8 +173,7 @@ function authHeaders(actor: ApiTestUser) {
 
 // Official workflow Runs complete through the native Runner claim protocol,
 // so fixtures use Fable, which model policy keeps off Pi.
-async function selectBuiltInDefaultModel(actor: ApiTestUser): Promise<void> {
-  await seedBuiltInModelKey(context, "claude-fable-5-1");
+async function selectPersonalDefaultModel(actor: ApiTestUser): Promise<void> {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -3635,7 +3633,7 @@ describe("Official Workflow installations", () => {
     if (!actor.orgId) {
       throw new Error("Expected organization-scoped actor");
     }
-    await selectBuiltInDefaultModel(actor);
+    await selectPersonalDefaultModel(actor);
     const { agentId } = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
       installCatalogStorageFixture();
@@ -4788,7 +4786,7 @@ describe("Official Workflow installations", () => {
     if (!actor.orgId) {
       throw new Error("Expected organization-scoped copy actor");
     }
-    await selectBuiltInDefaultModel(actor);
+    await selectPersonalDefaultModel(actor);
     const { agentId: sourceAgentId } = await workflowBdd.createAgent(actor);
     const { agentId: targetAgentId } = await workflowBdd.createAgent(actor);
     const headers = authHeaders(actor);
@@ -4951,7 +4949,7 @@ describe("Official Workflow installations", () => {
         timezone: "Asia/Shanghai",
         tier: "team",
       });
-      await selectBuiltInDefaultModel(actor);
+      await selectPersonalDefaultModel(actor);
       const { agentId: sourceAgentId } = await workflowBdd.createAgent(actor);
       const { agentId: targetAgentId } = await workflowBdd.createAgent(actor);
       const pending: {
@@ -7956,7 +7954,7 @@ describe("Official Workflow Run admission", () => {
         if (!actor.orgId) {
           throw new Error("Expected organization-scoped actor");
         }
-        await selectBuiltInDefaultModel(actor);
+        await selectPersonalDefaultModel(actor);
         const { agentId } = await workflowBdd.createAgent(actor);
         const headers = authHeaders(actor);
         configureResultEmailRecipient(actor);

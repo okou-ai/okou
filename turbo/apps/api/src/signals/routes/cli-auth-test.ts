@@ -494,6 +494,17 @@ const enableTestConnectors$ = command(
   },
 );
 
+function seededCodexResponse(orgId: string, tokenExpiresAt: Date) {
+  return {
+    status: 200 as const,
+    body: {
+      ok: true as const,
+      orgId,
+      tokenExpiresAt: tokenExpiresAt.toISOString(),
+    },
+  };
+}
+
 async function readSeededCodexAccountProfile(
   db: Pick<Db, "select">,
   owner: { readonly orgId: string; readonly userId: string },
@@ -629,14 +640,7 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
     signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: {
-        ok: true as const,
-        orgId,
-        tokenExpiresAt: parsed.tokenExpiresAt.toISOString(),
-      },
-    };
+    return seededCodexResponse(orgId, parsed.tokenExpiresAt);
   }
 
   const tokenExpiresAt = new Date(
@@ -687,14 +691,7 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
 
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      orgId,
-      tokenExpiresAt: tokenExpiresAt.toISOString(),
-    },
-  };
+  return seededCodexResponse(orgId, tokenExpiresAt);
 });
 
 export const cliAuthTestRoutes: readonly RouteEntry[] = [

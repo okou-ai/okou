@@ -1,4 +1,4 @@
-import { type ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { i18n } from "../../../../i18n/index.ts";
 import type { ModelCatalog } from "../../../../signals/external/model-catalog.ts";
 

@@ -179,7 +179,7 @@ export function createPublicChatAdmissionFixture(context: TestContext) {
       captureStorageMocks();
       runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor, { customerId, subscriptionId });
-      const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "BDD chat messages agent",
         description: "Exercises the web chat send route.",

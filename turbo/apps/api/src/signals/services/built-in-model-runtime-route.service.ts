@@ -13,7 +13,7 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { type ReadonlyDb } from "../external/db";
+import type { ReadonlyDb } from "../external/db";
 import {
   builtInRoutePricingRejectionMessage,
   isBuiltInRoutePriced,

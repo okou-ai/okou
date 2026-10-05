@@ -248,7 +248,23 @@ test("Chat settings fall back to Preference while the capability is disabled", a
   );
 });
 
-test("Chat settings keep the agreed row order and save chat defaults", async () => {
+test("Chat settings keep the agreed row order and save personal subscription chat defaults", async () => {
+  context.mocks.data.personalModelProviders([
+    {
+      id: "00000000-0000-4000-a000-000000000601",
+      type: "codex-oauth-token",
+      framework: "codex",
+      secretName: null,
+      authMethod: "auth_json",
+      secretNames: ["CODEX_AUTH_JSON"],
+      isDefault: false,
+      selectedModel: null,
+      needsReconnect: false,
+      lastRefreshErrorCode: null,
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+    },
+  ]);
   const updates = mockPreferences({ cloudBrowserEnabledByDefault: false });
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-astra",
@@ -318,15 +334,15 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     ).toBeVisible();
   });
   click(within(dialog).getByRole("combobox", { name: "GPT 6 Astra Fast" }));
-  click(await screen.findByRole("option", { name: "Org default (Auto)" }));
+  click(await screen.findByRole("option", { name: "Auto" }));
   await waitFor(() => {
     expect(modelUpdates).toContainEqual({
-      selectedModel: null,
+      selectedModel: "okou-1.0",
       serviceTier: null,
     });
     expect(
       within(dialog).getByRole("combobox", {
-        name: "Org default (Auto)",
+        name: "Auto",
       }),
     ).toBeVisible();
   });

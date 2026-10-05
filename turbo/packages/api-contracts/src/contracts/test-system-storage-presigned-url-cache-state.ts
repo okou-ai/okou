@@ -112,10 +112,6 @@ export const testSystemStoragePresignedUrlCacheStateActionBodySchema =
       storage_name: z.string(),
       version_id: z.string(),
     }),
-    z.object({
-      action: z.literal("read-cache-by-object-key-prefix"),
-      object_key_prefix: z.string(),
-    }),
   ]);
 
 export const testSystemStoragePresignedUrlCacheStateActionResponseSchema =

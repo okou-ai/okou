@@ -11,7 +11,10 @@ import { command } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import type { RouteEntry } from "../route-entry";
-import { modelCatalog$ } from "../services/model-catalog.service";
+import {
+  modelCatalog$,
+  resolveCatalogModel,
+} from "../services/model-catalog.service";
 
 const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
   get(organizationAuthContext$);
@@ -25,11 +28,6 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
       catalog.byModel.get(route.model)?.replacedBy === null
     );
   });
-  const personalModels = new Set(
-    routes.map((route) => {
-      return route.model;
-    }),
-  );
   return {
     status: 200 as const,
     body: {
@@ -47,16 +45,22 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
         },
         ...catalog.models
           .filter((row) => {
-            return personalModels.has(row.model);
+            return row.model !== AUTO_RUN_MODEL;
           })
           .map((row) => {
+            const resolution = resolveCatalogModel(catalog, row.model);
+            if (resolution.kind === "unknown") {
+              throw new Error(
+                "Catalog row disappeared during metadata projection",
+              );
+            }
             return {
               model: row.model,
               displayName: row.displayName,
               sortOrder: row.sortOrder,
               isSystemDefault: false,
-              replacedBy: null,
-              resolvedModel: row.model,
+              replacedBy: row.replacedBy,
+              resolvedModel: resolution.resolvedModel,
               priceTier: null,
               builtInOnRestrictedPlans: false,
               piRouteClass: isPiRouteClass(row.piRouteClass)

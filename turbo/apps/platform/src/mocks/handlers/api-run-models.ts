@@ -60,6 +60,15 @@ function response(): AvailableRunModelsResponse {
         routeStatusReason: account.needsReconnect
           ? "Reconnect your subscription"
           : null,
+        memberEffective: {
+          providerType: account.type,
+          runtimeProviderType: account.type,
+          credentialScope: "member",
+          availability: account.needsReconnect
+            ? "reconnect_required"
+            : "available",
+          accountSelection: "capture_required",
+        },
       },
     ];
   });

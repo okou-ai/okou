@@ -9,7 +9,9 @@ export function ModelFastImpact({ runModel }: { runModel: AvailableRunModel }) {
   const { t } = useTranslation();
   const route = getMemberRunModelRoute(runModel);
   const fast = getModelRunOptions(runModel.model).fast;
-  if (!fast) return null;
+  if (!fast) {
+    return null;
+  }
   if (route.runtimeProviderType !== "codex-oauth-token") {
     return t(($) => {
       return $.settings.models.picker.fastImpact.providerUsage;

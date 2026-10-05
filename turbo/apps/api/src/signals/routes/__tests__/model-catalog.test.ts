@@ -15,7 +15,6 @@ import {
   insertRetiredCatalogRowsFixture,
   setModelCatalogSystemDefaultFixture,
   stageLegacyChatThreadSelectedModelFixture,
-  stageModelReplacementFixture,
 } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
@@ -36,11 +35,11 @@ const {
   api,
   chat,
   chatCallbacks,
-  entitledChatActor,
   entitledNativeChatActor,
   sendChatRun,
   waitForThreadMessages,
   cancelChatRun,
+  seedBuiltInModelKey,
 } = createChatEventsFixture(context);
 
 const MCP_RESOURCE = "https://api.mcp.example.test/mcp";
@@ -175,14 +174,6 @@ function apiClient() {
   );
 }
 
-function signIn(): void {
-  const actor = authOrgApi.user({ orgRole: "org:member" });
-  if (!actor.orgId) {
-    throw new Error("Expected an organization member");
-  }
-  mocks.clerk.session(actor.userId, actor.orgId, "org:member");
-}
-
 describe("GET /api/model-catalog", () => {
   it("returns only fixed Auto without a personal subscription", async () => {
     const actor = authOrgApi.user();
@@ -194,12 +185,15 @@ describe("GET /api/model-catalog", () => {
       [200],
     );
     expect(response.body.systemDefaultModel).toBe("okou-1.0");
+    expect(response.body.models).toContainEqual(
+      expect.objectContaining({ model: "okou-1.0", displayName: "Auto" }),
+    );
     expect(
-      response.body.models.map((entry) => {
-        return entry.model;
-      }),
-    ).toStrictEqual(["okou-1.0"]);
-    expect(response.body.routes).toStrictEqual([
+      response.body.models.every((entry) => entry.priceTier === null),
+    ).toBeTruthy();
+    expect(
+      response.body.routes.filter((route) => route.providerType === "built-in"),
+    ).toStrictEqual([
       expect.objectContaining({
         model: "okou-1.0",
         providerType: "built-in",
@@ -239,7 +233,7 @@ describe("stored selections of replaced models", () => {
     const projected = await mcpThread(actor, thread.id);
     expect(projected.model).toStrictEqual({
       selectedModel: "claude-fable-5",
-      effectiveModel: "okou-1.0",
+      effectiveModel: "claude-fable-5-1",
       source: "thread",
       admission: "checked_on_send",
     });
@@ -250,11 +244,12 @@ describe("stored selections of replaced models", () => {
       prompt: "continue the legacy Fable thread",
     });
     const read = await api.readRun(actor, run.runId);
-    expect(read.source.model).toBe("okou-1.0");
+    expect(read.source.model).toBe("claude-fable-5-1");
+    expect(read.source.providerType).toBe("claude-code-oauth-token");
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 
-  it("shows a thread stored with gpt-5.6-terra as gpt-6-luna", async () => {
+  it("preserves a legacy Codex selection while using Auto without a Codex account", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, {
       agentId,
@@ -269,7 +264,7 @@ describe("stored selections of replaced models", () => {
     expect(projected.model).toStrictEqual({
       selectedModel: "gpt-5.6-terra",
       effectiveModel: "okou-1.0",
-      source: "thread",
+      source: "org_default",
       admission: "checked_on_send",
     });
   }, 90_000);
@@ -293,6 +288,7 @@ describe("stored selections of replaced models", () => {
 
   it("keeps queued Auto when the catalog default changes before pick", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
+    await seedBuiltInModelKey("okou-1.0");
     const active = await sendChatRun(actor, {
       agentId,
       model: "okou-1.0",
@@ -348,14 +344,16 @@ describe("stored selections of replaced models", () => {
     const projected = await mcpThread(actor, thread.id);
     expect(projected.model).toMatchObject({
       selectedModel: "test-chain-hop-a",
-      effectiveModel: "okou-1.0",
+      effectiveModel: "claude-opus-5-5",
     });
     const run = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
       prompt: "normalize stored retired choices",
     });
-    expect((await api.readRun(actor, run.runId)).source.model).toBe("okou-1.0");
+    expect((await api.readRun(actor, run.runId)).source.model).toBe(
+      "claude-opus-5-5",
+    );
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 });

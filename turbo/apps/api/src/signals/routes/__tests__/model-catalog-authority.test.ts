@@ -29,18 +29,22 @@ describe("fixed Auto catalog authority", () => {
     authenticate();
     const response = await accept(catalog().get({ headers }), [200]);
     expect(response.body.systemDefaultModel).toBe("okou-1.0");
-    expect(response.body.models).toHaveLength(1);
+    expect(
+      response.body.models.every((entry) => entry.priceTier === null),
+    ).toBeTruthy();
     expect(response.body.models[0]).toMatchObject({
       model: "okou-1.0",
       displayName: "Auto",
       priceTier: null,
     });
-    expect(response.body.routes).toStrictEqual([
+    expect(
+      response.body.routes.filter((route) => route.providerType === "built-in"),
+    ).toStrictEqual([
       expect.objectContaining({ providerType: "built-in", enabled: true }),
     ]);
   });
 
-  it("does not expose or admit a new platform model just because a catalog row exists", async () => {
+  it("keeps new catalog metadata without exposing a platform execution route", async () => {
     const model = `retired_catalog_route_${randomUUID()}`;
     onTestFinished(
       await insertCatalogModelFixture({
@@ -61,11 +65,12 @@ describe("fixed Auto catalog authority", () => {
     authenticate();
     const response = await accept(catalog().get({ headers }), [200]);
     expect(response.body.systemDefaultModel).toBe("okou-1.0");
+    expect(response.body.models).toContainEqual(
+      expect.objectContaining({ model, displayName: "Retired direct model" }),
+    );
     expect(
-      response.body.models.map((entry) => {
-        return entry.model;
-      }),
-    ).toStrictEqual(["okou-1.0"]);
+      response.body.routes.some((route) => route.model === model),
+    ).toBeFalsy();
   });
 
   it("requires an authenticated organization session", async () => {
@@ -75,6 +80,7 @@ describe("fixed Auto catalog authority", () => {
         return {};
       },
     });
-    await accept(catalog().get({ headers }), [401]);
+    const response = await accept(catalog().get({ headers }), [401]);
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 });

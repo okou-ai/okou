@@ -266,7 +266,7 @@ try {
   >`
     SELECT model, default_effort FROM model_routes
     WHERE subscription_type = provider_type AND model <> ${fixtureModel}
-    ORDER BY model
+    ORDER BY model COLLATE "C"
   `;
   assert.deepEqual(Array.from(defaults), [
     { model: "claude-fable-5-1", default_effort: "max" },

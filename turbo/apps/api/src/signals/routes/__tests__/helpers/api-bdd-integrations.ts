@@ -89,7 +89,6 @@ import { slackEventsRoutes } from "../../slack-events";
 import { slackInteractiveRoutes } from "../../slack-interactive";
 import { slackOauthRoutes } from "../../slack-oauth";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...githubOauthRoutes,
@@ -1280,8 +1279,9 @@ export function createBddIntegrationApi(context: TestContext) {
       const started = await auth.requestCodexStart(actor, "personal", [200], {
         mode: "add",
       });
-      if (started.status !== 200)
+      if (started.status !== 200) {
         throw new Error("Expected personal Codex auth start");
+      }
       await auth.requestCodexComplete(actor, started.body.sessionToken, [200]);
     },
 

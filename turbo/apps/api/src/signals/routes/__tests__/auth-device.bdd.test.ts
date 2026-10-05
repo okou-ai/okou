@@ -18,7 +18,6 @@ import {
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 const context = testContext();
 const bdd = createBddApi(context);

@@ -96,6 +96,7 @@ describe("available run models", () => {
         return {};
       },
     });
-    await accept(list(), [401]);
+    const response = await accept(list(), [401]);
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 });

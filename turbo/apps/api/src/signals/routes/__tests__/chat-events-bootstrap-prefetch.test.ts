@@ -151,13 +151,13 @@ describe("chat agent bootstrap prefetch", () => {
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    await api.updateUserModelPreference(actor, "claude-sonnet-5");
+    await api.updateUserModelPreference(actor, "claude-sonnet-5-5");
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "use my saved non-default model",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(firstClaim.claim.modelUsageProvider).toBe("claude-sonnet-5");
+    expect(firstClaim.claim.modelUsageProvider).toBe("claude-sonnet-5-5");
     const eventId = randomUUID();
     const queued = await chat.requestSendEvent(
       actor,
@@ -190,7 +190,7 @@ describe("chat agent bootstrap prefetch", () => {
       throw new Error("Expected the independent queued pick");
     }
     const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
-    expect(nextClaim.claim.modelUsageProvider).toBe("claude-sonnet-5");
+    expect(nextClaim.claim.modelUsageProvider).toBe("claude-sonnet-5-5");
     await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
   });
 
@@ -431,7 +431,7 @@ describe("chat agent bootstrap prefetch", () => {
     }
     expect((await api.readRun(actor, promoted.runId)).source).toMatchObject({
       model: "claude-fable-5-1",
-      providerType: "anthropic-api-key",
+      providerType: "claude-code-oauth-token",
     });
     const claimed = await claimChatRun(runnerGroup, promoted.runId);
     await cancelChatRun(actor, promoted.runId, claimed.sandboxHeaders);

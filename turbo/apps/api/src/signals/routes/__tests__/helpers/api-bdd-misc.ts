@@ -8,7 +8,7 @@ import type { z } from "zod";
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
-import { type UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
+import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,

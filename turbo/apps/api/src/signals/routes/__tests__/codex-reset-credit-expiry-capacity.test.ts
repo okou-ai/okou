@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";

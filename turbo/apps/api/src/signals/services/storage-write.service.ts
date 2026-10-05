@@ -1519,6 +1519,26 @@ function createInitialSandboxStorageReceipt(
   });
 }
 
+function createInitialSandboxStorageReplayVersion(
+  storageId: string,
+  versionId: string,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [version] = await db
+      .select()
+      .from(storageVersions)
+      .where(
+        and(
+          eq(storageVersions.storageId, storageId),
+          eq(storageVersions.id, versionId),
+        ),
+      )
+      .limit(1);
+    return version;
+  });
+}
+
 export function createSandboxStorageCommit(args: CommitStorageInput) {
   const commitInput: CommitStorageForStorageInput = {
     storageId: args.storageId,
@@ -1534,6 +1554,10 @@ export function createSandboxStorageCommit(args: CommitStorageInput) {
   const initialReceipt$ = binding
     ? createInitialSandboxStorageReceipt(binding)
     : undefined;
+  const initialReplayVersion$ = createInitialSandboxStorageReplayVersion(
+    args.storageId,
+    args.versionId,
+  );
   const commit$ = command(
     async (
       { get, set },
@@ -1564,11 +1588,7 @@ export function createSandboxStorageCommit(args: CommitStorageInput) {
         ) {
           return notFound("Pi memory maintenance checkpoint replay mismatch");
         }
-        const version = await findStorageVersion({
-          db: writeDb,
-          storageId: args.storageId,
-          versionId: receipt.versionId,
-        });
+        const version = await get(initialReplayVersion$);
         signal.throwIfAborted();
         if (!version) {
           return notFound("Pi memory maintenance checkpoint version not found");
