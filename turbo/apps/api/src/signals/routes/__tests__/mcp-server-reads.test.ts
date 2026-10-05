@@ -4,7 +4,12 @@ import {
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import {
+  seedRetentionOutputEvent$,
+  seedRetentionPendingEvent$,
+} from "../../../test-fixtures/chat-event-retention";
+import { mcpGetChatInputOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-input";
+import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -434,7 +439,10 @@ describe("MCP canonical message reads", () => {
       expect(original).toBeDefined();
       expect(message.ref).toStrictEqual({
         threadId: f.threadId,
-        eventId: original?.id,
+        eventId:
+          message.role === "user"
+            ? (original?.revokesEventId ?? original?.id)
+            : original?.id,
         seqId: original?.seqId,
       });
       expect(new URL(message.url).pathname).toBe(`/chats/${f.threadId}`);
@@ -478,7 +486,7 @@ describe("MCP canonical message reads", () => {
       expect(message).toMatchObject({
         ref: {
           threadId: sent.threadId,
-          eventId: original?.id,
+          eventId: initialInput?.id,
           seqId: original?.seqId,
         },
         messageAt: expect.any(String),
@@ -715,7 +723,7 @@ describe("MCP canonical message reads", () => {
       {
         agentId: f.agent.agentId,
         threadId: active.threadId,
-        revokesEventId: target.ref.eventId,
+        eventId: target.ref.eventId,
       },
     );
     expect(recalled.isError).not.toBeTruthy();
@@ -1191,6 +1199,7 @@ describe("MCP canonical message reads", () => {
         await f.chat.deleteThread(f.actor, sent.threadId);
       });
       await f.send("Second archived message", sent.threadId);
+      let physical = await f.chat.listThreadEvents(f.actor, sent.threadId);
       await snapshotMessages(sent.threadId);
       const archive = puts.at(-1);
       if (!archive) {
@@ -1198,14 +1207,28 @@ describe("MCP canonical message reads", () => {
       }
       if (source === "archive and tail") {
         await f.send("Current database tail", sent.threadId);
+        const last = physical.events.at(-1);
+        if (!last) {
+          throw new Error("Expected an archive boundary for the live tail");
+        }
+        const tail = await f.chat.listThreadEvents(f.actor, sent.threadId, {
+          sinceSeqId: last.seqId,
+          sinceEventId: last.id,
+        });
+        physical = { events: [...physical.events, ...tail.events] };
       }
       const token = f.auth.token();
       const args = { threadId: sent.threadId };
       const before = await getMessages(token, args);
-      const firstId = before.messages[0]?.ref.eventId;
-      const duplicateId = before.messages.at(-1)?.ref.eventId;
+      // MCP input references are origins, not physical storage row IDs.
+      const firstId = physical.events.find((event) => {
+        return event.seqId === before.messages[0]?.ref.seqId;
+      })?.id;
+      const duplicateId = physical.events.find((event) => {
+        return event.seqId === before.messages.at(-1)?.ref.seqId;
+      })?.id;
       if (!firstId || !duplicateId || firstId === duplicateId) {
-        throw new Error("Expected distinct canonical visible message IDs");
+        throw new Error("Expected distinct canonical visible message row IDs");
       }
       // Infrastructure exception: legacy persisted archives can contain IDs
       // that the canonical snapshot writer must normalize. Public writes do
@@ -1522,6 +1545,250 @@ describe("MCP canonical message reads", () => {
     ).toBeTruthy();
   });
 });
+describe("MCP original input observations", () => {
+  it("tracks concurrent identical inputs through queue, steering and a shared Run's completion", async () => {
+    const auth = fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await nativeRunnerChatActor(f, auth);
+    const token = auth.token({
+      scope: `${requiredScopes} okou:chat:send okou:run:cancel`,
+    });
+    const initial = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(token, "send_chat_message", {
+          agentId: actor.agentId,
+          model: NATIVE_RUNNER_MODEL,
+          prompt: "MCP origin anchor",
+        })
+      ).structuredContent,
+    );
+    await flushWaitUntilForTest();
+    const observe = async (eventId: string) => {
+      return mcpGetChatInputOutputSchema.parse(
+        (
+          await callTool(token, "get_chat_input", {
+            threadId: initial.threadId,
+            eventId,
+          })
+        ).structuredContent,
+      );
+    };
+    const first = await observe(initial.eventId);
+    if (first.inputStatus !== "consumed") {
+      throw new Error(
+        "Expected the accepted origin to be picked into a real Run",
+      );
+    }
+    const runId = first.run.runId;
+    onTestFinished(async () => {
+      const run = await f.api.readRun(actor.actor, runId);
+      if (
+        run.status === "pending" ||
+        run.status === "running" ||
+        run.status === "queued"
+      ) {
+        await f.cancelChatRun(actor.actor, runId);
+      }
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    const sends = await Promise.all(
+      [0, 1].map(async () => {
+        return mcpSendChatMessageOutputSchema.parse(
+          (
+            await callTool(token, "send_chat_message", {
+              agentId: actor.agentId,
+              threadId: initial.threadId,
+              model: NATIVE_RUNNER_MODEL,
+              prompt: "Identical MCP steering input",
+            })
+          ).structuredContent,
+        );
+      }),
+    );
+    await flushWaitUntilForTest();
+    expect(
+      new Set(
+        sends.map((sent) => {
+          return sent.eventId;
+        }),
+      ).size,
+    ).toBe(2);
+    for (const sent of sends) {
+      await expect(observe(sent.eventId)).resolves.toMatchObject({
+        eventId: sent.eventId,
+        inputStatus: "queued",
+        run: null,
+        error: null,
+      });
+    }
+    const queuedHistory = await getMessages(token, {
+      threadId: initial.threadId,
+    });
+    for (const message of queuedHistory.messages.filter((message) => {
+      return message.text === "Identical MCP steering input";
+    })) {
+      await f.api.declareSteeredInput(
+        claimed.claim.sandboxToken,
+        runId,
+        message.ref.eventId,
+      );
+    }
+    const after = await getMessages(token, { threadId: initial.threadId });
+    await projectSearchMessages([initial.threadId]);
+    const searched = await searchMessages(token, {
+      query: "Identical MCP steering input",
+    });
+    expect(
+      new Set(
+        searched.matches.map((match) => {
+          return match.ref.eventId;
+        }),
+      ),
+    ).toStrictEqual(
+      new Set(
+        sends.map((sent) => {
+          return sent.eventId;
+        }),
+      ),
+    );
+    for (const sent of sends) {
+      await expect(observe(sent.eventId)).resolves.toMatchObject({
+        eventId: sent.eventId,
+        inputStatus: "consumed",
+        run: { runId, status: "running" },
+        error: null,
+      });
+      const message = after.messages.find((item) => {
+        return item.ref.eventId === sent.eventId;
+      });
+      const queued = queuedHistory.messages.find((item) => {
+        return item.ref.eventId === sent.eventId;
+      });
+      expect(message?.ref.seqId).not.toBe(queued?.ref.seqId);
+      const around = await getMessages(token, {
+        threadId: initial.threadId,
+        around: { eventId: sent.eventId },
+        limit: 1,
+      });
+      expect(around.messages[0]?.ref.eventId).toBe(sent.eventId);
+      expect(
+        structuredToolError(
+          await callTool(token, "revoke_queued_message", {
+            agentId: actor.agentId,
+            threadId: initial.threadId,
+            eventId: sent.eventId,
+          }),
+        ).code,
+      ).toBe("bad_request");
+    }
+    await expect(f.api.readRun(actor.actor, runId)).resolves.toMatchObject({
+      status: "running",
+    });
+    f.chatCallbacks.mockChatOutputEvents([]);
+    await f.completeChatRunOk(runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    for (const sent of [initial, ...sends]) {
+      await expect(observe(sent.eventId)).resolves.toMatchObject({
+        eventId: sent.eventId,
+        inputStatus: "consumed",
+        run: { runId, status: "completed" },
+        error: null,
+      });
+    }
+  });
+
+  it("reads an archived recalled origin after retention and fails explicitly when its archive is unavailable", async () => {
+    const f = await threadFixture();
+    const puts: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, puts);
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    // Public writes cannot backdate an origin beyond the retention cutoff.
+    // Only that timestamp setup uses the existing retention fixture; recall,
+    // snapshot, retention and all observations exercise the real endpoints.
+    const eventId = await createStore().set(
+      seedRetentionPendingEvent$,
+      {
+        chatThreadId: thread.id,
+        offsetMs: -60_000,
+      },
+      context.signal,
+    );
+    await f.chat.requestSendEvent(
+      f.actor,
+      {
+        agentId: f.agent.agentId,
+        threadId: thread.id,
+        revokesEventId: eventId,
+      },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    await snapshotMessages(thread.id);
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [thread.id] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const selector = { threadId: thread.id, eventId };
+    const token = f.auth.token({ scope: `${requiredScopes} okou:run:cancel` });
+    const observed = mcpGetChatInputOutputSchema.parse(
+      (await callTool(token, "get_chat_input", selector)).structuredContent,
+    );
+    expect(observed).toMatchObject({
+      ...selector,
+      inputStatus: "recalled",
+      run: null,
+      error: null,
+    });
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toStrictEqual([]);
+    expect(
+      (
+        await callTool(token, "revoke_queued_message", {
+          ...selector,
+          agentId: f.agent.agentId,
+        })
+      ).structuredContent,
+    ).toMatchObject(selector);
+    const archive = puts.at(-1);
+    if (!archive) {
+      throw new Error("Expected the retained canonical archive");
+    }
+    // Infrastructure exception: only corrupt storage can leave a canonical
+    // successor referring to an origin absent from the complete history.
+    const incomplete = gunzipSync(archive.body)
+      .toString("utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => {
+        return chatEventRowSchema.parse(JSON.parse(line));
+      })
+      .filter((row) => {
+        return row.id !== eventId;
+      })
+      .map((row) => {
+        return `${JSON.stringify(row)}\n`;
+      })
+      .join("");
+    writeFakeChatEventObject(archive.key, gzipSync(Buffer.from(incomplete)));
+    expect(
+      structuredToolError(await callTool(token, "get_chat_input", selector))
+        .code,
+    ).toBe("history_unavailable");
+    writeFakeChatEventObject(archive.key, archive.body);
+    await deleteFakeChatEventObject(archive.key);
+    expect(
+      structuredToolError(await callTool(token, "get_chat_input", selector))
+        .code,
+    ).toBe("history_unavailable");
+  });
+});
+
 describe("MCP message search", () => {
   it("pages beyond 25 matches without losing or repeating canonical references", async () => {
     const query = "mcpsearchpaging";
@@ -1617,7 +1884,11 @@ describe("MCP message search", () => {
             })
             .map((event) => {
               return {
-                ref: { threadId, eventId: event.id, seqId: event.seqId },
+                ref: {
+                  threadId,
+                  eventId: event.revokesEventId ?? event.id,
+                  seqId: event.seqId,
+                },
                 createdAt: event.createdAt,
               };
             });
@@ -1706,6 +1977,7 @@ describe("MCP message search", () => {
     await projectSearchMessages([sent.threadId]);
     const token = f.auth.token();
     const source = await getMessages(token, { threadId: sent.threadId });
+    const physical = await f.chat.listThreadEvents(f.actor, sent.threadId);
     const timestamps = [
       "2026-09-18T01:02:03.456001Z",
       "2026-09-18T01:02:03.456003Z",
@@ -1726,8 +1998,14 @@ describe("MCP message search", () => {
       // Infrastructure exception: product writes cannot choose exact stored
       // sub-millisecond times. Model already-indexed historical SQL timestamps
       // without relying on the current projector's Date normalization.
+      const event = physical.events.find((event) => {
+        return event.seqId === message.ref.seqId;
+      });
+      if (!event) {
+        throw new Error("Expected a physical row for the timestamp fixture");
+      }
       await setChatSearchEventTimestampPrecisionFixture({
-        eventId: message.ref.eventId,
+        eventId: event.id,
         createdAt,
       });
       expected.push({ ref: message.ref, sourceEventAt: createdAt });
@@ -1842,6 +2120,10 @@ describe("MCP message search", () => {
     const sourceMessages = await getMessages(auth.token(), {
       threadId: sent.threadId,
     });
+    const sourceEvents = await f.chat.listThreadEvents(
+      actor.actor,
+      sent.threadId,
+    );
     for (const message of sourceMessages.messages) {
       const offset =
         message.role === "assistant"
@@ -1849,17 +2131,37 @@ describe("MCP message search", () => {
           : message.text.endsWith("queued after")
             ? 2000
             : 0;
+      const event = sourceEvents.events.find((event) => {
+        return event.seqId === message.ref.seqId;
+      });
+      if (!event) {
+        throw new Error(
+          "Expected a current physical event for the source fixture",
+        );
+      }
       await setChatSearchEventTimestampPrecisionFixture({
-        eventId: message.ref.eventId,
+        eventId: event.id,
         createdAt: new Date(baseTime + offset).toISOString(),
       });
     }
     const otherMessages = await getMessages(auth.token(), {
       threadId: other.threadId,
     });
+    const otherEvents = await f.chat.listThreadEvents(
+      actor.actor,
+      other.threadId,
+    );
     for (const message of otherMessages.messages) {
+      const event = otherEvents.events.find((event) => {
+        return event.seqId === message.ref.seqId;
+      });
+      if (!event) {
+        throw new Error(
+          "Expected a current physical event for the other source fixture",
+        );
+      }
       await setChatSearchEventTimestampPrecisionFixture({
-        eventId: message.ref.eventId,
+        eventId: event.id,
         createdAt: new Date(baseTime + 3000).toISOString(),
       });
     }
@@ -2060,7 +2362,8 @@ describe("MCP message search", () => {
     await projectSearchMessages([threadId]);
     const current = await searchMessages(token, { query: "replacementneedle" });
     expect(current.matches).toHaveLength(1);
-    expect(current.matches[0]?.ref.eventId).not.toBe(replaced.ref.eventId);
+    expect(current.matches[0]?.ref.eventId).toBe(replaced.ref.eventId);
+    expect(current.matches[0]?.ref.seqId).not.toBe(replaced.ref.seqId);
 
     // Releasing this run can pick the remaining input. Settle that work
     // before test teardown clears its Runner and storage configuration.

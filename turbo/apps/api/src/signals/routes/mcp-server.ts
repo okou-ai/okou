@@ -27,7 +27,8 @@ import {
 import { getMcpChatMessages$ } from "../services/mcp-chat-messages.service";
 import { searchMcpChatMessages$ } from "../services/mcp-chat-search.service";
 import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
-import { getMcpChatStatus$ } from "../services/mcp-chat-status.service";
+import { getMcpRunStatus$ } from "../services/mcp-run-status.service";
+import { getMcpChatInput$ } from "../services/mcp-chat-input.service";
 import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
 import {
   getMcpChatThread$,
@@ -177,8 +178,11 @@ const serveAuthorizedMcp$ = command(
             operationSignal,
           );
         },
-        getStatus: (input, readSignal) => {
-          return set(getMcpChatStatus$, principal, input, readSignal);
+        getRunStatus: (input, readSignal) => {
+          return set(getMcpRunStatus$, principal, input, readSignal);
+        },
+        getInput: (input, readSignal) => {
+          return set(getMcpChatInput$, principal, input, readSignal);
         },
         sendMessage: (input, operationSignal) => {
           return set(
@@ -188,7 +192,11 @@ const serveAuthorizedMcp$ = command(
           );
         },
         revokeQueuedMessage: (input, operationSignal) => {
-          return set(revokeQueuedMcpMessage$, { input }, operationSignal);
+          return set(
+            revokeQueuedMcpMessage$,
+            { principal, input },
+            operationSignal,
+          );
         },
         cancelRun: (input, operationSignal) => {
           return set(cancelMcpRun$, { principal, input }, operationSignal);

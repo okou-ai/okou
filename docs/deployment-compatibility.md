@@ -18,6 +18,44 @@ until it drains; source cleanup alone does not disable a serving old revision.
 Rollback restores that revision's feature-switch-controlled behavior. This PR
 does not change production overrides, merge, deploy, or revoke provider grants.
 
+## MCP original-input event identity (#37750)
+
+This is an explicitly authorized breaking MCP tool-schema cutover, not a Web,
+CLI, Runner or persisted-data change. MCP sends return
+`{threadId,eventId,createdAt}` for the original accepted input, instead of the
+ordinary Web null-Run acknowledgement. MCP-generated UUIDs are passed through
+the existing internal Web `clientEventId`; callers cannot provide replay keys.
+`get_chat_input({threadId,eventId})` reads canonical input metadata and a separate
+native consuming-Run observation. `get_run_status({runId})` replaces the previous
+Run-only tool name without an alias. MCP recall uses `eventId`, not a physical
+replacement selector, and acknowledges only canonical recalled input state.
+
+MCP user history/search references now preserve the original input ID across
+replacement; assistant outputs keep their own ID. Physical `seqId` remains the
+current revision/order coordinate, so cached references containing both an
+origin ID and a stale sequence must be refreshed. Cached tool schemas must be
+rediscovered after cutover. All serving APIs must use the same MCP definition
+before clients rely on it; an old API cannot provide this correlation contract.
+Rollback restores the old MCP tools and requires rediscovery, but does not
+rewrite inputs, Runs or snapshots. No compatibility alias or dual task lifecycle
+is retained by request.
+
+The bounded archive-plus-tail reader handles retained source identity without
+new tables, backfills or archive versions. Unknown/unauthorized inputs,
+unreadable history and unobservable consuming Runs are explicit failures,
+not fabricated queued work. Read limits and storage cost remain documented in
+`docs/mcp-server.md`; recall can use two separately bounded canonical reads.
+Existing OAuth/member/thread/organization authority and Web's atomic revoke
+edge remain required. Ordinary Web/CLI send responses, Runner protocols,
+canonical writers and native Run responses are unchanged. The empty Run field
+continues to exist on ordinary Web responses for their existing clients.
+
+This fixes missing correlation in the existing MCP surface; it adds no separate
+feature-flagged execution path. It does not introduce reliable MCP Events,
+exact-send replay, indexed unlimited lookup, automatic merge or production
+activation. A lost send response remains ambiguous and must not be retried
+automatically.
+
 ## Organization model mode defaults to Auto
 
 Migration 1320 changes only the `org_metadata.model_mode` column default to

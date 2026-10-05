@@ -31,12 +31,35 @@ owned conversation belonging to that Agent. Discovery through `list_agents` and
 ```
 
 The same `sendNormalEvent$` command as Web performs auth, model selection, queue
-acceptance and dispatch. The response is Web's `{threadId, runId, createdAt}`
-acceptance body. `runId` is null at acceptance: sending enqueues input, it does
-not prove launch, completion, delivery or readable output. Read conversation
-messages/events to discover a Run ID, then `get_chat_status` with `{runId}`.
-Status uses the ordinary Web Run reader and its response schema. It does not
-wait or derive another lifecycle, outcome or output-readiness state.
+acceptance and dispatch. MCP supplies a fresh internal `clientEventId` and returns
+`{threadId, eventId, createdAt}` only after acceptance. `eventId` is the original
+persisted input identity, not a replacement row ID or a Run. This is an explicitly
+breaking MCP tool contract (#37750); Web/CLI responses are unchanged.
+
+Follow that exact input with `get_chat_input({threadId,eventId})`. It reports
+original acceptance time, `inputStatus`, nullable safe `error`, and a separate
+nullable native `run: {runId,status}` observation:
+
+| Input state | Meaning                                                                     |
+| ----------- | --------------------------------------------------------------------------- |
+| `queued`    | Accepted input has not been consumed, rejected or recalled; no Run.         |
+| `consumed`  | A canonical replacement binds the input to a new or existing Run.           |
+| `rejected`  | Execution admission rejected the input; no Run and safe rejection metadata. |
+| `recalled`  | Recall won; metadata remains readable without resurrecting prompt content.  |
+
+A consumed input remains consumed when its Run finishes, fails, times out or is
+cancelled. Several inputs can share a Run; this does not promise an independent
+answer for each input. Known credit/plan rejection markers get safe reasons;
+unrecognized stored admission detail is not returned verbatim. Unknown,
+unauthorized, replacement, control, output and hidden automation IDs are not
+valid original-input selectors. Unreadable history or an unavailable consuming
+Run is an explicit error, never a fabricated queued result.
+
+Use `get_run_status({runId})` for the ordinary Web Run response. It replaces the
+old Run-only tool name directly, without an alias, and does not wait or derive
+another lifecycle, outcome or output-readiness state. Sending enqueues input;
+it does not prove launch, completion, delivery or readable output. No public MCP
+Events subscription/webhook or durable replay is introduced by this contract.
 
 MCP no longer accepts `requestId`, `inputRef`, `waitMs` or the old `text` input.
 It returns no receipt, disposition, replay flag, retry deadline, waiter admission,
@@ -54,9 +77,17 @@ unchanged; `model:null` clears the pin. Changes do not reroute queued inputs or
 an active Run. Read `get_chat_thread` after an uncertain update. Its result
 contains current metadata, `selectedModel`, `metadataUpdatedAt` and the App URL.
 
-`revoke_queued_message` takes `{agentId, threadId, revokesEventId}` and calls the
-ordinary Web recall command. It has exactly Web's revocability and ownership
-semantics; it does not cancel a Run. `cancel_run` takes `{runId}` and uses Web's
+`revoke_queued_message` takes `{agentId, threadId, eventId}` using the original
+input ID. It resolves the current physical target, calls the ordinary Web recall
+command with its Agent/thread authorization and atomic revoke edge, and checks
+canonical recall before acknowledging `{threadId,eventId,createdAt}`. The time
+is the recorded recall time, not original acceptance time. Live insufficient-credit
+rejections are recallable just like Web. Repeated recalls preserve the original
+identity; consumed and other rejected inputs are refused without cancelling a Run.
+Retained inputs can remain readable after their live rows disappear without being
+recallable; an unrecorded recall returns an explicit reference error rather than
+accepting Web's historical missing-target success. Recall performs up to two
+separately bounded canonical history reads. It does not cancel a Run. `cancel_run` takes `{runId}` and uses Web's
 cooperative cancellation command and side effects. Cancellation neither undoes
 past effects nor recalls unrelated queued inputs; worker cleanup can finish
 later. Completed/failed Runs cannot be cancelled.
@@ -144,7 +175,7 @@ organization. It uses the same visibility, recency, read-cursor and active-Run
 rules as the App; it does not run a separate MCP unread query. A thread marked
 `active` has a queued, pending or running Run, not proof of a successful result.
 Use `get_chat_thread` to read metadata for an indicated thread, and
-`get_chat_status` to inspect execution. Reading indicators does not mark any
+`get_run_status` to inspect execution. Reading indicators does not mark any
 thread read or change its lifecycle.
 
 ## Message history
@@ -157,7 +188,12 @@ run state or artifact visibility. It reuses the App's semantic visibility,
 replacement/revocation and run-turn ordering rules. Output contains ordinary
 visible user messages and assistant message events, including work the App may
 collapse. Thinking, usage, bookkeeping and hidden `additional_info` are excluded.
-Replaced user messages preserve the original submission time.
+Replaced user messages preserve the original submission time and original
+`ref.eventId`; assistant outputs keep their own immutable output-event IDs.
+`ref.seqId` is the current visible physical revision/order coordinate, not the
+input identity. `get_chat_input` uses the same archive-plus-tail reader and
+supported history limits, but also reads recalled metadata before visibility
+filtering. It does not return prompt content.
 
 | Argument   | Meaning                                                                                                                        |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -171,8 +207,11 @@ For example, begin with `{"threadId":"<thread UUID>","limit":20}`. The latest
 page is returned in conversation order. Follow `olderCursor` to read earlier
 messages. To inspect a message-search hit, use
 `{"threadId":"<thread UUID>","around":{"seqId":123},"limit":10}`. In each hit,
-`ref.seqId` is a sequence number; `ref.eventId` is its canonical event ID. A revoked, replaced, absent or
-run-filtered anchor returns an explicit unavailable-reference error. Around
+`ref.seqId` is a sequence number; `ref.eventId` is the original input ID for user
+messages or the output ID for assistants. An event-ID-only input anchor follows
+its current visible replacement. Supplying both coordinates requires the current
+sequence revision; hidden, absent, stale-sequence or run-filtered anchors return
+an explicit unavailable-reference error. Around
 pages expose older and newer continuations where applicable.
 
 Every message includes `ref: {threadId,eventId,seqId}`, `role`, `eventType`,
@@ -284,9 +323,9 @@ size and expire 24 hours after the initial page. Every request reauthorizes.
 Indexing is asynchronous and pages read live state, not a global snapshot. A
 newly indexed match can fall ahead of an existing cursor; restart for refreshed
 results. No total count, completeness, indexing-delay bound or global watermark
-is promised. For recently sent content, read `get_chat_messages` using the known
-thread ID; an empty search does not prove send failure or that a topic was never
-discussed. References can become stale after a result is returned; the context
+is promised. For recently sent content, read `get_chat_messages` with the accepted `threadId`
+and `around:{eventId}`; use `get_chat_input` for exact input-to-Run association.
+An empty search does not prove send failure or that a topic was never discussed. References can become stale after a result is returned; the context
 reader then reports the unavailable anchor.
 
 A call processes at most 100 candidates and reads one additional metadata row to

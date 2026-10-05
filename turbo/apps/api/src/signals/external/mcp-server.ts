@@ -23,11 +23,17 @@ import {
   type McpDiscoveryResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import {
-  mcpGetChatStatusInputSchema,
-  mcpGetChatStatusOutputSchema,
-  type McpGetChatStatusInput,
-  type McpChatStatusResult,
-} from "@okouai/api-contracts/contracts/mcp-chat-status";
+  mcpGetRunStatusInputSchema,
+  mcpGetRunStatusOutputSchema,
+  type McpGetRunStatusInput,
+  type McpRunStatusResult,
+} from "@okouai/api-contracts/contracts/mcp-run-status";
+import {
+  mcpGetChatInputInputSchema,
+  mcpGetChatInputOutputSchema,
+  type McpGetChatInputInput,
+  type McpChatInputReadResult,
+} from "@okouai/api-contracts/contracts/mcp-chat-input";
 import {
   mcpSendChatMessageInputSchema,
   mcpSendChatMessageOutputSchema,
@@ -91,10 +97,14 @@ interface McpChatAccess {
     input: McpUpdateChatThreadInput,
     signal: AbortSignal,
   ) => Promise<McpChatMutationResult<McpUpdateChatThreadOutput>>;
-  readonly getStatus: (
-    input: McpGetChatStatusInput,
+  readonly getRunStatus: (
+    input: McpGetRunStatusInput,
     signal: AbortSignal,
-  ) => Promise<McpChatStatusResult>;
+  ) => Promise<McpRunStatusResult>;
+  readonly getInput: (
+    input: McpGetChatInputInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatInputReadResult>;
   readonly sendMessage: (
     input: McpSendChatMessageInput,
     signal: AbortSignal,
@@ -473,7 +483,7 @@ function registerMessageTool(
     "get_chat_messages",
     {
       description:
-        "Read visible messages in turn order (latest 20 by default). messageAt is accepted-input time for users and output-event time for assistants. Filter by runId or center the first page on eventId/seqId with around. Continue cursors with unchanged filters and no around; use nextContentCursor for truncated content. Offsets count UTF-16 units/files. History changes invalidate cursors. Reading does not mark read or bypass artifact authorization. Limits: 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, 15 seconds.",
+        "Read visible messages in turn order (latest 20 by default). messageAt is accepted-input time for users and output-event time for assistants. User refs keep the original input eventId across replacements; seqId is the current revision. Filter by runId or center the first page on eventId/seqId with around. Continue cursors with unchanged filters and no around; use nextContentCursor for truncated content. Offsets count UTF-16 units/files. History changes invalidate cursors. Reading does not mark read or bypass artifact authorization. Limits: 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, 15 seconds.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
       annotations: { ...readAnnotations, title: "Read Chat Messages" },
@@ -600,7 +610,7 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Send an ordinary Web chat input with agentId and prompt. Omit threadId to create a conversation; provide it to continue that Agent's owned conversation. model is optional. Acceptance is not run completion: inspect messages/events and read the Run by runId. Never automatically retry an uncertain send.",
+          "Send an ordinary Web chat input with agentId and prompt. Omit threadId to create a conversation; provide it to continue that Agent's owned conversation. model is optional. Returns the original accepted eventId, not a Run. Follow it with get_chat_input(threadId,eventId), then get_run_status for native execution. Never automatically retry an uncertain send.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
@@ -621,7 +631,7 @@ function registerMutationTools(
           requestSignal,
           {
             summarize(data) {
-              return `Accepted input in chat thread ${data.threadId}.`;
+              return `Accepted input ${data.eventId} in chat thread ${data.threadId}.`;
             },
           },
         );
@@ -634,7 +644,7 @@ function registerMutationTools(
       "revoke_queued_message",
       {
         description:
-          "Recall a queued user input using agentId, threadId and revokesEventId, exactly as Web chat does. This does not cancel a Run or undo prior effects.",
+          "Recall a queued user input using agentId, threadId and its original eventId. Credit-rejected inputs are also recallable while live. Canonical input lookup resolves replacements and verifies recall; retained history may exceed read limits. This does not cancel a Run or undo prior effects.",
         inputSchema: mcpRevokeQueuedMessageInputSchema,
         outputSchema: mcpRevokeQueuedMessageOutputSchema,
         annotations: {
@@ -655,7 +665,7 @@ function registerMutationTools(
           requestSignal,
           {
             summarize(data) {
-              return `Recalled queued input in chat thread ${data.threadId}.`;
+              return `Recalled input ${data.eventId} in chat thread ${data.threadId}.`;
             },
           },
         );
@@ -790,26 +800,51 @@ function registerSearchAndStatusTools(
   );
   registerChatTool(
     server,
-    "get_chat_status",
+    "get_chat_input",
     {
       description:
-        "Read the ordinary Web Run state by runId. Discover run IDs in chat events/messages. This read does not wait, derive a second lifecycle, mark read, change execution or imply output completeness.",
-      inputSchema: mcpGetChatStatusInputSchema,
-      outputSchema: mcpGetChatStatusOutputSchema,
-      annotations: { ...readAnnotations, title: "Get Chat Status" },
+        "Follow an accepted chat input by threadId and its original eventId. Reports queued, consumed, rejected or recalled; consumed includes a separate native Run observation. Recalled content stays hidden. Several inputs may share a Run, without a separate answer guarantee. Reads canonical archive plus tail under 8 MiB gzip/32 MiB/50,000-event/15-second limits; failures never imply queued or absent work.",
+      inputSchema: mcpGetChatInputInputSchema,
+      outputSchema: mcpGetChatInputOutputSchema,
+      annotations: { ...readAnnotations, title: "Get Chat Input" },
     },
     async (args, context) => {
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return await readTool(
         access,
         () => {
-          return access.getStatus(args, signal);
+          return access.getInput(args, signal);
+        },
+        signal,
+        (data) => {
+          return `Input ${data.eventId}: ${data.inputStatus}${data.run ? `; Run ${data.run.runId}: ${data.run.status}` : ""}.`;
+        },
+        "Chat input is temporarily unavailable. Retry the read later; do not resend uncertain work.",
+      );
+    },
+  );
+  registerChatTool(
+    server,
+    "get_run_status",
+    {
+      description:
+        "Read the ordinary Web Run state by runId, obtainable from get_chat_input after consumption. This read does not wait, derive a second lifecycle, mark read, change execution or imply output completeness.",
+      inputSchema: mcpGetRunStatusInputSchema,
+      outputSchema: mcpGetRunStatusOutputSchema,
+      annotations: { ...readAnnotations, title: "Get Run Status" },
+    },
+    async (args, context) => {
+      const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+      return await readTool(
+        access,
+        () => {
+          return access.getRunStatus(args, signal);
         },
         signal,
         (data) => {
           return `Run ${data.runId}: ${data.status}.`;
         },
-        "Chat status is temporarily unavailable. Retry later.",
+        "Run status is temporarily unavailable. Retry later.",
       );
     },
   );

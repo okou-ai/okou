@@ -5,7 +5,7 @@ import {
   mcpRevokeQueuedMessageInputSchema,
   mcpSendChatMessageInputSchema,
 } from "../mcp-chat-mutations";
-import { mcpGetChatStatusInputSchema } from "../mcp-chat-status";
+import { mcpGetRunStatusInputSchema } from "../mcp-run-status";
 import { mcpUpdateChatThreadInputSchema } from "../mcp-chat-thread-update";
 import { mcpListChatThreadsInputSchema } from "../mcp-chat-threads";
 const id = "00000000-0000-4000-8000-000000000001";
@@ -90,24 +90,16 @@ describe("MCP Web input adaptation", () => {
       mcpListChatThreadsInputSchema.parse({ title: " Trimmed filter " }).title,
     ).toBe("Trimmed filter");
   });
-  it("uses ordinary Run and queued-event identities, not an input reference protocol", () => {
-    expect(mcpGetChatStatusInputSchema.parse({ runId: id })).toEqual({
+  it("distinguishes native Run selectors from original input recall selectors", () => {
+    expect(mcpGetRunStatusInputSchema.parse({ runId: id })).toEqual({
       runId: id,
     });
-    expect(
-      mcpGetChatStatusInputSchema.safeParse({ runId: id, waitMs: 0 }).success,
-    ).toBe(false);
     expect(
       mcpRevokeQueuedMessageInputSchema.parse({
         agentId: id,
         threadId: id,
-        revokesEventId: id,
+        eventId: id,
       }),
-    ).toEqual({ agentId: id, threadId: id, revokesEventId: id });
-    expect(
-      mcpRevokeQueuedMessageInputSchema.safeParse({
-        inputRef: { threadId: id, eventId: id, seqId: 1 },
-      }).success,
-    ).toBe(false);
+    ).toEqual({ agentId: id, threadId: id, eventId: id });
   });
 });

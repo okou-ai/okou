@@ -13,7 +13,8 @@ import {
   mcpListChatThreadsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
-import { mcpGetChatStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-status";
+import { mcpGetRunStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-run-status";
+import { mcpGetChatInputOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-input";
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -260,8 +261,13 @@ describe("external MCP authentication and transport", () => {
       },
       {
         method: "tools/call",
-        name: "get_chat_status",
-        args: { threadId: randomUUID() },
+        name: "get_run_status",
+        args: { runId: randomUUID() },
+      },
+      {
+        method: "tools/call",
+        name: "get_chat_input",
+        args: { threadId: randomUUID(), eventId: randomUUID() },
       },
       { method: "tools/call", name: "list_agents", args: {} },
       { method: "tools/call", name: "list_models", args: {} },
@@ -653,7 +659,7 @@ describe("MCP Web parity", () => {
       ).structuredContent,
     );
     expect(continued.threadId).toBe(first.threadId);
-    expect(first.runId).toBeNull();
+    expect(continued.eventId).not.toBe(first.eventId);
     const history = mcpGetChatMessagesOutputSchema.parse(
       (
         await callTool(f.token, "get_chat_messages", {
@@ -670,6 +676,27 @@ describe("MCP Web parity", () => {
           return message.text;
         }),
     ).toStrictEqual(["First ordinary MCP input", "Second ordinary MCP input"]);
+    expect(
+      history.messages.map((message) => {
+        return message.ref.eventId;
+      }),
+    ).toStrictEqual([first.eventId, continued.eventId]);
+    const observed = mcpGetChatInputOutputSchema.parse(
+      (
+        await callTool(f.token, "get_chat_input", {
+          threadId: first.threadId,
+          eventId: first.eventId,
+        })
+      ).structuredContent,
+    );
+    expect(observed).toMatchObject({
+      threadId: first.threadId,
+      eventId: first.eventId,
+      inputStatus: "rejected",
+      run: null,
+      error: { code: "insufficient_credits" },
+    });
+    expect(Date.parse(observed.createdAt)).toBe(Date.parse(first.createdAt));
     const web = await f.chat.listThreadEvents(f.actor, first.threadId);
     expect(JSON.stringify(web.events)).toContain("mcp_test_client");
     expect(first).not.toHaveProperty("inputRef");
@@ -695,6 +722,29 @@ describe("MCP Web parity", () => {
       ).structuredContent,
     );
     expect(second.threadId).not.toBe(first.threadId);
+    expect(second.eventId).not.toBe(first.eventId);
+    const third = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          threadId: first.threadId,
+          prompt: "Repeated intended text",
+        })
+      ).structuredContent,
+    );
+    expect(third.eventId).not.toBe(first.eventId);
+    const history = mcpGetChatMessagesOutputSchema.parse(
+      (
+        await callTool(f.token, "get_chat_messages", {
+          threadId: first.threadId,
+        })
+      ).structuredContent,
+    );
+    expect(
+      history.messages.map((message) => {
+        return message.ref.eventId;
+      }),
+    ).toStrictEqual([first.eventId, third.eventId]);
   });
 
   it.each([
@@ -907,6 +957,102 @@ describe("MCP Web parity", () => {
     ).toStrictEqual([]);
   });
 
+  it("observes rejection and recall by origin without exposing replacement IDs or hidden content", async () => {
+    const f = await conversationFixture();
+    const sent = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(f.token, "send_chat_message", {
+          agentId: f.agentId,
+          prompt: "Private rejected input to recall",
+        })
+      ).structuredContent,
+    );
+    const selector = { threadId: sent.threadId, eventId: sent.eventId };
+    const events = await f.chat.listThreadEvents(f.actor, sent.threadId);
+    const replacement = events.events.find((event) => {
+      return event.revokesEventId === sent.eventId;
+    });
+    if (!replacement) {
+      throw new Error("Expected the public rejection replacement");
+    }
+    for (const eventId of [replacement.id, randomUUID()]) {
+      expect(
+        structuredToolError(
+          await callTool(f.token, "get_chat_input", {
+            ...selector,
+            eventId,
+          }),
+        ).code,
+      ).toBe("not_found");
+    }
+    const peer = f.auth.token({
+      sub: `user_${randomUUID()}`,
+      scope: defaultScopes,
+    });
+    expect(
+      structuredToolError(await callTool(peer, "get_chat_input", selector))
+        .code,
+    ).toBe("not_found");
+    expect(
+      structuredToolError(
+        await callTool(peer, "revoke_queued_message", {
+          ...selector,
+          agentId: f.agentId,
+        }),
+      ).code,
+    ).toBe("not_found");
+    const recalled = await callTool(f.token, "revoke_queued_message", {
+      ...selector,
+      agentId: f.agentId,
+    });
+    expect(recalled.isError).not.toBeTruthy();
+    expect(recalled.structuredContent).toMatchObject(selector);
+    const repeated = await callTool(f.token, "revoke_queued_message", {
+      ...selector,
+      agentId: f.agentId,
+    });
+    expect(repeated.structuredContent).toStrictEqual(
+      recalled.structuredContent,
+    );
+    const observed = mcpGetChatInputOutputSchema.parse(
+      (await callTool(f.token, "get_chat_input", selector)).structuredContent,
+    );
+    expect(observed).toStrictEqual({
+      ...selector,
+      createdAt: expect.any(String),
+      inputStatus: "recalled",
+      run: null,
+      error: null,
+    });
+    expect(Date.parse(observed.createdAt)).toBe(Date.parse(sent.createdAt));
+    const history = mcpGetChatMessagesOutputSchema.parse(
+      (
+        await callTool(f.token, "get_chat_messages", {
+          threadId: sent.threadId,
+        })
+      ).structuredContent,
+    );
+    expect(history.messages).toStrictEqual([]);
+    const recalledEvents = await f.chat.listThreadEvents(
+      f.actor,
+      sent.threadId,
+    );
+    const control = recalledEvents.events.find((event) => {
+      return event.eventType === "control.revoke";
+    });
+    if (!control) {
+      throw new Error("Expected the public recall control event");
+    }
+    expect(
+      structuredToolError(
+        await callTool(f.token, "get_chat_input", {
+          ...selector,
+          eventId: control.id,
+        }),
+      ).code,
+    ).toBe("not_found");
+  });
+
   it("pages canonical messages and binds cursors to the same owner and filters", async () => {
     const f = await conversationFixture();
     const first = mcpSendChatMessageOutputSchema.parse(
@@ -978,8 +1124,8 @@ describe("MCP Web parity", () => {
       agentId: f.agentId,
       prompt: "Ordinary Run state",
     });
-    const read = mcpGetChatStatusOutputSchema.parse(
-      (await callTool(f.token, "get_chat_status", { runId: run.runId }))
+    const read = mcpGetRunStatusOutputSchema.parse(
+      (await callTool(f.token, "get_run_status", { runId: run.runId }))
         .structuredContent,
     );
     const web = await runs.readRun(f.actor, run.runId);
@@ -990,7 +1136,7 @@ describe("MCP Web parity", () => {
     });
     expect(
       structuredToolError(
-        await callTool(peer, "get_chat_status", { runId: run.runId }),
+        await callTool(peer, "get_run_status", { runId: run.runId }),
       ).code,
     ).toBe("not_found");
     expect(
@@ -1004,7 +1150,7 @@ describe("MCP Web parity", () => {
     });
     expect(
       structuredToolError(
-        await callTool(f.token, "get_chat_status", {
+        await callTool(f.token, "get_run_status", {
           runId: run.runId,
           waitMs: 1,
         }),

@@ -155,7 +155,7 @@ export function projectMcpChatMessages(
       messages.push({
         ref: {
           threadId: event.threadId,
-          eventId: event.id,
+          eventId: state.inputOriginId ?? event.id,
           seqId: event.seqId,
         },
         role: event.eventType === "output.message" ? "assistant" : "user",
@@ -328,7 +328,7 @@ function messageWindow(
       return {
         kind: "reference_unavailable",
         message:
-          "The reference is absent, replaced, hidden, or outside this run filter. Find a current visible message reference.",
+          "The input or output reference is absent, hidden, outside this run filter, or its sequence revision changed. Use a visible message's eventId to locate its current representation.",
       };
     }
     start = Math.max(0, index - Math.floor((input.limit - 1) / 2));
