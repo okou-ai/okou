@@ -390,7 +390,7 @@ describe("Teams webhook dispatch", () => {
       );
       await scenario.dispatch(unlinked, "unlinked teams");
       expect(unlinked.notices).toContain(
-        "Please connect your account to use Nova in this Teams workspace.",
+        "Please connect your account to use Okou in this Teams workspace.",
       );
       const reads = createRunReadsApi(context);
       expect(
