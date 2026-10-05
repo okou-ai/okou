@@ -11,6 +11,7 @@ import {
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { modelPoliciesRoutes } from "../model-policies";
 import { userModelPreferenceRoutes } from "../user-model-preference";
@@ -37,19 +38,20 @@ function preferencesApi() {
 
 async function signInUnrestrictedAdmin(): Promise<void> {
   await upsertOrgPlanEntitlementFixture({
-    orgId: signInAdmin(),
+    orgId: await signInAdmin(),
     status: "active",
     supportByok: true,
     restrictedBuiltInModels: false,
   });
 }
 
-function signInAdmin(): string {
+async function signInAdmin(): Promise<string> {
   const actor = authOrgApi.user();
   if (!actor.orgId) {
     throw new Error("Expected an organization member");
   }
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+  await ensureCustomModelModeForTest(context, actor, authHeaders);
   return actor.orgId;
 }
 
@@ -214,7 +216,7 @@ describe("model route capabilities", () => {
   });
 
   it("admits a model on a restricted plan when the catalog allows it", async () => {
-    const orgId = signInAdmin();
+    const orgId = await signInAdmin();
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
