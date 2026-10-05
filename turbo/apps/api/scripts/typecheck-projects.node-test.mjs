@@ -503,6 +503,27 @@ test("production ownership includes JSON and rejects uncovered or overlapping in
   rejected(guard(root), /exactly one Program|JSON.*overlap/);
 });
 
+function verifyTestStageFailures(root, invoke, projects) {
+  for (const index of [0, 1, 2]) {
+    rmSync(join(root, "commands.jsonl"));
+    const testFailure = invoke(
+      "all",
+      `.typecheck/tsconfig.tests-${index}.json`,
+    );
+    assert.equal(testFailure.status, 17, testFailure.stderr);
+    assert.deepEqual(
+      projects().slice(-index - 1),
+      [0, 1, 2].slice(0, index + 1).map((group) => {
+        return `.typecheck/tsconfig.tests-${group}.json`;
+      }),
+    );
+    assert.doesNotMatch(
+      testFailure.stdout,
+      /Type check phase: bootstrap-wiring/,
+    );
+  }
+}
+
 test("aggregate entrypoint preserves stage order and stops at a failed command", (t) => {
   const root = fixture(t);
   copyFileSync(
@@ -616,22 +637,5 @@ if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
     ".typecheck/tsconfig.tests-1.json",
     ".typecheck/tsconfig.tests-2.json",
   ]);
-  for (const index of [0, 1, 2]) {
-    rmSync(join(root, "commands.jsonl"));
-    const testFailure = invoke(
-      "all",
-      `.typecheck/tsconfig.tests-${index}.json`,
-    );
-    assert.equal(testFailure.status, 17, testFailure.stderr);
-    assert.deepEqual(
-      projects().slice(-index - 1),
-      [0, 1, 2].slice(0, index + 1).map((group) => {
-        return `.typecheck/tsconfig.tests-${group}.json`;
-      }),
-    );
-    assert.doesNotMatch(
-      testFailure.stdout,
-      /Type check phase: bootstrap-wiring/,
-    );
-  }
+  verifyTestStageFailures(root, invoke, projects);
 });
