@@ -1,6 +1,6 @@
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { logger } from "../../lib/log";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -9,7 +9,7 @@ import type { RouteEntry } from "../route-entry";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
 import {
-  completeAgentRun$,
+  createAgentRunCompletion,
   dispatchRequiredTerminalChatCallback$,
   type RequiredTerminalChatCallbackResult,
 } from "../services/agent-webhook-complete.service";
@@ -22,10 +22,20 @@ import {
 const L = logger("webhook:complete");
 
 const completeBody$ = bodyResultOf(webhookCompleteContract.complete);
+const completeRequest$ = computed(async (get) => {
+  const bodyResult = await get(completeBody$);
+  if (!bodyResult.ok) {
+    return bodyResult;
+  }
+  return {
+    ...bodyResult,
+    completion: createAgentRunCompletion(bodyResult.data.runId),
+  };
+});
 
 const completeAgentRunRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const bodyResult = await get(completeBody$);
+    const bodyResult = await get(completeRequest$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
@@ -37,7 +47,11 @@ const completeAgentRunRoute$ = command(
       return unauthorizedRunMismatch;
     }
 
-    const result = await set(completeAgentRun$, { auth, body }, signal);
+    const result = await set(
+      bodyResult.completion.complete$,
+      { auth, body },
+      signal,
+    );
     if (result.status === 200) {
       set(scheduleReleasedSlotPicks$, result.releasedSlots, signal);
     }
