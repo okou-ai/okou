@@ -54,6 +54,19 @@ function PwaChatListHeader() {
           <PwaAgentSwitcher />
         </div>
         <Button
+          type="button"
+          variant="quiet"
+          size="icon"
+          iconSize="lg"
+          className="min-h-11 min-w-11 shrink-0"
+          aria-label={t(($) => {
+            return $.appShell.sidebar.searchWorkspace;
+          })}
+          onClick={openSearch}
+        >
+          <Search aria-hidden="true" />
+        </Button>
+        <Button
           variant="quiet"
           size="icon"
           iconSize="lg"
@@ -72,19 +85,6 @@ function PwaChatListHeader() {
           }}
         >
           <SquarePen aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon"
-          iconSize="lg"
-          className="min-h-11 min-w-11 shrink-0"
-          aria-label={t(($) => {
-            return $.appShell.sidebar.searchWorkspace;
-          })}
-          onClick={openSearch}
-        >
-          <Search aria-hidden="true" />
         </Button>
         <ChatThreadsListMenu showMarkAllRead touch />
       </div>

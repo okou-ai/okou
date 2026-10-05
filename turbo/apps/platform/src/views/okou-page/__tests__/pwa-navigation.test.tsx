@@ -233,7 +233,12 @@ test.each([false, true])(
     const menu = screen.getByLabelText("Open chat list menu");
     expect(
       queryAllByRoleFast("button", search.parentElement ?? document),
-    ).toEqual([screen.getByLabelText("Switch agent"), newChat, search, menu]);
+    ).toStrictEqual([
+      screen.getByLabelText("Switch agent"),
+      search,
+      newChat,
+      menu,
+    ]);
 
     click(search);
     const dialog = await screen.findByRole("dialog", {
