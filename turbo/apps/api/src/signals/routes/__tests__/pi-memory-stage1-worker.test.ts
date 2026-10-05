@@ -1096,8 +1096,8 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("extracts built-in memory through the global OpenRouter route", async () => {
-    // V4.1 Flash's OpenRouter candidate carries the pinned extraction effort.
+  it("extracts built-in memory through its fixed internal OpenRouter binding", async () => {
+    // The maintenance binding is independent of Auto-only chat candidates.
     const selectedModel = "deepseek-v4.1-flash";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const storage = await createPublicStorageFixture();

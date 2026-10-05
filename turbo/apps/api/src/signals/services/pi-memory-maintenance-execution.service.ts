@@ -81,11 +81,9 @@ import {
   loadModelCatalog$,
   type ModelCatalog,
 } from "./model-catalog.service";
-import {
-  prepareManagedModelEnvironment,
-  prepareRegisteredModelEnvironment,
-} from "./model-provider.service";
+import { prepareRegisteredModelEnvironment } from "./model-provider.service";
 import { readDisabledPaidTools } from "./paid-tools.service";
+import { preparePiMemoryBuiltinEnvironment } from "./pi-memory-builtin-config";
 import {
   materializePreparedPiProvider,
   resolvePlatformMemoryPiModelConfig,
@@ -333,9 +331,16 @@ const admitMaintenance$ = command(
     const modelProviderType = modelProviderTypeSchema.parse(
       credential.pin.modelProvider,
     );
-    const framework = selectedModel
-      ? frameworkForProviderSelection(catalog, modelProviderType, selectedModel)
-      : null;
+    const framework =
+      credential.pin.modelProvider === "built-in"
+        ? ("codex" as const)
+        : selectedModel
+          ? frameworkForProviderSelection(
+              catalog,
+              modelProviderType,
+              selectedModel,
+            )
+          : null;
     if (!selectedModel || !framework) {
       throw new PiMaintenanceDispositionError("model_route_unavailable");
     }
@@ -353,18 +358,16 @@ const admitMaintenance$ = command(
 async function prepareMaintenanceModel(
   admitted: MaintenanceAdmission,
   job: ClaimedPiMemoryPhase2Job,
-  source: Parameters<typeof prepareManagedModelEnvironment>[0],
+  source: Parameters<typeof preparePiMemoryBuiltinEnvironment>[0],
 ) {
-  const { catalog, credential, selectedModel, framework } = admitted;
+  const { catalog, credential, selectedModel } = admitted;
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
     source.identity.kind === "built-in"
-      ? await prepareManagedModelEnvironment(source, {
-          builtInModelRuntimeRoute: credential.route ?? undefined,
-          selectedModelOverride: selectedModel,
-          catalog,
-          framework,
-          featureSwitchContext: admitted.featureSwitchContext,
-        })
+      ? preparePiMemoryBuiltinEnvironment(
+          source,
+          credential.route ?? undefined,
+          admitted.featureSwitchContext,
+        )
       : await prepareRegisteredModelEnvironment(source, selectedModel, {
           catalog,
           userId: job.userId,
@@ -383,10 +386,10 @@ async function prepareMaintenanceModel(
   if (!modelProvider) {
     throw new PiMaintenanceDispositionError("credential_unavailable");
   }
-  const piSandbox = resolvePreparedPiModelConfig({
-    input: piInput,
-    modelProvider,
-  });
+  const piSandbox =
+    credential.pin.modelProvider === "built-in"
+      ? modelProvider.piModelConfig
+      : resolvePreparedPiModelConfig({ input: piInput, modelProvider });
   if (!piSandbox) {
     throw new Error("Pi maintenance requires a Pi model configuration");
   }

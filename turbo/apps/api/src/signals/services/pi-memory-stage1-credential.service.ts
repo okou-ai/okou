@@ -18,14 +18,14 @@ import {
 import { eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
-import { resolveBuiltInModelRuntimeRouteFromCatalog } from "./built-in-model-runtime-route.service";
+import { resolvePiMemoryBuiltinRoute } from "./pi-memory-builtin-config";
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
 import {
-  catalogBuiltInCandidates,
   catalogBuiltInRoute,
+  catalogRoutesFor,
   type ModelCatalog,
   ModelCatalogInvariantError,
 } from "./model-catalog.service";
@@ -138,9 +138,11 @@ export function piMemoryStage1ModelPricingThreshold(
   catalog: ModelCatalog,
   model: PiMemoryStage1Model,
 ): number | null {
-  const route = catalogBuiltInCandidates(catalog, model).find((candidate) => {
-    return candidate.pricingProvider === model;
-  });
+  const route = catalogRoutesFor(catalog, model, "built-in").find(
+    (candidate) => {
+      return candidate.pricingProvider === model;
+    },
+  );
   return route?.longContextMinTotalInputTokens ?? null;
 }
 
@@ -227,13 +229,9 @@ async function builtinCredential(
   ) {
     return skip("source_binding_invalid");
   }
-  // Resolve against the held snapshot so the served route and its pricing
-  // threshold come from the same catalog read.
-  const route = await resolveBuiltInModelRuntimeRouteFromCatalog(
-    db,
-    args.catalog,
-    PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  );
+  // Maintenance has a fixed internal binding, independent of chat admission.
+  // Pricing still uses the held snapshot of the actual served route.
+  const route = await resolvePiMemoryBuiltinRoute(db, signal);
   signal.throwIfAborted();
   const provider = route ? builtInStage1PiProvider(route.providerType) : null;
   if (!route || !provider) {

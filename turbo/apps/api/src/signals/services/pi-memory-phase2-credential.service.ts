@@ -12,7 +12,7 @@ import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-contracts";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import { resolvePiMemoryBuiltinRoute } from "./pi-memory-builtin-config";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   featureSwitchContextFromRows,
@@ -22,10 +22,7 @@ import type { ModelCatalog } from "./model-catalog.service";
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
-import {
-  PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-  piMemoryPhase2Model,
-} from "./pi-memory-phase2-usage.service";
+import { piMemoryPhase2Model } from "./pi-memory-phase2-usage.service";
 type ReadDb = Pick<Db, "select">;
 
 type CredentialFailure =
@@ -328,11 +325,7 @@ export async function resolvePiMemoryPhase2Credential(
   };
   const route =
     pin.modelProvider === "built-in"
-      ? await resolveBuiltInModelRuntimeRoute(
-          catalogSnapshot,
-          db,
-          PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-        )
+      ? await resolvePiMemoryBuiltinRoute(db, signal)
       : undefined;
   signal.throwIfAborted();
   if (route === null) {
