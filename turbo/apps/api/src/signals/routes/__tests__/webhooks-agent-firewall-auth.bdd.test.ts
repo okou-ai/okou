@@ -40,6 +40,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
+import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import {
   API_TEST_CONNECTOR_CATALOG,
   catalogWithAuthMethod,
@@ -114,6 +115,35 @@ async function firewallRun(existingActor?: ApiTestUser): Promise<{
     runId: run.runId,
     headers: fw.sandboxHeaders(actor, run.runId),
   };
+}
+
+async function withPublicFirewallRun(
+  scenario: (headers: { readonly authorization: string }) => Promise<void>,
+): Promise<void> {
+  const fixture = createPublicFirewallFixture(context);
+  await fixture.run(async () => {
+    const bdd = createBddApi(context);
+    const runsApi = createRunsApi(context);
+    const fw = createFirewallApi(context);
+    bdd.acceptAgentStorageWrites();
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    runsApi.configureRunnerGroup();
+    await fixture.fund();
+    await runsApi.ensureOrgModelProvider(fixture.actor);
+    const agent = await bdd.createAgent(fixture.actor, {
+      displayName: "BDD firewall agent",
+      description: "Exercises firewall auth resolution.",
+      visibility: "private",
+    });
+    fixture.registerAgent(agent.agentId);
+    const run = await runsApi.createThreadRun(fixture.actor, {
+      agentId: agent.agentId,
+      prompt: "resolve firewall auth",
+    });
+    fixture.registerRun(run.runId);
+    await scenario(fw.sandboxHeaders(fixture.actor, run.runId));
+  });
 }
 
 async function exactSecretConnectorSources(
@@ -258,144 +288,151 @@ describe("FW-1: firewall auth boundaries", () => {
   });
 
   it("rejects undecryptable secret payloads for a real run", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const garbage = await fw.requestFirewallAuth(
-      headers,
-      { encryptedSecrets: "garbage", authHeaders: {} },
-      [400],
-    );
-    expectApiError(garbage.body);
-    expect(garbage.body.error.message).toContain("Failed to decrypt");
+      const garbage = await fw.requestFirewallAuth(
+        headers,
+        { encryptedSecrets: "garbage", authHeaders: {} },
+        [400],
+      );
+      expectApiError(garbage.body);
+      expect(garbage.body.error.message).toContain("Failed to decrypt");
+    });
   });
 });
 
 describe("FW-2: template resolution without connector refresh", () => {
   it("resolves secret-backed auth headers", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          API_KEY: "secret-value",
-          SCRAPENINJA_TOKEN: "rapidapi-secret",
-        }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-          "X-RapidAPI-Host": "scrapeninja.p.rapidapi.com",
-          "X-RapidAPI-Key": secretTemplate("SCRAPENINJA_TOKEN"),
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            API_KEY: "secret-value",
+            SCRAPENINJA_TOKEN: "rapidapi-secret",
+          }),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+            "X-RapidAPI-Host": "scrapeninja.p.rapidapi.com",
+            "X-RapidAPI-Key": secretTemplate("SCRAPENINJA_TOKEN"),
+          },
         },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected firewall auth resolution to succeed");
-    }
-    expect(resolved.body.headers.Authorization).toBe("Bearer secret-value");
-    expect(resolved.body.headers["X-RapidAPI-Host"]).toBe(
-      "scrapeninja.p.rapidapi.com",
-    );
-    expect(resolved.body.headers["X-RapidAPI-Key"]).toBe("rapidapi-secret");
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-    expect(resolved.body.resolvedSecrets).toContain("API_KEY");
-    expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected firewall auth resolution to succeed");
+      }
+      expect(resolved.body.headers.Authorization).toBe("Bearer secret-value");
+      expect(resolved.body.headers["X-RapidAPI-Host"]).toBe(
+        "scrapeninja.p.rapidapi.com",
+      );
+      expect(resolved.body.headers["X-RapidAPI-Key"]).toBe("rapidapi-secret");
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+      expect(resolved.body.resolvedSecrets).toContain("API_KEY");
+      expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
+    });
   });
 
   it("resolves variable and basic auth header templates", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          BASIC_USER: "alice",
-          SHARED: "secret-shared",
-        }),
-        authHeaders: {
-          "X-Tenant": varTemplate("TENANT"),
-          "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
-          "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
-          "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            BASIC_USER: "alice",
+            SHARED: "secret-shared",
+          }),
+          authHeaders: {
+            "X-Tenant": varTemplate("TENANT"),
+            "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
+            "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
+            "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
+          },
+          vars: {
+            TENANT: "tenant-1",
+            BASIC_PASS: "var-pass",
+            SHARED: "var-shared",
+          },
         },
-        vars: {
-          TENANT: "tenant-1",
-          BASIC_PASS: "var-pass",
-          SHARED: "var-shared",
-        },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected firewall auth resolution to succeed");
-    }
-    expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
-    expect(resolved.body.headers["X-Basic"]).toBe(
-      `Basic ${Buffer.from("alice:var-pass").toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Literal-Basic"]).toBe(
-      `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Shared"]).toBe("secret-shared:var-shared");
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected firewall auth resolution to succeed");
+      }
+      expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
+      expect(resolved.body.headers["X-Basic"]).toBe(
+        `Basic ${Buffer.from("alice:var-pass").toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Literal-Basic"]).toBe(
+        `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Shared"]).toBe(
+        "secret-shared:var-shared",
+      );
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+    });
   });
 
   it("resolves secret templates in the base URL and query", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          BASE_SECRET: "base-secret",
-          QUERY_SECRET: "query-secret",
-        }),
-        authHeaders: {},
-        authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
-        authQuery: { token: secretTemplate("QUERY_SECRET") },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected firewall auth resolution to succeed");
-    }
-    expect(resolved.body.base).toBe("https://api.example.test/base-secret");
-    expect(resolved.body.query).toStrictEqual({ token: "query-secret" });
-    expect(resolved.body.expiresAt).toBeNull();
-    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-    expect(resolved.body.resolvedSecrets).toStrictEqual(
-      [...resolved.body.resolvedSecrets].sort(),
-    );
-    expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
-    expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            BASE_SECRET: "base-secret",
+            QUERY_SECRET: "query-secret",
+          }),
+          authHeaders: {},
+          authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
+          authQuery: { token: secretTemplate("QUERY_SECRET") },
+        },
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected firewall auth resolution to succeed");
+      }
+      expect(resolved.body.base).toBe("https://api.example.test/base-secret");
+      expect(resolved.body.query).toStrictEqual({ token: "query-secret" });
+      expect(resolved.body.expiresAt).toBeNull();
+      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+      expect(resolved.body.resolvedSecrets).toStrictEqual(
+        [...resolved.body.resolvedSecrets].sort(),
+      );
+      expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
+      expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
+    });
   });
 
   it("reports unresolvable template references as connector-not-configured", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("NEVER_SET")}`,
+      const missing = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("NEVER_SET")}`,
+          },
+          secretConnectorMap: {},
         },
-        secretConnectorMap: {},
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected unresolved secret to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+        [424],
+      );
+      if (missing.status !== 424) {
+        throw new Error("Expected unresolved secret to fail with 424");
+      }
+      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    });
   });
 
   it("uses pinned routing variables and current auth-only variables for builtin connectors", async () => {
@@ -451,63 +488,69 @@ describe("FW-2: template resolution without connector refresh", () => {
   });
 
   it("passes literals through query templates and keeps basic-literal templates opaque", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    // The quoted basic arguments are literals: the embedded secret template
-    // must neither be collected as a reference nor resolved, so the request
-    // succeeds even though NEVER_SET is absent from the secret payload.
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({ PASS: "pass-secret" }),
-        authHeaders: {
-          "X-Empty-Basic": basicTemplate("", ""),
-          "X-Literal-Template": basicTemplate(
-            `"${secretTemplate("NEVER_SET")}"`,
-            "secrets.PASS",
-          ),
-          "X-Quoted-Namespace": basicTemplate('"secrets.PASS"', "secrets.PASS"),
+      // The quoted basic arguments are literals: the embedded secret template
+      // must neither be collected as a reference nor resolved, so the request
+      // succeeds even though NEVER_SET is absent from the secret payload.
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({ PASS: "pass-secret" }),
+          authHeaders: {
+            "X-Empty-Basic": basicTemplate("", ""),
+            "X-Literal-Template": basicTemplate(
+              `"${secretTemplate("NEVER_SET")}"`,
+              "secrets.PASS",
+            ),
+            "X-Quoted-Namespace": basicTemplate(
+              '"secrets.PASS"',
+              "secrets.PASS",
+            ),
+          },
+          authQuery: {
+            token: "literal-query-value",
+            workspace: varTemplate("WORKSPACE_ID"),
+          },
+          vars: { WORKSPACE_ID: "workspace-9" },
         },
-        authQuery: {
-          token: "literal-query-value",
-          workspace: varTemplate("WORKSPACE_ID"),
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected the literal template resolution to succeed");
+      }
+      expect(resolved.body.headers["X-Empty-Basic"]).toBe(
+        `Basic ${Buffer.from(":").toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Literal-Template"]).toBe(
+        `Basic ${Buffer.from(`${secretTemplate("NEVER_SET")}:pass-secret`).toString("base64")}`,
+      );
+      expect(resolved.body.headers["X-Quoted-Namespace"]).toBe(
+        `Basic ${Buffer.from("secrets.PASS:pass-secret").toString("base64")}`,
+      );
+      expect(resolved.body.query).toStrictEqual({
+        token: "literal-query-value",
+        workspace: "workspace-9",
+      });
+      expect(resolved.body.resolvedSecrets).toStrictEqual(["PASS"]);
+
+      const withoutQuery = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: { Authorization: "Bearer static-token" },
         },
-        vars: { WORKSPACE_ID: "workspace-9" },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected the literal template resolution to succeed");
-    }
-    expect(resolved.body.headers["X-Empty-Basic"]).toBe(
-      `Basic ${Buffer.from(":").toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Literal-Template"]).toBe(
-      `Basic ${Buffer.from(`${secretTemplate("NEVER_SET")}:pass-secret`).toString("base64")}`,
-    );
-    expect(resolved.body.headers["X-Quoted-Namespace"]).toBe(
-      `Basic ${Buffer.from("secrets.PASS:pass-secret").toString("base64")}`,
-    );
-    expect(resolved.body.query).toStrictEqual({
-      token: "literal-query-value",
-      workspace: "workspace-9",
+        [200],
+      );
+      if (withoutQuery.status !== 200) {
+        throw new Error("Expected the query-less resolution to succeed");
+      }
+      expect(withoutQuery.body.query).toBeUndefined();
+      expect(withoutQuery.body.headers.Authorization).toBe(
+        "Bearer static-token",
+      );
     });
-    expect(resolved.body.resolvedSecrets).toStrictEqual(["PASS"]);
-
-    const withoutQuery = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: { Authorization: "Bearer static-token" },
-      },
-      [200],
-    );
-    if (withoutQuery.status !== 200) {
-      throw new Error("Expected the query-less resolution to succeed");
-    }
-    expect(withoutQuery.body.query).toBeUndefined();
-    expect(withoutQuery.body.headers.Authorization).toBe("Bearer static-token");
   });
 });
 
@@ -2583,24 +2626,27 @@ describe("FW-8: static access tokens and unavailable sources", () => {
   });
 
   it("reports aliases for never-connected connector slugs as not configured", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("NOTION_TOKEN")}`,
+      const missing = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({}),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("NOTION_TOKEN")}`,
+          },
+          secretConnectorMap: { NOTION_TOKEN: "notion" },
         },
-        secretConnectorMap: { NOTION_TOKEN: "notion" },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected unconnected connector alias to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+        [424],
+      );
+      if (missing.status !== 424) {
+        throw new Error(
+          "Expected unconnected connector alias to fail with 424",
+        );
+      }
+      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    });
   });
 });
 
@@ -3414,64 +3460,66 @@ describe("FW-10: platform connector secrets", () => {
 
 describe("FW-11: aws sigv4 template resolution", () => {
   it("resolves aws sigv4 credentials from secret and var templates", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          AWS_SECRET_ACCESS_KEY: "secret-access-key",
-          AWS_SESSION_TOKEN: "session-token",
-        }),
-        authHeaders: {},
-        authAwsSigv4: {
-          accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
-          secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
-          sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            AWS_SECRET_ACCESS_KEY: "secret-access-key",
+            AWS_SESSION_TOKEN: "session-token",
+          }),
+          authHeaders: {},
+          authAwsSigv4: {
+            accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+            sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
+          },
+          vars: { AWS_ACCESS_KEY_ID: "access-key-id" },
         },
-        vars: { AWS_ACCESS_KEY_ID: "access-key-id" },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected the sigv4 resolution to succeed");
-    }
-    expect(resolved.body.headers).toStrictEqual({});
-    expect(resolved.body.awsSigv4).toStrictEqual({
-      accessKeyId: "access-key-id",
-      secretAccessKey: "secret-access-key",
-      sessionToken: "session-token",
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected the sigv4 resolution to succeed");
+      }
+      expect(resolved.body.headers).toStrictEqual({});
+      expect(resolved.body.awsSigv4).toStrictEqual({
+        accessKeyId: "access-key-id",
+        secretAccessKey: "secret-access-key",
+        sessionToken: "session-token",
+      });
+      expect(resolved.body.resolvedSecrets).toStrictEqual([
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+      ]);
+      expect(resolved.body.expiresAt).toBeNull();
     });
-    expect(resolved.body.resolvedSecrets).toStrictEqual([
-      "AWS_SECRET_ACCESS_KEY",
-      "AWS_SESSION_TOKEN",
-    ]);
-    expect(resolved.body.expiresAt).toBeNull();
   });
 
   it("rejects empty resolved aws sigv4 credentials as connector-not-configured", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          AWS_ACCESS_KEY_ID: "",
-          AWS_SECRET_ACCESS_KEY: "secret-access-key",
-        }),
-        authHeaders: {},
-        authAwsSigv4: {
-          accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
-          secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+      const missing = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            AWS_ACCESS_KEY_ID: "",
+            AWS_SECRET_ACCESS_KEY: "secret-access-key",
+          }),
+          authHeaders: {},
+          authAwsSigv4: {
+            accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+          },
         },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected the empty sigv4 credential to fail with 424");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+        [424],
+      );
+      if (missing.status !== 424) {
+        throw new Error("Expected the empty sigv4 credential to fail with 424");
+      }
+      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    });
   });
 });

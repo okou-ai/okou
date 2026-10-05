@@ -15,7 +15,7 @@ import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { deleteFeatureSwitchesForUser } from "./feature-switches";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
 
-/** A real paid actor; the selected OAuth scenarios own setup through teardown. */
+/** A real paid actor; the selected firewall scenarios own setup through teardown. */
 export function createPublicFirewallFixture(
   context: TestContext,
   options: ApiTestUserOptions = {},
@@ -155,7 +155,7 @@ export function createPublicFirewallFixture(
         }
       };
       createFirewallApi(context).seedClerkDirectory(actor);
-      // These eight scenarios observe authorization, not the old synthetic 100000.
+      // Selected scenarios observe authorization, not the old synthetic 100000.
       await createRunsApi(context).grantProEntitlement(actor, {
         customerId,
         subscriptionId,
