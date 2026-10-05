@@ -83,7 +83,10 @@ import {
 } from "./model-catalog.service";
 import { prepareRegisteredModelEnvironment } from "./model-provider.service";
 import { readDisabledPaidTools } from "./paid-tools.service";
-import { preparePiMemoryBuiltinEnvironment } from "./pi-memory-builtin-config";
+import {
+  preparePiMemoryBuiltinEnvironment,
+  readPiMemoryBuiltinPricing,
+} from "./pi-memory-builtin-config";
 import {
   materializePreparedPiProvider,
   resolvePlatformMemoryPiModelConfig,
@@ -922,14 +925,21 @@ function createMaintenanceModelReads(
       catalog: admitted.catalog,
       modelProvider,
       timing,
-      routePricing: await get(
-        runRoutePricing({
-          catalog: admitted.catalog,
-          modelProvider,
-          serviceTier: undefined,
-          resolution: get(usagePricingResolution$),
-        }),
-      ),
+      routePricing:
+        modelProvider.type === "built-in"
+          ? await readPiMemoryBuiltinPricing(
+              get(db$),
+              admitted.catalog,
+              get(usagePricingResolution$),
+            )
+          : await get(
+              runRoutePricing({
+                catalog: admitted.catalog,
+                modelProvider,
+                serviceTier: undefined,
+                resolution: get(usagePricingResolution$),
+              }),
+            ),
     });
   });
   // For a built-in model, the Stripe entitlement read for the allowance window

@@ -7,6 +7,20 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
+import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import {
+  resolveUsagePricingProvider,
+  type UsagePricingResolution,
+} from "../context/usage-pricing-resolution";
+import {
+  builtInRoutePricingFromSnapshot,
+  usagePricingByKey,
+} from "./built-in-route-pricing";
+import {
+  catalogBuiltInRoute,
+  ModelCatalogInvariantError,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 import { and, eq, gt } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
@@ -15,6 +29,47 @@ import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { compileModelRuntime } from "./execution-model-runtime";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
+
+export async function readPiMemoryBuiltinPricing(
+  db: ReadonlyDb,
+  catalog: ModelCatalog,
+  resolution: UsagePricingResolution,
+) {
+  const route = catalogBuiltInRoute(
+    catalog,
+    PI_MEMORY_BUILTIN_BINDING.selectedModel,
+    PI_MEMORY_BUILTIN_BINDING.providerType,
+  );
+  if (!route?.pricingKind || !route.pricingProvider) {
+    throw new ModelCatalogInvariantError(
+      "Pi memory pricing binding is missing",
+    );
+  }
+  const rows = await db
+    .select({
+      kind: usagePricing.kind,
+      provider: usagePricing.provider,
+      category: usagePricing.category,
+    })
+    .from(usagePricing)
+    .where(
+      and(
+        eq(usagePricing.kind, route.pricingKind),
+        eq(
+          usagePricing.provider,
+          resolveUsagePricingProvider(
+            resolution,
+            route.pricingKind,
+            route.pricingProvider,
+          ),
+        ),
+      ),
+    );
+  return builtInRoutePricingFromSnapshot(
+    { resolution, serviceTier: undefined },
+    usagePricingByKey(rows),
+  );
+}
 
 /** Internal maintenance binding. This is never a foreground model candidate. */
 export const PI_MEMORY_BUILTIN_BINDING = {
