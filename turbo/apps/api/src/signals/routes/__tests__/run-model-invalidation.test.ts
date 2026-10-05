@@ -43,7 +43,7 @@ describe("personal subscription invalidation", () => {
       `user:${userId}`,
     );
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "modelPoliciesChanged",
+      "runModelsChanged",
       null,
     );
     expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(

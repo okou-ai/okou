@@ -220,15 +220,7 @@ export async function publishUserPreferenceChangedForUserSafely(
 export function publishPersonalModelProvidersChangedSafely(
   userId: string,
 ): Promise<void> {
-  return publishUserSignal([userId], "modelPoliciesChanged");
-}
-
-/** Publish only after the policy/provider transaction has committed. */
-export function publishModelPoliciesChangedForOrgSafely(
-  orgId: string,
-): Promise<void> {
-  waitUntil(bestEffort(publishOrgSignal(orgId, "modelPoliciesChanged")));
-  return Promise.resolve();
+  return publishUserSignal([userId], "runModelsChanged");
 }
 
 /** Invalidate the aggregate Run capacity view after a committed state change. */
