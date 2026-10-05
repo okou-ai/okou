@@ -81,7 +81,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   const group = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  const [{ providerId }, agent] = await Promise.all([
+  const [, agent] = await Promise.all([
     runs.ensurePersonalSubscriptionModel(actor),
     bdd.createAgent(actor, {
       displayName: "Activity summary",
@@ -90,15 +90,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
     }),
   ]);
   // The activity suite needs a live Runner claim, not a Pi API-first turn.
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const sent = await chat.sendAndLaunch(actor, {
     agentId: agent.agentId,
     model: "claude-fable-5-1",

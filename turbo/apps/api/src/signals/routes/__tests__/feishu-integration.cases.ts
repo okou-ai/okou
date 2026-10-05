@@ -62,6 +62,7 @@ import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import {
@@ -6445,19 +6446,7 @@ export function registerSharedFeishuConversationTests(): void {
         fixture;
       const providerThreadId = `omt_${randomUUID()}`;
       await startFeishuDmSession(fixture, providerThreadId);
-      const { providerId } = await runsApi.createOrgModelProvider(actor, {
-        type: "openai-api-key",
-        secret: "feishu-history-openai-key",
-      });
-      await runsApi.updateOrgModelPolicies(actor, [
-        {
-          model: "gpt-6-astra",
-          preferred: true,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await allowFeishuGptModel(actor);
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
       const threads = await accept(
         setupApp({ context, routes: chatThreadRoutes })(
@@ -6513,18 +6502,9 @@ export function registerSharedFeishuConversationTests(): void {
     });
 
     async function allowFeishuGptModel(actor: ApiTestUser): Promise<void> {
-      const { providerId } = await runsApi.createOrgModelProvider(actor, {
-        type: "openai-api-key",
-        secret: "feishu-model-command-openai-key",
-      });
-      await runsApi.updateOrgModelPolicies(actor, [
-        {
-          model: "gpt-6-astra",
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+        actor,
+      );
     }
 
     async function readFeishuThreadEvents(actor: ApiTestUser) {

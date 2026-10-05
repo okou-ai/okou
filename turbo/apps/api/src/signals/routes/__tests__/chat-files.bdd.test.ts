@@ -232,14 +232,7 @@ describe("CHAT-01 chat thread lifecycle", () => {
     });
 
     await api.renameThread(owner, thread.id, "Pinned launch plan");
-    await createRunsApi(context).updateOrgModelPolicies(owner, [
-      {
-        model: "gpt-6-luna",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await createRunsApi(context).updateUserModelPreference(owner, "okou-1.0");
     await api.updateThreadModelSelection(owner, thread.id, "gpt-6-luna");
     await api.pinThread(owner, thread.id);
     const readEmpty = await api.markThreadRead(owner, thread.id);

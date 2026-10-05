@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 
 import { testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import {
   createCodexExpiryFixture,
   credentials,
@@ -16,6 +20,13 @@ import {
   expiryResponse,
   upstream,
 } from "./helpers/codex-reset-credit-expiry";
+
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
 
 const context = testContext();
 const fixture = createCodexExpiryFixture(context);
@@ -91,10 +102,10 @@ describe("Codex expiry cache capacity", () => {
     });
     const providers = setupApp({
       context,
-      routes: modelProvidersRoutes,
+      routes: personalModelProviderTestRoutes,
       signal: pressureSignal,
       rethrowErrors: true,
-    })(modelProvidersMainContract);
+    })(personalModelProvidersMainContract);
     const outcomes = await Promise.allSettled([
       ...owners.map(async (owner) => {
         await expect(

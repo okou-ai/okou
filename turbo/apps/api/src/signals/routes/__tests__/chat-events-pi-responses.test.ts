@@ -11,7 +11,6 @@ import {
 } from "../../../lib/secret-kms-client";
 
 import {
-  insertBuiltInModelMirrorFixture,
   insertCatalogModelFixture,
   setModelPiRouteClassFixture,
 } from "../../../test-fixtures/model-catalog";
@@ -24,7 +23,7 @@ import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
+
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -43,6 +42,7 @@ const {
   chatCallbacks,
   entitledChatActor,
   configureBuiltInPiModel,
+  configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -55,28 +55,19 @@ const {
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
-async function configureOpenRouterThroughProviderReport(args: {
+async function configureResponsesWithOwnedRuns(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
-  readonly selectedModel:
-    | "deepseek-v4-flash"
-    | "deepseek-v4.1-flash"
-    | "gpt-6-luna"
-    | "gpt-5.6-sol";
+  readonly selectedModel: "okou-1.0" | "gpt-6-luna";
 }): Promise<{
   readonly model: string;
   readonly sendChatRun: typeof sendChatRun;
   readonly claimChatRun: typeof claimChatRun;
   readonly cancelChatRun: typeof cancelChatRun;
 }> {
-  let model: string = args.selectedModel;
-  const needsPrimaryFailure = !args.selectedModel.startsWith("deepseek");
-  if (needsPrimaryFailure) {
-    const mirror = await insertBuiltInModelMirrorFixture(args.selectedModel);
-    onTestFinished(mirror.restore);
-    model = mirror.model;
-  }
+  const model = args.selectedModel;
+
   await seedBuiltInModelCandidateKeys(context, model);
   const owned = new Map<
     string,
@@ -183,32 +174,13 @@ async function configureOpenRouterThroughProviderReport(args: {
     run.finished = true;
   }
 
-  await api.updateOrgModelPolicies(args.actor, [
-    {
-      model,
-      preferred: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
+  await (model === "okou-1.0"
+    ? configureBuiltInPiModel(args.actor, model)
+    : configureSubscriptionPiModel(args.actor, {}, model));
   // DeepSeek's direct candidate is ineligible for managed routing, so its
   // ordinary launch already selects OpenRouter. GPT first reports the actual
   // primary through a separate claimed Run on this test-owned mirror.
-  if (needsPrimaryFailure) {
-    mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-    await coolDownBuiltInRoutesThroughReports(context, {
-      actor: args.actor,
-      agentId: args.agentId,
-      runnerGroup: args.runnerGroup,
-      model,
-      routes: [
-        { providerType: "openai-api-key", upstreamModel: args.selectedModel },
-      ],
-      beforeCooldownCleanup: cleanupOwnedRuns,
-    });
-  }
+
   return {
     model,
     sendChatRun: sendOwnedRun,
@@ -219,35 +191,17 @@ async function configureOpenRouterThroughProviderReport(args: {
 
 describe("CHAT-02: model-first provider policies", () => {
   it.each(
-    (
-      [
-        "deepseek-v4-flash",
-        "deepseek-v4.1-flash",
-        "gpt-6-luna",
-        "gpt-5.6-sol",
-      ] as const
-    ).flatMap((selectedModel) => {
-      // The other DeepSeek US-on routes are covered per model by the
-      // provider-policy matrix; v4-flash still exercises the fallback route.
-      const usSwitchValues =
-        selectedModel === "deepseek-v4.1-flash" ? [false] : [false, true];
-      return usSwitchValues.map((usRoutingEnabled) => {
-        return {
-          selectedModel,
-          usRoutingEnabled,
-        };
-      });
+    [false, true].map((usRoutingEnabled) => {
+      return { selectedModel: "okou-1.0" as const, usRoutingEnabled };
     }),
   )(
     "runs built-in $selectedModel OpenRouter Responses with US switch $usRoutingEnabled",
     async ({ selectedModel, usRoutingEnabled }) => {
-      if (selectedModel === "deepseek-v4.1-flash") {
-        configureNativeCliArtifact();
-      }
+      configureNativeCliArtifact();
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const orgId = requireOrgId(actor);
       const { model, sendChatRun, claimChatRun, cancelChatRun } =
-        await configureOpenRouterThroughProviderReport({
+        await configureResponsesWithOwnedRuns({
           actor,
           agentId,
           runnerGroup,
@@ -276,11 +230,8 @@ describe("CHAT-02: model-first provider policies", () => {
       // stays on the global OpenRouter endpoint even when enabled.
       expect(claim.piModelConfig).toMatchObject({
         provider: "openrouter",
-        baseUrl:
-          selectedModel === "gpt-5.6-sol" && usRoutingEnabled
-            ? "https://us.openrouter.ai/api/v1"
-            : "https://openrouter.ai/api/v1",
-        model: `${selectedModel.startsWith("deepseek") ? "deepseek" : "openai"}/${selectedModel}`,
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "@preset/okou-1-0",
       });
       await expectThreadModelCredits(context, actor, run.threadId, 0);
       await cancelChatRun(actor, run.runId);
@@ -291,11 +242,11 @@ describe("CHAT-02: model-first provider policies", () => {
   it("launches a model on the runtime its catalog Pi route class selects", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const { model, sendChatRun, claimChatRun, cancelChatRun } =
-      await configureOpenRouterThroughProviderReport({
+      await configureResponsesWithOwnedRuns({
         actor,
         agentId,
         runnerGroup,
-        selectedModel: "gpt-6-luna",
+        selectedModel: "okou-1.0",
       });
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
@@ -315,22 +266,19 @@ describe("CHAT-02: model-first provider policies", () => {
     const restore = await setModelPiRouteClassFixture(model, null);
     const vendor = await launch("run on the vendor harness");
     await restore();
-    expect(vendor.claim.cliAgentType).toBe("codex");
+    expect(vendor.claim.cliAgentType).toBe("pi");
 
     // The seeded `gpt-codex` class launches the same route on Pi.
     const pi = await launch("run on Pi");
     expect(pi.claim.cliAgentType).toBe("pi");
     expect(pi.claim.piModelConfig).toMatchObject({
       provider: "openrouter",
-      model: "openai/gpt-6-luna",
+      model: "@preset/okou-1-0",
     });
   });
 
-  it("launches a catalog-only model on Pi through its route's upstream model", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    // Only run_model_catalog and model_routes rows exist for this model: no
-    // static list names it. Its Built-in route reuses the OpenRouter Codex
-    // protocol and an upstream model the pinned Pi runtime resolves.
+  it("does not admit a catalog-only platform model or replace fixed Auto", async () => {
+    const { actor, agentId } = await entitledChatActor();
     const model = `catalog-pi-${randomUUID()}`;
     const restore = await insertCatalogModelFixture({
       model,
@@ -348,59 +296,36 @@ describe("CHAT-02: model-first provider policies", () => {
       ],
     });
     onTestFinished(restore);
-    await seedBuiltInModelCandidateKeys(context, model);
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "run the catalog-only model on Pi",
-      model,
-      runOptions: { reasoningEffort: "high" },
-    });
-    await flushWaitUntilForTest();
-
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      source: {
-        providerType: "built-in",
-        runtimeProviderType: "openrouter-codex",
-        model,
-      },
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim).toMatchObject({
-      cliAgentType: "pi",
-      // Built-in usage is billed under the route's pricing link
-      // (`usage_pricing` provider = the model ID).
-      modelUsageProvider: model,
-    });
-    expect(claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "openai/gpt-6-luna",
-      thinkingLevel: "high",
-    });
-    await cancelChatRun(actor, run.runId);
+    const models = await api.listRunModels(actor);
+    expect(models.models).not.toContainEqual(
+      expect.objectContaining({ model }),
+    );
+    expect(
+      models.models
+        .filter((entry) => {
+          return entry.defaultProviderType === "built-in";
+        })
+        .map((entry) => {
+          return entry.model;
+        }),
+    ).toStrictEqual(["okou-1.0"]);
+    const rejected = await chat.requestCreateThread(
+      actor,
+      { agentId, model },
+      [400],
+    );
+    expect(rejected.status).toBe(400);
   });
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();
     const { model, sendChatRun, claimChatRun, cancelChatRun } =
-      await configureOpenRouterThroughProviderReport({
+      await configureResponsesWithOwnedRuns({
         actor,
         agentId,
         runnerGroup,
-        selectedModel: "gpt-6-luna",
+        selectedModel: "okou-1.0",
       });
 
     mockPiResourceArchiveDownloads();
@@ -576,7 +501,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       const { model, sendChatRun, claimChatRun } =
-        await configureOpenRouterThroughProviderReport({
+        await configureResponsesWithOwnedRuns({
           actor,
           agentId,
           runnerGroup,
@@ -618,7 +543,7 @@ describe("CHAT-02: model-first provider policies", () => {
         claim: firstClaim,
         prompt: prompts[0],
         run: first,
-        responsesModel: { provider: "openai", model: selectedModel },
+        responsesModel: { provider: "openai-codex", model: selectedModel },
         usagePricingResolution,
       });
       const firstSessionId = await readCompletedRunSessionId(
@@ -651,7 +576,7 @@ describe("CHAT-02: model-first provider policies", () => {
         claim: fastClaim,
         prompt: prompts[1],
         run: fast,
-        responsesModel: { provider: "openai", model: selectedModel },
+        responsesModel: { provider: "openai-codex", model: selectedModel },
         usagePricingResolution,
       });
       await expect(
@@ -686,7 +611,7 @@ describe("CHAT-02: model-first provider policies", () => {
         claim: returnedClaim,
         prompt: prompts[2],
         run: returned,
-        responsesModel: { provider: "openai", model: selectedModel },
+        responsesModel: { provider: "openai-codex", model: selectedModel },
         usagePricingResolution,
       });
       await expect(
@@ -777,20 +702,11 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["gpt-6-luna"] as const)(
     "promotes queued fast %s to a priority Pi Sandbox run",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       // The anchor must stay on the native Runner while the queued target
       // proves Pi promotion; Sonnet 5 would itself run through Pi.
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold the thread before queued fast Luna",
@@ -798,7 +714,7 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
-      await configureBuiltInPiModel(actor, selectedModel);
+      await configureSubscriptionPiModel(actor, {}, selectedModel);
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
@@ -863,7 +779,7 @@ describe("CHAT-02: model-first provider policies", () => {
         claim: promotedClaim,
         prompt,
         run: { runId: promotedRunId, threadId: anchor.threadId },
-        responsesModel: { provider: "openai", model: selectedModel },
+        responsesModel: { provider: "openai-codex", model: selectedModel },
         usagePricingResolution,
       });
       const finalEvents = await waitForThreadMessages(

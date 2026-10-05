@@ -306,15 +306,7 @@ async function nativeRunnerChatActor(
     userId: auth.userId,
     orgId: auth.orgId,
   });
-  await f.api.updateOrgModelPolicies(actor.actor, [
-    {
-      model: NATIVE_RUNNER_MODEL,
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: actor.providerId,
-    },
-  ]);
+  await f.api.updateUserModelPreference(actor.actor, NATIVE_RUNNER_MODEL);
   return actor;
 }
 

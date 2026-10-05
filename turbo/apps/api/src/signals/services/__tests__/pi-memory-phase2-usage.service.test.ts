@@ -56,10 +56,8 @@ import {
   executePhase2Runtime,
 } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
 import {
-  createPhase2Provider,
+  createPhase2CodexProvider,
   disconnectPhase2Codex,
-  phase2ApiKeyRoutes,
-  type Phase2ProviderType,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
 
 // Private maintenance has no public launch/control/ledger API. Seed only its
@@ -68,8 +66,8 @@ import {
 const context = testContext({ connectorCatalog: true });
 
 async function dispatchMaintenance(
-  type?: Phase2ProviderType,
-  credentialScope: "org" | "member" = "org",
+  type?: "codex-oauth-token",
+
   represented?: "valid" | "invalid",
 ) {
   const scope = await createPhase2TestScope("usage", { emptyBase: true });
@@ -100,7 +98,7 @@ async function dispatchMaintenance(
   // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
   configureNativeCliArtifact();
   const provider = type
-    ? await createPhase2Provider(context, scope, type, credentialScope)
+    ? await createPhase2CodexProvider(context, scope)
     : undefined;
   const candidates = ["first", "second"].map((name) => {
     return {
@@ -192,12 +190,12 @@ async function dispatchMaintenance(
 }
 
 async function launchMaintenance(
-  type?: Phase2ProviderType,
-  credentialScope: "org" | "member" = "org",
+  type?: "codex-oauth-token",
+
   represented?: "valid" | "invalid",
 ) {
   const { scope, run, runId, binding, provider, baseFiles } =
-    await dispatchMaintenance(type, credentialScope, represented);
+    await dispatchMaintenance(type, represented);
   // One proxy flush aggregates two provider responses.
   const events = [
     { category: "tokens.input", quantity: 6 },
@@ -303,7 +301,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
     { status: "failed", type: undefined },
     { status: "cancelled", type: undefined },
     { status: "timeout", type: undefined },
-    { status: "completed", type: "openai-api-key" },
+    { status: "completed", type: "codex-oauth-token" },
   ] as const)(
     "keeps the $type proxy owner through $status and delayed cleanup",
     async ({ status, type }) => {
@@ -440,28 +438,16 @@ describe("Pi memory Phase 2 proxy billing", () => {
   );
 
   it.each([
-    ...phase2ApiKeyRoutes.flatMap((route) => {
-      return [
-        { ...route, scope: "org" as const },
-        { ...route, scope: "member" as const },
-      ];
-    }),
     {
-      type: "codex-oauth-token" as const,
-      scope: "member" as const,
+      type: "codex-oauth-token",
+      scope: "member",
       url: "https://chatgpt.com/backend-api/codex/responses",
       model: "gpt-5.6-luna",
     },
-    {
-      type: "custom-openai-responses" as const,
-      scope: "org" as const,
-      url: "https://phase2-gateway.example/v1/responses",
-      model: "mapped-luna",
-    },
-  ])(
+  ] as const)(
     "executes exact $type/$scope HTTP and drops replayed model usage",
     async ({ type, scope, url, model }) => {
-      const run = await launchMaintenance(type, scope);
+      const run = await launchMaintenance(type);
       expect(run.run).toMatchObject({
         modelProvider: type,
         modelProviderId: run.provider?.binding.modelProviderId,
@@ -487,11 +473,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
         });
         expect(request.body).not.toHaveProperty("text.format");
         expect(request.body).not.toHaveProperty("service_tier");
-        if (type === "custom-openai-responses") {
-          expect(request.headers.get("x-source-key")).toBe(
-            `Key ${run.provider?.key}`,
-          );
-        } else {
+        {
           expect(request.headers.get("authorization")).toBe(
             `Bearer ${run.provider?.key}`,
           );
@@ -508,28 +490,22 @@ describe("Pi memory Phase 2 proxy billing", () => {
     },
   );
 
-  it.each([
-    "openai-api-key",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-    "codex-oauth-token",
-    "custom-openai-responses",
-  ] as const)("drops %s usage after a real provider failure", async (type) => {
-    const run = await launchMaintenance(
-      type,
-      type === "codex-oauth-token" ? "member" : "org",
-    );
-    const actual = await executePhase2Runtime(context, run.runId, {
-      failure: true,
-    });
-    expect(actual.requests).toHaveLength(1);
-    await run.proxy();
-    await expect(run.ledger()).resolves.toStrictEqual([]);
-  });
+  it.each(["codex-oauth-token"] as const)(
+    "drops %s usage after a real provider failure",
+    async (type) => {
+      const run = await launchMaintenance(type);
+      const actual = await executePhase2Runtime(context, run.runId, {
+        failure: true,
+      });
+      expect(actual.requests).toHaveLength(1);
+      await run.proxy();
+      await expect(run.ledger()).resolves.toStrictEqual([]);
+    },
+  );
 });
 
 test("retains the committed Codex account and uses the current account for a new retry", async () => {
-  const run = await dispatchMaintenance("codex-oauth-token", "member");
+  const run = await dispatchMaintenance("codex-oauth-token");
   if (!run.provider) {
     throw new Error("Missing subscription fixture");
   }
@@ -539,12 +515,7 @@ test("retains the committed Codex account and uses the current account for a new
     run.scope,
     run.provider.binding.modelProviderId,
   );
-  const replacement = await createPhase2Provider(
-    context,
-    run.scope,
-    "codex-oauth-token",
-    "member",
-  );
+  const replacement = await createPhase2CodexProvider(context, run.scope);
   expect(replacement.binding.modelProviderId).not.toBe(
     run.provider.binding.modelProviderId,
   );
@@ -606,7 +577,7 @@ test("retains the committed Codex account and uses the current account for a new
 test.each(["valid", "invalid"] as const)(
   "preserves BYOK E3 represented %s artifacts",
   async (represented) => {
-    const run = await launchMaintenance("openai-api-key", "org", represented);
+    const run = await launchMaintenance("codex-oauth-token", represented);
     const actual = await executePhase2Runtime(context, run.runId, {
       baseFiles: run.baseFiles,
       noDiff: represented === "valid",
@@ -619,7 +590,7 @@ test.each(["valid", "invalid"] as const)(
 );
 
 test("preserves non-model usage for a genuinely launched BYOK run", async () => {
-  const run = await launchMaintenance("openai-api-key");
+  const run = await launchMaintenance("codex-oauth-token");
   const event = {
     idempotencyKey: randomUUID(),
     kind: "connector" as const,
@@ -683,7 +654,7 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
 test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
   "does not retain malformed BYOK private identity: %s",
   async (fault) => {
-    const run = await launchMaintenance("openai-api-key");
+    const run = await launchMaintenance("codex-oauth-token");
     const completedAt = nowDate();
     await db()
       .update(agentRuns)

@@ -1,5 +1,5 @@
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -15,8 +15,19 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
+
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
 
 const TEST_APP_ROUTES = Object.freeze([
   ...webhooksWorkflowAutomationsRoutes,
@@ -40,8 +51,8 @@ function automationsClient() {
 }
 
 function modelProvidersByTypeClient() {
-  return setupApp({ context, routes: modelProvidersRoutes })(
-    modelProvidersByTypeContract,
+  return setupApp({ context, routes: personalModelProviderTestRoutes })(
+    personalModelProvidersByTypeContract,
   );
 }
 
@@ -305,7 +316,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );

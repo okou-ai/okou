@@ -267,15 +267,7 @@ async function configureFastCodexPreference(
     },
     [200, 201],
   );
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "gpt-6-astra",
-      preferred: true,
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
-      modelProviderId: null,
-    },
-  ]);
+  await runs.updateUserModelPreference(actor, "gpt-6-astra");
   await bdd.readOnboardingStatus(actor);
   await integrations.updateUserModelPreference(
     actor,
@@ -4597,15 +4589,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       },
       [200, 201],
     );
-    await runs.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await runs.updateUserModelPreference(actor, "gpt-6-astra");
     await bdd.readOnboardingStatus(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {

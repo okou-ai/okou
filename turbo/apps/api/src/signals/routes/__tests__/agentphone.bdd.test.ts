@@ -82,16 +82,8 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   const sends = ap.captureAgentPhoneSends();
 
   await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runs.ensurePersonalSubscriptionModel(actor);
+  await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const phone = uniquePhoneHandle();
   await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
   return { actor, ap, phone, runnerGroup, sends, storage };

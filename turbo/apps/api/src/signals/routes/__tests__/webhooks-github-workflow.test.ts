@@ -92,16 +92,8 @@ async function setupFixture(): Promise<{
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
+  await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
   const agent = await wf.createAgent(actor, {
     displayName: "GitHub Webhook Agent",
   });

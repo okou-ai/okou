@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -22,7 +22,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
@@ -53,7 +53,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...webhooksWorkflowAutomationsRoutes,
   ...chatEventsRoutes,
   ...chatThreadRoutes,
-  ...modelProvidersRoutes,
+  ...meModelProvidersDeleteRoutes,
   ...workflowAutomationsRoutes,
 ]);
 
@@ -101,8 +101,8 @@ function chatEventsClient() {
 }
 
 function modelProvidersByTypeClient() {
-  return setupApp({ context, routes: modelProvidersRoutes })(
-    modelProvidersByTypeContract,
+  return setupApp({ context, routes: meModelProvidersDeleteRoutes })(
+    personalModelProvidersByTypeContract,
   );
 }
 
@@ -495,15 +495,7 @@ describe("workflow queue", () => {
       await insertBuiltInModelMirrorFixture("claude-fable-5-1");
     onTestFinished(restore);
     await seedBuiltInModelCandidateKeys(context, model);
-    await chatCallbacks.updateOrgModelPolicies(scenario.actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(scenario.actor, model);
     // The automation thread pins the preferred Built-in model.
     const automation = await createWebhookAutomation(scenario);
     // Provider failures cool down every Built-in candidate of the model.

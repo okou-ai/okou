@@ -747,7 +747,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("queues, retries, and recalls messages behind an active run", async () => {
-    const { actor, agentId, providerId } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
@@ -770,15 +770,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       throw new Error("Expected the queued send to be accepted");
     }
     expect(queued.body.runId).toBeNull();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-opus-5",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-opus-5");
     const queuedRetry = await chat.requestSendEvent(
       actor,
       {

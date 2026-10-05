@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
 
@@ -22,12 +22,23 @@ import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { userModelPreferenceRoutes } from "../user-model-preference";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -317,11 +328,11 @@ describe("POST /api/welcome-chat-threads", () => {
     const { actor } = await fixture();
     await runs.ensurePersonalSubscriptionModel(actor);
     await accept(
-      setupApp({ context, routes: modelProvidersRoutes })(
-        modelProvidersByTypeContract,
+      setupApp({ context, routes: personalModelProviderTestRoutes })(
+        personalModelProvidersByTypeContract,
       ).delete({
         headers: headers(actor),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );

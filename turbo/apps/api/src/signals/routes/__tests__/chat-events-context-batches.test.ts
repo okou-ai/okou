@@ -53,8 +53,7 @@ describe("shared context statement projections through normal sends", () => {
   it.each(["empty", "providers", "agent", "all"] as const)(
     "preserves %s rowsets in first and continuation sends",
     async (mode) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledNativeChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       const hasProviders = mode === "providers" || mode === "all";
       const hasAgentRows = mode === "agent" || mode === "all";
       if (hasProviders) {
@@ -67,15 +66,7 @@ describe("shared context statement projections through normal sends", () => {
           },
           [200, 201],
         );
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: MODEL,
-            preferred: true,
-            defaultProviderType: "anthropic-api-key",
-            credentialScope: "org",
-            modelProviderId: providerId,
-          },
-        ]);
+        await api.updateUserModelPreference(actor, MODEL);
       } else {
         await seedBuiltInModelKey(MODEL);
         await api.updateOrgModelPolicies(actor, [

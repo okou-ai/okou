@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -10,7 +10,11 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { codexDeviceAuthRoutes } from "../codex-device-auth";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import {
   createCodexExpiryFixture,
@@ -21,6 +25,13 @@ import {
   headers,
   upstream,
 } from "./helpers/codex-reset-credit-expiry";
+
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
 
 const context = testContext();
 const fixture = createCodexExpiryFixture(context);
@@ -224,8 +235,8 @@ describe("Codex expiry invalidation and identity isolation", () => {
     };
     user.session();
     const result = await accept(
-      setupApp({ context, routes: modelProvidersRoutes })(
-        modelProvidersMainContract,
+      setupApp({ context, routes: personalModelProviderTestRoutes })(
+        personalModelProvidersMainContract,
       ).upsert({
         headers,
         body: {

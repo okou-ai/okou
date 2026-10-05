@@ -722,19 +722,6 @@ describe("okou workflow automation scheduler", () => {
     async (queuedLaunch) => {
       const scenario = await setup();
       const misc = createMiscRoutesApi(context);
-      const configured = await runsApi.createOrgModelProvider(scenario.actor, {
-        type: "openai-api-key",
-        secret: "unused-scheduler-api-key",
-      });
-      await runsApi.updateOrgModelPolicies(scenario.actor, [
-        {
-          model: "gpt-6-astra",
-          preferred: true,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: configured.providerId,
-        },
-      ]);
       const connectOwner = async (actor: ApiTestUser, identity: string) => {
         const token = makeCodexJwt({
           exp: Math.floor(now() / 1000) + 7200,

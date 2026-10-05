@@ -71,13 +71,11 @@ import {
   type Phase2SourceBinding,
 } from "./pi-memory-phase2-job.test-fixture";
 import {
-  createPhase2Provider,
-  phase2ApiKeyRoutes,
+  createPhase2CodexProvider,
   disconnectPhase2Codex,
   activateAnotherPhase2Codex,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
+
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
 import {
   createRunsApi,
@@ -1320,10 +1318,9 @@ describe("Phase 2 current credential admission", () => {
     async (kind) => {
       expect.hasAssertions();
       const job = await createPhase2WorkerFixture(`mixed-${kind}`);
-      const provider = await createPhase2Provider(
+      const provider = await createPhase2CodexProvider(
         testContext(),
         job.scope,
-        "openai-api-key",
       );
       const second =
         kind === "builtin-byok"
@@ -1331,7 +1328,7 @@ describe("Phase 2 current credential admission", () => {
           : {
               ...provider.binding,
               ...(kind === "scope"
-                ? { modelProviderCredentialScope: "member" }
+                ? { modelProviderCredentialScope: "org" }
                 : { modelProviderId: randomUUID() }),
             };
       const firstSession = randomUUID();
@@ -1362,7 +1359,7 @@ describe("Phase 2 current credential admission", () => {
           .where(eq(agentRuns.id, result.runId)),
       ).resolves.toStrictEqual([
         {
-          type: "openai-api-key",
+          type: "codex-oauth-token",
           id: provider.binding.modelProviderId,
           model: "gpt-5.6-luna",
         },
@@ -1423,12 +1420,7 @@ describe("Phase 2 current credential admission", () => {
 
   it("uses built-in after the only BYOK account is disconnected", async () => {
     const job = await createPhase2WorkerFixture("disconnected-current-account");
-    const provider = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "codex-oauth-token",
-      "member",
-    );
+    const provider = await createPhase2CodexProvider(testContext(), job.scope);
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID() }],
@@ -1482,40 +1474,19 @@ describe("Phase 2 current credential admission", () => {
     ]);
   });
 
-  it("uses built-in when a custom surface cannot serve Luna", async () => {
-    const job = await createPhase2WorkerFixture("luna-only");
-    const provider = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "custom-openai-responses",
-      "org",
-      { mapsSelectedModel: false },
-    );
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID() }],
-      provider.binding,
-    );
-    await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
-  });
-
-  it.each(["storage-head", "switch", "rotation", "replacement", "surface"])(
+  it.each(["storage-head", "switch", "active-account", "disconnect"] as const)(
     "fences %s changes during asynchronous preparation",
     async (fault) => {
       const job = await createPhase2WorkerFixture(`race-${fault}`, false);
-      const provider = await createPhase2Provider(
+      const provider = await createPhase2CodexProvider(
         testContext(),
         job.scope,
-        fault === "surface" ? "custom-openai-responses" : "openai-api-key",
       );
       const sourceIds = [randomUUID(), randomUUID()].sort();
       await insertPhase2Candidates(
         job.scope,
         sourceIds.map((sourceRunId) => {
-          return {
-            piSessionId: randomUUID(),
-            sourceRunId,
-          };
+          return { piSessionId: randomUUID(), sourceRunId };
         }),
         provider.binding,
       );
@@ -1535,26 +1506,13 @@ describe("Phase 2 current credential admission", () => {
             await updateFeatureSwitchesForUser(testContext(), job.scope, {
               [FeatureSwitchKey.PiMemory]: false,
             });
-          } else if (fault === "surface") {
-            await db()
-              .update(modelProviderSurfaces)
-              .set({ modelMappings: { "gpt-5.6-luna": "replacement-alias" } })
-              .where(
-                eq(modelProviderSurfaces.id, provider.binding.modelProviderId),
-              );
+          } else if (fault === "active-account") {
+            await activateAnotherPhase2Codex(testContext(), job.scope);
           } else {
-            const actor = createBddApi(testContext()).user({
-              ...job.scope,
-              orgRole: "org:admin",
-            });
-            const api = createMiscRoutesApi(testContext());
-            if (fault === "replacement") {
-              await api.deleteOrgModelProvider(actor, "openai-api-key", [204]);
-            }
-            await api.upsertOrgModelProvider(
-              actor,
-              { type: "openai-api-key", secret: "rotated-source-key" },
-              [200, 201],
+            await disconnectPhase2Codex(
+              testContext(),
+              job.scope,
+              provider.binding.modelProviderId,
             );
           }
         }
@@ -1571,34 +1529,6 @@ describe("Phase 2 current credential admission", () => {
       expect(changed).toBeTruthy();
     },
   );
-
-  it("uses a surviving rotated key while ignoring a changed default", async () => {
-    const job = await createPhase2WorkerFixture("surviving-key");
-    const provider = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "openai-api-key",
-    );
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID() }],
-      provider.binding,
-    );
-    const actor = createBddApi(testContext()).user({
-      ...job.scope,
-      orgRole: "org:admin",
-    });
-    await createMiscRoutesApi(testContext()).upsertOrgModelProvider(
-      actor,
-      { type: "openai-api-key", secret: "current-same-owner-key" },
-      [200],
-    );
-    await db()
-      .update(modelProviders)
-      .set({ isDefault: false })
-      .where(eq(modelProviders.id, provider.binding.modelProviderId));
-    await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
-  });
 });
 
 test("does not admit a subscription disconnected during preparation", async () => {
@@ -1606,12 +1536,7 @@ test("does not admit a subscription disconnected during preparation", async () =
     "disconnect-before-admission",
     false,
   );
-  const provider = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "codex-oauth-token",
-    "member",
-  );
+  const provider = await createPhase2CodexProvider(testContext(), job.scope);
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID() }],
@@ -1635,11 +1560,7 @@ test("does not admit a subscription disconnected during preparation", async () =
 
 test("does not persist or dispatch when preparation is cancelled", async () => {
   const job = await createPhase2WorkerFixture("cancel-before-admission", false);
-  const provider = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "openai-api-key",
-  );
+  const provider = await createPhase2CodexProvider(testContext(), job.scope);
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID() }],
@@ -1675,13 +1596,9 @@ test.each([false, true])(
   async (revoke) => {
     const job = await createPhase2WorkerFixture("refresh-exact-account");
     const account = `account-${randomUUID()}`;
-    const provider = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "codex-oauth-token",
-      "member",
-      { subscription: { accountId: account, expired: true } },
-    );
+    const provider = await createPhase2CodexProvider(testContext(), job.scope, {
+      subscription: { accountId: account, expired: true },
+    });
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
@@ -1773,12 +1690,7 @@ test.each([false, true])(
 
 test("selects the current active account after historical account replacement", async () => {
   const job = await createPhase2WorkerFixture("active-account-replacement");
-  const old = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "codex-oauth-token",
-    "member",
-  );
+  const old = await createPhase2CodexProvider(testContext(), job.scope);
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID() }],
@@ -1809,12 +1721,7 @@ describe("Phase 2 new-run quota boundary", () => {
     "$name",
     async ({ payload, raw, status, reason }) => {
       const job = await createPhase2WorkerFixture("quota");
-      const native = await createPhase2Provider(
-        testContext(),
-        job.scope,
-        "codex-oauth-token",
-        "member",
-      );
+      const native = await createPhase2CodexProvider(testContext(), job.scope);
       await insertPhase2Candidates(
         job.scope,
         [{ piSessionId: randomUUID() }],
@@ -2010,12 +1917,7 @@ test.each([
 
 test("refreshes quota for a new hourly attempt and never re-admits committed recovery", async () => {
   const job = await createPhase2WorkerFixture("quota-retry");
-  const native = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "codex-oauth-token",
-    "member",
-  );
+  const native = await createPhase2CodexProvider(testContext(), job.scope);
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
@@ -2061,12 +1963,7 @@ test.each(["disconnect", "feature", "storage", "token", "cancel"])(
   "preserves the Phase 2 final %s fence after quota I/O",
   async (fault) => {
     const job = await createPhase2WorkerFixture("post-quota-race");
-    const native = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "codex-oauth-token",
-      "member",
-    );
+    const native = await createPhase2CodexProvider(testContext(), job.scope);
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
@@ -2161,12 +2058,7 @@ test.each(["malformed-json", "network", "timeout"])(
   "phase 2 unknown %s preserves canonical admission",
   async (fault) => {
     const job = await createPhase2WorkerFixture("unknown-quota");
-    const native = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "codex-oauth-token",
-      "member",
-    );
+    const native = await createPhase2CodexProvider(testContext(), job.scope);
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID() }],
@@ -2205,12 +2097,7 @@ test.each(["malformed-json", "network", "timeout"])(
 
 test("makes exactly one quota GET and no reset-credit request for a real native model attempt", async () => {
   const job = await createPhase2WorkerFixture("native-quota-purity");
-  const native = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "codex-oauth-token",
-    "member",
-  );
+  const native = await createPhase2CodexProvider(testContext(), job.scope);
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
@@ -2251,17 +2138,16 @@ test("makes exactly one quota GET and no reset-credit request for a real native 
 });
 
 test.each([
-  ...phase2ApiKeyRoutes,
   {
-    type: "custom-openai-responses" as const,
-    url: "https://phase2-gateway.example/v1/responses",
-    model: "mapped-luna",
+    type: "codex-oauth-token",
+    url: "https://chatgpt.com/backend-api/codex/responses",
+    model: "gpt-5.6-luna",
   },
-])(
+] as const)(
   "admits $type with unknown vendor quota independently of an empty wallet",
-  async ({ type, url, model }) => {
+  async ({ url, model }) => {
     const job = await createPhase2WorkerFixture("unknown-api-key-quota");
-    const provider = await createPhase2Provider(testContext(), job.scope, type);
+    const provider = await createPhase2CodexProvider(testContext(), job.scope);
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
@@ -2291,11 +2177,7 @@ test.each([
 
 test("writes the memory archive URL cache only after committing the run", async () => {
   const job = await createPhase2WorkerFixture("cache-after-commit", false);
-  const provider = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "openai-api-key",
-  );
+  const provider = await createPhase2CodexProvider(testContext(), job.scope);
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID() }],
@@ -2372,12 +2254,7 @@ test("reports a run committed before an abort on the next pass, never as stale",
 
 test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
   const job = await createPhase2WorkerFixture("quota-max3");
-  const native = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "codex-oauth-token",
-    "member",
-  );
+  const native = await createPhase2CodexProvider(testContext(), job.scope);
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],

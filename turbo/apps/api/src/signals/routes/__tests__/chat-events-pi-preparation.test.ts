@@ -25,19 +25,10 @@ const {
 
 describe("CHAT-02: model-first provider policies", () => {
   it("launches an at-capacity Pi send on a fresh session once a slot frees", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     await api.heartbeatRunner(runnerGroup);
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "hold admission capacity",

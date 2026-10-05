@@ -69,24 +69,19 @@ function authHeaders(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-// Fable is excluded from Pi, so the brief's legacy Run keeps the native
-// Runner lifecycle; Sonnet 5 exercises the Pi launch path.
-type BriefDefaultModel = "claude-fable-5-1" | "claude-sonnet-5";
+// Personal Fable retains the native lifecycle; fixed Auto exercises Pi.
+type BriefDefaultModel = "claude-fable-5-1" | "okou-1.0";
 
 async function selectBuiltInDefaultModel(
   actor: ApiTestUser,
   model: BriefDefaultModel,
 ): Promise<void> {
-  await seedBuiltInModelKey(context, model);
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model,
-      preferred: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
+  if (model === "okou-1.0") {
+    await seedBuiltInModelKey(context, model);
+    await runs.updateUserModelPreference(actor, model);
+  } else {
+    await runs.ensurePersonalSubscriptionModel(actor, { model });
+  }
 }
 
 function catalog(
@@ -763,10 +758,7 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
       "CLI_PKG_URL",
       `https://static.okou.io/okou-cli/${commit}/package.tgz`,
     );
-    const brief = await installJournaledBrief(
-      "Asia/Shanghai",
-      "claude-sonnet-5",
-    );
+    const brief = await installJournaledBrief("Asia/Shanghai", "okou-1.0");
     if (!brief.actor.orgId) {
       throw new Error("Expected an organization-scoped brief owner");
     }

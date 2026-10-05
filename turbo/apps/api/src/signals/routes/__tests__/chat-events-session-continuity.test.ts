@@ -46,15 +46,7 @@ async function entitledNativeChatActor(): Promise<
   Awaited<ReturnType<typeof entitledChatActor>>
 > {
   const fixture = await entitledChatActor();
-  await api.updateOrgModelPolicies(fixture.actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: fixture.providerId,
-    },
-  ]);
+  await api.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
   return fixture;
 }
 

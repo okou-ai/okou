@@ -341,16 +341,8 @@ function eventContextFromAgentPrompt(prompt: string): Record<string, unknown> {
 async function useNativeHarnessForFormsFixture(
   actor: Awaited<ReturnType<typeof workflows.setupWorkflowOrg>>["actor"],
 ): Promise<void> {
-  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runs.ensurePersonalSubscriptionModel(actor);
+  await runs.updateUserModelPreference(actor, "claude-fable-5-1");
 }
 
 async function setupGoogleFormsAutomation() {

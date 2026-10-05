@@ -60,8 +60,10 @@ describe("thread-bound Pi Automation execution", () => {
   )(
     "rotates the $source $selectedModel Automation session into Pi and learns only from its user turns",
     async ({ source, selectedModel }) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledChatActor({}, source === "event" ? "team" : "pro");
+      const { actor, agentId, runnerGroup } = await entitledChatActor(
+        {},
+        source === "event" ? "team" : "pro",
+      );
       const orgId = requireOrgId(actor);
       const usagePricingResolution =
         await createPiUsagePricingResolution(selectedModel);
@@ -82,15 +84,7 @@ describe("thread-bound Pi Automation execution", () => {
           },
         ]);
       } else {
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: "claude-fable-5-1",
-            preferred: true,
-            defaultProviderType: "anthropic-api-key",
-            credentialScope: "org",
-            modelProviderId: providerId,
-          },
-        ]);
+        await api.updateUserModelPreference(actor, "claude-fable-5-1");
       }
 
       const created = await accept(
@@ -311,18 +305,10 @@ describe("thread-bound Pi Automation execution", () => {
 describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
-    const { actor, agentId, runnerGroup, providerId } = scenario;
+    const { actor, agentId, runnerGroup } = scenario;
     // Fable keeps the automation on the Claude Code Runner claim protocol;
     // the Sonnet fixture default would launch a Pi run instead.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
       actor,
       { agentId, name: "native-effort" },

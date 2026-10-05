@@ -788,19 +788,10 @@ describe("shared native Pi route activation", () => {
   );
 
   it("resets native Claude API Pi to personal Claude Code while preserving the session and logical model", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     configureNativeCliArtifact();
     const model = "claude-sonnet-5";
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, model);
     mockPiResourceArchiveDownloads();
     const objects = mockPiCheckpointObjectStore();
     const first = await sendChatRun(actor, {
@@ -868,19 +859,11 @@ describe("shared native Pi route activation", () => {
       );
       configureNativeCliArtifact();
       const model = "claude-sonnet-5";
-      const { providerId } = await upsertOrgModelProvider(actor, {
+      await upsertOrgModelProvider(actor, {
         type: "anthropic-api-key",
         secret: "selected-automation-key",
       });
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model,
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await api.updateUserModelPreference(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiMemory]: true,
       });
@@ -982,15 +965,7 @@ describe("shared native Pi route activation", () => {
       },
       [200, 201],
     );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, model);
 
     const run = await sendChatRun(actor, {
       agentId,

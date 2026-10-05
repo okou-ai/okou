@@ -27,17 +27,8 @@ describe("selected eager Axiom operation payload", () => {
     "reports %i selected decrypts with both completed intervals",
     async (expectedCount) => {
       const fixture = createChatEventsFixture(context);
-      const { actor, agentId, runnerGroup, providerId } =
-        await fixture.entitledChatActor();
-      await fixture.api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+      await fixture.api.updateUserModelPreference(actor, "claude-fable-5-1");
       await fixture.connectors.connectManualGrant(
         actor,
         "figma",

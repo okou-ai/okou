@@ -44,24 +44,16 @@ export async function createPublicModelFailureFixture(
   }
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-sonnet-5",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-    ...selectedModels.map((model) => {
-      return {
-        model,
-        defaultProviderType: "built-in" as const,
-        credentialScope: "org" as const,
-        modelProviderId: null,
-      };
-    }),
-  ]);
+  if (
+    selectedModels.some((model) => {
+      return model !== "okou-1.0";
+    })
+  ) {
+    throw new Error("Platform failure fixtures must use the fixed Auto model");
+  }
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Public model failure observation",
   });
