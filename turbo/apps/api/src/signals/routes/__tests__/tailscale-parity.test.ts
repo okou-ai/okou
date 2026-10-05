@@ -91,7 +91,10 @@ beforeEach(() => {
   useSecretKmsProbe();
 });
 afterEach(ordinary.cleanup);
-async function config(scope: "personal" | "organization" = "personal") {
+async function config(
+  scope: "personal" | "organization" = "personal",
+  tags = ["tag:okou"],
+) {
   return (
     await accept(
       configs().create({
@@ -101,7 +104,7 @@ async function config(scope: "personal" | "organization" = "personal") {
           name: "Network",
           scope,
           credentials: oauth,
-          tags: ["tag:okou"],
+          tags,
         },
       }),
       [201],
@@ -809,6 +812,291 @@ test("rejects a late member binding after reviewed shared conversion without orp
     }),
     binding,
   ]);
+});
+
+async function protectedConfig(carrier: "tailscale" | "cloudflare_access") {
+  if (carrier === "tailscale") {
+    return await config();
+  }
+  return (
+    await accept(
+      setupApp({ context, routes: cloudflareAccessRoutes })(
+        cloudflareAccessContract,
+      ).create({
+        headers,
+        query: { view: "scoped" },
+        body: { id: randomUUID(), name: "Gateway", credentials: oauth },
+      }),
+      [201],
+    )
+  ).body;
+}
+
+test.each(["tailscale", "cloudflare_access"] as const)(
+  "rejects invisible %s host-update configuration before login encryption even when KMS fails",
+  async (carrier) => {
+    const o = owner();
+    const current = (
+      await accept(
+        hosts().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Unchanged host",
+            host: "peer.example.com",
+            port: 443,
+            credential: { create: login },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const credentials = setupApp({ context, routes: sshConnectionsRoutes })(
+      sshCredentialsContract,
+    );
+    const before = (await accept(credentials.list({ headers }), [200])).body;
+    owner(o.orgId);
+    const foreignPersonal = await protectedConfig(carrier);
+    authenticate({
+      userId: o.userId,
+      orgId: `org_tail_parity_${randomUUID()}`,
+    });
+    const foreignOrganization = await protectedConfig(carrier);
+    authenticate(o);
+    const visible = await protectedConfig(carrier);
+    const probe = useSecretKmsProbe(() => {
+      return Promise.reject(new Error("Synthetic encryption failure"));
+    });
+    for (const configId of [
+      randomUUID(),
+      foreignPersonal.id,
+      foreignOrganization.id,
+    ]) {
+      const rejected = await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: current.id },
+          body: {
+            expectedGeneration: current.generation,
+            transport:
+              carrier === "tailscale"
+                ? { type: "tailscale", configId }
+                : { type: "cloudflare_access", configId },
+            credential: { create: { ...login, name: "Rejected login" } },
+          },
+        }),
+        [404],
+      );
+      expect(rejected.body).toMatchObject({
+        error: {
+          code:
+            carrier === "tailscale"
+              ? "TAILSCALE_NOT_FOUND"
+              : "CLOUDFLARE_ACCESS_NOT_FOUND",
+        },
+      });
+      expect(probe.generateDataKeyCalls).toBe(0);
+      await expect(latest(current.id)).resolves.toStrictEqual(current);
+      expect(
+        (await accept(credentials.list({ headers }), [200])).body,
+      ).toStrictEqual(before);
+    }
+    await accept(
+      hosts().update({
+        headers,
+        params: { connectionId: current.id },
+        body: {
+          expectedGeneration: current.generation,
+          transport:
+            carrier === "tailscale"
+              ? { type: "tailscale", configId: visible.id }
+              : { type: "cloudflare_access", configId: visible.id },
+          credential: { create: { ...login, name: "Failed login" } },
+        },
+      }),
+      [500],
+    );
+    expect(probe.generateDataKeyCalls).toBe(1);
+    await expect(latest(current.id)).resolves.toStrictEqual(current);
+    expect(
+      (await accept(credentials.list({ headers }), [200])).body,
+    ).toStrictEqual(before);
+  },
+);
+
+test("rechecks Tailscale binding visibility after the unlocked preflight without leaving an inline login", async () => {
+  const admin = owner(undefined, "org:admin");
+  const shared = await config("organization");
+  const member = owner(admin.orgId);
+  const current = (
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Direct host",
+          host: "peer.example.com",
+          credential: { create: login },
+        },
+      }),
+      [201],
+    )
+  ).body;
+  const credentials = setupApp({ context, routes: sshConnectionsRoutes })(
+    sshCredentialsContract,
+  );
+  const before = (await accept(credentials.list({ headers }), [200])).body;
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  useSecretKmsProbe(async (request) => {
+    entered.resolve();
+    await release.promise;
+    return {
+      keyId: request.keyId,
+      plaintext: Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
+      encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
+    };
+  });
+  const binding = accept(
+    hosts().update({
+      headers,
+      params: { connectionId: current.id },
+      body: {
+        expectedGeneration: current.generation,
+        transport: { type: "tailscale", configId: shared.id },
+        credential: { create: { ...login, name: "Late login" } },
+      },
+    }),
+    [404],
+  );
+  await joinAll([
+    (async () => {
+      await entered.promise;
+      authenticate(admin, "org:admin");
+      const impact = await preview(shared.id, "convert");
+      await accept(
+        configs().convertToPersonal({
+          headers,
+          params: { configId: shared.id },
+          body: {
+            expectedRevision: impact.expectedRevision,
+            impactSnapshot: impact.impactSnapshot,
+          },
+        }),
+        [200],
+      );
+      release.resolve();
+      expect((await binding).body).toMatchObject({
+        error: { code: "TAILSCALE_NOT_FOUND" },
+      });
+      authenticate(member);
+      await expect(latest(current.id)).resolves.toStrictEqual(current);
+      expect(
+        (await accept(credentials.list({ headers }), [200])).body,
+      ).toStrictEqual(before);
+    })().finally(() => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+    }),
+    binding,
+  ]);
+});
+
+test("treats tag permutations as metadata-only while real tag additions and removals invalidate all referencing hosts", async () => {
+  const admin = owner(undefined, "org:admin");
+  const shared = await config("organization", ["tag:prod", "tag:ci"]);
+  const first = await pin(admin, await host(shared.id));
+  const member = owner(admin.orgId);
+  const second = await pin(member, await host(shared.id));
+  authenticate(admin, "org:admin");
+  let revision = shared.revision;
+  for (const tags of [
+    ["tag:ci", "tag:prod"],
+    ["tag:prod", "tag:ci"],
+  ]) {
+    context.mocks.ably.publish.mockClear();
+    const reordered = (
+      await accept(
+        configs().update({
+          headers,
+          params: { configId: shared.id },
+          body: { expectedRevision: revision, tags },
+        }),
+        [200],
+      )
+    ).body;
+    expect(reordered).toMatchObject({
+      tags,
+      revision: revision + 1,
+      generation: shared.generation,
+    });
+    revision = reordered.revision;
+    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+      ["tailscale:changed", { orgId: admin.orgId }],
+    ]);
+    await expect(latest(first.host.id)).resolves.toStrictEqual(first.host);
+    authenticate(member);
+    await expect(latest(second.host.id)).resolves.toStrictEqual(second.host);
+    authenticate(admin, "org:admin");
+  }
+  let generation = shared.generation;
+  for (const tags of [
+    ["tag:prod", "tag:ci", "tag:extra"],
+    ["tag:ci", "tag:extra"],
+  ]) {
+    context.mocks.ably.publish.mockClear();
+    const changed = (
+      await accept(
+        configs().update({
+          headers,
+          params: { configId: shared.id },
+          body: { expectedRevision: revision, tags },
+        }),
+        [200],
+      )
+    ).body;
+    expect(changed).toMatchObject({
+      tags,
+      revision: revision + 1,
+      generation: generation + 1,
+    });
+    revision = changed.revision;
+    generation = changed.generation;
+    const offset = generation - shared.generation;
+    await expect(latest(first.host.id)).resolves.toMatchObject({
+      generation: first.host.generation + offset,
+      credentialId: first.host.credentialId,
+      credentialName: first.host.credentialName,
+      username: first.host.username,
+      learnedHostKey: key,
+    });
+    authenticate(member);
+    await expect(latest(second.host.id)).resolves.toMatchObject({
+      generation: second.host.generation + offset,
+      credentialId: second.host.credentialId,
+      credentialName: second.host.credentialName,
+      username: second.host.username,
+      learnedHostKey: key,
+    });
+    authenticate(admin, "org:admin");
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([event]) => {
+        return event === "ssh-authority-invalidated";
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([
+        [
+          "ssh-authority-invalidated",
+          { runId: first.runtime.runId, connectionId: first.host.id },
+        ],
+        [
+          "ssh-authority-invalidated",
+          { runId: second.runtime.runId, connectionId: second.host.id },
+        ],
+      ]),
+    );
+  }
 });
 
 test("rotates shared credentials and all current member host generations atomically while name-only changes preserve effective authority", async () => {

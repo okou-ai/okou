@@ -509,7 +509,10 @@ export const updateTailscaleConfig$ = command(
       const effective =
         encrypted !== undefined ||
         (args.body.tags !== undefined &&
-          JSON.stringify(args.body.tags) !== JSON.stringify(config.tags));
+          (args.body.tags.length !== config.tags.length ||
+            args.body.tags.some((tag) => {
+              return !config.tags.includes(tag);
+            })));
       if (exhausted(config, hosts, effective)) {
         return tailscaleFailure("exhausted");
       }
