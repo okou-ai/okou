@@ -293,19 +293,28 @@ test.each([
         return candidate.hasAttribute("disabled");
       }),
     ).toStrictEqual(hasButton ? [true] : []);
-    if (!hasButton) {
-      click(button("original@example.test 5h remaining"));
-      const details = within(await screen.findByRole("dialog"));
-      expect(
-        details.queryByText("Remaining resets: 3"),
-      ).not.toBeInTheDocument();
-      expect(
-        details.queryByText(/Only clicking Reset submits the request/),
-      ).not.toBeInTheDocument();
-      expect(details.getByText(notice)).toBeInTheDocument();
-    }
   },
 );
+
+test("Claude Code recovery details never advertise manual reset credits or confirmation", async () => {
+  mockRead(
+    subscription({
+      type: "claude-code-oauth-token",
+      framework: "claude-code",
+      subscriptionResetSupported: false,
+    }),
+  );
+  await setupChat(URL);
+  const notice = "Manual reset is not supported; usage recovers naturally.";
+  await screen.findByText(notice);
+  click(button("original@example.test 5h remaining"));
+  const details = within(await screen.findByRole("dialog"));
+  expect(details.queryByText("Remaining resets: 3")).not.toBeInTheDocument();
+  expect(
+    details.queryByText(/Only clicking Reset submits the request/),
+  ).not.toBeInTheDocument();
+  expect(details.getByText(notice)).toBeInTheDocument();
+});
 
 test("a delayed unavailable read keeps the mounted frame and content row through refresh", async () => {
   const gate = context.mocks.deferred<void>();
