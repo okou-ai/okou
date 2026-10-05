@@ -67,7 +67,7 @@ function ComposerModelPanelBody({
   placeholder,
 }: Pick<ComposerModelPanelProps, "value" | "onChange" | "placeholder">) {
   const { t } = useTranslation();
-  const policiesLoadable = useLastLoadable(availableRunModels$);
+  const modelsLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
   const modelsResponse = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
@@ -80,7 +80,7 @@ function ComposerModelPanelBody({
   if (modelsResponse === undefined || catalog === undefined) {
     return (
       <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
-        {policiesLoadable.state === "loading" ||
+        {modelsLoadable.state === "loading" ||
         catalogLoadable.state === "loading"
           ? t(($) => {
               return $.settings.models.picker.loading;

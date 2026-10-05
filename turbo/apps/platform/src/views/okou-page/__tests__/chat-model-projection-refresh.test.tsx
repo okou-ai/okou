@@ -51,9 +51,9 @@ function runModelFixture(
     },
     subscriptionOptions: {
       efforts: personal
-        ? ["low", "high"]
+        ? ["low", "high", "max"]
         : ["low", "medium", "high", "xhigh", "max"],
-      serviceTier: null,
+      serviceTier: "priority",
     },
   };
 }
@@ -255,9 +255,11 @@ test("A local active-account change refreshes the member projection", async () =
   click(within(menu).getByText("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   click(await findButton("Models"));
-  await expect(
-    screen.findByRole("heading", { name: "Use more models" }),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.getByRole("heading", { name: "Use more models" }),
+    ).toBeInTheDocument();
+  });
   const row = await screen.findByTestId(`oauth-account-${secondId}`);
   const activate = queryAllByRoleFast("button", row).find((button) => {
     return button.getAttribute("aria-label")?.startsWith("Use:");
@@ -279,4 +281,16 @@ test("A local active-account change refreshes the member projection", async () =
   });
   click(await findButton("GPT 5.6 Sol"));
   await personalOption();
+  await user.keyboard("{Escape}");
+  const effortTrigger = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label")?.startsWith("Effort,");
+  });
+  expect(effortTrigger).toBeDefined();
+  click(effortTrigger!);
+  const slider = await screen.findByRole("slider", { name: "Effort" });
+  slider.focus();
+  await user.keyboard("{Home}{ArrowRight}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "High");
+  });
 });

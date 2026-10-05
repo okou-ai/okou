@@ -934,12 +934,12 @@ function SubscribedExplicitModelFirstModelPickerContent({
   onMenuChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
-  const policiesLoadable = useLastLoadable(availableRunModels$);
+  const modelsLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
   const modelsResponse = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
   const loading =
-    policiesLoadable.state === "loading" || catalogLoadable.state === "loading";
+    modelsLoadable.state === "loading" || catalogLoadable.state === "loading";
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
   if (modelsResponse === undefined || catalog === undefined) {

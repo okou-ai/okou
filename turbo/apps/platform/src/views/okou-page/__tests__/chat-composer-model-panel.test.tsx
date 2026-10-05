@@ -201,8 +201,8 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   // The trigger already names the level, so the panel does not repeat it above
   // the bar.
   expect(within(panel).queryByText("Max")).toBeNull();
-  expect(within(panel).getByText("Fewer credits")).toBeVisible();
-  expect(within(panel).getByText("More credits")).toBeVisible();
+  expect(within(panel).getByText("Lower usage")).toBeVisible();
+  expect(within(panel).getByText("Higher usage")).toBeVisible();
   expect(
     within(panel).getByText("2.5× subscription usage"),
   ).toBeInTheDocument();

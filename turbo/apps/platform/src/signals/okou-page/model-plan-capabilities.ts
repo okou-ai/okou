@@ -15,14 +15,14 @@ import { orgPlanCapabilities$ } from "./org-plan-capabilities.ts";
 export interface ModelPlanCapabilities {
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  /** The catalog's plan runModel of a model; undefined outside the catalog. */
+  /** The catalog's plan eligibility of a model; undefined outside the catalog. */
   readonly restrictedPlanAccess: (
     model: string,
   ) => RestrictedPlanModelAccess | undefined;
   /**
    * Whether the catalog has an enabled personal subscription route
    * (`subscriptionType`) of the provider type for the model. A member-scope
-   * runModel on it runs only with each member's own valid subscription, which
+   * model on it runs only with each member's own valid subscription, which
    * every plan allows; the API verifies the account per run.
    */
   readonly subscriptionRouteServes: (
@@ -124,18 +124,7 @@ export function modelRouteAllowedForPlan(
   );
 }
 
-export function runModelAllowedForPlan(
-  runModel: Pick<AvailableRunModel, "model" | "defaultProviderType">,
-  capabilities: ModelPlanCapabilities,
-): boolean {
-  return modelRouteAllowedForPlan(
-    runModel.model,
-    runModel.defaultProviderType,
-    capabilities,
-  );
-}
-
-/** Member controls use the server projection; organization settings keep the helper above. */
+/** Member controls use the caller-specific server projection. */
 export function memberRunModelAllowedForPlan(
   runModel: AvailableRunModel,
   capabilities: ModelPlanCapabilities,

@@ -8708,9 +8708,11 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
     detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
   };
   // Auto offers a choice only once a personal subscription adds models.
-  const autoOnly = !models.models.some((runModel) => {
-    return runModel.subscriptionOptions;
-  });
+  const autoOnly =
+    models === undefined ||
+    models.models.every((runModel) => {
+      return runModel.model === models.defaultModel;
+    });
   if (modelPickerLoading || value === null || autoOnly) {
     return null;
   }

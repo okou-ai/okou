@@ -135,7 +135,7 @@ function connectedPersonalClaudeCodeProvider(): ModelProviderResponse {
 }
 
 async function openModelSettings(
-  heading = "Models",
+  heading = "Use more models",
   locale?: SupportedLocale,
 ): Promise<void> {
   await setupPage({
@@ -250,7 +250,7 @@ async function setupPersonalSubscriptionIdentityReview() {
     subscriptionResetCredits: null,
   };
   context.mocks.data.personalModelProviders([accountA, accountB, accountC]);
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
   return {
     accountA,
     rowA: await screen.findByTestId(`oauth-account-${accountA.id}`),
@@ -314,7 +314,7 @@ test("Show no 5h availability when the weekly allowance is exhausted", async () 
       },
     },
   ]);
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const row = await screen.findByTestId(`oauth-account-${account.id}`);
   const [fiveHour, week] = within(row).getAllByRole("progressbar");
@@ -375,7 +375,7 @@ test("Reset personal Codex account usage from the reset count", async () => {
   });
   context.mocks.data.personalModelProviders([account]);
 
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const row = await screen.findByTestId(`oauth-account-${account.id}`);
   click(within(row).getByLabelText("2 resets left"));
@@ -416,7 +416,7 @@ test("Disconnect an active personal subscription account", async () => {
   });
   context.mocks.data.personalModelProviders([account]);
 
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const row = await screen.findByTestId(`oauth-account-${account.id}`);
   click(within(row).getByLabelText("More options"));
@@ -522,7 +522,7 @@ test("Start and close personal Claude login directly from its account group", as
     });
   });
 
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const claudeSection = screen
     .getByRole("heading", { name: "Claude" })
@@ -651,7 +651,7 @@ test("Redeem a Claude Code subscription reset from the account row", async () =>
     },
   );
   context.mocks.data.personalModelProviders([granted, withoutGrants]);
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const grantedRow = await screen.findByTestId(`oauth-account-${granted.id}`);
   const withoutGrantsRow = await screen.findByTestId(
