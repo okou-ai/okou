@@ -9,7 +9,11 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
-import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorsSearchContract,
+  builtinConnectorAutomaticContract,
+} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
@@ -384,7 +388,10 @@ async function ownedMcpRun(candidate: ReturnType<typeof release>) {
   return { userId, orgId, runId, connectionId, connectorSlug: connector.slug };
 }
 
-function actorToken(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+function actorToken(
+  actor: Awaited<ReturnType<typeof ownedMcpRun>>,
+  write = false,
+) {
   // Real agent tokens still resolve the owner's organization membership.
   // Bound only this owned actor; unrelated users receive a valid empty list.
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
@@ -423,7 +430,9 @@ function actorToken(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
     userId: actor.userId,
     orgId: actor.orgId,
     runId: actor.runId,
-    capabilities: ["connector:read"],
+    capabilities: write
+      ? ["connector:read", "connector:write"]
+      : ["connector:read"],
     builtinConnectorSourceIds: { [actor.connectorSlug]: actor.connectionId },
     iat: seconds,
     exp: seconds + 3600,
@@ -446,6 +455,16 @@ async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
     mcpConnectorsContract,
   ).list({
     headers: { authorization: `Bearer ${actorToken(actor)}` },
+  });
+}
+
+async function automaticStart(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+  return await setupApp({ context, routes: builtinConnectorsAutomaticRoutes })(
+    builtinConnectorAutomaticContract,
+  ).start({
+    headers: { authorization: `Bearer ${actorToken(actor, true)}` },
+    params: { connectorSlug: actor.connectorSlug },
+    body: { authMethod: "smart-connect", account: { intent: "add" } },
   });
 }
 
@@ -995,6 +1014,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const unknown = "unknown-catalog-connector";
     const unknownActor = { ...actor, connectorSlug: unknown };
     expect((await accountDirectory(unknownActor)).status).toBe(404);
+    expect((await automaticStart(unknownActor)).status).toBe(400);
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
@@ -1012,6 +1032,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       [candidate.hash, slug],
     );
     expect((await mcpDirectory(actor)).status).toBe(500);
+    expect((await automaticStart(actor)).status).toBe(500);
     await expect(accountDirectory(actor)).rejects.toThrow(
       "Unknown response status 500 for GET /api/connector-accounts/connections",
     );
@@ -1020,6 +1041,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     });
     expect((await accountDirectory(unknownActor)).status).toBe(404);
     await engine.exec("DELETE FROM connector_catalog");
+    expect((await automaticStart(unknownActor)).status).toBe(500);
     expect((await mcpDirectory(unknownActor)).status).toBe(500);
     await expect(accountDirectory(unknownActor)).rejects.toThrow(
       "Unknown response status 500 for GET /api/connector-accounts/connections",
@@ -1035,9 +1057,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const catalogReads = statements.filter((query) => {
       return query.includes("connector_catalog");
     });
-    // Four existing MCP/empty-selection reads plus three account reads.
+    // Four MCP/empty-selection, three account and two Automatic negative reads.
     // Every consumer still captures current and entries in one statement.
-    expect(catalogReads).toHaveLength(7);
+    expect(catalogReads).toHaveLength(9);
     for (const query of catalogReads) {
       expect(query).not.toContain("connector_catalog_active_snapshot");
       expect(query).not.toContain("connector_catalog_runtime_projection");
