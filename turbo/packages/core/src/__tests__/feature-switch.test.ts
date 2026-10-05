@@ -65,17 +65,27 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("keeps the multi-account subscription UI on the staff organization", () => {
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      }),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
-        orgId: "org_external",
-      }),
-    ).toBe(false);
+  it("enables multiple subscriptions for everyone and honors explicit overrides", () => {
+    for (const context of [
+      {},
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { orgId: "org_external" },
+    ]) {
+      expect(
+        isFeatureEnabled(
+          FeatureSwitchKey.PersonalModelProviderAccounts,
+          context,
+        ),
+      ).toBe(true);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
+          ...context,
+          overrides: {
+            [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
+          },
+        }),
+      ).toBe(false);
+    }
   });
 
   it("enables Pi memory for staff and honors explicit overrides", () => {
@@ -364,7 +374,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
-      false,
+      true,
     );
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
@@ -504,7 +514,7 @@ describe("getFeatureSwitchMetadata", () => {
     );
     expect(
       metadata[FeatureSwitchKey.PersonalModelProviderAccounts].rolloutStage,
-    ).toBe("beta");
+    ).toBe("released");
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
     ).toBe("beta");

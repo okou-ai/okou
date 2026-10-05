@@ -173,7 +173,9 @@ function mockBillingCapabilities(modelCapabilities: {
 
 async function openModelSettings(
   heading = "Models",
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
+  },
   locale?: SupportedLocale,
 ): Promise<void> {
   await setupPage({
@@ -584,6 +586,38 @@ test("Offer Pro from personal account groups when BYOK is unavailable", async ()
   await expect(
     screen.findByRole("heading", { name: "Choose a plan" }),
   ).resolves.toBeInTheDocument();
+});
+
+test("View personal account groups by default in an external workspace", async () => {
+  context.mocks.data.personalModelProviders([]);
+  await setupPage({
+    context,
+    path: "/?settings=model",
+    auth: {
+      user: { id: "user_external", fullName: "External member" },
+      organization: {
+        activeOrg: {
+          id: "org_external",
+          name: "External workspace",
+          role: "member",
+        },
+        memberships: [{ id: "org_external" }],
+      },
+    },
+  });
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  for (const name of ["Claude", "ChatGPT (Codex)"]) {
+    const section = within(settings)
+      .getByRole("heading", { name })
+      .closest("section");
+    if (!section) {
+      throw new Error(`Provider section not found: ${name}`);
+    }
+    expect(connectButtonInRow(section, "Connect account")).toBeEnabled();
+    expect(
+      within(section).getByText("No accounts connected."),
+    ).toBeInTheDocument();
+  }
 });
 
 test("Start and close personal Claude login directly from its account group", async () => {
