@@ -240,7 +240,7 @@ async function publishPublicMemory() {
     await fixture.api.grantProEntitlement(actor, {
       subscriptionId: owned.subscriptionId,
     });
-    await fixture.api.ensureOrgModelProvider(actor, {
+    await fixture.api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
     const agent = await bdd.createAgent(actor, {

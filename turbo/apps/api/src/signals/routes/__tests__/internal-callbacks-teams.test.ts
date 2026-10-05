@@ -400,7 +400,7 @@ async function setupConnectedTeamsActor(
     );
   }
   const [{ providerId }] = await Promise.all([
-    runsApi.ensureOrgModelProvider(actor),
+    runsApi.ensurePersonalSubscriptionModel(actor),
     authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
       visibility: "public",
     }),

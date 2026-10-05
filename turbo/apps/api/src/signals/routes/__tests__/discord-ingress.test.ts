@@ -894,9 +894,12 @@ describe("canonical Discord ingress", () => {
     if (!guildThread) {
       throw new Error("Expected guild thread");
     }
-    const { providerId } = await runsApi.ensureOrgModelProvider(actor.actor, {
-      model: "claude-fable-5-1",
-    });
+    const { providerId } = await runsApi.ensurePersonalSubscriptionModel(
+      actor.actor,
+      {
+        model: "claude-fable-5-1",
+      },
+    );
     await runsApi.updateOrgModelPolicies(actor.actor, [
       {
         model: "claude-fable-5-1",

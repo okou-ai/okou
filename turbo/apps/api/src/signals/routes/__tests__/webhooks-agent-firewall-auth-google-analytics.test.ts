@@ -35,7 +35,7 @@ async function setupAnalyticsFirewall(publicFixture?: PublicFirewallFixture) {
   } else {
     await fw.provisionRunReadyOrg(actor);
   }
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Analytics refresh agent",
     description: "Exercises Analytics refresh and reconnect.",

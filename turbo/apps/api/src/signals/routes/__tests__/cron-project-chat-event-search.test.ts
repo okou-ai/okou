@@ -126,7 +126,7 @@ async function sendRejectedPrompt(
 async function promptActor(displayName: string) {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, { displayName });
   return { actor, agentId: agent.agentId };
 }

@@ -341,7 +341,7 @@ function eventContextFromAgentPrompt(prompt: string): Record<string, unknown> {
 async function useNativeHarnessForFormsFixture(
   actor: Awaited<ReturnType<typeof workflows.setupWorkflowOrg>>["actor"],
 ): Promise<void> {
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",

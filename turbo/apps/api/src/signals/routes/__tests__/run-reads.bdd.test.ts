@@ -94,7 +94,9 @@ async function createThreadAgent(
   prefix: string,
 ): Promise<{ readonly agentId: string }> {
   // The Claude Code route (no Pi route), matching completeRun's checkpoints.
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: `${prefix}-${randomUUID().slice(0, 8)}`,
     description: "Exercises run reads.",
@@ -146,7 +148,9 @@ async function readChatInputOutcome(
 }
 
 async function createChatAgent(actor: ApiTestUser): Promise<string> {
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD chat admission agent",
     description: "Chat input picked at the concurrency limit.",
@@ -480,7 +484,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const other = await namedAgent(actor, "bdd-other");
     const memberCompose = await namedAgent(member, "bdd-member");
 
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD run reads agent",
       description: "Direct create at the concurrency limit.",
@@ -1135,7 +1141,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     mockEnv("S3_PUBLIC_ENDPOINT", undefined);
     const storages = createStoragesBddApi(context);
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const volumeArchiveSize = 12_345;
     storages.mockStoragePresignedUrls();
     storages.mockStorageObjectsExist(volumeArchiveSize);
@@ -2204,7 +2212,9 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("preserves reuse outcomes from completion through runner reads", async () => {
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD sandbox reuse reason agent",
       description: "Sandbox reuse reason compatibility.",
@@ -2331,7 +2341,7 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("bounds run context Axiom scans around the run creation time", async () => {
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD bounded run context agent",
       description: "Bounded run context reads.",
@@ -2389,7 +2399,9 @@ describe("RUN-04: agent run telemetry families", () => {
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD zero detail agent",
       description: "Agent run detail reads.",
@@ -2984,7 +2996,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agentOne = await bdd.createAgent(actor, {
       displayName: "BDD logs agent one",
       description: "Primary logs agent.",

@@ -95,7 +95,7 @@ export async function setupConnectedDiscordActor(
       visibility: "public",
     });
     // These lifecycle fixtures exercise the native Runner claim protocol.
-    await runsApi.ensureOrgModelProvider(actor, {
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
   }

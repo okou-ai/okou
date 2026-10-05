@@ -70,7 +70,9 @@ async function prepareShare(content = selectedContent) {
   await runs.grantProEntitlement(actor);
   // Sharing reads persisted chat events only. Fable keeps both sends queued
   // for the native Runner instead of starting unmocked Pi API-first turns.
-  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, { displayName: "Sharing test" });
   const { threadId, runId } = await chat.sendAndLaunch(actor, {
     agentId: agent.agentId,
@@ -259,7 +261,9 @@ describe("optional shared-thread titles", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "Forwarded share test",
     });

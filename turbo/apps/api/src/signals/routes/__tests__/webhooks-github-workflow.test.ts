@@ -92,7 +92,7 @@ async function setupFixture(): Promise<{
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",

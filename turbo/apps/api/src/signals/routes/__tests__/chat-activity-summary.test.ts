@@ -82,7 +82,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   const group = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   const [{ providerId }, agent] = await Promise.all([
-    runs.ensureOrgModelProvider(actor),
+    runs.ensurePersonalSubscriptionModel(actor),
     bdd.createAgent(actor, {
       displayName: "Activity summary",
       description: "Activity API integration",

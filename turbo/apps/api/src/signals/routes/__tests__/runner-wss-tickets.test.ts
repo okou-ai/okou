@@ -42,7 +42,9 @@ describe("direct Runner WSS ticket boundary", () => {
     api.acceptTelemetryIngest();
     const group = api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "WSS ticket fixture",
       description: "Tests a one-use ticket on an official Runner",

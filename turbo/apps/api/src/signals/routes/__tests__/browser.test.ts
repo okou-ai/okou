@@ -5849,7 +5849,7 @@ async function setupBrowserScenario() {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
   await runs.grantProEntitlement(orgActor);
-  const { providerId } = await runs.ensureOrgModelProvider(orgActor);
+  const { providerId } = await runs.ensurePersonalSubscriptionModel(orgActor);
   await runs.updateOrgModelPolicies(orgActor, [
     {
       model: "claude-fable-5-1",

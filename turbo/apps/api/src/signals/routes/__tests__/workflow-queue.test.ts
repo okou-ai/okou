@@ -124,7 +124,7 @@ async function setup(): Promise<Scenario> {
   }
   // Queue ordering uses claimable native runs; Pi route tests set their
   // own model policy instead of inheriting this fixture's default.
-  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
@@ -1400,7 +1400,9 @@ describe("workflow queue", () => {
     expect(rejectedEvent.userMessage).toStrictEqual(admittedEvent.userMessage);
     expect(chatEventDisplayText(admittedEvent)).toBe(rejectedDisplayPrompt);
     // Reconnect the thread's model so the next trigger can launch.
-    const { providerId } = await runsApi.ensureOrgModelProvider(scenario.actor);
+    const { providerId } = await runsApi.ensurePersonalSubscriptionModel(
+      scenario.actor,
+    );
     await runsApi.updateOrgModelPolicies(scenario.actor, [
       {
         model: "claude-fable-5-1",

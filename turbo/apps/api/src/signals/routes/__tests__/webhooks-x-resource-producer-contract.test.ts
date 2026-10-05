@@ -66,7 +66,7 @@ async function createRun() {
     throw new Error("X resource test requires an organization");
   }
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "X producer contract",
     visibility: "private",

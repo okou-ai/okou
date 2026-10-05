@@ -68,7 +68,7 @@ async function emailOrg(): Promise<EmailOrgFixture> {
   runs.acceptTelemetryIngest();
 
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   await runs.heartbeatRunner(runnerGroup);
 
   mockClerkUsers(context, [clerkUserListEntry(actor.userId, actor.email)]);

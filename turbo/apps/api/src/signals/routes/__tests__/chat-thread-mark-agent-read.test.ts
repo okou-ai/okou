@@ -155,7 +155,9 @@ async function createUnreadAgentThreads(
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(owner, {
     displayName: `Shared ${randomUUID().slice(0, 8)}`,
     visibility: "public",

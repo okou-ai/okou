@@ -62,7 +62,7 @@ async function createEntitledAgent(
   displayName: string,
 ): Promise<string> {
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   await api.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",

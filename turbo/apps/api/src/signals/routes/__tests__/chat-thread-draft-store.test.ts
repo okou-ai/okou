@@ -232,7 +232,7 @@ describe("thread drafts", () => {
 describe("sends and drafts", () => {
   it("leaves the saved draft for the client to clear when a message is sent", async () => {
     const fixture = await createDraftFixture();
-    await runs.ensureOrgModelProvider(fixture.actor);
+    await runs.ensurePersonalSubscriptionModel(fixture.actor);
     await chat.patchThread(fixture.actor, fixture.threadId, {
       draftUserMessage: draftDocument("saved before send"),
       draftAttachments: [draftAttachment()],

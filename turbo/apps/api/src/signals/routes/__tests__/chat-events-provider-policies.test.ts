@@ -629,8 +629,8 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(restrictedByok.picked).toMatchObject({
       eventType: "input.rejected",
     });
-    const restrictedPolicies = await misc.listModelPolicies(actor);
-    expect(restrictedPolicies.policies).toContainEqual(
+    const restrictedPolicies = await misc.listRunModels(actor);
+    expect(restrictedPolicies.models).toContainEqual(
       expect.objectContaining({
         model: "claude-fable-5-1",
         defaultProviderType: "anthropic-api-key",

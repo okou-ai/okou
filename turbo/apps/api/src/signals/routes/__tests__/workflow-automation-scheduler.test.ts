@@ -131,7 +131,7 @@ async function setup(
   }
   // Scheduler scenarios that claim and complete a Runner job use a native
   // default; explicit Pi cases select their own model policy below.
-  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",

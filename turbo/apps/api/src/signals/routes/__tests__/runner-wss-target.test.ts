@@ -35,7 +35,9 @@ async function setup() {
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "WSS target fixture",
     description: "Tests existing winning Runner attribution",

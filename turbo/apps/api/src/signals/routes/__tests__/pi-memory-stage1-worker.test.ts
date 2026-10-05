@@ -2284,7 +2284,7 @@ describe("Stage 1 source credentials", () => {
         },
       ]);
       expect(
-        (await createMiscRoutesApi(context).listModelPolicies(actor)).policies,
+        (await createMiscRoutesApi(context).listRunModels(actor)).models,
       ).toContainEqual(
         expect.objectContaining({
           model: "gpt-5.6-luna",

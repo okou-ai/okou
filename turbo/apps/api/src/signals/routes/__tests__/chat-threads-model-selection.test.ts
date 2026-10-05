@@ -37,7 +37,7 @@ interface ChatThreadFixture {
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   await api.updateOrgModelPolicies(
     actor,
     (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
@@ -112,7 +112,9 @@ function metadataClient() {
 describe("POST /api/chat-threads/:id/model-selection", () => {
   it("uses current workspace routes without mutating a rejected selection", async () => {
     const fixture = await seedChatThread("Current workspace routes");
-    const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(
+      fixture.actor,
+    );
     const route = {
       defaultProviderType: "anthropic-api-key" as const,
       credentialScope: "org" as const,
@@ -272,7 +274,9 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     "stores the replacement when an old client requests retired %s",
     async (retiredModel, replacement) => {
       const fixture = await seedChatThread("Model retirement");
-      const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
+      const { providerId } = await api.ensurePersonalSubscriptionModel(
+        fixture.actor,
+      );
       await api.updateOrgModelPolicies(
         fixture.actor,
         (["claude-sonnet-5", "claude-opus-5", replacement] as const).map(

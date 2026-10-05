@@ -369,7 +369,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
 
     // Adding a compatible route for the replacement lets the same delivery
     // be admitted: the failed attempt did not consume its key.
-    await runsApi.ensureOrgModelProvider(actor, {
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-opus-5-5",
     });
     await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({

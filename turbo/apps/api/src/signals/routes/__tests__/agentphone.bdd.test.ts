@@ -82,7 +82,7 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   const sends = ap.captureAgentPhoneSends();
 
   await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
@@ -1924,7 +1924,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     integrations.configureAgentPhoneWebhook();
     const sends = ap.captureAgentPhoneSends();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const phone = uniquePhoneHandle();
     await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
     const welcome = sends.messages.slice(-4);

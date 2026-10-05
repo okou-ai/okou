@@ -650,7 +650,7 @@ async function configureCanonicalSlackPiActor(
   integrations.configureSlackAppMocks();
   await runs.grantProEntitlement(actor);
   const { providerId: anthropicProviderId } =
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
   const { providerId: openaiProviderId } = await runs.createOrgModelProvider(
     actor,
     {
@@ -1992,7 +1992,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2148,7 +2150,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     if (!actor.orgId) {
       throw new Error("Expected historical Slack actor to belong to an org");
     }
@@ -2238,7 +2242,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2295,7 +2301,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = runs.configureRunnerGroup();
       integrations.configureSlackAppMocks();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+      await runs.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
       const slackUserId = uniqueSlackUserId();
       const mentionedSlackUserId = uniqueSlackUserId();
       const secondMentionedSlackUserId = uniqueSlackUserId();
@@ -2528,7 +2536,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2714,7 +2724,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = runs.configureRunnerGroup();
       integrations.configureSlackAppMocks();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+      await runs.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
       if (!actor.orgId) {
         throw new Error("Expected canonical Slack actor to belong to an org");
       }
@@ -2984,7 +2996,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       integrations.acceptSlackSessionHistoryDownloads();
       const runnerGroup = runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
-      await integrations.configureSlackRunModelPolicies(actor);
+      await integrations.configureNativeSubscriptionModels(actor);
       await bdd.readOnboardingStatus(actor);
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -3167,7 +3179,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     await bdd.readOnboardingStatus(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -3260,9 +3272,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await runs.grantProEntitlement(blockerActor);
-    await runs.ensureOrgModelProvider(blockerActor, {
+    await runs.ensurePersonalSubscriptionModel(blockerActor, {
       model: "claude-fable-5-1",
     });
     const slackUserId = uniqueSlackUserId();
@@ -3421,7 +3435,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3502,7 +3518,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3557,7 +3575,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const titlePrompts: string[] = [];
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
@@ -3627,7 +3647,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const onboarding = await bdd.readOnboardingStatus(actor);
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
@@ -3724,7 +3744,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3793,7 +3813,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -4508,7 +4528,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       tier: "pro",
       credits: 20_000,
     });
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     await seedOrgMetadata({
       orgId: actor.orgId,
       tier: "pro",
@@ -4691,7 +4711,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     await bdd.readOnboardingStatus(actor);
     await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
@@ -4947,7 +4967,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await bdd.readOnboardingStatus(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -5346,7 +5366,9 @@ describe("INT-02: Telegram integration", () => {
     const runnerGroup = runs.configureRunnerGroup();
     const actor = integrations.user();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const typingBotId = randomInt(1_000_000_000, 9_999_999_999);
     const typingBotToken = `${typingBotId}:bdd-typing-token`;

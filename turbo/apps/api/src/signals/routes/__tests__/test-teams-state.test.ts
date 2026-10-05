@@ -309,7 +309,7 @@ async function dispatchTeamsMessage(args: {
       orgId: args.fixture.orgId,
     });
     await runs.grantProEntitlement(actor);
-    const { providerId } = await runs.ensureOrgModelProvider(actor);
+    const { providerId } = await runs.ensurePersonalSubscriptionModel(actor);
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
@@ -543,7 +543,9 @@ describe("POST /api/test/teams-dispatch-probe", () => {
     await runs.grantProEntitlement(actor, {
       subscriptionId: owned.subscriptionId,
     });
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await installTeamsForTest(context.signal, fixture);
     createRouteMocks(context).clerk.session(
       fixture.userId,

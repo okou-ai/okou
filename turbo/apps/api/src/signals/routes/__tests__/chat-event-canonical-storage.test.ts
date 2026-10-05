@@ -20,7 +20,7 @@ describe("canonical chat event storage", () => {
   it("writes only canonical payloads and pointers through every persistence path", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Canonical chat event storage agent",
     });

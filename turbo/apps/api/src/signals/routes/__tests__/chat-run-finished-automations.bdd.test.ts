@@ -81,7 +81,7 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Completion and queue fixtures use the retained native Claude route.
   await api.updateOrgModelPolicies(actor, [
     {

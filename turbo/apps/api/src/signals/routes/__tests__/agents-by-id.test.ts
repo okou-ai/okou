@@ -569,7 +569,7 @@ describe("DELETE /api/agents/:id", () => {
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor);
     const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,

@@ -705,7 +705,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it("rejects invalid model selections without creating visible state", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Invalid model selection agent",
     });

@@ -87,7 +87,7 @@ function orgIdOf(actor: ApiTestUser): string {
  */
 async function setupWorkspaceOwner(actor: ApiTestUser): Promise<ApiTestUser> {
   await runs.grantProEntitlement(actor, { tier: "team" });
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   context.mocks.s3.send.mockResolvedValue({});
   return actor;
 }

@@ -233,7 +233,7 @@ async function projectSearchMessages(threadIds: string[]) {
 
 async function messageFixture() {
   const f = await threadFixture();
-  await createRunsApi(context).ensureOrgModelProvider(f.actor);
+  await createRunsApi(context).ensurePersonalSubscriptionModel(f.actor);
   async function send(
     prompt: string,
     threadId?: string,
@@ -372,7 +372,9 @@ async function chatRunFixture() {
   callbacks.disableVapid();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor, { model: NATIVE_RUNNER_MODEL });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: NATIVE_RUNNER_MODEL,
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "MCP activity agent",
     visibility: "private",

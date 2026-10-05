@@ -453,7 +453,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
 
   it("rejects unusable computer-use host selections", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor, {
       displayName: "Computer-use guard agent",

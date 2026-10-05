@@ -1257,7 +1257,7 @@ describe("Canonical Discord file publication and delivery", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(fixture.actor);
-    await runs.ensureOrgModelProvider(fixture.actor);
+    await runs.ensurePersonalSubscriptionModel(fixture.actor);
     const runnerGroup = runs.configureRunnerGroup();
     await runs.heartbeatRunner(runnerGroup);
     const agent = await bdd.createAgent(fixture.actor, {

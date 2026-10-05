@@ -292,7 +292,7 @@ async function setupFixture(): Promise<CalendarScenario> {
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   const { actor } = await wf.setupWorkflowOrg();
-  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  const { providerId } = await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",

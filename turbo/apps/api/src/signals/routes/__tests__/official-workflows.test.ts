@@ -1790,7 +1790,9 @@ async function observeInstalledResultEmail(
   expected: boolean,
   subject?: string,
 ): Promise<void> {
-  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const runnerGroup = runs.configureRunnerGroup();
   runs.acceptTelemetryIngest();
   publicResults.configureDelivery(actor);

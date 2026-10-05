@@ -47,7 +47,7 @@ export function createClaimedSshRuntimeApi(
     if (!paidOrganizations.has(owner.orgId)) {
       const bootstrapActor = bdd.user({ ...owner, orgRole: "org:admin" });
       await runs.grantProEntitlement(bootstrapActor);
-      await runs.ensureOrgModelProvider(bootstrapActor, {
+      await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
         model: "claude-fable-5-1",
       });
       await bdd.readOnboardingStatus(bootstrapActor);

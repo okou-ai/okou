@@ -996,7 +996,9 @@ async function setupConnectedTeamsBotActor(): Promise<{
     visibility: "public",
   });
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   botFrameworkHandlers();
   const outboundRequests = teamsOutboundHandlers(fixture.serviceUrl);
 
@@ -1750,7 +1752,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       visibility: "public",
     });
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await installTeamsForTest(context.signal, fixture);
     await connectTeamsFixture(fixture);
     botFrameworkHandlers();
@@ -3076,7 +3080,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         visibility: "public",
       });
       await runsApi.grantProEntitlement(actor);
-      await runsApi.ensureOrgModelProvider(actor, {
+      await runsApi.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
       });
       botFrameworkHandlers();

@@ -611,7 +611,9 @@ describe("okou workflow automations", () => {
       throw new Error("Expected an org-scoped workflow actor");
     }
     // Fable keeps automation runs on the claimable native Runner route.
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await wf.createAgent(actor, {
       displayName: "Automation Agent",
     });
