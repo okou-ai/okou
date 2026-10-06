@@ -41,7 +41,12 @@ An owned startup `APT_CONFIG` excludes global main/fragments/trust directories
 before APT loads them; the copied Ubuntu keyring and borrowed APT/gpgv/dpkg parser
 bytes are recorded separately from the private native compiler/runtime closure.
 Exact MIT/Cyrus/GnuTLS identities above are retained; compiler, libc, Python/venv,
-shell/tools and development seeds are explicit.
+shell/tools and development seeds are explicit. Dash `0.5.12-6ubuntu5` supplies
+the archive-provided `sh` realization required by the pinned configure's
+`#!/bin/sh`; Bash alone does not satisfy it. Before any source execution the
+producer checks contained, executable native bytes for that exact interpreter
+and required compiler/Python/build tools, retaining their file/mode/hash roles in
+the input-closure binding. This is not complete transitive loaded-byte attribution.
 Archive hashes are checked against signed metadata before collision/path-safe
 extraction. No package installation or maintainer script runs. Declared usrmerge,
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace

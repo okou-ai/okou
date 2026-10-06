@@ -52,11 +52,11 @@ KERBEROS = ("krb5-user", "krb5-kdc", "krb5-admin-server", "libgssapi-krb5-2",
             "libkrb5-3", "libk5crypto3", "libkrb5support0", "libkdb5-10t64",
             "libkadm5clnt-mit12", "libkadm5srv-mit12", "libgssrpc4t64")
 REQUIRED = (*KERBEROS, "libverto-libevent1t64", "libsasl2-2", "libsasl2-modules-gssapi-mit",
-            "libgnutls30t64", "bash", "coreutils", "grep", "sed", "gawk", "findutils", "iproute2",
+            "libgnutls30t64", "bash", "dash", "coreutils", "grep", "sed", "gawk", "findutils", "iproute2",
             "make", "gcc", "g++", "gcc-13", "g++-13", "binutils", "libc6-dev", "pkgconf",
             "ninja-build", "python3", "python3-venv", "python3.12", "python3.12-venv", "libglib2.0-dev",
             "libpixman-1-dev", "libfdt-dev", "zlib1g-dev", "libgnutls28-dev", "libsasl2-dev", "openssl")
-SEEDS = {"gcc-13": "13.2.0-23ubuntu4", "g++-13": "13.2.0-23ubuntu4", "binutils": "2.42-4ubuntu2",
+SEEDS = {"dash": "0.5.12-6ubuntu5", "gcc-13": "13.2.0-23ubuntu4", "g++-13": "13.2.0-23ubuntu4", "binutils": "2.42-4ubuntu2",
          "libc6-dev": "2.39-0ubuntu8", "libglib2.0-dev": "2.80.0-6ubuntu1", "libpixman-1-dev": "0.42.2-1build1",
          "libfdt-dev": "1.7.0-2build1", "zlib1g-dev": "1:1.3.dfsg-3.1ubuntu2", "python3.12": "3.12.3-1",
          "python3.12-venv": "3.12.3-1", "python3": "3.12.3-0ubuntu1", "python3-venv": "3.12.3-0ubuntu1",
@@ -200,6 +200,30 @@ def extract_deb(archive, root):
             stream.extractall(root, members=members, filter="data")
 
 
+def required_build_inputs(root, native):
+    # Source-required programs are not implied by a satisfied package Depends
+    # graph. Check actual contained executable bytes before downloaded source
+    # runs, including configure's /bin/sh and its signed Dash realization.
+    records = {}
+    for name in ("bin/sh", "bin/bash", "usr/bin/env", "usr/bin/cc", "usr/bin/c++",
+                 "usr/bin/make", "usr/bin/ninja", "usr/bin/python3", "usr/bin/pkg-config",
+                 "usr/bin/grep", "usr/bin/sed", "usr/bin/awk", "usr/bin/find", "usr/bin/ld"):
+        path = root / name
+        try:
+            actual = path.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise ValueError("required private build program missing: " + name) from error
+        if not actual.is_relative_to(root) or not actual.is_file() or not (actual.stat().st_mode & 0o111):
+            raise ValueError("required private build program escaped or refused: " + name)
+        with actual.open("rb") as stream:
+            verify_elf_header(stream.read(64), native)
+        records[name] = {"file": str(actual.relative_to(root)), "sha256": sha(actual),
+                         "mode": stat.S_IMODE(actual.stat().st_mode)}
+    if (root / "bin/sh").resolve(strict=True) != root / "usr/bin/dash":
+        raise ValueError("signed private Dash interpreter realization required")
+    return records
+
+
 def provision(base, arch, multiarch, origin):
     keyring = pathlib.Path("/usr/share/keyrings/ubuntu-archive-keyring.gpg")
     if not keyring.is_file() or keyring.is_symlink():
@@ -296,11 +320,12 @@ def provision(base, arch, multiarch, origin):
     return {"mitVersion": MIT, "multiarch": multiarch, "architecture": arch,
             "signedIndexOrigin": origin, "snapshot": SNAPSHOT, "suite": "noble", "packages": packages,
             "signingRootSha256": sha(signing_root),
+            "requiredBuildInputs": required_build_inputs(root, {"amd64": "x86_64", "arm64": "aarch64"}[arch]),
             "bootstrapInputs": {str(path): sha(path.resolve(strict=True)) for path in
                                 (keyring, pathlib.Path("/usr/bin/apt-get"), pathlib.Path("/usr/bin/apt-cache"),
                                  pathlib.Path("/usr/bin/gpgv"), pathlib.Path("/usr/bin/dpkg-deb"),
                                  pathlib.Path("/usr/lib/apt/apt-helper"))},
-            "transformations": ["contained absolute package aliases", "usrmerge", "compiler aliases",
+            "transformations": ["contained absolute package aliases", "usrmerge", "archive-provided Dash sh alias", "compiler aliases",
                                 "rmt alias", "UTC alias", "signed public CA concatenation"],
             "signedIndexFiles": {str(p.relative_to(base)): sha(p) for p in sorted((base / "state/lists").glob("*"))
                                  if p.is_file() and not p.is_symlink() and (p.name.endswith("InRelease") or "_Packages" in p.name)}}
@@ -427,7 +452,7 @@ def main():
     manifest["runtimeInventorySha256"] = hashlib.sha256(json.dumps(
         {name: manifest[name] for name in ("files", "aliases")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     manifest["inputClosureSha256"] = hashlib.sha256(json.dumps(
-        {name: manifest[name] for name in ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256")},
+        {name: manifest[name] for name in ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs")},
         sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     manifest["packageLockSha256"] = hashlib.sha256(json.dumps(manifest["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     manifest["producer"] = {"head": call(["git", "rev-parse", "HEAD"], cwd=REPO).strip(),

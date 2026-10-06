@@ -710,6 +710,24 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build and bind actual full-LTO guest and Runner consumers
         run: bash .github/scripts/build-runner-native-release.sh
+      # Still inside the existing pinned producer and its unchanged 25m budget.
+      # These are optimized integration executables, NOT relabeled Runner assets.
+      - name: Compile real optimized supervisor and independent-peer consumers
+        run: bash .github/scripts/build-runner-native-supervisor.sh
+      - name: Transfer checked ci supervisor inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-supervisor-input-ci-${{ matrix.target }}
+          path: crates/target/f5-supervisor-ci/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Transfer checked full-LTO supervisor inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-supervisor-input-release-${{ matrix.target }}
+          path: crates/target/f5-supervisor-release/
+          if-no-files-found: error
+          retention-days: 1
       - name: Transfer this target's new conformance input to its native consumer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -769,6 +787,91 @@ jobs:
             crates/target/f5-release-input/guest-compiler.json
           if-no-files-found: error
           retention-days: 1
+
+  native-supervisor-runtime:
+    name: Optimized native supervisor and mutual-GSS (${{ matrix.profile }}, ${{ matrix.target }})
+    runs-on: ${{ matrix.target == 'aarch64-unknown-linux-musl' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      actions: read
+      contents: read
+    needs:
+      [prepare, native-release-build, native-package, native-release-package]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.prepare.result == 'success' &&
+        needs.prepare.outputs.current-runner-image-needed == 'true' &&
+        needs.native-release-build.result == 'success' &&
+        needs.native-package.result == 'success' &&
+        needs.native-release-package.result == 'success'
+      }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [ci, release]
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
+    env:
+      SOURCE_SHA: ${{ needs.prepare.outputs.source-head-sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.source-head-sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: native-supervisor-input-${{ matrix.profile }}-${{ matrix.target }}
+          path: crates/target/f5-supervisor-input
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: native-runner-package-${{ matrix.profile }}-${{ matrix.target }}
+          path: crates/target/f5-actual-package
+      - name: Execute only checked original optimized consumers on matching native CPU
+        run: |
+          set -euo pipefail
+          package=crates/target/f5-actual-package
+          if [[ "${{ matrix.profile }}" == release ]]; then package+=/f5-release-package; fi
+          bash .github/scripts/check-runner-native-supervisor.sh crates/target/f5-supervisor-input "$package" "${{ matrix.profile }}" "${{ matrix.target }}"
+      - name: Retain original optimized receipts, never fixture credentials
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-supervisor-runtime-${{ matrix.profile }}-${{ matrix.target }}
+          path: crates/target/f5-supervisor-receipt-${{ matrix.profile }}/
+          if-no-files-found: error
+          retention-days: 1
+
+  native-supervisor-gate:
+    name: Optimized native conformance gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs:
+      [
+        prepare,
+        native-package,
+        native-release-build,
+        native-release-package,
+        native-supervisor-runtime,
+      ]
+    if: ${{ always() }}
+    timeout-minutes: 5
+    steps:
+      - name: Require all selected package, compiler and optimized runtime legs
+        env:
+          SELECTED: ${{ needs.prepare.outputs.current-runner-image-needed }}
+          PREPARE: ${{ needs.prepare.result }}
+          CI_PACKAGE: ${{ needs.native-package.result }}
+          RELEASE_BUILD: ${{ needs.native-release-build.result }}
+          RELEASE_PACKAGE: ${{ needs.native-release-package.result }}
+          OPTIMIZED: ${{ needs.native-supervisor-runtime.result }}
+        run: |
+          set -euo pipefail
+          [[ "$PREPARE" == success ]] || exit 1
+          if [[ "$SELECTED" == false ]]; then exit 0; fi
+          [[ "$SELECTED" == true ]] || exit 1
+          for result in "$CI_PACKAGE" "$RELEASE_BUILD" "$RELEASE_PACKAGE" "$OPTIMIZED"; do
+            [[ "$result" == success ]] || { echo 'required native conformance failed, cancelled or unexpectedly skipped' >&2; exit 1; }
+          done
 
   build:
     name: Build runner image (${{ matrix.label }})

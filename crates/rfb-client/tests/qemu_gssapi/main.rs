@@ -380,7 +380,15 @@ async fn framebuffer(root: &Path, mode: &str, occurrence: &str, relay: &mut Rela
 fn mit_peer(root: &Path, mode: &str) -> tokio::process::Child {
     let mut command = tokio::process::Command::new("python3");
     command
-        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mit_gss_peer.py"))
+        // The fixture runner fixes CWD to its verified source checkout. Cross-job
+        // optimized consumers must not read a producer-container absolute path.
+        // Only the independent acceptor script is located here; the worker stays
+        // the immutable native package sealed into this actual test executable.
+        .arg(
+            std::env::current_dir()
+                .unwrap()
+                .join("crates/rfb-client/tests/fixtures/mit_gss_peer.py"),
+        )
         .args(["--fixture", root.to_str().unwrap(), "--mode", mode])
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap())

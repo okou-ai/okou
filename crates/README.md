@@ -399,6 +399,29 @@ alone establishes that proof. A failed native probe retains available actual
 package evidence with `runtimeVerified: false` and still fails the job. Required
 optimized Rust-supervisor lifecycle evidence remains a separate mandatory gate.
 
+The additional optimized integration producer stays inside that existing pinned
+producer and its 25-minute budget. It compiles the unchanged public worker process,
+parent-death and cleanup-uncertainty suites plus the independent controlled-peer
+suite under both `ci` and `release`, without executing cross-target outputs.
+Compiler receipts must identify an optimized **non-test production library** and
+real optimized integration executables. Matching native x86/ARM consumers bind
+the original source/tree, compiler, same-source CLI context and payload receipts,
+then require their build-selected helper bytes to equal the corresponding actual
+package exports. A difference refuses execution; no helper/environment override
+repairs it. Fixture acceptor code is read from the verifier checkout, not a
+producer-container compile-time path.
+
+The privileged-synthetic namespace executes all 18 existing public process tests
+and seven existing acquisition/renewal/mutual-GSS/RFC4752/TLS finality tests. Fixed
+lifetimes, capacity, CPU and cancellation assertions are unchanged. Original
+compiler/provider records and non-secret results are retained; synthetic fixture
+credentials never leave the disposable child namespace. Missing tests, bootstrap
+refusal, failed cleanup, timeout or unexpected skip cannot satisfy the selected
+conformance gate. These are optimized production-library integration tests, not
+a replacement for distributed Runner package checks, source-pinned full QEMU PNG,
+non-root availability, whole-PR approval or K3 activation. Actual execution and
+fit within the unchanged budget are required evidence, not source-level promises.
+
 ## nbd-cow Benchmark
 
 The `nbd-cow` benchmark compares NBD COW with dm-snapshot using fio workloads. It is an opt-in,

@@ -90,6 +90,23 @@ class ProducerInputs(unittest.TestCase):
             for hook in ("APT::Update::Post-Invoke", "APT::Update::Pre-Invoke", "DPkg::Pre-Invoke", "DPkg::Post-Invoke"):
                 self.assertTrue(hook not in config, "ambient hook survived private startup")
 
+    def test_source_required_posix_shell_is_an_explicit_signed_seed(self):
+        self.assertIn('dash', self.producer.REQUIRED)
+        self.assertEqual(self.producer.SEEDS['dash'], '0.5.12-6ubuntu5')
+
+    def test_required_program_preflight_refuses_missing_interpreter_without_execution(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            with self.assertRaisesRegex(ValueError, 'required private build program missing: bin/sh'):
+                self.producer.required_build_inputs(pathlib.Path(directory), 'x86_64')
+
+    def test_required_program_preflight_refuses_escaping_interpreter_without_execution(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            root = pathlib.Path(directory)
+            (root / 'bin').mkdir()
+            (root / 'bin/sh').symlink_to(pathlib.Path(__file__).resolve())
+            with self.assertRaisesRegex(ValueError, 'required private build program escaped'):
+                self.producer.required_build_inputs(root, 'x86_64')
+
     def test_every_provision_apt_query_selects_private_startup(self):
         # Structural caller-boundary regression complements the real apt-config
         # startup test; it is not a package/build/signature/runtime receipt.

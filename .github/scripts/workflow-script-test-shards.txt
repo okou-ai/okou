@@ -26,6 +26,7 @@
 1 runner-image-manifest-test.sh
 1 runner-native-test-artifact-test.sh
 1 runner-native-release-test.sh
+1 runner-native-supervisor-test.sh
 1 runner-release-build-workflow-test.sh
 1 runner-run-context-test.sh
 1 semgrep-results-test.sh

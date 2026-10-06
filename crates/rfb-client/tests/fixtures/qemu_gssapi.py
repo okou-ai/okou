@@ -144,7 +144,7 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False):
         package_lock = hashlib.sha256(json.dumps(baseline["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         inventory_digest = full_private_inventory(runtime, baseline)
         closure_digest = hashlib.sha256(json.dumps({name: baseline[name] for name in
-                    ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256")},
+                    ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs")},
                     sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if (inventory_digest != expected.get("runtimeInventorySha256")
             or closure_digest != expected.get("inputClosureSha256")
@@ -324,7 +324,12 @@ def main():
     mode.add_argument("--controlled-peer-only", action="store_true")
     mode.add_argument("--source-built-full-private", action="store_true")
     parser.add_argument("--test-executable", type=pathlib.Path)
+    parser.add_argument("--optimized-manifest", type=pathlib.Path,
+                        help="original checked ci/release integration compiler manifest, never a helper override")
     args = parser.parse_args()
+    if args.optimized_manifest is not None:
+        assert args.controlled_peer_only and args.test_executable is not None
+
     runtime = args.runtime_dir.resolve(strict=True)
     multiarch = {"x86_64": "x86_64-linux-gnu", "aarch64": "aarch64-linux-gnu"}[platform.machine()]
     # Validate the actual private inputs in BOTH modes, before compiling,
@@ -357,7 +362,19 @@ def main():
     if args.test_executable:
         assert (args.controlled_peer_only or args.source_built_full_private) and not args.test_executable.is_symlink()
         executable = args.test_executable.resolve(strict=True)
-        assert executable.parent == REPO / "crates/target/local/deps" and executable.name.startswith("qemu_gssapi-")
+        if args.optimized_manifest is None:
+            assert executable.parent == REPO / "crates/target/local/deps" and executable.name.startswith("qemu_gssapi-")
+        else:
+            manifest = json.loads(args.optimized_manifest.read_bytes())
+            profile, target = manifest["profile"], manifest["target"]
+            assert profile in ("ci", "release") and target == platform.machine() + "-unknown-linux-musl"
+            assert executable.parent == REPO / "crates/target" / target / profile / "deps"
+            item = manifest["executables"]["qemu_gssapi"]
+            assert executable.name == item["file"] and executable.name.startswith("qemu_gssapi-")
+            payload = executable.read_bytes()
+            assert len(payload) == item["sizeBytes"] and hashlib.sha256(payload).hexdigest() == item["sha256"]
+            # Admission only: caller already checked original compiler/native/package
+            # identities; this flag never changes the sealed helper in that executable.
         cargo, separator = [str(executable)], []
     else:
         run_tests(cargo + ["--no-run"], timeout=500)
