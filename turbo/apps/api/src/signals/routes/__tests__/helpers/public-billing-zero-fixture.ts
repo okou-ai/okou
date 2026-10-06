@@ -27,7 +27,12 @@ export function createPublicBillingZeroFixture(
       readonly priceId: string;
       readonly webhookSecret: string;
     };
+    readonly foreverCustom?: {
+      readonly priceId: string;
+      readonly webhookSecret: string;
+    };
     readonly beforeOrganizationCleanup?: () => Promise<void>;
+    readonly afterOrganizationCleanup?: () => Promise<void>;
   } = {},
 ) {
   const orgId = actor.orgId;
@@ -51,52 +56,73 @@ export function createPublicBillingZeroFixture(
   }
 
   const owner = createFixtureOperationOwner(async () => {
-    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
-    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
-    context.mocks.s3.send.mockResolvedValue({
-      Contents: [],
-      IsTruncated: false,
-    });
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    await flushWaitUntilForTest();
-    const additionalCleanup = await settleIncludingAbort(
-      options.beforeOrganizationCleanup?.() ?? Promise.resolve(),
-    );
+    const outcome = await settleIncludingAbort(
+      (async () => {
+        mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+        mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+        context.mocks.s3.send.mockResolvedValue({
+          Contents: [],
+          IsTruncated: false,
+        });
+        context.mocks.ably.publish.mockResolvedValue(undefined);
+        await flushWaitUntilForTest();
+        const additionalCleanup = await settleIncludingAbort(
+          options.beforeOrganizationCleanup?.() ?? Promise.resolve(),
+        );
 
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureStripeBillingEnv();
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    context.mocks.stripe.subscriptions.retrieve.mockImplementation((id) => {
-      return Promise.resolve({ id, status: "active", metadata: {} });
-    });
-    context.mocks.stripe.subscriptions.update.mockImplementation((id) => {
-      return Promise.resolve({ id });
-    });
-    context.mocks.stripe.subscriptions.cancel.mockImplementation((id) => {
-      return Promise.resolve({ id, status: "canceled" });
-    });
-    context.mocks.stripe.invoices.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgId },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
-    // Immutable financial and invitation receipts remain under this UUID owner.
-    expect((await readStatus()).body.credits).toBe(0);
-    if (!additionalCleanup.ok) {
-      throw additionalCleanup.error;
+        const webhooks = createWebhookCallbackApi(context);
+        webhooks.configureStripeBillingEnv();
+        context.mocks.stripe.subscriptions.list.mockReset().mockResolvedValue({
+          data: [],
+          has_more: false,
+        });
+        context.mocks.stripe.subscriptions.retrieve
+          .mockReset()
+          .mockImplementation((id) => {
+            return Promise.resolve({ id, status: "active", metadata: {} });
+          });
+        context.mocks.stripe.subscriptions.update
+          .mockReset()
+          .mockImplementation((id) => {
+            return Promise.resolve({ id });
+          });
+        context.mocks.stripe.subscriptions.cancel
+          .mockReset()
+          .mockImplementation((id) => {
+            return Promise.resolve({ id, status: "canceled" });
+          });
+        context.mocks.stripe.invoices.list.mockReset().mockResolvedValue({
+          data: [],
+          has_more: false,
+        });
+        webhooks.configureClerkWebhookSecret();
+        webhooks.verifyNextClerkWebhook({
+          type: "organization.deleted",
+          data: { id: orgId },
+        });
+        await webhooks.requestClerkWebhook("{}", {}, [200]);
+        await flushWaitUntilForTest();
+        // Immutable financial and invitation receipts remain under this UUID owner.
+        expect((await readStatus()).body.credits).toBe(0);
+        if (!additionalCleanup.ok) {
+          throw additionalCleanup.error;
+        }
+      })(),
+    );
+    const released = await settleIncludingAbort(
+      options.afterOrganizationCleanup?.() ?? Promise.resolve(),
+    );
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+    if (!released.ok) {
+      throw released.error;
     }
   });
 
   return {
+    customerId,
+    subscriptionId,
     run: owner.run,
     async initialize(): Promise<void> {
       await owner.run(async () => {
@@ -107,6 +133,68 @@ export function createPublicBillingZeroFixture(
           status: "active",
           credits: 0,
         });
+        if (options.foreverCustom) {
+          mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
+          mockEnv("ATOM_GRANT_PRICE", options.foreverCustom.priceId);
+          mockOptionalEnv(
+            "STRIPE_WEBHOOK_SECRET",
+            options.foreverCustom.webhookSecret,
+          );
+          context.mocks.stripe.subscriptions.list.mockResolvedValue({
+            data: [],
+            has_more: false,
+          });
+          context.mocks.stripe.customers.retrieve.mockResolvedValue({
+            id: customerId,
+            metadata: { orgId },
+          });
+          const seconds = Math.floor(now() / 1000);
+          await createWebhookCallbackApi(context).postStripeEvent(
+            {
+              id: `evt_forever_${suffix}`,
+              type: "invoice.paid",
+              created: seconds,
+              data: {
+                object: {
+                  id: `in_forever_${suffix}`,
+                  customer: customerId,
+                  metadata: {
+                    type: "atom_grant",
+                    purpose: "atom_grant",
+                    source: "atom_entitlement",
+                    orgId,
+                    tier: "custom",
+                    duration: "forever",
+                  },
+                  parent: null,
+                  lines: {
+                    has_more: false,
+                    data: [
+                      {
+                        id: `il_forever_${suffix}`,
+                        quantity: 1,
+                        price: { id: options.foreverCustom.priceId },
+                        period: { start: seconds, end: seconds + 30 * 86_400 },
+                        parent: { type: "invoice_item_details" },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            [200],
+          );
+          await flushWaitUntilForTest();
+          expect((await readStatus()).body).toMatchObject({
+            tier: "custom",
+            status: "active",
+            credits: 0,
+            hasSubscription: false,
+            currentPeriodEnd: null,
+            concurrencyLimit: 10,
+            creditBreakdown: [],
+          });
+        }
         if (!options.plan) {
           return;
         }

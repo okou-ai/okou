@@ -31,12 +31,14 @@ const mocks = createRouteMocks(context);
 
 async function setupCustomOAuthFirewall(
   mode: "configured" | "automatic",
-  refreshResponse?: (attempt: number) => Response | Promise<Response>,
+  refreshResponse:
+    | ((attempt: number) => Response | Promise<Response>)
+    | undefined,
   identity: {
     readonly initial?: OAuthIdentityFixtureOptions;
     readonly refresh?: OAuthIdentityFixtureOptions;
-  } = {},
-  publicFixture?: PublicFirewallFixture,
+  },
+  publicFixture: PublicFirewallFixture,
 ) {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -60,27 +62,23 @@ async function setupCustomOAuthFirewall(
   const fw = createFirewallApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
-  const actor = publicFixture?.actor ?? bdd.user({ orgRole: "org:admin" });
+  const actor = publicFixture.actor;
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  if (publicFixture) {
-    await publicFixture.fund();
-  } else {
-    await fw.provisionRunReadyOrg(actor);
-  }
+  await publicFixture.fund();
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Custom OAuth refresh agent",
   });
-  publicFixture?.registerAgent(agent.agentId);
+  publicFixture.registerAgent(agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",
   });
-  publicFixture?.registerRun(run.runId);
+  publicFixture.registerRun(run.runId);
   const headers = fw.sandboxHeaders(actor, run.runId);
   const connector = await connectors.createCustomConnector(
     actor,
@@ -120,7 +118,7 @@ async function setupCustomOAuthFirewall(
           },
         },
   );
-  const ownedAccountIds = publicFixture?.registerCustomConnector(connector.id);
+  const ownedAccountIds = publicFixture.registerCustomConnector(connector.id);
   async function connect(mutation: ConnectorAccountMutationIntent) {
     const previous = await connectors.listCustomConnectorAccounts(
       actor,
@@ -157,7 +155,7 @@ async function setupCustomOAuthFirewall(
     if (!account) {
       throw new Error("Expected authorized custom OAuth account");
     }
-    ownedAccountIds?.add(account.id);
+    ownedAccountIds.add(account.id);
     return account;
   }
   function request(connectionId: string, forceRefresh: boolean) {
@@ -191,139 +189,147 @@ describe.each(["configured", "automatic"] as const)(
       { subtype: undefined, reason: "authorization_expired_or_revoked" },
       { subtype: "invalid_rapt", reason: "authorization_expired_or_revoked" },
     ])(
-      "retries invalid_grant ($subtype) quietly and recovers the exact account",
+      "retries invalid_grant ($subtype) and recovers the exact account",
       async ({ subtype, reason }) => {
-        let refreshCalls = 0;
-        const custom = await setupCustomOAuthFirewall(mode, () => {
-          refreshCalls += 1;
-          return HttpResponse.json(
-            {
-              error: "invalid_grant",
-              ...(subtype ? { error_subtype: subtype } : {}),
+        const publicFixture = createPublicFirewallFixture(context, {
+          orgRole: "org:admin",
+        });
+        await publicFixture.run(async () => {
+          let refreshCalls = 0;
+          const custom = await setupCustomOAuthFirewall(
+            mode,
+            () => {
+              refreshCalls += 1;
+              return HttpResponse.json(
+                {
+                  error: "invalid_grant",
+                  ...(subtype ? { error_subtype: subtype } : {}),
+                },
+                { status: 400 },
+              );
             },
-            { status: 400 },
+            {},
+            publicFixture,
           );
-        });
-        const sibling = await custom.connect({
-          intent: "add",
-          displayName: "Second",
-        });
-        context.mocks.sentry.captureException.mockClear();
-        const responses = [await custom.request(custom.account.id, true)];
+          const sibling = await custom.connect({
+            intent: "add",
+            displayName: "Second",
+          });
+          const responses = [await custom.request(custom.account.id, true)];
 
-        mocks.clerk.session(custom.actor.userId, custom.actor.orgId);
-        await accept(
-          setupApp({ context, routes: connectorAccountRoutes })(
-            connectorAccountsContract,
-          ).setDefault({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { connectionId: sibling.id },
-            body: {
-              target: {
-                kind: "custom",
-                customConnectorId: custom.connector.id,
+          mocks.clerk.session(custom.actor.userId, custom.actor.orgId);
+          await accept(
+            setupApp({ context, routes: connectorAccountRoutes })(
+              connectorAccountsContract,
+            ).setDefault({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { connectionId: sibling.id },
+              body: {
+                target: {
+                  kind: "custom",
+                  customConnectorId: custom.connector.id,
+                },
               },
-            },
-          }),
-          [200],
-        );
-        responses.push(await custom.request(custom.account.id, false));
-        responses.push(await custom.request(custom.account.id, true));
-        for (const response of responses) {
-          expect(response.status).toBe(502);
-          expect(response.body).toMatchObject({
-            error: {
-              code: "TOKEN_REFRESH_FAILED",
-              failureReason: "reconnect_required",
+            }),
+            [200],
+          );
+          responses.push(await custom.request(custom.account.id, false));
+          responses.push(await custom.request(custom.account.id, true));
+          for (const response of responses) {
+            expect(response.status).toBe(502);
+            expect(response.body).toMatchObject({
+              error: {
+                code: "TOKEN_REFRESH_FAILED",
+                failureReason: "reconnect_required",
+              },
+            });
+          }
+          expect(refreshCalls).toBe(3);
+          await expect(
+            custom.connectors.listCustomConnectorAccounts(
+              custom.actor,
+              custom.connector.id,
+            ),
+          ).resolves.toStrictEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                id: custom.account.id,
+                connectionStatus: "reconnect-required",
+                reconnectReason: reason,
+              }),
+              expect.objectContaining({
+                id: sibling.id,
+                connectionStatus: "connected",
+                reconnectReason: null,
+              }),
+            ]),
+          );
+          const siblingAuth = await custom.request(sibling.id, false);
+          expect(siblingAuth.status).toBe(200);
+          expect(refreshCalls).toBe(3);
+
+          const replacement =
+            mode === "automatic"
+              ? mockAutomaticMcpOAuthProvider(context, {
+                  registration: "cimd",
+                  initialExpiresIn: 3600,
+                  initialRefreshToken: "replacement-custom-refresh",
+                })
+              : mockCustomConnectorOAuth2Provider(context, {
+                  initialExpiresIn: 3600,
+                  initialRefreshToken: "replacement-custom-refresh",
+                });
+          const retried = await custom.request(custom.account.id, false);
+          expect(retried.status).toBe(200);
+          expect(retried.body).toMatchObject({
+            headers: {
+              Authorization:
+                mode === "automatic"
+                  ? "Bearer automatic-refreshed-access-token"
+                  : "Bearer custom-oauth-refreshed-access-token",
             },
           });
-        }
-        expect(refreshCalls).toBe(3);
-        await expect(
-          custom.connectors.listCustomConnectorAccounts(
-            custom.actor,
-            custom.connector.id,
-          ),
-        ).resolves.toStrictEqual(
-          expect.arrayContaining([
+          expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
+            mode === "automatic"
+              ? "automatic-refresh-token"
+              : "custom-oauth-refresh-token",
+          );
+          await expect(
+            custom.connectors.listCustomConnectorAccounts(
+              custom.actor,
+              custom.connector.id,
+            ),
+          ).resolves.toContainEqual(
             expect.objectContaining({
               id: custom.account.id,
-              connectionStatus: "reconnect-required",
-              reconnectReason: reason,
-            }),
-            expect.objectContaining({
-              id: sibling.id,
               connectionStatus: "connected",
               reconnectReason: null,
             }),
-          ]),
-        );
-        const siblingAuth = await custom.request(sibling.id, false);
-        expect(siblingAuth.status).toBe(200);
-        expect(refreshCalls).toBe(3);
-        expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+          );
 
-        const replacement =
-          mode === "automatic"
-            ? mockAutomaticMcpOAuthProvider(context, {
-                registration: "cimd",
-                initialExpiresIn: 3600,
-                initialRefreshToken: "replacement-custom-refresh",
-              })
-            : mockCustomConnectorOAuth2Provider(context, {
-                initialExpiresIn: 3600,
-                initialRefreshToken: "replacement-custom-refresh",
-              });
-        const retried = await custom.request(custom.account.id, false);
-        expect(retried.status).toBe(200);
-        expect(retried.body).toMatchObject({
-          headers: {
-            Authorization:
-              mode === "automatic"
-                ? "Bearer automatic-refreshed-access-token"
-                : "Bearer custom-oauth-refreshed-access-token",
-          },
-        });
-        expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
-          mode === "automatic"
-            ? "automatic-refresh-token"
-            : "custom-oauth-refresh-token",
-        );
-        await expect(
-          custom.connectors.listCustomConnectorAccounts(
-            custom.actor,
-            custom.connector.id,
-          ),
-        ).resolves.toContainEqual(
-          expect.objectContaining({
+          const reconnected = await custom.connect({
+            intent: "reconnect",
+            connectionId: custom.account.id,
+          });
+          expect(reconnected).toMatchObject({
             id: custom.account.id,
             connectionStatus: "connected",
             reconnectReason: null,
-          }),
-        );
-
-        const reconnected = await custom.connect({
-          intent: "reconnect",
-          connectionId: custom.account.id,
+          });
+          const recovered = await custom.request(custom.account.id, true);
+          expect(recovered.status).toBe(200);
+          expect(recovered.body).toMatchObject({
+            headers: {
+              Authorization:
+                mode === "automatic"
+                  ? "Bearer automatic-refreshed-access-token"
+                  : "Bearer custom-oauth-refreshed-access-token",
+            },
+          });
+          expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
+            "replacement-custom-refresh",
+          );
         });
-        expect(reconnected).toMatchObject({
-          id: custom.account.id,
-          connectionStatus: "connected",
-          reconnectReason: null,
-        });
-        const recovered = await custom.request(custom.account.id, true);
-        expect(recovered.status).toBe(200);
-        expect(recovered.body).toMatchObject({
-          headers: {
-            Authorization:
-              mode === "automatic"
-                ? "Bearer automatic-refreshed-access-token"
-                : "Bearer custom-oauth-refreshed-access-token",
-          },
-        });
-        expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
-          "replacement-custom-refresh",
-        );
       },
     );
 

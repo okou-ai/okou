@@ -49,10 +49,7 @@ import {
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import {
-  SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX,
-  sharedThreadArtifactAuthorUserId,
-} from "../../lib/shared-thread-artifact";
+import { SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX } from "../../lib/shared-thread-artifact";
 import { nowDate } from "../../lib/time";
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
@@ -794,8 +791,6 @@ const deleteOrgData$ = command(
       ),
     );
     signal.throwIfAborted();
-    await db.delete(artifacts).where(eq(artifacts.orgId, orgId));
-    signal.throwIfAborted();
     await db
       .delete(browserUserActionRequests)
       .where(eq(browserUserActionRequests.orgId, orgId));
@@ -907,15 +902,6 @@ const deleteUserData$ = command(
       .where(eq(slackOrgConnections.userId, userId));
     signal.throwIfAborted();
     await db.delete(githubUserLinks).where(eq(githubUserLinks.userId, userId));
-    signal.throwIfAborted();
-    await db
-      .delete(artifacts)
-      .where(
-        inArray(artifacts.authorUserId, [
-          userId,
-          sharedThreadArtifactAuthorUserId(userId),
-        ]),
-      );
     signal.throwIfAborted();
     await db.delete(sharedThreads).where(eq(sharedThreads.userId, userId));
     signal.throwIfAborted();

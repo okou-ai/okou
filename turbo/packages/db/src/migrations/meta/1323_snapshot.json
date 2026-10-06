@@ -1,5 +1,5 @@
 {
-  "id": "679b5e4f-a7a6-4956-ab90-c8495f262bbc",
+  "id": "7c831073-e4a2-4374-8b4e-b23525b9b330",
   "prevId": "3b44c5a6-41b8-4501-b26a-822505cdcb7e",
   "version": "7",
   "dialect": "postgresql",
@@ -26628,7 +26628,7 @@
         },
         "pi_stable_context_heads_input_check": {
           "name": "pi_stable_context_heads_input_check",
-          "value": "(\"pi_stable_context_heads\".\"status\" = 'missing' AND \"pi_stable_context_heads\".\"input_digest\" IS NULL AND (\"pi_stable_context_heads\".\"input\" IS NULL OR jsonb_typeof(\"pi_stable_context_heads\".\"input\") = 'object')) OR (\"pi_stable_context_heads\".\"status\" <> 'missing' AND \"pi_stable_context_heads\".\"input\" IS NOT NULL AND \"pi_stable_context_heads\".\"input_digest\" IS NOT NULL)"
+          "value": "(\"pi_stable_context_heads\".\"status\" = 'missing' AND \"pi_stable_context_heads\".\"input\" IS NULL AND \"pi_stable_context_heads\".\"input_digest\" IS NULL) OR (\"pi_stable_context_heads\".\"status\" <> 'missing' AND \"pi_stable_context_heads\".\"input\" IS NOT NULL AND \"pi_stable_context_heads\".\"input_digest\" IS NOT NULL)"
         },
         "pi_stable_context_heads_artifact_check": {
           "name": "pi_stable_context_heads_artifact_check",
@@ -27946,19 +27946,6 @@
         }
       },
       "foreignKeys": {
-        "run_uploaded_files_run_id_agent_runs_id_fk": {
-          "name": "run_uploaded_files_run_id_agent_runs_id_fk",
-          "tableFrom": "run_uploaded_files",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "run_uploaded_files_chat_thread_id_chat_threads_id_fk": {
           "name": "run_uploaded_files_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "run_uploaded_files",

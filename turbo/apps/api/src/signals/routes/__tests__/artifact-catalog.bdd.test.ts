@@ -707,26 +707,89 @@ describe("GET /api/artifacts/catalog", () => {
     ).toBe(21);
   }, 180_000);
 
-  it("removes catalog rows when deleting the backing agent", async () => {
+  it("keeps owned files and catalog identity after deleting the backing agent", async () => {
     const owner = await catalogActor("Artifact catalog deletion owner");
-    await uploadFile({
+    const uploaded = await uploadFile({
       owner,
-      prompt: "upload a disposable report",
-      filename: "disposable-report.txt",
+      prompt: "upload an independently owned report",
+      filename: "retained-report.txt",
       contentType: "text/plain",
     });
-    expect(
-      (await chat.listArtifactCatalog(owner.actor)).artifacts,
-    ).toHaveLength(1);
+    const catalog = await chat.listArtifactCatalog(owner.actor);
+    expect(catalog.artifacts).toHaveLength(1);
+    const artifactId = catalog.artifacts[0]?.id;
+    if (!artifactId) {
+      throw new Error("Expected the report artifact");
+    }
+    const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
 
     await flushWaitUntilForTest();
     await bdd.deleteAgent(owner.actor, owner.agentId);
 
-    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-    });
+    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
+      catalog,
+    );
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.toStrictEqual(detail);
+    const file = await chat.resolveWebFileUrl(owner.actor, uploaded.fileId);
+    expect(file.publicUrl).toBe(uploaded.url);
+    await chat.requestWebFileUrl(bdd.user(), uploaded.fileId, [404]);
   }, 180_000);
+
+  it.each(["user", "organization"] as const)(
+    "erases independently retained files by %s ownership after Run deletion",
+    async (kind) => {
+      const owner = await catalogActor("Independent artifact erasure owner");
+      const outsider = await catalogActor(
+        "Independent artifact erasure outsider",
+      );
+      const uploaded = await uploadFile({
+        owner,
+        prompt: "publish a report before account erasure",
+        filename: "account-report.txt",
+        contentType: "text/plain",
+      });
+      const unrelated = await uploadFile({
+        owner: outsider,
+        prompt: "publish an unrelated report",
+        filename: "unrelated-report.txt",
+        contentType: "text/plain",
+      });
+      await bdd.deleteAgent(owner.actor, owner.agentId);
+      const catalog = await chat.listArtifactCatalog(owner.actor);
+      const artifactId = catalog.artifacts[0]?.id;
+      if (!artifactId) {
+        throw new Error("Expected a retained artifact after Agent deletion");
+      }
+      const pendingId = await seedPendingCatalogFile({
+        owner,
+        filename: "pending-account-report.txt",
+        url: `https://files.okou.test/${randomUUID()}/pending-account-report.txt`,
+      });
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: kind === "user" ? "user.deleted" : "organization.deleted",
+        data: { id: kind === "user" ? owner.actor.userId : owner.actor.orgId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      await chat.requestWebFileUrl(owner.actor, uploaded.fileId, [404]);
+      await chat.requestWebFileUrl(owner.actor, pendingId, [404]);
+      await chat.requestArtifactCatalogEntry(owner.actor, artifactId, [404]);
+      const unrelatedFile = await chat.resolveWebFileUrl(
+        outsider.actor,
+        unrelated.fileId,
+      );
+      expect(unrelatedFile.publicUrl).toBe(unrelated.url);
+      expect(
+        (await chat.listArtifactCatalog(outsider.actor)).artifacts,
+      ).toContainEqual(
+        expect.objectContaining({ title: "unrelated-report.txt" }),
+      );
+    },
+    180_000,
+  );
 
   it("keeps one catalog entry for a redeployed hosted site", async () => {
     const owner = await catalogActor(

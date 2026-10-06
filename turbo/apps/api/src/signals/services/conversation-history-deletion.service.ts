@@ -7,7 +7,6 @@ import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { settle } from "../utils";
-import { deleteArtifactCatalogForRunIds } from "./artifact-catalog-deletion.service";
 
 const L = logger("ConversationHistoryDeletion");
 const DELETION_BATCH_SIZE = 500;
@@ -67,7 +66,6 @@ export async function deleteLockedRuns(tx: Tx, runIds: readonly string[]) {
   let deletedRuns = 0;
   for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {
     const batch = runIds.slice(offset, offset + DELETION_BATCH_SIZE);
-    await deleteArtifactCatalogForRunIds(tx, batch);
     const result = await contentFreeDatabaseOperation(
       tx.delete(agentRuns).where(inArray(agentRuns.id, batch)),
     );

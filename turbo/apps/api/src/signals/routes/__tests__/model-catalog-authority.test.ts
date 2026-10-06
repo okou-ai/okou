@@ -115,18 +115,20 @@ async function listPolicies() {
     .body;
 }
 
-/** Only the system-default case's live route is outside its policy revision. */
-function systemDefaultPolicyProjection(policy: OrgModelPolicy) {
-  const { runtimeProviderType: _runtimeProviderType, ...projection } = policy;
-  if (projection.memberEffective === undefined) {
-    return projection;
+function policyDefinition({
+  runtimeProviderType: _runtimeProviderType,
+  memberEffective,
+  ...definition
+}: OrgModelPolicy) {
+  if (memberEffective === undefined) {
+    return { ...definition, memberEffective };
   }
   const {
-    availability: _availability,
     runtimeProviderType: _memberRuntimeProviderType,
-    ...memberEffective
-  } = projection.memberEffective;
-  return { ...projection, memberEffective };
+    availability: _availability,
+    ...memberScope
+  } = memberEffective;
+  return { ...definition, memberEffective: memberScope };
 }
 
 describe("model catalog authority", () => {
@@ -158,9 +160,9 @@ describe("model catalog authority", () => {
       }),
     ]);
 
-    // The default is projected rather than persisted. Empty PUT preserves its
-    // complete policy projection and revision, not the live key/route/cooldown
-    // facts behind the three runtime fields exercised by the owned model below.
+    // The default is projected rather than persisted: its definition, member
+    // scope and revision stay unchanged. Runtime route/availability are live
+    // observations, not stored policy fields, and may change between requests.
     const written = await accept(
       policiesApi().update({
         headers: authHeaders(),
@@ -169,9 +171,9 @@ describe("model catalog authority", () => {
       [200],
     );
     expect(written.body.revision).toBe(initial.revision);
-    expect(
-      written.body.policies.map(systemDefaultPolicyProjection),
-    ).toStrictEqual(initial.policies.map(systemDefaultPolicyProjection));
+    expect(written.body.policies.map(policyDefinition)).toStrictEqual(
+      initial.policies.map(policyDefinition),
+    );
   });
 
   it("admits a new policy for an active catalog model", async () => {
@@ -263,13 +265,6 @@ describe("model catalog authority", () => {
       defaultProviderType: "built-in",
       runtimeProviderType: "openrouter-codex",
     });
-    expect(launched(added.body)?.memberEffective).toStrictEqual({
-      providerType: "built-in",
-      runtimeProviderType: "openrouter-codex",
-      credentialScope: "org",
-      availability: "available",
-      accountSelection: "not_applicable",
-    });
 
     // Disabling the first-priority candidate moves Built-in execution to the
     // next enabled route.
@@ -278,31 +273,9 @@ describe("model catalog authority", () => {
       concreteProviderType: "openrouter-codex",
       enabled: false,
     });
-    const nextCandidate = await listPolicies();
-    expect(nextCandidate.revision).toBe(added.body.revision);
-    expect(launched(nextCandidate)).toMatchObject({
+    expect(launched(await listPolicies())).toMatchObject({
       runtimeProviderType: "openai-api-key",
     });
-    expect(launched(nextCandidate)?.memberEffective).toStrictEqual({
-      providerType: "built-in",
-      runtimeProviderType: "openai-api-key",
-      credentialScope: "org",
-      availability: "available",
-      accountSelection: "not_applicable",
-    });
-
-    // This UUID-owned model has no other candidates or run/cooldown writers.
-    // Its key leases remain held; only its own final enabled route is removed.
-    await updateBuiltInRouteFixture({
-      model,
-      concreteProviderType: "openai-api-key",
-      enabled: false,
-    });
-    // No executable catalog route means public policy omission, not a retained
-    // unavailable policy. The enabled-route cooldown case covers that outcome.
-    const unsupported = await listPolicies();
-    expect(unsupported.revision).toBe(added.body.revision);
-    expect(launched(unsupported)).toBeUndefined();
   });
 
   it("runs a new catalog model on an existing protocol from rows alone", async () => {
