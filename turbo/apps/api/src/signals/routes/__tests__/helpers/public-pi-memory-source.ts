@@ -6,7 +6,7 @@ import { http, HttpResponse } from "msw";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
-import { mockNow } from "../../../../lib/time";
+import { mockNow, now, withNowScopeForTest } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { cronExtractPiMemoryStage1RoutesForTest } from "../../cron-extract-pi-memory-stage1";
@@ -47,10 +47,15 @@ export function createPublicPiMemorySource(context: TestContext) {
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
-    await chat.configureSubscriptionPiModel(fixture.actor, {
-      accountId: account,
-      refreshToken: `refresh-${account}`,
-      accessTokenExpiresAt: Math.floor(sourceTime / 1000) + 72 * 3600,
+    // Device consent is committed against the database wall clock. Authenticate
+    // in that clock domain, then restore the historical source clock unchanged.
+    await withNowScopeForTest(async () => {
+      await chat.configureSubscriptionPiModel(fixture.actor, {
+        accountId: account,
+        refreshToken: `refresh-${account}`,
+        accessTokenExpiresAt:
+          Math.floor(Math.max(now(), at.getTime()) / 1000) + 72 * 3600,
+      });
     });
     const agent = await chat.bdd.createAgent(fixture.actor, {
       displayName: "Public Memory source",
