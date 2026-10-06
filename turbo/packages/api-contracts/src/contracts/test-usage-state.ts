@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { initContract } from "./base";
-import { cronCompactUsageEventsContract } from "./cron";
 
 const c = initContract();
 
@@ -149,16 +148,6 @@ export const testUsageStateActionResponseSchema = z.object({
 });
 
 export const testUsageStateContract = c.router({
-  compact: {
-    method: "POST",
-    path: "/api/test/usage-state/compact",
-    body: z.object({ orgId: z.string().min(1) }),
-    responses: {
-      ...cronCompactUsageEventsContract.compact.responses,
-      404: z.string(),
-    },
-    summary: "Compact usage for one explicitly owned test organization",
-  },
   action: {
     method: "POST",
     path: "/api/test/usage-state/action",

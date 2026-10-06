@@ -79,21 +79,6 @@ export const testCronSyncSkillsStateActionResponseSchema = z.object({
   storage: storageRowSchema.nullable().optional(),
 });
 
-const testCronSyncSkillsStateSyncBodySchema = z.object({
-  skill_name_prefix: z.string().regex(/^api-test-skill-[0-9a-f]{32}-$/),
-  required_skill_names: z.array(z.string()).min(1),
-});
-
-const testCronSyncSkillsStateSyncResponseSchema = z.object({
-  success: z.literal(true),
-  commitSha: z.string(),
-  synced: z.number(),
-  skipped: z.number(),
-  failed: z.number(),
-  removed: z.number(),
-  total: z.number(),
-});
-
 export const testCronSyncSkillsStateContract = c.router({
   action: {
     method: "POST",
@@ -106,17 +91,6 @@ export const testCronSyncSkillsStateContract = c.router({
     },
     summary: "Mutate and read cron sync skills API test support state",
   },
-  sync: {
-    method: "POST",
-    path: "/api/test/cron-sync-skills-state/sync",
-    body: testCronSyncSkillsStateSyncBodySchema,
-    responses: {
-      200: testCronSyncSkillsStateSyncResponseSchema,
-      400: testCronSyncSkillsStateErrorSchema,
-      404: z.string(),
-    },
-    summary: "Sync the explicitly scoped skills fixture in API tests",
-  },
 });
 
 export type TestCronSyncSkillsStateContract =
@@ -126,9 +100,6 @@ export type TestCronSyncSkillsStateActionBody = z.infer<
 >;
 export type TestCronSyncSkillsStateActionResponse = z.infer<
   typeof testCronSyncSkillsStateActionResponseSchema
->;
-export type TestCronSyncSkillsStateSyncResponse = z.infer<
-  typeof testCronSyncSkillsStateSyncResponseSchema
 >;
 export type TestCronSyncSkillsStateSkillVersionSeed = z.infer<
   typeof skillVersionSeedSchema

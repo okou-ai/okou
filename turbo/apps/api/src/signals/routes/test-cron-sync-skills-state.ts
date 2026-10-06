@@ -13,7 +13,6 @@ import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { syncSkillsForScope$ } from "../services/cron-sync-skills.service";
 import { newStorageS3Location } from "../services/storage-s3-prefix.utils";
 import {
   isTestEndpointAllowed,
@@ -21,7 +20,6 @@ import {
 } from "./test-endpoint-helpers";
 
 const actionBody$ = bodyResultOf(testCronSyncSkillsStateContract.action);
-const syncBody$ = bodyResultOf(testCronSyncSkillsStateContract.sync);
 
 type CronSyncSkillsAction<
   TAction extends TestCronSyncSkillsStateActionBody["action"],
@@ -289,40 +287,9 @@ const mutateCronSyncSkillsState$ = command(
   },
 );
 
-const syncCronSyncSkillsState$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-
-    const bodyResult = await get(syncBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    const result = await set(
-      syncSkillsForScope$,
-      {
-        skillNamePrefix: bodyResult.data.skill_name_prefix,
-        requiredSkillNames: bodyResult.data.required_skill_names,
-      },
-      signal,
-    );
-    return {
-      status: 200 as const,
-      body: { success: true as const, ...result },
-    };
-  },
-);
-
 export const testCronSyncSkillsStateRoutes: readonly RouteEntry[] = [
   {
     route: testCronSyncSkillsStateContract.action,
     handler: mutateCronSyncSkillsState$,
-  },
-  {
-    route: testCronSyncSkillsStateContract.sync,
-    handler: syncCronSyncSkillsState$,
   },
 ];

@@ -35,6 +35,7 @@ import {
   readPiStableContextStorageDemandFixture,
   seedPiStableContextStorageDemandFixture,
 } from "../../../test-fixtures/pi-stable-context";
+import { syncSkillFixturesForTest } from "../../../test-fixtures/skill-sync-worker";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { createBddApi } from "./helpers/api-bdd";
 import {
@@ -47,7 +48,6 @@ import {
   findSystemStorageByNameState,
   seedCurrentSkillVersionsState,
   setOwnedSkillsCommitShaState,
-  syncOwnedSkillsState,
 } from "./helpers/cron-sync-skills-state";
 
 const context = testContext();
@@ -202,10 +202,13 @@ async function setOwnedSkillsCommitSha(
 }
 
 async function syncOwnedSkills(fixture: CronSyncSkillsFixture) {
-  return await syncOwnedSkillsState(context, {
-    skillNamePrefix: fixture.skillNamePrefix,
-    requiredSkillNames: fixture.requiredSeedSkillNames,
-  });
+  return await syncSkillFixturesForTest(
+    {
+      skillNamePrefix: fixture.skillNamePrefix,
+      requiredSkillNames: fixture.requiredSeedSkillNames,
+    },
+    context.signal,
+  );
 }
 
 async function seedCurrentSkillVersions(
@@ -367,7 +370,7 @@ async function seedCurrentSeedSkillVersions(
 }
 
 // The production cron scans every system skill. The existing prefix-scoped
-// route runs that same sync against this test's owned names (API testing guide,
+// driver runs that same sync against this test's owned names (API testing guide,
 // Shared Persistent State); prior versions also go through GitHub and S3.
 async function publishSeedSkills(
   fixture: CronSyncSkillsFixture,
@@ -375,7 +378,6 @@ async function publishSeedSkills(
   const commitSha = newCommitSha();
   setupMswHandlers(commitSha, createFullTarball(fixture, []));
   await expect(syncOwnedSkills(fixture)).resolves.toStrictEqual({
-    success: true,
     commitSha,
     synced: fixture.requiredSeedSkillNames.length,
     skipped: 0,
@@ -406,12 +408,14 @@ async function publishSentinelSkill(
     ]),
   );
   await expect(
-    syncOwnedSkillsState(context, {
-      skillNamePrefix: fixture.sentinelSkillNamePrefix,
-      requiredSkillNames: [name],
-    }),
+    syncSkillFixturesForTest(
+      {
+        skillNamePrefix: fixture.sentinelSkillNamePrefix,
+        requiredSkillNames: [name],
+      },
+      context.signal,
+    ),
   ).resolves.toStrictEqual({
-    success: true,
     commitSha,
     synced: 1,
     skipped: 0,
@@ -428,7 +432,6 @@ async function expectCompletedCommit(
 ): Promise<void> {
   setupGitRefsHandler(commitSha);
   await expect(syncOwnedSkills(fixture)).resolves.toStrictEqual({
-    success: true,
     commitSha,
     synced: 0,
     skipped: 0,
@@ -606,7 +609,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha,
       synced: 0,
       skipped: 0,
@@ -617,12 +619,14 @@ describe("GET /api/cron/sync-skills", () => {
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
     setupGitRefsHandler(sentinelCommitSha);
     await expect(
-      syncOwnedSkillsState(context, {
-        skillNamePrefix: fixture.sentinelSkillNamePrefix,
-        requiredSkillNames: [fixture.sentinelSkillName],
-      }),
+      syncSkillFixturesForTest(
+        {
+          skillNamePrefix: fixture.sentinelSkillNamePrefix,
+          requiredSkillNames: [fixture.sentinelSkillName],
+        },
+        context.signal,
+      ),
     ).resolves.toStrictEqual({
-      success: true,
       commitSha: sentinelCommitSha,
       synced: 0,
       skipped: 0,
@@ -644,7 +648,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha,
       synced: fixture.requiredSeedSkillNames.length + 1,
       skipped: 0,
@@ -668,7 +671,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha,
       synced: 2,
       skipped: fixture.requiredSeedSkillNames.length,
@@ -690,7 +692,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha,
       synced: fixture.requiredSeedSkillNames.length,
       skipped: 0,
@@ -736,7 +737,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha,
       synced: 2,
       skipped: fixture.requiredSeedSkillNames.length,
@@ -781,7 +781,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha,
       synced: 1,
       skipped: fixture.requiredSeedSkillNames.length,
@@ -810,7 +809,6 @@ describe("GET /api/cron/sync-skills", () => {
     const retryResponse = await syncOwnedSkills(fixture);
 
     expect(retryResponse).toStrictEqual({
-      success: true,
       commitSha,
       synced: 1,
       skipped: fixture.requiredSeedSkillNames.length + 1,
@@ -838,7 +836,7 @@ describe("GET /api/cron/sync-skills", () => {
     const commitSha = newCommitSha();
     setupMswHandlers(commitSha, createFullTarball(fixture, [oversized]));
     const response = await syncOwnedSkills(fixture);
-    expect(response).toMatchObject({ success: true, skipped: 1, failed: 0 });
+    expect(response).toMatchObject({ skipped: 1, failed: 0 });
     await expect(
       findSkillByUrl(testSkillUrl(oversized.name)),
     ).resolves.toMatchObject({ commitSha });
@@ -886,7 +884,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha: nextCommitSha,
       synced: 1,
       skipped: fixture.requiredSeedSkillNames.length + 1,
@@ -926,7 +923,6 @@ describe("GET /api/cron/sync-skills", () => {
       createFullTarball(fixture, [fixture.alphaSkill]),
     );
     await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
-      success: true,
       synced: 1,
       failed: 0,
     });
@@ -946,7 +942,6 @@ describe("GET /api/cron/sync-skills", () => {
       createFullTarball(fixture, [modifiedAlpha]),
     );
     await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
-      success: true,
       synced: 1,
       failed: 0,
     });
@@ -960,7 +955,7 @@ describe("GET /api/cron/sync-skills", () => {
     );
     const result = await syncOwnedSkills(fixture);
 
-    expect(result).toMatchObject({ success: true, synced: 1, failed: 0 });
+    expect(result).toMatchObject({ synced: 1, failed: 0 });
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
     expect(s3CallsByName("HeadObjectCommand")).toHaveLength(0);
     await expectCompletedCommit(fixture, finalCommitSha);
@@ -1175,7 +1170,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha: nextCommitSha,
       synced: 0,
       skipped: fixture.requiredSeedSkillNames.length + 1,
@@ -1237,7 +1231,6 @@ describe("GET /api/cron/sync-skills", () => {
     const response = await syncOwnedSkills(fixture);
 
     expect(response).toStrictEqual({
-      success: true,
       commitSha: nextCommitSha,
       synced: 0,
       skipped: fixture.requiredSeedSkillNames.length + 1,
@@ -1254,7 +1247,6 @@ describe("GET /api/cron/sync-skills", () => {
       createFullTarball(fixture, [fixture.alphaSkill, fixture.betaSkill]),
     );
     await expect(syncOwnedSkills(fixture)).resolves.toStrictEqual({
-      success: true,
       commitSha: restoredCommitSha,
       synced: 1,
       skipped: fixture.requiredSeedSkillNames.length + 1,
@@ -1299,7 +1291,6 @@ describe("GET /api/cron/sync-skills", () => {
     const removalResponse = await syncOwnedSkills(fixture);
 
     expect(removalResponse).toStrictEqual({
-      success: true,
       commitSha: removalCommitSha,
       synced: 0,
       skipped: keptSkills.length,
@@ -1314,7 +1305,6 @@ describe("GET /api/cron/sync-skills", () => {
     const rollbackResponse = await syncOwnedSkills(fixture);
 
     expect(rollbackResponse).toStrictEqual({
-      success: true,
       commitSha: initialCommitSha,
       synced: omittedSkills.length,
       skipped: keptSkills.length,

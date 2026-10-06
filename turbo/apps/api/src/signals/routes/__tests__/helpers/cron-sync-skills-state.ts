@@ -2,7 +2,6 @@ import type {
   TestCronSyncSkillsStateActionBody,
   TestCronSyncSkillsStateActionResponse,
   TestCronSyncSkillsStateSkillVersionSeed,
-  TestCronSyncSkillsStateSyncResponse,
 } from "@okouai/api-contracts/contracts/test-cron-sync-skills-state";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
@@ -106,29 +105,6 @@ export async function setOwnedSkillsCommitShaState(
     }),
     commit_sha: input.commitSha,
   });
-}
-
-export async function syncOwnedSkillsState(
-  context: TestContext,
-  input: {
-    readonly skillNamePrefix: string;
-    readonly requiredSkillNames: readonly string[];
-  },
-): Promise<TestCronSyncSkillsStateSyncResponse> {
-  const response = await requestCronSyncSkillsState(
-    context,
-    `${CRON_SYNC_SKILLS_STATE_ROUTE}/sync`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        skill_name_prefix: input.skillNamePrefix,
-        required_skill_names: input.requiredSkillNames,
-      }),
-    },
-  );
-  expectOk(response, "cron sync skills scoped sync");
-  return await readJson<TestCronSyncSkillsStateSyncResponse>(response);
 }
 
 export async function seedCurrentSkillVersionsState(

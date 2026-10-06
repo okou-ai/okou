@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
-import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -14,6 +13,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
+import { compactUsageForTest } from "../../../test-fixtures/usage-compaction-worker";
 import {
   deleteUsagePricingRows,
   seedUsagePricingRows,
@@ -29,7 +29,6 @@ import {
   seedUsageStateFixture$,
 } from "../../routes/__tests__/helpers/usage-state";
 import { testUsageSettlementRoutes } from "../../routes/test-usage-settlement";
-import { testUsageStateRoutes } from "../../routes/test-usage-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -217,15 +216,9 @@ describe("shared SDK ingestion", () => {
       undefined,
       context.signal,
     );
-    const client = setupApp({ context, routes: testUsageStateRoutes })(
-      testUsageStateContract,
-    );
     const compact = async () => {
       context.mocks.axiom.sdkIngest.mockClear();
-      return await accept(
-        client.compact({ body: { orgId: fixture.orgId } }),
-        [200],
-      );
+      return await compactUsageForTest(fixture.orgId, context.signal);
     };
     const expectGrainMax = (expected: number) => {
       const batchEvents = context.mocks.axiom.sdkIngest.mock.calls
@@ -278,12 +271,12 @@ describe("shared SDK ingestion", () => {
     });
     await usageEventCompactionDbFixture(randomUUID(), async () => {
       const empty = await compact();
-      expect(empty.body).toMatchObject({
+      expect(empty).toMatchObject({
         selectedGrains: 0,
         rawRowsDeleted: 0,
         reconciled: true,
       });
-      expect(Object.keys(empty.body)).not.toContain("maxGrainSourceRows");
+      expect(Object.keys(empty)).not.toContain("maxGrainSourceRows");
       expectGrainMax(0);
 
       for (const [category, count] of [
@@ -307,7 +300,7 @@ describe("shared SDK ingestion", () => {
         );
       }
       const large = await compact();
-      expect(large.body).toMatchObject({
+      expect(large).toMatchObject({
         seededRawRows: 500,
         selectedGrains: 1,
         rawRowsDeleted: 500,
@@ -317,7 +310,7 @@ describe("shared SDK ingestion", () => {
       expectGrainMax(500);
 
       const remaining = await compact();
-      expect(remaining.body).toMatchObject({
+      expect(remaining).toMatchObject({
         selectedGrains: 2,
         rawRowsDeleted: 4,
         reconciled: true,
@@ -341,7 +334,7 @@ describe("shared SDK ingestion", () => {
         );
       }
       const multiple = await compact();
-      expect(multiple.body).toMatchObject({
+      expect(multiple).toMatchObject({
         selectedGrains: 2,
         rawRowsDeleted: 5,
         quantity: "5",
@@ -399,7 +392,7 @@ describe("shared SDK ingestion", () => {
         context.signal,
       );
       const reconsolidated = await compact();
-      expect(reconsolidated.body).toMatchObject({
+      expect(reconsolidated).toMatchObject({
         rawRowsDeleted: 2,
         hourlyRowsDeleted: 0,
         selectedGrains: 2,

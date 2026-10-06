@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
-import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
-import { testUsageStateRoutes } from "../test-usage-state";
 import { cronCompactUsageEventsContract } from "@okouai/api-contracts/contracts/cron";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
@@ -10,6 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
+import { compactUsageForTest } from "../../../test-fixtures/usage-compaction-worker";
 import { nowDate } from "../../../lib/time";
 import {
   attachUsageAllowance$,
@@ -53,12 +52,7 @@ async function seedFixture(): Promise<UsageStateFixture> {
 }
 
 async function compactOwnedUsage(fixture: UsageStateFixture) {
-  return await accept(
-    setupApp({ context, routes: testUsageStateRoutes })(
-      testUsageStateContract,
-    ).compact({ body: { orgId: fixture.orgId } }),
-    [200],
-  );
+  return await compactUsageForTest(fixture.orgId, context.signal);
 }
 
 async function readStorage(fixture: UsageStateFixture) {
@@ -163,8 +157,7 @@ describe("usage event compaction cron", () => {
     );
     const response = await compactOwnedUsage(fixture);
 
-    expect(response.body).toMatchObject({
-      success: true,
+    expect(response).toMatchObject({
       rawSeedLimit: RAW_SEED_LIMIT,
       seededRawRows: 1,
       selectedGrains: 1,
@@ -176,7 +169,7 @@ describe("usage event compaction cron", () => {
       allowanceUnits: "0",
       reconciled: true,
     });
-    expect(Object.keys(response.body).sort()).toStrictEqual([
+    expect(Object.keys(response).sort()).toStrictEqual([
       "affectedShortWindows",
       "affectedWeeklyWindows",
       "allowanceUnits",
@@ -195,7 +188,6 @@ describe("usage event compaction cron", () => {
       "reconciled",
       "seededRawRows",
       "selectedGrains",
-      "success",
     ]);
     await expect(readStorage(fixture)).resolves.toStrictEqual({
       raw: 0,
@@ -269,7 +261,7 @@ describe("usage event compaction cron", () => {
       completedHour.getTime() - 4 * 24 * 60 * 60 * 1000,
     );
 
-    expect(response.body).toMatchObject({
+    expect(response).toMatchObject({
       rawRowsDeleted: 1,
       hourlyRowsInserted: 1,
       billingErrorHeldRows: 1,
@@ -277,7 +269,7 @@ describe("usage event compaction cron", () => {
     expect([
       expectedCutoffAtStart.toISOString(),
       expectedCutoffAtCompletion.toISOString(),
-    ]).toContain(response.body.cutoff);
+    ]).toContain(response.cutoff);
     await expect(readStorage(fixture)).resolves.toStrictEqual({
       raw: 3,
       processedRaw: 2,
@@ -300,7 +292,7 @@ describe("usage event compaction cron", () => {
       );
     }
 
-    expect((await compactOwnedUsage(owned)).body).toMatchObject({
+    await expect(compactOwnedUsage(owned)).resolves.toMatchObject({
       rawRowsDeleted: 1,
       hourlyRowsInserted: 1,
       hasMore: false,
@@ -342,7 +334,7 @@ describe("usage event compaction cron", () => {
 
     const response = await compactOwnedUsage(fixture);
 
-    expect(response.body).toMatchObject({
+    expect(response).toMatchObject({
       rawSeedLimit: RAW_SEED_LIMIT,
       seededRawRows: RAW_SEED_LIMIT,
       selectedGrains: 1,
@@ -381,7 +373,7 @@ describe("usage event compaction cron", () => {
       ),
     ).resolves.toBe(2);
 
-    expect((await compactOwnedUsage(fixture)).body).toMatchObject({
+    await expect(compactOwnedUsage(fixture)).resolves.toMatchObject({
       rawRowsDeleted: 0,
       hourlyRowsDeleted: 0,
       hourlyRowsInserted: 0,
@@ -404,7 +396,7 @@ describe("usage event compaction cron", () => {
       context.signal,
     );
     const late = await compactOwnedUsage(fixture);
-    expect(late.body).toMatchObject({
+    expect(late).toMatchObject({
       rawRowsDeleted: 1,
       hourlyRowsDeleted: 0,
       hourlyRowsInserted: 1,
@@ -418,7 +410,7 @@ describe("usage event compaction cron", () => {
     });
 
     const retry = await compactOwnedUsage(fixture);
-    expect(retry.body).toMatchObject({
+    expect(retry).toMatchObject({
       rawRowsDeleted: 0,
       hourlyRowsDeleted: 0,
       hourlyRowsInserted: 0,
@@ -490,7 +482,7 @@ describe("usage event compaction cron", () => {
     );
     const response = await compactOwnedUsage(fixture);
 
-    expect(response.body).toMatchObject({
+    expect(response).toMatchObject({
       selectedGrains: 3,
       rawRowsDeleted: 3,
       hourlyRowsInserted: 3,
@@ -564,7 +556,7 @@ describe("usage event compaction cron", () => {
     });
     const response = await compactOwnedUsage(fixture);
 
-    expect(response.body).toMatchObject({
+    expect(response).toMatchObject({
       rawRowsDeleted: 1,
       hourlyRowsDeleted: 0,
       hourlyRowsInserted: 1,
@@ -575,17 +567,6 @@ describe("usage event compaction cron", () => {
       processedRaw: 0,
       hourly: 2,
     });
-  });
-
-  it("denies scoped test compaction in production", async () => {
-    mockEnv("ENV", "production");
-    const response = await accept(
-      setupApp({ context, routes: testUsageStateRoutes })(
-        testUsageStateContract,
-      ).compact({ body: { orgId: randomUUID() } }),
-      [404],
-    );
-    expect(response.status).toBe(404);
   });
 
   it("preserves different billing identities after their live runs are removed", async () => {
@@ -630,7 +611,7 @@ describe("usage event compaction cron", () => {
       count: 1,
     });
     const result = await compactOwnedUsage(fixture);
-    expect(result.body).toMatchObject({
+    expect(result).toMatchObject({
       rawRowsDeleted: 3,
       hourlyRowsDeleted: 0,
       hourlyRowsInserted: 3,
@@ -646,7 +627,7 @@ describe("usage event compaction cron", () => {
       hourly: 5,
     });
     const retry = await compactOwnedUsage(fixture);
-    expect(retry.body).toMatchObject({
+    expect(retry).toMatchObject({
       rawRowsDeleted: 0,
       hourlyRowsInserted: 0,
       reconciled: true,
@@ -677,7 +658,7 @@ describe("usage event compaction cron", () => {
     // A later ordinary visit must not resurrect facts after either concurrent
     // operation won the raw rows. This is a new request, not a failed retry.
     const nextVisit = await compactOwnedUsage(fixture);
-    expect(nextVisit.body).toMatchObject({
+    expect(nextVisit).toMatchObject({
       rawRowsDeleted: 0,
       hourlyRowsInserted: 0,
       reconciled: true,
@@ -722,17 +703,17 @@ describe("usage event compaction cron", () => {
     const nextVisit = await compactOwnedUsage(fixture);
     const visits = [...responses, nextVisit];
     for (const response of visits) {
-      expect(response.body.reconciled).toBeTruthy();
-      expect(response.body.rawRowsDeleted).toBeLessThanOrEqual(RAW_SEED_LIMIT);
+      expect(response.reconciled).toBeTruthy();
+      expect(response.rawRowsDeleted).toBeLessThanOrEqual(RAW_SEED_LIMIT);
     }
     expect(
       visits.reduce((total, response) => {
-        return total + response.body.rawRowsDeleted;
+        return total + response.rawRowsDeleted;
       }, 0),
     ).toBe(RAW_SEED_LIMIT + 1);
     expect(
       visits.reduce((total, response) => {
-        return total + Number(response.body.quantity);
+        return total + Number(response.quantity);
       }, 0),
     ).toBe(RAW_SEED_LIMIT + 70_001);
     await expect(readStorage(fixture)).resolves.toStrictEqual({

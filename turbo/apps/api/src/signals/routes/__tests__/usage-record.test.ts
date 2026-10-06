@@ -1,6 +1,4 @@
-import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
 import { randomUUID } from "node:crypto";
-import { testUsageStateRoutes } from "../test-usage-state";
 
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { mapsContract } from "@okouai/api-contracts/contracts/maps";
@@ -19,6 +17,7 @@ import {
   seedUsagePricingRows,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
+import { compactUsageForTest } from "../../../test-fixtures/usage-compaction-worker";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mapsRoutes } from "../maps";
 import { usageRecordRoutes } from "../usage-record";
@@ -741,13 +740,7 @@ describe("GET /api/usage/record", () => {
     await recordModelUsage(fixture.actor, run.runId, model, { input: 50 });
     await recordConnectorUsage(fixture.actor, run.runId, connectorProvider, 2);
     await billing.processOrgUsageEvents(fixture.actor);
-    const compactor = setupApp({ context, routes: testUsageStateRoutes })(
-      testUsageStateContract,
-    );
-    await accept(
-      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
-      [200],
-    );
+    await compactUsageForTest(fixture.actor.orgId, context.signal);
 
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     const response = await accept(
@@ -796,14 +789,8 @@ describe("GET /api/usage/record", () => {
     // already committed. Product reads must include both immutable fragments.
     await recordConnectorUsage(fixture.actor, run.runId, connectorProvider, 1);
     await billing.processOrgUsageEvents(fixture.actor);
-    await accept(
-      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
-      [200],
-    );
-    await accept(
-      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
-      [200],
-    );
+    await compactUsageForTest(fixture.actor.orgId, context.signal);
+    await compactUsageForTest(fixture.actor.orgId, context.signal);
     const after = await accept(
       apiClient().get({
         query: { range: "today", tz: "UTC" },
