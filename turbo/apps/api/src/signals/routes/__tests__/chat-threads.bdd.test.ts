@@ -1,3 +1,4 @@
+import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import AdmZip from "adm-zip";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -45,10 +46,7 @@ import {
   setChatThreadSnapshotBoundaryFixture,
 } from "../../../test-fixtures/chat-thread-events";
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
-import {
-  seedOrgMetadata,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
+import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
@@ -2374,29 +2372,54 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   }, 90_000);
 
   it("pins okou-1.0 on its Built-in route for limited-free-1 workspaces", async () => {
-    const { actor, agentId } = await entitledChatActor(
-      "Limited free model pin agent",
-    );
-    if (!actor.orgId) {
-      throw new Error("Expected actor org");
-    }
-    // "limited-free-1" is only assigned by the Clerk org-creation bootstrap;
-    // no product API can move an entitled org onto it, so downgrade the tier
-    // through the shared system-config seed while keeping the pro balance.
-    const billingStatus = await api.readBillingStatus(actor);
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: billingStatus.credits,
+    const fixture = createPublicFirewallFixture(context);
+    await fixture.run(async () => {
+      api.configureRunnerGroup();
+      chatCallbacks.acceptChatObjectStorage();
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      chatCallbacks.disableVapid();
+      const actor = fixture.actor;
+      const subscription = await fixture.fund();
+      const { providerId } = await api.ensureOrgModelProvider(actor);
+      await selectNativeClaudeModel(actor, providerId);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Limited free model pin agent",
+        visibility: "private",
+      });
+      fixture.registerAgent(agent.agentId);
+      const agentId = agent.agentId;
+      const billingStatus = await api.readBillingStatus(actor);
+      await createWebhookCallbackApi(context).postStripeEvent(
+        {
+          type: "customer.subscription.deleted",
+          data: {
+            object: {
+              id: subscription.subscriptionId,
+              customer: subscription.customerId,
+              status: "canceled",
+              metadata: {},
+              items: { data: [{ price: { id: "price_bdd_pro" } }] },
+            },
+          },
+        },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
+        tier: "limited-free-1",
+        status: "active",
+        credits: billingStatus.credits,
+      });
+      const thread = await chat.createThread(actor, {
+        agentId,
+        model: "okou-1.0",
+        title: "limited free model pin",
+      });
+      expect(thread.title).toBe("limited free model pin");
+      await chat.updateThreadModelSelection(actor, thread.id, "okou-1.0");
     });
-
-    const thread = await chat.createThread(actor, {
-      agentId,
-      model: "okou-1.0",
-      title: "limited free model pin",
-    });
-    expect(thread.title).toBe("limited free model pin");
-    await chat.updateThreadModelSelection(actor, thread.id, "okou-1.0");
   }, 90_000);
 
   it("updates the Computer Use host binding on a chat thread", async () => {

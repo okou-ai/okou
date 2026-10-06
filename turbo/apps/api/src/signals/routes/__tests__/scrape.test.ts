@@ -20,7 +20,7 @@ import {
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -196,7 +196,7 @@ async function cleanupFundedScrapeActor(
   await flushWaitUntilForTest();
 
   // Public deletion removes the wallet and active work. Production retains
-  // immutable billing and usage history under this fixture's unique IDs.
+  // immutable billing receipts under this fixture's unique IDs.
   await expect(credits(owned.actor)).resolves.toBe(0);
   expect(
     (
@@ -209,7 +209,12 @@ async function cleanupFundedScrapeActor(
   ).toStrictEqual([]);
 }
 
-async function fundActorWithSubscription(actor: ApiTestUser) {
+async function fundActorWithSubscription(
+  actor: ApiTestUser,
+  options: {
+    readonly createCliTokenBeforeFunding?: () => Promise<string>;
+  } = {},
+) {
   if (!actor.orgId) {
     throw new Error("Scrape test actor must belong to an organization");
   }
@@ -223,10 +228,42 @@ async function fundActorWithSubscription(actor: ApiTestUser) {
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
+  let cliToken: string | undefined;
   const owner = createFixtureOperationOwner(async () => {
-    await cleanupFundedScrapeActor(owned);
+    const cleanupResult = await settleIncludingAbort(
+      cleanupFundedScrapeActor(owned),
+    );
+    if (options.createCliTokenBeforeFunding) {
+      const webhooks = createWebhookCallbackApi(context);
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: "user.deleted",
+        data: { id: actor.userId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      if (cliToken) {
+        mockClerkMembership(context, actor, "org:admin");
+        const revoked = await rawScrapeRequest(
+          null,
+          {
+            url: "https://example.com/page",
+            format: "markdown",
+            mode: "standard",
+          },
+          { authHeaders: { authorization: `Bearer ${cliToken}` } },
+        );
+        expect(revoked.status).toBe(401);
+        await flushWaitUntilForTest();
+      }
+      // Anonymous unapproved challenges retain their public 900-second expiry.
+    }
+    if (!cleanupResult.ok) {
+      throw cleanupResult.error;
+    }
   });
   await owner.run(async () => {
+    cliToken = await options.createCliTokenBeforeFunding?.();
     await bootstrapOnboarding(actor);
     await expect(credits(actor)).resolves.toBe(0);
 
@@ -533,45 +570,69 @@ describe("okou scrape route", () => {
 
   it("stops Clerk membership retries when the API instance is aborted", async () => {
     const actor = createBddApi(context).user();
-    const { token } =
-      await createAuthOrgAgentsBddApi(context).createCliToken(actor);
-    const controller = new AbortController();
-    const retryStarted = createDeferredPromise<void>(context.signal);
-    const abortError = new Error("client disconnected during Clerk retry");
-    abortError.name = "AbortError";
-    await fundActor(actor);
-    context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(521),
-    );
-    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
-      retryStarted.resolve(undefined);
-      const signal = options?.signal;
-      if (!signal) {
-        throw new Error("Expected Clerk retry delay to receive a signal");
-      }
-      return createDeferredPromise<void>(signal).promise;
+
+    let token = "";
+    const owner = await fundActorWithSubscription(actor, {
+      createCliTokenBeforeFunding: async () => {
+        const issued =
+          await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+        token = issued.token;
+        return token;
+      },
     });
+    await owner.run(async () => {
+      const controller = new AbortController();
+      const retryStarted = createDeferredPromise<void>(context.signal);
+      const abortError = new Error("client disconnected during Clerk retry");
+      abortError.name = "AbortError";
 
-    const responsePromise = rawScrapeRequest(
-      null,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      {
-        authHeaders: { authorization: `Bearer ${token}` },
-        instanceSignal: controller.signal,
-      },
-    );
-    await retryStarted.promise;
-    controller.abort(abortError);
-    const response = await responsePromise;
+      context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
+        new ClerkApiResponseTestError(521),
+      );
+      context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+        retryStarted.resolve(undefined);
+        const signal = options?.signal;
+        if (!signal) {
+          throw new Error("Expected Clerk retry delay to receive a signal");
+        }
+        return createDeferredPromise<void>(signal).promise;
+      });
 
-    expect(response.status).toBe(500);
-    expect(
-      context.mocks.clerk.users.getOrganizationMembershipList,
-    ).toHaveBeenCalledOnce();
+      const responsePromise = rawScrapeRequest(
+        null,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        {
+          authHeaders: { authorization: `Bearer ${token}` },
+          instanceSignal: controller.signal,
+        },
+      );
+
+      const responseOutcome = settleIncludingAbort(responsePromise);
+      const outcome = await settleIncludingAbort(
+        (async () => {
+          await retryStarted.promise;
+          controller.abort(abortError);
+          const response = await responsePromise;
+
+          expect(response.status).toBe(500);
+          expect(
+            context.mocks.clerk.users.getOrganizationMembershipList,
+          ).toHaveBeenCalledOnce();
+        })(),
+      );
+      controller.abort(abortError);
+      const settledResponse = await responseOutcome;
+      if (!outcome.ok) {
+        throw outcome.error;
+      }
+      if (!settledResponse.ok) {
+        throw settledResponse.error;
+      }
+    });
   });
 
   it("keeps successful Clerk membership misses on the unauthorized path", async () => {

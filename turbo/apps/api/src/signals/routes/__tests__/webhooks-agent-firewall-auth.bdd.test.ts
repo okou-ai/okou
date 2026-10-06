@@ -577,35 +577,50 @@ describe("FW-3: billable firewall lease", () => {
   afterEach(publicConnections.cleanup);
 
   it("leases billable auth for limited-free-1 workspaces with spendable credits", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await firewallRun();
-    if (!actor.orgId) {
-      throw new Error("Expected firewall actor to have an org");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId ?? "",
-      tier: "limited-free-1",
-      credits: 20_000,
-    });
-
-    const before = Math.floor(now() / 1000);
-    const leased = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+    await withPublicFirewallRun(async (headers, fixture, subscription) => {
+      const fw = createFirewallApi(context);
+      await createWebhookCallbackApi(context).postStripeEvent(
+        {
+          type: "customer.subscription.deleted",
+          data: {
+            object: {
+              id: subscription.subscriptionId,
+              customer: subscription.customerId,
+              status: "canceled",
+              metadata: {},
+              items: { data: [{ price: { id: "price_bdd_pro" } }] },
+            },
+          },
         },
-        firewallBillable: true,
-      },
-      [200],
-    );
-    if (leased.status !== 200) {
-      throw new Error("Expected limited-free-1 billable auth to succeed");
-    }
-    expect(leased.body.expiresAt).not.toBeNull();
-    expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
-    expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await expect(
+        createRunsApi(context).readBillingStatus(fixture.actor),
+      ).resolves.toMatchObject({
+        tier: "limited-free-1",
+        status: "active",
+        credits: 20_000,
+      });
+      const before = Math.floor(now() / 1000);
+      const leased = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
+          },
+          firewallBillable: true,
+        },
+        [200],
+      );
+      if (leased.status !== 200) {
+        throw new Error("Expected limited-free-1 billable auth to succeed");
+      }
+      expect(leased.body.expiresAt).not.toBeNull();
+      expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
+      expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
+    });
   });
 
   it("denies billable auth for suspended workspaces even with credits", async () => {
@@ -3472,28 +3487,30 @@ describe("FW-10: platform connector secrets", () => {
   });
 
   it("keeps old encrypted platform-secret payloads working without metadata", async () => {
-    const fw = createFirewallApi(context);
-    const { headers } = await firewallRun();
-    mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
+    await withPublicFirewallRun(async (headers) => {
+      const fw = createFirewallApi(context);
 
-    const resolved = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          GOOGLE_ADS_DEVELOPER_TOKEN: "old-encrypted-developer-token",
-        }),
-        authHeaders: {
-          "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
+      mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", undefined);
+
+      const resolved = await fw.requestFirewallAuth(
+        headers,
+        {
+          encryptedSecrets: fw.encryptedSecretsBody({
+            GOOGLE_ADS_DEVELOPER_TOKEN: "old-encrypted-developer-token",
+          }),
+          authHeaders: {
+            "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
+          },
         },
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected old encrypted platform payload to resolve");
-    }
-    expect(resolved.body.headers["developer-token"]).toBe(
-      "old-encrypted-developer-token",
-    );
+        [200],
+      );
+      if (resolved.status !== 200) {
+        throw new Error("Expected old encrypted platform payload to resolve");
+      }
+      expect(resolved.body.headers["developer-token"]).toBe(
+        "old-encrypted-developer-token",
+      );
+    });
   });
 });
 
