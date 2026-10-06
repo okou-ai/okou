@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.998.1",
+  "version": "0.998.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -34,6 +34,7 @@
     "@okouai/core": "workspace:*",
     "@okouai/mermaid-lite": "workspace:*",
     "@okouai/ui": "workspace:*",
+    "@ricky0123/vad-web": "0.0.31",
     "@sentry/browser": "^10.73.0",
     "@sentry/react": "^10.73.0",
     "@solana/web3.js": "1.98.4",
@@ -69,6 +70,7 @@
     "lucide-react": "1.30.0",
     "marked": "17.0.5",
     "micromark-util-sanitize-uri": "^2.0.1",
+    "onnxruntime-web": "1.23.2",
     "path-to-regexp": "^8.4.0",
     "posthog-js": "^1.422.5",
     "qrcode.react": "4.2.0",

@@ -373,8 +373,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.PwaNavigation]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser. Enable manually to try it.",
+      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.AgentResponsibilitySetup]: {
     maintainer: "linghan@okou.ai",

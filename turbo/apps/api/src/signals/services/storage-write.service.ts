@@ -1539,6 +1539,26 @@ function createInitialSandboxStorageReplayVersion(
   });
 }
 
+function createTerminalSandboxStorageRetryVersion(
+  storageId: string,
+  versionId: string,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [version] = await db
+      .select()
+      .from(storageVersions)
+      .where(
+        and(
+          eq(storageVersions.storageId, storageId),
+          eq(storageVersions.id, versionId),
+        ),
+      )
+      .limit(1);
+    return version;
+  });
+}
+
 export function createSandboxStorageCommit(args: CommitStorageInput) {
   const commitInput: CommitStorageForStorageInput = {
     storageId: args.storageId,
@@ -1555,6 +1575,10 @@ export function createSandboxStorageCommit(args: CommitStorageInput) {
     ? createInitialSandboxStorageReceipt(binding)
     : undefined;
   const initialReplayVersion$ = createInitialSandboxStorageReplayVersion(
+    args.storageId,
+    args.versionId,
+  );
+  const terminalRetryVersion$ = createTerminalSandboxStorageRetryVersion(
     args.storageId,
     args.versionId,
   );
@@ -1604,11 +1628,7 @@ export function createSandboxStorageCommit(args: CommitStorageInput) {
       const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
       if (terminalRetry) {
         const parentVersionId = args.parentVersionId;
-        const version = await findStorageVersion({
-          db: writeDb,
-          storageId: mounted.storage.id,
-          versionId: args.versionId,
-        });
+        const version = await get(terminalRetryVersion$);
         signal.throwIfAborted();
         if (
           !parentVersionId ||

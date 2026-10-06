@@ -274,8 +274,11 @@ test("Show microphone startup before the voice-draft waveform", async () => {
 
 test("Keep a silent voice draft recording until the user stops it", async () => {
   const voiceActivityObserved = context.mocks.deferred<void>();
-  let multimodalCalls = 0;
   context.mocks.browser.voiceInput({
+    finalPcmSamples: new Float32Array(16_000),
+    onPcmCapture: (emit) => {
+      emit(new Float32Array(4096));
+    },
     rms: () => {
       if (!voiceActivityObserved.settled()) {
         voiceActivityObserved.resolve(undefined);
@@ -285,7 +288,6 @@ test("Keep a silent voice draft recording until the user stops it", async () => 
   });
   installAvailableVoiceQuota();
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-    multimodalCalls += 1;
     return HttpResponse.json({
       transcript: "Extended voice draft",
       polishedText: "Extended voice draft.",
@@ -305,15 +307,13 @@ test("Keep a silent voice draft recording until the user stops it", async () => 
 
   const stop = await findEnabledButton("Stop recording");
   expect(stop).toBeEnabled();
-  expect(multimodalCalls).toBe(0);
-
   click(stop);
 
-  await waitFor(() => {
-    expect(normalizedComposerText()).toBe("Extended voice draft.");
-  });
-  expect(multimodalCalls).toBe(1);
+  await expect(
+    screen.findByText("No speech detected. Please record again."),
+  ).resolves.toBeInTheDocument();
   await findEnabledButton("Voice input");
+  expect(normalizedComposerText()).toBe("");
 });
 
 async function removeFailedRecordingWithTypedNotes() {
@@ -353,7 +353,7 @@ test("Discard a failed recording without removing typed notes", async () => {
   expect(normalizedComposerText()).toBe("Keep typed notes");
 });
 
-test("Silently finish a recording with no speech and preserve the input", async () => {
+test("Finish a provider no-speech response and preserve the input", async () => {
   const initialText = "Keep the existing draft";
   const consoleErrors = captureVoiceTranscriptionErrors();
   context.mocks.browser.voiceInput({ rms: 0 });
