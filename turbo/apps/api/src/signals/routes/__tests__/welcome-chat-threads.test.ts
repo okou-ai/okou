@@ -44,7 +44,7 @@ const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
-const MODEL = "claude-sonnet-5";
+const MODEL = "claude-fable-5-1";
 const WELCOME_STEP_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
 const WELCOME_SCENE_BASE =

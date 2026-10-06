@@ -93,10 +93,10 @@ export async function disconnectPhase2Codex(
   );
 }
 
-export async function activateAnotherPhase2Codex(
+async function createAdditionalPhase2CodexAccount(
   context: TestContext,
   owner: { orgId: string; userId: string },
-) {
+): Promise<string> {
   const actor = createBddApi(context).user({ ...owner, orgRole: "org:admin" });
   const auth = createAuthDeviceApiActions(context);
   mockCodexDeviceAuthProvider({
@@ -117,7 +117,31 @@ export async function activateAnotherPhase2Codex(
   if (!("status" in result.body) || result.body.status !== "complete") {
     throw new Error("Expected device auth completion");
   }
+  return result.body.provider.id;
+}
+
+export async function activateAnotherPhase2Codex(
+  context: TestContext,
+  owner: { orgId: string; userId: string },
+) {
+  const id = await createAdditionalPhase2CodexAccount(context, owner);
+  const actor = createBddApi(context).user({ ...owner, orgRole: "org:admin" });
   await createAuthDeviceSupportApi(
     context,
-  ).activatePersonalModelProviderAccount(actor, result.body.provider.id);
+  ).activatePersonalModelProviderAccount(actor, id);
+}
+
+/** Complete real account creation before entering a historical worker clock. */
+export async function preparePhase2CodexActivation(
+  context: TestContext,
+  owner: { orgId: string; userId: string },
+  originalAccountId: string,
+) {
+  const id = await createAdditionalPhase2CodexAccount(context, owner);
+  const actor = createBddApi(context).user({ ...owner, orgRole: "org:admin" });
+  const support = createAuthDeviceSupportApi(context);
+  await support.activatePersonalModelProviderAccount(actor, originalAccountId);
+  return async () => {
+    await support.activatePersonalModelProviderAccount(actor, id);
+  };
 }

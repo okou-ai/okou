@@ -20,7 +20,8 @@ const VENDOR_MODULE_PATTERN =
 
 export function isVendorModule(moduleId: string): boolean {
   return (
-    VENDOR_MODULE_PATTERN.test(moduleId) &&
+    (VENDOR_MODULE_PATTERN.test(moduleId) ||
+      moduleId === "\u0000vite/preload-helper.js") &&
     !APPLICATION_LAZY_CHUNK.modulePattern.test(moduleId)
   );
 }

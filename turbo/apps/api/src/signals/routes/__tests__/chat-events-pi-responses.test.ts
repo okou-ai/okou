@@ -533,7 +533,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await flushWaitUntilForTest();
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
       expect(firstClaim.claim.piModelConfig).toMatchObject({
-        model: `openai/${selectedModel}`,
+        model: selectedModel,
       });
       expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
       await completeSandboxFirstPiRun({
@@ -566,8 +566,8 @@ describe("CHAT-02: model-first provider policies", () => {
       await flushWaitUntilForTest();
       const fastClaim = await claimChatRun(runnerGroup, fast.runId);
       expect(fastClaim.claim.piModelConfig).toMatchObject({
-        model: `openai/${selectedModel}`,
-        serviceTier: "priority",
+        model: selectedModel,
+        serviceTier: "fast",
       });
       await completeSandboxFirstPiRun({
         actor,
@@ -599,7 +599,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await flushWaitUntilForTest();
       const returnedClaim = await claimChatRun(runnerGroup, returned.runId);
       expect(returnedClaim.claim.piModelConfig).toMatchObject({
-        model: `openai/${selectedModel}`,
+        model: selectedModel,
       });
       expect(returnedClaim.claim.piModelConfig).not.toHaveProperty(
         "serviceTier",
@@ -770,7 +770,7 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(promotedClaim.claim.cliAgentType).toBe("pi");
       expect(promotedClaim.claim.piModelConfig).toMatchObject({
         model: selectedModel,
-        serviceTier: "priority",
+        serviceTier: "fast",
       });
       await completeSandboxFirstPiRun({
         actor,

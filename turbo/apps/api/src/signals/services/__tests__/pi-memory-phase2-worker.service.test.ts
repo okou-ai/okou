@@ -74,6 +74,7 @@ import {
   createPhase2CodexProvider,
   disconnectPhase2Codex,
   activateAnotherPhase2Codex,
+  preparePhase2CodexActivation,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
 
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
@@ -1361,7 +1362,7 @@ describe("Phase 2 current credential admission", () => {
         {
           type: "codex-oauth-token",
           id: provider.binding.modelProviderId,
-          model: "gpt-5.6-luna",
+          model: "gpt-6-luna",
         },
       ]);
       const [callback] = await db()
@@ -1490,6 +1491,14 @@ describe("Phase 2 current credential admission", () => {
         }),
         provider.binding,
       );
+      const activatePreparedAccount =
+        fault === "active-account"
+          ? await preparePhase2CodexActivation(
+              testContext(),
+              job.scope,
+              provider.binding.modelProviderId,
+            )
+          : undefined;
       let changed = false;
       let expectedHead = job.scope.baseVersion.versionId;
       onMemoryArchivePresign(job, async () => {
@@ -1507,7 +1516,7 @@ describe("Phase 2 current credential admission", () => {
               [FeatureSwitchKey.PiMemory]: false,
             });
           } else if (fault === "active-account") {
-            await activateAnotherPhase2Codex(testContext(), job.scope);
+            await activatePreparedAccount?.();
           } else {
             await disconnectPhase2Codex(
               testContext(),
@@ -2141,7 +2150,7 @@ test.each([
   {
     type: "codex-oauth-token",
     url: "https://chatgpt.com/backend-api/codex/responses",
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
   },
 ] as const)(
   "admits $type with unknown vendor quota independently of an empty wallet",
@@ -2159,19 +2168,22 @@ test.each([
     server.use(
       http.get("https://chatgpt.com/backend-api/wham/usage", () => {
         quotaReads++;
-        return HttpResponse.json({ rate_limit: { allowed: false } });
+        return HttpResponse.json(
+          { error: "quota temporarily unavailable" },
+          { status: 503 },
+        );
       }),
     );
     const result = await job.work(nowDate());
     expect(result.outcome).toBe("dispatched");
     if (result.outcome !== "dispatched") {
-      throw new Error("Expected admitted API-key maintenance");
+      throw new Error("Expected admitted subscription maintenance");
     }
     const runtime = await executePhase2Runtime(testContext(), result.runId);
     expect(runtime.requests).toHaveLength(3);
     expect(runtime.requests[0]?.body).toMatchObject({ model });
     expect(runtime.requests[0]?.url).toBe(url);
-    expect(quotaReads).toBe(0);
+    expect(quotaReads).toBe(1);
   },
 );
 

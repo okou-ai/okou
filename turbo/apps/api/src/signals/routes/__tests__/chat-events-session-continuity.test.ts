@@ -307,8 +307,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, blockerTwo.runId);
   }, 90_000);
 
-  // Built-in native Runner routes are the Fable (Claude Code) and Astra
-  // (Codex) frontier lines; every other built-in model runs through Pi.
+  // Caller-owned Fable (Claude Code) and Astra (Codex) use distinct runtime families.
   it.each([
     {
       from: "claude-fable-5-1",
@@ -323,12 +322,10 @@ describe("CHAT-02: run-level model overrides", () => {
       toRuntime: "claude-code",
     },
   ] as const)(
-    "applies family compatibility when switching built-in $from on $fromRuntime to $to on $toRuntime",
+    "applies family compatibility when switching owned $from on $fromRuntime to $to on $toRuntime",
     async ({ from, fromRuntime, to, toRuntime }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
 
-      await seedBuiltInModelKey(from);
-      await seedBuiltInModelKey(to);
       await createBddIntegrationApi(context)
         .configureNativeSubscriptionModels(actor)
         .then(() => {
@@ -564,9 +561,8 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
 
-    // A connected personal subscription outranks the organization API for a
-    // model it supports, so the organization route only becomes observable once
-    // the member disconnects it.
+    // Disconnect and reconnect only this member's credential source; no
+    // organization API route may replace a missing personal subscription.
     await authDeviceSupport.deletePersonalModelProvider(
       actor,
       "claude-code-oauth-token",
@@ -583,10 +579,10 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "follow up after the upstream provider changes",
     });
     const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_AUTH_TOKEN).toBe(
+    expect(claimEnvironment(thirdClaim.claim).CLAUDE_CODE_OAUTH_TOKEN).toBe(
       modelProviderSecretPlaceholder(
-        "openrouter-api-key",
-        "OPENROUTER_API_KEY",
+        "claude-code-oauth-token",
+        "CLAUDE_CODE_OAUTH_TOKEN",
       ),
     );
     expect(thirdClaim.claim.cliAgentType).toBe("claude-code");
@@ -674,24 +670,36 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(events.body.events).toStrictEqual([]);
   }, 60_000);
 
-  it("captures the system default when an explicit model is outside workspace policy", async () => {
+  it("rejects an explicit disconnected personal model instead of capturing Auto", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-    const fallback = await sendChatRun(actor, {
-      agentId,
-      prompt: "use a supported model outside workspace policy",
-      model: "gpt-6-luna",
-    });
-    await expectThreadCreatedModelEvent(actor, fallback.threadId, "gpt-6-luna");
-    await expect(
-      chat.readThreadMetadata(actor, fallback.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: "gpt-6-luna",
-    });
-    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        prompt: "do not bill Auto for my unavailable personal model",
+        model: "gpt-6-luna",
+      },
+      [201],
     );
-    await cancelChatRun(actor, fallback.runId);
+    if (sent.status !== 201) {
+      throw new Error(
+        "Expected the input acknowledgement before personal admission rejection",
+      );
+    }
+    await flushWaitUntilForTest();
+    const page = await chat.listThreadEvents(actor, sent.body.threadId);
+    expect(page.events).toContainEqual(
+      expect.objectContaining({ eventType: "input.rejected" }),
+    );
+    expect(
+      page.events.some((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toBeFalsy();
+    await expect(
+      chat.readThreadMetadata(actor, sent.body.threadId),
+    ).resolves.toMatchObject({ selectedModel: "gpt-6-luna" });
   }, 60_000);
 });

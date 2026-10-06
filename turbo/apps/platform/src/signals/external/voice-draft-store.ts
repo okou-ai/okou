@@ -17,6 +17,8 @@ export interface VoiceDraftSegment {
   readonly endSample: number;
   readonly final: boolean;
   readonly transcript?: string;
+  /** Only locally skipped silence has a policy version; old provider checkpoints remain valid. */
+  readonly vadPolicyVersion?: string;
 }
 
 export interface VoiceDraftProgress {

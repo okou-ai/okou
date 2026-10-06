@@ -30,7 +30,6 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { setRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
 import { insertQueuedSlackMissingContextFixture } from "../../../test-fixtures/chat-events";
-import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
@@ -82,12 +81,8 @@ const misc = createMiscRoutesApi(context);
 
 const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
 // Built-in candidates of claude-fable-5-1 in the global model catalog.
-const CLAUDE_FABLE_5_1_CANDIDATES = [
-  { providerType: "anthropic-api-key", upstreamModel: "claude-fable-5-1" },
-  {
-    providerType: "openrouter-api-key",
-    upstreamModel: "anthropic/claude-fable-5.1",
-  },
+const AUTO_CANDIDATES = [
+  { providerType: "openrouter-codex", upstreamModel: "@preset/okou-1-0" },
 ] as const;
 type UserMessage = Extract<
   ChatEvent,
@@ -192,9 +187,7 @@ async function startChatRun(
   readonly messageId: string;
 }> {
   const messageId = body.clientEventId ?? randomUUID();
-  const selectedModel: string | undefined =
-    body.selectedModel ??
-    (body.threadId === undefined ? "claude-fable-5-1" : undefined);
+  const selectedModel = body.selectedModel;
   const requestBody = {
     agentId: body.agentId,
     prompt: body.prompt,
@@ -895,7 +888,7 @@ describe("CHAT-02: completed chat callback", () => {
       "okou generate presentation --design-system",
     );
     expect(Object.keys(autoContext.body.environment)).toContain(
-      "ANTHROPIC_API_KEY",
+      "CLAUDE_CODE_OAUTH_TOKEN",
     );
 
     await claimChatRunJob(runnerGroup, claimed.runId);
@@ -3525,11 +3518,9 @@ describe("CHAT-02: drain-time admission failure", () => {
       await flushWaitUntilForTest();
     });
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
-    // isolated from concurrent tests that route the real model.
-    const { model, restore } =
-      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
-    onTestFinished(restore);
+    // Only fixed Auto has foreground platform authority. Use owned key/cooldown
+    // fixtures; a cloned catalog model must never become an executable route.
+    const model = "okou-1.0";
     await seedBuiltInModelCandidateKeys(context, model);
 
     const anchor = await startChatRun(actor, {
@@ -3589,7 +3580,7 @@ describe("CHAT-02: drain-time admission failure", () => {
       agentId,
       runnerGroup,
       model,
-      routes: CLAUDE_FABLE_5_1_CANDIDATES,
+      routes: AUTO_CANDIDATES,
       beforeCooldownCleanup: cleanupAnchor,
     });
 
@@ -4095,7 +4086,7 @@ describe("CHAT-02: failed chat callbacks", () => {
 
   it("retains built-in billing reports and route cooldown after a public unavailable failure", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const selectedModel = "gpt-6-astra";
+    const selectedModel = "okou-1.0";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const cleanupRoute = await resolveBuiltInModelRouteFixture(
       context,
@@ -4135,20 +4126,39 @@ describe("CHAT-02: failed chat callbacks", () => {
       error: "The current model is unavailable.",
     });
 
-    const second = await startChatRun(actor, {
-      agentId,
-      prompt: "another built-in run",
-      selectedModel,
+    expect(before.body).toMatchObject({
+      modelRuntimeProvider: "openrouter-codex",
+      modelRuntimeModel: "@preset/okou-1-0",
     });
-    await claimChatRun(runnerGroup, second.runId);
-    const after = await reads.requestReadLogById(actor, second.runId, [200]);
-    expect([
-      after.body.modelRuntimeProvider,
-      after.body.modelRuntimeModel,
-    ]).not.toStrictEqual([
-      before.body.modelRuntimeProvider,
-      before.body.modelRuntimeModel,
-    ]);
+    const clientEventId = randomUUID();
+    const second = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        prompt: "another built-in run",
+        model: selectedModel,
+        clientEventId,
+      },
+      [201],
+    );
+    if (second.status !== 201) {
+      throw new Error(
+        "Expected the input acknowledgement before queue rejection",
+      );
+    }
+    await flushWaitUntilForTest();
+    const events = await chat.listThreadEvents(actor, second.body.threadId);
+    expect(userMessages(events.events)).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+      }),
+    );
+    expect(
+      userMessages(events.events).some((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toBeFalsy();
   });
 
   it("formats failed-run errors and notifies, without auto-sending", async () => {
@@ -4565,7 +4575,9 @@ describe("CHAT-02: failed chat callbacks", () => {
         params.orgRole === "member"
           ? await entitledChatMemberActor()
           : await entitledChatActor();
-      await params.configureProvider?.(fixture);
+      await (
+        params.configureProvider ?? configureClaudeCodeSubscriptionProvider
+      )(fixture);
       const run = await startChatRun(fixture.actor, {
         agentId: fixture.agentId,
         prompt: params.prompt,
@@ -4620,13 +4632,13 @@ describe("CHAT-02: failed chat callbacks", () => {
             type: "claude-code-oauth-token",
             secret: "sk-ant-oat-reconnected-bdd",
           },
-          [201],
+          [200],
         );
         const retry = await startChatRun(fixture.actor, {
           agentId: fixture.agentId,
           threadId: run.threadId,
           prompt: "retry after replacing the Claude OAuth token",
-          selectedModel: "claude-opus-5",
+          selectedModel: "claude-opus-5-5",
         });
         const retryHeaders = await claimChatRun(
           fixture.runnerGroup,
@@ -4643,7 +4655,7 @@ describe("CHAT-02: failed chat callbacks", () => {
     await expect(
       failAndReadError({
         prompt: "subscription credential failed",
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4654,7 +4666,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "structured subscription credential failed",
         errorMessage: "Provider authentication copy changed",
         failureReason: "invalid_credentials",
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4664,7 +4676,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       failAndReadError({
         prompt: "revoked subscription credential failed",
         errorMessage: revokedOAuthError,
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4672,16 +4684,18 @@ describe("CHAT-02: failed chat callbacks", () => {
     );
     await expect(
       failAndReadError({
-        prompt: "revoked OAuth text with an Anthropic API key",
+        prompt: "revoked OAuth text with the default personal subscription",
         errorMessage: revokedOAuthError,
         selectedModel: "claude-fable-5-1",
       }),
-    ).resolves.toBe("Oops, something went wrong. Please try again later.");
+    ).resolves.toBe(
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+    );
     await expect(
       failAndReadError({
         prompt: "invalid subscription credential failed",
         errorMessage: invalidOAuthError,
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4692,7 +4706,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "structured invalid subscription credential failed",
         errorMessage: invalidOAuthError,
         failureReason: "reconnect_required",
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4700,11 +4714,13 @@ describe("CHAT-02: failed chat callbacks", () => {
     );
     await expect(
       failAndReadError({
-        prompt: "invalid OAuth text with an Anthropic API key",
+        prompt: "invalid OAuth text with the default personal subscription",
         errorMessage: invalidOAuthError,
         selectedModel: "claude-fable-5-1",
       }),
-    ).resolves.toBe("Oops, something went wrong. Please try again later.");
+    ).resolves.toBe(
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+    );
     for (const errorMessage of [
       "Failed to authenticate. API Error: 4010 OAuth access token is invalid.",
       "Failed to authenticate. API Error: 401 OAuth access token is invalidated.",
@@ -4714,26 +4730,26 @@ describe("CHAT-02: failed chat callbacks", () => {
         failAndReadError({
           prompt: "unclassified OAuth failure",
           errorMessage,
-          selectedModel: "claude-opus-5",
+          selectedModel: "claude-opus-5-5",
           configureProvider: configureClaudeCodeSubscriptionProvider,
         }),
       ).resolves.toBe("Oops, something went wrong. Please try again later.");
     }
     await expect(
       failAndReadError({
-        prompt: "org key failed for admin",
+        prompt: "personal subscription failed for an admin",
         orgRole: "admin",
       }),
     ).resolves.toBe(
-      "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
-        prompt: "org key failed for member",
+        prompt: "personal subscription failed for a member",
         orgRole: "member",
       }),
     ).resolves.toBe(
-      "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.\n\nShare with an admin: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
   }, 90_000);
 });
@@ -5630,7 +5646,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      selectedModel: "claude-opus-5",
+      selectedModel: "claude-opus-5-5",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([
@@ -5684,7 +5700,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
           message.eventType === "input.rejected"
         );
       }),
-    ).toMatchObject({ error: "bad_request" });
+    ).toMatchObject({ error: "conflict" });
     expect(
       userMessages(messages.events).some((message) => {
         return (
@@ -5714,7 +5730,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt: "start on opus before queueing a Claude family switch",
-      selectedModel: "claude-opus-5",
+      selectedModel: "claude-opus-5-5",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);

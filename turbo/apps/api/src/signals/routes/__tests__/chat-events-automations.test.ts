@@ -238,7 +238,9 @@ describe("thread-bound Pi Automation execution", () => {
       );
       expect(piSessionId).toBe(legacySessionId);
       const billed = await readThreadModelUsage(context, actor, threadId);
-      expect(billed.tokens).toBe(3);
+      // This endpoint reports the settled platform ledger, not vendor usage.
+      // Personal subscription model usage never enters that billable ledger.
+      expect(billed.tokens).toBe(selectedModel === "okou-1.0" ? 3 : 0);
       if (selectedModel === "okou-1.0") {
         expect(billed.credits).toBeGreaterThan(0);
       } else {

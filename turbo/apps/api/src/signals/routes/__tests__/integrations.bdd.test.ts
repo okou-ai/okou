@@ -618,7 +618,7 @@ function mockPiResourceArchiveDownloads(
   );
 }
 
-type SlackPiModel = "gpt-6-luna" | "gpt-5.6-sol" | "gpt-5.6-luna";
+type SlackPiModel = "gpt-6-luna" | "gpt-6-sol" | "gpt-6.1-sol";
 
 interface SlackPiActorSetup {
   readonly selectedModel: SlackPiModel;
@@ -779,7 +779,7 @@ async function completeSlackPiTurnInSandbox(args: {
     role: "assistant",
     content: [{ type: "text", text: args.answer }],
     api: "openai-responses",
-    provider: "openai",
+    provider: "openai-codex",
     model: args.scenario.selectedModel,
     usage: {
       input: 5,
@@ -881,13 +881,14 @@ async function expectFirstSlackPiExecution(args: {
   expect(claim.cliAgentType).toBe("pi");
   expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
   expect(claim.piModelConfig).toMatchObject({
-    provider: "openai",
+    provider: "openai-codex",
     model: args.scenario.selectedModel,
     thinkingLevel:
-      args.scenario.selectedModel === "gpt-6-luna" ||
-      args.scenario.selectedModel === "gpt-5.6-luna"
+      args.scenario.selectedModel === "gpt-6-luna"
         ? "xhigh"
-        : "max",
+        : args.scenario.selectedModel === "gpt-6.1-sol"
+          ? "medium"
+          : "max",
   });
   // The fresh Pi session still carries the canonical Slack history to the
   // Sandbox that executes the first turn.
@@ -2915,7 +2916,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it.each(["gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"] as const)(
+  it.each(["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"] as const)(
     "admits canonical Slack %s turns into one Pi session without duplicate ownership",
     async (selectedModel) => {
       const scenario = await establishCanonicalSlackHistory(
@@ -3662,7 +3663,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(claim1.cliAgentType).toBe("claude-code");
     expect(claim1.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
     });
     const running = await runs.readRun(actor, run1Id);
     expect(running.status).toBe("running");
@@ -3736,7 +3737,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const gptClaim = await runs.claimRunnerJob(gptRunId);
     expect(gptClaim.cliAgentType).toBe("codex");
     expect(gptClaim.environment).toMatchObject({
-      OPENAI_API_KEY: expect.stringMatching(/.+/),
+      CHATGPT_ACCESS_TOKEN: expect.stringMatching(/.+/),
       OPENAI_MODEL: "gpt-6-astra",
     });
     await completeSlackTriggeredRun({
@@ -3804,7 +3805,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const firstClaim = await runs.claimRunnerJob(firstRunId);
     expect(firstClaim.cliAgentType).toBe("claude-code");
     expect(firstClaim.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
     await completeSlackTriggeredRun({
@@ -4803,7 +4804,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       workspaceId: teamId,
       slackUserId: slackUser2,
     });
-    // A member's new thread starts from their own preference.
+    // A member's new thread uses their own subscription and preference.
+    await runs.ensurePersonalSubscriptionModel(actor2);
     await integrations.updateUserModelPreference(actor2, "claude-fable-5-1");
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -4951,7 +4953,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const claim1 = await runs.claimRunnerJob(run1Id);
     expect(claim1.cliAgentType).toBe("claude-code");
     expect(claim1.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
 

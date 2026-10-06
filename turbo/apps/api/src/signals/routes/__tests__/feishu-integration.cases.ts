@@ -5900,7 +5900,8 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
-        // Runs without a thread pin use the member preference, then Auto.
+        // Each triggering member supplies their own subscription credentials.
+        await runsApi.ensurePersonalSubscriptionModel(secondActor);
         await runsApi.updateUserModelPreference(
           secondActor,
           "claude-fable-5-1",
@@ -6334,6 +6335,7 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
+        await runsApi.ensurePersonalSubscriptionModel(secondActor);
         await runsApi.updateUserModelPreference(
           secondActor,
           "claude-fable-5-1",
