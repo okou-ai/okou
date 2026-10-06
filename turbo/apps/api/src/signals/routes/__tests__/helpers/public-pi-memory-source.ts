@@ -121,71 +121,6 @@ export function createPublicPiMemorySource(
       }
       memoryStorageId = memory.storageId;
       sourceMemoryVersionId = memory.versionId;
-      if (options.memoryFile && !publishedMemory) {
-        const file = options.memoryFile;
-        const files = [storageTextFile(file.path, file.content)];
-        const archive = memoryArchive(file.path, file.content);
-        const objects = new Map<string, Buffer>();
-        const transport = context.mocks.s3.send.getMockImplementation();
-        if (!transport) {
-          throw new Error("Expected the source object transport");
-        }
-        context.mocks.s3.send.mockImplementation((command: unknown) => {
-          if (
-            (command instanceof GetObjectCommand ||
-              command instanceof HeadObjectCommand) &&
-            command.input.Key &&
-            objects.has(command.input.Key)
-          ) {
-            const bytes = objects.get(command.input.Key);
-            if (!bytes) {
-              throw new Error("Expected owned Memory bytes");
-            }
-            return Promise.resolve({
-              ContentLength: bytes.length,
-              Body: {
-                async *[Symbol.asyncIterator]() {
-                  yield bytes;
-                },
-              },
-            });
-          }
-          return transport(command);
-        });
-        const prepared = await chat.webhooks.requestAgentStoragePrepare(
-          { runId: source.runId, storageId: memory.storageId, files },
-          claimed.sandboxHeaders,
-          [200],
-        );
-        if (prepared.status !== 200 || !prepared.body.uploads) {
-          throw new Error("Expected Memory upload targets");
-        }
-        objects.set(prepared.body.uploads.archive.key, archive);
-        objects.set(
-          prepared.body.uploads.manifest.key,
-          Buffer.from(
-            JSON.stringify({
-              version: 1,
-              files,
-              createdAt: new Date(0).toISOString(),
-            }),
-          ),
-        );
-        await chat.webhooks.requestAgentStorageCommit(
-          {
-            runId: source.runId,
-            storageId: memory.storageId,
-            versionId: prepared.body.versionId,
-            files,
-          },
-          claimed.sandboxHeaders,
-          [200],
-        );
-        publishedMemory = {
-          versionId: prepared.body.versionId,
-          archiveKey: prepared.body.uploads.archive.key,
-        };
-      }
       const history = await completePublicPiHistory(
         context,
         source,
@@ -207,7 +142,100 @@ export function createPublicPiMemorySource(
       model: "gpt-6-luna",
     });
     fixture.registerRun(trigger.runId);
+    let triggerToken: string | undefined;
+    if (options.memoryFile) {
+      // Publish only after this existing trigger has prepared its empty mount.
+      // Otherwise its admission caches the new archive URL before Phase2 can
+      // exercise the original external presign interruption boundary.
+      const claimed = await chat.claimChatRun(runnerGroup, trigger.runId);
+      triggerToken = claimed.claim.sandboxToken;
+      fixture.registerClaim(trigger.runId, triggerToken);
+      const memory = expectCanonicalStorageManifest(
+        claimed.claim.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory" && mount.storageId;
+      });
+      if (!memory) {
+        throw new Error("Expected the existing trigger's Memory mount");
+      }
+      expect(memory.storageId).toBe(memoryStorageId);
+      expect(memory.empty).toBeTruthy();
+      const file = options.memoryFile;
+      const files = [storageTextFile(file.path, file.content)];
+      const archive = memoryArchive(file.path, file.content);
+      const objects = new Map<string, Buffer>();
+      const transport = context.mocks.s3.send.getMockImplementation();
+      if (!transport) {
+        throw new Error("Expected the source object transport");
+      }
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (
+          (command instanceof GetObjectCommand ||
+            command instanceof HeadObjectCommand) &&
+          command.input.Key &&
+          objects.has(command.input.Key)
+        ) {
+          const bytes = objects.get(command.input.Key);
+          if (!bytes) {
+            throw new Error("Expected owned Memory bytes");
+          }
+          return Promise.resolve({
+            ContentLength: bytes.length,
+            Body: {
+              async *[Symbol.asyncIterator]() {
+                yield bytes;
+              },
+            },
+          });
+        }
+        return transport(command);
+      });
+      const prepared = await chat.webhooks.requestAgentStoragePrepare(
+        { runId: trigger.runId, storageId: memory.storageId, files },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      if (prepared.status !== 200 || !prepared.body.uploads) {
+        throw new Error("Expected Memory upload targets");
+      }
+      objects.set(prepared.body.uploads.archive.key, archive);
+      objects.set(
+        prepared.body.uploads.manifest.key,
+        Buffer.from(
+          JSON.stringify({
+            version: 1,
+            files,
+            createdAt: new Date(0).toISOString(),
+          }),
+        ),
+      );
+      await chat.webhooks.requestAgentStorageCommit(
+        {
+          runId: trigger.runId,
+          storageId: memory.storageId,
+          versionId: prepared.body.versionId,
+          files,
+        },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      publishedMemory = {
+        versionId: prepared.body.versionId,
+        archiveKey: prepared.body.uploads.archive.key,
+      };
+    }
     await chat.api.requestCancelRun(fixture.actor, trigger.runId, [200]);
+    if (triggerToken) {
+      await chat.webhooks.requestAgentComplete(
+        {
+          runId: trigger.runId,
+          exitCode: 1,
+          error: "Owned Memory writer cancelled",
+        },
+        { authorization: `Bearer ${triggerToken}` },
+        [200],
+      );
+    }
     await flushWaitUntilForTest();
     return {
       memoryStorageId,
