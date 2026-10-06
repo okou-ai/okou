@@ -112,6 +112,17 @@ export const sshConnectionMetadataSchema = z
 export const sshConnectionResponseSchema = z.union([
   sshConnectionMetadataSchema,
   sshConnectionMetadataSchema.extend({ transport: accessTransportSchema }),
+  // Prepare readers before a later release introduces Tailscale write inputs.
+  sshConnectionMetadataSchema.extend({
+    transport: z
+      .object({ type: z.literal("tailscale"), configId: z.uuid() })
+      .strict(),
+  }),
+  sshConnectionMetadataSchema.extend({
+    transport: z
+      .object({ type: z.literal("tailscale"), needsRebind: z.literal(true) })
+      .strict(),
+  }),
   sshConnectionMetadataSchema.extend({
     transport: z
       .object({

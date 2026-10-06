@@ -5416,6 +5416,9 @@
     },
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",
+    "tailscale": {
+      "needsRebind": "此主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。"
+    },
     "unavailable": "該帳號無法使用SSH訪問。",
     "username": "SSH使用者名稱"
   },
@@ -5660,6 +5663,7 @@
       "sshHelp": "SSH 僅保護 Runner 到 SSH 伺服器這一段。該伺服器必須能夠存取 RFB 目標。只有在聊天中同時啟用該 SSH 主機，才能使用此路由。",
       "sshNeedsRebind": "此 VNC 連線使用的 SSH 主機需要重新綁定 Cloudflare Access。請先在 SSH 設定中重新綁定，或明確選擇直接連線，再嘗試連線。",
       "sshNeedsRebindStatus": "SSH 需要重新綁定",
+      "sshTailscaleNeedsRebind": "此 VNC 連線使用的 SSH 主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。",
       "title": "連線路由",
       "unavailable": "此帳戶無法使用SSH設定。",
       "via": "SSH主機："

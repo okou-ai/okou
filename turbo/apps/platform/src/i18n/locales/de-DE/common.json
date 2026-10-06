@@ -5440,6 +5440,9 @@
     },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
+    "tailscale": {
+      "needsRebind": "Dieser Host benötigt eine neue Tailscale-Konfiguration. Die Einrichtung und erneute Zuordnung von Tailscale sind hier noch nicht verfügbar."
+    },
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
@@ -5685,6 +5688,7 @@
       "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Ein Chat kann diese Route nur nutzen, wenn dieser SSH-Host dort ebenfalls aktiviert ist.",
       "sshNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Cloudflare-Access-Zuordnung. Verknüpfe ihn in den SSH-Einstellungen erneut oder wähle dort ausdrücklich Direkt, bevor du dich verbindest.",
       "sshNeedsRebindStatus": "SSH muss neu verknüpft werden",
+      "sshTailscaleNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Tailscale-Konfiguration. Tailscale-Einrichtung und erneute Verknüpfung sind hier noch nicht verfügbar.",
       "title": "Verbindungsroute",
       "unavailable": "SSH-Einstellungen sind für dieses Konto nicht verfügbar.",
       "via": "SSH-Host:"

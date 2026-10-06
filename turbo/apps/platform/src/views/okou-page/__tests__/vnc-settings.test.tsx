@@ -552,41 +552,100 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
   ]);
 });
 
-test("A VNC host warns when its saved SSH transport needs rebind and recovers after SSH refresh", async () => {
-  const settings = mockSettings({
-    connections: [host, tunneledHost],
-    sshConnections: [
-      {
-        ...sshHost,
-        port: 443,
-        transport: { type: "cloudflare_access", needsRebind: true },
+test.each<{
+  type: "cloudflare_access" | "tailscale";
+  port: number;
+  destination: string;
+  warning: string;
+}>([
+  {
+    type: "cloudflare_access",
+    port: 443,
+    destination: "gateway.example.com",
+    warning: "Rebind it or explicitly choose Direct in SSH settings",
+  },
+  {
+    type: "tailscale",
+    port: 22,
+    destination: "100.100.10.2",
+    warning:
+      "The SSH host for this VNC connection needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
+  },
+])(
+  "A VNC host explains its retained $type SSH carrier and recovers after SSH refresh",
+  async ({ type, port, destination, warning }) => {
+    const retained: SshConnectionResponse = {
+      ...sshHost,
+      host: destination,
+      port,
+      learnedHostKey: {
+        algorithm: "ssh-ed25519",
+        fingerprint: "SHA256:retained",
       },
-    ],
-  });
-  await page();
-  const card = await screen.findByRole("heading", {
-    name: tunneledHost.displayName,
-  });
-  const blocked = card.closest("article");
-  expect(blocked).not.toBeNull();
-  expect(within(blocked!).getByText("SSH needs rebind")).toBeInTheDocument();
-  expect(within(blocked!).getByRole("alert")).toHaveTextContent(
-    "Rebind it or explicitly choose Direct in SSH settings",
-  );
-  const direct = screen.getByRole("heading", { name: host.displayName });
-  expect(
-    within(direct.closest("article")!).getByText("Configured"),
-  ).toBeInTheDocument();
+      transport:
+        type === "tailscale"
+          ? { type: "tailscale", needsRebind: true }
+          : { type: "cloudflare_access", needsRebind: true },
+    };
+    const settings = mockSettings({
+      connections: [host, tunneledHost],
+      sshConnections: [retained],
+    });
+    await page();
+    const card = await screen.findByRole("heading", {
+      name: tunneledHost.displayName,
+    });
+    const blocked = card.closest("article");
+    expect(blocked).not.toBeNull();
+    const details = within(blocked!);
+    expect(details.getByText("SSH needs rebind")).toBeInTheDocument();
+    expect(details.getByRole("alert")).toHaveTextContent(warning);
+    expect(details.getByText(/SSH host: Desktop gateway/u)).toBeInTheDocument();
+    expect(
+      details.getByText("RFB destination: 127.0.0.1:5901"),
+    ).toBeInTheDocument();
+    expect(details.getByText("Desktop login")).toBeInTheDocument();
+    expect(
+      details.getByText(
+        "TLS certificate identity: desktop.internal.example.com",
+      ),
+    ).toBeInTheDocument();
+    const direct = screen.getByRole("heading", { name: host.displayName });
+    expect(
+      within(direct.closest("article")!).getByText("Configured"),
+    ).toBeInTheDocument();
+    expect(within(direct.closest("article")!).queryByRole("alert")).toBeNull();
 
-  settings.sshConnections = [sshHost];
-  context.mocks.ably.trigger("ssh:changed", {
-    orgId: auth.organization.activeOrg.id,
-  });
-  await waitFor(() => {
-    expect(within(blocked!).queryByRole("alert")).toBeNull();
-    expect(within(blocked!).getByText("Configured")).toBeInTheDocument();
-  });
-});
+    settings.sshConnections = [
+      {
+        ...retained,
+        generation: retained.generation + 1,
+        transport:
+          type === "tailscale"
+            ? {
+                type: "tailscale",
+                configId: "f0000000-0000-4000-8000-000000000001",
+              }
+            : {
+                type: "cloudflare_access",
+                configId: "f0000000-0000-4000-8000-000000000001",
+              },
+      },
+    ];
+    context.mocks.ably.trigger("ssh:changed", {
+      orgId: auth.organization.activeOrg.id,
+    });
+    await waitFor(() => {
+      expect(details.getByText("Configured")).toBeInTheDocument();
+    });
+    expect(details.queryByRole("alert")).toBeNull();
+    expect(details.getByText(/SSH host: Desktop gateway/u)).toBeInTheDocument();
+    expect(
+      details.getByText("RFB destination: 127.0.0.1:5901"),
+    ).toBeInTheDocument();
+    expect(details.getByText("Desktop login")).toBeInTheDocument();
+  },
+);
 
 test("An SSH-backed card shows topology and a missing saved SSH host blocks edits", async () => {
   mockSettings({ connections: [tunneledHost], sshConnections: [] });

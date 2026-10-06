@@ -522,6 +522,15 @@ export const openSshDialog$ = command(
     connection: SshConnectionResponse | null,
     signal: AbortSignal,
   ) => {
+    // The setup sibling owns Tailscale forms. Never treat a retained binding as Direct/Cloudflare.
+    if (
+      kind === "edit" &&
+      connection &&
+      "transport" in connection &&
+      connection.transport.type === "tailscale"
+    ) {
+      return;
+    }
     const identity = await get(sshIdentity$);
     signal.throwIfAborted();
     if (!identity) {
@@ -538,7 +547,7 @@ export const openSshDialog$ = command(
     set(transportEditor$, {
       mode:
         connection && "transport" in connection
-          ? "cloudflare_access"
+          ? connection.transport.type
           : "direct",
       configId:
         connection && "transport" in connection
