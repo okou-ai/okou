@@ -297,16 +297,11 @@ describe("model catalog authority", () => {
       concreteProviderType: "openai-api-key",
       enabled: false,
     });
-    const unavailable = await listPolicies();
-    expect(unavailable.revision).toBe(added.body.revision);
-    expect(launched(unavailable)?.runtimeProviderType).toBeNull();
-    expect(launched(unavailable)?.memberEffective).toStrictEqual({
-      providerType: "built-in",
-      runtimeProviderType: null,
-      credentialScope: "org",
-      availability: "unavailable",
-      accountSelection: "not_applicable",
-    });
+    // No executable catalog route means public policy omission, not a retained
+    // unavailable policy. The enabled-route cooldown case covers that outcome.
+    const unsupported = await listPolicies();
+    expect(unsupported.revision).toBe(added.body.revision);
+    expect(launched(unsupported)).toBeUndefined();
   });
 
   it("runs a new catalog model on an existing protocol from rows alone", async () => {

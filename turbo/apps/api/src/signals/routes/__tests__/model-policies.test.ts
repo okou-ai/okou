@@ -1011,6 +1011,18 @@ describe("GET/PUT /api/model-policies", () => {
       })?.runtimeProviderType;
     };
     expect(runtimeProviderType(response.body)).toBe("openrouter-codex");
+    const memberEffective = (body: OrgModelPoliciesResponse) => {
+      return body.policies.find((policy) => {
+        return policy.model === model;
+      })?.memberEffective;
+    };
+    expect(memberEffective(response.body)).toStrictEqual({
+      providerType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+      credentialScope: "org",
+      availability: "available",
+      accountSelection: "not_applicable",
+    });
 
     // The runner reports a billing failure for a run on the only route, which
     // cools that route down the way production does.
@@ -1040,7 +1052,15 @@ describe("GET/PUT /api/model-policies", () => {
       client.list({ headers: authHeaders() }),
       [200],
     );
+    expect(unavailable.body.revision).toBe(response.body.revision);
     expect(runtimeProviderType(unavailable.body)).toBeNull();
+    expect(memberEffective(unavailable.body)).toStrictEqual({
+      providerType: "built-in",
+      runtimeProviderType: null,
+      credentialScope: "org",
+      availability: "unavailable",
+      accountSelection: "not_applicable",
+    });
   });
 
   it("preserves canonical built-in rows with legacy built-in route semantics", async () => {
