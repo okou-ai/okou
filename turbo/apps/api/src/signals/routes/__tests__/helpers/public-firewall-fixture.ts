@@ -183,7 +183,10 @@ export function createPublicFirewallFixture(
   return {
     actor,
     run: owner.run,
-    async fund() {
+    async fund(fundingActor = actor) {
+      if (fundingActor.orgId !== orgId) {
+        throw new Error("Funding must belong to the owned organization");
+      }
       const storage = context.mocks.s3.send.getMockImplementation();
       const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
       restoreStorage = () => {
@@ -194,9 +197,9 @@ export function createPublicFirewallFixture(
           context.mocks.s3.getSignedUrl.mockImplementation(presign);
         }
       };
-      createFirewallApi(context).seedClerkDirectory(actor);
+      createFirewallApi(context).seedClerkDirectory(fundingActor);
       // Selected scenarios observe authorization, not the old synthetic 100000.
-      return await createRunsApi(context).grantProEntitlement(actor, {
+      return await createRunsApi(context).grantProEntitlement(fundingActor, {
         customerId,
         subscriptionId,
       });

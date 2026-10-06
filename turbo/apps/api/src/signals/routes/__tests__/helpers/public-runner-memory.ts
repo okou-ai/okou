@@ -8,6 +8,7 @@ import { mockOptionalEnv } from "../../../../lib/env";
 import { createBddApi, type ApiTestUserOptions } from "./api-bdd";
 import { createRunsApi, expectCanonicalStorageManifest } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
+import { createFirewallApi } from "./api-bdd-firewall";
 import { configureNativeCliArtifact } from "./chat-events-fixture";
 import { createPublicFirewallFixture } from "./public-firewall-fixture";
 
@@ -90,12 +91,18 @@ export function createPublicRunnerMemory(
     api.configureRunnerGroup();
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     configureNativeCliArtifact();
-    await fixture.fund();
     const admin =
       fixture.actor.orgRole === "org:member"
         ? bdd.user({ orgId: fixture.actor.orgId, orgRole: "org:admin" })
         : fixture.actor;
+    // Only an admin can initialize the organization's default Agent. The
+    // member remains the owner of the Memory, Agent and Runner claims below.
+    await fixture.fund(admin);
     await api.ensureOrgModelProvider(admin, { model: "claude-fable-5-1" });
+    createFirewallApi(context).seedClerkDirectory(fixture.actor);
+    if (admin.userId !== fixture.actor.userId) {
+      await bdd.completeOnboarding(fixture.actor);
+    }
     const agent = await bdd.createAgent(fixture.actor, {
       displayName: "Owned Memory carrier",
       visibility: "private",
