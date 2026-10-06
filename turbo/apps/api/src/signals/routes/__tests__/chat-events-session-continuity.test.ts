@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 import { mockEnv } from "../../../lib/env";
 import { describe, expect, it } from "vitest";
@@ -36,7 +37,6 @@ const {
   waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
-  upsertOrgModelProvider,
 } = createChatEventsFixture(context);
 
 // Session continuity is observed through the native Runner claim protocol.
@@ -46,22 +46,13 @@ async function entitledNativeChatActor(): Promise<
   Awaited<ReturnType<typeof entitledChatActor>>
 > {
   const fixture = await entitledChatActor();
-  await api.updateOrgModelPolicies(fixture.actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: fixture.providerId,
-    },
-  ]);
+  await api.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
   return fixture;
 }
 
 describe("CHAT-02: run-level model overrides", () => {
   it("reuses Codex sessions across account switches with the newly captured account", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const firewall = createFirewallApi(context);
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -121,21 +112,7 @@ describe("CHAT-02: run-level model overrides", () => {
 
     // Astra keeps Codex subscription runs on the native Codex harness; other
     // GPT models on this route run through Pi.
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "gpt-6-astra");
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -259,26 +236,12 @@ describe("CHAT-02: run-level model overrides", () => {
       },
       [200, 201],
     );
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-opus-5",
-        preferred: true,
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-      {
-        model: "claude-sonnet-5",
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-opus-5-5");
 
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "start on opus before switching within Claude",
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);
@@ -289,14 +252,14 @@ describe("CHAT-02: run-level model overrides", () => {
       agentId,
       threadId: first.threadId,
       prompt: "continue on sonnet in the same session",
-      model: "claude-sonnet-5",
+      model: "claude-sonnet-5-5",
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.resumeSession?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
     expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
     );
     await cancelChatRun(actor, second.runId);
   }, 90_000);
@@ -344,8 +307,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, blockerTwo.runId);
   }, 90_000);
 
-  // Built-in native Runner routes are the Fable (Claude Code) and Astra
-  // (Codex) frontier lines; every other built-in model runs through Pi.
+  // Caller-owned Fable (Claude Code) and Astra (Codex) use distinct runtime families.
   it.each([
     {
       from: "claude-fable-5-1",
@@ -360,27 +322,15 @@ describe("CHAT-02: run-level model overrides", () => {
       toRuntime: "claude-code",
     },
   ] as const)(
-    "applies family compatibility when switching built-in $from on $fromRuntime to $to on $toRuntime",
+    "applies family compatibility when switching owned $from on $fromRuntime to $to on $toRuntime",
     async ({ from, fromRuntime, to, toRuntime }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
 
-      await seedBuiltInModelKey(from);
-      await seedBuiltInModelKey(to);
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: from,
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-        {
-          model: to,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
+      await createBddIntegrationApi(context)
+        .configureNativeSubscriptionModels(actor)
+        .then(() => {
+          return api.updateUserModelPreference(actor, from);
+        });
       const first = await sendChatRun(actor, {
         agentId,
         prompt: "establish native history before switching models",
@@ -432,32 +382,15 @@ describe("CHAT-02: run-level model overrides", () => {
   );
 
   it("replays prior final answers when a model family resets native history", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const { providerId: codexProviderId } = await upsertOrgModelProvider(
-      actor,
-      {
-        type: "openai-api-key",
-        secret: "prior-round-trim-openai-key",
-      },
-    );
+
     // Fable and Astra keep both families on their native Runner harnesses.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: codexProviderId,
-      },
-    ]);
+    await createBddIntegrationApi(context)
+      .configureNativeSubscriptionModels(actor)
+      .then(() => {
+        return api.updateUserModelPreference(actor, "claude-fable-5-1");
+      });
 
     const firstPrompt = "plan the migration in several steps";
     const first = await sendChatRun(actor, {
@@ -560,7 +493,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
   }, 90_000);
 
-  it("re-resolves a sticky model through the current provider policy", async () => {
+  it("resumes a sticky model through personal credential replacement and reconnect", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -594,15 +527,7 @@ describe("CHAT-02: run-level model overrides", () => {
       },
       [200, 201],
     );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
     const second = await sendChatRun(actor, {
       agentId,
@@ -636,30 +561,17 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
 
-    // A connected personal subscription outranks the organization API for a
-    // model it supports, so the organization route only becomes observable once
-    // the member disconnects it.
+    // Disconnect and reconnect only this member's credential source; no
+    // organization API route may replace a missing personal subscription.
     await authDeviceSupport.deletePersonalModelProvider(
       actor,
       "claude-code-oauth-token",
       [204],
     );
-    const { providerId: openRouterProviderId } = await upsertOrgModelProvider(
-      actor,
-      {
-        type: "openrouter-api-key",
-        secret: "rerouted-openrouter-key",
-      },
-    );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "openrouter-api-key",
-        credentialScope: "org",
-        modelProviderId: openRouterProviderId,
-      },
-    ]);
+
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const third = await sendChatRun(actor, {
       agentId,
@@ -667,10 +579,10 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "follow up after the upstream provider changes",
     });
     const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_AUTH_TOKEN).toBe(
+    expect(claimEnvironment(thirdClaim.claim).CLAUDE_CODE_OAUTH_TOKEN).toBe(
       modelProviderSecretPlaceholder(
-        "openrouter-api-key",
-        "OPENROUTER_API_KEY",
+        "claude-code-oauth-token",
+        "CLAUDE_CODE_OAUTH_TOKEN",
       ),
     );
     expect(thirdClaim.claim.cliAgentType).toBe("claude-code");
@@ -705,7 +617,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it("rejects invalid model selections without creating visible state", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Invalid model selection agent",
     });
@@ -758,24 +670,36 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(events.body.events).toStrictEqual([]);
   }, 60_000);
 
-  it("captures the system default when an explicit model is outside workspace policy", async () => {
+  it("rejects an explicit disconnected personal model instead of capturing Auto", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-    const fallback = await sendChatRun(actor, {
-      agentId,
-      prompt: "use a supported model outside workspace policy",
-      model: "gpt-6-luna",
-    });
-    await expectThreadCreatedModelEvent(actor, fallback.threadId, "gpt-6-luna");
-    await expect(
-      chat.readThreadMetadata(actor, fallback.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: "gpt-6-luna",
-    });
-    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        prompt: "do not bill Auto for my unavailable personal model",
+        model: "gpt-6-luna",
+      },
+      [201],
     );
-    await cancelChatRun(actor, fallback.runId);
+    if (sent.status !== 201) {
+      throw new Error(
+        "Expected the input acknowledgement before personal admission rejection",
+      );
+    }
+    await flushWaitUntilForTest();
+    const page = await chat.listThreadEvents(actor, sent.body.threadId);
+    expect(page.events).toContainEqual(
+      expect.objectContaining({ eventType: "input.rejected" }),
+    );
+    expect(
+      page.events.some((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toBeFalsy();
+    await expect(
+      chat.readThreadMetadata(actor, sent.body.threadId),
+    ).resolves.toMatchObject({ selectedModel: "gpt-6-luna" });
   }, 60_000);
 });

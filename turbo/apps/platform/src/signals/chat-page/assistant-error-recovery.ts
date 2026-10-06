@@ -1,32 +1,32 @@
-import { hasChatEventBodyContent } from "./chat-event-body-blocks.ts";
-import { command, computed, type Computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isChatEventContentTextType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   getCodexChatGptAccountUnsupportedModel,
   isAgentExecutionTimeoutRunError,
 } from "@okouai/api-contracts/contracts/errors";
+import { getMemberRunModelRoute } from "@okouai/api-contracts/contracts/member-run-model";
 import type { ModelProviderFramework } from "@okouai/api-contracts/contracts/model-provider-types";
-import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getFrameworkForType,
   type ModelProviderResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import {
   knownRunFailureReasonSchema,
   type KnownRunFailureReason,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { modelCatalog$ } from "../external/model-catalog.ts";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command, computed, type Computed } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { modelCatalog$ } from "../external/model-catalog.ts";
 import { personalModelProviderAccountRevision$ } from "../external/personal-model-providers.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
 import { resetPersonalCodexAccountSubscriptionUsage$ } from "../okou-page/settings/personal-model-providers.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
-import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
+import { hasChatEventBodyContent } from "./chat-event-body-blocks.ts";
 import type { ChatEventSignals } from "./chat-event-signals.ts";
+import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import { threadMeta } from "./chat-thread-event-sourcing.ts";
 import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
 
@@ -504,14 +504,14 @@ function createCurrentPersonalSubscriptionComputed(
     if (selectedModel === null) {
       return null;
     }
-    const { policies } = await get(orgModelPolicies$);
-    const policy = policies.find((candidate) => {
+    const { models } = await get(availableRunModels$);
+    const runModel = models.find((candidate) => {
       return candidate.model === selectedModel;
     });
-    if (!policy) {
+    if (!runModel) {
       return null;
     }
-    const route = getMemberModelPolicyRoute(policy);
+    const route = getMemberRunModelRoute(runModel);
     if (
       route.credentialScope !== "member" ||
       !isPersonalSubscriptionProviderType(route.providerType)

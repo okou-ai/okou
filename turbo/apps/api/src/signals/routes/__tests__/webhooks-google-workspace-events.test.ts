@@ -1,3 +1,4 @@
+import { renewGoogleMeetSubscriptionForTest } from "../../../test-fixtures/google-renewal";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
@@ -6,7 +7,6 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { testGoogleMeetSubscriptionRenewalContract } from "@okouai/api-contracts/contracts/test-google-meet-subscription-renewal";
 import {
   workflowAutomationsContract,
   workflowsDetailContract,
@@ -35,7 +35,6 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { testGoogleMeetSubscriptionRenewalRoutes } from "../test-google-meet-subscription-renewal";
 import { webhooksGoogleWorkspaceEventsRoutes } from "../webhooks-google-workspace-events";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -139,13 +138,6 @@ function connectorAccountsClient() {
   return setupApp({ context, routes: connectorAccountRoutes })(
     connectorAccountsContract,
   );
-}
-
-function renewalClient() {
-  return setupApp({
-    context,
-    routes: testGoogleMeetSubscriptionRenewalRoutes,
-  })(testGoogleMeetSubscriptionRenewalContract);
 }
 
 function workflowDetailClient() {
@@ -471,7 +463,9 @@ async function setupFixture(
     throw new Error("Expected an org-scoped workflow actor");
   }
   // Fable keeps Google Meet workflow runs on the claimable native Runner route.
-  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const orgActor: OrgActor = { ...actor, orgId: actor.orgId };
   const agent = await workflows.createAgent(orgActor, {
     displayName: "Google Meet automation agent",
@@ -1066,17 +1060,11 @@ describe("Google Workspace Events subscription lifecycle", () => {
       duplicates: 0,
     });
 
-    const renewed = await accept(
-      renewalClient().renew({
-        body: {
-          org_id: fixture.actor.orgId,
-          user_id: fixture.actor.userId,
-        },
-      }),
-      [200],
+    const renewed = await renewGoogleMeetSubscriptionForTest(
+      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+      context.signal,
     );
-    expect(renewed.body).toMatchObject({
-      success: true,
+    expect(renewed).toMatchObject({
       renewed: 0,
       repaired: 0,
     });
@@ -1310,31 +1298,19 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
     const created = await createMeetAutomation(fixture);
 
-    const renewed = await accept(
-      renewalClient().renew({
-        body: {
-          org_id: fixture.actor.orgId,
-          user_id: fixture.actor.userId,
-        },
-      }),
-      [200],
+    const renewed = await renewGoogleMeetSubscriptionForTest(
+      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+      context.signal,
     );
-    const unchanged = await accept(
-      renewalClient().renew({
-        body: {
-          org_id: fixture.actor.orgId,
-          user_id: fixture.actor.userId,
-        },
-      }),
-      [200],
+    const unchanged = await renewGoogleMeetSubscriptionForTest(
+      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+      context.signal,
     );
-    expect(renewed.body).toMatchObject({
-      success: true,
+    expect(renewed).toMatchObject({
       renewed: 1,
       repaired: 0,
     });
-    expect(unchanged.body).toMatchObject({
-      success: true,
+    expect(unchanged).toMatchObject({
       renewed: 0,
       repaired: 0,
     });

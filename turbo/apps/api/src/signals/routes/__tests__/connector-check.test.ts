@@ -214,7 +214,9 @@ async function createOwnedRun(
   runsApi.acceptTelemetryIngest();
   runsApi.configureRunnerGroup();
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: `Connector check ${randomUUID()}`,
     visibility: "private",

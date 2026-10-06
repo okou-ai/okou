@@ -1,6 +1,3 @@
-import { modelCatalog$ } from "./model-catalog.service";
-import { command } from "ccstate";
-import { and, eq, inArray } from "drizzle-orm";
 import type {
   OnboardingIndustry,
   OnboardingSubscriptionProvider,
@@ -9,12 +6,11 @@ import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { command } from "ccstate";
+import { and, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
-import { onboardingModelPolicyWritePlan } from "./model-policy.service";
 
 interface OrgOnboardingCompletion {
   readonly orgId: string;
@@ -42,13 +38,11 @@ function onboardingEntitlementValues(metadata: {
 
 /** Metadata, entitlement bootstrap and untouched policy seeding commit together. */
 export const markOrgOnboardingComplete$ = command(
-  async ({ get, set }, args: OrgOnboardingCompletion, signal: AbortSignal) => {
+  async ({ set }, args: OrgOnboardingCompletion, signal: AbortSignal) => {
     const db = set(writeDb$);
     const now = nowDate();
     const industry =
       args.industry === undefined ? {} : { onboardingIndustry: args.industry };
-    signal.throwIfAborted();
-    const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
       // No row lock: the INSERT ... ON CONFLICT DO NOTHING result tells this
@@ -87,67 +81,6 @@ export const markOrgOnboardingComplete$ = command(
           .insert(orgPlanEntitlements)
           .values(entitlement)
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-      }
-      if (args.modelProvider === undefined) {
-        signal.throwIfAborted();
-        return true;
-      }
-      const owner = eq(orgModelPolicies.orgId, args.orgId);
-      const [metadata] = await tx
-        .select({ mode: orgMetadata.modelMode })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1);
-      if (metadata?.mode !== "custom") {
-        return true;
-      }
-      // Onboarding writes provider-less seed rows without coordinating other
-      // low-frequency policy operations; existing uniqueness arbitrates inserts.
-      const existing = await tx.select().from(orgModelPolicies).where(owner);
-      const plan = onboardingModelPolicyWritePlan({
-        ...args,
-        provider: args.modelProvider,
-        existing,
-        catalog,
-        now,
-      });
-      if (plan) {
-        await tx
-          .insert(orgModelPolicies)
-          .values(plan.insertValues)
-          .onConflictDoNothing({
-            target: [orgModelPolicies.orgId, orgModelPolicies.model],
-          });
-        const removed = await tx
-          .delete(orgModelPolicies)
-          .where(plan.removalCondition)
-          .returning({ model: orgModelPolicies.model });
-        if (removed.length > 0) {
-          await tx
-            .update(orgMembersMetadata)
-            .set({
-              selectedModel: plan.defaultModel,
-              serviceTier: null,
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(orgMembersMetadata.orgId, args.orgId),
-                inArray(
-                  orgMembersMetadata.selectedModel,
-                  removed.map((row) => {
-                    return row.model;
-                  }),
-                ),
-              ),
-            );
-        }
-        for (const update of plan.updates) {
-          await tx
-            .update(orgModelPolicies)
-            .set(update.values)
-            .where(update.condition);
-        }
       }
       signal.throwIfAborted();
       return true;

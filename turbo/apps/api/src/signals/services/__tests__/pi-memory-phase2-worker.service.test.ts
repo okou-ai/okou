@@ -1,10 +1,4 @@
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { modelProviderGatewayRoutes } from "../../routes/model-provider-gateways";
-import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
 import { storageTextFile } from "../../routes/__tests__/helpers/api-bdd-storage-files";
 import { observePublicUsage } from "../../routes/__tests__/helpers/public-usage-observation";
 import { postUsageAllowanceInvoicePaid } from "../../routes/__tests__/helpers/stripe-billing-webhook";
@@ -54,6 +48,7 @@ import { createDeferredPromise } from "../../utils";
 import { and, eq, inArray } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
+import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
 import { withMockNowForTest, now, nowDate } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
@@ -85,11 +80,12 @@ import {
   type Phase2SourceBinding,
 } from "./pi-memory-phase2-job.test-fixture";
 import {
-  createPhase2Provider,
-  phase2ApiKeyRoutes,
+  createPhase2CodexProvider,
+  disconnectPhase2Codex,
   activateAnotherPhase2Codex,
+  preparePhase2CodexActivation,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
-import { modelProviders } from "@okouai/db/schema/model-provider";
+
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
 import {
   createRunsApi,
@@ -98,7 +94,6 @@ import {
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
-import { createMiscRoutesApi } from "../../routes/__tests__/helpers/api-bdd-misc";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import {
@@ -218,7 +213,7 @@ async function createPublicEmptyPhase2Scope() {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     const runnerGroup = chat.api.configureRunnerGroup();
     await chat.api.grantProEntitlement(actor);
-    await chat.api.ensureOrgModelProvider(actor, {
+    await chat.api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
     const agent = await chat.bdd.createAgent(actor, {
@@ -988,7 +983,7 @@ async function publicMemoryVersion(
   agentId: string,
 ) {
   const api = createRunsApi(publicScopeContext);
-  await api.ensureOrgModelProvider(fixture.actor, {
+  await api.ensurePersonalSubscriptionModel(fixture.actor, {
     model: "claude-fable-5-1",
   });
   const run = await api.createThreadRun(fixture.actor, {
@@ -1086,42 +1081,13 @@ async function claimOwnedMemoryCarrier(
 ) {
   const api = createRunsApi(publicScopeContext);
   fixture.registerCleanup(async () => {
-    await fixture.misc.deleteOrgModelProvider(
+    await fixture.misc.deletePersonalModelProvider(
       fixture.actor,
-      "anthropic-api-key",
+      "claude-code-oauth-token",
       [204, 404],
     );
   });
-  const { providerId } = await api.createOrgModelProvider(fixture.actor, {
-    type: "anthropic-api-key",
-    secret: "test-anthropic-key",
-  });
-  const current = await fixture.misc.listModelPolicies(fixture.actor);
-  await api.updateOrgModelPolicies(fixture.actor, [
-    ...current.policies
-      .filter((policy) => {
-        return policy.model !== "claude-fable-5-1";
-      })
-      .map((policy) => {
-        return {
-          model: policy.model,
-          defaultProviderType: isBuiltInModelProviderType(
-            policy.defaultProviderType,
-          )
-            ? ("built-in" as const)
-            : policy.defaultProviderType,
-          credentialScope: policy.credentialScope,
-          modelProviderId: policy.modelProviderId,
-          modelProviderSurfaceId: policy.modelProviderSurfaceId,
-        };
-      }),
-    {
-      model: "claude-fable-5-1",
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(fixture.actor);
   const run = await api.createThreadRun(fixture.actor, {
     agentId,
     model: "claude-fable-5-1",
@@ -1296,6 +1262,25 @@ async function expectNoDispatch(
   }
 }
 
+// Runs `fault` when run preparation presigns the non-empty memory base archive.
+// Storage materialization happens after credential resolution and before the
+// final admission transaction; other presigns keep the default behavior.
+function onMemoryArchivePresign(
+  job: Awaited<ReturnType<typeof createPhase2WorkerFixture>>,
+  fault: () => Promise<void> | void,
+) {
+  const archiveKey = `${job.scope.baseVersion.s3Key}/archive.tar.gz`;
+  testContext().mocks.s3.getSignedUrl.mockImplementation(
+    async (_client: unknown, command: unknown) => {
+      const url = apiTestS3PresignedUrl(command);
+      if (new URL(url).searchParams.get("object")?.endsWith(`/${archiveKey}`)) {
+        await fault();
+      }
+      return url;
+    },
+  );
+}
+
 describe("Phase 2 current credential admission", () => {
   it.each([true, false])(
     "defers empty-selection cleanup/repair for emptyBase=%s with three hourly attempts",
@@ -1357,10 +1342,9 @@ describe("Phase 2 current credential admission", () => {
     async (kind) => {
       expect.hasAssertions();
       const job = await createPhase2WorkerFixture(`mixed-${kind}`);
-      const provider = await createPhase2Provider(
+      const provider = await createPhase2CodexProvider(
         testContext(),
         job.scope,
-        "openai-api-key",
       );
       const second =
         kind === "builtin-byok"
@@ -1368,7 +1352,7 @@ describe("Phase 2 current credential admission", () => {
           : {
               ...provider.binding,
               ...(kind === "scope"
-                ? { modelProviderCredentialScope: "member" }
+                ? { modelProviderCredentialScope: "org" }
                 : { modelProviderId: randomUUID() }),
             };
       const firstSession = randomUUID();
@@ -1399,9 +1383,9 @@ describe("Phase 2 current credential admission", () => {
           .where(eq(agentRuns.id, result.runId)),
       ).resolves.toStrictEqual([
         {
-          type: "openai-api-key",
+          type: "codex-oauth-token",
           id: provider.binding.modelProviderId,
-          model: "gpt-5.6-luna",
+          model: "gpt-6-luna",
         },
       ]);
       const [callback] = await db()
@@ -1567,251 +1551,199 @@ describe("Phase 2 current credential admission", () => {
   });
 
   it("ignores stale historical provider IDs when no BYOK is configured", async () => {
-    const fixture = createPublicPiMemorySource(publicScopeContext, {
-      cashCredits: 100_000,
-      sourceProvider: "openai-api-key",
+    const job = await createPhase2WorkerFixture("stale-source-binding");
+    await insertPhase2Candidates(job.scope, [{ piSessionId: randomUUID() }], {
+      modelProvider: "openai-api-key",
+      modelProviderId: randomUUID(),
+      modelProviderCredentialScope: "org",
     });
-    await fixture.run(async () => {
-      const job = await createPublicPhase2WorkerFixture(
-        fixture,
-        new Date(now() + 24 * 3_600_000),
-      );
-      await fixture.misc.deleteOrgModelProvider(
-        fixture.actor,
-        "openai-api-key",
-        [204],
-      );
-      await seedBuiltInModelKey(
-        publicScopeContext,
-        "deepseek-v4.1-flash",
-        fixture.registerCleanup,
-      );
-      const result = await job.work();
-      expect(result.outcome).toBe("dispatched");
-      if (result.outcome !== "dispatched") {
-        throw new Error("Expected dispatch");
-      }
-      const execution = await claimPhase2Execution(
-        publicScopeContext,
-        result.runId,
-      );
-      fixture.registerClaim(result.runId, execution.sandboxToken);
-      expect(
-        (
-          await createRunsApi(publicScopeContext).readRun(
-            fixture.actor,
-            result.runId,
-          )
-        ).source,
-      ).toMatchObject({
-        providerType: "built-in",
-        model: "deepseek-v4.1-flash",
-      });
-    });
+    const result = await job.work();
+    expect(result.outcome).toBe("dispatched");
+    if (result.outcome !== "dispatched") {
+      throw new Error("Expected dispatch");
+    }
+    await expect(
+      db()
+        .select({
+          type: agentRuns.modelProvider,
+          model: agentRuns.selectedModel,
+        })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, result.runId)),
+    ).resolves.toStrictEqual([
+      { type: "built-in", model: "deepseek-v4.1-flash" },
+    ]);
   });
 
-  it("uses built-in when a custom surface cannot serve Luna", async () => {
-    const job = await createPhase2WorkerFixture("luna-only");
-    const provider = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "custom-openai-responses",
-      "org",
-      { mapsSelectedModel: false },
-    );
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID() }],
-      provider.binding,
-    );
-    await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
-  });
-
-  it.each(["storage-head", "switch", "rotation", "replacement", "surface"])(
+  it.each(["storage-head", "switch", "active-account", "disconnect"] as const)(
     "fences %s changes during asynchronous preparation",
     async (fault) => {
-      const concurrentMemory = "Concurrent preparation Memory";
-      let concurrentMemoryVersionId: string | undefined;
-      const fixture = createPublicPiMemorySource(publicScopeContext, {
-        cashCredits: 100_000,
-        sourceProvider:
-          fault === "surface" ? "custom-openai-responses" : "openai-api-key",
-        sources: [
-          "first actual preparation source",
-          "second actual preparation source",
-        ],
-        memoryFile: {
-          path: "MEMORY.md",
-          content: "Original owned preparation Memory",
-        },
-
-        async beforeMemoryPublication(agentId) {
-          // Claim the empty mount before initial publication can cache its archive URL.
+      const job = await createPhase2WorkerFixture(`race-${fault}`, false);
+      const provider = await createPhase2CodexProvider(
+        testContext(),
+        job.scope,
+      );
+      const sourceIds = [randomUUID(), randomUUID()].sort();
+      await insertPhase2Candidates(
+        job.scope,
+        sourceIds.map((sourceRunId) => {
+          return { piSessionId: randomUUID(), sourceRunId };
+        }),
+        provider.binding,
+      );
+      const activatePreparedAccount =
+        fault === "active-account"
+          ? await preparePhase2CodexActivation(
+              testContext(),
+              job.scope,
+              provider.binding.modelProviderId,
+            )
+          : undefined;
+      let changed = false;
+      let expectedHead = job.scope.baseVersion.versionId;
+      onMemoryArchivePresign(job, async () => {
+        if (!changed) {
+          changed = true;
           if (fault === "storage-head") {
-            const carrier = await claimOwnedMemoryCarrier(fixture, agentId);
-            concurrentMemoryVersionId = await commitOwnedCarrierMemory(
-              carrier,
-              concurrentMemory,
+            const version = await insertPhase2StorageVersion(
+              job.scope,
+              "external",
+            );
+            await setPhase2StorageHead(job.scope, version);
+            expectedHead = version.versionId;
+          } else if (fault === "switch") {
+            await updateFeatureSwitchesForUser(testContext(), job.scope, {
+              [FeatureSwitchKey.PiMemory]: false,
+            });
+          } else if (fault === "active-account") {
+            await activatePreparedAccount?.();
+          } else {
+            await disconnectPhase2Codex(
+              testContext(),
+              job.scope,
+              provider.binding.modelProviderId,
             );
           }
-        },
-      });
-      await fixture.run(async () => {
-        const at = new Date(now() + 24 * 3_600_000);
-        const scope = await fixture.prepare(at);
-        fixture.installExtractionProvider();
-        await expect(fixture.extract()).resolves.toMatchObject({
-          claimed: 2,
-          succeeded: 2,
-        });
-        const provider = scope.sourceProvider;
-        if (!provider || !scope.publishedMemory) {
-          throw new Error("Expected public source and Memory version");
         }
-        const job = ownedPublicPhase2Job(fixture, scope, at);
-        let changed = false;
-        const originalHead = scope.publishedMemory.versionId;
-        let expectedHead = originalHead;
-        onPublicMemoryArchivePresign(
-          scope.publishedMemory.archiveKey,
-          async () => {
-            if (changed) {
-              return;
-            }
-            changed = true;
-            if (fault === "storage-head") {
-              if (!concurrentMemoryVersionId) {
-                throw new Error(
-                  "Expected publicly committed concurrent Memory",
-                );
-              }
-              // Key10 retains this exact original HEAD-only race input. A public
-              // commit here also notifies new input, changing retry semantics.
-              // Both nonempty versions were publicly committed before Stage1;
-              // only the original notification-free HEAD swap remains private.
-              expectedHead = concurrentMemoryVersionId;
-              const changedStorage = await db()
-                .update(storages)
-                .set({
-                  headVersionId: concurrentMemoryVersionId,
-                  size: Buffer.byteLength(concurrentMemory),
-                  fileCount: 1,
-                  updatedAt: new Date(now()),
-                })
-                .where(
-                  and(
-                    eq(storages.id, scope.memoryStorageId),
-                    eq(storages.orgId, scope.orgId),
-                    eq(storages.userId, scope.userId),
-                    eq(storages.headVersionId, originalHead),
-                  ),
-                )
-                .returning({ id: storages.id });
-              expect(changedStorage).toHaveLength(1);
-            } else if (fault === "switch") {
-              await updateFeatureSwitchesForUser(publicScopeContext, scope, {
-                [FeatureSwitchKey.PiMemory]: false,
-              });
-            } else if (fault === "surface") {
-              if (!("connectionId" in provider)) {
-                throw new Error("Expected public gateway connection");
-              }
-              createRouteMocks(publicScopeContext).clerk.session(
-                scope.userId,
-                scope.orgId,
-                "org:admin",
-              );
-              const updated = await accept(
-                setupApp({
-                  context: publicScopeContext,
-                  routes: modelProviderGatewayRoutes,
-                })(modelProviderConnectionsByIdContract).update({
-                  headers: { authorization: "Bearer clerk-session" },
-                  params: { id: provider.connectionId },
-                  body: {
-                    displayName: provider.displayName,
-                    surfaces: [
-                      {
-                        protocol: "openai-responses",
-                        apiBaseUrl: "https://phase2-gateway.example/v1",
-                        authHeaderName: "x-source-key",
-                        authHeaderTemplate: "Key {{secret}}",
-                        modelMappings: { "gpt-5.6-luna": "replacement-alias" },
-                      },
-                    ],
-                  },
-                }),
-                [200],
-              );
-              expect(updated.body.surfaces[0]?.id).toBe(
-                provider.binding.modelProviderId,
-              );
-            } else {
-              if (fault === "replacement") {
-                await fixture.misc.deleteOrgModelProvider(
-                  fixture.actor,
-                  "openai-api-key",
-                  [204],
-                );
-              }
-              await fixture.misc.upsertOrgModelProvider(
-                fixture.actor,
-                { type: "openai-api-key", secret: "rotated-source-key" },
-                [200, 201],
-              );
-            }
-          },
-        );
-        const reason =
-          fault === "switch"
-            ? "pi_memory_disabled"
-            : fault === "storage-head"
-              ? "storage_binding_changed"
-              : "credential_unavailable";
-        await expect(job.work()).resolves.toStrictEqual({
-          outcome: "failed",
-          errorClass: reason,
-        });
-        await expectPublicFailedJob(scope, reason);
-        await expect(publicMaintenanceRuns(fixture)).resolves.toStrictEqual([]);
-        if (fault !== "storage-head") {
-          await expect(
-            publicMemoryVersion(fixture, scope.sourceAgentId),
-          ).resolves.toBe(expectedHead);
-        }
-        expect(changed).toBeTruthy();
       });
+      await expectNoDispatch(
+        job,
+        fault === "switch"
+          ? "pi_memory_disabled"
+          : fault === "storage-head"
+            ? "storage_binding_changed"
+            : "credential_unavailable",
+        fault === "storage-head" ? null : expectedHead,
+      );
+      expect(changed).toBeTruthy();
     },
   );
-
-  it("uses a surviving rotated key while ignoring a changed default", async () => {
-    const job = await createPhase2WorkerFixture("surviving-key");
-    const provider = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "openai-api-key",
-    );
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID() }],
-      provider.binding,
-    );
-    const actor = createBddApi(testContext()).user({
-      ...job.scope,
-      orgRole: "org:admin",
-    });
-    await createMiscRoutesApi(testContext()).upsertOrgModelProvider(
-      actor,
-      { type: "openai-api-key", secret: "current-same-owner-key" },
-      [200],
-    );
-    await db()
-      .update(modelProviders)
-      .set({ isDefault: false })
-      .where(eq(modelProviders.id, provider.binding.modelProviderId));
-    await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
-  });
 });
+
+test.each(["storage-head", "switch"] as const)(
+  "fences public %s changes during asynchronous preparation",
+  async (fault) => {
+    const concurrentMemory = "Concurrent preparation Memory";
+    let concurrentMemoryVersionId: string | undefined;
+    const fixture = createPublicPiMemorySource(publicScopeContext, {
+      cashCredits: 100_000,
+      sources: [
+        "first actual preparation source",
+        "second actual preparation source",
+      ],
+      memoryFile: {
+        path: "MEMORY.md",
+        content: "Original owned preparation Memory",
+      },
+
+      async beforeMemoryPublication(agentId) {
+        // Claim the empty mount before initial publication can cache its archive URL.
+        if (fault === "storage-head") {
+          const carrier = await claimOwnedMemoryCarrier(fixture, agentId);
+          concurrentMemoryVersionId = await commitOwnedCarrierMemory(
+            carrier,
+            concurrentMemory,
+          );
+        }
+      },
+    });
+    await fixture.run(async () => {
+      const at = new Date(now() + 24 * 3_600_000);
+      const scope = await fixture.prepare(at);
+      fixture.installExtractionProvider();
+      await expect(fixture.extract()).resolves.toMatchObject({
+        claimed: 2,
+        succeeded: 2,
+      });
+      if (!scope.publishedMemory) {
+        throw new Error("Expected public source and Memory version");
+      }
+      const job = ownedPublicPhase2Job(fixture, scope, at);
+      let changed = false;
+      const originalHead = scope.publishedMemory.versionId;
+      let expectedHead = originalHead;
+      onPublicMemoryArchivePresign(
+        scope.publishedMemory.archiveKey,
+        async () => {
+          if (changed) {
+            return;
+          }
+          changed = true;
+          if (fault === "storage-head") {
+            if (!concurrentMemoryVersionId) {
+              throw new Error("Expected publicly committed concurrent Memory");
+            }
+            // Key10 retains this exact original HEAD-only race input. A public
+            // commit here also notifies new input, changing retry semantics.
+            // Both nonempty versions were publicly committed before Stage1;
+            // only the original notification-free HEAD swap remains private.
+            expectedHead = concurrentMemoryVersionId;
+            const changedStorage = await db()
+              .update(storages)
+              .set({
+                headVersionId: concurrentMemoryVersionId,
+                size: Buffer.byteLength(concurrentMemory),
+                fileCount: 1,
+                updatedAt: new Date(now()),
+              })
+              .where(
+                and(
+                  eq(storages.id, scope.memoryStorageId),
+                  eq(storages.orgId, scope.orgId),
+                  eq(storages.userId, scope.userId),
+                  eq(storages.headVersionId, originalHead),
+                ),
+              )
+              .returning({ id: storages.id });
+            expect(changedStorage).toHaveLength(1);
+          } else if (fault === "switch") {
+            await updateFeatureSwitchesForUser(publicScopeContext, scope, {
+              [FeatureSwitchKey.PiMemory]: false,
+            });
+          }
+        },
+      );
+      const reason =
+        fault === "switch"
+          ? "pi_memory_disabled"
+          : fault === "storage-head"
+            ? "storage_binding_changed"
+            : "credential_unavailable";
+      await expect(job.work()).resolves.toStrictEqual({
+        outcome: "failed",
+        errorClass: reason,
+      });
+      await expectPublicFailedJob(scope, reason);
+      await expect(publicMaintenanceRuns(fixture)).resolves.toStrictEqual([]);
+      if (fault !== "storage-head") {
+        await expect(
+          publicMemoryVersion(fixture, scope.sourceAgentId),
+        ).resolves.toBe(expectedHead);
+      }
+      expect(changed).toBeTruthy();
+    });
+  },
+);
 
 test("does not admit a subscription disconnected during preparation", async () => {
   const fixture = createPublicPiMemorySource(publicScopeContext, {
@@ -1856,8 +1788,6 @@ test("does not persist or dispatch when preparation is cancelled", async () => {
       new Date(now() + 24 * 3_600_000),
     );
 
-    await fixture.disconnect(job.scope.subscription.accountSourceId);
-    await fixture.configureOrgApiKey("phase2-cancel-owned-key");
     const published = job.scope.publishedMemory;
     if (!published) {
       throw new Error("Expected published Memory");
@@ -2482,17 +2412,16 @@ test("makes exactly one quota GET and no reset-credit request for a real native 
 });
 
 test.each([
-  ...phase2ApiKeyRoutes,
   {
-    type: "custom-openai-responses" as const,
-    url: "https://phase2-gateway.example/v1/responses",
-    model: "mapped-luna",
+    type: "codex-oauth-token",
+    url: "https://chatgpt.com/backend-api/codex/responses",
+    model: "gpt-6-luna",
   },
-])(
+] as const)(
   "admits $type with unknown vendor quota independently of an empty wallet",
-  async ({ type, url, model }) => {
+  async ({ url, model }) => {
     const job = await createPhase2WorkerFixture("unknown-api-key-quota");
-    const provider = await createPhase2Provider(testContext(), job.scope, type);
+    const provider = await createPhase2CodexProvider(testContext(), job.scope);
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
@@ -2504,19 +2433,22 @@ test.each([
     server.use(
       http.get("https://chatgpt.com/backend-api/wham/usage", () => {
         quotaReads++;
-        return HttpResponse.json({ rate_limit: { allowed: false } });
+        return HttpResponse.json(
+          { error: "quota temporarily unavailable" },
+          { status: 503 },
+        );
       }),
     );
     const result = await job.work(nowDate());
     expect(result.outcome).toBe("dispatched");
     if (result.outcome !== "dispatched") {
-      throw new Error("Expected admitted API-key maintenance");
+      throw new Error("Expected admitted subscription maintenance");
     }
     const runtime = await executePhase2Runtime(testContext(), result.runId);
     expect(runtime.requests).toHaveLength(3);
     expect(runtime.requests[0]?.body).toMatchObject({ model });
     expect(runtime.requests[0]?.url).toBe(url);
-    expect(quotaReads).toBe(0);
+    expect(quotaReads).toBe(1);
   },
 );
 

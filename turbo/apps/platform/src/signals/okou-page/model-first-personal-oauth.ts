@@ -1,21 +1,21 @@
 import {
-  getMemberModelPolicyRoute,
-  isMemberModelPolicyAvailable,
-} from "@okouai/api-contracts/contracts/member-model-policy";
-import { command, computed, state } from "ccstate";
+  getMemberRunModelRoute,
+  isMemberRunModelAvailable,
+} from "@okouai/api-contracts/contracts/member-run-model";
 import type {
+  AvailableRunModelsResponse,
   ModelProviderResponse,
   ModelProviderType,
-  OrgModelPoliciesResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
+import { command, computed, state } from "ccstate";
 import {
   personalModelProviders$,
   reloadPersonalModelProviders$,
 } from "../external/personal-model-providers.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
 import {
+  memberRunModelAllowedForPlan,
   modelPlanCapabilities$,
-  memberModelPolicyAllowedForPlan,
 } from "./model-plan-capabilities.ts";
 
 type PersonalOauthProviderType =
@@ -59,11 +59,11 @@ function isPersonalOauthProviderType(
   return type === "claude-code-oauth-token" || type === "codex-oauth-token";
 }
 
-function personalStatusForPolicy(
-  policy: OrgModelPoliciesResponse["policies"][number],
+function personalStatusForRunModel(
+  runModel: AvailableRunModelsResponse["models"][number],
   personalProviders: readonly ModelProviderResponse[],
 ): PersonalModelProviderStatus | null {
-  const route = getMemberModelPolicyRoute(policy);
+  const route = getMemberRunModelRoute(runModel);
   if (
     route.availability === "plan_restricted" ||
     route.credentialScope !== "member" ||
@@ -79,7 +79,7 @@ function personalStatusForPolicy(
   });
   const providerDetails = {
     providerType: route.providerType,
-    modelLabel: policy.modelLabel,
+    modelLabel: runModel.modelLabel,
   };
   if (!provider) {
     return { ...providerDetails, status: "missing" };
@@ -97,16 +97,19 @@ function personalStatusForPolicy(
 export const personalModelProvider$ = computed(
   async (get): Promise<PersonalModelProviderStatusByModel> => {
     get(internalReloadPersonalModelProvider$);
-    const [policies, personal] = await Promise.all([
-      get(orgModelPolicies$),
+    const [models, personal] = await Promise.all([
+      get(availableRunModels$),
       get(personalModelProviders$),
     ]);
 
     const statuses: Record<string, PersonalModelProviderStatus> = {};
-    for (const policy of policies.policies) {
-      const status = personalStatusForPolicy(policy, personal.modelProviders);
+    for (const runModel of models.models) {
+      const status = personalStatusForRunModel(
+        runModel,
+        personal.modelProviders,
+      );
       if (status) {
-        statuses[policy.model] = status;
+        statuses[runModel.model] = status;
       }
     }
     return statuses;
@@ -119,26 +122,26 @@ export const selectedModelAvailable$ = command(
     selectedModel: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const [policies, modelCapabilities] = await Promise.all([
-      get(orgModelPolicies$),
+    const [models, modelCapabilities] = await Promise.all([
+      get(availableRunModels$),
       get(modelPlanCapabilities$),
     ]);
     signal.throwIfAborted();
-    const policy = policies.policies.find((candidate) => {
+    const runModel = models.models.find((candidate) => {
       return candidate.model === selectedModel;
     });
-    if (policy === undefined || !isMemberModelPolicyAvailable(policy)) {
+    if (runModel === undefined || !isMemberRunModelAvailable(runModel)) {
       return false;
     }
-    if (!memberModelPolicyAllowedForPlan(policy, modelCapabilities)) {
+    if (!memberRunModelAllowedForPlan(runModel, modelCapabilities)) {
       return false;
     }
-    if (policy.memberEffective) {
+    if (runModel.memberEffective) {
       return true;
     }
     if (
-      policy.credentialScope !== "member" ||
-      !isPersonalOauthProviderType(policy.defaultProviderType)
+      runModel.credentialScope !== "member" ||
+      !isPersonalOauthProviderType(runModel.defaultProviderType)
     ) {
       return true;
     }

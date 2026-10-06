@@ -4747,7 +4747,6 @@
         },
         "model": {
           "autoDescription": "Okou가 각 작업에 맞는 모델을 선택합니다.",
-          "description": "워크스페이스와 실행에 사용할 AI 모델을 선택하세요.",
           "title": "모델"
         },
         "people": {
@@ -4837,21 +4836,7 @@
     },
     "models": {
       "actions": {
-        "addModel": "모델 추가",
-        "deleteModel": "모델 삭제",
-        "editModel": "모델 편집",
-        "resetUsage": "사용량 초기화",
-        "upgradePro": "Pro로 업그레이드하여 사용",
-        "upgradeToPro": "Pro로 업그레이드"
-      },
-      "autoMode": {
-        "cancel": "취소",
-        "confirm": "Auto Model로 전환",
-        "confirmDescription": "조직의 모델 정책, Provider Connections 및 더 이상 사용하지 않는 보안 정보를 영구적으로 삭제합니다. 조직 정책은 Auto만 남습니다. 멤버의 개인 구독은 연결된 상태로 유지되며 모델을 추가할 수 있습니다. Custom으로 돌아가도 삭제된 조직 설정은 복원되지 않습니다.",
-        "confirmTitle": "워크스페이스를 Auto Model로 전환할까요?",
-        "description": "조직 정책으로 Auto를 사용합니다. 개인 구독에서 멤버의 모델을 추가할 수 있습니다.",
-        "failed": "모델 모드를 변경하지 못했습니다. 설정을 새로고침하고 다시 시도하세요.",
-        "title": "Auto Model"
+        "resetUsage": "사용량 초기화"
       },
       "deviceAuth": {
         "claude": {
@@ -4887,44 +4872,8 @@
           "signIn": "ChatGPT로 로그인"
         }
       },
-      "gateways": {
-        "actions": "게이트웨이 작업",
-        "add": "공급자 추가",
-        "addTitle": "모델 공급자 추가",
-        "apiBaseUrl": "API 기본 URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API 키",
-        "deleteConfirm": "이 모델 공급자 연결을 삭제하시겠습니까? 이를 사용하는 모델 경로를 더 이상 사용할 수 없게 됩니다.",
-        "description": "Anthropic Messages, OpenAI Responses 또는 둘 다를 통해 관리자가 관리하는 게이트웨이를 연결합니다.",
-        "dialogDescription": "Claude Code 또는 Codex에서 사용하는 API 기본 URL로 각 프로토콜을 구성하세요.",
-        "editTitle": "모델 공급자 편집",
-        "errors": {
-          "invalidMappings": "모델 매핑은 값이 업스트림 모델 이름인 JSON 객체여야 합니다.",
-          "missingProtocol": "프로토콜을 하나 이상 활성화하세요.",
-          "missingSecret": "API 키를 입력하세요."
-        },
-        "headerName": "인증 헤더",
-        "headerValue": "헤더 값 템플릿",
-        "keepKey": "현재 키를 유지하려면 비워 두세요",
-        "modelMappings": "모델 매핑(JSON)",
-        "name": "이름",
-        "presets": {
-          "custom": "사용자 지정",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "요청",
-        "title": "공급자 연결"
-      },
       "personal": {
         "accountFallback": "계정 {{number}}",
-        "accountsDescription": "새 실행에 각 공급자가 사용할 계정을 선택하세요.",
-        "accountsSectionTitle": "개인 계정",
         "activeAccount": "활성",
         "autoDescription": "Claude 또는 ChatGPT 계정을 연결하여 더 많은 모델을 사용하세요.",
         "autoTitle": "더 많은 모델 사용하기",
@@ -4951,8 +4900,6 @@
         "useAccount": "사용"
       },
       "picker": {
-        "builtInModel": "내장 모델",
-        "byokHelp": "구성된 공급자 사용",
         "chatModels": "채팅 모델",
         "effort": "강도",
         "effortScale": {
@@ -4965,8 +4912,8 @@
         },
         "fast": "빠름",
         "fastImpact": {
-          "creditCost": "크레딧 비용 {{multiplier}}×",
-          "providerUsage": "사용량은 제공업체에 따라 다름"
+          "providerUsage": "사용량은 제공업체에 따라 다름",
+          "subscriptionUsage": "구독 사용량 {{multiplier}}배"
         },
         "fastMode": "빠른 모드",
         "generationPriceTiers": {
@@ -4980,56 +4927,11 @@
         "loading": "모델 불러오는 중...",
         "models": "모델",
         "noConfiguredModels": "구성된 모델 없음",
-        "priceTiers": {
-          "balanced": "비용과 성능의 균형",
-          "economy": "일상 간단 작업용 경제형",
-          "frontier": "최첨단 프런티어 모델",
-          "premium": "가장 어려운 작업용 프리미엄 프런티어 모델"
-        },
         "pro": "프로",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure 파운드리 포털",
-          "claudeCodeOauth": "Claude Code (OAuth 토큰)",
-          "deepseek": "Deepseek"
-        },
         "standard": "표준",
         "ultrafast": "울트라패스트",
         "ultrafastImpact": "토큰 생성 속도 최대 8배 · OpenAI API 토큰 요금 6배",
         "ultrafastMode": "울트라패스트 모드"
-      },
-      "policies": {
-        "actionsFor": "{{model}}에 대한 작업",
-        "apiKey": "API 키",
-        "apiKeyDescription": "공유 워크스페이스 키입니다. 팀이 하나의 계정으로 청구할 때 가장 적합합니다.",
-        "apiKeyPlaceholder": "API 키 입력",
-        "apiKeyRequired": "API 키가 필요합니다.",
-        "availableModels": "사용 가능한 모델",
-        "builtIn": "내장형",
-        "builtInDescription": "워크스페이스 크레딧으로 사용량을 충당합니다.",
-        "claudeSubscription": "Claude 구독",
-        "claudeSubscriptionDescription": "각 멤버가 자신의 Pro, Max 또는 Team 플랜을 연결합니다.",
-        "codexSubscription": "Codex 구독",
-        "codexSubscriptionDescription": "각 멤버가 자신의 Pro 또는 Team 플랜을 연결합니다.",
-        "dialogDescription": "멤버가 이 모델에 접근하는 방식을 결정하세요.",
-        "gateway": "사용자 지정 게이트웨이",
-        "gatewayDescription": "관리자가 정의한 공급자 연결을 통해 라우팅합니다.",
-        "gatewayProvider": "공급자 연결",
-        "getKey": "키 받기",
-        "invalidRoute": "잘못된 경로",
-        "missingProvider": "공급자 누락",
-        "model": "모델",
-        "noMappedGateway": "이 모델에 매핑된 공급자 연결이 없습니다.",
-        "orgDefaultModelLocked": "Auto는 삭제할 수 없습니다",
-        "pricing": "요금",
-        "providedBy": "제공자",
-        "provider": "공급자",
-        "providerApiKey": "{{provider}} API 키",
-        "runsThrough": "실행 경로",
-        "secretStored": "워크스페이스 비밀에 저장됨.",
-        "selectGateway": "공급자 연결 선택",
-        "selectModel": "모델 선택",
-        "selectProvider": "공급자 선택",
-        "workspaceDescription": "이 워크스페이스의 모든 사용자에게 제공됨."
       },
       "reset": {
         "confirmDescription": "현재 사용량 창을 재설정하려면 Codex 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
@@ -5041,20 +4943,9 @@
         "remainingWithExpiry_other": "{{value}}회 재설정 가능 · {{expiry}} 만료",
         "title": "Codex 사용량을 재설정하시겠습니까?"
       },
-      "stale": {
-        "claudeExpired": "Claude Code 세션이 만료되었습니다. 계속하려면 다시 연결하세요.",
-        "claudeFailed": "Claude Code 새로고침 실패. 재시도하려면 다시 연결하세요.",
-        "claudeTitle": "Claude Code 세션 재연결 필요",
-        "codexExpired": "ChatGPT 세션이 만료되었습니다. 계속하려면 다시 연결하세요.",
-        "codexFailed": "ChatGPT 새로고침 실패. 재시도하려면 다시 연결하세요.",
-        "codexInvalidated": "ChatGPT 세션이 취소되었습니다. 다시 연결하세요.",
-        "codexReused": "ChatGPT 세션이 다른 곳에서 사용되었습니다. 다시 연결하세요.",
-        "codexTitle": "ChatGPT 세션 재연결 필요"
-      },
       "toasts": {
         "accountDisconnected": "계정 연결이 해제되었습니다",
         "accountSwitched": "활성 계정이 변경되었습니다",
-        "policiesUpdated": "모델 공급자 설정이 업데이트되었습니다.",
         "reset": "Codex 사용량이 재설정되었습니다.",
         "resetUnavailable": "사용 가능한 Codex 사용량 재설정이 없습니다.",
         "resetUnneeded": "현재 Codex 사용량 재설정이 필요하지 않습니다."
@@ -5328,10 +5219,8 @@
       "connecting": "연결 중...",
       "delete": "삭제",
       "discard": "버리기",
-      "edit": "편집",
       "loading": "로딩 중",
       "moreOptions": "더 보기",
-      "reconnect": "재연결",
       "remove": "제거",
       "save": "저장",
       "saveChanges": "변경 사항 저장",

@@ -68,7 +68,7 @@ async function emailOrg(): Promise<EmailOrgFixture> {
   runs.acceptTelemetryIngest();
 
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   await runs.heartbeatRunner(runnerGroup);
 
   mockClerkUsers(context, [clerkUserListEntry(actor.userId, actor.email)]);
@@ -287,7 +287,7 @@ describe("low-credit email delivery", () => {
     // Built-in usage is billed to the organization's credits.
     await createChatEventsFixture(context).configureBuiltInPiModel(
       actor,
-      "deepseek-v4.1-flash",
+      "okou-1.0",
     );
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD low-credit agent",

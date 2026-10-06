@@ -2,6 +2,7 @@ import {
   chatInputModelSelectionSchema,
   type ChatInputModelSelection,
 } from "@okouai/api-contracts/contracts/chat-input-model";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   modelSettingsSchema,
@@ -20,15 +21,32 @@ import {
   resolveModelSelectionPin$,
   isReplacedModelSelection,
   type ModelSelectionBootstrap,
+  type ModelFirstPin,
 } from "./model-selection.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
+import {
+  loadModelCatalog$,
+  resolveCatalogRunModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
+function isUnavailablePersonalCapture(
+  catalog: ModelCatalog,
+  selected: ModelFirstPin | ReturnType<typeof badRequestMessage> | null,
+): boolean {
+  return (
+    selected !== null &&
+    !("status" in selected) &&
+    selected.modelProviderCredentialScope === "member" &&
+    selected.selectedModel !== null &&
+    resolveCatalogRunModel(catalog, selected.selectedModel) === null
+  );
+}
+
 /**
- * Capture an input's model once. A replaced model resolves to its final
- * replacement or fails explicitly; an unavailable active model uses the
- * catalog system default.
+ * Capture an input's model once. Personal selections keep their credential
+ * source or fail explicitly; retired Custom choices normalize to fixed Auto.
  */
 export const resolveChatInputModelSelection$ = command(
   async (
@@ -57,6 +75,7 @@ export const resolveChatInputModelSelection$ = command(
       ? await set(
           resolveModelSelectionPin$,
           {
+            purpose: "capture",
             orgId: args.orgId,
             userId: args.userId,
             modelSelection: {
@@ -70,6 +89,12 @@ export const resolveChatInputModelSelection$ = command(
           signal,
         )
       : null;
+    if (isUnavailablePersonalCapture(catalog, selected)) {
+      // A retained personal catalog row identifies ownership, not runtime permission.
+      return badRequestMessage(
+        "The selected personal subscription model is unavailable",
+      );
+    }
     if (
       selected &&
       "status" in selected &&
@@ -113,7 +138,8 @@ export const resolveChatInputModelSelection$ = command(
     const selectedIsReplacement =
       selected !== null &&
       !("status" in selected) &&
-      selectedModel !== args.selectedModel;
+      selectedModel !== args.selectedModel &&
+      selectedModel !== AUTO_RUN_MODEL;
     const effort = resolveChatReasoningEffort({
       catalog,
       selectedModel,

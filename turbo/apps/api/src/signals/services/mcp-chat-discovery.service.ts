@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import type {
   McpDiscoveryResult,
   McpListAgentsInput,
@@ -7,10 +6,11 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
   nullableDriverValueDecoder,
@@ -21,7 +21,7 @@ import { now } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
+import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
 interface Principal {
   readonly orgId: string;
   readonly userId: string;
@@ -198,7 +198,7 @@ export const listMcpModels$ = command(
     signal: AbortSignal,
   ): Promise<McpDiscoveryResult<McpListModelsOutput>> => {
     const [listing, preferences] = await Promise.all([
-      set(listOrgModelPoliciesWithSystemDefault$, principal, signal),
+      set(listAvailableRunModelsWithDefault$, principal, signal),
       get(db$)
         .select({ model: orgMembersMetadata.selectedModel })
         .from(orgMembersMetadata)
@@ -211,7 +211,7 @@ export const listMcpModels$ = command(
         .limit(1),
     ]);
     signal.throwIfAborted();
-    const models: McpListModelsOutput["models"] = listing.response.policies.map(
+    const models: McpListModelsOutput["models"] = listing.response.models.map(
       (policy) => {
         const availability =
           policy.memberEffective?.availability ??

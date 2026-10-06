@@ -16,7 +16,7 @@ const APP_API_PREFETCH_PATHS = [
   "/api/onboarding/status",
   "/api/agents",
   "/api/org",
-  "/api/model-policies",
+  "/api/run-models",
   "/api/user-model-preference",
 ];
 const APP_API_PREFETCH_MARKER = "<!--okou-app-api-prefetch-->";

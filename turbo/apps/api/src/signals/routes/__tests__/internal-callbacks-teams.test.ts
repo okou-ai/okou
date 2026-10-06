@@ -21,7 +21,6 @@ import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -47,6 +46,7 @@ import {
 import { chatThreadRoutes } from "../chat-threads";
 
 const context = testContext();
+const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -412,23 +412,17 @@ async function setupConnectedTeamsActor(
       "Expected paid onboarding to create a Teams callback agent",
     );
   }
-  const [{ providerId }] = await Promise.all([
-    runsApi.ensureOrgModelProvider(actor),
+  await Promise.all([
+    runsApi.ensurePersonalSubscriptionModel(actor),
     authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
       visibility: "public",
     }),
   ]);
   // Queued Teams callbacks inspect and complete the Runner claim. Fable keeps
   // this native fixture claimable while eligible Pi routes remain enabled.
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   if (options.okouDebug) {
     await updateFeatureSwitchesForUser(
       context,
@@ -1159,9 +1153,11 @@ describe("Teams chat callbacks", () => {
       });
       await authOrgApi.completeOnboarding(secondActor);
       // The participant's new input starts from their own model preference.
-      await createBddIntegrationApi(context).updateUserModelPreference(
+      await createRunsApi(context).ensurePersonalSubscriptionModel(
         secondActor,
-        "claude-fable-5-1",
+        {
+          model: "claude-fable-5-1",
+        },
       );
 
       const tokenRequestCountBeforeConnect = teamsApi.tokenRequests.length;

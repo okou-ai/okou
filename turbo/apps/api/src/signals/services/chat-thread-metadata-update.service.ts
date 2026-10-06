@@ -301,6 +301,7 @@ const prepareMetadataModel$ = command(
     const pin = await set(
       resolveModelSelectionPin$,
       {
+        purpose: "configure",
         ...args.principal,
         catalog,
         modelSelection: {

@@ -312,15 +312,7 @@ async function nativeRunnerChatActor(
     userId: auth.userId,
     orgId: auth.orgId,
   });
-  await f.api.updateOrgModelPolicies(actor.actor, [
-    {
-      model: NATIVE_RUNNER_MODEL,
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: actor.providerId,
-    },
-  ]);
+  await f.api.updateUserModelPreference(actor.actor, NATIVE_RUNNER_MODEL);
   return actor;
 }
 
@@ -378,7 +370,9 @@ async function chatRunFixture() {
   callbacks.disableVapid();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor, { model: NATIVE_RUNNER_MODEL });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: NATIVE_RUNNER_MODEL,
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "MCP activity agent",
     visibility: "private",

@@ -193,6 +193,21 @@ const TEST_ONLY_MODEL_PRICING = [
  * app pool singleton: tests that stub DATABASE_URL to an unavailable database
  * rely on their first app DB access creating the pool from that stub.
  */
+/** The isolated harness uses the exact same pricing seed on its owned DB. */
+export async function seedIsolatedModelPricingForTests(): Promise<void> {
+  await fixtureDb()
+    .insert(usagePricing)
+    .values([
+      ...USAGE_PRICING.filter((row) => {
+        return row.kind === "model";
+      }),
+      ...TEST_ONLY_MODEL_PRICING,
+    ])
+    .onConflictDoNothing({
+      target: [usagePricing.kind, usagePricing.provider, usagePricing.category],
+    });
+}
+
 export async function seedDevelopmentModelPricingForTests(): Promise<void> {
   const client = new Client({ connectionString: env("DATABASE_URL") });
   await client.connect();

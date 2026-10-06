@@ -20,6 +20,8 @@ const {
   connectors,
   entitledNativeChatActor,
   seedBuiltInModelKey,
+  mockPiResourceArchiveDownloads,
+  mockPiCheckpointObjectStore,
   sendChatRun,
   claimChatRun,
   cancelChatRun,
@@ -53,8 +55,7 @@ describe("shared context statement projections through normal sends", () => {
   it.each(["empty", "providers", "agent", "all"] as const)(
     "preserves %s rowsets in first and continuation sends",
     async (mode) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledNativeChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       const hasProviders = mode === "providers" || mode === "all";
       const hasAgentRows = mode === "agent" || mode === "all";
       if (hasProviders) {
@@ -67,27 +68,17 @@ describe("shared context statement projections through normal sends", () => {
           },
           [200, 201],
         );
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: MODEL,
-            preferred: true,
-            defaultProviderType: "anthropic-api-key",
-            credentialScope: "org",
-            modelProviderId: providerId,
-          },
-        ]);
+        await api.updateUserModelPreference(actor, MODEL);
       } else {
-        await seedBuiltInModelKey(MODEL);
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: MODEL,
-            preferred: true,
-            defaultProviderType: "built-in",
-            credentialScope: "org",
-            modelProviderId: null,
-          },
-        ]);
-        await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
+        await seedBuiltInModelKey("okou-1.0");
+        await api.updateUserModelPreference(actor, "okou-1.0");
+        await misc.deletePersonalModelProvider(
+          actor,
+          "claude-code-oauth-token",
+          [204],
+        );
+        mockPiResourceArchiveDownloads();
+        mockPiCheckpointObjectStore();
       }
       let customId: string | undefined;
       let workflowId: string | undefined;
@@ -165,7 +156,9 @@ describe("shared context statement projections through normal sends", () => {
         });
         threadId = run.threadId;
         const claimed = await claimChatRun(runnerGroup, run.runId);
-        expect(claimed.claim.modelUsageProvider).toBe(MODEL);
+        expect(claimed.claim.modelUsageProvider).toBe(
+          hasProviders ? MODEL : "okou-1.0",
+        );
         const targets = claimed.claim.connectorRuntimeTargets;
         if (customId) {
           expect(targets).toContainEqual(

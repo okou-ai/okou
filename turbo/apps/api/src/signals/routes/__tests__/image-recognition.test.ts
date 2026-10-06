@@ -122,7 +122,9 @@ async function seedImageRecognitionActor(): Promise<ThreadImageRecognitionActor>
   bdd.acceptAgentStorageWrites();
   api.configureRunnerGroup();
   await bdd.completeOnboarding(actor);
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Image recognition agent",
     visibility: "private",
@@ -332,9 +334,11 @@ async function createPublicImageRecognitionActor() {
       credits: STARTING_CREDITS,
     });
 
-    // Model configuration writes the user's Debug override through its real API.
+    // Connect the caller's personal subscription through its real API.
     featureSwitchCleanupNeeded = true;
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "Image recognition agent",
       visibility: "private",

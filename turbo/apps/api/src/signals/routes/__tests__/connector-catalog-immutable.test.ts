@@ -514,6 +514,101 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
   });
   it.todo("n1: rejects downloaded bytes whose hash differs from the pointer");
+  it("entry column migrations preserve payloads and backfill bundled and absent skills", async () => {
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    // Historical schema upgrades cannot be constructed through a public API.
+    // Reuse the sole case-owned lifecycle engine, not another database binding.
+    await engine.exec(`ALTER TABLE connector_catalog_entries
+      DROP COLUMN label, DROP COLUMN description, DROP COLUMN category,
+      DROP COLUMN auth_methods, DROP COLUMN firewall, DROP COLUMN storage_name,
+      DROP COLUMN version_id, DROP COLUMN mcp_endpoint`);
+    const versionId = "a".repeat(64);
+    const entries = [
+      {
+        slug: "bundled",
+        label: "Bundled connector",
+        description: "Description",
+        category: "productivity",
+        authMethods: [{ id: "token" }],
+        firewall: { kind: "generated", config: { rules: [] } },
+        skill: {
+          kind: "bundled",
+          storageName: "connector-skill@bundled",
+          versionId,
+          storageVersionPrefix: `__system__/volume/connector-skill@bundled/${versionId}`,
+        },
+      },
+      {
+        slug: "no-skill",
+        label: "No skill connector",
+        description: "Other description",
+        category: "communication",
+        authMethods: [{ id: "oauth" }],
+        firewall: { kind: "none" },
+        skill: { kind: "none" },
+        mcp: {
+          transport: "streamable-http",
+          endpoint: "https://mcp.example.com/mcp",
+        },
+      },
+    ];
+    for (const entry of entries) {
+      await engine.query(
+        "INSERT INTO connector_catalog_entries VALUES ('catalog', $1, $2)",
+        [entry.slug, JSON.stringify(entry)],
+      );
+    }
+    for (const name of [
+      "1328_connector_catalog_entry_columns.sql",
+      "1329_backfill_connector_catalog_entry_columns.sql",
+    ]) {
+      await engine.exec(await readFile(new URL(name, migrationDir), "utf8"));
+    }
+    const expected = entries.map((entry) => {
+      return {
+        hash: "catalog",
+        slug: entry.slug,
+        payload: entry,
+        label: entry.label,
+        description: entry.description,
+        category: entry.category,
+        auth_methods: entry.authMethods,
+        firewall: entry.firewall,
+        storage_name: entry.skill.storageName ?? null,
+        version_id: entry.skill.versionId ?? null,
+        mcp_endpoint: entry.mcp?.endpoint ?? null,
+      };
+    });
+    expect(
+      (
+        await engine.query(
+          "SELECT * FROM connector_catalog_entries ORDER BY slug",
+        )
+      ).rows,
+    ).toStrictEqual(expected);
+    await engine.query(
+      "INSERT INTO connector_catalog_entries (hash, slug, payload) VALUES ('old-api', $1, $2)",
+      [entries[0]?.slug, JSON.stringify(entries[0])],
+    );
+    const backfill = await readFile(
+      new URL(
+        "1329_backfill_connector_catalog_entry_columns.sql",
+        migrationDir,
+      ),
+      "utf8",
+    );
+    await engine.exec(backfill);
+    await engine.exec(backfill);
+    expect(
+      (
+        await engine.query(
+          "SELECT * FROM connector_catalog_entries WHERE hash = 'old-api'",
+        )
+      ).rows,
+    ).toStrictEqual([{ ...expected[0], hash: "old-api" }]);
+  });
   it("n2: binds all existing gateways to the case engine and accepts the publisher-shaped digest through cron", async () => {
     if (!engine || !binding.database) {
       throw new Error("Missing case engine");

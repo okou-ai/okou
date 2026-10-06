@@ -1,24 +1,19 @@
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   click,
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import {
-  readClipboardItemText,
-  readSingleRichClipboardWrite,
-} from "./chat-lifecycle-test-helpers.ts";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { openTemplatePicker } from "./chat-composer-template-gallery-test-helpers.ts";
-import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -27,13 +22,18 @@ import {
   findComposerEditor,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
   selectTemplate,
 } from "./chat-composer-test-helpers.ts";
+import {
+  readClipboardItemText,
+  readSingleRichClipboardWrite,
+} from "./chat-lifecycle-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 function setupModels(): void {
   mockAgent();
-  mockOrgModelRoutes();
+  mockPersonalModelRoutes();
   mockBillingCapabilities({
     supportByok: true,
     restrictedBuiltInModels: false,

@@ -1,6 +1,3 @@
-import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatEventsContract,
@@ -8,7 +5,10 @@ import {
   type ChatEventSendBody,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -148,7 +148,23 @@ test("A prompt link prefills a new chat from Home", async () => {
   expect(capture.sends).toHaveLength(0);
 });
 
-test("A prompt route starts a chat with its selected model", async () => {
+test("A prompt route starts a chat with its selected personal subscription model", async () => {
+  context.mocks.data.personalModelProviders([
+    {
+      id: "00000000-0000-4000-a000-000000000701",
+      type: "codex-oauth-token",
+      framework: "codex",
+      secretName: null,
+      authMethod: "auth_json",
+      secretNames: ["CODEX_AUTH_JSON"],
+      isDefault: false,
+      selectedModel: null,
+      needsReconnect: false,
+      lastRefreshErrorCode: null,
+      createdAt: "2026-03-10T00:00:00Z",
+      updatedAt: "2026-03-10T00:00:00Z",
+    },
+  ]);
   const capture = capturePromptLaunch();
   await setupPage({
     context,
@@ -277,7 +293,7 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
     parts: [{ type: "text" as const, text: "Keep my unrelated draft" }],
   };
   const draftUpdates: unknown[] = [];
-  context.mocks.data.orgModelPolicies([]);
+  context.mocks.data.availableRunModels([]);
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: savedDraft,

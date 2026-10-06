@@ -22,7 +22,9 @@ async function prepareRunCreation(
   api.configureRunnerGroup();
   for (const actor of actors) {
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
   }
 }
 

@@ -528,7 +528,7 @@ describe("POST /api/integrations/feishu/message", () => {
       const { actor, agentId, installationId } =
         await createOnboardedFeishuInstallation(undefined, platform);
       await runsApi.grantProEntitlement(actor);
-      await runsApi.ensureOrgModelProvider(actor);
+      await runsApi.ensurePersonalSubscriptionModel(actor);
       const runnerGroup = runsApi.configureRunnerGroup();
       await runsApi.heartbeatRunner(runnerGroup);
       const sent = await chatApi.sendAndLaunch(actor, {

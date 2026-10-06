@@ -1,28 +1,22 @@
-import { useGet, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
-import { useTranslation } from "react-i18next";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
+import { useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
+import { brandName$ } from "../../../../signals/branding.ts";
 import {
-  claudeCodeDeviceAuthDialogState$,
   claudeCodeDeviceAuthDialogStatePersonal$,
-  claudeCodeDeviceAuthFlowState$,
   claudeCodeDeviceAuthFlowStatePersonal$,
-  closeClaudeCodeDeviceAuthDialog$,
   closeClaudeCodeDeviceAuthDialogPersonal$,
-  runClaudeCodeDeviceAuth$,
   runClaudeCodeDeviceAuthPersonal$,
-  setClaudeCodeDeviceAuthAuthorizationCode$,
   setClaudeCodeDeviceAuthAuthorizationCodePersonal$,
-  submitClaudeCodeDeviceAuth$,
   submitClaudeCodeDeviceAuthPersonal$,
   type ClaudeCodeDeviceAuthFlowState,
 } from "../../../../signals/okou-page/settings/claude-code-device-auth.ts";
-import { brandName$ } from "../../../../signals/branding.ts";
-import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   DeviceAuthDialogShell,
   DeviceAuthLoadingContent,
@@ -44,34 +38,9 @@ interface ClaudeCodeDeviceAuthScopeBundle {
   setAuthorizationCode: (value: string) => void;
 }
 
-export function ClaudeCodeDeviceAuthDialog() {
-  const bundle = useOrgClaudeCodeDeviceAuthBundle();
-  return <ClaudeCodeDeviceAuthDialogView bundle={bundle} />;
-}
-
 export function PersonalClaudeCodeDeviceAuthDialog() {
   const bundle = usePersonalClaudeCodeDeviceAuthBundle();
   return <ClaudeCodeDeviceAuthDialogView bundle={bundle} />;
-}
-
-function useOrgClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundle {
-  const dialog = useGet(claudeCodeDeviceAuthDialogState$);
-  const flow = useGet(claudeCodeDeviceAuthFlowState$);
-  const close = useSet(closeClaudeCodeDeviceAuthDialog$);
-  const [, run] = useLoadableSet(runClaudeCodeDeviceAuth$);
-  const [submitLoadable, submit] = useLoadableSet(submitClaudeCodeDeviceAuth$);
-  const setAuthorizationCode = useSet(
-    setClaudeCodeDeviceAuthAuthorizationCode$,
-  );
-  return {
-    dialog,
-    flow,
-    close,
-    run,
-    submit,
-    submitting: submitLoadable.state === "loading",
-    setAuthorizationCode,
-  };
 }
 
 function usePersonalClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundle {

@@ -55,6 +55,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
+const api = createRunsApi(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
@@ -131,16 +132,10 @@ async function setup(
   }
   // Scheduler scenarios that claim and complete a Runner job use a native
   // default; explicit Pi cases select their own model policy below.
-  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await wf.createAgent(actor, {
     displayName: "Scheduler Agent",
   });
@@ -727,19 +722,6 @@ describe("okou workflow automation scheduler", () => {
     async (queuedLaunch) => {
       const scenario = await setup();
       const misc = createMiscRoutesApi(context);
-      const configured = await runsApi.createOrgModelProvider(scenario.actor, {
-        type: "openai-api-key",
-        secret: "unused-scheduler-api-key",
-      });
-      await runsApi.updateOrgModelPolicies(scenario.actor, [
-        {
-          model: "gpt-6-astra",
-          preferred: true,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: configured.providerId,
-        },
-      ]);
       const connectOwner = async (actor: ApiTestUser, identity: string) => {
         const token = makeCodexJwt({
           exp: Math.floor(now() / 1000) + 7200,
@@ -1194,16 +1176,8 @@ describe("okou workflow automation scheduler", () => {
     "keeps a credit-blocked %s automation enabled and resumes after billing recovers",
     async (scheduleType) => {
       const scenario = await setup();
-      await seedBuiltInModelKey(context, "claude-fable-5-1");
-      await runsApi.updateOrgModelPolicies(scenario.actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
+      await seedBuiltInModelKey(context, "okou-1.0");
+      await api.updateUserModelPreference(scenario.actor, "okou-1.0");
       const created = await accept(
         automationsClient().create({
           headers: authHeaders(),

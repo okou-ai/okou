@@ -62,6 +62,7 @@ import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import {
@@ -1200,7 +1201,9 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       ? defaultAgent
       : alternateAgent;
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     if (options.useAlternateInstallationDefault) {
       const orgId = actor.orgId;
       if (!orgId) {
@@ -5897,7 +5900,8 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
-        // Runs without a thread pin use the member preference, then Auto.
+        // Each triggering member supplies their own subscription credentials.
+        await runsApi.ensurePersonalSubscriptionModel(secondActor);
         await runsApi.updateUserModelPreference(
           secondActor,
           "claude-fable-5-1",
@@ -6331,6 +6335,7 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
+        await runsApi.ensurePersonalSubscriptionModel(secondActor);
         await runsApi.updateUserModelPreference(
           secondActor,
           "claude-fable-5-1",
@@ -6443,19 +6448,7 @@ export function registerSharedFeishuConversationTests(): void {
         fixture;
       const providerThreadId = `omt_${randomUUID()}`;
       await startFeishuDmSession(fixture, providerThreadId);
-      const { providerId } = await runsApi.createOrgModelProvider(actor, {
-        type: "openai-api-key",
-        secret: "feishu-history-openai-key",
-      });
-      await runsApi.updateOrgModelPolicies(actor, [
-        {
-          model: "gpt-6-astra",
-          preferred: true,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await allowFeishuGptModel(actor);
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
       const threads = await accept(
         setupApp({ context, routes: chatThreadRoutes })(
@@ -6511,18 +6504,9 @@ export function registerSharedFeishuConversationTests(): void {
     });
 
     async function allowFeishuGptModel(actor: ApiTestUser): Promise<void> {
-      const { providerId } = await runsApi.createOrgModelProvider(actor, {
-        type: "openai-api-key",
-        secret: "feishu-model-command-openai-key",
-      });
-      await runsApi.updateOrgModelPolicies(actor, [
-        {
-          model: "gpt-6-astra",
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+        actor,
+      );
     }
 
     async function readFeishuThreadEvents(actor: ApiTestUser) {

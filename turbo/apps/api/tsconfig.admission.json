@@ -119,7 +119,7 @@
     "src/signals/services/pending-launch-credit-plan.ts",
     "src/signals/services/pending-launch-official-plan.ts",
     "src/signals/services/personal-subscription-recovery.service.ts",
-    "src/signals/services/pi-native-model-config.ts",
+    "src/signals/services/pi-model-configuration-error.ts",
     "src/signals/services/pi-resource-snapshot.service.ts",
     "src/signals/services/pi-sandbox-config.ts",
     "src/signals/services/pi-stable-context-recapture.service.ts",

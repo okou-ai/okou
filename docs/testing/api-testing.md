@@ -184,15 +184,52 @@ remain while those production mechanisms are active (#26/#28). Those cases own
 an explicitly separate legacy source, never the shared fixture. The legacy
 source module is not removed by the additive schema PR.
 
-`connector-catalog-immutable.test.ts` is the sole PGlite catalog lifecycle entry.
-Its `api-immutable-catalog` Vitest project does not run shared real-DB setup;
-each case owns a fresh in-process database and closes it after owner abort and
-work drainage. File-level lint exceptions are confined to that mechanism file.
-Current-entry publication, missing-entry faults and account-generation cases
-belong to this lifecycle engine, not a per-case shared PostgreSQL publisher.
-Its external KMS mock is async-local and shared with ordinary setup; HTTP uses
-MSW. N1 remains TODO and is not acceptance evidence. All ordinary API tests
-continue using real PostgreSQL and the startup-installed fixed current catalog.
+`connector-catalog-immutable.test.ts` retains its dedicated PGlite catalog
+lifecycle project and existing mechanism-specific lint exceptions. Its project
+never loads shared real-PG setup; each case owns its engine through abort and
+work drainage. Current-entry publication, missing-entry faults and account
+generation stay in that lifecycle engine. Its external KMS mock is async-local
+and shared with ordinary setup; HTTP uses MSW. N1 remains TODO and is not
+acceptance evidence. Ordinary API suites keep native PostgreSQL and the
+startup-installed fixed current catalog, except the explicitly owned SQL
+contracts described below.
+
+New isolated
+SQL contract suites use the shared `api-isolated-database` project instead of
+copying those exceptions. `src/__tests__/pglite-setup.ts` binds only the DB
+transport to `src/test-fixtures/pglite-database.ts`; routes, services, fixture
+writers and SQL remain real. Every case owns a new engine and async-local
+binding. Only immutable migrated baseline bytes are reused. The project never
+loads shared real-PG setup or opens a `pg.Client` for its pricing seed.
+
+Foreground work is aborted before API-based cleanup, which has its own live
+case-owned signal. Final teardown aborts both signals and drains detached/native
+work before engine close, including setup failures. `pglite-database.test.ts`
+verifies concurrent owner isolation, fail-closed access, cleanup-signal lifetime,
+initialization failure, failed drainage and node-postgres-compatible int8/numeric
+text decoding without precision loss.
+`api/no-test-database-binding` confines engine imports/construction to the
+harness (and the existing catalog mechanism) and prevents the migrated
+`model-providers.test.ts`, `test-runtime-state.test.ts` and the three dedicated
+`*-cooldown.test.ts` suites from returning to a serialized project. The dedicated
+callback, model-admission and workflow suites preserve their public rejection,
+no-extra-Run and billing-report assertions while isolating each global Auto
+cooldown write. Their former siblings retain native PostgreSQL, including
+concurrent event writes and queue/claim contracts. The sole
+central DB `vi.mock` is permitted; service mocks and case-local DB mocks remain
+forbidden. These lexical guards do not prove runtime isolation.
+
+All migrated cooldown suites use this per-case harness without serial scheduling.
+The retired Custom bootstrap left an unused catalog argument/read in the
+publication transaction; removing that obsolete dependency makes the lifecycle
+suite portable without changing transaction boundaries or redirecting reads.
+The harness uses PGlite's driver parsers to preserve int8/numeric text exactly as
+node-postgres does, rather than rewriting SQL results or weakening row schemas.
+
+PGlite still has a single PostgreSQL session. It cannot replace pool/multi-session
+contracts, protocol cancellation or real lock competition. Keep those specific
+contracts on native PostgreSQL. Do not redirect outside queries into an active
+transaction or widen timeouts to make an incompatible suite pass.
 
 Do not hold advisory locks, inspect `pg_locks`, or install internal admission
 gates to construct or assert an API scenario. Exercise concurrent requests and

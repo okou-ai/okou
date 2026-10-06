@@ -1,32 +1,22 @@
-import { computed } from "ccstate";
-import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import {
+  BUILT_IN_MODEL_ROUTE_PROVIDERS,
+  getSecretNameForType,
+  hasAuthMethods,
+  modelProviderTypeSchema,
+} from "@okouai/api-contracts/contracts/model-providers";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import {
-  modelProviderConnections,
-  modelProviderSurfaces,
-} from "@okouai/db/schema/model-provider-gateway";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { secrets } from "@okouai/db/schema/secret";
-import {
-  hasAuthMethods,
-  modelProviderTypeSchema,
-  BUILT_IN_MODEL_ROUTE_PROVIDERS,
-  getSecretNameForType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  modelProviderSurfaceProtocolSchema,
-  getModelProviderTypeForSurfaceProtocol,
-} from "@okouai/api-contracts/contracts/model-provider-gateways";
+import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { computed } from "ccstate";
+import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import { db$ } from "../external/db";
-import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
-import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
-import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
+import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import type { MemberModelBootstrap } from "./model-bootstrap.service";
 
 const MULTI_AUTH_TYPES = modelProviderTypeSchema.options.filter(hasAuthMethods);
@@ -75,71 +65,13 @@ type ProviderRow = {
 };
 
 export function providerFacts(rows: readonly ProviderRow[]) {
-  const groups = new Map<string, ProviderRow[]>();
-  for (const row of rows) {
-    const group = groups.get(row.provider.id);
-    if (group) {
-      group.push(row);
-    } else {
-      groups.set(row.provider.id, [row]);
-    }
-  }
-  return [...groups.values()].map((group) => {
-    const first = group[0];
-    if (!first) {
-      throw new Error("Provider group is empty");
-    }
-    const provider = first.provider;
-    const organization = provider.userId === ORG_SENTINEL_USER_ID;
-    const credentials = [
-      ...new Map(
-        group.flatMap(({ providerSecret }) => {
-          return providerSecret
-            ? [
-                [
-                  providerSecret.name,
-                  { kind: "encrypted" as const, ...providerSecret },
-                ] as const,
-              ]
-            : [];
-        }),
-      ).values(),
-    ];
-    const source: ModelSourceSnapshot = {
-      identity: {
-        kind: organization ? "organization" : "member-provider",
-        modelProviderId: provider.id,
-      },
-      credentialOwner: organization ? "organization" : "member",
-      configuration: {
-        kind: "registered-provider",
-        providerType: provider.type,
-        authMethod: provider.authMethod,
-        configuredModel: provider.selectedModel,
-      },
-      credentials,
-      accountIdentity: null,
-    };
-    return { ...provider, source };
-  });
-}
-
-/** Organization provider metadata and encrypted credentials share one rowset. */
-export function createOrgModelSources(orgId: string) {
-  return computed(async (get) => {
-    return providerFacts(
-      await get(db$)
-        .select(providerProjection())
-        .from(modelProviders)
-        .leftJoin(secrets, providerSecretJoin)
-        .where(
-          and(
-            eq(modelProviders.orgId, orgId),
-            eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-          ),
-        ),
-    );
-  });
+  return [
+    ...new Map(
+      rows.map((row) => {
+        return [row.provider.id, row.provider];
+      }),
+    ).values(),
+  ];
 }
 
 /** Member providers, connected accounts and both credential kinds share a read. */
@@ -173,7 +105,14 @@ export function createMemberModelSources(orgId: string, userId: string) {
       )
       .leftJoin(secrets, providerSecretJoin)
       .where(
-        and(eq(modelProviders.orgId, orgId), eq(modelProviders.userId, userId)),
+        and(
+          eq(modelProviders.orgId, orgId),
+          eq(modelProviders.userId, userId),
+          inArray(modelProviders.type, [
+            "codex-oauth-token",
+            "claude-code-oauth-token",
+          ]),
+        ),
       );
     return memberModelSourcesFromRows(orgId, userId, joined);
   });
@@ -209,89 +148,6 @@ export function memberModelSourcesFromRows(
     ).values(),
   ];
   return { orgId, userId, providers: providerFacts(joined), rows };
-}
-
-/** Mapping and credential authority are captured together, before selection. */
-export function createGatewayModelSources(orgId: string) {
-  return computed(async (get) => {
-    return await get(db$)
-      .select({
-        id: modelProviderSurfaces.id,
-        protocol: modelProviderSurfaces.protocol,
-        apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
-        authHeaderName: modelProviderSurfaces.authHeaderName,
-        authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
-        modelMappings: modelProviderSurfaces.modelMappings,
-        displayName: modelProviderConnections.displayName,
-        encryptedValue: secrets.encryptedValue,
-        secretOrgId: secrets.orgId,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-      )
-      .leftJoin(secrets, eq(modelProviderConnections.secretId, secrets.id))
-      .where(eq(modelProviderConnections.orgId, orgId));
-  });
-}
-
-export function gatewaySourceFromSnapshot(
-  orgId: string,
-  row:
-    | Awaited<
-        ReturnType<ReturnType<typeof createGatewayModelSources>["read"]>
-      >[number]
-    | undefined,
-): ModelSourceSnapshot | null {
-  if (!row || row.encryptedValue === null) {
-    return null;
-  }
-  if (row.secretOrgId !== orgId) {
-    throw new Error("Gateway credential owner mismatch");
-  }
-  const protocol = modelProviderSurfaceProtocolSchema.parse(row.protocol);
-  return {
-    identity: { kind: "gateway", surfaceId: row.id },
-    credentialOwner: "organization",
-    configuration: {
-      kind: "gateway",
-      providerType: getModelProviderTypeForSurfaceProtocol(protocol),
-      protocol,
-      apiBaseUrl: row.apiBaseUrl,
-      authHeaderName: row.authHeaderName,
-      authHeaderTemplate: row.authHeaderTemplate,
-      modelMappings: row.modelMappings,
-      displayName: row.displayName,
-    },
-    credentials: [
-      {
-        kind: "encrypted",
-        name: GATEWAY_RUNTIME_SECRET_NAME,
-        encryptedValue: row.encryptedValue,
-      },
-    ],
-    accountIdentity: null,
-  };
-}
-
-export function registeredSourceFromSnapshot(
-  providerId: string,
-  scope: "org" | "member" | undefined,
-  org: Awaited<ReturnType<ReturnType<typeof createOrgModelSources>["read"]>>,
-  member: MemberModelBootstrap,
-): ModelSourceSnapshot | null {
-  const providers =
-    scope === "org"
-      ? org
-      : scope === "member"
-        ? member.providers
-        : [...org, ...member.providers];
-  return (
-    providers.find((provider) => {
-      return provider.id === providerId;
-    })?.source ?? null
-  );
 }
 
 export function memberAccountSourceFromSnapshot(

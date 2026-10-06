@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createHmac,
   createSign,
@@ -996,7 +997,9 @@ async function setupConnectedTeamsBotActor(): Promise<{
     visibility: "public",
   });
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   botFrameworkHandlers();
   const outboundRequests = teamsOutboundHandlers(fixture.serviceUrl);
 
@@ -1750,7 +1753,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       visibility: "public",
     });
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await installTeamsForTest(context.signal, fixture);
     await connectTeamsFixture(fixture);
     botFrameworkHandlers();
@@ -2418,29 +2423,10 @@ describe("POST /api/webhooks/teams/bot", () => {
           "activity-existing-switch-model-run",
         ),
       };
-      const anthropic = await runsApi.createOrgModelProvider(actor, {
-        type: "anthropic-api-key",
-        secret: "teams-switch-anthropic-key",
-      });
-      const openai = await runsApi.createOrgModelProvider(actor, {
-        type: "openai-api-key",
-        secret: "teams-switch-openai-key",
-      });
-      await runsApi.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: anthropic.providerId,
-        },
-        {
-          model: "gpt-6-astra",
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: openai.providerId,
-        },
-      ]);
+
+      await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+        actor,
+      );
       teamsGraphHistoryHandlers({
         fixture,
         chatMessages: [],
@@ -2544,29 +2530,10 @@ describe("POST /api/webhooks/teams/bot", () => {
 
   it("switches only the main Teams DM thread from the model card", async () => {
     const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
-    const anthropic = await runsApi.createOrgModelProvider(actor, {
-      type: "anthropic-api-key",
-      secret: "teams-dm-switch-anthropic-key",
-    });
-    const openai = await runsApi.createOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "teams-dm-switch-openai-key",
-    });
-    await runsApi.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: anthropic.providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openai.providerId,
-      },
-    ]);
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      actor,
+    );
     teamsGraphHistoryHandlers({
       fixture,
       chatMessages: [],
@@ -3076,7 +3043,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         visibility: "public",
       });
       await runsApi.grantProEntitlement(actor);
-      await runsApi.ensureOrgModelProvider(actor, {
+      await runsApi.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
       });
       botFrameworkHandlers();

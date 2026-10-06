@@ -625,7 +625,7 @@ describe("shared SDK ingestion", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: `Archive mismatch telemetry ${randomUUID()}`,
       visibility: "private",
@@ -738,7 +738,7 @@ describe("shared SDK ingestion", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: `Workspace history telemetry ${randomUUID()}`,
       visibility: "private",

@@ -129,19 +129,11 @@ interface CodexAuthJsonPasteCommonArgs {
   upsert: UpsertCodexProvider;
 }
 
-/**
- * Discriminated union over the calling scope. The org variant carries only
- * `orgId`; the personal variant additionally requires `userId`. Encoded in
- * the type system (rather than as a doc-comment on a `userId?: string`) so
- * the personal call site cannot compile without a real userId.
- */
-type CodexAuthJsonPasteArgs =
-  | ({ scope: "org"; orgId: string } & CodexAuthJsonPasteCommonArgs)
-  | ({
-      scope: "personal";
-      orgId: string;
-      userId: string;
-    } & CodexAuthJsonPasteCommonArgs);
+type CodexAuthJsonPasteArgs = {
+  scope: "personal";
+  orgId: string;
+  userId: string;
+} & CodexAuthJsonPasteCommonArgs;
 
 /**
  * Handle the codex-oauth-token + auth_json paste-based connect flow.
@@ -156,15 +148,8 @@ export async function handleCodexAuthJsonPaste(
   args: CodexAuthJsonPasteArgs,
   signal: AbortSignal,
 ) {
-  const log = logger(
-    args.scope === "personal"
-      ? "api:personal-model-providers"
-      : "api:org-model-providers",
-  );
-  const logContext =
-    args.scope === "personal"
-      ? { orgId: args.orgId, userId: args.userId }
-      : { orgId: args.orgId };
+  const log = logger("api:personal-model-providers");
+  const logContext = { orgId: args.orgId, userId: args.userId };
 
   const pasteResult = await settle(
     (async () => {
@@ -243,24 +228,17 @@ export async function handleCodexAuthJsonPaste(
   const { error } = pasteResult;
   throwIfAbort(error);
   if (isCodexAuthJsonFreePlanError(error)) {
-    log.debug(
-      args.scope === "personal"
-        ? "rejected personal codex auth_json paste: free plan"
-        : "rejected codex auth_json paste: free plan",
-      logContext,
-    );
+    log.debug("rejected personal codex auth_json paste: free plan", logContext);
     return createErrorResponse(
       "CODEX_FREE_PLAN_REJECTED",
       "ChatGPT free plan is not supported — upgrade to Plus or higher.",
     );
   }
   if (isCodexAuthJsonShapeError(error)) {
-    log.warn(
-      args.scope === "personal"
-        ? "rejected personal codex auth_json paste: shape"
-        : "rejected codex auth_json paste: shape",
-      { ...logContext, errorMessage: error.message },
-    );
+    log.warn("rejected personal codex auth_json paste: shape", {
+      ...logContext,
+      errorMessage: error.message,
+    });
     return createErrorResponse("CODEX_AUTH_JSON_SHAPE_INVALID", error.message);
   }
   throw error;

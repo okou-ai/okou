@@ -1,8 +1,8 @@
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  personalModelProvidersMainContract,
-  personalModelProvidersByTypeContract,
   personalModelProviderAccountsByIdContract,
+  personalModelProvidersByTypeContract,
+  personalModelProvidersMainContract,
   personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { nowDate } from "../../lib/time.ts";
@@ -10,6 +10,10 @@ import { mockApi } from "../msw-contract.ts";
 
 // Mock personal model providers data — empty by default
 let mockPersonalModelProviders: ModelProviderResponse[] = [];
+
+export function getMockPersonalModelProviders(): readonly ModelProviderResponse[] {
+  return mockPersonalModelProviders;
+}
 
 export function setMockPersonalModelProviders(
   providers: ModelProviderResponse[],

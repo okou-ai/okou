@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
@@ -894,24 +895,12 @@ describe("canonical Discord ingress", () => {
     if (!guildThread) {
       throw new Error("Expected guild thread");
     }
-    const { providerId } = await runsApi.ensureOrgModelProvider(actor.actor, {
+    await runsApi.ensurePersonalSubscriptionModel(actor.actor, {
       model: "claude-fable-5-1",
     });
-    await runsApi.updateOrgModelPolicies(actor.actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "claude-opus-5",
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      actor.actor,
+    );
     createRouteMocks(context).clerk.session(
       actor.userId,
       actor.orgId,
@@ -924,7 +913,7 @@ describe("canonical Discord ingress", () => {
     await accept(
       preferences.update({
         headers: { authorization: "Bearer clerk-session" },
-        body: { selectedModel: "claude-opus-5", serviceTier: null },
+        body: { selectedModel: "claude-opus-5-5", serviceTier: null },
       }),
       [200],
     );
@@ -995,7 +984,7 @@ describe("canonical Discord ingress", () => {
       },
     );
     expect(dmThreads).toMatchObject([
-      { id: originalDm.id, selectedModel: "claude-opus-5" },
+      { id: originalDm.id, selectedModel: "claude-opus-5-5" },
     ]);
     const inputs = currentInputs(await events(actor, originalDm.id));
     expect(inputs).toHaveLength(2);
@@ -1010,7 +999,7 @@ describe("canonical Discord ingress", () => {
     await runsApi.heartbeatRunner(actor.runnerGroup);
     const claim = await runsApi.claimRunnerJob(nextInput.runId);
     expect(claim.prompt).toBe(nextDm.content);
-    expect(claim.modelUsageProvider).toBe("claude-opus-5");
+    expect(claim.modelUsageProvider).toBe("claude-opus-5-5");
     expect(claim.appendSystemPrompt).not.toContain("ship on Friday");
     await runsApi.requestCancelRun(actor.actor, nextInput.runId, [200]);
   });
@@ -1093,18 +1082,10 @@ describe("canonical Discord ingress", () => {
     const firstRun = await launchedRun(actor, thread.id);
     await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
     await flushWaitUntilForTest();
-    const { providerId } = await runsApi.createOrgModelProvider(actor.actor, {
-      type: "openai-api-key",
-      secret: "sk-test-discord-dm-default",
-    });
-    await runsApi.updateOrgModelPolicies(actor.actor, [
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      actor.actor,
+    );
     const preferenceClient = setupApp({
       context,
       routes: userModelPreferenceRoutes,
@@ -1183,19 +1164,10 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the main DM thread");
     }
     const firstRun = await launchedRun(actor, thread.id);
-    const { providerId } = await runsApi.createOrgModelProvider(actor.actor, {
-      type: "openai-api-key",
-      secret: "sk-test-discord-dm-send-default",
-    });
-    await runsApi.updateOrgModelPolicies(actor.actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      actor.actor,
+    );
     const sent = await chatApi.requestSendEvent(
       actor.actor,
       {

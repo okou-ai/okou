@@ -1,20 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
-import { modelProvidersRoutes } from "../model-providers";
-import { modelPoliciesRoutes } from "../model-policies";
-import { featureSwitchesRoutes } from "../feature-switches";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import {
   createCodexExpiryFixture,
   credentials,
@@ -22,6 +21,13 @@ import {
   expiryResponse,
   upstream,
 } from "./helpers/codex-reset-credit-expiry";
+
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
 
 const context = testContext();
 const fixture = createCodexExpiryFixture(context);
@@ -59,37 +65,10 @@ describe("Codex expiry cache capacity", () => {
     // Each owner is independent. Route auth resolves its token per request,
     // so concurrent setup does not race a shared mutable session fixture.
     authenticateOwners(`user_expiry_capacity_${randomUUID()}`);
-    const switches = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
-    const policies = setupApp({ context, routes: modelPoliciesRoutes })(
-      modelPoliciesMainContract,
-    );
+
     await Promise.all(
       owners.map(async (owner) => {
         await seedOrgMetadata({ orgId: owner.orgId, tier: "pro", credits: 0 });
-        const headers = { authorization: `Bearer ${owner.orgId}` };
-        await accept(
-          switches.update({
-            headers,
-            body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-          }),
-          [200],
-        );
-        await accept(
-          policies.updateMode({
-            headers,
-            body: { mode: "custom" },
-          }),
-          [200],
-        );
-        await accept(
-          switches.update({
-            headers,
-            body: { switches: { [FeatureSwitchKey.OkouDebug]: false } },
-          }),
-          [200],
-        );
       }),
     );
   });
@@ -142,10 +121,10 @@ describe("Codex expiry cache capacity", () => {
     authenticateOwners(first.userId);
     const providers = setupApp({
       context,
-      routes: modelProvidersRoutes,
+      routes: personalModelProviderTestRoutes,
       signal: pressureSignal,
       rethrowErrors: true,
-    })(modelProvidersMainContract);
+    })(personalModelProvidersMainContract);
     const outcomes = await Promise.allSettled([
       ...owners.map(async (owner) => {
         await expect(

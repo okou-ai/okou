@@ -292,89 +292,23 @@ describe("MISC-03: workflows lifecycle through public API", () => {
   });
 });
 
-describe("MISC-04: model providers, policies, and logs visible state", () => {
-  it("chains model provider setup, policy read/update, provider delete, and empty logs", async () => {
+describe("MISC-04: available run models, personal subscriptions, and logs", () => {
+  it("lists the fixed Auto model for both administrators and members", async () => {
     const { api, admin, member } = testActors();
-    await api.configureCustomModelMode(admin);
-
-    const initialProviders = await api.listModelProviders(admin);
-    expect(initialProviders.body.modelProviders).toStrictEqual([]);
-
-    const deniedProvider = await api.upsertBuiltInProvider(member, [403]);
-    expectApiError(deniedProvider.body);
-
-    const createdProvider = await api.upsertBuiltInProvider(admin, [201]);
-    expect(createdProvider.body).toMatchObject({
-      created: true,
-      provider: { type: "built-in" },
-    });
-
-    const listedProviders = await api.listModelProviders(admin);
-    expect(
-      listedProviders.body.modelProviders.some((provider) => {
-        return provider.type === "built-in";
-      }),
-    ).toBeTruthy();
-
-    const policies = await api.listModelPolicies(admin);
-    expect(policies.policies.length).toBeGreaterThan(0);
-    const updatedPolicies = await api.updateModelPolicies(
-      admin,
-      policies.policies,
-      [200],
-    );
-    if (updatedPolicies.status !== 200) {
-      throw new Error(
-        `Expected model policies update to succeed, got ${updatedPolicies.status}`,
-      );
+    for (const actor of [admin, member]) {
+      const available = await api.listRunModels(actor);
+      expect(available.defaultModel).toBe("okou-1.0");
+      expect(
+        available.models.map((model) => {
+          return model.model;
+        }),
+      ).toStrictEqual(["okou-1.0"]);
+      expect(available.models[0]).toMatchObject({
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      });
     }
-    expect(updatedPolicies.body.policies).toHaveLength(
-      policies.policies.length,
-    );
-
-    await api.deleteBuiltInProvider(admin, [204]);
-    const afterDelete = await api.listModelProviders(admin);
-    expect(
-      afterDelete.body.modelProviders.some((provider) => {
-        return provider.type === "built-in";
-      }),
-    ).toBeFalsy();
-  });
-
-  it("creates the built-in provider once when upserts race", async () => {
-    const { api, admin } = testActors();
-    await api.configureCustomModelMode(admin);
-
-    const results = await Promise.all([
-      api.upsertBuiltInProvider(admin, [200, 201]),
-      api.upsertBuiltInProvider(admin, [200, 201]),
-    ]);
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 201]);
-    const providerIds = results.map((result) => {
-      if (!("provider" in result.body)) {
-        throw new Error("Expected built-in provider upsert response");
-      }
-      return result.body.provider.id;
-    });
-    expect(providerIds[0]).toBe(providerIds[1]);
-
-    const replay = await api.upsertBuiltInProvider(admin, [200]);
-    expect(replay.body).toMatchObject({
-      created: false,
-      provider: { id: providerIds[0], type: "built-in" },
-    });
-    const listed = await api.listModelProviders(admin);
-    expect(
-      listed.body.modelProviders.filter((provider) => {
-        return provider.type === "built-in";
-      }),
-    ).toHaveLength(1);
   });
 
   it("chains personal subscription account create, replace, list, and delete through public API", async () => {
@@ -440,6 +374,15 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       throw new Error("Expected personal model provider upsert response");
     }
     expect("secret" in created.body.provider).toBeFalsy();
+    const connectedModels = await api.listRunModels(admin);
+    expect(connectedModels.defaultModel).toBe("okou-1.0");
+    expect(connectedModels.models).toContainEqual(
+      expect.objectContaining({
+        model: "claude-sonnet-5-5",
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+      }),
+    );
 
     const listed = await api.listPersonalModelProviders(admin, [200]);
     if (!("modelProviders" in listed.body)) {
@@ -498,5 +441,12 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       throw new Error("Expected personal model provider list response");
     }
     expect(afterDelete.body.modelProviders).toStrictEqual([]);
+    const disconnectedModels = await api.listRunModels(admin);
+    expect(disconnectedModels.defaultModel).toBe("okou-1.0");
+    expect(
+      disconnectedModels.models.map((model) => {
+        return model.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
   });
 });

@@ -73,15 +73,7 @@ const {
 // finish API-first before the Runner claim, cancel, and callback steps run.
 async function entitledChatActor() {
   const result = await createEntitledChatActor();
-  await api.updateOrgModelPolicies(result.actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: result.providerId,
-    },
-  ]);
+  await api.updateUserModelPreference(result.actor, "claude-fable-5-1");
   return result;
 }
 

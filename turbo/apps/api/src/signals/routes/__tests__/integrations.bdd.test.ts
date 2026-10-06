@@ -266,15 +266,7 @@ async function configureFastCodexPreference(
     },
     [200, 201],
   );
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "gpt-6-astra",
-      preferred: true,
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
-      modelProviderId: null,
-    },
-  ]);
+  await runs.updateUserModelPreference(actor, "gpt-6-astra");
   await bdd.readOnboardingStatus(actor);
   await integrations.updateUserModelPreference(
     actor,
@@ -626,7 +618,7 @@ function mockPiResourceArchiveDownloads(
   );
 }
 
-type SlackPiModel = "gpt-6-luna" | "gpt-5.6-sol" | "gpt-5.6-luna";
+type SlackPiModel = "gpt-6-luna" | "gpt-6-sol" | "gpt-6.1-sol";
 
 interface SlackPiActorSetup {
   readonly selectedModel: SlackPiModel;
@@ -648,30 +640,11 @@ async function configureCanonicalSlackPiActor(
   const runnerGroup = runs.configureRunnerGroup();
   integrations.configureSlackAppMocks();
   await runs.grantProEntitlement(actor);
-  const { providerId: anthropicProviderId } =
-    await runs.ensureOrgModelProvider(actor);
-  const { providerId: openaiProviderId } = await runs.createOrgModelProvider(
+  await runs.ensurePersonalSubscriptionModel(actor);
+
+  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
     actor,
-    {
-      type: "openai-api-key",
-      secret: "bdd-slack-luna-api-key",
-    },
   );
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: anthropicProviderId,
-    },
-    {
-      model: selectedModel,
-      defaultProviderType: "openai-api-key",
-      credentialScope: "org",
-      modelProviderId: openaiProviderId,
-    },
-  ]);
 
   await integrations.updateUserModelPreference(actor, "claude-fable-5-1");
   return { actor, orgId, runnerGroup, selectedModel };
@@ -806,7 +779,7 @@ async function completeSlackPiTurnInSandbox(args: {
     role: "assistant",
     content: [{ type: "text", text: args.answer }],
     api: "openai-responses",
-    provider: "openai",
+    provider: "openai-codex",
     model: args.scenario.selectedModel,
     usage: {
       input: 5,
@@ -908,13 +881,14 @@ async function expectFirstSlackPiExecution(args: {
   expect(claim.cliAgentType).toBe("pi");
   expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
   expect(claim.piModelConfig).toMatchObject({
-    provider: "openai",
+    provider: "openai-codex",
     model: args.scenario.selectedModel,
     thinkingLevel:
-      args.scenario.selectedModel === "gpt-6-luna" ||
-      args.scenario.selectedModel === "gpt-5.6-luna"
+      args.scenario.selectedModel === "gpt-6-luna"
         ? "xhigh"
-        : "max",
+        : args.scenario.selectedModel === "gpt-6.1-sol"
+          ? "medium"
+          : "max",
   });
   // The fresh Pi session still carries the canonical Slack history to the
   // Sandbox that executes the first turn.
@@ -1991,7 +1965,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2147,7 +2123,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     if (!actor.orgId) {
       throw new Error("Expected historical Slack actor to belong to an org");
     }
@@ -2237,7 +2215,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2294,7 +2274,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = runs.configureRunnerGroup();
       integrations.configureSlackAppMocks();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+      await runs.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
       const slackUserId = uniqueSlackUserId();
       const mentionedSlackUserId = uniqueSlackUserId();
       const secondMentionedSlackUserId = uniqueSlackUserId();
@@ -2527,7 +2509,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -2713,7 +2697,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = runs.configureRunnerGroup();
       integrations.configureSlackAppMocks();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+      await runs.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
       if (!actor.orgId) {
         throw new Error("Expected canonical Slack actor to belong to an org");
       }
@@ -2930,7 +2916,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it.each(["gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"] as const)(
+  it.each(["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"] as const)(
     "admits canonical Slack %s turns into one Pi session without duplicate ownership",
     async (selectedModel) => {
       const scenario = await establishCanonicalSlackHistory(
@@ -2983,7 +2969,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       integrations.acceptSlackSessionHistoryDownloads();
       const runnerGroup = runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
-      await integrations.configureSlackRunModelPolicies(actor);
+      await integrations.configureNativeSubscriptionModels(actor);
       await bdd.readOnboardingStatus(actor);
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -3166,7 +3152,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     await bdd.readOnboardingStatus(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -3259,9 +3245,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await runs.grantProEntitlement(blockerActor);
-    await runs.ensureOrgModelProvider(blockerActor, {
+    await runs.ensurePersonalSubscriptionModel(blockerActor, {
       model: "claude-fable-5-1",
     });
     const slackUserId = uniqueSlackUserId();
@@ -3420,7 +3408,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3501,7 +3491,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3556,7 +3548,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     integrations.configureSlackAppMocks();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const titlePrompts: string[] = [];
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
@@ -3626,7 +3620,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const onboarding = await bdd.readOnboardingStatus(actor);
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
@@ -3669,7 +3663,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(claim1.cliAgentType).toBe("claude-code");
     expect(claim1.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
     });
     const running = await runs.readRun(actor, run1Id);
     expect(running.status).toBe("running");
@@ -3723,7 +3717,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3743,7 +3737,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const gptClaim = await runs.claimRunnerJob(gptRunId);
     expect(gptClaim.cliAgentType).toBe("codex");
     expect(gptClaim.environment).toMatchObject({
-      OPENAI_API_KEY: expect.stringMatching(/.+/),
+      CHATGPT_ACCESS_TOKEN: expect.stringMatching(/.+/),
       OPENAI_MODEL: "gpt-6-astra",
     });
     await completeSlackTriggeredRun({
@@ -3792,7 +3786,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3811,7 +3805,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const firstClaim = await runs.claimRunnerJob(firstRunId);
     expect(firstClaim.cliAgentType).toBe("claude-code");
     expect(firstClaim.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
     await completeSlackTriggeredRun({
@@ -4507,7 +4501,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       tier: "pro",
       credits: 20_000,
     });
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     await seedOrgMetadata({
       orgId: actor.orgId,
       tier: "pro",
@@ -4576,15 +4570,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       },
       [200, 201],
     );
-    await runs.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await runs.updateUserModelPreference(actor, "gpt-6-astra");
     await bdd.readOnboardingStatus(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -4690,7 +4676,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     await bdd.readOnboardingStatus(actor);
     await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
@@ -4818,7 +4804,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       workspaceId: teamId,
       slackUserId: slackUser2,
     });
-    // A member's new thread starts from their own preference.
+    // A member's new thread uses their own subscription and preference.
+    await runs.ensurePersonalSubscriptionModel(actor2);
     await integrations.updateUserModelPreference(actor2, "claude-fable-5-1");
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -4946,7 +4933,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await bdd.readOnboardingStatus(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -4966,7 +4953,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const claim1 = await runs.claimRunnerJob(run1Id);
     expect(claim1.cliAgentType).toBe("claude-code");
     expect(claim1.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
 
@@ -5345,7 +5332,9 @@ describe("INT-02: Telegram integration", () => {
     const runnerGroup = runs.configureRunnerGroup();
     const actor = integrations.user();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
     const typingBotId = randomInt(1_000_000_000, 9_999_999_999);
     const typingBotToken = `${typingBotId}:bdd-typing-token`;

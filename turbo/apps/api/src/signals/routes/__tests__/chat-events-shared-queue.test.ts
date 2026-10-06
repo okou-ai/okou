@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 import type {
   UserMessageDocument,
@@ -33,7 +34,7 @@ const {
   completeChatRunOk,
   failChatRun,
   cancelChatRun,
-  upsertOrgModelProvider,
+
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
 
@@ -42,15 +43,7 @@ const {
 // instead of relying on an API-first attempt to remain pending.
 async function entitledChatActor() {
   const result = await createEntitledChatActor();
-  await api.updateOrgModelPolicies(result.actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: result.providerId,
-    },
-  ]);
+  await api.updateUserModelPreference(result.actor, "claude-fable-5-1");
   return result;
 }
 
@@ -677,8 +670,7 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("keeps Web context and tools for agent prompts sent into existing threads", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -703,28 +695,9 @@ describe("CHAT-02: shared user message queue", () => {
       rotatedAnchor.runId,
     );
 
-    const { providerId: codexProviderId } = await upsertOrgModelProvider(
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
       actor,
-      {
-        type: "openai-api-key",
-        secret: "agent-web-semantics-openai-key",
-      },
     );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: codexProviderId,
-      },
-    ]);
     await chat.updateThreadModelSelection(
       actor,
       rotatedAnchor.threadId,

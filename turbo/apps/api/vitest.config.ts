@@ -6,8 +6,18 @@ export const realDatabaseSetupFiles = [
 ];
 
 const immutableCatalogTests = [
-  "src/__tests__/connector-catalog-entry-columns-migration.test.ts",
   "src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
+];
+
+const isolatedDatabaseTests = [
+  "src/signals/routes/__tests__/chat-callbacks-cooldown.test.ts",
+  "src/signals/routes/__tests__/chat-events-provider-cooldown.test.ts",
+  "src/signals/routes/__tests__/workflow-queue-cooldown.test.ts",
+  "src/signals/routes/__tests__/model-providers.test.ts",
+  "src/signals/routes/__tests__/test-runtime-state.test.ts",
+];
+const databaseLifecycleTests = [
+  "src/test-fixtures/__tests__/pglite-database.test.ts",
 ];
 
 // Fixed-catalog readers retain their existing isolated business scheduling.
@@ -17,9 +27,6 @@ const catalogTests = [
   "src/signals/routes/__tests__/official-workflows.test.ts",
   "src/signals/routes/__tests__/official-workflows-schedule-claims.test.ts",
   "src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts",
-  // Switches the global model catalog system default, which org policy
-  // writes project away; it must not overlap other suites' policy writes.
-  "src/signals/routes/__tests__/model-catalog.test.ts",
 ];
 
 // Only generation-changing contracts belong here, never their former sibling
@@ -78,6 +85,39 @@ export default defineConfig({
         },
       },
       {
+        test: {
+          name: "api-database-lifecycle",
+          globals: true,
+          environment: "node",
+          env: { TZ: "UTC" },
+          include: databaseLifecycleTests,
+          setupFiles: [
+            "./src/__tests__/env-stub.ts",
+            "./src/__tests__/mocks.ts",
+            "./src/__tests__/pglite-schema-setup.ts",
+          ],
+          sequence: { setupFiles: "list" },
+          benchmark: { enabled: false, include: [], exclude: ["**/*"] },
+        },
+      },
+      {
+        test: {
+          name: "api-isolated-database",
+          globals: true,
+          environment: "node",
+          env: { TZ: "UTC" },
+          include: isolatedDatabaseTests,
+          setupFiles: [
+            "./src/__tests__/env-stub.ts",
+            "./src/__tests__/mocks.ts",
+            "./src/__tests__/pglite-schema-setup.ts",
+            "./src/__tests__/pglite-setup.ts",
+          ],
+          sequence: { setupFiles: "list" },
+          benchmark: { enabled: false, include: [], exclude: ["**/*"] },
+        },
+      },
+      {
         extends: true,
         test: {
           name: "api",
@@ -88,6 +128,8 @@ export default defineConfig({
             ...catalogGenerationTests,
             ...bootstrapFailureTests,
             ...immutableCatalogTests,
+            ...isolatedDatabaseTests,
+            ...databaseLifecycleTests,
           ],
         },
       },

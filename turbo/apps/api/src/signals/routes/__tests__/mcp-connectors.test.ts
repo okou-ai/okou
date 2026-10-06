@@ -139,7 +139,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP Discovery Agent",
     });
@@ -324,7 +324,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Public MCP Agent",
     });
@@ -385,7 +385,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP exact identity Agent",
     });
@@ -484,7 +484,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Legacy MCP discovery Agent",
     });
@@ -634,7 +634,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const owned: (typeof ownedReauthorizations)[number] = { actor };
       ownedReauthorizations.push(owned);
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "MCP scope reauthorization Agent",
       });
@@ -792,7 +792,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     });
     const actor = bdd.user({ orgRole: "org:admin" });
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP no-auth reauthorization Agent",
     });

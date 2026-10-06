@@ -32,6 +32,7 @@ import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 
 const context = testContext();
+const api = createRunsApi(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);
@@ -91,16 +92,10 @@ function clerkUser(userId: string, email: string) {
 async function setupScenario(): Promise<Scenario> {
   const runnerGroup = runs.configureRunnerGroup();
   const { actor } = await workflows.setupWorkflowOrg();
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runs.ensurePersonalSubscriptionModel(actor);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped actor");
   }

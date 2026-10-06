@@ -39,15 +39,7 @@ async function entitledNativeChatActor(): Promise<
   Awaited<ReturnType<typeof entitledChatActor>>
 > {
   const fixture = await entitledChatActor();
-  await api.updateOrgModelPolicies(fixture.actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: fixture.providerId,
-    },
-  ]);
+  await api.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
   return fixture;
 }
 
@@ -452,7 +444,13 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
   }, 120_000);
 
   it("rejects unusable computer-use host selections", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const actor = bdd.user();
+    await api.ensurePersonalSubscriptionModel(actor);
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Computer-use guard agent",
+    });
+    const agentId = agent.agentId;
 
     const unknownHost = await chat.requestSendEvent(
       actor,

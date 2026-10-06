@@ -1115,7 +1115,7 @@ describe("registerCommands", () => {
     );
   });
 
-  it("should show the model help example in sandbox help", () => {
+  it("should show fixed Auto and personal model help in sandbox help", () => {
     const token = buildOkouToken({
       scope: "okou",
       capabilities: [],
@@ -1125,7 +1125,7 @@ describe("registerCommands", () => {
       "List models?",
     );
     expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Model routing?",
+      "Personal models?",
     );
   });
 

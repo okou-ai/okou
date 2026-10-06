@@ -30,7 +30,6 @@ import {
   type CodexDeviceAuthScope,
   codexDeviceAuthContract,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { http, HttpResponse } from "msw";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
@@ -47,7 +46,6 @@ import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
 import { claudeCodeDeviceAuthRoutes } from "../../claude-code-device-auth";
 import { codexDeviceAuthRoutes } from "../../codex-device-auth";
-import { modelProvidersRoutes } from "../../model-providers";
 import { realtimeTokenRoutes } from "../../realtime-token";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
@@ -83,7 +81,6 @@ const authDeviceRoutes: readonly RouteEntry[] = [
   ...billingStatusRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...codexDeviceAuthRoutes,
-  ...modelProvidersRoutes,
   ...realtimeTokenRoutes,
 ];
 
@@ -797,20 +794,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
           body: { sessionToken },
         }),
         statuses,
-      );
-    },
-
-    async deleteOrgModelProvider(
-      actor: ApiTestUser,
-      type: "claude-code-oauth-token" | "codex-oauth-token",
-    ): Promise<void> {
-      const client = authDeviceApp(context)(modelProvidersByTypeContract);
-      await accept(
-        client.delete({
-          params: { type },
-          headers: authenticate(actor),
-        }),
-        [204],
       );
     },
   };

@@ -1,16 +1,12 @@
-import {
-  modelMenuOption,
-  findModelMenuOption,
-} from "./chat-model-menu-test-helpers.ts";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type {
+  AvailableRunModel,
   ModelProviderResponse,
-  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -21,45 +17,44 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
+  findModelMenuOption,
+  modelMenuOption,
+} from "./chat-model-menu-test-helpers.ts";
+import {
   context,
   findButton,
   installRunChat,
   NEW_CHAT_PATH,
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
-
-const POLICY_ID = "e7000000-0000-4000-a000-000000000001";
 const MODEL = "gpt-5.6-sol";
 
-function modelPolicy(personal: boolean, restricted = false): OrgModelPolicy {
+function runModelFixture(
+  personal: boolean,
+  restricted = false,
+): AvailableRunModel {
   return {
-    id: POLICY_ID,
     model: MODEL,
     modelLabel: "GPT 5.6 Sol",
-    defaultProviderType: "built-in",
-    runtimeProviderType: "openai-api-key",
-    credentialScope: "org",
+    defaultProviderType: "codex-oauth-token",
+    runtimeProviderType: "codex-oauth-token",
+    credentialScope: "member",
     modelProviderId: null,
-    modelProviderSurfaceId: null,
     routeStatus: "valid",
     routeStatusReason: null,
-    memberEffective: personal
-      ? {
-          providerType: "codex-oauth-token",
-          runtimeProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          availability: restricted ? "plan_restricted" : "available",
-          accountSelection: "capture_required",
-        }
-      : {
-          providerType: "built-in",
-          runtimeProviderType: "openai-api-key",
-          credentialScope: "org",
-          availability: restricted ? "plan_restricted" : "available",
-          accountSelection: "not_applicable",
-        },
-    createdAt: "2026-09-15T00:00:00.000Z",
-    updatedAt: "2026-09-15T00:00:00.000Z",
+    memberEffective: {
+      providerType: "codex-oauth-token",
+      runtimeProviderType: "codex-oauth-token",
+      credentialScope: "member",
+      availability: restricted ? "reconnect_required" : "available",
+      accountSelection: "capture_required",
+    },
+    subscriptionOptions: {
+      efforts: personal
+        ? ["low", "high", "max"]
+        : ["low", "medium", "high", "xhigh", "max"],
+      serviceTier: "priority",
+    },
   };
 }
 
@@ -82,13 +77,13 @@ async function openChat(
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         "user:test-user-123",
-        "modelPoliciesChanged",
+        "runModelsChanged",
       ),
     ).toBeTruthy();
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         "org:org_default",
-        "modelPoliciesChanged",
+        "runModelsChanged",
       ),
     ).toBeTruthy();
   });
@@ -97,7 +92,7 @@ async function openChat(
 async function personalOption(): Promise<HTMLElement> {
   return await waitFor(() => {
     const option = modelMenuOption(/GPT 5\.6 Sol/u);
-    expect(within(option).getByText("BYOK")).toBeInTheDocument();
+    expect(within(option).getByText("ChatGPT (Codex)")).toBeInTheDocument();
     return option;
   });
 }
@@ -106,104 +101,11 @@ function notice(scope: "user" | "org"): void {
   act(() => {
     context.mocks.ably.triggerOnChannel(
       scope === "user" ? "user:test-user-123" : "org:org_default",
-      "modelPoliciesChanged",
+      "runModelsChanged",
       null,
     );
   });
 }
-
-test.each([
-  {
-    notice: "personal policy" as const,
-    initialPersonal: false,
-    initialRestricted: false,
-    nextPersonal: true,
-    nextRestricted: false,
-  },
-  {
-    notice: "organization policy" as const,
-    initialPersonal: true,
-    initialRestricted: false,
-    nextPersonal: false,
-    nextRestricted: false,
-  },
-  {
-    notice: "reconnect" as const,
-    initialPersonal: false,
-    initialRestricted: false,
-    nextPersonal: true,
-    nextRestricted: false,
-  },
-  {
-    notice: "billing restriction" as const,
-    initialPersonal: true,
-    initialRestricted: false,
-    nextPersonal: true,
-    nextRestricted: true,
-  },
-  {
-    notice: "billing recovery" as const,
-    initialPersonal: true,
-    initialRestricted: true,
-    nextPersonal: true,
-    nextRestricted: false,
-  },
-])(
-  "Refresh member source after a $notice notice",
-  async ({
-    notice: refreshNotice,
-    initialPersonal,
-    initialRestricted,
-    nextPersonal,
-    nextRestricted,
-  }) => {
-    let personal = initialPersonal;
-    let restricted = initialRestricted;
-    installRunChat({ selectedModel: MODEL });
-    context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
-      return respond(200, {
-        revision: "revision-1",
-        modelMode: "custom",
-        writePreconditionRequired: false,
-        modelsAvailableToAdd: [],
-        policies: [modelPolicy(personal, restricted)],
-      });
-    });
-    // Reconnect callbacks belong to the real MessagePort protocol; the direct
-    // page transport intentionally forwards named events only.
-    await openChat("message-port");
-    click(await findButton("GPT 5.6 Sol"));
-    const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
-    expect(within(initial).queryByText("BYOK") !== null).toBe(initialPersonal);
-    expect(within(initial).queryByText("Pro") !== null).toBe(initialRestricted);
-
-    personal = nextPersonal;
-    restricted = nextRestricted;
-    if (refreshNotice === "personal policy") {
-      notice("user");
-    } else if (refreshNotice === "organization policy") {
-      notice("org");
-    } else if (refreshNotice === "reconnect") {
-      act(() => {
-        context.mocks.ably.triggerSharedWorkerConnectionState("suspended", {
-          code: 80_003,
-          message: "Network unavailable",
-        });
-        context.mocks.ably.triggerSharedWorkerConnectionState("connected");
-      });
-    } else {
-      act(() => {
-        context.mocks.ably.trigger("billing:changed");
-      });
-    }
-
-    await waitFor(() => {
-      const option = modelMenuOption(/GPT 5\.6 Sol/u);
-      expect(within(option).queryByText("BYOK") !== null).toBe(nextPersonal);
-      expect(within(option).queryByText("Pro") !== null).toBe(nextRestricted);
-    });
-  },
-);
 
 async function setupHeldProjectionRefresh() {
   let failRefresh = false;
@@ -211,7 +113,7 @@ async function setupHeldProjectionRefresh() {
   const release = context.mocks.deferred<void>();
   installRunChat({ selectedModel: MODEL });
   context.mocks.api(
-    modelPoliciesMainContract.list,
+    runModelsMainContract.list,
     async ({ respond, withSignal }) => {
       if (failRefresh) {
         started.resolve();
@@ -224,11 +126,8 @@ async function setupHeldProjectionRefresh() {
         });
       }
       return respond(200, {
-        revision: "revision-1",
-        modelMode: "custom",
-        writePreconditionRequired: false,
-        modelsAvailableToAdd: [],
-        policies: [modelPolicy(true)],
+        defaultModel: "okou-1.0",
+        models: [runModelFixture(false)],
       });
     },
   );
@@ -318,13 +217,10 @@ test("A local active-account change refreshes the member projection", async () =
   };
   const firstId = "e7000000-0000-4000-a000-000000000003";
   const secondId = "e7000000-0000-4000-a000-000000000004";
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, {
-      revision: "revision-1",
-      modelMode: "custom",
-      writePreconditionRequired: false,
-      modelsAvailableToAdd: [],
-      policies: [modelPolicy(personal)],
+      defaultModel: "okou-1.0",
+      models: [runModelFixture(personal)],
     });
   });
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
@@ -346,7 +242,7 @@ test("A local active-account change refreshes the member projection", async () =
   await openChat();
   click(await findButton("GPT 5.6 Sol"));
   const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
-  expect(within(initial).queryByText("BYOK")).not.toBeInTheDocument();
+  expect(within(initial).getByText("ChatGPT (Codex)")).toBeInTheDocument();
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Escape}");
   const rail = screen.queryByTestId("labeled-nav-rail");
@@ -359,9 +255,11 @@ test("A local active-account change refreshes the member projection", async () =
   click(within(menu).getByText("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   click(await findButton("Models"));
-  await expect(
-    screen.findByRole("heading", { name: "Models" }),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.getByRole("heading", { name: "Use more models" }),
+    ).toBeInTheDocument();
+  });
   const row = await screen.findByTestId(`oauth-account-${secondId}`);
   const activate = queryAllByRoleFast("button", row).find((button) => {
     return button.getAttribute("aria-label")?.startsWith("Use:");
@@ -383,4 +281,16 @@ test("A local active-account change refreshes the member projection", async () =
   });
   click(await findButton("GPT 5.6 Sol"));
   await personalOption();
+  await user.keyboard("{Escape}");
+  const effortTrigger = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label")?.startsWith("Effort,");
+  });
+  expect(effortTrigger).toBeDefined();
+  click(effortTrigger!);
+  const slider = await screen.findByRole("slider", { name: "Effort" });
+  slider.focus();
+  await user.keyboard("{Home}{ArrowRight}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "High");
+  });
 });

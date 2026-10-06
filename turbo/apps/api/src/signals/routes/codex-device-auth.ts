@@ -1,32 +1,22 @@
-import { command } from "ccstate";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
+import { command } from "ccstate";
 
 import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import type { RouteEntry } from "../route-entry";
 import {
   cancelCodexDeviceAuth$,
   codexDeviceAuthUnavailable,
   completeCodexDeviceAuth$,
   startCodexDeviceAuth$,
 } from "../services/codex-device-auth.service";
-import type { RouteEntry } from "../route-entry";
 
 const modelProviderWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
-
-const adminRequired = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "Only admins can manage org model providers",
-      code: "FORBIDDEN",
-    }),
-  }),
-});
 
 const startCodexDeviceAuthBody$ = bodyResultOf(codexDeviceAuthContract.start);
 const completeCodexDeviceAuthBody$ = bodyResultOf(
@@ -41,9 +31,6 @@ const startCodexDeviceAuthInner$ = command(
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
-    }
-    if (body.data.scope === "org" && auth.orgRole !== "admin") {
-      return adminRequired;
     }
     if (
       body.data.scope === "personal" &&

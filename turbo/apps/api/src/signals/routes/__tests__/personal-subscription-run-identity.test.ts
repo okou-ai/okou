@@ -3,7 +3,7 @@ import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
-import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
+
 import {
   upsertOrgPlanEntitlementFixture,
   deleteOrgPlanEntitlementFixture,
@@ -13,20 +13,15 @@ import { clearAllDetached, createDeferredPromise } from "../../utils";
 import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
+
 import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { chatEventsRoutes } from "../chat-events";
-import { modelProviderGatewayRoutes } from "../model-provider-gateways";
-import {
-  modelProviderConnectionsMainContract,
-  modelProviderConnectionsByIdContract,
-} from "@okouai/api-contracts/contracts/model-provider-gateways";
+
 import { createRouteMocks } from "./helpers/route-test";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -57,38 +52,13 @@ const support = createAuthDeviceSupportApi(context);
 const firewall = createFirewallApi(context);
 
 /** The configured policy, not the fixed default every workspace keeps. */
-function configuredPolicy(
-  response: { readonly policies: readonly OrgModelPolicy[] },
+function availableModel(
+  response: { readonly models: readonly AvailableRunModel[] },
   model: string,
-): OrgModelPolicy | undefined {
-  return response.policies.find((policy) => {
-    return policy.model === model;
+): AvailableRunModel | undefined {
+  return response.models.find((entry) => {
+    return entry.model === model;
   });
-}
-
-async function configureOrganizationApi(
-  f: Awaited<ReturnType<typeof fixture>>,
-  route: "built-in" | "custom",
-) {
-  const type =
-    f.type === "codex-oauth-token" ? "openai-api-key" : "anthropic-api-key";
-  const provider =
-    route === "custom"
-      ? await runs.createOrgModelProvider(f.actor, {
-          type,
-          secret: "organization-api-key",
-        })
-      : null;
-  await runs.updateOrgModelPolicies(f.actor, [
-    {
-      model: f.model,
-      preferred: true,
-      defaultProviderType: route === "built-in" ? "built-in" : type,
-      credentialScope: "org",
-      modelProviderId: provider?.providerId ?? null,
-    },
-  ]);
-  return provider;
 }
 
 type Claim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
@@ -203,17 +173,9 @@ async function fixture(type: SubscriptionType) {
   await runs.grantProEntitlement(actor);
   mockClaudeCodeTokenEndpoint();
   const connected = await connect(actor, type, "identity-a");
-  const model: "gpt-6-astra" | "claude-sonnet-5" =
-    type === "codex-oauth-token" ? "gpt-6-astra" : "claude-sonnet-5";
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model,
-      preferred: true,
-      defaultProviderType: type,
-      credentialScope: "member",
-      modelProviderId: null,
-    },
-  ]);
+  const model: "gpt-6-astra" | "claude-sonnet-5-5" =
+    type === "codex-oauth-token" ? "gpt-6-astra" : "claude-sonnet-5-5";
+  await runs.updateUserModelPreference(actor, model);
   const agent = await bdd.createAgent(actor, {
     displayName: "Subscription identity",
     visibility: "private",
@@ -455,10 +417,6 @@ describe("personal subscription run identity", () => {
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const runnerGroup = runs.configureRunnerGroup();
-        await support.updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.OkouDebug]: true,
-        });
-        await runs.updateOrgModelMode(actor, "auto");
         const connected = await connect(actor, type, "identity-auto");
         const agent = await bdd.createAgent(actor, {
           displayName: "Auto subscription",
@@ -480,72 +438,6 @@ describe("personal subscription run identity", () => {
         await finish(actor, sent.runId, claim, "failed");
         completed = true;
       });
-    },
-  );
-
-  it.each([
-    ["claude-code-oauth-token", "claude-opus-5-5"],
-    ["codex-oauth-token", "gpt-6-sol"],
-  ] as const)(
-    "runs a free-plan Custom member's %s subscription policy on the member's account",
-    async (type, model) => {
-      const bdd = createBddApi(context);
-      const actor = bdd.user();
-      if (!actor.orgId) {
-        throw new Error("Expected an organization-scoped actor");
-      }
-      bdd.acceptAgentStorageWrites();
-      expect((await bdd.completeOnboarding(actor)).status).toBe(200);
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
-      await seedOrgMetadata({
-        orgId: actor.orgId,
-        tier: "limited-free-1",
-        credits: 0,
-      });
-      await support.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OkouDebug]: true,
-      });
-      await runs.updateOrgModelMode(actor, "custom");
-      const connected = await connect(actor, type, "identity-custom");
-      // A member-scope policy carries no credential; each member runs it with
-      // their own subscription, which the free plan allows.
-      await runs.updateOrgModelPolicies(actor, [
-        {
-          model,
-          preferred: true,
-          defaultProviderType: type,
-          credentialScope: "member",
-          modelProviderId: null,
-        },
-      ]);
-      const policies =
-        await createMiscRoutesApi(context).listModelPolicies(actor);
-      expect(
-        policies.policies.find((policy) => {
-          return policy.model === model;
-        })?.memberEffective,
-      ).toMatchObject({
-        providerType: type,
-        credentialScope: "member",
-        availability: "available",
-      });
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Custom subscription",
-        visibility: "private",
-      });
-      const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
-        agentId: agent.agentId,
-        prompt: "use my subscription policy",
-        model,
-      });
-      const state = await runs.readRun(actor, sent.runId);
-      expect(state.status, JSON.stringify(state)).toBe("pending");
-      await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(sent.runId);
-      expect(accountId(claim, type)).toBe(connected.id);
-      await finish(actor, sent.runId, claim, "failed");
     },
   );
 
@@ -582,7 +474,7 @@ describe("personal subscription run identity", () => {
         f.actor,
         connected.body.provider.id,
       );
-      await configureOrganizationApi(f, "built-in");
+
       const observed: {
         readonly path: string;
         readonly account: string | null;
@@ -842,11 +734,9 @@ describe("personal subscription run identity", () => {
 
   it.each([false, true])(
     "retains pending bindings when a replacement changes the active identity (organization API: %s)",
-    async (organizationApi) => {
+    async () => {
       const f = await fixture("codex-oauth-token");
-      if (organizationApi) {
-        await configureOrganizationApi(f, "custom");
-      }
+
       const first = await f.start();
       const pending = await f.start();
       const firstClaim = await f.claim(first);
@@ -1123,21 +1013,13 @@ describe("personal subscription run identity", () => {
 
 describe("exact subscription selection", () => {
   it.each([
-    ["claude-code-oauth-token", "claude-opus-5", "ANTHROPIC_MODEL"],
-    ["codex-oauth-token", "gpt-5.6-sol", "OPENAI_MODEL"],
+    ["claude-code-oauth-token", "claude-opus-5-5", "ANTHROPIC_MODEL"],
+    ["codex-oauth-token", "gpt-6-sol", "OPENAI_MODEL"],
   ] as const)(
     "preserves the requested model and lazy exact %s authentication",
     async (type, model, modelEnv) => {
       const f = await fixture(type);
-      await runs.updateOrgModelPolicies(f.actor, [
-        {
-          model,
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
+      await runs.updateUserModelPreference(f.actor, model);
       const { runId } = await createChatFilesBddApi(context).sendAndLaunch(
         f.actor,
         { agentId: f.agentId, model, prompt: "use the requested model" },
@@ -1177,21 +1059,13 @@ test("keeps a Claude identity shared after a type-wide disconnect and reconnect"
 
 describe("personal priority over organization API", () => {
   it.each([
-    {
-      type: "claude-code-oauth-token",
-      route: "custom",
-    },
-    {
-      type: "claude-code-oauth-token",
-      route: "built-in",
-    },
-    { type: "codex-oauth-token", route: "built-in" },
-    { type: "codex-oauth-token", route: "custom" },
+    { type: "claude-code-oauth-token" },
+    { type: "codex-oauth-token" },
   ] as const)(
-    "admits $type over $route with zero model credits",
-    async ({ type, route }) => {
+    "admits personal $type with zero model credits",
+    async ({ type }) => {
       const f = await fixture(type);
-      await configureOrganizationApi(f, route);
+
       if (!f.actor.orgId) {
         throw new Error("Expected an owned organization");
       }
@@ -1230,23 +1104,16 @@ describe("personal priority over organization API", () => {
 
 describe("personal priority connection boundaries", () => {
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "uses supported personal %s after the configured API is actually deleted",
+    "lists and runs personal %s, then removes it after disconnection",
     async (type) => {
       const f = await fixture(type);
-      await configureOrganizationApi(f, "custom");
-      await createMiscRoutesApi(context).deleteOrgModelProvider(
-        f.actor,
-        type === "codex-oauth-token" ? "openai-api-key" : "anthropic-api-key",
-        [204],
-      );
-      const policy = configuredPolicy(
-        await createMiscRoutesApi(context).listModelPolicies(f.actor),
-        f.model,
-      );
-      expect(policy).toMatchObject({
-        modelProviderId: null,
-        routeStatus: "missing_provider",
-        memberEffective: { providerType: type, credentialScope: "member" },
+      const misc = createMiscRoutesApi(context);
+      expect(
+        availableModel(await misc.listRunModels(f.actor), f.model),
+      ).toMatchObject({
+        defaultProviderType: type,
+        credentialScope: "member",
+        routeStatus: "valid",
       });
       const runId = await f.start();
       const claim = await f.claim(runId);
@@ -1255,190 +1122,55 @@ describe("personal priority connection boundaries", () => {
       });
       await runs.requestCancelRun(f.actor, runId, [200]);
       await support.deletePersonalModelProvider(f.actor, type, [204]);
-      // The unavailable selection falls back to the fixed default route, so
-      // the send is accepted instead of failing without a model route.
-      await createChatFilesBddApi(context).requestSendEvent(
+      const models = await misc.listRunModels(f.actor);
+      expect(availableModel(models, f.model)).toBeUndefined();
+      expect(models.defaultModel).toBe("okou-1.0");
+      const rejected = await createChatFilesBddApi(context).requestCreateThread(
         f.actor,
-        {
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "missing organization API",
-        },
-        [201],
+        { agentId: f.agentId, model: f.model },
+        [400],
       );
+      expect(rejected.status).toBe(400);
     },
   );
 });
 
 describe("member-effective model policy contract", () => {
-  it("keeps administrative GET and PUT fields identical for two real members", async () => {
+  it("keeps fixed Auto common and personal model visibility scoped to the member", async () => {
     const f = await fixture("claude-code-oauth-token");
-    await configureOrganizationApi(f, "custom");
-    const addableModel = await insertBuiltInModelMirrorFixture(f.model);
-    onTestFinished(addableModel.restore);
     const bdd = createBddApi(context);
     const member = bdd.user({ orgId: f.actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
     const misc = createMiscRoutesApi(context);
-    const before = await misc.listModelPolicies(f.actor);
-    const other = await misc.listModelPolicies(member);
-    expect(configuredPolicy(before, f.model)?.memberEffective).toMatchObject({
-      providerType: f.type,
+    const ownerModels = await misc.listRunModels(f.actor);
+    const memberModels = await misc.listRunModels(member);
+    expect(ownerModels.defaultModel).toBe("okou-1.0");
+    expect(memberModels.defaultModel).toBe("okou-1.0");
+    expect(availableModel(ownerModels, "okou-1.0")).toStrictEqual(
+      availableModel(memberModels, "okou-1.0"),
+    );
+    expect(availableModel(ownerModels, f.model)).toMatchObject({
+      defaultProviderType: f.type,
       credentialScope: "member",
-      accountSelection: "capture_required",
+      memberEffective: {
+        providerType: f.type,
+        credentialScope: "member",
+        accountSelection: "capture_required",
+      },
     });
-    expect(configuredPolicy(other, f.model)?.memberEffective).toMatchObject({
-      providerType: "anthropic-api-key",
-      credentialScope: "org",
-      availability: "available",
-      accountSelection: "not_applicable",
+    expect(availableModel(memberModels, f.model)).toBeUndefined();
+    await connect(member, "codex-oauth-token", "other-member");
+    const connected = await misc.listRunModels(member);
+    expect(availableModel(connected, "gpt-6-astra")).toMatchObject({
+      credentialScope: "member",
+      defaultProviderType: "codex-oauth-token",
     });
-    const administrative = (response: typeof before) => {
-      return {
-        modelMode: response.modelMode,
-        revision: response.revision,
-        writePreconditionRequired: response.writePreconditionRequired,
-        policies: response.policies.map((policy) => {
-          return {
-            ...policy,
-            memberEffective: undefined,
-          };
-        }),
-      };
-    };
-    expect(administrative(before)).toStrictEqual(administrative(other));
-    // Addable choices derive from the live operator catalog, not persisted org
-    // policy. Other files may add/remove their own models between these reads.
-    // This case owns one catalog identity and verifies it for both members.
-    for (const response of [before, other]) {
-      expect(response.modelsAvailableToAdd).toContain(addableModel.model);
-      expect(response.modelsAvailableToAdd).not.toContain(f.model);
-    }
-    expect(JSON.stringify(before)).not.toContain(f.connected.id);
-    expect(JSON.stringify(before)).not.toContain(f.connected.token);
-    const put = await misc.updateModelPolicies(
-      f.actor,
-      before.policies,
-      [200],
-      before.revision,
+    expect(availableModel(connected, f.model)).toBeUndefined();
+    const ownerAfter = await misc.listRunModels(f.actor);
+    expect(availableModel(ownerAfter, "gpt-6-astra")).toBeUndefined();
+    expect(availableModel(ownerAfter, f.model)).toStrictEqual(
+      availableModel(ownerModels, f.model),
     );
-    if (put.status !== 200) {
-      throw new Error("Expected the policy replacement to succeed");
-    }
-    expect(configuredPolicy(put.body, f.model)).toMatchObject({
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      memberEffective: { providerType: f.type, credentialScope: "member" },
-    });
-    const after = await misc.listModelPolicies(member);
-    expect(configuredPolicy(after, f.model)).toMatchObject({
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      memberEffective: configuredPolicy(other, f.model)?.memberEffective,
-    });
-    expect(administrative(put.body)).toStrictEqual(administrative(after));
-    for (const response of [put.body, after]) {
-      expect(response.modelsAvailableToAdd).toContain(addableModel.model);
-      expect(response.modelsAvailableToAdd).not.toContain(f.model);
-    }
-    expect(
-      (await misc.updateModelPolicies(member, before.policies, [403])).status,
-    ).toBe(403);
-    const otherAgent = await bdd.createAgent(member, {
-      displayName: "Other member",
-      visibility: "private",
-    });
-    // Explicit cancellation owns the run's terminal state in this case.
-    const chat = createChatFilesBddApi(context);
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      member,
-      {
-        agentId: otherAgent.agentId,
-        model: f.model,
-        prompt: "use my configured org API",
-        clientEventId,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the member send to be accepted");
-    }
-    // The background pick launches the run.
-    await flushWaitUntilForTest();
-    const runId = (
-      await chat.listThreadEvents(member, sent.body.threadId)
-    ).events.find((event) => {
-      return (
-        event.eventType === "input.prompt" &&
-        event.revokesEventId === clientEventId
-      );
-    })?.runId;
-    if (runId === undefined) {
-      throw new Error("Expected a member run");
-    }
-    await expect(runs.readRun(member, runId)).resolves.toMatchObject({
-      source: {
-        providerType: "anthropic-api-key",
-        credentialScope: "org",
-        model: f.model,
-      },
-    });
-    await runs.requestCancelRun(member, runId, [200]);
-    await flushWaitUntilForTest();
-    await expect(runs.readRun(member, runId)).resolves.toMatchObject({
-      status: "cancelled",
-    });
-  });
-
-  it("keeps an unsupported subscription/model pair on the configured API", async () => {
-    const f = await fixture("claude-code-oauth-token");
-    const configured = await runs.createOrgModelProvider(f.actor, {
-      type: "openai-api-key",
-      secret: "openai-org-key",
-    });
-    await runs.updateOrgModelPolicies(f.actor, [
-      {
-        model: "gpt-5.6-luna",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: configured.providerId,
-      },
-    ]);
-    const sent = await createChatFilesBddApi(context).sendAndLaunch(f.actor, {
-      agentId: f.agentId,
-      model: "gpt-5.6-luna",
-      prompt: "Claude cannot authorize this model",
-    });
-    await expect(runs.readRun(f.actor, sent.runId)).resolves.toMatchObject({
-      source: {
-        providerType: "openai-api-key",
-        credentialScope: "org",
-        model: "gpt-5.6-luna",
-      },
-    });
-    const claim = await f.claim(sent.runId);
-    if (!claim.encryptedSecrets) {
-      throw new Error("Expected the configured organization credential");
-    }
-    const resolved = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("OPENAI_API_KEY")}`,
-        },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
-      },
-      [200],
-    );
-    expect(resolved.body).toMatchObject({
-      headers: { Authorization: "Bearer openai-org-key" },
-    });
-    await runs.requestCancelRun(f.actor, sent.runId, [200]);
   });
 
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
@@ -1453,92 +1185,116 @@ describe("member-effective model policy contract", () => {
       });
       expect(rejected).toMatchObject({ error: "conflict" });
       expect(guidance?.content).toContain("subscription");
-      const policies = await createMiscRoutesApi(context).listModelPolicies(
-        f.actor,
-      );
-      expect(configuredPolicy(policies, f.model)).toMatchObject({
-        defaultProviderType: f.type,
-        credentialScope: "member",
-      });
+      const models = await createMiscRoutesApi(context).listRunModels(f.actor);
+      expect(availableModel(models, f.model)).toBeUndefined();
+      expect(
+        models.models.map((entry) => {
+          return entry.model;
+        }),
+      ).toStrictEqual(["okou-1.0"]);
     },
   );
 });
 
 describe("personal effective provider entitlement", () => {
-  it.each(["suspended", "byok-disabled"] as const)(
-    "rejects %s with org credits and a supported subscription",
-    async (state) => {
-      const f = await fixture("claude-code-oauth-token");
-      await configureOrganizationApi(f, "built-in");
-      if (!f.actor.orgId) {
-        throw new Error("Expected an owned organization");
-      }
-      // Infrastructure-only divergent entitlement snapshot, as in chat-events.
-      await upsertOrgPlanEntitlementFixture({
-        orgId: f.actor.orgId,
-        status: state === "suspended" ? "suspended" : "active",
-        supportByok: state !== "byok-disabled",
-        restrictedBuiltInModels: false,
-      });
-      const restricted = await sendRejectedAtPick(f.actor, {
+  it("keeps personal subscriptions independent of retired organization BYOK entitlement", async () => {
+    const f = await fixture("claude-code-oauth-token");
+    if (!f.actor.orgId) {
+      throw new Error("Expected an owned organization");
+    }
+    // Infrastructure-only entitlement state cannot be constructed via a production endpoint.
+    await upsertOrgPlanEntitlementFixture({
+      orgId: f.actor.orgId,
+      status: "active",
+      supportByok: false,
+      restrictedBuiltInModels: true,
+    });
+    const models = await createMiscRoutesApi(context).listRunModels(f.actor);
+    expect(availableModel(models, f.model)?.memberEffective).toMatchObject({
+      providerType: f.type,
+      credentialScope: "member",
+      availability: "available",
+    });
+    const runId = await f.start();
+    onTestFinished(async () => {
+      await runs.requestCancelRun(f.actor, runId, [200]);
+    });
+    const claim = await f.claim(runId);
+    expect(claim.billableFirewalls).toStrictEqual([]);
+    expect(accountId(claim, f.type)).toBe(f.connected.id);
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${f.connected.token}`,
+    });
+  });
+  it("rejects a suspended entitlement even with org credits and a supported subscription", async () => {
+    const f = await fixture("claude-code-oauth-token");
+
+    if (!f.actor.orgId) {
+      throw new Error("Expected an owned organization");
+    }
+    // Infrastructure-only divergent entitlement snapshot, as in chat-events.
+    await upsertOrgPlanEntitlementFixture({
+      orgId: f.actor.orgId,
+      status: "suspended",
+      supportByok: true,
+      restrictedBuiltInModels: false,
+    });
+    const restricted = await sendRejectedAtPick(f.actor, {
+      agentId: f.agentId,
+      model: f.model,
+      prompt: "personal requires plan authority",
+    });
+    expect(restricted.rejected).toBeDefined();
+    const policies = await createMiscRoutesApi(context).listRunModels(f.actor);
+    expect(
+      policies.models.find((policy) => {
+        return policy.model === f.model;
+      })?.memberEffective,
+    ).toMatchObject({
+      providerType: f.type,
+      credentialScope: "member",
+      availability: "plan_restricted",
+    });
+    await deleteOrgPlanEntitlementFixture(f.actor.orgId);
+    // Missing canonical entitlement fails model selection before a thread,
+    // input or run can be created. Use raw HTTP for the invariant 500 status.
+    const clientThreadId = randomUUID();
+    createRouteMocks(context).clerk.session(
+      f.actor.userId,
+      f.actor.orgId,
+      f.actor.orgRole,
+    );
+    const missing = await setupRawAppRequestWithRoutes({
+      context,
+      routes: chatEventsRoutes,
+    })("/api/chat/events", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer clerk-session",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
         agentId: f.agentId,
         model: f.model,
-        prompt: "personal requires plan authority",
-      });
-      expect(restricted.rejected).toBeDefined();
-      const policies = await createMiscRoutesApi(context).listModelPolicies(
-        f.actor,
-      );
-      expect(
-        policies.policies.find((policy) => {
-          return policy.model === f.model;
-        })?.memberEffective,
-      ).toMatchObject({
-        providerType: f.type,
-        credentialScope: "member",
-        availability: "plan_restricted",
-      });
-      await deleteOrgPlanEntitlementFixture(f.actor.orgId);
-      // Missing canonical entitlement fails model selection before a thread,
-      // input or run can be created. Use raw HTTP for the invariant 500 status.
-      const clientThreadId = randomUUID();
-      createRouteMocks(context).clerk.session(
-        f.actor.userId,
-        f.actor.orgId,
-        f.actor.orgRole,
-      );
-      const missing = await setupRawAppRequestWithRoutes({
-        context,
-        routes: chatEventsRoutes,
-      })("/api/chat/events", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer clerk-session",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          agentId: f.agentId,
-          model: f.model,
-          clientThreadId,
-          prompt: "missing plan authority",
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "missing plan authority" }],
-          },
-          hasTextContent: true,
-        }),
-      });
-      expect(missing).toStrictEqual({
-        status: 500,
-        body: { error: "Internal server error" },
-      });
-      await createChatFilesBddApi(context).requestReadThreadMetadata(
-        f.actor,
         clientThreadId,
-        [404],
-      );
-    },
-  );
+        prompt: "missing plan authority",
+        userMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "missing plan authority" }],
+        },
+        hasTextContent: true,
+      }),
+    });
+    expect(missing).toStrictEqual({
+      status: 500,
+      body: { error: "Internal server error" },
+    });
+    await createChatFilesBddApi(context).requestReadThreadMetadata(
+      f.actor,
+      clientThreadId,
+      [404],
+    );
+  });
 });
 
 describe("subscription bundle decryption ownership", () => {
@@ -1688,7 +1444,7 @@ describe("subscription bundle decryption ownership", () => {
 describe("personal priority gateway and session boundaries", () => {
   it("keeps a selected subscription personal when credential decryption fails", async () => {
     const f = await fixture("codex-oauth-token");
-    await configureOrganizationApi(f, "custom");
+
     const billingBefore = await runs.readBillingStatus(f.actor);
     const runId = await f.start();
     const claim = await f.claim(runId);
@@ -1700,15 +1456,11 @@ describe("personal priority gateway and session boundaries", () => {
     const kms = useSecretKmsProbe(undefined, () => {
       return Promise.reject(new Error("owned KMS transport unavailable"));
     });
-    const projected = await createMiscRoutesApi(context).listModelPolicies(
-      f.actor,
-    );
-    expect(configuredPolicy(projected, f.model)?.memberEffective).toMatchObject(
-      {
-        providerType: f.type,
-        credentialScope: "member",
-      },
-    );
+    const projected = await createMiscRoutesApi(context).listRunModels(f.actor);
+    expect(availableModel(projected, f.model)?.memberEffective).toMatchObject({
+      providerType: f.type,
+      credentialScope: "member",
+    });
     expect(kms.decryptCalls).toBe(0);
     const denied = await firewall.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
@@ -1732,107 +1484,9 @@ describe("personal priority gateway and session boundaries", () => {
     });
   });
 
-  it.each(["deleted", "unmapped"] as const)(
-    "keeps personal authority when the configured gateway is %s",
-    async (loss) => {
-      const f = await fixture("claude-code-oauth-token");
-      const headers = { authorization: "Bearer clerk-session" };
-      createRouteMocks(context).clerk.session(f.actor.userId, f.actor.orgId);
-      const surface = {
-        protocol: "anthropic-messages" as const,
-        apiBaseUrl: "https://gateway.example.com/anthropic",
-        authHeaderName: "Authorization",
-        authHeaderTemplate: "Bearer {{secret}}",
-        modelMappings: { [f.model]: "company-sonnet" },
-      };
-      const created = await accept(
-        setupApp({ context, routes: modelProviderGatewayRoutes })(
-          modelProviderConnectionsMainContract,
-        ).create({
-          headers,
-          body: {
-            displayName: "Company API",
-            secret: "unused-gateway-secret",
-            surfaces: [surface],
-          },
-        }),
-        [201],
-      );
-      const surfaceId = created.body.surfaces[0]?.id;
-      if (!surfaceId) {
-        throw new Error("Expected a configured surface");
-      }
-      await runs.updateOrgModelPolicies(f.actor, [
-        {
-          model: f.model,
-          preferred: true,
-          defaultProviderType: "custom-anthropic-messages",
-          credentialScope: "org",
-          modelProviderId: null,
-          modelProviderSurfaceId: surfaceId,
-        },
-      ]);
-      const client = setupApp({ context, routes: modelProviderGatewayRoutes })(
-        modelProviderConnectionsByIdContract,
-      );
-      if (loss === "deleted") {
-        await accept(
-          client.delete({ headers, params: { id: created.body.id } }),
-          [204],
-        );
-      } else {
-        await accept(
-          client.update({
-            headers,
-            params: { id: created.body.id },
-            body: {
-              displayName: "Company API",
-              surfaces: [{ ...surface, modelMappings: {} }],
-            },
-          }),
-          [200],
-        );
-      }
-      const policies = await createMiscRoutesApi(context).listModelPolicies(
-        f.actor,
-      );
-      expect(
-        configuredPolicy(policies, f.model)?.memberEffective,
-      ).toMatchObject({
-        providerType: f.type,
-        credentialScope: "member",
-      });
-      if (loss === "deleted") {
-        expect(
-          configuredPolicy(policies, f.model)?.modelProviderSurfaceId,
-        ).toBeNull();
-      }
-      const run = await f.start();
-      const claim = await f.claim(run);
-      onTestFinished(async () => {
-        return await finish(f.actor, run, claim, "cancelled");
-      });
-      expect((await resolve(claim, f.type)).Authorization).toBe(
-        `Bearer ${f.connected.token}`,
-      );
-      await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-      // The unavailable selection falls back to the fixed default route, so
-      // the send is accepted instead of failing without a model route.
-      await createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "the selected organization route must be valid",
-        },
-        [201],
-      );
-    },
-  );
-
   it("preserves a Codex session across account changes and resolves uncreated queued messages at promotion", async () => {
     const f = await fixture("codex-oauth-token");
-    await configureOrganizationApi(f, "custom");
+
     const chat = createChatFilesBddApi(context);
     const sent = await chat.sendAndLaunch(f.actor, {
       agentId: f.agentId,

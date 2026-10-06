@@ -1,6 +1,25 @@
-import { createChatRunUsageSignals } from "./chat-run-usage.ts";
-import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
-import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
+import {
+  chatEventCompatibilityRole,
+  isChatEventContentTextType,
+  isChatRunTerminalEventType,
+  revokedChatEventIds,
+} from "@okouai/api-contracts/contracts/chat-events";
+import {
+  chatThreadArtifactsContract,
+  resolveChatEventRecommendedFollowups,
+  type ChatEventUsagePayload,
+  type ChatRunOptionsRequest,
+  type ChatThreadArtifactRun,
+  type ChatThreadDraft,
+  type FeedbackNotePart,
+  type GenerationTemplateRequest,
+  type ChatEvent as PersistedChatEvent,
+  type ResolvedAttachFile,
+  type UserMessageDocument,
+  type UserMessageInputDocument,
+  type UserMessagePart,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   command,
   computed,
@@ -9,11 +28,26 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
+import {
+  createDraftSignals,
+  createRestoredAttachment,
+  type DraftSignals,
+} from "../okou-page/chat-draft.ts";
+import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
 import { onRejection, resetSignal, settle } from "../utils.ts";
-import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
-import { createThreadSidebarSignals } from "./thread-sidebar.ts";
+import {
+  chatEventDebugSummaries,
+  chatEventTraceTime,
+} from "./chat-event-debug.ts";
+import type {
+  ChatEvent,
+  OptimisticChatEvent,
+  OptimisticUserMessageAssociation,
+} from "./chat-event-types.ts";
+import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
+import { createChatRunUsageSignals } from "./chat-run-usage.ts";
+import { createThreadDraftLoad } from "./chat-thread-draft.ts";
 import {
   createChatThreadScrollSignals,
   createThreadScrollPositionSignals,
@@ -22,84 +56,134 @@ import {
   type ScrollAfterRenderRequest,
   type ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
-import {
-  createDraftSignals,
-  createRestoredAttachment,
-  type DraftSignals,
-} from "../okou-page/chat-draft.ts";
-import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { createThreadDraftLoad } from "./chat-thread-draft.ts";
+import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
 import {
   collectSuccessfulAttachmentInfos,
   prepareUserMessageFromDraft$,
 } from "./resolve-draft-attachments.ts";
-import type {
-  ChatEvent,
-  OptimisticChatEvent,
-  OptimisticUserMessageAssociation,
-} from "./chat-event-types.ts";
-import {
-  chatEventDebugSummaries,
-  chatEventTraceTime,
-} from "./chat-event-debug.ts";
-import {
-  chatThreadArtifactsContract,
-  resolveChatEventRecommendedFollowups,
-  type ChatRunOptionsRequest,
-  type GenerationTemplateRequest,
-  type ChatEvent as PersistedChatEvent,
-  type ChatEventUsagePayload,
-  type FeedbackNotePart,
-  type ResolvedAttachFile,
-  type ChatThreadArtifactRun,
-  type ChatThreadDraft,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessagePart,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  chatEventCompatibilityRole,
-  isChatEventContentTextType,
-  isChatRunTerminalEventType,
-  revokedChatEventIds,
-} from "@okouai/api-contracts/contracts/chat-events";
+import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
+import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 
-import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
-import { accept } from "../../lib/accept.ts";
-import { apiClient$ } from "../api-client.ts";
-import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
-import { debounceCommand } from "../command-scheduling.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { modelCatalog$ } from "../external/model-catalog.ts";
-import {
-  writeChatMessageToClipboard,
-  type ChatClipboardPayload,
-} from "../okou-page/clipboard.ts";
-import type {
-  EnrichedChatEvent,
-  ChatEventGroup,
-  UserMessageFeedbackNoteRenderPart,
-  UserMessageRenderDocument,
-  UserMessageRenderPart,
-} from "./chat-event.ts";
-import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
-import {
-  liveRunIdsFromChatEvents,
-  queuedEventsFromChatEvents,
-  type RunIndicatorState,
-} from "./chat-event-state.ts";
 import {
   groupSemanticChatEvents,
   isInterruptControlEvent,
   isInterruptedAssistantCancellation,
   isUsageEvent,
   semanticChatEventsFromChatEvents,
-  type SemanticChatEventState,
   type SemanticChatGroups as GenericSemanticChatGroups,
+  type SemanticChatEventState,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
+import type { Root } from "hast";
+import { accept } from "../../lib/accept.ts";
+import {
+  markdownCardKey,
+  parseMarkdownTree,
+} from "../../lib/markdown/pipeline.ts";
+import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
+import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
+import { apiClient$ } from "../api-client.ts";
+import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
+import { debounceCommand } from "../command-scheduling.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { modelCatalog$ } from "../external/model-catalog.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
+import {
+  createImageLoadRegistry,
+  embedImageLoadSignals,
+  type ImageLoadRegistry,
+} from "../image-load.ts";
+import { locale$ } from "../locale.ts";
 import { logger } from "../log.ts";
+import {
+  createMermaidDiagramRegistry,
+  embedMermaidSignals,
+  type MermaidDiagramRegistry,
+} from "../mermaid-diagram.ts";
+import { openDiagramLightbox$ } from "../okou-page/attachment-chips.ts";
+import {
+  writeChatMessageToClipboard,
+  type ChatClipboardPayload,
+} from "../okou-page/clipboard.ts";
+import {
+  createComposerSignals,
+  type ComposerSignals,
+  type ComposerSubmission,
+} from "../okou-page/composer-signals.ts";
+import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
+import { connectorOverview$ } from "../okou-page/connector-overview.ts";
+import {
+  createComposerConnectorSignals,
+  type ComposerConnectorSignals,
+} from "../okou-page/connectors.ts";
+import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
+import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
+import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
+import {
+  messageDocumentToPrompt,
+  textToMessageDocument,
+} from "../okou-page/user-message-document-codec.ts";
+import {
+  createAgentReferenceSignalsRegistry,
+  type AgentReferenceSignalsRegistry,
+} from "./agent-reference-signals.ts";
+import {
+  createArtifactCardSignalsRegistry,
+  type ArtifactCardSignalsRegistry,
+} from "./artifact-card-signals.ts";
+import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.ts";
+import { createBankingCardSignalsRegistry } from "./banking-action-block.ts";
+import { createBrowserSessionSignals } from "./browser-session-block.ts";
+import { createBrowserUserActionCardSignalsRegistry } from "./browser-user-action-block.ts";
+import type { ChatActionContext } from "./chat-action-context.ts";
+import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import {
+  chatEventTreeContent,
+  chatEventTreePlan,
+  isTransientOutputMessage,
+} from "./chat-event-body-blocks.ts";
+import {
+  registerChatEventChangeHandler$,
+  type ChatEventChangeHandler,
+} from "./chat-event-change-registry.ts";
+import { replyTurnKey } from "./chat-event-group-keys.ts";
+import {
+  createChatEventSignals,
+  type ChatEventSignals,
+  type SendChatEventInput,
+  type SendInputChatEvent,
+} from "./chat-event-signals.ts";
+import {
+  liveRunIdsFromChatEvents,
+  queuedEventsFromChatEvents,
+  type RunIndicatorState,
+} from "./chat-event-state.ts";
+import type {
+  ChatEventGroup,
+  EnrichedChatEvent,
+  UserMessageFeedbackNoteRenderPart,
+  UserMessageRenderDocument,
+  UserMessageRenderPart,
+} from "./chat-event.ts";
+import type { ChatForwardContext } from "./chat-forward.ts";
+import type {
+  ChatPanelSignals,
+  EventImageGroupProjection,
+  MessageListSignals,
+  QueueMessageOptions,
+  RecommendedFollowupSource,
+  SendMessageOptions,
+  ThinkingIndicators,
+} from "./chat-panel-signals.ts";
+import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
+import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
+import {
+  optimisticChatThreadCreateUnsettled,
+  threadMeta,
+  type ThreadMeta,
+} from "./chat-thread-event-sourcing.ts";
+import { createChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
+import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
+import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
 import {
   createCancellationRecoverySignals,
   createRemoteChatThreadDraft,
@@ -108,127 +192,43 @@ import {
   patchChatThreadModelSelection$,
   subscribeChatThreadRealtime$,
 } from "./chat-thread-remote-signals.ts";
-import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
+import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
+import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { createChatLastReadMarkerSignals } from "./chat-last-read-marker.ts";
-import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
-import { unreadThroughAt } from "./unread-through-at.ts";
+import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
+import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
+import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
+import {
+  createMailDraftCardSignalsRegistry,
+  type MailDraftCardSignalsRegistry,
+} from "./mail-draft.ts";
+import { embedMarkdownArtifacts$ } from "./markdown-artifacts.ts";
+import type { MarkdownCardRef } from "./markdown-card-ref.ts";
+import { embedMarkdownMailDrafts$ } from "./markdown-mail-drafts.ts";
+import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
 import {
   cardSlotUrl,
   classifyChatAttachment,
   type CardDescriptorBlock,
 } from "./parse-body-blocks.ts";
-import {
-  createMermaidDiagramRegistry,
-  embedMermaidSignals,
-  type MermaidDiagramRegistry,
-} from "../mermaid-diagram.ts";
-import { openDiagramLightbox$ } from "../okou-page/attachment-chips.ts";
-import { embedMarkdownArtifacts$ } from "./markdown-artifacts.ts";
-import {
-  createImageLoadRegistry,
-  embedImageLoadSignals,
-  type ImageLoadRegistry,
-} from "../image-load.ts";
-import {
-  chatEventTreeContent,
-  chatEventTreePlan,
-  isTransientOutputMessage,
-} from "./chat-event-body-blocks.ts";
-import type { ChatActionContext } from "./chat-action-context.ts";
-import type { Root } from "hast";
-import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
-import {
-  markdownCardKey,
-  parseMarkdownTree,
-} from "../../lib/markdown/pipeline.ts";
-import type { MarkdownCardRef } from "./markdown-card-ref.ts";
-import {
-  createArtifactCardSignalsRegistry,
-  type ArtifactCardSignalsRegistry,
-} from "./artifact-card-signals.ts";
-import {
-  createAgentReferenceSignalsRegistry,
-  type AgentReferenceSignalsRegistry,
-} from "./agent-reference-signals.ts";
-import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
-import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
-import { createBankingCardSignalsRegistry } from "./banking-action-block.ts";
-import { createBrowserUserActionCardSignalsRegistry } from "./browser-user-action-block.ts";
 import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
-import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
-import { getChatThreadTitleParts } from "./chat-thread-title.ts";
-import {
-  optimisticChatThreadCreateUnsettled,
-  threadMeta,
-  type ThreadMeta,
-} from "./chat-thread-event-sourcing.ts";
-import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
-import { connectorOverview$ } from "../okou-page/connector-overview.ts";
-import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
-import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
-import type {
-  MessageListSignals,
-  ChatPanelSignals,
-  EventImageGroupProjection,
-  QueueMessageOptions,
-  RecommendedFollowupSource,
-  SendMessageOptions,
-  ThinkingIndicators,
-} from "./chat-panel-signals.ts";
-import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
-import {
-  createMailDraftCardSignalsRegistry,
-  type MailDraftCardSignalsRegistry,
-} from "./mail-draft.ts";
-import { embedMarkdownMailDrafts$ } from "./markdown-mail-drafts.ts";
-import { createBrowserSessionSignals } from "./browser-session-block.ts";
-import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
-import { replyTurnKey } from "./chat-event-group-keys.ts";
-import {
-  createThreadActivitySummarySignals,
-  type ThinkingSummaries,
-} from "./thread-activity-summary.ts";
-import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.ts";
-import {
-  messageDocumentToPrompt,
-  textToMessageDocument,
-} from "../okou-page/user-message-document-codec.ts";
-import { locale$ } from "../locale.ts";
-import {
-  createComposerSignals,
-  type ComposerSignals,
-  type ComposerSubmission,
-} from "../okou-page/composer-signals.ts";
-import { createChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
-import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
-import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
 import {
   createRunDetailSignalsRegistry,
   type RunDetailSignals,
 } from "./run-detail.ts";
-import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import {
-  createChatEventSignals,
-  type ChatEventSignals,
-  type SendChatEventInput,
-  type SendInputChatEvent,
-} from "./chat-event-signals.ts";
-import {
-  registerChatEventChangeHandler$,
-  type ChatEventChangeHandler,
-} from "./chat-event-change-registry.ts";
+  createThreadActivitySummarySignals,
+  type ThinkingSummaries,
+} from "./thread-activity-summary.ts";
+import { unreadThroughAt } from "./unread-through-at.ts";
 import {
   canonicalUserMessageFileUrl,
   userMessageFileAttachments,
 } from "./user-message-files.ts";
-import type { ChatForwardContext } from "./chat-forward.ts";
-import {
-  createComposerConnectorSignals,
-  type ComposerConnectorSignals,
-} from "../okou-page/connectors.ts";
 
 const L = logger("ChatThread");
 
@@ -395,14 +395,14 @@ function createModelSelection(
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
-    const [policies, catalog] = await Promise.all([
-      get(orgModelPolicies$),
+    const [models, catalog] = await Promise.all([
+      get(availableRunModels$),
       get(modelCatalog$),
     ]);
     const selectedModel = catalog.resolve(get(selectedModel$));
     if (
       !isCodexFastModeAvailableForSelection({
-        policies,
+        models,
         catalog,
         selectedModel,
       })
@@ -3666,8 +3666,8 @@ function createChatThreadComposerSignals(
   const { modelSelection, computerUseHostSelection, messageActions } = options;
   const composerModelSelection$ = computed(
     async (get): Promise<ModelProviderSelection | null> => {
-      const [policies, catalog] = await Promise.all([
-        get(orgModelPolicies$),
+      const [models, catalog] = await Promise.all([
+        get(availableRunModels$),
         get(modelCatalog$),
       ]);
       // Thread pins of retired models display their catalog replacement.
@@ -3675,8 +3675,8 @@ function createChatThreadComposerSignals(
       if (!selectedModel) {
         return null;
       }
-      const effectiveModel = policies.policies.some((policy) => {
-        return policy.model === selectedModel;
+      const effectiveModel = models.models.some((runModel) => {
+        return runModel.model === selectedModel;
       })
         ? selectedModel
         : catalog.systemDefaultModel;

@@ -246,10 +246,10 @@ actor ChatService {
   func createThread(agentID: String? = nil) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
-    async let policiesRequest: ModelPolicies = client.request("/api/model-policies")
+    async let modelsRequest: AvailableRunModels = client.request("/api/run-models")
     async let catalogRequest: ModelCatalog = client.request("/api/model-catalog")
-    let (agents, preference, policies, catalog) = try await (
-      agentsRequest, preferenceRequest, policiesRequest, catalogRequest
+    let (agents, preference, availableModels, catalog) = try await (
+      agentsRequest, preferenceRequest, modelsRequest, catalogRequest
     )
     guard
       let agent = agents.first(where: {
@@ -262,13 +262,13 @@ actor ChatService {
     // A saved selection of a retired model resolves to its active replacement.
     let savedModel = preference.selectedModel.flatMap { catalog.resolve($0) }
     let usableSavedModel = savedModel.flatMap { model in
-      policies.policies.contains { $0.model == model && $0.hasUsableRoute(catalog: catalog) }
+      availableModels.models.contains { $0.model == model && $0.hasUsableRoute(catalog: catalog) }
         ? model : nil
     }
-    let model = usableSavedModel ?? catalog.systemDefaultModel
+    let model = usableSavedModel ?? availableModels.defaultModel
     let serviceTier = preference.serviceTier.flatMap { tier in
       usableSavedModel != nil
-        && policies.policies.contains {
+        && availableModels.models.contains {
           $0.model == model && $0.supportsServiceTier(tier, catalog: catalog)
         }
         ? tier : nil

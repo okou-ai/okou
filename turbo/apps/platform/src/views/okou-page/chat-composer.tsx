@@ -1,112 +1,81 @@
 import { Combobox } from "@base-ui/react/combobox";
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
+  DropdownMenuTrigger,
 } from "@okouai/ui/components/ui/dropdown-menu";
+import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import {
-  useComposerConnectorActions,
-  type ComposerConnectorActions,
-} from "./composer-connector-actions.ts";
 import {
   useComposerActions,
   type ComposerActions,
 } from "./composer-actions.ts";
-import { ComposerTaskControls } from "./composer-create.tsx";
 import {
   ComposerAddMenu,
   type ComposerAddMenuGroup,
 } from "./composer-add-menu.tsx";
-import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
+import {
+  useComposerConnectorActions,
+  type ComposerConnectorActions,
+} from "./composer-connector-actions.ts";
+import { ComposerTaskControls } from "./composer-create.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  ReactNode,
-  RefCallback,
-} from "react";
+  GenerationTemplateRequest,
+  UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type {
+  BuiltinConnectorBrief,
+  ConnectorDefaultAccountBrief,
+  CustomConnectorBrief,
+} from "@okouai/api-contracts/contracts/connector-overview";
 import {
-  useGet,
-  useSet,
-  useLoadable,
-  useLoadableState,
-  useLastLoadable,
-  useLastResolved,
-  useResolved,
-  type Loadable,
-} from "ccstate-react";
-import { useTranslation } from "react-i18next";
-import { useLoadableSet } from "ccstate-react/experimental";
-import { i18n } from "../../i18n/index.ts";
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  ComposerPaidToolNotice,
-  TemplatePaidToolNotice,
-} from "./paid-tool-notice.tsx";
-import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
-import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
-import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
-import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
+  ILLUSTRATION_TEMPLATE_ITEMS,
+  type IllustrationTemplateItem,
+} from "@okouai/core/illustration-template-items";
 import {
-  loadCustomTemplateCatalog$,
-  resetCustomTemplatePicker$,
-  resetCustomTemplatePickerView$,
-} from "../../signals/okou-page/custom-template-library.ts";
+  PRESENTATION_TEMPLATE_PICKER_ITEMS,
+  type PresentationTemplateItem,
+} from "@okouai/core/presentation-template-items";
+import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import {
-  importPresentationTemplateDeck$,
-  PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
-} from "../../signals/okou-page/presentation-template-import.ts";
-import type {
-  ImportedPresentationTemplateImageBuffers,
-  ImportedPresentationTemplateImageSignals,
-  ImportedPresentationTemplateImageSlot,
-  ImportedPresentationTemplateImageState,
-  ImportedPresentationTemplateLoadedImage,
-  ImportedPresentationTemplatePickerItem,
-  PresentationTemplateDetail,
-  PresentationTemplateSummary,
-} from "../../signals/okou-page/presentation-template-library.ts";
-import { CHAT_UPLOAD_MAX_FILE_SIZE } from "../../lib/chat-upload.ts";
-import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
-import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
+  WEBSITE_TEMPLATE_ITEMS,
+  findWebsiteTemplateItem,
+  type WebsiteTemplateItem,
+} from "@okouai/core/website-template-items";
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Bolt,
-  Check,
-  Download,
-  Globe,
-  Image as ImageIcon,
-  LayoutTemplate,
-  Loader2,
-  Layers,
-  Lock,
-  Mic,
-  Monitor,
-  Palette,
-  Paperclip,
-  Plug,
-  Plus,
-  Presentation,
-  Route,
-  Search,
-  SlidersHorizontal,
-  Square,
-  SwatchBook,
-  Trash2,
-  type LucideIcon,
-  User,
-  UserCheck,
-  Users,
-  X,
-} from "lucide-react";
+  WORKFLOW_TEMPLATE_CATEGORIES,
+  WORKFLOW_TEMPLATE_ITEMS,
+  findWorkflowTemplateItem,
+  type WorkflowTemplateItem,
+} from "@okouai/core/workflow-template-items";
+import {
+  ElapsedTime,
+  getShortcutLabel,
+  processShortcut,
+  surfaceVariants,
+  type KeyboardEventLike,
+} from "@okouai/ui";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -114,8 +83,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
-import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import { Input } from "@okouai/ui/components/ui/input";
 import {
   Popover,
@@ -131,6 +98,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   Tabs,
   TabsContent,
@@ -145,120 +113,124 @@ import {
 } from "@okouai/ui/components/ui/tooltip";
 import { cn } from "@okouai/ui/lib/utils";
 import {
-  surfaceVariants,
-  ElapsedTime,
-  getShortcutLabel,
-  processShortcut,
-  type KeyboardEventLike,
-} from "@okouai/ui";
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useLoadableState,
+  useResolved,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import {
-  bestEffort,
-  detach,
-  onDomEventFn,
-  Reason,
-  tapError,
-} from "../../signals/utils.ts";
-import { sendMode$ } from "../../signals/send-mode.ts";
-import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
-import type { TemplatePreviewRuntime } from "../../signals/okou-page/template-preview-runtime.ts";
-import { agents$ } from "../../signals/agent.ts";
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Bolt,
+  Check,
+  Download,
+  Globe,
+  Image as ImageIcon,
+  Layers,
+  LayoutTemplate,
+  Loader2,
+  Lock,
+  Mic,
+  Monitor,
+  Palette,
+  Paperclip,
+  Plug,
+  Plus,
+  Presentation,
+  Route,
+  Search,
+  SlidersHorizontal,
+  Square,
+  SwatchBook,
+  Trash2,
+  User,
+  UserCheck,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import type {
-  GenerationTemplateRequest,
-  UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import type { RestorableAttachment } from "../../signals/okou-page/chat-draft.ts";
-import {
-  TEMPLATE_CARD_SHADOW,
-  TEMPLATE_TILE_CAPTION,
-  TEMPLATE_TILE_MEDIA,
-  TEMPLATE_TILE_NAME,
-  TEMPLATE_TILE_PREVIEW_FOCUS,
-  TEMPLATE_TILE_SELECTED,
-  TEMPLATE_TILE_SELECTION_FRAME,
-  TEMPLATE_TILE_SCRIM,
-  TEMPLATE_TILE_USE,
-  TEMPLATE_TILE_WRAPPER,
-} from "./template-tile.ts";
-import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
-import { AttachmentChips } from "./attachment-chips.tsx";
-import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
-import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
-import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
-import { computerUseIllustrationImg } from "./platform-assets.ts";
-import type { ComposerPasteEvent } from "./composer-input-types.ts";
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+  RefCallback,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { i18n } from "../../i18n/index.ts";
+import { CHAT_UPLOAD_MAX_FILE_SIZE } from "../../lib/chat-upload.ts";
 import {
   COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS,
   COMPOSER_VOICE_INPUT_SHORTCUT,
 } from "../../lib/composer-voice-input-shortcut.ts";
+import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
+import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
+import { agents$ } from "../../signals/agent.ts";
+import { computerUseProductName$ } from "../../signals/branding.ts";
 import {
-  contrastRatio,
-  previewTextColorOn,
-  safePreviewGround,
-} from "./presentation-html-preview.ts";
-import {
-  type IllustrationTemplateItem,
-  ILLUSTRATION_TEMPLATE_ITEMS,
-} from "@okouai/core/illustration-template-items";
-import {
-  type PresentationTemplateItem,
-  PRESENTATION_TEMPLATE_PICKER_ITEMS,
-} from "@okouai/core/presentation-template-items";
-import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
-import {
-  type WebsiteTemplateItem,
-  WEBSITE_TEMPLATE_ITEMS,
-  findWebsiteTemplateItem,
-} from "@okouai/core/website-template-items";
-import {
-  WORKFLOW_TEMPLATE_CATEGORIES,
-  WORKFLOW_TEMPLATE_ITEMS,
-  findWorkflowTemplateItem,
-  type WorkflowTemplateItem,
-} from "@okouai/core/workflow-template-items";
-import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import {
-  defaultPresentationTemplateThemeId,
-  presentationTemplateColorSystemId,
-  toIllustrationGenerationTemplate,
-  toPresentationGenerationTemplate,
-  toWebsiteGenerationTemplate,
-} from "./composer-template-catalog.ts";
-import {
-  ComposerRail,
-  RAIL_TILE,
-  RAIL_TILE_CAPTION,
-} from "./composer-rail.tsx";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  ConnectorAccountConnection,
-  ConnectorAccountSelection,
-  ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+  cancelConnectorConnection$,
+  connectorConnectionAttempt$,
+  registerConnectorConnectionDialog$,
+} from "../../signals/connector-connection-progress.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
-import type {
-  BuiltinConnectorBrief,
-  CustomConnectorBrief,
-  ConnectorDefaultAccountBrief,
-} from "@okouai/api-contracts/contracts/connector-overview";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
+import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import {
-  ModelProviderPicker,
-  type ModelProviderSelection,
-} from "./components/model-provider-picker.tsx";
-import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
-import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
-import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import { ConnectorCard } from "./components/settings/connector-card.tsx";
-import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
-import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
-import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
-import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
-import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+  updateUserModelPreference$,
+  userModelPreference$,
+} from "../../signals/external/user-model-preference.ts";
+import type { RestorableAttachment } from "../../signals/okou-page/chat-draft.ts";
+import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
+import { invalidateAgentConnectorAccess$ } from "../../signals/okou-page/composer-agent-connectors.ts";
+import type {
+  ComposerPendingEvent,
+  ComposerPrimaryAction,
+  ComposerSignals,
+} from "../../signals/okou-page/composer-signals.ts";
+import {
+  OKOU_DESKTOP_DOWNLOAD_URL,
+  desktopDownloadSupportStatus$,
+  selectedComputerUseHostId,
+  visibleComputerUseHosts,
+} from "../../signals/okou-page/computer-use-hosts.ts";
+import {
+  CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
+  connectorAccountTargetKey,
+} from "../../signals/okou-page/connector-accounts.ts";
+import {
+  connectorOverview$,
+  invalidateConnectorOverview$,
+} from "../../signals/okou-page/connector-overview.ts";
+import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
+import {
+  loadCustomTemplateCatalog$,
+  resetCustomTemplatePicker$,
+  resetCustomTemplatePickerView$,
+} from "../../signals/okou-page/custom-template-library.ts";
+import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
+import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
+import {
+  PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
+  importPresentationTemplateDeck$,
+} from "../../signals/okou-page/presentation-template-import.ts";
+import type {
+  ImportedPresentationTemplateImageBuffers,
+  ImportedPresentationTemplateImageSignals,
+  ImportedPresentationTemplateImageSlot,
+  ImportedPresentationTemplateImageState,
+  ImportedPresentationTemplateLoadedImage,
+  ImportedPresentationTemplatePickerItem,
+  PresentationTemplateDetail,
+  PresentationTemplateSummary,
+} from "../../signals/okou-page/presentation-template-library.ts";
 import {
   defaultBuiltinConnectorAccountOptions,
   defaultCustomConnectorAccountOptions,
@@ -268,73 +240,101 @@ import {
   matchesConnectorSearch,
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
-import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
-import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
 import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
-import {
-  cancelConnectorConnection$,
-  connectorConnectionAttempt$,
-  registerConnectorConnectionDialog$,
-} from "../../signals/connector-connection-progress.ts";
-import { LoadingSwitch } from "../components/loading-switch.tsx";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import { sshSummary$ } from "../../signals/ssh.ts";
-import { vncSummary$ } from "../../signals/vnc.ts";
-import { VncLoadError } from "./vnc-load-error.tsx";
-import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
-import { SshLoadError } from "./ssh-load-error.tsx";
-import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
-import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
-import { rootSignal$ } from "../../signals/root-signal.ts";
-import { orgModelPolicies$ } from "../../signals/external/org-model-policies.ts";
-import {
-  updateUserModelPreference$,
-  userModelPreference$,
-} from "../../signals/external/user-model-preference.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
-import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
-import {
-  selectedComputerUseHostId,
-  visibleComputerUseHosts,
-  OKOU_DESKTOP_DOWNLOAD_URL,
-  desktopDownloadSupportStatus$,
-} from "../../signals/okou-page/computer-use-hosts.ts";
-import {
-  connectorOverview$,
-  invalidateConnectorOverview$,
-} from "../../signals/okou-page/connector-overview.ts";
-import { invalidateAgentConnectorAccess$ } from "../../signals/okou-page/composer-agent-connectors.ts";
-import { computerUseProductName$ } from "../../signals/branding.ts";
-import {
-  CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
-  connectorAccountTargetKey,
-} from "../../signals/okou-page/connector-accounts.ts";
-import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
-import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
 import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
-import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import type {
-  ComposerPendingEvent,
-  ComposerPrimaryAction,
-  ComposerSignals,
-} from "../../signals/okou-page/composer-signals.ts";
+import type { TemplatePreviewRuntime } from "../../signals/okou-page/template-preview-runtime.ts";
+import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
+import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { sendMode$ } from "../../signals/send-mode.ts";
+import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
+import { sshSummary$ } from "../../signals/ssh.ts";
+import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
+import {
+  Reason,
+  bestEffort,
+  detach,
+  onDomEventFn,
+  tapError,
+} from "../../signals/utils.ts";
+import { vncSummary$ } from "../../signals/vnc.ts";
 import {
   audioInputAvailable$,
   audioInputQuota$,
 } from "../../signals/voice-io/voice-io-stt.ts";
-import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
-import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
+import { IconTooltipButton } from "../components/icon-tooltip.tsx";
+import { LoadingSwitch } from "../components/loading-switch.tsx";
+import { AttachmentChips } from "./attachment-chips.tsx";
+import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
+import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
+import {
+  ModelProviderPicker,
+  type ModelProviderSelection,
+} from "./components/model-provider-picker.tsx";
+import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+import { ConnectorCard } from "./components/settings/connector-card.tsx";
+import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
+import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
+import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
+import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
+import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
+import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx";
+import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
+import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
+import type { ComposerPasteEvent } from "./composer-input-types.ts";
+import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
+import {
+  defaultPresentationTemplateThemeId,
+  presentationTemplateColorSystemId,
+  toIllustrationGenerationTemplate,
+  toPresentationGenerationTemplate,
+  toWebsiteGenerationTemplate,
+} from "./composer-template-catalog.ts";
+import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
+import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
+import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
+import {
+  ComposerPaidToolNotice,
+  TemplatePaidToolNotice,
+} from "./paid-tool-notice.tsx";
+import { computerUseIllustrationImg } from "./platform-assets.ts";
+import {
+  contrastRatio,
+  previewTextColorOn,
+  safePreviewGround,
+} from "./presentation-html-preview.ts";
+import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
+import { SshLoadError } from "./ssh-load-error.tsx";
+import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
+import {
+  TEMPLATE_CARD_SHADOW,
+  TEMPLATE_TILE_CAPTION,
+  TEMPLATE_TILE_MEDIA,
+  TEMPLATE_TILE_NAME,
+  TEMPLATE_TILE_PREVIEW_FOCUS,
+  TEMPLATE_TILE_SCRIM,
+  TEMPLATE_TILE_SELECTED,
+  TEMPLATE_TILE_SELECTION_FRAME,
+  TEMPLATE_TILE_USE,
+  TEMPLATE_TILE_WRAPPER,
+} from "./template-tile.ts";
+import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
+import { VncLoadError } from "./vnc-load-error.tsx";
+import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
 import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
 } from "./workflow-template-copy.ts";
-import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
-import { IconTooltipButton } from "../components/icon-tooltip.tsx";
-import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 
 const COMPOSER_CONTROL_FOCUS_CLASS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
@@ -5386,7 +5386,7 @@ function TemplatePickerDialog({
                 onReopenCustom={resetCustomTemplatePickerView}
               />
               {/* Keep the existing single active content tree and its category
-                  unmounting policy; signals retain search and scroll state. */}
+                  unmounting runModel; signals retain search and scroll state. */}
               <TabsContent
                 value={selectedCategory}
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -8701,7 +8701,7 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
   const setModelSelection = useSet(signals.model.setModelSelection$);
   const pageSignal = useGet(pageSignal$);
-  const policies = useLastResolved(orgModelPolicies$);
+  const models = useLastResolved(availableRunModels$);
   const value = modelSelection.state === "hasData" ? modelSelection.data : null;
   const modelPickerLoading = modelSelection.state === "loading";
   const onModelPickerChange = (selection: ModelProviderSelection | null) => {
@@ -8709,9 +8709,9 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   };
   // Auto offers a choice only once a personal subscription adds models.
   const autoOnly =
-    policies?.modelMode === "auto" &&
-    !policies.policies.some((policy) => {
-      return policy.subscriptionOptions;
+    models === undefined ||
+    models.models.every((runModel) => {
+      return runModel.model === models.defaultModel;
     });
   if (modelPickerLoading || value === null || autoOnly) {
     return null;
@@ -8788,7 +8788,7 @@ function ComposerTemporaryModelNotice({
 }) {
   const { t } = useTranslation();
   const selection = useLastResolved(signals.model.modelSelection$);
-  const policies = useLastResolved(orgModelPolicies$);
+  const models = useLastResolved(availableRunModels$);
   const userPreference = useLastResolved(userModelPreference$);
   const catalog = useLastResolved(modelCatalog$);
   const [updateLoadable, updatePreference] = useLoadableSet(
@@ -8797,7 +8797,7 @@ function ComposerTemporaryModelNotice({
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveDefaultModelSelection({
     userPreference,
-    policies,
+    models,
     catalog,
   });
   const selectionServiceTier = runServiceTier(selection);
@@ -8814,7 +8814,7 @@ function ComposerTemporaryModelNotice({
     !selection ||
     !defaultSelection ||
     userPreference === undefined ||
-    policies === undefined ||
+    models === undefined ||
     (!modelChanged && !serviceTierChanged && !effortChanged)
   ) {
     return withChatScrollLayout(null);

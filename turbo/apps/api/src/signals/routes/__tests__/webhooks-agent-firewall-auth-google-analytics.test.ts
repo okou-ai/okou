@@ -31,7 +31,7 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
   runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Analytics refresh agent",
     description: "Exercises Analytics refresh and reconnect.",

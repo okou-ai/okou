@@ -1,3 +1,4 @@
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { settleIncludingAbort } from "../../utils";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
@@ -38,17 +39,14 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
-import {
-  seedBuiltInModelCandidateKeys,
-  seedBuiltInModelKey,
-} from "../../routes/__tests__/helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "../pi-memory-phase2-maintenance.service";
 import {
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-  PI_MEMORY_PHASE2_BYOK_MODEL,
+  PI_MEMORY_PHASE2_PERSONAL_MODEL,
 } from "../pi-memory-phase2-usage.service";
 import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import {
@@ -61,10 +59,8 @@ import {
   executePhase2Runtime,
 } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
 import {
-  createPhase2Provider,
+  createPhase2CodexProvider,
   disconnectPhase2Codex,
-  phase2ApiKeyRoutes,
-  type Phase2ProviderType,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
 
 // The original named key10 harness keeps exact corrupt identities and financial
@@ -72,10 +68,7 @@ import {
 // remains only for the separately inventoried terminal-fault callback.
 const context = testContext();
 
-async function dispatchMaintenance(
-  type?: Phase2ProviderType,
-  credentialScope: "org" | "member" = "org",
-) {
+async function dispatchMaintenance(type?: "codex-oauth-token") {
   const scope = await createPhase2TestScope("usage", { emptyBase: true });
   // PiMemory is off for everyone by default; the dispatcher only runs for
   // owners whose explicit override enables it.
@@ -93,9 +86,7 @@ async function dispatchMaintenance(
     });
   });
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
-  if (type) {
-    await seedBuiltInModelKey(context, PI_MEMORY_PHASE2_BYOK_MODEL);
-  } else {
+  if (!type) {
     await seedBuiltInModelCandidateKeys(
       context,
       PI_MEMORY_PHASE2_BUILT_IN_MODEL,
@@ -104,7 +95,7 @@ async function dispatchMaintenance(
   // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
   configureNativeCliArtifact();
   const provider = type
-    ? await createPhase2Provider(context, scope, type, credentialScope)
+    ? await createPhase2CodexProvider(context, scope)
     : undefined;
   const candidates = ["first", "second"].map((name) => {
     return {
@@ -152,14 +143,9 @@ async function dispatchMaintenance(
   return { scope, run, runId, binding, provider };
 }
 
-async function launchMaintenance(
-  type?: Phase2ProviderType,
-  credentialScope: "org" | "member" = "org",
-) {
-  const { scope, run, runId, binding, provider } = await dispatchMaintenance(
-    type,
-    credentialScope,
-  );
+async function launchMaintenance(type?: "codex-oauth-token") {
+  const { scope, run, runId, binding, provider } =
+    await dispatchMaintenance(type);
   // One proxy flush aggregates two provider responses.
   const events = [
     { category: "tokens.input", quantity: 6 },
@@ -172,7 +158,7 @@ async function launchMaintenance(
       idempotencyKey: randomUUID(),
       kind: "model" as const,
       provider: type
-        ? PI_MEMORY_PHASE2_BYOK_MODEL
+        ? PI_MEMORY_PHASE2_PERSONAL_MODEL
         : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
     };
   });
@@ -239,10 +225,7 @@ async function launchMaintenance(
 
 async function launchPublicMaintenance(
   fixture: ReturnType<typeof createPublicPiMemorySource>,
-  {
-    type,
-    credentialScope = "org",
-  }: { type?: Phase2ProviderType; credentialScope?: "org" | "member" } = {},
+  { type }: { type?: "codex-oauth-token"; credentialScope?: "member" } = {},
 ) {
   const at = new Date(now() + 24 * 3_600_000);
   const scope = await fixture.prepare(at);
@@ -263,20 +246,14 @@ async function launchPublicMaintenance(
     succeeded: 2,
   });
   await fixture.disconnect(scope.subscription.accountSourceId);
-  let provider: Awaited<ReturnType<typeof createPhase2Provider>> | undefined;
+  let provider:
+    | Awaited<ReturnType<typeof createPhase2CodexProvider>>
+    | undefined;
   if (type) {
-    await seedBuiltInModelKey(
-      context,
-      PI_MEMORY_PHASE2_BYOK_MODEL,
-      fixture.registerCleanup,
-    );
-    provider = await createPhase2Provider(
-      context,
-      scope,
-      type,
-      credentialScope,
-      { registerCleanup: fixture.registerCleanup, miscApi: fixture.misc },
-    );
+    provider = await createPhase2CodexProvider(context, scope, {
+      registerCleanup: fixture.registerCleanup,
+      miscApi: fixture.misc,
+    });
   } else {
     await seedBuiltInModelCandidateKeys(
       context,
@@ -308,7 +285,7 @@ async function launchPublicMaintenance(
       idempotencyKey: randomUUID(),
       kind: "model" as const,
       provider: type
-        ? PI_MEMORY_PHASE2_BYOK_MODEL
+        ? PI_MEMORY_PHASE2_PERSONAL_MODEL
         : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
     };
   });
@@ -428,7 +405,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
     { status: "failed", type: undefined },
     { status: "cancelled", type: undefined },
     { status: "timeout", type: undefined },
-    { status: "completed", type: "openai-api-key" },
+    { status: "completed", type: "codex-oauth-token" },
   ] as const)(
     "keeps the $type proxy owner through $status and delayed cleanup",
     async ({ status, type }) => {
@@ -438,7 +415,9 @@ describe("Pi memory Phase 2 proxy billing", () => {
       // cleanup below only reports `deleted: 0` while the retained binding is
       // still resolvable, so this asserts the full set is honoured.
       expect(run.run.selectedModel).toBe(
-        type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+        type
+          ? PI_MEMORY_PHASE2_PERSONAL_MODEL
+          : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
       );
       const completedAt = nowDate();
       // Terminal states, persisted launch snapshots and delayed proxy flushes
@@ -550,7 +529,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
               await threads.createThread(fixture.actor, {
                 agentId: run.scope.sourceAgentId,
                 clientThreadId: threadId,
-                model: "gpt-6-luna",
+                model: AUTO_RUN_MODEL,
               });
               await db()
                 .update(agentRuns)
@@ -597,23 +576,11 @@ describe("Pi memory Phase 2 proxy billing", () => {
   );
 
   it.each([
-    ...phase2ApiKeyRoutes.flatMap((route) => {
-      return [
-        { ...route, scope: "org" as const },
-        { ...route, scope: "member" as const },
-      ];
-    }),
     {
       type: "codex-oauth-token" as const,
       scope: "member" as const,
       url: "https://chatgpt.com/backend-api/codex/responses",
-      model: "gpt-5.6-luna",
-    },
-    {
-      type: "custom-openai-responses" as const,
-      scope: "org" as const,
-      url: "https://phase2-gateway.example/v1/responses",
-      model: "mapped-luna",
+      model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
     },
   ])(
     "executes exact $type/$scope HTTP and drops replayed model usage",
@@ -629,7 +596,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
         });
         expect(run.run.source).toMatchObject({
           providerType: type,
-          model: "gpt-5.6-luna",
+          model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
           credentialScope: scope,
         });
         expect(run.execution.piSessionId).toBe(run.runId);
@@ -660,15 +627,9 @@ describe("Pi memory Phase 2 proxy billing", () => {
           });
           expect(request.body).not.toHaveProperty("text.format");
           expect(request.body).not.toHaveProperty("service_tier");
-          if (type === "custom-openai-responses") {
-            expect(request.headers.get("x-source-key")).toBe(
-              `Key ${run.provider?.key}`,
-            );
-          } else {
-            expect(request.headers.get("authorization")).toBe(
-              `Bearer ${run.provider?.key}`,
-            );
-          }
+          expect(request.headers.get("authorization")).toBe(
+            `Bearer ${run.provider?.key}`,
+          );
           if (type === "codex-oauth-token") {
             expect(request.headers.get("chatgpt-account-id")).toBe(
               run.provider?.account,
@@ -682,32 +643,29 @@ describe("Pi memory Phase 2 proxy billing", () => {
     },
   );
 
-  it.each([
-    "openai-api-key",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-    "codex-oauth-token",
-    "custom-openai-responses",
-  ] as const)("drops %s usage after a real provider failure", async (type) => {
-    const fixture = createPublicPiMemorySource(context, {
-      cashCredits: 100_000,
-      sources: ["first complete evidence", "second complete evidence"],
-    });
-    await fixture.run(async () => {
-      const run = await launchPublicMaintenance(fixture, {
-        type,
-        credentialScope: type === "codex-oauth-token" ? "member" : "org",
+  it.each(["codex-oauth-token"] as const)(
+    "drops %s usage after a real provider failure",
+    async (type) => {
+      const fixture = createPublicPiMemorySource(context, {
+        cashCredits: 100_000,
+        sources: ["first complete evidence", "second complete evidence"],
       });
-      const actual = await executePhase2Runtime(context, run.runId, {
-        failure: true,
-        execution: run.execution,
-        registerCleanup: fixture.registerCleanup,
+      await fixture.run(async () => {
+        const run = await launchPublicMaintenance(fixture, {
+          type,
+          credentialScope: "member",
+        });
+        const actual = await executePhase2Runtime(context, run.runId, {
+          failure: true,
+          execution: run.execution,
+          registerCleanup: fixture.registerCleanup,
+        });
+        expect(actual.requests).toHaveLength(1);
+        await run.proxy();
+        await expect(run.ledger()).resolves.toStrictEqual([]);
       });
-      expect(actual.requests).toHaveLength(1);
-      await run.proxy();
-      await expect(run.ledger()).resolves.toStrictEqual([]);
-    });
-  });
+    },
+  );
 });
 
 test("retains the committed Codex account and uses the current account for a new retry", async () => {
@@ -728,13 +686,10 @@ test("retains the committed Codex account and uses the current account for a new
       run.scope,
       run.provider.binding.modelProviderId,
     );
-    const replacement = await createPhase2Provider(
-      context,
-      run.scope,
-      "codex-oauth-token",
-      "member",
-      { registerCleanup: fixture.registerCleanup, miscApi: fixture.misc },
-    );
+    const replacement = await createPhase2CodexProvider(context, run.scope, {
+      registerCleanup: fixture.registerCleanup,
+      miscApi: fixture.misc,
+    });
     expect(replacement.binding.modelProviderId).not.toBe(
       run.provider.binding.modelProviderId,
     );
@@ -815,7 +770,7 @@ test("retains the committed Codex account and uses the current account for a new
 });
 
 test.each(["valid", "invalid"] as const)(
-  "preserves BYOK E3 represented %s artifacts",
+  "preserves personal subscription E3 represented %s artifacts",
   async (represented) => {
     let baseFiles: { path: string; content: string }[] = [];
     const fixture = createPublicPiMemorySource(context, {
@@ -855,7 +810,7 @@ test.each(["valid", "invalid"] as const)(
     });
     await fixture.run(async () => {
       const run = await launchPublicMaintenance(fixture, {
-        type: "openai-api-key",
+        type: "codex-oauth-token",
       });
       for (const [index, source] of run.scope.sources.entries()) {
         expect(
@@ -887,14 +842,14 @@ test.each(["valid", "invalid"] as const)(
   },
 );
 
-test("preserves non-model usage for a genuinely launched BYOK run", async () => {
+test("preserves non-model usage for a genuinely launched personal subscription run", async () => {
   const fixture = createPublicPiMemorySource(context, {
     cashCredits: 100_000,
     sources: ["first complete evidence", "second complete evidence"],
   });
   await fixture.run(async () => {
     const run = await launchPublicMaintenance(fixture, {
-      type: "openai-api-key",
+      type: "codex-oauth-token",
     });
     const event = {
       idempotencyKey: randomUUID(),
@@ -971,7 +926,7 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
 });
 
 test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
-  "does not retain malformed BYOK private identity: %s",
+  "does not retain malformed personal subscription private identity: %s",
   async (fault) => {
     const fixture = createPublicPiMemorySource(context, {
       cashCredits: 100_000,
@@ -979,7 +934,7 @@ test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
     });
     await fixture.run(async () => {
       const run = await launchPublicMaintenance(fixture, {
-        type: "openai-api-key",
+        type: "codex-oauth-token",
       });
       const memory = expectCanonicalStorageManifest(
         run.execution.storageManifest,

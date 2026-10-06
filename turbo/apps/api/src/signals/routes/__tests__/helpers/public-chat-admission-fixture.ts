@@ -179,22 +179,14 @@ export function createPublicChatAdmissionFixture(context: TestContext) {
       captureStorageMocks();
       runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor, { customerId, subscriptionId });
-      const { providerId } = await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "BDD chat messages agent",
         description: "Exercises the web chat send route.",
         visibility: "private",
       });
       agentIds.add(agent.agentId);
-      await runs.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
       return { actor, agentId: agent.agentId };
     },
     async suspend(credits: 0 | 20_000): Promise<void> {

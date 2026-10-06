@@ -611,6 +611,13 @@ export default [
       "api/no-package-variable": "error",
     },
   },
+  {
+    files: ["src/**/*.ts", "vitest.config.ts"],
+    plugins: { api: apiLintPlugin },
+    rules: {
+      "api/no-test-database-binding": "error",
+    },
+  },
   // Gateway boundary. Tests are exempt: they type-check in their own smaller
   // program, so an SDK import there does not land in the core program.
   {

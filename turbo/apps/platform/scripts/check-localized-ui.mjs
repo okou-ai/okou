@@ -136,10 +136,6 @@ function getInternalAllowedLiterals() {
 function getConnectorAllowedLiterals() {
   return [
     [
-      "src/views/okou-page/components/model-provider-picker.tsx\u0000BYOK",
-      "bring-your-own-key product acronym",
-    ],
-    [
       "src/views/okou-page/components/settings/custom-connector-create-dialog.tsx\u0000Acme API",
       "example connector name",
     ],

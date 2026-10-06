@@ -1,15 +1,9 @@
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { command } from "ccstate";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { v5 as uuidv5 } from "uuid";
-import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -18,13 +12,17 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
+import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { escapeHtml } from "../../lib/telegram-format";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
-import { pathParamsOf } from "../context/request";
+import { escapeHtml } from "../../lib/telegram-format";
+import { now } from "../../lib/time";
 import { request$ } from "../context/hono";
+import { pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -42,33 +40,26 @@ import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
-import { now } from "../../lib/time";
-import { settle, safeJsonParse, tapError } from "../utils";
-import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
-import {
-  pickEnqueuedChatThread$,
-  enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput$,
-} from "./chat-thread-queue-drain.service";
-import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
-import {
-  bindTelegramReplyMessageRoute,
-  type TelegramOwnerLink,
-  createTelegramChatThread$,
-  ensureTelegramChatThreadRoute$,
-  findTelegramRoutedChatThreadId$,
-} from "./telegram-chat-ingress.service";
-import {
-  updateIntegrationChatThreadModel$,
-  readIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
+import { safeJsonParse, settle, tapError } from "../utils";
 import {
   InputFileImportError,
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
+import {
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import {
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
 import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
@@ -76,12 +67,21 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import {
+  bindTelegramReplyMessageRoute,
+  createTelegramChatThread$,
+  ensureTelegramChatThreadRoute$,
+  findTelegramRoutedChatThreadId$,
+  type TelegramOwnerLink,
+} from "./telegram-chat-ingress.service";
 import {
   formatTelegramUserDisplayName,
   linkOfficialTelegramUser$,
 } from "./telegram-link.service";
-import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 const log = logger("api:telegram:post");
 const MAX_CONTEXT_MESSAGES = 10;
 const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
@@ -1555,12 +1555,12 @@ const handleModelCommand$ = command(
       return;
     }
     const { response: policies, systemDefaultModel } = await set(
-      listOrgModelPoliciesWithSystemDefault$,
+      listAvailableRunModelsWithDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
-    const options = policies.policies.flatMap((policy) => {
+    const options = policies.models.flatMap((policy) => {
       if (policy.routeStatus !== "valid") {
         return [];
       }

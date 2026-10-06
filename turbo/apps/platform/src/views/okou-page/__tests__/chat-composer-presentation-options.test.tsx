@@ -1,11 +1,11 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -13,15 +13,15 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   AGENT_ID,
   context,
   findComposerEditor,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
 } from "./chat-composer-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 interface SubmittedMessage {
   readonly userMessage?: UserMessageDocument;
@@ -50,7 +50,7 @@ function setupModels(): void {
     });
   });
   mockAgent();
-  mockOrgModelRoutes();
+  mockPersonalModelRoutes();
   mockBillingCapabilities({
     supportByok: true,
     restrictedBuiltInModels: false,

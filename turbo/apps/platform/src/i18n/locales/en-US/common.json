@@ -4759,7 +4759,6 @@
         },
         "model": {
           "autoDescription": "Okou chooses the model for each task.",
-          "description": "Choose which AI models your workspace and your runs use.",
           "title": "Models"
         },
         "people": {
@@ -4849,21 +4848,7 @@
     },
     "models": {
       "actions": {
-        "addModel": "Add model",
-        "deleteModel": "Delete model",
-        "editModel": "Edit model",
-        "resetUsage": "Reset usage",
-        "upgradePro": "Upgrade Pro to use",
-        "upgradeToPro": "Upgrade to Pro"
-      },
-      "autoMode": {
-        "cancel": "Cancel",
-        "confirm": "Switch to Auto Model",
-        "confirmDescription": "This permanently deletes organization model policies, provider connections and their unused secrets. The only organization policy will be Auto. Members' personal subscriptions remain connected and can add models. Switching back to Custom will not restore deleted organization settings.",
-        "confirmTitle": "Switch this workspace to Auto Model?",
-        "description": "Use Auto as the organization policy. Connected personal subscriptions add models for each member.",
-        "failed": "Could not change the model mode. Refresh settings and try again.",
-        "title": "Auto Model"
+        "resetUsage": "Reset usage"
       },
       "deviceAuth": {
         "claude": {
@@ -4899,44 +4884,8 @@
           "signIn": "Sign in with ChatGPT"
         }
       },
-      "gateways": {
-        "actions": "Gateway actions",
-        "add": "Add provider",
-        "addTitle": "Add model provider",
-        "apiBaseUrl": "API base URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API key",
-        "deleteConfirm": "Delete this model provider connection? Model routes using it will become unavailable.",
-        "description": "Connect an admin-managed gateway through Anthropic Messages, OpenAI Responses, or both.",
-        "dialogDescription": "Configure each protocol with the API base URL used by Claude Code or Codex.",
-        "editTitle": "Edit model provider",
-        "errors": {
-          "invalidMappings": "Model mappings must be a JSON object whose values are upstream model names.",
-          "missingProtocol": "Enable at least one protocol.",
-          "missingSecret": "Enter an API key."
-        },
-        "headerName": "Authentication header",
-        "headerValue": "Header value template",
-        "keepKey": "Leave blank to keep the current key",
-        "modelMappings": "Model mappings (JSON)",
-        "name": "Name",
-        "presets": {
-          "custom": "Custom",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "Requests",
-        "title": "Provider connections"
-      },
       "personal": {
         "accountFallback": "Account {{number}}",
-        "accountsDescription": "Choose the account each provider uses for new runs.",
-        "accountsSectionTitle": "Personal accounts",
         "activeAccount": "Active",
         "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
         "autoTitle": "Use more models",
@@ -4963,8 +4912,6 @@
         "useAccount": "Use"
       },
       "picker": {
-        "builtInModel": "Built-in model",
-        "byokHelp": "Uses your configured provider",
         "chatModels": "Chat models",
         "effort": "Effort",
         "effortScale": {
@@ -4977,8 +4924,8 @@
         },
         "fast": "Fast",
         "fastImpact": {
-          "creditCost": "{{multiplier}}× credit cost",
-          "providerUsage": "Usage depends on provider"
+          "providerUsage": "Usage depends on provider",
+          "subscriptionUsage": "{{multiplier}}× subscription usage"
         },
         "fastMode": "Fast mode",
         "generationPriceTiers": {
@@ -4992,56 +4939,11 @@
         "loading": "Loading models...",
         "models": "Models",
         "noConfiguredModels": "No configured models",
-        "priceTiers": {
-          "balanced": "Balanced cost and performance",
-          "economy": "Economy tier for everyday simple tasks",
-          "frontier": "Frontier flagship model",
-          "premium": "Premium frontier model for the hardest tasks"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure foundry portal",
-          "claudeCodeOauth": "Claude Code (OAuth token)",
-          "deepseek": "Deepseek"
-        },
         "standard": "Standard",
         "ultrafast": "Ultrafast",
         "ultrafastImpact": "Up to 8× token speed · 6× OpenAI API token price",
         "ultrafastMode": "Ultrafast mode"
-      },
-      "policies": {
-        "actionsFor": "Actions for {{model}}",
-        "apiKey": "API key",
-        "apiKeyDescription": "A shared workspace key. Best when the team bills through one account.",
-        "apiKeyPlaceholder": "Enter your API key",
-        "apiKeyRequired": "API key is required",
-        "availableModels": "Available models",
-        "builtIn": "Built-in",
-        "builtInDescription": "Workspace credits cover usage.",
-        "claudeSubscription": "Claude subscription",
-        "claudeSubscriptionDescription": "Each member connects their own Pro, Max, or Team plan.",
-        "codexSubscription": "Codex subscription",
-        "codexSubscriptionDescription": "Each member connects their own Pro or Team plan.",
-        "dialogDescription": "Decide how members access this model.",
-        "gateway": "Custom gateway",
-        "gatewayDescription": "Route through an admin-defined provider connection.",
-        "gatewayProvider": "Provider connection",
-        "getKey": "Get a key",
-        "invalidRoute": "Invalid route",
-        "missingProvider": "Missing provider",
-        "model": "Model",
-        "noMappedGateway": "No provider connection maps this model.",
-        "orgDefaultModelLocked": "Auto can't be removed",
-        "pricing": "Pricing",
-        "providedBy": "Provided by",
-        "provider": "Provider",
-        "providerApiKey": "{{provider}} API key",
-        "runsThrough": "Runs through",
-        "secretStored": "Stored in workspace secrets.",
-        "selectGateway": "Select a provider connection",
-        "selectModel": "Select a model",
-        "selectProvider": "Select a provider",
-        "workspaceDescription": "Available to everyone in this workspace."
       },
       "reset": {
         "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
@@ -5054,20 +4956,9 @@
         "remainingWithExpiry_other": "{{value}} resets left · expires {{expiry}}",
         "title": "Reset Codex usage?"
       },
-      "stale": {
-        "claudeExpired": "Your Claude Code session expired. Re-connect to continue.",
-        "claudeFailed": "Claude Code refresh failed. Re-connect to retry.",
-        "claudeTitle": "Claude Code session needs reconnection",
-        "codexExpired": "Your ChatGPT session expired. Re-connect to continue.",
-        "codexFailed": "ChatGPT refresh failed. Re-connect to retry.",
-        "codexInvalidated": "Your ChatGPT session was revoked. Re-connect.",
-        "codexReused": "Your ChatGPT session was used elsewhere. Re-connect.",
-        "codexTitle": "ChatGPT session needs reconnection"
-      },
       "toasts": {
         "accountDisconnected": "Account disconnected",
         "accountSwitched": "Active account switched",
-        "policiesUpdated": "Model provider settings updated",
         "reset": "Codex usage reset",
         "resetUnavailable": "No Codex usage resets available",
         "resetUnneeded": "Codex usage does not need a reset right now"
@@ -5341,10 +5232,8 @@
       "connecting": "Connecting...",
       "delete": "Delete",
       "discard": "Discard",
-      "edit": "Edit",
       "loading": "Loading",
       "moreOptions": "More options",
-      "reconnect": "Reconnect",
       "remove": "Remove",
       "save": "Save",
       "saveChanges": "Save changes",

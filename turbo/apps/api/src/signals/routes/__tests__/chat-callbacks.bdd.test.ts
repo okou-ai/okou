@@ -30,7 +30,6 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { setRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
 import { insertQueuedSlackMissingContextFixture } from "../../../test-fixtures/chat-events";
-import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
@@ -45,18 +44,12 @@ import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fix
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  registerBuiltInCandidateCooldownCleanup,
-  resolveBuiltInModelRouteFixture,
-  seedBuiltInModelCandidateKeys,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 
 /**
  * CHAT-02 / HOOK-01: signed chat run callbacks through real dispatch.
@@ -81,14 +74,6 @@ const integrations = createBddIntegrationApi(context);
 const misc = createMiscRoutesApi(context);
 
 const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
-// Built-in candidates of claude-fable-5-1 in the global model catalog.
-const CLAUDE_FABLE_5_1_CANDIDATES = [
-  { providerType: "anthropic-api-key", upstreamModel: "claude-fable-5-1" },
-  {
-    providerType: "openrouter-api-key",
-    upstreamModel: "anthropic/claude-fable-5.1",
-  },
-] as const;
 type UserMessage = Extract<
   ChatEvent,
   {
@@ -134,7 +119,7 @@ async function entitledChatActor(): Promise<EntitledChatActor> {
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor, {
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
   const agent = await bdd.createAgent(actor, {
@@ -172,21 +157,7 @@ async function configureClaudeCodeSubscriptionProvider(
     { type: "claude-code-oauth-token", secret: "sk-ant-oat-bdd" },
     [200, 201],
   );
-  await api.updateOrgModelPolicies(fixture.actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: fixture.providerId,
-    },
-    {
-      model: "claude-opus-5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
-      modelProviderId: null,
-    },
-  ]);
+  await api.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
 }
 
 async function startChatRun(
@@ -206,9 +177,7 @@ async function startChatRun(
   readonly messageId: string;
 }> {
   const messageId = body.clientEventId ?? randomUUID();
-  const selectedModel: string | undefined =
-    body.selectedModel ??
-    (body.threadId === undefined ? "claude-fable-5-1" : undefined);
+  const selectedModel = body.selectedModel;
   const requestBody = {
     agentId: body.agentId,
     prompt: body.prompt,
@@ -909,7 +878,7 @@ describe("CHAT-02: completed chat callback", () => {
       "okou generate presentation --design-system",
     );
     expect(Object.keys(autoContext.body.environment)).toContain(
-      "ANTHROPIC_API_KEY",
+      "CLAUDE_CODE_OAUTH_TOKEN",
     );
 
     await claimChatRunJob(runnerGroup, claimed.runId);
@@ -1605,7 +1574,7 @@ describe("CHAT-02: completed chat callback", () => {
         { [FeatureSwitchKey.ChatThreadArchiving]: true },
       );
       integrations.configureSlackAppMocks();
-      await integrations.configureSlackRunModelPolicies(actor);
+      await integrations.configureNativeSubscriptionModels(actor);
       const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
       const { teamId, botUserId } = await integrations.installSlackWorkspace(
         actor,
@@ -3535,156 +3504,6 @@ describe("CHAT-02: drain-time admission failure", () => {
       }),
     ).toHaveLength(0);
   }, 90_000);
-
-  it("terminalizes a queued Web message with neutral copy when every built-in route is unavailable", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    onTestFinished(async () => {
-      await createBddApi(context).deleteAgent(actor, agentId);
-      await flushWaitUntilForTest();
-    });
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
-    // isolated from concurrent tests that route the real model.
-    const { model, restore } =
-      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
-    onTestFinished(restore);
-    await seedBuiltInModelCandidateKeys(context, model);
-
-    const anchor = await startChatRun(actor, {
-      agentId,
-      prompt: "finish before queued built-in model admission",
-    });
-    const ownedAnchor: {
-      headers?: { readonly authorization: string };
-      finished: boolean;
-    } = { finished: false };
-    async function cleanupAnchor(): Promise<void> {
-      if (ownedAnchor.finished) {
-        return;
-      }
-      const cleanupRuns = createRunsApi(context);
-      cleanupRuns.acceptTelemetryIngest();
-      context.mocks.ably.publish.mockResolvedValue(undefined);
-      const current = await cleanupRuns.readRun(actor, anchor.runId);
-      if (current.status === "pending" || current.status === "running") {
-        await cleanupRuns.requestCancelRun(actor, anchor.runId, [200]);
-      }
-      if (
-        ownedAnchor.headers &&
-        (current.status === "pending" ||
-          current.status === "running" ||
-          current.status === "cancelled")
-      ) {
-        await createWebhookCallbackApi(context).requestAgentComplete(
-          {
-            runId: anchor.runId,
-            exitCode: 1,
-            error: "Cancelled queued admission anchor",
-          },
-          ownedAnchor.headers,
-          [200],
-        );
-      }
-      await flushWaitUntilForTest();
-      ownedAnchor.finished = true;
-    }
-    onTestFinished(cleanupAnchor);
-    const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
-    ownedAnchor.headers = anchorHeaders;
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    // The queued input keeps the model selected when it is enqueued.
-    await chat.updateThreadModelSelection(actor, anchor.threadId, model);
-    const queuedPrompt = "reject this queued message without a built-in key";
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: anchor.threadId,
-      prompt: queuedPrompt,
-    });
-    chatCallbacks.mockChatOutputEvents([]);
-    // Provider failures cool down every Built-in candidate of the model.
-    await coolDownBuiltInRoutesThroughReports(context, {
-      actor,
-      agentId,
-      runnerGroup,
-      model,
-      routes: CLAUDE_FABLE_5_1_CANDIDATES,
-      beforeCooldownCleanup: cleanupAnchor,
-    });
-
-    await completeChatRunOk(anchor.runId, anchorHeaders);
-    await flushWaitUntilForTest();
-
-    const terminal = await waitForThreadMessages(
-      actor,
-      anchor.threadId,
-      (events) => {
-        return (
-          userMessages(events).some((event) => {
-            return (
-              event.eventType === "input.rejected" &&
-              event.revokesEventId === queuedEventId &&
-              event.error === "model_provider_unavailable"
-            );
-          }) &&
-          assistantMessages(events).some((event) => {
-            return (
-              event.eventType === "output.error" &&
-              event.error === "model_provider_unavailable"
-            );
-          })
-        );
-      },
-    );
-    const rejected = userMessages(terminal.events).find((event) => {
-      return (
-        event.eventType === "input.rejected" &&
-        event.revokesEventId === queuedEventId
-      );
-    });
-    if (rejected?.eventType !== "input.rejected") {
-      throw new Error("Expected the queued Web message to be rejected");
-    }
-    expect(rejected.error).toBe("model_provider_unavailable");
-    const errors = assistantMessages(terminal.events).filter((event) => {
-      return (
-        event.eventType === "output.error" &&
-        event.error === "model_provider_unavailable"
-      );
-    });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]?.content).toBe(
-      "Oops, something went wrong. Please try again later.",
-    );
-    const reads = createRunReadsApi(context);
-    const pending = await reads.requestListLogs(
-      actor,
-      { status: "pending", limit: 20 },
-      [200],
-    );
-    const running = await reads.requestListLogs(
-      actor,
-      { status: "running", limit: 20 },
-      [200],
-    );
-    const active = [...pending.body.data, ...running.body.data]
-      .sort((left, right) => {
-        return right.createdAt.localeCompare(left.createdAt);
-      })
-      .slice(0, 20);
-    expect(
-      active.filter((run) => {
-        return run.prompt === queuedPrompt;
-      }),
-    ).toHaveLength(0);
-  }, 90_000);
 });
 
 describe("CHAT-02: failed chat callbacks", () => {
@@ -3727,28 +3546,13 @@ describe("CHAT-02: failed chat callbacks", () => {
   ] as const)(
     "presents $name using persisted ownership across chat and detail reads",
     async (scenario) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledChatActor();
-      await seedBuiltInModelKey(context, "gpt-6-astra");
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-        {
-          model: "gpt-6-astra",
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await seedBuiltInModelKey(context, "okou-1.0");
+      await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const run = await startChatRun(actor, {
         agentId,
         prompt: scenario.name,
-        selectedModel: scenario.builtIn ? "gpt-6-astra" : "claude-fable-5-1",
+        selectedModel: scenario.builtIn ? "okou-1.0" : "claude-fable-5-1",
       });
       const callbackUrl = "https://callback.example/balance-outcome";
       const deliveries: unknown[] = [];
@@ -3769,22 +3573,10 @@ describe("CHAT-02: failed chat callbacks", () => {
       );
       const headers = await claimChatRun(runnerGroup, run.runId);
       // Changing the current default cannot change the owner of this failed run.
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: scenario.builtIn,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-        {
-          model: "gpt-6-astra",
-          preferred: !scenario.builtIn,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
+      await api.updateUserModelPreference(
+        actor,
+        scenario.builtIn ? "claude-fable-5-1" : "okou-1.0",
+      );
       await failChatRun(run.runId, headers, scenario.error, scenario.reason);
       await flushWaitUntilForTest();
       const messages = await chat.listThreadEvents(actor, run.threadId);
@@ -3843,18 +3635,12 @@ describe("CHAT-02: failed chat callbacks", () => {
   ])(
     "protects built-in=%s multi-block=%s billing events and network exports while preserving ordinary output",
     async (builtIn, multipleBlocks) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledChatActor();
-      await seedBuiltInModelKey(context, "claude-fable-5-1");
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: builtIn ? "built-in" : "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: builtIn ? null : providerId,
-        },
-      ]);
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await seedBuiltInModelKey(context, "okou-1.0");
+      await api.updateUserModelPreference(
+        actor,
+        builtIn ? "okou-1.0" : "claude-fable-5-1",
+      );
       const run = await startChatRun(actor, {
         agentId,
         prompt: "export balance failure evidence",
@@ -4152,91 +3938,10 @@ describe("CHAT-02: failed chat callbacks", () => {
     },
   );
 
-  it("retains built-in billing reports and route cooldown after a public unavailable failure", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const selectedModel = "gpt-6-astra";
-    await seedBuiltInModelCandidateKeys(context, selectedModel);
-    const cleanupRoute = await resolveBuiltInModelRouteFixture(
-      context,
-      selectedModel,
-    );
-    if (!cleanupRoute) {
-      throw new Error("Expected a seeded built-in route for cleanup");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      selectedModel,
-      cleanupRoute,
-    );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    const first = await startChatRun(actor, {
-      agentId,
-      prompt: "first built-in run",
-      selectedModel,
-    });
-    const headers = await claimChatRun(runnerGroup, first.runId);
-    const reads = createRunReadsApi(context);
-    const before = await reads.requestReadLogById(actor, first.runId, [200]);
-    await failChatRun(
-      first.runId,
-      headers,
-      "Credit balance is too low",
-      "provider_insufficient_credits",
-    );
-    await flushWaitUntilForTest();
-    await expect(
-      api.reportRunnerModelProviderFailure(first.runId, {
-        failureKind: "billing",
-      }),
-    ).resolves.toStrictEqual({ outcome: "recorded" });
-    await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
-      status: "failed",
-      error: "The current model is unavailable.",
-    });
-
-    const second = await startChatRun(actor, {
-      agentId,
-      prompt: "another built-in run",
-      selectedModel,
-    });
-    await claimChatRun(runnerGroup, second.runId);
-    const after = await reads.requestReadLogById(actor, second.runId, [200]);
-    expect([
-      after.body.modelRuntimeProvider,
-      after.body.modelRuntimeModel,
-    ]).not.toStrictEqual([
-      before.body.modelRuntimeProvider,
-      before.body.modelRuntimeModel,
-    ]);
-  });
-
   it("formats failed-run errors and notifies, without auto-sending", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
-    await seedBuiltInModelKey(context, "gpt-6-astra");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await seedBuiltInModelKey(context, "okou-1.0");
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
@@ -4286,7 +3991,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         expectedError:
           "Selected model is at capacity. Please try a different model.",
         failureReason: "provider_overloaded",
-        selectedModel: "gpt-6-astra",
+        selectedModel: "okou-1.0",
       },
       {
         prompt: "round eight",
@@ -4328,7 +4033,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         error: codexAccessProgramError,
         expectedError: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
         failureReason: "codex_access_program_unavailable",
-        selectedModel: "gpt-6-astra",
+        selectedModel: "okou-1.0",
       },
     ];
 
@@ -4647,7 +4352,9 @@ describe("CHAT-02: failed chat callbacks", () => {
         params.orgRole === "member"
           ? await entitledChatMemberActor()
           : await entitledChatActor();
-      await params.configureProvider?.(fixture);
+      await (
+        params.configureProvider ?? configureClaudeCodeSubscriptionProvider
+      )(fixture);
       const run = await startChatRun(fixture.actor, {
         agentId: fixture.agentId,
         prompt: params.prompt,
@@ -4702,13 +4409,13 @@ describe("CHAT-02: failed chat callbacks", () => {
             type: "claude-code-oauth-token",
             secret: "sk-ant-oat-reconnected-bdd",
           },
-          [201],
+          [200],
         );
         const retry = await startChatRun(fixture.actor, {
           agentId: fixture.agentId,
           threadId: run.threadId,
           prompt: "retry after replacing the Claude OAuth token",
-          selectedModel: "claude-opus-5",
+          selectedModel: "claude-opus-5-5",
         });
         const retryHeaders = await claimChatRun(
           fixture.runnerGroup,
@@ -4725,7 +4432,7 @@ describe("CHAT-02: failed chat callbacks", () => {
     await expect(
       failAndReadError({
         prompt: "subscription credential failed",
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4736,7 +4443,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "structured subscription credential failed",
         errorMessage: "Provider authentication copy changed",
         failureReason: "invalid_credentials",
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4746,7 +4453,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       failAndReadError({
         prompt: "revoked subscription credential failed",
         errorMessage: revokedOAuthError,
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4754,16 +4461,18 @@ describe("CHAT-02: failed chat callbacks", () => {
     );
     await expect(
       failAndReadError({
-        prompt: "revoked OAuth text with an Anthropic API key",
+        prompt: "revoked OAuth text with the default personal subscription",
         errorMessage: revokedOAuthError,
         selectedModel: "claude-fable-5-1",
       }),
-    ).resolves.toBe("Oops, something went wrong. Please try again later.");
+    ).resolves.toBe(
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+    );
     await expect(
       failAndReadError({
         prompt: "invalid subscription credential failed",
         errorMessage: invalidOAuthError,
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4774,7 +4483,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "structured invalid subscription credential failed",
         errorMessage: invalidOAuthError,
         failureReason: "reconnect_required",
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
@@ -4782,11 +4491,13 @@ describe("CHAT-02: failed chat callbacks", () => {
     );
     await expect(
       failAndReadError({
-        prompt: "invalid OAuth text with an Anthropic API key",
+        prompt: "invalid OAuth text with the default personal subscription",
         errorMessage: invalidOAuthError,
         selectedModel: "claude-fable-5-1",
       }),
-    ).resolves.toBe("Oops, something went wrong. Please try again later.");
+    ).resolves.toBe(
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+    );
     for (const errorMessage of [
       "Failed to authenticate. API Error: 4010 OAuth access token is invalid.",
       "Failed to authenticate. API Error: 401 OAuth access token is invalidated.",
@@ -4796,26 +4507,26 @@ describe("CHAT-02: failed chat callbacks", () => {
         failAndReadError({
           prompt: "unclassified OAuth failure",
           errorMessage,
-          selectedModel: "claude-opus-5",
+          selectedModel: "claude-opus-5-5",
           configureProvider: configureClaudeCodeSubscriptionProvider,
         }),
       ).resolves.toBe("Oops, something went wrong. Please try again later.");
     }
     await expect(
       failAndReadError({
-        prompt: "org key failed for admin",
+        prompt: "personal subscription failed for an admin",
         orgRole: "admin",
       }),
     ).resolves.toBe(
-      "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
-        prompt: "org key failed for member",
+        prompt: "personal subscription failed for a member",
         orgRole: "member",
       }),
     ).resolves.toBe(
-      "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.\n\nShare with an admin: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
   }, 90_000);
 });
@@ -5691,7 +5402,7 @@ describe("CHAT-02: auto-send after failures", () => {
 describe("CHAT-02: auto-send across a model switch", () => {
   it("rejects a queued message whose model the workspace no longer offers", async () => {
     const fixture = await entitledChatActor();
-    const { actor, agentId, runnerGroup, providerId } = fixture;
+    const { actor, agentId, runnerGroup } = fixture;
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Opus stays on the native Claude Code Runner only through the
     // subscription credential; on an API key it would run through Pi.
@@ -5712,7 +5423,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      selectedModel: "claude-opus-5",
+      selectedModel: "claude-opus-5-5",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([
@@ -5733,15 +5444,11 @@ describe("CHAT-02: auto-send across a model switch", () => {
       threadId: first.threadId,
       prompt: "queued before policy removal",
     });
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await misc.deletePersonalModelProvider(
+      actor,
+      "claude-code-oauth-token",
+      [204],
+    );
     chatCallbacks.mockChatOutputEvents([
       assistantEvent(0, "Use JSON.stringify(value)."),
     ]);
@@ -5770,7 +5477,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
           message.eventType === "input.rejected"
         );
       }),
-    ).toMatchObject({ error: "bad_request" });
+    ).toMatchObject({ error: "conflict" });
     expect(
       userMessages(messages.events).some((message) => {
         return (
@@ -5800,7 +5507,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const first = await startChatRun(actor, {
       agentId,
       prompt: "start on opus before queueing a Claude family switch",
-      selectedModel: "claude-opus-5",
+      selectedModel: "claude-opus-5-5",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);

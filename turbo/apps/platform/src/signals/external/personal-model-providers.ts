@@ -1,14 +1,14 @@
-import { command, computed, state } from "ccstate";
 import {
-  personalModelProvidersMainContract,
-  personalModelProvidersByTypeContract,
   personalModelProviderAccountsByIdContract,
+  personalModelProvidersByTypeContract,
+  personalModelProvidersMainContract,
   type ResetPersonalModelProviderSubscriptionUsageResponse,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { apiClient$ } from "../api-client.ts";
+import { command, computed, state } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { invalidateOrgModelPolicies$ } from "./org-model-policies.ts";
+import { apiClient$ } from "../api-client.ts";
+import { invalidateAvailableRunModels$ } from "./run-models.ts";
 
 /**
  * Reload trigger for personal model provider signals.
@@ -31,7 +31,7 @@ const PERSONAL_MODEL_PROVIDERS_STALE_MS = 60_000;
 const internalPersonalModelProvidersRefreshedAt$ = state<number | null>(null);
 
 const forcePersonalModelProvidersReload$ = command(({ set }) => {
-  set(invalidateOrgModelPolicies$);
+  set(invalidateAvailableRunModels$);
   set(internalPersonalModelProvidersRefreshedAt$, now());
   set(internalReloadPersonalModelProviders$, (x) => {
     return x + 1;
@@ -147,7 +147,7 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
 /**
  * Force-refresh `personalModelProviders$` after a successful higher-level
  * provider mutation, such as Codex device login. Mirrors
- * `reloadOrgModelProviders$` in `external/org-model-providers.ts`.
+ * Only personal subscription accounts are managed here.
  */
 export const reloadPersonalModelProviders$ = command(({ set }) => {
   set(forcePersonalModelProvidersReload$);

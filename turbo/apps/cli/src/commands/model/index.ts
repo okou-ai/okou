@@ -1,73 +1,61 @@
-import { Command } from "commander";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import chalk from "chalk";
-import { getModelCatalog } from "../../lib/api/domains/model-catalog";
-import { listModelPolicies } from "../../lib/api/domains/model-policies";
+import { Command } from "commander";
+import {
+  listRunModels,
+  selectRunModel,
+} from "../../lib/api/domains/run-models";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
-  formatModelPolicyStatus,
   formatModelProviderRoute,
-  getModelProviderRouteKind,
-} from "../../lib/domain/model-policy-display";
-import {
-  getCatalogModelDisplayName,
-  getCatalogModelPriceTier,
-  isCatalogModelActive,
-  isCatalogSystemDefaultModel,
-  sortByCatalogOrder,
-} from "../../lib/domain/model-catalog-display";
+  formatRunModelStatus,
+} from "../../lib/domain/run-model-display";
 
 const listCommand = new Command()
   .name("list")
   .alias("ls")
-  .description("List models allowed by the current organization")
+  .description("List Auto and your connected personal subscription models")
   .action(
     withErrorHandler(async () => {
-      const [result, catalog] = await Promise.all([
-        listModelPolicies(),
-        getModelCatalog(),
-      ]);
-      const policies = sortByCatalogOrder(
-        catalog,
-        result.policies.filter((policy) => {
-          return isCatalogModelActive(catalog, policy.model);
-        }),
-      );
-
-      if (policies.length === 0) {
-        console.log(chalk.dim("No models are allowed for this organization"));
-        return;
-      }
-
-      console.log(chalk.bold("Allowed Models:"));
-      console.log();
-
-      for (const policy of policies) {
-        const defaultMarker = isCatalogSystemDefaultModel(catalog, policy.model)
-          ? chalk.dim(" (default)")
-          : "";
-        const name = getCatalogModelDisplayName(catalog, policy.model);
+      const { models, defaultModel } = await listRunModels();
+      console.log(chalk.bold("Available Models:"));
+      for (const model of models) {
         console.log(
-          `  - ${name} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
+          `  - ${model.modelLabel} (${model.model})${model.model === defaultModel ? " (default)" : ""}`,
         );
-        console.log(`    provider: ${formatModelProviderRoute(policy)}`);
-
-        if (getModelProviderRouteKind(policy) === "built-in") {
-          console.log(
-            `    price tier: ${getCatalogModelPriceTier(catalog, policy.model) ?? "unknown"}`,
-          );
-        }
-
-        const status = formatModelPolicyStatus(policy);
-        if (status) {
-          console.log(chalk.yellow(`    status: ${status}`));
-        }
+        console.log(`    provider: ${formatModelProviderRoute(model)}`);
+        const status = formatRunModelStatus(model);
+        if (status) console.log(chalk.yellow(`    status: ${status}`));
       }
-
-      console.log();
       console.log(
         chalk.dim(
-          "Use `okou model-provider set --help` to see how to switch each model between built-in and BYOK.",
+          "Select your default: okou model select <model>. For one chat: okou chat model <model>.",
         ),
+      );
+    }),
+  );
+
+const selectCommand = new Command()
+  .name("select")
+  .argument(
+    "<model>",
+    "Auto model id or a connected personal subscription model",
+  )
+  .description("Select your default model for new chats")
+  .action(
+    withErrorHandler(async (model: string) => {
+      const available = await listRunModels();
+      const selected = available.models.find((candidate) => {
+        return candidate.model === model;
+      });
+      if (!selected || !isMemberRunModelConfigurable(selected, null)) {
+        throw new Error(
+          `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Settings / Models.`,
+        );
+      }
+      const result = await selectRunModel(model);
+      console.log(
+        chalk.green(`✓ Default model selected: ${result.selectedModel}`),
       );
     }),
   );
@@ -77,12 +65,13 @@ export const switchCommand = new Command()
   .description("Show how to switch models in the current environment")
   .action(() => {
     console.log(
-      "Open https://app.okou.ai and switch models from the model selector next to the input box.",
+      "Use okou model select <model> for new chats, or okou chat model <model> for the current chat. You can also use the model selector next to the input box at https://app.okou.ai.",
     );
   });
 
 export const modelCommand = new Command()
   .name("model")
-  .description("List available models and model-switching guidance")
+  .description("List and select Auto or personal subscription models")
   .addCommand(listCommand)
+  .addCommand(selectCommand)
   .addCommand(switchCommand);

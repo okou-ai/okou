@@ -19,7 +19,19 @@ teardown() {
     runner_e2e_teardown_test
 }
 
-@test "public chat filters mock Claude JSONL stream noise" {
+@test "personal Claude chat filters mock JSONL stream noise" {
+    run runner_api_curl "/api/run-models"
+    assert_success
+    run jq -e '
+        .defaultModel == "okou-1.0" and
+        any(.models[]?;
+            .model == "claude-sonnet-5-5" and
+            .defaultProviderType == "claude-code-oauth-token" and
+            .credentialScope == "member"
+        )
+    ' <<<"$output"
+    assert_success
+
     run create_runner_agent "e2e-mock-claude-echo-${TEST_ID}"
     echo "$output"
     assert_success
@@ -41,7 +53,7 @@ teardown() {
 EOF
 )
 
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "claude-sonnet-5"
+    run runner_chat_send "$AGENT_ID" "$prompt" "" "claude-sonnet-5-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -61,6 +73,14 @@ EOF
     echo "$output"
     assert_success
     assert_output "$assistant_text"
+
+    run runner_api_curl "/api/runs/${RUN_ID}/context"
+    assert_success
+    run jq -e '
+        .cliAgentType == "claude-code" and
+        any(.firewalls[]?; .name == "model-provider:claude-code-oauth-token")
+    ' <<<"$output"
+    assert_success
 
     run runner_chat_event_rows "$THREAD_ID"
     echo "$output"
@@ -90,7 +110,7 @@ EOF
     assert_success
     AGENT_ID="$output"
 
-    run runner_chat_send "$AGENT_ID" "@orphan-pipe" "" "claude-sonnet-5"
+    run runner_chat_send "$AGENT_ID" "@orphan-pipe" "" "claude-sonnet-5-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

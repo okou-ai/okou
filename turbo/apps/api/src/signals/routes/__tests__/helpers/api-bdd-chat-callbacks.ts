@@ -2,21 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 
 import { mockOptionalEnv } from "../../../../lib/env";
 import { nowDate } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
-import { modelPoliciesRoutes } from "../../model-policies";
-import { userModelPreferenceRoutes } from "../../user-model-preference";
-import {
-  ensureCustomModelModeForTest,
-  orgModelPolicyWrite,
-  type TestOrgModelPolicy,
-} from "./org-model-policy-write";
 import { pushSubscriptionsRoutes } from "../../push-subscriptions";
 import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import type { ApiTestUser } from "./api-bdd";
@@ -315,13 +306,6 @@ export function createChatCallbacksApi(context: TestContext) {
     })(pushSubscriptionsContract);
   }
 
-  function modelPoliciesClient() {
-    return setupAppWithRoutes({
-      context,
-      routes: modelPoliciesRoutes,
-    })(modelPoliciesMainContract);
-  }
-
   return {
     failIfChatCallbackRouteIsFetched(): () => number {
       let requests = 0;
@@ -364,45 +348,6 @@ export function createChatCallbacksApi(context: TestContext) {
     disableVapid(): void {
       mockOptionalEnv("VAPID_PUBLIC_KEY", undefined);
       mockOptionalEnv("VAPID_PRIVATE_KEY", undefined);
-    },
-
-    /**
-     * Replaces the org model-first policy set through the public route and
-     * stores a `preferred` policy as the actor's model preference.
-     */
-    async updateOrgModelPolicies(
-      actor: ApiTestUser,
-      policies: readonly TestOrgModelPolicy[],
-    ): Promise<void> {
-      const write = orgModelPolicyWrite(policies);
-      await ensureCustomModelModeForTest(context, actor, () => {
-        return authenticate(context, actor);
-      });
-      const snapshot = await accept(
-        modelPoliciesClient().list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
-      await accept(
-        modelPoliciesClient().update({
-          headers: authenticate(context, actor),
-          body: { policies: write.policies, revision: snapshot.body.revision },
-        }),
-        [200],
-      );
-      if (write.preferredModel) {
-        await accept(
-          setupAppWithRoutes({
-            context,
-            routes: userModelPreferenceRoutes,
-          })(userModelPreferenceContract).update({
-            headers: authenticate(context, actor),
-            body: { selectedModel: write.preferredModel, serviceTier: null },
-          }),
-          [200],
-        );
-      }
     },
 
     /** Native Vertex completions serving title, follow-up and summary fixtures. */

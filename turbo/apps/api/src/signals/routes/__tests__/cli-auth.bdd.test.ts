@@ -13,7 +13,6 @@ import {
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -774,7 +773,10 @@ describe("CLI-TEST: test-enable-connector", () => {
 
 describe("CLI-TEST: test-codex-oauth", () => {
   async function readCodexProvider(actor: ReturnType<typeof bdd.user>) {
-    const providers = await support.listModelProviders(actor);
+    const providers = await support.listPersonalModelProviders(actor, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
     const provider = providers.body.modelProviders.find((candidate) => {
       return candidate.type === "codex-oauth-token";
     });
@@ -817,7 +819,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
     }
     expect(rewritten.body.orgId).toBe(actor.orgId);
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("rejects malformed codex bodies and unprovisioned users", async () => {
@@ -846,15 +852,16 @@ describe("CLI-TEST: test-codex-oauth", () => {
   it("seeds codex provider state visible through the model-providers API", async () => {
     const actor = bdd.user();
     await authDevice.provisionTestOrg(actor);
-    await createMiscRoutesApi(context).configureCustomModelMode(actor);
 
     const legacySeed = await authDevice.requestTestCodexOauth(
       {},
       {
         ...LEGACY_CODEX_OAUTH_BODY,
-        expiresIn: 600,
+        // Keep seeding-state inspection outside the automatic refresh window.
+        // Refresh/expiry behavior has separate credential-lifecycle coverage.
+        expiresIn: 3600,
         needsReconnect: true,
-        lastRefreshErrorCode: "refresh_failed",
+        lastRefreshErrorCode: "refresh_token_invalidated",
       },
       [200],
     );
@@ -872,7 +879,7 @@ describe("CLI-TEST: test-codex-oauth", () => {
     expect(legacyProvider).toMatchObject({
       authMethod: "auth_json",
       needsReconnect: true,
-      lastRefreshErrorCode: "refresh_failed",
+      lastRefreshErrorCode: "refresh_token_invalidated",
     });
 
     const preExpired = await authDevice.requestTestCodexOauth(
@@ -918,7 +925,13 @@ describe("CLI-TEST: test-codex-oauth", () => {
     );
     await authDevice.requestTestCodexOauth(
       {},
-      { ...LEGACY_CODEX_OAUTH_BODY, expiresIn: 600 },
+      {
+        ...LEGACY_CODEX_OAUTH_BODY,
+        // Preservation is scoped to the same subscription account, not an
+        // organization-wide provider that can mix identities.
+        accountId: "ws_acct_id_token",
+        expiresIn: 3600,
+      },
       [200],
     );
     const preservedProvider = await readCodexProvider(actor);
@@ -956,13 +969,16 @@ describe("CLI-TEST: test-codex-oauth", () => {
       emailAddress: ["custom@test.com"],
     });
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("accepts pasted auth.json claim variants through public API state", async () => {
     const actor = bdd.user();
     await authDevice.provisionTestOrg(actor);
-    await createMiscRoutesApi(context).configureCustomModelMode(actor);
 
     await authDevice.requestTestCodexOauth(
       {},
@@ -1008,7 +1024,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
       planType: "plus",
     });
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("derives pasted auth.json expiry from API inputs", async () => {
@@ -1059,7 +1079,11 @@ describe("CLI-TEST: test-codex-oauth", () => {
       idTokenExp * 1000,
     );
 
-    await authDevice.deleteOrgModelProvider(actor, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("maps invalid pasted auth.json inputs to endpoint errors", async () => {

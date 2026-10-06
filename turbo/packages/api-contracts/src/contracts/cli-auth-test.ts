@@ -107,6 +107,7 @@ export const cliAuthTestCodexOauthContract = c.router({
       200: z.object({
         ok: z.literal(true).optional(),
         orgId: z.string(),
+        modelProviderAccountId: z.uuid(),
         tokenExpiresAt: z.string().optional(),
       }),
       400: stringErrorResponseSchema,

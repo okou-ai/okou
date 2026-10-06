@@ -272,7 +272,7 @@ async function publishVersion(args: {
     await createBddApi(context).deleteAgent(carrier.actor, carrier.agentId);
     await flushWaitUntilForTest();
   });
-  await fixture.api.ensureOrgModelProvider(actor, {
+  await fixture.api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
   const run = await fixture.sendChatRun(actor, {

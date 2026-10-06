@@ -50,17 +50,34 @@ import {
 } from "./test-endpoint-helpers";
 import {
   modelCatalog$,
+  catalogBuiltInRoute,
   type ModelCatalog,
 } from "../services/model-catalog.service";
 
-/** Vendors of the model's enabled Built-in catalog candidates, in order. */
-async function builtInCandidateVendors(
+import { PI_MEMORY_BUILTIN_BINDING } from "../services/pi-memory-builtin-config";
+
+/** Infrastructure fixtures seed only fixed Auto or the independent memory binding. */
+function builtInCandidateVendors(
   catalogSnapshot: ModelCatalog,
   db: Db,
   selectedModel: string,
-): Promise<readonly string[]> {
+): readonly string[] {
+  if (selectedModel === PI_MEMORY_BUILTIN_BINDING.selectedModel) {
+    const route = catalogBuiltInRoute(
+      catalogSnapshot,
+      selectedModel,
+      PI_MEMORY_BUILTIN_BINDING.providerType,
+    );
+    if (
+      !route?.enabled ||
+      route.upstreamModel !== PI_MEMORY_BUILTIN_BINDING.upstreamModel
+    ) {
+      throw new Error("Expected the independent fixed memory binding");
+    }
+    return ["openrouter"];
+  }
   return getCatalogBuiltInModelRouteCandidates(
-    await catalogSnapshot,
+    catalogSnapshot,
     selectedModel,
   ).map((candidate) => {
     return candidate.vendor;
@@ -121,12 +138,7 @@ async function seedBuiltInModelKey(
   selectedModel: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const vendor = getCatalogBuiltInModelRouteCandidates(
-    catalogSnapshot,
-    selectedModel,
-  ).find((candidate) => {
-    return candidate.providerType !== "deepseek";
-  })?.vendor;
+  const vendor = builtInCandidateVendors(catalogSnapshot, db, selectedModel)[0];
   if (vendor === undefined) {
     throw new Error(`Expected a Built-in catalog route for ${selectedModel}`);
   }
@@ -148,7 +160,7 @@ async function seedBuiltInModelCandidateKeys(
   signal: AbortSignal,
 ): Promise<string> {
   const vendors = new Set(
-    await builtInCandidateVendors(catalogSnapshot, db, selectedModel),
+    builtInCandidateVendors(catalogSnapshot, db, selectedModel),
   );
   await acquireBuiltInModelKeyFixture(
     db,

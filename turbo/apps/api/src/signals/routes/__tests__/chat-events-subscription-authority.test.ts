@@ -26,7 +26,6 @@ const {
   entitledChatActor,
   entitledNativeChatActor,
   configureUserOwnedGptPiModel,
-  configureOrganizationGptModel,
   configureSubscriptionPiModel,
   sendChatRun,
   sendWaitingChatInput,
@@ -111,7 +110,7 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: identity,
         accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
       });
-      await configureOrganizationGptModel(actor);
+      await api.updateUserModelPreference(actor, "okou-1.0");
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const run = await sendChatRun(actor, {
@@ -229,9 +228,9 @@ describe("CHAT-02: run-level model overrides", () => {
 
   const representativeModels = {
     "codex-oauth-token": "gpt-6-luna",
-    "openai-api-key": "gpt-5.6-sol",
-    "openrouter-codex": "gpt-5.6-luna",
-    "vercel-ai-gateway-codex": "gpt-5.6-luna",
+    "openai-api-key": "gpt-6-sol",
+    "openrouter-codex": "gpt-6.1-sol",
+    "vercel-ai-gateway-codex": "gpt-6.1-sol",
   } as const;
 
   it.each(
@@ -379,17 +378,10 @@ describe("CHAT-02: run-level model overrides", () => {
   )(
     "promotes queued and immediate $name Fast from $origin into the runner claim",
     async ({ route, origin }) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledChatActor();
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await api.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
       const source = await sendChatRun(actor, {
         agentId,
         prompt: "source run for Luna handoff",

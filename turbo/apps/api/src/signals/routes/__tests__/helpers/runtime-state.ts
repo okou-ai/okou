@@ -11,7 +11,7 @@ import { onTestFinished } from "vitest";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import type { TestContext } from "../../../../__tests__/test-context";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
-import { now } from "../../../../lib/time";
+
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
 
 const RUNTIME_STATE_ROUTE = "/api/test/runtime-state";
@@ -221,21 +221,6 @@ export async function setBuiltInCandidateCooldownFixture(
  * Puts the given Built-in candidates of a test-owned model into cooldown for
  * the rest of the test, as the provider-failure path does in production.
  */
-export async function coolDownBuiltInCandidatesFixture(
-  context: TestContext,
-  selectedModel: string,
-  candidates: readonly BuiltInModelCandidateFixture[],
-): Promise<void> {
-  const unavailableUntil = new Date(now() + 60 * 60 * 1000);
-  for (const candidate of candidates) {
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      selectedModel,
-      candidate,
-      unavailableUntil,
-    );
-  }
-}
 
 export async function deleteBuiltInCandidateCooldownFixture(
   context: TestContext,

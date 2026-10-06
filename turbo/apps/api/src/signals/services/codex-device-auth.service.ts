@@ -1,13 +1,13 @@
-import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
-import { command } from "ccstate";
 import type {
   CodexDeviceAuthMode,
   CodexDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
+import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -19,20 +19,19 @@ import {
   settle,
   tapError,
 } from "../utils";
+import { handleCodexAuthJsonPaste } from "./codex-auth-json-paste-handler";
 import {
   decryptPersistentSecretValue,
   decryptSecretValue,
   encryptPersistentSecretValue,
   encryptSecretValue,
 } from "./crypto.utils";
-import { handleCodexAuthJsonPaste } from "./codex-auth-json-paste-handler";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   upsertPersonalModelProviderAccount$,
   type PersonalProviderAccountErrorResponse,
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
-import { userFeatureSwitchContext } from "./feature-switches.service";
-import { upsertOrgMultiAuthModelProvider$ } from "./model-provider.service";
 
 const CODEX_DEVICE_AUTH_ISSUER = "https://auth.openai.com";
 const CODEX_DEVICE_AUTH_API_BASE_URL = `${CODEX_DEVICE_AUTH_ISSUER}/api/accounts`;
@@ -52,7 +51,7 @@ const codexDeviceAuthSessionTokenSchema = z.object({
 const codexDeviceAuthProviderStateSchema = z.object({
   version: z.literal(1),
   type: z.literal("codex"),
-  scope: z.enum(["org", "personal"]),
+  scope: z.literal("personal"),
   mode: z.enum(["add", "reconnect"]).optional(),
   modelProviderId: z.string().uuid().optional(),
   deviceAuthId: z.string().min(1),
@@ -869,26 +868,6 @@ const importCodexAuthJson$ = command(
       rawAuthJson: args.rawAuthJson,
       selectedModel: undefined,
       upsert: async (pasteArgs: ImportedCodexPasteArgs) => {
-        if (args.scope === "org") {
-          const result = await set(
-            upsertOrgMultiAuthModelProvider$,
-            {
-              orgId: args.orgId,
-              authSession: args.authSession,
-              type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
-              authMethod: pasteArgs.authMethod,
-              secretValues: pasteArgs.secretValues,
-              metadata: pasteArgs.metadata,
-            },
-            signal,
-          );
-          if ("status" in result) {
-            throw new Error(
-              "upsertOrgMultiAuthModelProvider$ unexpectedly returned BAD_REQUEST during codex device auth",
-            );
-          }
-          return result;
-        }
         const featureSwitchContext = await get(
           userFeatureSwitchContext(args.orgId, args.userId),
         );
@@ -910,25 +889,15 @@ const importCodexAuthJson$ = command(
       },
     };
 
-    const response =
-      args.scope === "org"
-        ? await handleCodexAuthJsonPaste(
-            {
-              scope: "org",
-              orgId: args.orgId,
-              ...common,
-            },
-            signal,
-          )
-        : await handleCodexAuthJsonPaste(
-            {
-              scope: "personal",
-              orgId: args.orgId,
-              userId: args.userId,
-              ...common,
-            },
-            signal,
-          );
+    const response = await handleCodexAuthJsonPaste(
+      {
+        scope: "personal",
+        orgId: args.orgId,
+        userId: args.userId,
+        ...common,
+      },
+      signal,
+    );
 
     if (response.status === 400 || response.status === 404) {
       return {
@@ -1042,12 +1011,6 @@ const completeLoadedCodexDeviceAuth$ = command(
         status: "error",
         code: "CODEX_DEVICE_AUTH_FAILED",
         message: "Codex device auth session state is invalid",
-      };
-    }
-    if (providerState.scope === "org" && args.orgRole !== "admin") {
-      return {
-        status: "forbidden",
-        message: "Only admins can manage org model providers",
       };
     }
 

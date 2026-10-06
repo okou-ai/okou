@@ -18,7 +18,6 @@ import {
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -716,7 +715,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
   });
 
-  it.each(["org", "personal"] as const)(
+  it.each(["personal"] as const)(
     "does not publish %s Codex credentials after cancellation during token exchange",
     async (scope) => {
       const actor = bdd.user();
@@ -746,10 +745,10 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       expect(completed.body.error.message).toBe(
         "Device authorization was cancelled or expired",
       );
-      const providers =
-        scope === "org"
-          ? await support.listModelProviders(actor)
-          : await support.listPersonalModelProviders(actor, [200]);
+      const providers = await support.listPersonalModelProviders(actor, [200]);
+      if (!("modelProviders" in providers.body)) {
+        throw new Error("Expected personal provider list");
+      }
       expect(providers.body).toMatchObject({
         modelProviders: expect.not.arrayContaining([
           expect.objectContaining({ type: "codex-oauth-token" }),
@@ -767,7 +766,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     },
   );
 
-  it("does not publish org Claude credentials after cancellation during token exchange", async () => {
+  it("does not publish personal Claude credentials after cancellation during token exchange", async () => {
     const actor = bdd.user();
     let sessionToken = "";
     mockClaudeCodeTokenEndpoint({
@@ -782,7 +781,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
     const started = await authDevice.requestClaudeCodeStart(
       actor,
-      "org",
+      "personal",
       [200],
     );
     if (started.status !== 200) {
@@ -800,7 +799,10 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     expect(completed.body.error.message).toBe(
       "Device authorization was cancelled or expired",
     );
-    const providers = await support.listModelProviders(actor);
+    const providers = await support.listPersonalModelProviders(actor, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
     expect(providers.body.modelProviders).not.toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "claude-code-oauth-token" }),
@@ -818,12 +820,15 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("completes org-scope Codex device auth and exposes the imported provider", async () => {
-    const calls = mockCodexDeviceAuthProvider({ tokenScope: "org" });
+  it("completes personal Codex device auth for an administrator", async () => {
+    const calls = mockCodexDeviceAuthProvider({ tokenScope: "personal" });
     const admin = bdd.user();
-    await createMiscRoutesApi(context).configureCustomModelMode(admin);
 
-    const started = await authDevice.requestCodexStart(admin, "org", [200]);
+    const started = await authDevice.requestCodexStart(
+      admin,
+      "personal",
+      [200],
+    );
     if (started.status !== 200) {
       throw new Error(
         `Expected Codex device auth start, got ${started.status}`,
@@ -832,7 +837,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     expect(started.body).toMatchObject({
       type: "codex",
       status: "pending",
-      scope: "org",
+      scope: "personal",
       browserUrl: "https://auth.openai.com/codex/device",
       verificationCode: "ABCD-EFGH",
       interval: 5,
@@ -852,7 +857,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       provider: {
         type: "codex-oauth-token",
         authMethod: "auth_json",
-        workspaceName: "Org Acme",
+        workspaceName: "Personal Acme",
         planType: "plus",
       },
     });
@@ -871,12 +876,15 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
     expect(oauthTokenBody?.get("code_verifier")).toBe("code_verifier_test");
 
-    const providers = await support.listModelProviders(admin);
+    const providers = await support.listPersonalModelProviders(admin, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
     expect(
       providers.body.modelProviders.find((provider) => {
         return provider.type === "codex-oauth-token";
       }),
-    ).toMatchObject({ workspaceName: "Org Acme", planType: "plus" });
+    ).toMatchObject({ workspaceName: "Personal Acme", planType: "plus" });
 
     const reComplete = await authDevice.requestCodexComplete(
       admin,
@@ -889,7 +897,11 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
     expect(calls.deviceToken).toHaveLength(1);
 
-    await authDevice.deleteOrgModelProvider(admin, "codex-oauth-token");
+    await support.deletePersonalModelProvider(
+      admin,
+      "codex-oauth-token",
+      [204],
+    );
   });
 
   it("completes personal-scope Codex device auth for an org member", async () => {
@@ -1488,14 +1500,13 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("completes org-scope Claude Code device auth with a pasted code fragment", async () => {
+  it("completes personal Claude Code device auth with a pasted code fragment", async () => {
     const calls = mockClaudeCodeTokenEndpoint();
     const admin = bdd.user();
-    await createMiscRoutesApi(context).configureCustomModelMode(admin);
 
     const started = await authDevice.requestClaudeCodeStart(
       admin,
-      "org",
+      "personal",
       [200],
     );
     if (started.status !== 200) {
@@ -1523,7 +1534,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       created: true,
       provider: {
         type: "claude-code-oauth-token",
-        secretName: "CLAUDE_CODE_OAUTH_TOKEN",
+
         workspaceName: "Claude User's Organization",
         planType: "pro",
         subscriptionResetPeriod: "weekly",
@@ -1545,7 +1556,10 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       code_verifier: expect.any(String),
     });
 
-    const providers = await support.listModelProviders(admin);
+    const providers = await support.listPersonalModelProviders(admin, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
     expect(
       providers.body.modelProviders.find((provider) => {
         return provider.type === "claude-code-oauth-token";
@@ -1566,7 +1580,11 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       "Claude Code device auth session is not ready",
     );
 
-    await authDevice.deleteOrgModelProvider(admin, "claude-code-oauth-token");
+    await support.deletePersonalModelProvider(
+      admin,
+      "claude-code-oauth-token",
+      [204],
+    );
   });
 
   it("completes personal-scope Claude Code device auth from a full callback URL", async () => {
@@ -1640,45 +1658,24 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("enforces authentication, active organization, and admin scope boundaries", async () => {
+  it("enforces authentication and active organization for personal authorization", async () => {
     const noOrg = bdd.user({ orgId: null });
-    const member = bdd.user({ orgRole: "org:member" });
-
-    const codexUnauthenticated = await authDevice.requestCodexStart(
-      null,
-      "org",
-      [401],
-    );
-    expectApiError(codexUnauthenticated.body);
-    expect(codexUnauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const codexNoOrg = await authDevice.requestCodexStart(noOrg, "org", [401]);
-    expectApiError(codexNoOrg.body);
-    expect(codexNoOrg.body.error.code).toBe("UNAUTHORIZED");
-
-    const codexMemberOrg = await authDevice.requestCodexStart(
-      member,
-      "org",
-      [403],
-    );
-    expectApiError(codexMemberOrg.body);
-    expect(codexMemberOrg.body.error.code).toBe("FORBIDDEN");
-
-    const claudeNoOrg = await authDevice.requestClaudeCodeStart(
-      noOrg,
-      "org",
-      [401],
-    );
-    expectApiError(claudeNoOrg.body);
-    expect(claudeNoOrg.body.error.code).toBe("UNAUTHORIZED");
-
-    const claudeMemberOrg = await authDevice.requestClaudeCodeStart(
-      member,
-      "org",
-      [403],
-    );
-    expectApiError(claudeMemberOrg.body);
-    expect(claudeMemberOrg.body.error.code).toBe("FORBIDDEN");
+    for (const actor of [null, noOrg]) {
+      const codex = await authDevice.requestCodexStart(
+        actor,
+        "personal",
+        [401],
+      );
+      expectApiError(codex.body);
+      expect(codex.body.error.code).toBe("UNAUTHORIZED");
+      const claude = await authDevice.requestClaudeCodeStart(
+        actor,
+        "personal",
+        [401],
+      );
+      expectApiError(claude.body);
+      expect(claude.body.error.code).toBe("UNAUTHORIZED");
+    }
   });
 
   it("rejects invalid model-provider device session tokens without importing provider state", async () => {

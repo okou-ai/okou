@@ -112,7 +112,7 @@ describe("GitHub file integration routes", () => {
   ): Promise<{ readonly runId: string }> {
     bdd.acceptAgentStorageWrites();
     await api.grantProEntitlement(fixture.actor);
-    await api.ensureOrgModelProvider(fixture.actor);
+    await api.ensurePersonalSubscriptionModel(fixture.actor);
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();

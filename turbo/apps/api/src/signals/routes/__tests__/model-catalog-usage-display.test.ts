@@ -2,17 +2,16 @@ import { randomUUID } from "node:crypto";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createUsagePricingFixture } from "../../../test-fixtures/usage-pricing";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  deleteUsagePricingRows,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { usageRecordRoutes } from "../usage-record";
-import { insertCatalogModelFixture } from "../../../test-fixtures/model-catalog";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  userMessages,
+} from "./helpers/chat-events-fixture";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -20,19 +19,12 @@ const chatEvents = createChatEventsFixture(context);
 const webhooks = createWebhookCallbackApi(context);
 const billing = createBillingMediaApi(context);
 
-describe("model usage under a pricing alias", () => {
+describe("fixed Auto usage display", () => {
   it("classifies long context from run data and names the actual model", async () => {
     const { actor, agentId, runnerGroup } =
       await chatEvents.entitledChatActor();
-    // The Built-in route bills under a pricing alias that is not a key of the
-    // long-context map; its upstream model is. The upstream ID only selects
-    // billing data here: this verifies the claim and billing contracts, not
-    // live provider acceptance.
-    const model = `catalog-alias-${randomUUID()}`;
-    const pricingProvider = `catalog-alias-pricing-${randomUUID()}`;
-    // Base rows keep the route fully priced for admission; only the
-    // long-context rows are charged below.
-    const pricedCategories = {
+    const model = "okou-1.0";
+    const categories = {
       "tokens.input": 1,
       "tokens.output": 1,
       "tokens.cache_read": 1,
@@ -42,68 +34,35 @@ describe("model usage under a pricing alias", () => {
       "tokens.cache_read.long_context": 3,
       "tokens.cache_creation.long_context": 5,
     } as const;
-    await seedUsagePricingRows(
-      Object.entries(pricedCategories).map(([category, unitPrice]) => {
+    const pricing = await createUsagePricingFixture({
+      configured: Object.entries(categories).map(([category, unitPrice]) => {
         return {
           kind: "model",
-          provider: pricingProvider,
+          provider: model,
           category,
           unitPrice,
           unitSize: 1,
         };
       }),
+    });
+    onTestFinished(pricing.cleanup);
+    await chatEvents.configureBuiltInPiModel(actor);
+    chatEvents.mockPiResourceArchiveDownloads();
+    chatEvents.mockPiCheckpointObjectStore();
+    const run = await chatEvents.sendChatRun(
+      actor,
+      { agentId, prompt: "bill fixed Auto long context", model },
+      pricing.resolution,
     );
-    onTestFinished(async () => {
-      await deleteUsagePricingRows({
-        kind: "model",
-        provider: pricingProvider,
-        categories: Object.keys(pricedCategories),
-      });
-    });
-    const restore = await insertCatalogModelFixture({
-      model,
-      displayName: "Catalog Alias",
-      sortOrder: 100_000,
-      builtInRoutes: [
-        {
-          concreteProviderType: "openai-api-key",
-          upstreamModel: "gpt-6-luna",
-          priority: 0,
-          efforts: ["low", "medium", "high"],
-          defaultEffort: "medium",
-          pricingProvider,
-          longContextMinTotalInputTokens: 272_001,
-        },
-      ],
-    });
-    onTestFinished(restore);
-    await seedBuiltInModelCandidateKeys(context, model);
-    await chatEvents.api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-
-    const run = await chatEvents.sendChatRun(actor, {
-      agentId,
-      prompt: "bill the aliased catalog model",
-      model,
-    });
     const { claim, sandboxHeaders } = await chatEvents.claimChatRun(
       runnerGroup,
       run.runId,
     );
     expect(claim).toMatchObject({
-      billableFirewalls: ["model-provider:openai-api-key"],
-      modelUsageProvider: pricingProvider,
+      billableFirewalls: ["model-provider:openrouter-codex"],
+      modelUsageProvider: model,
       modelUsageLongContextMinTotalInputTokens: 272_001,
     });
-
-    // The Runner addon reports long-context usage under the pricing alias.
     const tokens = {
       "tokens.input.long_context": 100,
       "tokens.output.long_context": 10,
@@ -116,8 +75,8 @@ describe("model usage under a pricing alias", () => {
         events: Object.entries(tokens).map(([category, quantity]) => {
           return {
             idempotencyKey: randomUUID(),
-            kind: "model" as const,
-            provider: pricingProvider,
+            kind: "model",
+            provider: model,
             category,
             quantity,
           };
@@ -125,45 +84,110 @@ describe("model usage under a pricing alias", () => {
       },
       sandboxHeaders,
       [200],
+      pricing.resolution,
     );
-    await billing.processOrgUsageEvents(actor);
-
-    // 100*7 + 10*11 + 1000*3 + 20*5 credits under the alias's rows.
-    const expectedCredits = 3910;
+    await billing.processOrgUsageEvents(actor, pricing.resolution);
     if (!actor.orgId) {
       throw new Error("Expected an organization member");
     }
     mocks.clerk.session(actor.userId, actor.orgId);
     const record = await accept(
       setupApp({ context, routes: usageRecordRoutes })(usageRecordContract).get(
-        {
-          query: {},
-          headers: { authorization: "Bearer clerk-session" },
-        },
+        { query: {}, headers: { authorization: "Bearer clerk-session" } },
       ),
       [200],
     );
-    expect(record.body.totalCredits).toBe(expectedCredits);
-    // The row names the run's model, which the App shows as its catalog
-    // display name ("Catalog Alias").
+    expect(record.body.totalCredits).toBe(3910);
     expect(record.body.rows).toStrictEqual([
       expect.objectContaining({
         threadId: run.threadId,
-        credits: expectedCredits,
+        credits: 3910,
         breakdown: [
           {
             kind: "model",
-            credits: expectedCredits,
+            credits: 3910,
             providers: [
               {
                 provider: model,
-                credits: expectedCredits,
-                usageKinds: [{ kind: "model", credits: expectedCredits }],
+                credits: 3910,
+                usageKinds: [{ kind: "model", credits: 3910 }],
               },
             ],
           },
         ],
       }),
     ]);
+    await chatEvents.cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
+
+  it("rejects Auto when its billable long-context usage is unpriced", async () => {
+    // Base token categories are priced but the route's long-context
+    // threshold makes `.long_context` billable too. Nothing may run unbilled.
+    const { actor, agentId } = await chatEvents.entitledChatActor();
+    const model = "okou-1.0";
+    const base = [
+      "tokens.input",
+      "tokens.output",
+      "tokens.cache_read",
+      "tokens.cache_creation",
+    ] as const;
+    const pricing = await createUsagePricingFixture({
+      configured: base.map((category) => {
+        return {
+          kind: "model",
+          provider: model,
+          category,
+          unitPrice: 1,
+          unitSize: 1,
+        };
+      }),
+      missing: base.map((category) => {
+        return {
+          kind: "model",
+          provider: model,
+          category: `${category}.long_context`,
+        };
+      }),
+    });
+    onTestFinished(pricing.cleanup);
+    await chatEvents.configureBuiltInPiModel(actor);
+
+    const clientEventId = randomUUID();
+    const sent = await chatEvents.chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "run without complete pricing", model, clientEventId },
+      [201],
+      { usagePricingResolution: pricing.resolution },
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the chat input to be accepted");
+    }
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const { events } = await chatEvents.waitForThreadMessages(
+      actor,
+      sent.body.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === clientEventId &&
+            message.eventType === "input.rejected"
+          );
+        });
+      },
+    );
+    expect(
+      userMessages(events).find((message) => {
+        return message.revokesEventId === clientEventId;
+      }),
+    ).toMatchObject({
+      eventType: "input.rejected",
+      error: "model_provider_unavailable",
+    });
+    expect(
+      events.filter((event) => {
+        return "runId" in event && event.runId !== undefined;
+      }),
+    ).toStrictEqual([]);
   });
 });

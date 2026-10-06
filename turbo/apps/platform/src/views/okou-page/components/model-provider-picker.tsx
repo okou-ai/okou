@@ -1,20 +1,20 @@
+import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  getMemberModelPolicyRoute,
-  isMemberModelPolicyConfigurable,
-} from "@okouai/api-contracts/contracts/member-model-policy";
-import type { ComponentProps, ReactNode } from "react";
+  getMemberRunModelRoute,
+  isMemberRunModelConfigurable,
+} from "@okouai/api-contracts/contracts/member-run-model";
 import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useSet,
-} from "ccstate-react";
-import { Check, ChevronDown, Cpu, Zap } from "lucide-react";
+  getModelProviderPresentationLabel,
+  type AvailableRunModel,
+  type AvailableRunModelsResponse,
+  type ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
 import {
+  Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-  Button,
   Select,
   SelectContent,
   SelectGroup,
@@ -27,27 +27,32 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  cn,
 } from "@okouai/ui";
 import {
-  getModelProviderPresentationLabel,
-  isBuiltInModelProviderType,
-  type ModelProviderType,
-  type OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useSet,
+} from "ccstate-react";
+import { Check, ChevronDown, Cpu, Zap } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../../i18n/index.ts";
-import { orgModelPolicies$ } from "../../../signals/external/org-model-policies";
 import {
   modelCatalog$,
   type ModelCatalog,
 } from "../../../signals/external/model-catalog.ts";
+import { availableRunModels$ } from "../../../signals/external/run-models";
+import {
+  isRunModelFastModeAvailable,
+  isRunModelUltrafastAvailable,
+  resolveExplicitModelSelection$,
+} from "../../../signals/okou-page/model-default-selection";
 import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
+  memberRunModelAllowedForPlan,
   modelAllowedForPlan,
   modelPlanCapabilities$,
-  memberModelPolicyAllowedForPlan,
   type ModelPlanCapabilities,
 } from "../../../signals/okou-page/model-plan-capabilities";
 import {
@@ -55,21 +60,11 @@ import {
   setSettingsDialogOpen$,
 } from "../../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../../signals/page-signal";
-import {
-  isPolicyFastModeAvailable,
-  isPolicyUltrafastAvailable,
-  resolveExplicitModelSelection$,
-} from "../../../signals/okou-page/model-default-selection";
 import { detach, Reason } from "../../../signals/utils";
-import {
-  getModelBrandIconType,
-  getCatalogModelPriceTier,
-  getBuiltInModelPriceTierLabel,
-} from "./settings/provider-ui-config";
-import { ProviderIcon } from "./settings/provider-icons";
-import { PriceTierBadge } from "./model-picker-price-tier.tsx";
 import { ModelFastImpact } from "./model-fast-impact.tsx";
 import { ModelPickerMenuContent } from "./model-picker-menu.tsx";
+import { ProviderIcon } from "./settings/provider-icons";
+import { getModelBrandIconType } from "./settings/provider-ui-config";
 
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
@@ -144,10 +139,10 @@ const CODEX_ULTRAFAST_SELECTED_PREFIX = "__codex_ultrafast_selected__:";
 const MEASURABLE_HIDDEN_SELECT_ITEM_CLASS =
   "absolute left-0 top-0 h-8 w-px overflow-hidden opacity-0 data-[disabled]:opacity-0 pointer-events-none";
 
-function ByokBadge({
+function SubscriptionBadge({
   subscriptionProvider,
 }: {
-  subscriptionProvider?: ModelProviderType;
+  subscriptionProvider: ModelProviderType;
 }) {
   const { t } = useTranslation();
   return (
@@ -156,7 +151,7 @@ function ByokBadge({
         <TooltipTrigger
           render={
             <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
-              BYOK
+              {getModelProviderPresentationLabel(subscriptionProvider)}
             </span>
           }
         />
@@ -167,9 +162,7 @@ function ByokBadge({
             </span>
           )}
           {t(($) => {
-            return subscriptionProvider
-              ? $.settings.models.personal.description
-              : $.settings.models.picker.byokHelp;
+            return $.settings.models.personal.description;
           })}
         </TooltipContent>
       </Tooltip>
@@ -261,18 +254,18 @@ function catalogDisplayName(
 
 function selectionAllowedValue(
   value: ModelProviderSelection | null,
-  policies: OrgModelPolicy[],
+  models: AvailableRunModel[],
   modelCapabilities: ModelPlanCapabilities,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null {
   if (!value || !catalog?.isActive(value.selectedModel)) {
     return null;
   }
-  const policy = policies.find((candidate) => {
+  const runModel = models.find((candidate) => {
     return candidate.model === value.selectedModel;
   });
-  const allowed = policy
-    ? memberModelPolicyAllowedForPlan(policy, modelCapabilities)
+  const allowed = runModel
+    ? memberRunModelAllowedForPlan(runModel, modelCapabilities)
     : modelAllowedForPlan(value.selectedModel, modelCapabilities);
   return allowed ? value : null;
 }
@@ -479,44 +472,29 @@ function isHiddenModelFirstSelectValue(value: string): boolean {
   );
 }
 
-export function ModelFirstPolicyRowContent({
-  policy,
+export function ModelFirstRunModelRowContent({
+  runModel,
   modelCapabilities,
   selected = false,
   showSelectedIndicator = false,
 }: {
-  policy: OrgModelPolicy;
+  runModel: AvailableRunModel;
   modelCapabilities: ModelPlanCapabilities;
   selected?: boolean;
   showSelectedIndicator?: boolean;
 }) {
   const catalog = useLastResolved(modelCatalog$);
-  const iconType = getModelFirstIconType(policy.model, catalog);
-  const route = getMemberModelPolicyRoute(policy);
-  const builtInPriceTier = isBuiltInModelProviderType(route.providerType)
-    ? getCatalogModelPriceTier(catalog, policy.model)
-    : undefined;
-  const restricted = !memberModelPolicyAllowedForPlan(
-    policy,
-    modelCapabilities,
-  );
+  const iconType = getModelFirstIconType(runModel.model, catalog);
+  const route = getMemberRunModelRoute(runModel);
+  const restricted = !memberRunModelAllowedForPlan(runModel, modelCapabilities);
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
       <span className="min-w-0 flex-1 truncate">
-        {catalogDisplayName(catalog, policy.model)}
+        {catalogDisplayName(catalog, runModel.model)}
       </span>
-      {builtInPriceTier !== undefined ? (
-        <PriceTierBadge
-          tier={builtInPriceTier}
-          description={getBuiltInModelPriceTierLabel(builtInPriceTier)}
-        />
-      ) : (
-        <ByokBadge
-          subscriptionProvider={
-            route.credentialScope === "member" ? route.providerType : undefined
-          }
-        />
+      {route.credentialScope === "member" && (
+        <SubscriptionBadge subscriptionProvider={route.providerType} />
       )}
       {restricted && <ProBadge />}
       {showSelectedIndicator && (
@@ -528,26 +506,26 @@ export function ModelFirstPolicyRowContent({
   );
 }
 
-function ModelFirstPolicyRow({
-  policy,
+function ModelFirstRunModelRow({
+  runModel,
   modelCapabilities,
   selection,
 }: {
-  policy: OrgModelPolicy;
+  runModel: AvailableRunModel;
   modelCapabilities: ModelPlanCapabilities;
   selection: ModelProviderSelection | null;
 }) {
   const { t } = useTranslation();
   const catalog = useLastResolved(modelCatalog$);
-  const fastAvailable = isPolicyFastModeAvailable(policy, catalog);
+  const fastAvailable = isRunModelFastModeAvailable(runModel, catalog);
   if (fastAvailable) {
-    const modelLabel = catalogDisplayName(catalog, policy.model);
-    const selected = selection?.selectedModel === policy.model;
-    const fastSelected = selected && selection.codexServiceTier === "fast";
+    const modelLabel = catalogDisplayName(catalog, runModel.model);
+    const selected = selection?.selectedModel === runModel.model;
+    const fastSelected = selected && selection?.codexServiceTier === "fast";
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
     });
-    const ultrafastAvailable = isPolicyUltrafastAvailable(policy, catalog);
+    const ultrafastAvailable = isRunModelUltrafastAvailable(runModel, catalog);
     return (
       <>
         <div
@@ -558,7 +536,7 @@ function ModelFirstPolicyRow({
           )}
         >
           <SelectItem
-            value={policy.model}
+            value={runModel.model}
             aria-label={modelLabel}
             // Two fixed columns sit at this row's right edge: the checkmark's
             // (`pr-8`, shared with every other row) and the fast toggle's, which
@@ -567,8 +545,8 @@ function ModelFirstPolicyRow({
             // selected is what used to push the checkmark off its column.
             className="min-w-0 flex-1 rounded-lg pr-16 hover:bg-transparent data-highlighted:bg-transparent"
           >
-            <ModelFirstPolicyRowContent
-              policy={policy}
+            <ModelFirstRunModelRowContent
+              runModel={runModel}
               modelCapabilities={modelCapabilities}
               selected={selected}
               showSelectedIndicator={fastSelected}
@@ -579,7 +557,7 @@ function ModelFirstPolicyRow({
               <TooltipTrigger
                 render={
                   <SelectItem
-                    value={codexFastOptionValue(policy.model)}
+                    value={codexFastOptionValue(runModel.model)}
                     aria-label={`${modelLabel} ${fastLabel}`}
                     className={cn(
                       // `right-8` parks the toggle in its own column beside the
@@ -604,14 +582,14 @@ function ModelFirstPolicyRow({
                 }
               />
               <TooltipContent side="top" className="text-xs">
-                {fastLabel} · <ModelFastImpact policy={policy} />
+                {fastLabel} · <ModelFastImpact runModel={runModel} />
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </div>
         {ultrafastAvailable && (
           <SelectItem
-            value={`${CODEX_ULTRAFAST_OPTION_PREFIX}${policy.model}`}
+            value={`${CODEX_ULTRAFAST_OPTION_PREFIX}${runModel.model}`}
             aria-label={`${modelLabel} ${t(($) => {
               return $.settings.models.picker.ultrafast;
             })}`}
@@ -627,7 +605,7 @@ function ModelFirstPolicyRow({
                 return $.settings.models.picker.ultrafastImpact;
               })}
             </span>
-            {selected && selection.codexServiceTier === "ultrafast" && (
+            {selected && selection?.codexServiceTier === "ultrafast" && (
               <Check size={15} className="ml-auto" aria-hidden="true" />
             )}
           </SelectItem>
@@ -637,27 +615,27 @@ function ModelFirstPolicyRow({
   }
   return (
     <SelectItem
-      key={policy.id}
-      value={policy.model}
-      disabled={!isMemberModelPolicyConfigurable(policy, catalog)}
+      key={runModel.model}
+      value={runModel.model}
+      disabled={!isMemberRunModelConfigurable(runModel, catalog)}
     >
-      <ModelFirstPolicyRowContent
-        policy={policy}
+      <ModelFirstRunModelRowContent
+        runModel={runModel}
         modelCapabilities={modelCapabilities}
       />
     </SelectItem>
   );
 }
 
-function ModelFirstPolicyItems({
-  policies,
+function ModelFirstRunModelItems({
+  models,
   selection,
   modelCapabilities,
   placeholder,
   showInheritOption,
   showSeparator = true,
 }: {
-  policies: OrgModelPolicy[];
+  models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
   modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
@@ -667,20 +645,20 @@ function ModelFirstPolicyItems({
   const { t } = useTranslation();
   const catalog = useLastResolved(modelCatalog$);
   const explicitSelectedModel = selection?.selectedModel ?? null;
-  const hasExplicitSelectedPolicy =
+  const hasExplicitSelectedRunModel =
     explicitSelectedModel === null ||
-    policies.some((policy) => {
-      return policy.model === explicitSelectedModel;
+    models.some((runModel) => {
+      return runModel.model === explicitSelectedModel;
     });
   return (
     <>
       {showInheritOption && (
         <SelectItem value={INHERIT_SENTINEL}>{placeholder}</SelectItem>
       )}
-      {showSeparator && (!hasExplicitSelectedPolicy || policies.length > 0) && (
+      {showSeparator && (!hasExplicitSelectedRunModel || models.length > 0) && (
         <SelectSeparator className="my-0" />
       )}
-      {!hasExplicitSelectedPolicy && explicitSelectedModel && (
+      {!hasExplicitSelectedRunModel && explicitSelectedModel && (
         <SelectItem
           value={explicitSelectedModel}
           className={MEASURABLE_HIDDEN_SELECT_ITEM_CLASS}
@@ -690,7 +668,7 @@ function ModelFirstPolicyItems({
           {catalogDisplayName(catalog, explicitSelectedModel)}
         </SelectItem>
       )}
-      {policies.length === 0 ? (
+      {models.length === 0 ? (
         <div className="px-2 py-2 text-sm text-muted-foreground">
           {t(($) => {
             return $.settings.models.picker.noConfiguredModels;
@@ -703,11 +681,11 @@ function ModelFirstPolicyItems({
               return $.settings.models.picker.models;
             })}
           </SelectLabel>
-          {policies.map((policy) => {
+          {models.map((runModel) => {
             return (
-              <ModelFirstPolicyRow
-                key={policy.id}
-                policy={policy}
+              <ModelFirstRunModelRow
+                key={runModel.model}
+                runModel={runModel}
                 modelCapabilities={modelCapabilities}
                 selection={selection}
               />
@@ -722,7 +700,7 @@ function ModelFirstPolicyItems({
 interface ModelFirstModelPickerContentBaseProps {
   selectValue: string;
   placeholder: string;
-  policies: OrgModelPolicy[];
+  models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
   modelCapabilities: ModelPlanCapabilities;
   fastLabel: string;
@@ -732,7 +710,7 @@ interface ModelFirstModelPickerContentBaseProps {
 function ModelFirstModelPickerContentLayout({
   selectValue,
   placeholder,
-  policies,
+  models,
   selection,
   modelCapabilities,
   fastLabel,
@@ -757,8 +735,8 @@ function ModelFirstModelPickerContentLayout({
             })}
           </SelectItem>
         )}
-      <ModelFirstPolicyItems
-        policies={policies}
+      <ModelFirstRunModelItems
+        models={models}
         selection={selection}
         modelCapabilities={modelCapabilities}
         placeholder={placeholder}
@@ -770,7 +748,7 @@ function ModelFirstModelPickerContentLayout({
 }
 
 interface ModelFirstModelPickerState {
-  policies: OrgModelPolicy[];
+  models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
   selectValue: string;
   triggerAriaLabel: string;
@@ -782,34 +760,38 @@ interface ModelFirstModelPickerState {
  */
 export function resolveModelFirstModelPickerState({
   value,
-  policyResponse,
+  modelsResponse,
   catalog,
   modelCapabilities,
   placeholder,
   fastLabel,
 }: {
   value: ModelProviderSelection | null;
-  policyResponse: { policies: OrgModelPolicy[] } | null | undefined;
+  modelsResponse: AvailableRunModelsResponse | null | undefined;
   catalog: ModelCatalog | null | undefined;
   modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
   fastLabel: string;
 }): ModelFirstModelPickerState {
-  const policies = (policyResponse?.policies ?? [])
-    .filter((policy) => {
-      return catalog?.isActive(policy.model) ?? false;
+  const models = (modelsResponse?.models ?? [])
+    .filter((runModel) => {
+      return (
+        (runModel.model === modelsResponse?.defaultModel ||
+          getMemberRunModelRoute(runModel).credentialScope === "member") &&
+        (catalog?.isActive(runModel.model) ?? false)
+      );
     })
     .sort((left, right) => {
       return catalog ? catalog.compare(left.model, right.model) : 0;
     });
   const selection = selectionAllowedValue(
     value,
-    policies,
+    models,
     modelCapabilities,
     catalog,
   );
   return {
-    policies,
+    models,
     selection,
     selectValue: modelFirstSelectValue(selection),
     triggerAriaLabel: selectionLabel({
@@ -892,7 +874,7 @@ function resolveExplicitModelFirstModelPickerState({
   catalog: ModelCatalog | null | undefined;
 }): ModelFirstModelPickerState {
   return {
-    policies: [],
+    models: [],
     selection: value,
     selectValue: modelFirstSelectValue(value),
     triggerAriaLabel: selectionLabel({
@@ -952,15 +934,15 @@ function SubscribedExplicitModelFirstModelPickerContent({
   onMenuChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
-  const policiesLoadable = useLastLoadable(orgModelPolicies$);
+  const modelsLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
-  const policyResponse = useLastResolved(orgModelPolicies$);
+  const modelsResponse = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
   const loading =
-    policiesLoadable.state === "loading" || catalogLoadable.state === "loading";
+    modelsLoadable.state === "loading" || catalogLoadable.state === "loading";
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
-  if (policyResponse === undefined || catalog === undefined) {
+  if (modelsResponse === undefined || catalog === undefined) {
     if (nativeMenu) {
       return (
         <div className="px-2 py-2 text-sm text-muted-foreground" role="status">
@@ -993,7 +975,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
   }
   const state = resolveModelFirstModelPickerState({
     value,
-    policyResponse,
+    modelsResponse,
     catalog,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
@@ -1004,17 +986,17 @@ function SubscribedExplicitModelFirstModelPickerContent({
       <ModelPickerMenuContent
         value={state.selection}
         onChange={onMenuChange}
-        options={state.policies.map((policy) => {
+        options={state.models.map((runModel) => {
           return {
-            model: policy.model,
-            label: catalog.displayName(policy.model),
+            model: runModel.model,
+            label: catalog.displayName(runModel.model),
             content: (
-              <ModelFirstPolicyRowContent
-                policy={policy}
+              <ModelFirstRunModelRowContent
+                runModel={runModel}
                 modelCapabilities={modelCapabilities}
               />
             ),
-            disabled: !isMemberModelPolicyConfigurable(policy, catalog),
+            disabled: !isMemberRunModelConfigurable(runModel, catalog),
           };
         })}
       />
@@ -1024,7 +1006,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
     <ModelFirstModelPickerContentLayout
       selectValue={state.selectValue}
       placeholder={placeholder}
-      policies={state.policies}
+      models={state.models}
       selection={state.selection}
       modelCapabilities={modelCapabilities}
       fastLabel={fastLabel}

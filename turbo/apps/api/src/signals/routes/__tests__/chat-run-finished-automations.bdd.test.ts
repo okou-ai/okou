@@ -81,23 +81,11 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  const { providerId } = await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Completion and queue fixtures use the retained native Claude route.
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-    {
-      model: "claude-sonnet-5",
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat run finished automation agent",
     description: "Exercises chat-run-finished automation dispatch.",
@@ -805,7 +793,7 @@ describe("chat-run-finished workflow automations", () => {
     });
     const otherThread = await chat.createThread(otherUser, {
       agentId: otherAgent.agentId,
-      model: "claude-sonnet-5",
+      model: "okou-1.0",
     });
     // Restore the fixture actor's session after acting as the other member.
     await bdd.readMe(fixture.actor);
@@ -832,7 +820,7 @@ describe("chat-run-finished workflow automations", () => {
     const fixture = await setupChatAutomationFixture();
     const workflowThread = await chat.createThread(fixture.actor, {
       agentId: fixture.agentId,
-      model: "claude-sonnet-5",
+      model: "okou-1.0",
     });
     const workflowId = await wf.createWorkflow(fixture.actor, {
       agentId: fixture.agentId,

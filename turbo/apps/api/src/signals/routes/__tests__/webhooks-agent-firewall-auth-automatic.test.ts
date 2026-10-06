@@ -63,7 +63,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP identity refresh",
     });
@@ -258,7 +258,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       runs.acceptTelemetryIngest();
       const runnerGroup = runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: `MCP refresh ${outcomeKind}`,
       });

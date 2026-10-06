@@ -1,23 +1,22 @@
 import { Field } from "@base-ui/react/field";
+import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { useTranslation } from "react-i18next";
 import { Bug } from "lucide-react";
-import { Switch } from "@okouai/ui/components/ui/switch";
-import { pageSignal$ } from "../../../../../signals/page-signal.ts";
-import { detach, Reason } from "../../../../../signals/utils.ts";
+import { useTranslation } from "react-i18next";
 import {
   captureNetworkBodiesRemaining$,
   updateCaptureNetworkBodies$,
 } from "../../../../../signals/okou-page/settings/debug-network-capture.ts";
+import { pageSignal$ } from "../../../../../signals/page-signal.ts";
+import { detach, Reason } from "../../../../../signals/utils.ts";
 import { BuildInfoBlock } from "../build-info-block.tsx";
+import { BuiltInModelCooldownDiagnosticsBlock } from "../built-in-model-cooldown-diagnostics-block.tsx";
 import { ConnectionDiagnosticsBlock } from "../connection-diagnostics-block.tsx";
 import { ConnectorCatalogDiagnosticsBlock } from "../connector-catalog-diagnostics-block.tsx";
-import { WorkerConnectionDiagnosticsBlock } from "../worker-connection-diagnostics-block.tsx";
-import { BuiltInModelCooldownDiagnosticsBlock } from "../built-in-model-cooldown-diagnostics-block.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
-import { OrgModelModeControl } from "../../org-manage/org-model-mode-control.tsx";
+import { WorkerConnectionDiagnosticsBlock } from "../worker-connection-diagnostics-block.tsx";
 
 const CAPTURE_RUN_COUNT = 3;
 
@@ -83,7 +82,6 @@ export function DebugSection() {
   return (
     <div className="flex flex-col gap-6">
       <BuildInfoBlock />
-      <OrgModelModeControl />
       <WelcomeThreadCard />
       <ConnectionDiagnosticsBlock />
       <WorkerConnectionDiagnosticsBlock />

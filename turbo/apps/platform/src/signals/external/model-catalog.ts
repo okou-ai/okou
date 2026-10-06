@@ -89,7 +89,23 @@ function createIdentifierLookup(
       return identifier;
     }
     const candidates = modelsByUpstream.get(identifier);
-    if (candidates?.size !== 1) {
+    if (candidates === undefined) {
+      // Historical billing may keep a vendor-prefixed model ID after the
+      // executable route is physically deleted. This is display-only: do not
+      // use these identifiers for selection, admission, or replacement lookup.
+      const prefix = ["openai/", "anthropic/", "google/", "deepseek/"].find(
+        (value) => {
+          return identifier.startsWith(value);
+        },
+      );
+      const historicalModel = prefix
+        ? identifier.slice(prefix.length)
+        : undefined;
+      return historicalModel && byModel.has(historicalModel)
+        ? historicalModel
+        : undefined;
+    }
+    if (candidates.size !== 1) {
       return undefined;
     }
     const [model] = candidates;

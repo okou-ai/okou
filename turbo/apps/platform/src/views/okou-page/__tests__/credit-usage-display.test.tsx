@@ -255,12 +255,6 @@ test("Credit usage names each model row from the server catalog, keeping retired
           ? { ...entry, displayName: "Luna From Catalog" }
           : entry;
       }),
-      routes: catalog.routes.map((route) => {
-        return route.model === "gpt-6-luna" &&
-          route.providerType === "openrouter-codex"
-          ? { ...route, upstreamModel: "openai/gpt-6-luna" }
-          : route;
-      }),
     });
   });
   await setupUsageChat(

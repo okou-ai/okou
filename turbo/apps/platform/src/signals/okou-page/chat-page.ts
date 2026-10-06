@@ -1,12 +1,12 @@
 import { command, computed, state } from "ccstate";
+import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { modelCatalog$ } from "../external/model-catalog.ts";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
   isServiceTierAvailableForSelection,
   resolveDefaultModelSelection,
 } from "./model-default-selection.ts";
-import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { createPersonalModelProviderAuthSignals } from "./personal-model-provider-auth.ts";
 
 const internalTaglineIndex$ = state(Math.floor(Math.random() * 17));
@@ -69,13 +69,13 @@ export const chatPageModelSelection$ = computed(
       if (!user.value.codexServiceTier) {
         return selection;
       }
-      const [policies, catalog] = await Promise.all([
-        get(orgModelPolicies$),
+      const [models, catalog] = await Promise.all([
+        get(availableRunModels$),
         get(modelCatalog$),
       ]);
       const ultrafast = user.value.codexServiceTier === "ultrafast";
       return isServiceTierAvailableForSelection({
-        policies,
+        models,
         catalog,
         selectedModel: user.value.selectedModel,
         tier: ultrafast ? "ultrafast" : "priority",
@@ -86,14 +86,14 @@ export const chatPageModelSelection$ = computed(
           }
         : selection;
     }
-    const [policies, userPreference, catalog] = await Promise.all([
-      get(orgModelPolicies$),
+    const [models, userPreference, catalog] = await Promise.all([
+      get(availableRunModels$),
       get(userModelPreference$),
       get(modelCatalog$),
     ]);
     return resolveDefaultModelSelection({
       userPreference,
-      policies,
+      models,
       catalog,
     });
   },

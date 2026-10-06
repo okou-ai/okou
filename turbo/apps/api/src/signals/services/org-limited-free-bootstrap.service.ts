@@ -1,39 +1,28 @@
-import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
-import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { randomUUID } from "node:crypto";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 
-import { command } from "ccstate";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import {
   getInstructionsStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { agents } from "@okouai/db/schema/agent";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, eq, exists, ne, notInArray, sql } from "drizzle-orm";
+import { command } from "ccstate";
+import { and, eq, notInArray, sql } from "drizzle-orm";
+import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
+import { onRejection, settleIncludingAbort } from "../utils";
 import { prepareAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
-import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
-import {
-  storageObjectCleanupJobValues,
-  executeStorageObjectCleanupWork$,
-} from "./storage-object-cleanup.service";
-import { newStorageS3Location } from "./storage-s3-prefix.utils";
-import {
-  grantOnboardingCredits,
-  LIMITED_FREE_ONBOARDING_CREDITS,
-  onboardingCreditsExpiresAt,
-} from "./onboarding-credit-grants.service";
-import { upsertOrgNoSecretModelProvider$ } from "./model-provider.service";
 import {
   DEFAULT_AGENT_AVATAR_URL,
   DEFAULT_AGENT_DISPLAY_NAME,
@@ -41,12 +30,20 @@ import {
   DEFAULT_AGENT_SOUND,
 } from "./default-agent-profile";
 import {
+  grantOnboardingCredits,
+  LIMITED_FREE_ONBOARDING_CREDITS,
+  onboardingCreditsExpiresAt,
+} from "./onboarding-credit-grants.service";
+import {
   upsertOrgPlanEntitlement,
   writeOrgMetadataWithPlanEntitlements,
 } from "./org-plan-entitlements.service";
-import type { Tx } from "../../lib/db-types";
-import { onRejection, settleIncludingAbort } from "../utils";
-import { modelCatalog$, type ModelCatalog } from "./model-catalog.service";
+import {
+  executeStorageObjectCleanupWork$,
+  storageObjectCleanupJobValues,
+} from "./storage-object-cleanup.service";
+import { newStorageS3Location } from "./storage-s3-prefix.utils";
+import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 
 const L = logger("org-limited-free-bootstrap.service");
 const PAID_TIERS = ["pro", "team", "custom"] as const;
@@ -149,7 +146,6 @@ async function enqueueBootstrapPrefixCleanup(
 }
 
 async function publishBootstrap(
-  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: EnsureOrgLimitedFreeBootstrapArgs & {
     readonly agentId: string;
@@ -213,7 +209,7 @@ async function publishBootstrap(
     }
     const result = existingAgentId
       ? { bootstrapped: false, agentId: existingAgentId }
-      : await finalizeBootstrap(catalogSnapshot, tx, args);
+      : await finalizeBootstrap(tx, args);
     signal.throwIfAborted();
     return { result, cleanupJobIds };
   }
@@ -252,7 +248,7 @@ async function publishBootstrap(
       args.volume.version.versionId,
     );
   }
-  const result = await finalizeBootstrap(catalogSnapshot, tx, args);
+  const result = await finalizeBootstrap(tx, args);
   signal.throwIfAborted();
   return { result, cleanupJobIds };
 }
@@ -394,7 +390,6 @@ async function reserveBootstrapAgent(
 }
 
 async function finalizeBootstrap(
-  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: {
     readonly orgId: string;
@@ -454,18 +449,6 @@ async function finalizeBootstrap(
     return { bootstrapped: true, agentId: agentRow.id };
   }
 
-  const systemDefaultModel = catalogSnapshot.systemDefaultModel;
-  const hasConfiguredPolicies = exists(
-    tx
-      .select({ id: orgModelPolicies.id })
-      .from(orgModelPolicies)
-      .where(
-        and(
-          eq(orgModelPolicies.orgId, args.orgId),
-          ne(orgModelPolicies.model, systemDefaultModel),
-        ),
-      ),
-  );
   const initialized = await writeOrgMetadataWithPlanEntitlements(tx, {
     writeOrgMetadata: async (writeTx) => {
       return await writeTx
@@ -476,10 +459,6 @@ async function finalizeBootstrap(
           tier: "limited-free-1",
           onboardingPaymentPending: false,
           onboardingComplete: false,
-          // A policy can be configured before metadata exists. Preserve the
-          // Custom policy contract on INSERT as well as on conflict. Unconfigured
-          // new organizations use Auto, matching the schema default.
-          modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN 'custom' ELSE 'auto' END`,
           updatedAt: nowDate(),
         })
         .onConflictDoUpdate({
@@ -488,10 +467,6 @@ async function finalizeBootstrap(
             defaultAgentId: agentRow.id,
             tier: "limited-free-1",
             onboardingPaymentPending: false,
-            // Another writer may have created the row first. Only an org with
-            // no configured non-default model becomes Auto; configured models
-            // keep the stored mode.
-            modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN ${orgMetadataCanonicalWrites.modelMode} ELSE 'auto' END`,
             updatedAt: nowDate(),
           },
           // The earlier tier read is not write authority. Stripe can commit
@@ -535,7 +510,7 @@ async function finalizeBootstrap(
 
 export const ensureOrgLimitedFreeBootstrap$ = command(
   async (
-    { get, set },
+    { set },
     args: EnsureOrgLimitedFreeBootstrapArgs,
     signal: AbortSignal,
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
@@ -552,17 +527,6 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
     if (reservation.status === "skipped") {
       return { bootstrapped: false, agentId: reservation.agentId };
     }
-
-    await set(
-      upsertOrgNoSecretModelProvider$,
-      {
-        orgId: args.orgId,
-        type: "built-in",
-        selectedModel: (await get(modelCatalog$)).systemDefaultModel,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
 
     const location = newStorageS3Location(args.orgId);
     const candidate = { id: location.storageId, s3Prefix: location.s3Prefix };
@@ -582,7 +546,6 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       return await writeDb.transaction(
         async (tx) => {
           return await publishBootstrap(
-            await get(modelCatalog$),
             tx,
             { ...args, agentId: reservation.agentId, candidate, volume },
             signal,

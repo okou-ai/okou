@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { aroundEach, it, describe, beforeEach, onTestFinished } from "vitest";
+import { aroundEach, it, describe, beforeEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -16,13 +16,12 @@ import {
   setQueuedUserMessageCreatedAtFixture,
   setWorkflowQueueEventCreatedAtFixture,
 } from "../../../test-fixtures/chat-events";
-import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
@@ -39,11 +38,7 @@ import {
 } from "./helpers/chat-event";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
-import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
-import {
-  seedBuiltInModelCandidateKeys,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -53,11 +48,12 @@ const TEST_APP_ROUTES = Object.freeze([
   ...webhooksWorkflowAutomationsRoutes,
   ...chatEventsRoutes,
   ...chatThreadRoutes,
-  ...modelProvidersRoutes,
+  ...meModelProvidersDeleteRoutes,
   ...workflowAutomationsRoutes,
 ]);
 
 const context = testContext();
+const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -100,8 +96,8 @@ function chatEventsClient() {
 }
 
 function modelProvidersByTypeClient() {
-  return setupApp({ context, routes: modelProvidersRoutes })(
-    modelProvidersByTypeContract,
+  return setupApp({ context, routes: meModelProvidersDeleteRoutes })(
+    personalModelProvidersByTypeContract,
   );
 }
 
@@ -124,16 +120,10 @@ async function setup(): Promise<Scenario> {
   }
   // Queue ordering uses claimable native runs; Pi route tests set their
   // own model policy instead of inheriting this fixture's default.
-  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runsApi.ensurePersonalSubscriptionModel(actor);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await wf.createAgent(actor, {
     displayName: "Workflow Queue Agent",
   });
@@ -491,68 +481,6 @@ async function releaseStaleRunAndPickWorkflowQueue(args: {
 }
 
 describe("workflow queue", () => {
-  it("rejects a workflow automation when every built-in route is unavailable", async () => {
-    const scenario = await setup();
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", scenario.runnerGroup);
-    // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
-    // isolated from concurrent tests that route the real model.
-    const { model, restore } =
-      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
-    onTestFinished(restore);
-    await seedBuiltInModelCandidateKeys(context, model);
-    await chatCallbacks.updateOrgModelPolicies(scenario.actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    // The automation thread pins the preferred Built-in model.
-    const automation = await createWebhookAutomation(scenario);
-    // Provider failures cool down every Built-in candidate of the model.
-    await coolDownBuiltInRoutesThroughReports(context, {
-      actor: scenario.actor,
-      agentId: scenario.agentId,
-      runnerGroup: scenario.runnerGroup,
-      model,
-      routes: [
-        {
-          providerType: "anthropic-api-key",
-          upstreamModel: "claude-fable-5-1",
-        },
-        {
-          providerType: "openrouter-api-key",
-          upstreamModel: "anthropic/claude-fable-5.1",
-        },
-      ],
-    });
-
-    const response = await postWorkflowWebhook(
-      automation,
-      "launch without a built-in model key",
-    );
-    // The trigger is accepted; the launch rejection appears in the thread.
-    expectAccepted(response);
-
-    const events = await wf.readThreadEvents(automation.threadId);
-    const rejected = events.find((event) => {
-      return event.eventType === "input.rejected";
-    });
-    if (rejected?.eventType !== "input.rejected") {
-      throw new Error("Expected the workflow automation to be rejected");
-    }
-    expect(rejected.error).toBe("model_provider_unavailable");
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "model_provider_unavailable",
-      }),
-    );
-    await expect(workflowRunIds(automation.threadId)).resolves.toHaveLength(0);
-  });
-
   describe("a stale automation event with a missed terminal callback", () => {
     async function prepareStaleEvent() {
       mockNow(Date.UTC(2020, 0, 1));
@@ -1359,7 +1287,7 @@ describe("workflow queue", () => {
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
@@ -1400,16 +1328,10 @@ describe("workflow queue", () => {
     expect(rejectedEvent.userMessage).toStrictEqual(admittedEvent.userMessage);
     expect(chatEventDisplayText(admittedEvent)).toBe(rejectedDisplayPrompt);
     // Reconnect the thread's model so the next trigger can launch.
-    const { providerId } = await runsApi.ensureOrgModelProvider(scenario.actor);
-    await runsApi.updateOrgModelPolicies(scenario.actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await runsApi.ensurePersonalSubscriptionModel(scenario.actor);
+    await api.ensurePersonalSubscriptionModel(scenario.actor, {
+      model: "claude-fable-5-1",
+    });
     const runId = await expectAcceptedRunId(
       await postWorkflowWebhook(automation, "next trigger"),
       automation.threadId,
@@ -1446,12 +1368,12 @@ describe("workflow queue", () => {
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
 
-    // Without the Anthropic key the launch falls back to the fixed default,
+    // Without a personal subscription the new thread uses fixed Auto,
     // whose Built-in route has no operator key yet, so the launch fast-fails.
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
     await executeDueWorkflowAutomations(created.body.id);
@@ -1478,7 +1400,7 @@ describe("workflow queue", () => {
     );
   });
 
-  it("re-arms a recurring schedule whose queued tick the pick rejects", async () => {
+  it("re-arms a recurring schedule after its queued personal subscription is disconnected", async () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const webhookAutomation = await createWebhookAutomation(scenario);
@@ -1505,10 +1427,13 @@ describe("workflow queue", () => {
       pendingAutomationEvents(webhookAutomation.threadId),
     ).resolves.toHaveLength(1);
 
+    // Auto remains available: a personal route losing authority must not
+    // silently execute against the platform account.
+    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
@@ -1524,6 +1449,9 @@ describe("workflow queue", () => {
     await expect(
       pendingAutomationEvents(webhookAutomation.threadId),
     ).resolves.toHaveLength(0);
+    await expect(
+      workflowRunIds(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([busyRunId]);
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.enabled).toBeTruthy();
     expect(automation.nextRunAt).toBe(
