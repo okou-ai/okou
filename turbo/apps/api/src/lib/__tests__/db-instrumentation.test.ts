@@ -353,10 +353,11 @@ describe("instrumentPgPool", () => {
     const first = client.query("SELECT 501 AS first_overlap");
     const second = client.query("SELECT 502 AS second_overlap");
     const results = await Promise.all([first, second]);
-    expect(results.map((r) => {return r.rows})).toStrictEqual([
-      [{ first_overlap: 501 }],
-      [{ second_overlap: 502 }],
-    ]);
+    expect(
+      results.map((r) => {
+        return r.rows;
+      }),
+    ).toStrictEqual([[{ first_overlap: 501 }], [{ second_overlap: 502 }]]);
     for (const statement of [
       "SELECT 501 AS first_overlap",
       "SELECT 502 AS second_overlap",

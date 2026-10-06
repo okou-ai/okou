@@ -388,7 +388,9 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
             // context. Preserve the captured pool-query owner for its callback.
             return context.with(
               context.active().setValue(POOL_QUERY_SPAN_KEY, markedSpan),
-              () => {return callback(error, client, release)},
+              () => {
+                return callback(error, client, release);
+              },
             );
           }
         }

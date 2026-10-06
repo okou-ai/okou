@@ -168,15 +168,21 @@ export class PreviewPgClient extends Client {
 
     const query = connection.query.bind(connection);
     connection.query = (...args) => {
-      return this.observeSubmission("query", () => {return query(...args)});
+      return this.observeSubmission("query", () => {
+        return query(...args);
+      });
     };
     const parse = connection.parse.bind(connection);
     connection.parse = (...args) => {
-      return this.observeSubmission("parse", () => {return parse(...args)});
+      return this.observeSubmission("parse", () => {
+        return parse(...args);
+      });
     };
     const bind = connection.bind.bind(connection);
     connection.bind = (...args) => {
-      return this.observeSubmission("bind", () => {return bind(...args)});
+      return this.observeSubmission("bind", () => {
+        return bind(...args);
+      });
     };
   }
 
@@ -223,7 +229,9 @@ export class PreviewPgClient extends Client {
         // its protocol observation for a recovery query before actual drain.
         this.blockedUntilDrain = true;
       }
-      safeSync(() => {return probe.finish(outcome)});
+      safeSync(() => {
+        return probe.finish(outcome);
+      });
       this.pending.delete(probe);
       if (this.current === probe) {
         this.current = undefined;
@@ -236,7 +244,9 @@ export class PreviewPgClient extends Client {
     operation: () => void,
   ): void {
     const probe = this.current;
-    safeSync(() => {return probe?.mark("first_protocol_submit")});
+    safeSync(() => {
+      return probe?.mark("first_protocol_submit");
+    });
     const startedAt = performance.now();
     // Delegate exactly once. This is enqueue/serialization time, not proof
     // of socket flush or server execution. Do not inspect SQL or bind data.
