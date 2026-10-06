@@ -24,7 +24,11 @@ import {
   resolveConnectorRuntimeTargets$,
   resolveConnectorRuntimeDiagnosticTargets$,
 } from "../../services/connector-runtime-sync.service";
-import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorsSearchContract,
+  builtinConnectorAutomaticContract,
+} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
@@ -822,7 +826,10 @@ function nativePiInputs(
   };
 }
 
-function actorToken(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+function actorToken(
+  actor: Awaited<ReturnType<typeof ownedMcpRun>>,
+  write = false,
+) {
   // Real agent tokens still resolve the owner's organization membership.
   // Bound only this owned actor; unrelated users receive a valid empty list.
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
@@ -861,7 +868,9 @@ function actorToken(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
     userId: actor.userId,
     orgId: actor.orgId,
     runId: actor.runId,
-    capabilities: ["connector:read"],
+    capabilities: write
+      ? ["connector:read", "connector:write"]
+      : ["connector:read"],
     builtinConnectorSourceIds: { [actor.connectorSlug]: actor.connectionId },
     iat: seconds,
     exp: seconds + 3600,
@@ -884,6 +893,16 @@ async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
     mcpConnectorsContract,
   ).list({
     headers: { authorization: `Bearer ${actorToken(actor)}` },
+  });
+}
+
+async function automaticStart(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
+  return await setupApp({ context, routes: builtinConnectorsAutomaticRoutes })(
+    builtinConnectorAutomaticContract,
+  ).start({
+    headers: { authorization: `Bearer ${actorToken(actor, true)}` },
+    params: { connectorSlug: actor.connectorSlug },
+    body: { authMethod: "smart-connect", account: { intent: "add" } },
   });
 }
 
@@ -1948,6 +1967,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const unknown = "unknown-catalog-connector";
     const unknownActor = { ...actor, connectorSlug: unknown };
     expect((await accountDirectory(unknownActor)).status).toBe(404);
+    expect((await automaticStart(unknownActor)).status).toBe(400);
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
@@ -1968,6 +1988,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await expect(runtimeSync(actor)).rejects.toThrow(
       "Immutable connector catalog manifest entry is missing",
     );
+    expect((await automaticStart(actor)).status).toBe(500);
     await expect(accountDirectory(actor)).rejects.toThrow(
       "Unknown response status 500 for GET /api/connector-accounts/connections",
     );
@@ -1995,6 +2016,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       [candidate.hash, slug],
     );
     await engine.exec("DELETE FROM connector_catalog");
+    expect((await automaticStart(unknownActor)).status).toBe(500);
     expect((await mcpDirectory(unknownActor)).status).toBe(500);
     await expect(runtimeDiagnostics(unknownActor)).rejects.toThrow(
       "Immutable connector catalog current is missing",
@@ -2013,9 +2035,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const catalogReads = statements.filter((query) => {
       return query.includes("connector_catalog");
     });
-    // Four MCP/empty-selection reads plus three runtime, three account, and two
-    // malformed-payload reads; none may recover from still-present legacy data.
-    expect(catalogReads).toHaveLength(12);
+    // Four MCP/empty-selection, three runtime, three account, two malformed
+    // payload and two Automatic negative reads; no legacy recovery is allowed.
+    expect(catalogReads).toHaveLength(14);
     for (const query of catalogReads) {
       expect(query).not.toContain("connector_catalog_active_snapshot");
       expect(query).not.toContain("connector_catalog_runtime_projection");

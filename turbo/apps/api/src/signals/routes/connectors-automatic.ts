@@ -17,7 +17,7 @@ import {
 } from "../../lib/error";
 import { env } from "../../lib/env";
 import { connectorOAuthRedirectResponse } from "../../lib/connector-oauth-state";
-import { connectorActionResolver } from "../services/connector-action-resolver.service";
+import { connectorActionResolverForConnector } from "../services/connector-action-resolver.service";
 import {
   completeBuiltinConnectorAutomatic$,
   startBuiltinConnectorAutomatic$,
@@ -112,7 +112,9 @@ const startBuiltinAutomaticInner$ = command(
     if (!agentTarget.ok) {
       return notFound(agentTarget.message);
     }
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(
+      connectorActionResolverForConnector(params.connectorSlug),
+    );
     signal.throwIfAborted();
     const resolved = resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,
