@@ -294,6 +294,17 @@ async fn framebuffer(root: &Path, mode: &str, relay: &mut Relay) {
         (640, 480)
     );
     assert!(frame.png().len() > 1000);
+    if let Some(directory) = std::env::var_os("QEMU_GSSAPI_CAPTURE_DIR") {
+        let directory = PathBuf::from(directory);
+        assert!(directory.is_dir() && !directory.is_symlink());
+        let name = format!("{}-{mode}.png", root.file_name().unwrap().to_str().unwrap());
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(directory.join(name))
+            .unwrap();
+        std::io::Write::write_all(&mut output, frame.png()).unwrap();
+    }
     drop(session);
     assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
 }
@@ -321,7 +332,9 @@ fn mit_peer(root: &Path, mode: &str) -> tokio::process::Child {
         .kill_on_drop(true);
     match public(root, "peer-provider").as_str() {
         "pinned-host" => {}
-        "signed-private" => {
+        "signed-private" | "source-built-full-private" => {
+            // These are explicit independently selected fixture profiles,
+            // never a host fallback or production native backend override.
             // Only the independent acceptor receives this exact fixture directory.
             // Missing metadata refuses; there is no ambient-library fallback.
             command.env("LD_LIBRARY_PATH", public(root, "peer-libdir"));

@@ -119,6 +119,14 @@ class RuntimeInputs(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.verify(full_qemu=True)
 
+    def test_new_full_source_profile_cannot_self_admit_an_unreviewed_producer(self):
+        baseline = self.inputs(full_qemu=True)
+        baseline["fullQemuProvider"] = "source-pinned-private-noble-v1"
+        self.save(baseline)
+        # Public inert input records, not a build/runtime/signature receipt.
+        with self.assertRaisesRegex(ValueError, "reviewed native producer pins"):
+            qemu_gssapi.verify_runtime(self.runtime, "x86_64-linux-gnu", True, True)
+
     def test_full_mode_refuses_changed_private_kdc_bytes(self):
         self.inputs(full_qemu=True)
         (self.runtime / "usr/sbin/krb5kdc").write_bytes(b"changed public canary")

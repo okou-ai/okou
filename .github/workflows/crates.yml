@@ -657,6 +657,34 @@ jobs:
         shell: bash
         run: bash .github/scripts/check-packaged-addon-control.sh
 
+  native-full-qemu-producer:
+    name: Signed native full QEMU candidate producer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    needs: [detect]
+    if: needs.detect.outputs.any-changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build two actual source-pinned native candidate binaries
+        run: bash .github/scripts/check-full-qemu-producer.sh
+      - name: Retain public compiler outputs and original producer identity
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: full-qemu-candidate-${{ matrix.os }}
+          path: |
+            crates/target/full-qemu-producer-receipt/
+            crates/target/qemu-full-fixture/signed-noble-*/provision-error.log
+            crates/target/qemu-full-fixture/signed-noble-*/build.log
+          if-no-files-found: error
+          retention-days: 1
+
   native-kerberos-runtime:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -1400,6 +1428,7 @@ jobs:
       - runner-rootfs-process-test
       - native-kerberos-runtime
       - native-gssapi-independent-peer
+      - native-full-qemu-producer
     # Always run so the gate reports an explicit result (not "skipped").
     if: always()
     steps:
@@ -1464,6 +1493,7 @@ jobs:
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "native-gssapi-independent-peer" "${{ needs.native-gssapi-independent-peer.result }}" "$COVERAGE_ALLOW_SKIP"
+          check_result "native-full-qemu-producer" "${{ needs.native-full-qemu-producer.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "$FIREWALL_CONTRACT_ALLOW_SKIP"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"

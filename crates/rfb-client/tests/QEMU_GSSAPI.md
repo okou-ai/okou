@@ -26,6 +26,51 @@ The full fixture's explicit `pinned-host` independent MIT acceptor remains disti
 
 The harness compiles the current Rust test target and owns only its synthetic loopback listeners/processes/private generated directory. Secrets go through private stdin/files, never CLI arguments or environment values. Public fixture-directory/stopped-KDC indicators select the opt-in test target; default ignored tests are not an acceptance result. Cargo/test descendants run in an owned process group; the harness is a subreaper and verifies descendant termination/reap, listener closure and exact secret-tree removal even on timeout/failure. Actual native child reaping is checked by process tests and completed-context/finality controls, not inferred merely from the intentionally unlinked input directory. Do not use external hosts/KDCs, public ingress, global Kerberos/PAM/SSH settings or retained credentials.
 
+## Rebuilt full-private candidate producer
+
+```bash
+bash .github/scripts/check-full-qemu-producer.sh
+```
+
+The separate native x86_64/aarch64 CI producers download the complete
+Depends/Pre-Depends closure from signed Ubuntu snapshot `20260521T000000Z` into
+an empty private APT state. Exact MIT/Cyrus/GnuTLS identities above are retained;
+compiler, libc, Python/venv, shell/tools and development seeds are explicit.
+Archive hashes are checked against signed metadata before collision/path-safe
+extraction. No package installation or maintainer script runs. Declared usrmerge,
+compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace
+only their normal maintainer-generated inputs. Dangling package documentation
+and non-C locale aliases remain recorded, not executable/library/configuration
+inputs or host fallbacks.
+
+QEMU9.2 source and VNC hashes are unchanged. The producer runs the native signed
+compiler/Python in a private read-only input root, ordinary-owner build directories
+and disposable mount/PID/network namespaces. Archive-covered Meson wheels are
+used offline; subproject downloads, modules, plugins and KVM are disabled. Two
+separate generic-ISA builds must produce identical native ELF bytes. The guest
+emulation target remains `x86_64-softmmu` on both native hosts. BIOS/VGA firmware
+is separately hashed against exact members of the pinned QEMU release archive,
+not a host firmware directory.
+
+`full-qemu-producer-receipt/` retains actual candidate QEMU bytes, original signed
+InRelease indexes, compiler log, package/file/alias closure and producer identities.
+Its receipt deliberately has `runtimeVerified: false` and
+`attributionVerified: false`: successful builds do not complete full-ten/PNG or
+loader acceptance. Independently reviewed actual binary/recipe/package-lock pins
+must be recorded in `qemu_gssapi_full_pins.json` before the explicit
+`--source-built-full-private` mode can admit a producer. The initially empty pin
+map refuses before credentials/KDC/QEMU; an arbitrary rehashed tree cannot approve
+itself. This mode is distinct from legacy `--qemu`/`pinned-host` and
+`--controlled-peer-only`/`signed-private`; neither is reinterpreted as a fallback.
+
+Full-private execution additionally needs the private-root harness, actual
+interpreter/transitive/late-plugin/short-lived-tool and firmware/data attribution,
+the unchanged ten tests on both native hosts, their actual 640x480 PNGs and checked
+teardown. These mandatory inputs/executions are **not yet completed** by the
+candidate-producer patch. No K2, six-pass review, non-root or production readiness
+is implied. The optional `QEMU_GSSAPI_CAPTURE_DIR` is only a public image-receipt
+destination for actual fixture frames, never a backend or native-helper override.
+
 ## Native independent-acceptor CI
 
 ```bash

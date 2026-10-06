@@ -14,7 +14,7 @@ use kerberos_credentials::{ClientKeytab, Principal, ServiceTicketCache};
 use tokio::time::Instant;
 use zeroize::Zeroizing;
 
-pub use supervisor::Context;
+pub use supervisor::{Context, NativePackage, native_package};
 
 /// Redistribution notices for the pinned native MIT/musl/Zig dependency closure.
 /// Referenced by sealed package validation so a linked consumer retains the notices.

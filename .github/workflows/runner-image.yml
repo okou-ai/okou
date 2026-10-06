@@ -575,6 +575,82 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/report-memory-peak
 
+  native-package:
+    name: Actual native Kerberos Runner package (${{ matrix.label }})
+    runs-on: ${{ matrix.id == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      actions: read
+      contents: read
+    needs: [prepare, compile]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.prepare.result == 'success' &&
+        needs.prepare.outputs.current-runner-image-needed == 'true' &&
+        (
+          (needs.prepare.outputs.runner-binary-miss-count == '0' && needs.compile.result == 'skipped') ||
+          (needs.prepare.outputs.runner-binary-miss-count != '0' && needs.compile.result == 'success')
+        )
+      }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source-head-sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: runner-cli-${{ github.run_id }}
+          path: runner-cli-intermediate
+      - name: Resolve exact Runner input identity
+        id: binary-input
+        env:
+          GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+          GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+          RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
+        run: .github/scripts/runner-binary-build/digest.sh "${{ matrix.target }}"
+      - uses: ./.github/actions/setup-aws-cli
+      - name: Consume existing validated Runner transport
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          CACHE_REFERENCE: ${{ toJSON(fromJSON(needs.prepare.outputs.runner-binary-hit-references)[matrix.target]) }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          OUTPUT_DIR: crates/target/f5-transport
+          RESOLVE_OUTPUT_DIR: crates/target/f5-transport
+          IS_CACHE_HIT: ${{ contains(fromJSON(needs.prepare.outputs.runner-binary-hit-targets), matrix.target) }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_CACHE_HIT" = true ]; then
+            bash .github/scripts/runner-binary-cache.sh download-reference
+          else
+            bash .github/scripts/runner-binary-transport.sh download
+          fi
+      - name: Bind original producer and verify actual native exports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/resolve-runner-native-provenance.sh "${{ matrix.target }}" "${{ steps.binary-input.outputs.binary-input-digest }}" crates/target/f5-transport
+          bash .github/scripts/check-runner-native-package.sh crates/target/f5-transport/runner crates/target/f5-transport/metadata.json crates/target/f5-transport/manifest.json "${{ matrix.target }}" crates/target/f5-native-package
+      - name: Retain actual exported helper, notices and native receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-runner-package-ci-${{ matrix.target }}
+          path: crates/target/f5-native-package/
+          if-no-files-found: error
+          retention-days: 1
+
   build:
     name: Build runner image (${{ matrix.label }})
     runs-on: ubuntu-latest

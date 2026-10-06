@@ -43,6 +43,51 @@ const NOTICES_DIGEST: &str = "";
 const BINARY: &[u8] = &[];
 #[cfg(not(native_kerberos))]
 const BINARY_DIGEST: &str = "";
+#[cfg(native_kerberos)]
+const NATIVE_TARGET: &str = env!("KERBEROS_WORKER_TARGET");
+#[cfg(not(native_kerberos))]
+const NATIVE_TARGET: &str = "";
+
+/// Immutable redistribution bytes from this consumer's sealed build, never an override.
+pub struct NativePackage {
+    /// Complete static helper ELF.
+    pub helper: &'static [u8],
+    /// Build-verified helper identity.
+    pub helper_sha256: &'static str,
+    /// Complete joined MIT/musl/Zig redistribution notices.
+    pub notices: &'static str,
+    /// Build-verified notice identity.
+    pub notices_sha256: &'static str,
+    /// Native musl target selected by the build recipe.
+    pub target: &'static str,
+}
+
+/// Inspect/export the same sealed bytes used by native resource provisioning.
+/// Unsupported targets or a broken package refuse before returning any bytes.
+pub fn native_package() -> Result<NativePackage, Error> {
+    if BINARY.is_empty()
+        || BINARY.len() > 16 * 1024 * 1024
+        || Sha256::digest(BINARY)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            != BINARY_DIGEST
+        || Sha256::digest(crate::NATIVE_NOTICES.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            != NOTICES_DIGEST
+    {
+        return Err(Error::Unavailable);
+    }
+    Ok(NativePackage {
+        helper: BINARY,
+        helper_sha256: BINARY_DIGEST,
+        notices: crate::NATIVE_NOTICES,
+        notices_sha256: NOTICES_DIGEST,
+        target: NATIVE_TARGET,
+    })
+}
 
 struct Request {
     kind: u8,
@@ -143,21 +188,7 @@ struct Resources {
 }
 impl Resources {
     fn create(root: &Path, capacity: Capacity) -> Result<Self, Error> {
-        if BINARY.is_empty()
-            || BINARY.len() > 16 * 1024 * 1024
-            || Sha256::digest(BINARY)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-                != BINARY_DIGEST
-            || Sha256::digest(crate::NATIVE_NOTICES.as_bytes())
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-                != NOTICES_DIGEST
-        {
-            return Err(Error::Unavailable);
-        }
+        let package = native_package()?;
         let metadata = fs::symlink_metadata(root).map_err(|_| Error::Unavailable)?;
         if !metadata.is_dir()
             || metadata.permissions().mode() & 0o7777 != 0o700
@@ -190,7 +221,9 @@ impl Resources {
         fs::set_permissions(resources.tree.path(), fs::Permissions::from_mode(0o700))
             .map_err(|_| Error::Unavailable)?;
         let mut binary = resources.tree.create_file("helper")?;
-        binary.write_all(BINARY).map_err(|_| Error::Unavailable)?;
+        binary
+            .write_all(package.helper)
+            .map_err(|_| Error::Unavailable)?;
         binary
             .set_permissions(fs::Permissions::from_mode(0o700))
             .map_err(|_| Error::Unavailable)?;

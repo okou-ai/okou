@@ -361,6 +361,33 @@ Inspect the reported error and host support before retrying. Normal termination
 through an owning runner still uses its owned child lifecycle and does not gain
 this new kernel requirement. `--run` targets do not fall back to orphan killing.
 
+### Native Kerberos redistribution package
+
+The root-only operator commands `runner native-kerberos helper`,
+`runner native-kerberos notices` and `runner native-kerberos identity` export
+this Runner's immutable build-selected helper ELF, complete MIT/musl/Zig notices,
+and target/digest/length identity to stdout. Helper output is binary; redirect it
+to a private file and keep the notices alongside any redistributed helper.
+These commands do not open a VNC/KDC connection, start a native worker, advertise
+a profile/capability or enable a product feature. No backend/library/path
+override is admitted. Existing commands and Runner's root requirement are unchanged.
+
+`.github/scripts/check-runner-native-package.py` consumes the actual verified
+Runner payload and its producer metadata on the matching native CPU. It checks
+complete exported bytes against that Runner, full notice delivery and ELF64
+machine/endianness with no `PT_INTERP` or `DT_NEEDED`. Its optional
+`privileged-synthetic` mode exercises the **exported** helper's secret-free
+Ready, invalid-initialize refusal, bad-profile refusal and close/reap/fixed-file
+cleanup inside an already selected disposable native CI context. It neither
+changes host policy nor elevates privilege. Package-only success is not runtime
+success; unsupported bootstrap fails a required positive run.
+
+Both release-derived thin-LTO `ci` and full-LTO `release` Runner consumers need
+separate producer/target/profile-bound checks. The verifier labels HEAD, dirty
+state, original producer, Runner/helper/notice identities, UID/kernel and its
+limited scope. It does not establish mutual GSS, Rust supervisor cancellation or
+non-root availability, and does not authorize production activation.
+
 ## nbd-cow Benchmark
 
 The `nbd-cow` benchmark compares NBD COW with dm-snapshot using fio workloads. It is an opt-in,
