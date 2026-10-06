@@ -27,6 +27,41 @@ interface without modifying active accounts or running Runs; retained new
 links may be unavailable until the supporting versions return. This PR does
 not enable production overrides, deploy, or update the Web floor.
 
+## File lifetime independent of Run provenance
+
+Migration 1323 drops only `run_uploaded_files.run_id -> agent_runs.id`.
+The nullable UUID, its indexes and upsert identity are unchanged. File ownership,
+thread `SET NULL`, media/delivery/queue child foreign keys, object URLs and public
+response shapes remain unchanged. A short file-table lock serializes the
+association precondition with the drop under the normal 1s lock and 10s statement
+timeouts. Unreconciled thread/org associations from run-backed chat files reject
+the migration atomically; this migration does not perform another backfill.
+
+Run, thread and Agent deletion no longer imply file or artifact deletion.
+The new API removes Run-scoped catalog cleanup from all Run/Agent deleters.
+Account erasure remains distinct: verified Clerk user/org deletion explicitly
+removes files and catalog entries through their own user/org, direct thread,
+projection and pending-queue ownership. It works even after the Run and Agent
+are gone, and it preserves other owners' files. Files own their media, delivery
+and pending-catalog cleanup; Run IDs are not erasure selectors.
+
+Apply 1322, drain writers older than its association-capturing API, reconcile
+associations, then apply 1323 before the new API. New API/old database still has
+Run cascading file deletion, so it does not provide the new retention contract.
+Old API/new database preserves file rows but can still remove their catalog
+projections when it deletes a Run/Agent; a retained pending queue can restore
+those projections. Its account erasure also cannot remove independently retained
+files after their Run is gone. Do not process account erasure during that
+DB/API cutover gap, and drain old API requests/jobs before accepting the new
+retention and erasure contract. Rollback to the old API does not restore either
+contract; re-adding the Run FK is not a safe automatic rollback because retained
+provenance may no longer resolve. Keep the new lifecycle API as the rollback
+floor once these semantics are in use.
+
+The owning-event reader path remains for cross-thread ownership and nullable
+associations. No Run purge, Run-ID column removal, object-storage deletion,
+release, production migration or deployment is initiated by this source PR.
+
 ## Chat-derived readers without historical Run joins
 
 Migration 1322 backfills existing run-backed files' nullable thread and org

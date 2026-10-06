@@ -30,7 +30,6 @@ import {
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
-import { deleteArtifactCatalogForRunIds } from "./artifact-catalog-deletion.service";
 import {
   lockMorningBriefNativeAgentAuthorities,
   revokeMorningBriefNativeAuthority,
@@ -267,7 +266,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     kind: "agent",
     agentId: args.agentId,
   });
-  await deleteArtifactCatalogForRunIds(tx, lifecycle.runIds);
   await tx
     .delete(agents)
     .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));

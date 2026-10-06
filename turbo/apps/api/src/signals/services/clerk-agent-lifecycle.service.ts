@@ -11,6 +11,7 @@ import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import { usageCleanupTargets } from "./usage-event-cleanup.service";
 import { logCommittedConversationDeletion } from "./conversation-history-deletion.service";
+import { deleteOwnedArtifactFiles } from "./artifact-catalog-deletion.service";
 import {
   clerkStableContextCleanupSql,
   conversationFreeRunDeleteSql,
@@ -20,7 +21,6 @@ import {
   releasedConversationSweepSchema,
   requireReleasedConversationReferences,
   revokeAgentDeliveriesSql,
-  runCatalogCleanupSql,
   runFreeAgentDeleteSql,
   runFreeUserSessionDeleteSql,
   throwClerkLifecycleFailure,
@@ -32,9 +32,10 @@ import {
 /**
  * Delete one snapshot of target Runs conversation-first, in a single pass.
  *
- * The conversations and their blob references go in one statement, then the
- * catalog, then only conversation-free Runs. A Run that gained a conversation
- * in between survives that DELETE; the short count rolls the whole deletion
+ * The conversations and their blob references go in one statement, then only
+ * conversation-free Runs are deleted. Files and artifacts have independent
+ * owners. A Run that gained a conversation in between survives that DELETE;
+ * the short count rolls the whole deletion
  * back for the job's existing attempt schedule instead of re-sweeping here.
  */
 async function deleteTargetRunsConversationFirst(
@@ -50,9 +51,6 @@ async function deleteTargetRunsConversationFirst(
       await tx.execute(releaseRunConversationsSql(runIds)),
     ),
   );
-  for (const statement of runCatalogCleanupSql(runIds)) {
-    await tx.execute(statement);
-  }
   const [deleted] = parseRawRows(
     deletedRunCountSchema,
     await tx.execute(conversationFreeRunDeleteSql(runIds)),
@@ -86,6 +84,7 @@ const deleteClerkUserLifecycleData$ = command(
         for (const target of usage) {
           await tx.delete(target.table).where(target.condition);
         }
+        await deleteOwnedArtifactFiles(tx, { kind: "user", userId });
         const userSessions = tx
           .select({ id: agentSessions.id })
           .from(agentSessions)
@@ -154,6 +153,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
         for (const target of usage) {
           await tx.delete(target.table).where(target.condition);
         }
+        await deleteOwnedArtifactFiles(tx, { kind: "organization", orgId });
         const agentScope = eq(agents.orgId, orgId);
         // The Agent set is this deletion's snapshot; an Agent created later is
         // not our evidence and survives, as on the locked path before.

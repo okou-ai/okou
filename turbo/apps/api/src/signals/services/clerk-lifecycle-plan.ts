@@ -1,11 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import {
-  artifacts,
-  imageArtifacts,
-  videoArtifacts,
-} from "@okouai/db/schema/artifact";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
@@ -16,7 +11,6 @@ import {
   piStableContextHeads,
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { and, eq, gte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -89,24 +83,6 @@ export function requireReleasedConversationReferences(
     releasedReferences: row.releasedReferences,
     releasedHashes: row.releasedHashes,
   };
-}
-
-export function runCatalogCleanupSql(runIds: readonly string[]) {
-  const ownedFiles = sql`SELECT ${runUploadedFiles.id} FROM ${runUploadedFiles}
-    WHERE ${runUploadedFiles.runId} = ANY(${sql.param(runIds)}::uuid[])`;
-  return [
-    sql`SELECT ${runUploadedFiles.id} FROM ${runUploadedFiles}
-      WHERE ${runUploadedFiles.runId} = ANY(${sql.param(runIds)}::uuid[])
-      ORDER BY ${runUploadedFiles.id} FOR UPDATE`,
-    sql`DELETE FROM ${artifacts} WHERE
-      (${artifacts.kind} = 'file' AND ${artifacts.entityId} IN (${ownedFiles}))
-      OR (${artifacts.kind} = 'image' AND ${artifacts.entityId} IN (
-        SELECT ${imageArtifacts.id} FROM ${imageArtifacts} WHERE ${imageArtifacts.fileId} IN (${ownedFiles})
-      ))
-      OR (${artifacts.kind} = 'video' AND ${artifacts.entityId} IN (
-        SELECT ${videoArtifacts.id} FROM ${videoArtifacts} WHERE ${videoArtifacts.fileId} IN (${ownedFiles})
-      ))`,
-  ];
 }
 
 /**
