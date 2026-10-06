@@ -30,7 +30,9 @@ describe("fixed Auto catalog authority", () => {
     const response = await accept(catalog().get({ headers }), [200]);
     expect(response.body.systemDefaultModel).toBe("okou-1.0");
     expect(
-      response.body.models.every((entry) => entry.priceTier === null),
+      response.body.models.every((entry) => {
+        return entry.priceTier === null;
+      }),
     ).toBeTruthy();
     expect(response.body.models[0]).toMatchObject({
       model: "okou-1.0",
@@ -38,7 +40,9 @@ describe("fixed Auto catalog authority", () => {
       priceTier: null,
     });
     expect(
-      response.body.routes.filter((route) => route.providerType === "built-in"),
+      response.body.routes.filter((route) => {
+        return route.providerType === "built-in";
+      }),
     ).toStrictEqual([
       expect.objectContaining({ providerType: "built-in", enabled: true }),
     ]);
@@ -69,7 +73,9 @@ describe("fixed Auto catalog authority", () => {
       expect.objectContaining({ model, displayName: "Retired direct model" }),
     );
     expect(
-      response.body.routes.some((route) => route.model === model),
+      response.body.routes.some((route) => {
+        return route.model === model;
+      }),
     ).toBeFalsy();
   });
 

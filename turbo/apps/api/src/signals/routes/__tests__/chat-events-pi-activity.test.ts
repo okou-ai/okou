@@ -196,7 +196,6 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         prompt,
         model,
-        runOptions: { codexServiceTier: "fast" },
       },
       usagePricingResolution,
     );
@@ -210,7 +209,7 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     expect(claimed.claim.piModelConfig).toMatchObject({
       provider: "openrouter",
-      serviceTier: "priority",
+      model: "@preset/okou-1-0",
     });
     expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
@@ -243,7 +242,7 @@ describe("CHAT-02: model-first provider policies", () => {
       idempotencyKey: randomUUID(),
       kind: "model" as const,
       provider: "okou-1.0",
-      category: "tokens.output.fast",
+      category: "tokens.output",
       quantity: 2,
     };
     const sandboxUsageReceipts = await Promise.all([

@@ -590,7 +590,8 @@ beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
   installS3Objects();
-  await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
+  // Auto and independent memory share the managed OpenRouter key, not chat routes.
+  await seedBuiltInModelKey(context, "okou-1.0");
 });
 
 describe("Pi memory Stage 1 worker", () => {
@@ -1879,7 +1880,7 @@ const personalMemoryRoutes = [
   {
     type: "codex-oauth-token",
     url: "https://chatgpt.com/backend-api/codex/responses",
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     contextWindow: 1_050_000,
   },
 ] as const;
@@ -2099,7 +2100,7 @@ describe("Stage 1 source credentials", () => {
       subscription.identity,
     );
     expect(native?.request).toMatchObject({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       text: { format: { type: "json_schema", strict: true } },
     });
     expect(native?.request).not.toHaveProperty("max_output_tokens");

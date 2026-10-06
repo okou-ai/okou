@@ -37,7 +37,7 @@ function diagnostics() {
     modelProviderCooldownDiagnosticsContract,
   );
 }
-const headers = { authorization: "Bearer clerk-session" };
+const headers = { authorization: "Bearer clerk-session" } as const;
 function actor(staff = false) {
   const fixture = {
     orgId: staff
@@ -52,7 +52,9 @@ async function enableDiagnostics(fixture: ReturnType<typeof actor>) {
   await updateFeatureSwitchesForUser(context, fixture, {
     [FeatureSwitchKey.OkouDebug]: true,
   });
-  onTestFinished(() => deleteFeatureSwitchesForUser(context, fixture));
+  onTestFinished(() => {
+    return deleteFeatureSwitchesForUser(context, fixture);
+  });
   mocks.clerk.session(fixture.userId, fixture.orgId);
 }
 async function storedCooldown(
@@ -73,11 +75,15 @@ async function storedCooldown(
   );
 }
 function ownedCooldowns(rows: { selectedModel: string }[]) {
-  return rows.filter((row) =>
-    [auto.selectedModel, memory.selectedModel, historical.selectedModel].some(
-      (model) => model === row.selectedModel,
-    ),
-  );
+  return rows.filter((row) => {
+    return [
+      auto.selectedModel,
+      memory.selectedModel,
+      historical.selectedModel,
+    ].some((model) => {
+      return model === row.selectedModel;
+    });
+  });
 }
 describe("GET /api/model-providers/cooldown-diagnostics", () => {
   it("returns 401 when the request is unauthenticated", async () => {
@@ -101,9 +107,9 @@ describe("GET /api/model-providers/cooldown-diagnostics", () => {
     await storedCooldown(memory, earlier);
     await storedCooldown(historical, new Date(startedAt - 1));
     await enableDiagnostics(fixture);
-    const response = await withMockNowForTest(startedAt, () =>
-      accept(diagnostics().get({ headers }), [200]),
-    );
+    const response = await withMockNowForTest(startedAt, () => {
+      return accept(diagnostics().get({ headers }), [200]);
+    });
     expect(response.body.canCancelCooldowns).toBeFalsy();
     expect(ownedCooldowns(response.body.activeCooldowns)).toStrictEqual([
       { ...memory, unavailableUntil: earlier.toISOString() },

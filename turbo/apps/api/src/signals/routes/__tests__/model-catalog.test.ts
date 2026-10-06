@@ -189,10 +189,14 @@ describe("GET /api/model-catalog", () => {
       expect.objectContaining({ model: "okou-1.0", displayName: "Auto" }),
     );
     expect(
-      response.body.models.every((entry) => entry.priceTier === null),
+      response.body.models.every((entry) => {
+        return entry.priceTier === null;
+      }),
     ).toBeTruthy();
     expect(
-      response.body.routes.filter((route) => route.providerType === "built-in"),
+      response.body.routes.filter((route) => {
+        return route.providerType === "built-in";
+      }),
     ).toStrictEqual([
       expect.objectContaining({
         model: "okou-1.0",
