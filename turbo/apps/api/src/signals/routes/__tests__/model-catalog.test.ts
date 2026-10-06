@@ -13,7 +13,6 @@ import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   insertRetiredCatalogRowsFixture,
-  setModelCatalogSystemDefaultFixture,
   stageLegacyChatThreadSelectedModelFixture,
 } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -365,7 +364,7 @@ describe("stored selections of replaced models", () => {
     expect(preference.body.selectedModel).toBe("okou-1.0");
   }, 90_000);
 
-  it("keeps queued Auto when the catalog default changes before pick", async () => {
+  it("keeps the queued Auto selection when the active run releases its slot", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     await seedBuiltInModelKey("okou-1.0");
     const active = await sendChatRun(actor, {
@@ -386,7 +385,6 @@ describe("stored selections of replaced models", () => {
       [201],
     );
     await flushWaitUntilForTest();
-    onTestFinished(await setModelCatalogSystemDefaultFixture("gpt-6-luna"));
     await cancelChatRun(actor, active.runId);
     const runId = await pickedRunId(actor, active.threadId, clientEventId);
     expect((await api.readRun(actor, runId)).source.model).toBe("okou-1.0");

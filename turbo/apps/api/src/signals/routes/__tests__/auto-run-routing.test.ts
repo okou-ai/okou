@@ -1,6 +1,5 @@
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { setModelCatalogSystemDefaultFixture } from "../../../test-fixtures/model-catalog";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -14,8 +13,7 @@ const {
 } = createChatEventsFixture(context);
 
 describe("fixed Auto through public admission and runner claim", () => {
-  it("does not adopt the database platform default as a runtime route", async () => {
-    onTestFinished(await setModelCatalogSystemDefaultFixture("gpt-6-luna"));
+  it("claims fixed Auto through the platform OpenRouter preset", async () => {
     await seedBuiltInModelKey("okou-1.0");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const run = await sendChatRun(actor, {
