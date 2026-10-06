@@ -184,13 +184,33 @@ remain while those production mechanisms are active (#26/#28). Those cases own
 an explicitly separate legacy source, never the shared fixture. The legacy
 source module is not removed by the additive schema PR.
 
-`connector-catalog-immutable.test.ts` is the sole PGlite catalog lifecycle entry.
-Its `api-immutable-catalog` Vitest project does not run shared real-DB setup;
-each implemented case will own a fresh in-process database and close it at
-teardown. File-level lint exceptions are confined to that mechanism file.
-N1–N5 are currently TODO, not passing acceptance tests. Subsequent sync/reader
-PRs must implement them through their real entry points. All ordinary API tests
-continue using real PostgreSQL. The new tables have no production reader yet.
+`connector-catalog-immutable.test.ts` retains its dedicated PGlite catalog
+lifecycle project and existing mechanism-specific lint exceptions. New isolated
+SQL contract suites use the shared `api-isolated-database` project instead of
+copying those exceptions. `src/__tests__/pglite-setup.ts` binds only the DB
+transport to `src/test-fixtures/pglite-database.ts`; routes, services, fixture
+writers and SQL remain real. Every case owns a new engine and async-local
+binding. Only immutable migrated baseline bytes are reused. The project never
+loads shared real-PG setup or opens a `pg.Client` for its pricing seed.
+
+Foreground work is aborted before API-based cleanup, which has its own live
+case-owned signal. Final teardown aborts both signals and drains detached/native
+work before engine close, including setup failures. `pglite-database.test.ts`
+verifies concurrent owner isolation, fail-closed access, cleanup-signal lifetime,
+initialization failure and failed drainage.
+`api/no-test-database-binding` confines engine imports/construction to the
+harness (and the existing catalog mechanism) and prevents the migrated
+`model-providers.test.ts` from returning to a serialized project. The sole
+central DB `vi.mock` is permitted; service mocks and case-local DB mocks remain
+forbidden. These lexical guards do not prove runtime isolation.
+
+PGlite has a single PostgreSQL session. It cannot replace pool/multi-session
+contracts, protocol cancellation or real lock competition. In particular,
+`test-runtime-state.test.ts` currently reaches a transaction that awaits reads
+through the outside pool; a direct PGlite binding stalls that path. It remains
+on native PostgreSQL pending genuine database isolation. Its existing serial
+scheduling is not a resolved ownership guarantee. Do not redirect outside
+queries into the active transaction or widen timeouts to make this pass.
 
 Do not hold advisory locks, inspect `pg_locks`, or install internal admission
 gates to construct or assert an API scenario. Exercise concurrent requests and
