@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.733.0](https://github.com/okou-ai/okou/compare/core-v8.732.1...core-v8.733.0) (2026-10-06)
+
+
+### Features
+
+* enable pwa navigation for staff organizations ([#37787](https://github.com/okou-ai/okou/issues/37787)) ([f150ca6](https://github.com/okou-ai/okou/commit/f150ca60dc652e273d114e7523acd48fac0a2491))
+
 ## [8.732.1](https://github.com/okou-ai/okou/compare/core-v8.732.0...core-v8.732.1) (2026-10-05)
 
 
