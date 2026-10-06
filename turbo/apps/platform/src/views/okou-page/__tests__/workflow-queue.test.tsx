@@ -115,6 +115,7 @@ function installWorkflowQueueFixture(
       serviceTier: null,
       pinnedAt: null,
       archived: false,
+      muted: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
     });

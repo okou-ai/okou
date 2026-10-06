@@ -242,6 +242,7 @@ export function installActiveChatBoundaries(
       serviceTier: thread.serviceTier ?? null,
       pinnedAt: thread.pinnedAt,
       archived: thread.archived,
+      muted: thread.muted ?? false,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
     });

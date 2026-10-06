@@ -286,6 +286,7 @@ export function installContinuityWorkspace(
         serviceTier: thread.serviceTier,
         pinnedAt: thread.pinnedAt,
         archived: thread.archived,
+        muted: thread.muted ?? false,
         computerUseHostId: thread.computerUseHostId,
         cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
       });

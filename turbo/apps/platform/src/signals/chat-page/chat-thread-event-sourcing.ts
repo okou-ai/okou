@@ -372,9 +372,7 @@ function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
     archived: metadata.archived,
-    // Shared metadata from an outgoing API can omit the additive mute field.
-    // Remove after serving and retained rollback APIs require it.
-    muted: metadata.muted ?? false,
+    muted: metadata.muted,
     selectedModel: metadata.selectedModel,
     modelSettings: metadata.modelSettings,
     serviceTier: metadata.serviceTier,

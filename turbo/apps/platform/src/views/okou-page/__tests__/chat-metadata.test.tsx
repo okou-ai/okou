@@ -97,6 +97,7 @@ function threadMetadata(id: string, title: string): ChatThreadMetadata {
     serviceTier: null,
     pinnedAt: null,
     archived: false,
+    muted: false,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
   };

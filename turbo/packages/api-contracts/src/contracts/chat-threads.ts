@@ -987,7 +987,7 @@ const chatThreadMetadataSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable(),
   pinnedAt: z.string().nullable(),
   archived: z.boolean(),
-  muted: z.boolean().optional(),
+  muted: z.boolean(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
 });

@@ -354,9 +354,11 @@ Mute changes use the existing `sort_touched` event with an optional `muted`
 payload, not a new strict-enum kind. The event captures the thread's existing
 `lastMessageAt`; old readers ignore the payload without promoting activity.
 New readers change only mute, preserving activity and metadata timestamps.
-Snapshot/metadata mute fields are optional on the wire and normalize to false
-for old snapshots, cached projections and old API responses. The compactor
-captures the canonical mute state. The existing snapshot/event version remains
+Snapshot mute fields are optional on the wire and normalize to false for old
+snapshots and cached projections. The metadata shortcut response requires
+`muted`: every serving and rollback-eligible API emits it, so the App no
+longer defaults a missing value. The compactor captures the canonical mute
+state. The existing snapshot/event version remains
 unchanged and old readers continue to parse the stream.
 
 New App/old API has no mute operation (404); keep the rollout switch disabled
