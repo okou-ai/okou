@@ -113,10 +113,7 @@ import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import {
-  configureNativeCliArtifact,
-  createChatEventsFixture,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import {
   deleteSlackIntegrationFixture$,
@@ -1439,9 +1436,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const claim = await api.claimRunnerJob(created.runId);
     expect(claim.appendSystemPrompt ?? "").toContain("Timezone: UTC");
     expect(claim.userTimezone).toBeUndefined();
-    expect(claim.networkPolicies).toHaveProperty(
-      "model-provider:anthropic-api-key",
-    );
+    expect(claim.environment).toMatchObject({
+      CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
+    });
+    expect(claim.billableFirewalls).toStrictEqual([]);
     expect(claim.connectorRuntimeTargets).toStrictEqual([]);
     expect(claim).not.toHaveProperty("connectorPermissionBaseline");
   });
@@ -2597,7 +2595,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(claim.sandboxToken).not.toBe("");
     expect(claim.prompt).toBe("summarize the repository");
     expect(claim.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
     });
     expect(claim.cliAgentType).toBe("claude-code");
 
@@ -3185,13 +3183,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("resumes thread sessions only on the same runtime and family", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    // gpt-6-astra has no Pi route, so its built-in route runs a native CLI.
-    const selectedModel = await seedBuiltInModelKey("gpt-6-astra");
+    // The owned GPT 6 Astra subscription has no Pi route and runs the native Codex CLI.
+    const selectedModel = "gpt-6-astra";
     const { actor, agentId, runnerGroup } = await entitledRunActor(
       {},
       NATIVE_RUNNER_ROUTE,
     );
-
     await createBddIntegrationApi(context)
       .configureNativeSubscriptionModels(actor)
       .then(() => {
@@ -3257,11 +3254,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(resumedStorageManifest.storageMounts).toStrictEqual(
       initialStorageMounts,
     );
-    await expectBuiltInModelRunRuntimeRoute(
-      actor,
-      resumed.runId,
-      selectedModel,
-    );
+    await expect(api.readRun(actor, resumed.runId)).resolves.toMatchObject({
+      source: { model: selectedModel, providerType: "codex-oauth-token" },
+    });
+    expect(resumedClaim.billableFirewalls).toStrictEqual([]);
 
     await api.requestCancelRun(actor, resumed.runId, [200]);
     await finishCancelledRun(resumed.runId, resumedClaim.sandboxToken);
@@ -5039,32 +5035,58 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, sent.runId, [200]);
     await finishCancelledRun(sent.runId, claim.sandboxToken);
 
-    // Unavailable selections fall back to the fixed default at enqueue.
-    // Explicitly pinning a model outside the Auto policy is rejected.
+    // Explicit unavailable selections reject without silently switching credential source.
+    // Configuration also rejects pins outside the caller's available models.
     for (const [model, status, code] of [
       ["gpt-6-astra", 400, "BAD_REQUEST"],
       ["claude-fable-5-1", 400, "BAD_REQUEST"],
       ["gpt-5.6-sol", 400, "BAD_REQUEST"],
     ] as const) {
-      const fallback = await chat.sendAndLaunch(actor, {
-        agentId,
-        prompt: `limited-free unavailable ${model} run`,
-        model,
-      });
-      const fallbackClaim = await api.claimRunnerJob(fallback.runId);
-      expect(fallbackClaim.piModelConfig).toMatchObject({
-        provider: "openrouter",
-        catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
-      });
-      expect(fallbackClaim.modelUsageProvider).toBe(
-        SEEDED_SYSTEM_DEFAULT_MODEL,
+      const prompt = `limited-free unavailable ${model} run`;
+      const clientEventId = randomUUID();
+      const input = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: sent.threadId,
+          prompt,
+          model,
+          clientEventId,
+        },
+        [201, 400],
       );
-      await api.requestCancelRun(actor, fallback.runId, [200]);
-      await finishCancelledRun(fallback.runId, fallbackClaim.sandboxToken);
+      if (input.status === 400) {
+        expectApiError(input.body);
+        expect(input.body.error.code).toBe("BAD_REQUEST");
+      } else {
+        await flushWaitUntilForTest();
+        const messages = await piClaimFixture.waitForThreadMessages(
+          actor,
+          sent.threadId,
+          (events) => {
+            return events.some((event) => {
+              return (
+                event.revokesEventId === clientEventId &&
+                event.eventType === "input.rejected"
+              );
+            });
+          },
+        );
+        const rejected = messages.events.find((event) => {
+          return event.revokesEventId === clientEventId;
+        });
+        expect(rejected).toMatchObject({
+          eventType: "input.rejected",
+          error: "pro_required",
+        });
+        expect(rejected?.runId).toBeUndefined();
+      }
+      const queue = await api.readRunQueue(actor);
+      expect(queue.body.concurrency.active).toBe(0);
 
       const rejectedPin = await chat.requestUpdateThreadModelSelection(
         actor,
-        fallback.threadId,
+        sent.threadId,
         model,
         [status],
       );
@@ -5115,11 +5137,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("claims built-in GPT 5.6 chat runs through Pi with the selected OpenAI runtime model", async () => {
+  it("claims personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const selectedModel = "gpt-6-sol";
-    await seedBuiltInModelKey(selectedModel);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
     await createBddIntegrationApi(context)
@@ -5132,7 +5153,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
     const sent = await chat.sendAndLaunch(actor, {
       agentId,
-      prompt: "built-in GPT 5.6 model provider",
+      prompt: "personal Codex GPT 6 model provider",
       model: selectedModel,
     });
 
@@ -5143,20 +5164,22 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       experimentalProfile: DEFAULT_PROFILE,
     });
     const claim = await api.claimRunnerJob(sent.runId);
-    await expectBuiltInModelRunRuntimeRoute(actor, sent.runId, selectedModel);
+    await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
+      source: { model: selectedModel, providerType: "codex-oauth-token" },
+    });
 
-    // GPT 5.6 is Pi-eligible: chat runs launch a Pi turn, not a Codex job.
+    // The personal Codex route launches a Pi turn rather than a native job.
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
-      provider: "openai",
+      provider: "openai-codex",
       model: selectedModel,
     });
     expect(
       claim.firewalls?.map((firewall) => {
         return firewallEntryName(firewall);
       }),
-    ).toContain("model-provider:openai-api-key");
-    expect(claim.billableFirewalls).toContain("model-provider:openai-api-key");
+    ).toContain("model-provider:codex-oauth-token");
+    expect(claim.billableFirewalls).toStrictEqual([]);
     expect(claim.modelUsageProvider).toBe(selectedModel);
 
     await api.requestCancelRun(actor, sent.runId, [200]);
@@ -5213,81 +5236,63 @@ describe("RUN-02: model provider selection and built-in admission", () => {
   });
 
   it.each(["deepseek-v4-flash", "deepseek-v4.1-flash"] as const)(
-    "claims built-in %s chat runs through the Pi Responses route",
+    "does not execute a retired foreground %s route or admit a vendor fallback",
     async (selectedModel) => {
       const api = createRunsApi(context);
       const chat = createChatFilesBddApi(context);
-      if (selectedModel === "deepseek-v4.1-flash") {
-        configureNativeCliArtifact();
-      }
-      await seedBuiltInModelKey(selectedModel);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-      await api.updateUserModelPreference(actor, selectedModel);
-
-      preparePiSandboxClaim();
-
-      const sent = await chat.sendAndLaunch(actor, {
-        agentId,
-        prompt: "built-in DeepSeek Responses model provider",
-        model: selectedModel,
-      });
-
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.runId);
-      await expectBuiltInModelRunRuntimeRoute(actor, sent.runId, selectedModel);
-
-      // Built-in DeepSeek uses Pi's OpenRouter Responses route.
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.piModelConfig).toMatchObject({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: (await readPrimaryBuiltInRouteFixture(selectedModel))
-          .upstreamModel,
-      });
-      expect(
-        claim.firewalls?.map((firewall) => {
-          return firewallEntryName(firewall);
-        }),
-      ).toContain("model-provider:openrouter-codex");
-      expect(claim.billableFirewalls).toContain(
-        "model-provider:openrouter-codex",
+      const prompt = `retired foreground route ${selectedModel}`;
+      if (selectedModel === "deepseek-v4.1-flash") {
+        // This catalog row remains for independent memory, never foreground execution.
+        await seedBuiltInDefaultModelKey();
+        preparePiSandboxClaim();
+        const normalized = await chat.sendAndLaunch(actor, {
+          agentId,
+          prompt,
+          model: selectedModel,
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(normalized.runId);
+        expect(claim.piModelConfig).toMatchObject({
+          provider: "openrouter",
+          catalogModel: "okou-1.0",
+          model: "@preset/okou-1-0",
+        });
+        await expect(
+          api.readRun(actor, normalized.runId),
+        ).resolves.toMatchObject({
+          source: { model: "okou-1.0", providerType: "built-in" },
+        });
+        expect(claim.modelUsageProvider).toBe("okou-1.0");
+        expect(claim.billableFirewalls).toStrictEqual([
+          "model-provider:openrouter-codex",
+        ]);
+        await api.requestCancelRun(actor, normalized.runId, [200]);
+        return;
+      }
+      const rejected = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          prompt,
+          model: selectedModel,
+        },
+        [400],
       );
-      expect(claim.modelUsageProvider).toBe(selectedModel);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error(
-          "Expected the built-in DeepSeek run to expose OKOU_TOKEN",
-        );
-      }
-      if (selectedModel === "deepseek-v4-flash") {
-        // This OpenRouter route needs the existing image-recognition tool.
-        expect(claim.appendSystemPrompt ?? "").toContain(
-          "okou image-recognition",
-        );
-        expect(verifyOkouToken(token)?.capabilities).toContain(
-          "image-recognition:write",
-        );
-      } else {
-        expect(claim.appendSystemPrompt ?? "").not.toContain(
-          "okou image-recognition",
-        );
-        expect(verifyOkouToken(token)?.capabilities).not.toContain(
-          "image-recognition:write",
-        );
-      }
-
-      await api.requestCancelRun(actor, sent.runId, [200]);
+      expectApiError(rejected.body);
+      expect(rejected.body.error.code).toBe("BAD_REQUEST");
+      const queue = await api.readRunQueue(actor);
+      expect(queue.body.concurrency.active).toBe(0);
     },
   );
 
-  it("offers image recognition only for image-unsupported models", async () => {
+  it("rejects retired image-unsupported models and omits recognition for supported personal models and Auto", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    // Native DeepSeek serves V4.1 with images; OpenRouter V4 Flash is text-only.
-    const unsupportedModel = "deepseek-v4-flash";
-    const supportedModel = "claude-sonnet-5";
-    const unknownModel = "gpt-5.6-sol";
+    // Retired text-only foreground routes cannot grant an image-recognition capability.
+    const retiredUnsupportedModel = "deepseek-v4-flash";
+    const supportedModel = "gpt-6-sol";
+    const unknownModel = await seedBuiltInDefaultModelKey();
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     await api.ensurePersonalSubscriptionModel(actor);
 
@@ -5313,20 +5318,17 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       return { claim, runId: sent.runId };
     }
 
-    const unsupported = await claimModel(unsupportedModel);
-    const unsupportedToken = unsupported.claim.platformEnvironment.OKOU_TOKEN;
-    if (!unsupportedToken) {
-      throw new Error(
-        "Expected the unsupported-model run to expose OKOU_TOKEN",
-      );
-    }
-    expect(unsupported.claim.appendSystemPrompt ?? "").toContain(
-      'okou image-recognition --file <image-path> --prompt "<instruction>"',
+    const rejected = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        prompt: "retired text-only foreground model",
+        model: retiredUnsupportedModel,
+      },
+      [400],
     );
-    expect(verifyOkouToken(unsupportedToken)?.capabilities).toContain(
-      "image-recognition:write",
-    );
-    await api.requestCancelRun(actor, unsupported.runId, [200]);
+    expectApiError(rejected.body);
+    expect(rejected.body.error.code).toBe("BAD_REQUEST");
 
     const supported = await claimModel(supportedModel);
     const supportedToken = supported.claim.platformEnvironment.OKOU_TOKEN;
@@ -10458,9 +10460,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     const claim = await api.claimRunnerJob(run.runId);
 
-    expect(claim.networkPolicies).toHaveProperty(
-      "model-provider:anthropic-api-key",
-    );
+    expect(claim.environment).toMatchObject({
+      CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
+    });
+    expect(claim.billableFirewalls).toStrictEqual([]);
     expect(claim).not.toHaveProperty("connectorPermissionBaseline");
     await api.requestCancelRun(actor, run.runId, [200]);
   });
@@ -10588,15 +10591,16 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(grantedContext.claim.networkPolicyRefreshes).not.toHaveProperty(
       "model-provider:anthropic-api-key",
     );
+    expect(grantedContext.claim.environment).toMatchObject({
+      CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
+    });
+    expect(grantedContext.claim.billableFirewalls).toStrictEqual([]);
     expect(
       findFirewallEntry(
         grantedContext.claim.firewalls,
         "model-provider:anthropic-api-key",
       ),
-    ).toMatchObject({
-      kind: "builtin",
-      name: "model-provider:anthropic-api-key",
-    });
+    ).toBeUndefined();
     expect(grantedContext.claim.connectorRuntimeTargets).toContainEqual({
       kind: "builtin",
       connectorSlug: "slack",
@@ -11515,6 +11519,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     });
     const member = bdd.user({ orgId: actor.orgId });
     await bdd.completeOnboarding(member);
+    await api.ensurePersonalSubscriptionModel(member, NATIVE_RUNNER_ROUTE);
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, member, "scrape", true);
     const run = await api.createThreadRun(member, {
@@ -11992,7 +11997,7 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
         {
           agentId,
           prompt: request.prompt,
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           clientEventId,
         },
         [201],
@@ -13527,6 +13532,8 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
 
     const member = bdd.user({ orgId: actor.orgId });
     await bdd.completeOnboarding(member);
+    await seedBuiltInDefaultModelKey();
+    preparePiSandboxClaim();
     const memberAgent = await bdd.createAgent(member, {
       displayName: "BDD member usage agent",
       visibility: "private",
@@ -13539,7 +13546,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const memberRun = await api.createThreadRun(member, {
       agentId: memberAgent.agentId,
       prompt: "member usage",
-      model: NATIVE_RUNNER_ROUTE.model,
+      model: "okou-1.0",
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -14001,16 +14008,16 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
 
     async function completePublicFailure(args: {
       readonly failureReason: RunFailureReasonToken;
-      readonly modelProvider?: "anthropic-api-key" | "built-in";
+      readonly modelProvider?: "claude-code-oauth-token" | "built-in";
     }) {
       const api = createRunsApi(context);
       const chat = createChatFilesBddApi(context);
       const webhooks = createWebhookCallbackApi(context);
-      const modelProvider = args.modelProvider ?? "anthropic-api-key";
+      const modelProvider = args.modelProvider ?? "claude-code-oauth-token";
       const selectedModel =
         modelProvider === "built-in"
           ? await seedBuiltInDefaultModelKey()
-          : "claude-sonnet-5";
+          : "claude-fable-5-1";
       const { actor, agentId, runnerGroup } = await entitledRunActor();
       const run = await chat.sendAndLaunch(actor, {
         agentId,
@@ -14067,7 +14074,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       },
     );
 
-    it.each(["anthropic-api-key", "built-in"] as const)(
+    it.each(["claude-code-oauth-token", "built-in"] as const)(
       "preserves failed completion when sandbox root storage fills on %s",
       async (modelProvider) => {
         const { failures, rawFailures } = await completePublicFailure({

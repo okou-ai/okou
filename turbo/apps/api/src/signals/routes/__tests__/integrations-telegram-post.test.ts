@@ -1896,7 +1896,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const actor = actorForFixture(fixture);
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-sonnet-5",
+      model: "claude-sonnet-5-5",
     });
     const telegramMocks = telegramApiMocks();
 
@@ -1936,7 +1936,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             username: "alice",
             first_name: "Alice",
           },
-          text: "/model Claude Sonnet 5",
+          text: "/model Claude Sonnet 5.5",
         },
       },
     });
@@ -1945,7 +1945,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(telegramMocks.sentMessages[1]?.text).toContain(
       "existing Okou conversation",
     );
-    await expect(memberDefaultModel(fixture)).resolves.toBe("claude-sonnet-5");
+    await expect(memberDefaultModel(fixture)).resolves.toBe(
+      "claude-sonnet-5-5",
+    );
 
     const defaultModel = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -1969,7 +1971,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(telegramMocks.sentMessages[2]?.text).toContain(
       "existing Okou conversation",
     );
-    await expect(memberDefaultModel(fixture)).resolves.toBe("claude-sonnet-5");
+    await expect(memberDefaultModel(fixture)).resolves.toBe(
+      "claude-sonnet-5-5",
+    );
   });
 
   it.each(["photo", "document"] as const)(

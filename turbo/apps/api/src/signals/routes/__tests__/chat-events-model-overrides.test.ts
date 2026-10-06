@@ -1,5 +1,5 @@
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
@@ -18,12 +18,10 @@ import {
   eventBackedContents,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const {
   api,
-  authDeviceSupport,
   chat,
   misc,
   webhooks,
@@ -38,14 +36,17 @@ const {
   waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
-  seedBuiltInModelKey,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
   piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
-function expectedDefaultEffort(model: string): "xhigh" | "max" {
-  return model === "gpt-6-luna" || model === "gpt-6.1-sol" ? "xhigh" : "max";
+function expectedDefaultEffort(model: string): "xhigh" | "max" | "medium" {
+  return model === "gpt-6-luna"
+    ? "xhigh"
+    : model === "gpt-6.1-sol"
+      ? "medium"
+      : "max";
 }
 
 function completedSubscriptionHistory(
@@ -120,18 +121,18 @@ describe("CHAT-02: run-level model overrides", () => {
       [200, 201],
     );
     await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
     });
 
     const firstPrompt = "first turn on the default opus policy";
     const first = await sendChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-opus-5",
+      "claude-opus-5-5",
     );
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, "opus answer")]);
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
@@ -143,7 +144,11 @@ describe("CHAT-02: run-level model overrides", () => {
         return message.content === "opus answer";
       });
     });
-    await expectThreadCreatedModelEvent(actor, first.threadId, "claude-opus-5");
+    await expectThreadCreatedModelEvent(
+      actor,
+      first.threadId,
+      "claude-opus-5-5",
+    );
     expect(
       (await api.readRun(actor, first.runId)).result?.agentSessionId,
     ).toMatch(/[0-9a-f-]{36}/);
@@ -155,7 +160,7 @@ describe("CHAT-02: run-level model overrides", () => {
       agentId,
       threadId: first.threadId,
       prompt: "switch to sonnet",
-      model: "claude-sonnet-5",
+      model: "claude-sonnet-5-5",
     });
     const secondRun = await api.readRun(actor, second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
@@ -169,7 +174,7 @@ describe("CHAT-02: run-level model overrides", () => {
       `bdd-cli-${first.runId}`,
     );
     expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
     );
     // The send persists its model selection on the thread.
     await expect(
@@ -180,14 +185,14 @@ describe("CHAT-02: run-level model overrides", () => {
           expect.objectContaining({
             kind: "model_selection_updated",
             chatThreadId: first.threadId,
-            selectedModel: "claude-sonnet-5",
+            selectedModel: "claude-sonnet-5-5",
           }),
         ]),
       },
     });
     await expect(
       chat.readThreadMetadata(actor, first.threadId),
-    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5-5" });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
     await flushWaitUntilForTest();
@@ -204,41 +209,57 @@ describe("CHAT-02: run-level model overrides", () => {
       `bdd-cli-${second.runId}`,
     );
     expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
     );
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 
-  it("captures the system default when the stored model's provider is removed", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor();
+  it("rejects a disconnected personal thread model even when the member default is Auto", async () => {
+    const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-
     await api.updateUserModelPreference(actor, "okou-1.0");
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-sonnet-5",
+      model: "claude-sonnet-5-5",
     });
-    await authDeviceSupport.deletePersonalModelProviderAccount(
+    await misc.deletePersonalModelProvider(
       actor,
-      providerId,
+      "claude-code-oauth-token",
+      [204],
     );
-    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-
-    // The member preference does not replace an unavailable thread model.
-    const fallback = await sendChatRun(actor, {
-      agentId,
-      threadId: thread.id,
-      prompt: "use the system default",
+    const clientEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt: "keep my personal credential source",
+        clientEventId,
+      },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const messages = await waitForThreadMessages(actor, thread.id, (items) => {
+      return items.some((event) => {
+        return (
+          event.revokesEventId === clientEventId &&
+          event.eventType === "input.rejected"
+        );
+      });
     });
-    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
+    const rejected = messages.events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    expect(rejected).toMatchObject({
+      eventType: "input.rejected",
+      error: "conflict",
+    });
+    expect(rejected?.runId).toBeUndefined();
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-sonnet-5-5",
     });
-    await cancelChatRun(actor, fallback.runId);
   }, 90_000);
 
   it.each(

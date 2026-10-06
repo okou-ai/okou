@@ -272,13 +272,10 @@ export const resolveModelSelectionPin$ = command(
             "Select Auto or a model from your connected personal subscription",
           );
     }
-    const unavailable =
-      selectedModel === params.modelSelection.selectedModel
-        ? unavailablePersonalPin(facts.catalog, selectedModel)
-        : null;
+    const unavailable = unavailablePersonalPin(facts.catalog, selectedModel);
     if (unavailable) {
-      // Preserve the requested credential source so account capture rejects it;
-      // a missing personal account must never execute against platform billing.
+      // Preserve the personal credential source, including replacement-chain aliases,
+      // so a missing account never executes against platform billing.
       return unavailable;
     }
     // Stored Custom choices no longer represent a runtime source. Normalize them

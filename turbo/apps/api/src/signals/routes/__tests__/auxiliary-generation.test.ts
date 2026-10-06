@@ -79,7 +79,7 @@ async function prepareChatTitle() {
       const sent = await accept(
         chat.requestSendEvent(
           actor,
-          { agentId: agent.agentId, prompt, model: "claude-sonnet-5" },
+          { agentId: agent.agentId, prompt, model: "claude-sonnet-5-5" },
           [201],
         ),
         [201],

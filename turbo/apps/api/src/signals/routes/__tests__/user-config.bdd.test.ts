@@ -389,8 +389,12 @@ describe("AUTH-03 user model preference", () => {
     );
     expectApiError(unsupported.body);
     expect(unsupported.body.error.message).toBe(
-      "Reasoning effort is not supported by the selected model",
+      "Reasoning effort is not available for this subscription",
     );
+    await expect(cfg.readModelPreference(admin)).resolves.toMatchObject({
+      selectedModel: "gpt-6-luna",
+      modelSettings: luna.modelSettings,
+    });
   });
 
   it("rejects contract-invalid model preference bodies and unauthenticated access", async () => {

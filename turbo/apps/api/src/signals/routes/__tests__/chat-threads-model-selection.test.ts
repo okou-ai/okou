@@ -46,7 +46,7 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const thread = await chat.createThread(actor, {
     agentId: agent.agentId,
     title,
-    model: "claude-sonnet-5",
+    model: "claude-sonnet-5-5",
   });
   if (!actor.orgId) {
     throw new Error("Expected the seeded actor to belong to an org");
@@ -110,28 +110,29 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     );
     expect(rejected.body).toMatchObject({
       error: {
-        message: "The selected model is not available in this workspace",
+        message:
+          "Select Auto or a model from your connected personal subscription",
       },
     });
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5-5" });
 
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-5",
+      "claude-opus-5-5",
     );
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({ selectedModel: "claude-opus-5" });
+    ).resolves.toMatchObject({ selectedModel: "claude-opus-5-5" });
   });
 
   it("rejects unsupported effort levels and persists supported ones", async () => {
     const fixture = await seedChatThread("Effort validation");
     for (const [model, reasoningEffort] of [
-      ["claude-opus-5", "xhigh"],
-      ["claude-sonnet-5", "xhigh"],
+      ["claude-opus-5-5", "xhigh"],
+      ["claude-sonnet-5-5", "xhigh"],
     ] as const) {
       const unsupported = await chat.requestUpdateThreadModelSelection(
         fixture.actor,
@@ -150,13 +151,13 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       await chat.updateThreadModelSelection(
         fixture.actor,
         fixture.threadId,
-        "claude-sonnet-5",
+        "claude-sonnet-5-5",
         { reasoningEffort },
       );
       await expect(
         chat.readThreadMetadata(fixture.actor, fixture.threadId),
       ).resolves.toMatchObject({
-        modelSettings: { "claude-sonnet-5": { effort: reasoningEffort } },
+        modelSettings: { "claude-sonnet-5-5": { effort: reasoningEffort } },
       });
     }
   });
@@ -166,32 +167,32 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       { reasoningEffort: "high" },
     );
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-5",
+      "claude-opus-5-5",
     );
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({
-      selectedModel: "claude-opus-5",
-      modelSettings: { "claude-sonnet-5": { effort: "high" } },
+      selectedModel: "claude-opus-5-5",
+      modelSettings: { "claude-sonnet-5-5": { effort: "high" } },
     });
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-5",
+      "claude-opus-5-5",
       { reasoningEffort: "extra" },
     );
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({
       modelSettings: {
-        "claude-sonnet-5": { effort: "high" },
-        "claude-opus-5": { effort: "extra" },
+        "claude-sonnet-5-5": { effort: "high" },
+        "claude-opus-5-5": { effort: "extra" },
       },
     });
     const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
@@ -202,7 +203,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         modelSettingsPatch: {
-          model: "claude-sonnet-5",
+          model: "claude-sonnet-5-5",
           effort: "high",
         },
       }),
@@ -211,7 +212,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         modelSettingsPatch: {
-          model: "claude-opus-5",
+          model: "claude-opus-5-5",
           effort: "extra",
         },
       }),
@@ -223,21 +224,21 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       { reasoningEffort: "extra" },
     );
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-5",
+      "claude-opus-5-5",
     );
     const metadata = await chat.readThreadMetadata(
       fixture.actor,
       fixture.threadId,
     );
     expect(metadata).toMatchObject({
-      selectedModel: "claude-opus-5",
-      modelSettings: { "claude-sonnet-5": { effort: "extra" } },
+      selectedModel: "claude-opus-5-5",
+      modelSettings: { "claude-sonnet-5-5": { effort: "extra" } },
     });
   });
 
@@ -285,7 +286,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         headers: { authorization: `Bearer ${token}` },
         params: { id: fixture.threadId },
         body: {
-          model: "claude-sonnet-5",
+          model: "claude-sonnet-5-5",
         },
       }),
       [204],
@@ -306,7 +307,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       pinnedAt: null,
       archived: false,
       muted: false,
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-sonnet-5-5",
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
@@ -327,7 +328,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         headers: { authorization: `Bearer ${token}` },
         params: { id: fixture.threadId },
         body: {
-          model: "claude-sonnet-5",
+          model: "claude-sonnet-5-5",
         },
       }),
       [403],

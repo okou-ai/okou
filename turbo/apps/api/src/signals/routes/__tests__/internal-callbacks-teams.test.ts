@@ -16,7 +16,6 @@ import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";

@@ -7461,12 +7461,15 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         agentId: doomedPublicAgent.agentId,
         title: "BDD peer thread on the deleted user's Agent",
       });
-      // The peer's first run needs the member's initialized memory.
+      // The peer owns its initialized memory and personal subscription.
       await bdd.completeOnboarding(peer);
+      await runs.ensurePersonalSubscriptionModel(peer, {
+        model: "claude-sonnet-5-5",
+      });
       const peerRun = await runs.createThreadRun(peer, {
         agentId: doomedPublicAgent.agentId,
         prompt: "peer run on the deleted user's Agent",
-        model: "claude-sonnet-5",
+        model: "claude-sonnet-5-5",
       });
       const doomedThread = await chat.createThread(doomed, {
         agentId: doomedAgent.agentId,

@@ -913,7 +913,7 @@ describe("canonical Discord ingress", () => {
     await accept(
       preferences.update({
         headers: { authorization: "Bearer clerk-session" },
-        body: { selectedModel: "claude-opus-5", serviceTier: null },
+        body: { selectedModel: "claude-opus-5-5", serviceTier: null },
       }),
       [200],
     );
@@ -984,7 +984,7 @@ describe("canonical Discord ingress", () => {
       },
     );
     expect(dmThreads).toMatchObject([
-      { id: originalDm.id, selectedModel: "claude-opus-5" },
+      { id: originalDm.id, selectedModel: "claude-opus-5-5" },
     ]);
     const inputs = currentInputs(await events(actor, originalDm.id));
     expect(inputs).toHaveLength(2);
@@ -999,7 +999,7 @@ describe("canonical Discord ingress", () => {
     await runsApi.heartbeatRunner(actor.runnerGroup);
     const claim = await runsApi.claimRunnerJob(nextInput.runId);
     expect(claim.prompt).toBe(nextDm.content);
-    expect(claim.modelUsageProvider).toBe("claude-opus-5");
+    expect(claim.modelUsageProvider).toBe("claude-opus-5-5");
     expect(claim.appendSystemPrompt).not.toContain("ship on Friday");
     await runsApi.requestCancelRun(actor.actor, nextInput.runId, [200]);
   });

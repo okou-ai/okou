@@ -82,6 +82,7 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  */
 
 const context = testContext();
+const codexFirewallApi = createFirewallApi(context);
 const publicConnections = createPublicFirewallConnections(context);
 const TERMINAL_RUN_STATUSES = [
   "completed",
@@ -2685,10 +2686,20 @@ describe("FW-8: static access tokens and unavailable sources", () => {
   });
 });
 
+async function ownedCodexMetadata(actor: ApiTestUser) {
+  const sourceId = await codexFirewallApi.seededPersonalCodexAccountId(actor);
+  return {
+    sourceType: "model-provider" as const,
+    sourceUserId: actor.userId,
+    sourceId,
+    metadataKey: "codex-oauth-token",
+  };
+}
+
 describe("FW-9: codex model-provider access", () => {
-  it("resolves static model-provider auth from an empty runtime namespace", async () => {
+  it("rejects organization-scoped model credentials from an empty runtime namespace", async () => {
     await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
+      const fw = codexFirewallApi;
 
       const resolved = await fw.requestFirewallAuth(
         headers,
@@ -2706,22 +2717,16 @@ describe("FW-9: codex model-provider access", () => {
             },
           },
         },
-        [200],
+        [403],
       );
-      if (resolved.status !== 200) {
-        throw new Error("Expected static model-provider auth to resolve");
-      }
-      expect(resolved.body.headers["x-api-key"]).toBe("test-anthropic-key");
-      expect(resolved.body.resolvedSecrets).toStrictEqual([
-        "ANTHROPIC_API_KEY",
-      ]);
-      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body).toMatchObject({ error: { code: "FORBIDDEN" } });
+      expect(resolved.body).not.toHaveProperty("headers");
     });
   });
 
-  it("derives static model-provider auth when metadata is omitted", async () => {
+  it("rejects model credentials with omitted account ownership metadata", async () => {
     await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
+      const fw = codexFirewallApi;
 
       const resolved = await fw.requestFirewallAuth(
         headers,
@@ -2732,23 +2737,15 @@ describe("FW-9: codex model-provider access", () => {
           },
           secretConnectorMap: { ANTHROPIC_API_KEY: "anthropic-api-key" },
         },
-        [200],
+        [403],
       );
-      if (resolved.status !== 200) {
-        throw new Error(
-          "Expected derived static model-provider auth to resolve",
-        );
-      }
-      expect(resolved.body.headers["x-api-key"]).toBe("test-anthropic-key");
-      expect(resolved.body.resolvedSecrets).toStrictEqual([
-        "ANTHROPIC_API_KEY",
-      ]);
-      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+      expect(resolved.body).toMatchObject({ error: { code: "FORBIDDEN" } });
+      expect(resolved.body).not.toHaveProperty("headers");
     });
   });
 
-  it("refreshes an expired org codex provider and serves the stored token afterwards", async () => {
-    const fw = createFirewallApi(context);
+  it("refreshes the exact owned Codex account and serves its stored token afterwards", async () => {
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
@@ -2774,11 +2771,7 @@ describe("FW-9: codex model-provider access", () => {
       },
       secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
       secretConnectorMetadataMap: {
-        CHATGPT_ACCESS_TOKEN: {
-          sourceType: "model-provider" as const,
-          sourceUserId: ORG_SENTINEL_USER_ID,
-          metadataKey: "codex-oauth-token",
-        },
+        CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
       },
     };
 
@@ -2806,8 +2799,8 @@ describe("FW-9: codex model-provider access", () => {
     expect(served.body.refreshedConnectors).toStrictEqual([]);
   });
 
-  it("derives the model-provider source when metadata is omitted", async () => {
-    const fw = createFirewallApi(context);
+  it("rejects Codex access when concrete account metadata is omitted", async () => {
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
@@ -2835,18 +2828,14 @@ describe("FW-9: codex model-provider access", () => {
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
       },
-      [200],
+      [403],
     );
-    if (refreshed.status !== 200) {
-      throw new Error("Expected derived-source codex refresh to succeed");
-    }
-    expect(refreshed.body.headers.Authorization).toBe(
-      "Bearer derived-chatgpt-token",
-    );
+    expect(refreshed.body).toMatchObject({ error: { code: "FORBIDDEN" } });
+    expect(refreshed.body).not.toHaveProperty("headers");
   });
 
   it("rejects cross-user model-provider sources and unknown aliases", async () => {
-    const fw = createFirewallApi(context);
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
@@ -2885,11 +2874,7 @@ describe("FW-9: codex model-provider access", () => {
         },
         secretConnectorMap: { CHATGPT_REFRESH_TOKEN: "codex-oauth-token" },
         secretConnectorMetadataMap: {
-          CHATGPT_REFRESH_TOKEN: {
-            sourceType: "model-provider" as const,
-            sourceUserId: ORG_SENTINEL_USER_ID,
-            metadataKey: "codex-oauth-token",
-          },
+          CHATGPT_REFRESH_TOKEN: await ownedCodexMetadata(actor),
         },
       },
       [424],
@@ -2915,16 +2900,14 @@ describe("FW-9: codex model-provider access", () => {
           },
         },
       },
-      [424],
+      [403],
     );
-    if (userScoped.status !== 424) {
-      throw new Error("Expected user-scoped lookup to miss the org row");
-    }
-    expect(userScoped.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
+    expect(userScoped.body).toMatchObject({ error: { code: "FORBIDDEN" } });
+    expect(userScoped.body).not.toHaveProperty("headers");
   });
 
   it("recovers an unclassified reconnect-flagged codex provider after a successful refresh", async () => {
-    const fw = createFirewallApi(context);
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
@@ -2953,6 +2936,9 @@ describe("FW-9: codex model-provider access", () => {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+        secretConnectorMetadataMap: {
+          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+        },
       },
       [200],
     );
@@ -2965,7 +2951,7 @@ describe("FW-9: codex model-provider access", () => {
   });
 
   it("re-refreshes unclassified reconnect-flagged codex providers before their token expires", async () => {
-    const fw = createFirewallApi(context);
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     await fw.seedPersonalCodexProvider(actor, {
       accessToken: "current-chatgpt-token",
@@ -2994,6 +2980,9 @@ describe("FW-9: codex model-provider access", () => {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+        secretConnectorMetadataMap: {
+          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+        },
       },
       [200],
     );
@@ -3008,46 +2997,42 @@ describe("FW-9: codex model-provider access", () => {
     ]);
   });
 
-  it("reports missing codex providers as not configured", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const missing = await fw.requestFirewallAuth(
-        headers,
-        {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-          },
-          secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+  it("reports a missing exact owned Codex account as not configured", async () => {
+    const { actor, headers } = await firewallRun();
+    const fw = createFirewallApi(context);
+    const missing = await fw.requestFirewallAuth(
+      headers,
+      {
+        encryptedSecrets: fw.encryptedSecretsBody({}),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
-        [424],
-      );
-      if (missing.status !== 424) {
-        throw new Error("Expected missing codex provider to fail with 424");
-      }
-      expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-    });
+        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+        secretConnectorMetadataMap: {
+          CHATGPT_ACCESS_TOKEN: {
+            sourceType: "model-provider" as const,
+            sourceUserId: actor.userId,
+            sourceId: randomUUID(),
+            metadataKey: "codex-oauth-token",
+          },
+        },
+      },
+      [424],
+    );
+    if (missing.status !== 424) {
+      throw new Error("Expected missing Codex account to fail with 424");
+    }
+    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
   });
 
   it("stops retrying terminal chatgpt refresh failures", async () => {
-    const fw = createFirewallApi(context);
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     const terminalErrorCodes = [
       "refresh_token_reused",
       "refresh_token_expired",
       "refresh_token_invalidated",
     ] as const;
-    const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
-      }),
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-      },
-      secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-    };
-
     for (const errorCode of terminalErrorCodes) {
       await fw.seedPersonalCodexProvider(actor, {
         accessToken: "stale-chatgpt-token",
@@ -3056,6 +3041,18 @@ describe("FW-9: codex model-provider access", () => {
         idToken: "id-token-bdd",
         expiresIn: -60,
       });
+      const body = {
+        encryptedSecrets: fw.encryptedSecretsBody({
+          CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
+        }),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+        },
+        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+        secretConnectorMetadataMap: {
+          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+        },
+      };
       let refreshCalls = 0;
       fw.mockCodexTokenRefresh(() => {
         refreshCalls += 1;
@@ -3227,7 +3224,7 @@ describe("FW-9: codex model-provider access", () => {
   });
 
   it("retries a transient codex refresh failure", async () => {
-    const fw = createFirewallApi(context);
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
@@ -3256,6 +3253,9 @@ describe("FW-9: codex model-provider access", () => {
         Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
       },
       secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+      secretConnectorMetadataMap: {
+        CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+      },
     };
 
     const failed = await fw.requestFirewallAuth(headers, body, [502]);
@@ -3275,7 +3275,7 @@ describe("FW-9: codex model-provider access", () => {
   });
 
   it("omits the failure reason for unknown chatgpt refresh error codes", async () => {
-    const fw = createFirewallApi(context);
+    const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
     await fw.seedPersonalCodexProvider(actor, {
       accessToken: "stale-chatgpt-token",
@@ -3306,6 +3306,9 @@ describe("FW-9: codex model-provider access", () => {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+        secretConnectorMetadataMap: {
+          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+        },
       },
       [502],
     );
