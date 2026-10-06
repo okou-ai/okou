@@ -872,9 +872,7 @@ function PlanPrice({
 
 /* Each plan keeps its complete value story in one list. Concurrency leads both
    lists, so 3 against 10 is still the first comparison without becoming a
-   second visual hierarchy between the price and the bullets. Pro names three
-   flagship models rather than asking "Every model" to carry the claim, then
-   keeps BYOK as its own value prop.
+   second visual hierarchy between the price and the bullets.
 
    The built-in research APIs ship on Pro, so they sit in Pro's list. One line
    covers SEO, lead, web, and market data instead of three, which names the
@@ -897,12 +895,8 @@ function PlanPrice({
    only once ORG_PLAN_ENTITLEMENT_TIER_VALUES carries a per-tier connector
    limit and createCustomConnector$ enforces it.
 
-   Nine rows on each side, every row a single line at this width, so the columns
-   align row for row across the divider.
-
-   The dialog is a fixed 43rem, leaving 570px for the columns, which Pro's nine
-   rows sit exactly on. A tenth row has to replace one, and any row that wraps
-   costs the same height as a new row. */
+   The dialog is a fixed 43rem, leaving 570px for the columns. Any row that
+   wraps costs the same height as a new row. */
 function planHighlights(tier: UsagePackPlanTier): readonly string[] {
   const concurrentAgents = i18n.t(
     ($) => {
@@ -948,12 +942,6 @@ function planHighlights(tier: UsagePackPlanTier): readonly string[] {
   }
   return [
     concurrentAgents,
-    i18n.t(($) => {
-      return $.billing.plans.highlights.models;
-    }),
-    i18n.t(($) => {
-      return $.billing.plans.features.byok;
-    }),
     i18n.t(($) => {
       return $.billing.plans.highlights.automations;
     }),
