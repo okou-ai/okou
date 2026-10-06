@@ -8,6 +8,7 @@ import type { ComputerUseAuthorizationSignals } from "./computer-use-authorizati
 import type { MailDraftSignals } from "./mail-draft.ts";
 import type { PermissionSignals } from "./permission-card-signals.ts";
 import type { PlanUpgradeSignals } from "./plan-upgrade-block.ts";
+import type { SubscriptionResetSignals } from "./subscription-reset-block.ts";
 
 /**
  * The signals behind one resource occurrence in an event's markdown tree.
@@ -22,6 +23,10 @@ export type MarkdownCardRef =
       readonly signals: ArtifactSignals;
       /** The owning thread, for lightbox targets scoped to its artifacts. */
       readonly threadId: string;
+    }
+  | {
+      readonly kind: "subscription-reset";
+      readonly signals: SubscriptionResetSignals;
     }
   | { readonly kind: "connector-action"; readonly signals: ConnectorSignals }
   | {

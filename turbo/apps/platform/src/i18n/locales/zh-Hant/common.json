@@ -2219,6 +2219,28 @@
       },
       "templates": "模板"
     },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "此重設請求已經兌換。",
+      "confirm": "重設",
+      "confirmation": "重設會消耗一次重設額度。只有點擊重設才會提交請求。",
+      "credits_other": "剩餘重設次數：{{count}}",
+      "creditsUnknown": "剩餘重設次數：未知",
+      "error": "重設失敗。可重新整理或重試同一請求。",
+      "expiresAt": "重設次數到期：{{time}}",
+      "loadFailed": "無法讀取訂閱用量。",
+      "loading": "正在讀取訂閱…",
+      "noCredit": "沒有可用的重設次數。",
+      "nothingToReset": "沒有需要重設的已耗盡用量時段。",
+      "reconnect": "請在個人模型設定中重新連接此訂閱。",
+      "reset": "用量已成功重設。",
+      "resetting": "正在重設…",
+      "retry": "重新整理",
+      "title": "Reset card",
+      "unavailable": "目前工作區無法存取此訂閱。",
+      "unknown": "未知",
+      "unsupported": "不支援手動重設；用量將自然恢復。"
+    },
     "taskChips": {
       "chooseTask": "選擇任務",
       "ideas": {

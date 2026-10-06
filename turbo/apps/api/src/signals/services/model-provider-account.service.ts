@@ -154,6 +154,7 @@ function accountResponse(args: {
     accountEmail: account.accountEmail,
     workspaceName: account.workspaceName,
     planType: account.planType,
+    subscriptionResetSupported: type === CODEX_TYPE,
     subscriptionResetPeriod: account.subscriptionResetPeriod,
     subscriptionNextResetAt:
       account.subscriptionNextResetAt?.toISOString() ?? null,

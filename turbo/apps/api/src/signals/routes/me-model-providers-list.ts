@@ -7,9 +7,18 @@ import { refreshPersonalModelProviderSubscriptionUsage$ } from "../services/mode
 import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
+import { notFound } from "../../lib/error";
+import { subscriptionControlsEnabled$ } from "../services/subscription-controls.service";
 
 const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  if (auth.tokenType === "agent") {
+    const enabled = await get(subscriptionControlsEnabled$);
+    signal.throwIfAborted();
+    if (!enabled) {
+      return notFound("Resource not found");
+    }
+  }
   const result = await listPersonalModelProviderAccounts({
     db: set(writeDb$),
     orgId: auth.orgId,
@@ -36,7 +45,11 @@ export const meModelProvidersListRoutes: readonly RouteEntry[] = [
   {
     route: personalModelProvidersMainContract.list,
     handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "subscription:read",
+      },
       listInner$,
     ),
   },
