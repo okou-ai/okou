@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
 import { cronRetainChatEventsContract } from "@okouai/api-contracts/contracts/cron";
 import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -19,8 +18,8 @@ import {
   seedRetentionRun$,
   setRetentionRunStatus$,
 } from "../../../test-fixtures/chat-event-retention";
+import { retainChatEventsForTest } from "../../../test-fixtures/chat-event-retention-worker";
 import { cronRetainChatEventsRoutes } from "../cron-retain-chat-events";
-import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
@@ -33,12 +32,6 @@ const DEPLOYMENT_SHA = "a".repeat(40);
 const OLD_OFFSET_MS = -60_000;
 const NEW_OFFSET_MS = 60_000;
 const AFTER_SWEEP_RESTART_MS = 2 * 60 * 60 * 1000;
-
-function fixtureClient() {
-  return setupApp({ context, routes: testChatEventRetentionRoutes })(
-    testChatEventRetentionContract,
-  );
-}
 
 function cronClient() {
   return setupApp({ context, routes: cronRetainChatEventsRoutes })(
@@ -59,15 +52,7 @@ async function createFixtureThread(label: string): Promise<string> {
 }
 
 async function retainFixtures(...chatThreadIds: readonly string[]) {
-  const response = await accept(
-    fixtureClient().retain({
-      body: {
-        chat_thread_ids: [...chatThreadIds],
-      },
-    }),
-    [200],
-  );
-  return response.body;
+  return await retainChatEventsForTest(chatThreadIds, context.signal);
 }
 
 async function eventRows(...eventIds: readonly string[]) {

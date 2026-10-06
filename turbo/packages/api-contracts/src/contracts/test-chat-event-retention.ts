@@ -1,23 +1,10 @@
 import { z } from "zod";
 
 import { initContract } from "./base";
-import { cronRetainChatEventsResponseSchema } from "./cron";
 
 const c = initContract();
 
 export const testChatEventRetentionContract = c.router({
-  retain: {
-    method: "POST",
-    path: "/api/test/retain-chat-events",
-    body: z.object({
-      chat_thread_ids: z.array(z.uuid()).min(1).max(100),
-    }),
-    responses: {
-      200: cronRetainChatEventsResponseSchema,
-      404: z.string(),
-    },
-    summary: "Retain explicitly owned chat event test fixtures",
-  },
   sessionPrompt: {
     method: "POST",
     path: "/api/test/chat-event-session-prompt",

@@ -40,6 +40,7 @@ import {
   seedRetentionPendingEvent$,
   seedRetentionRun$,
 } from "../../../test-fixtures/chat-event-retention";
+import { retainChatEventsForTest } from "../../../test-fixtures/chat-event-retention-worker";
 import { withChatEventDeletedAfterReadFixture } from "../../../test-fixtures/chat-events";
 import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
 import { snapshotChatEventsForTest } from "../../../test-fixtures/chat-event-snapshot-worker";
@@ -120,11 +121,8 @@ async function archiveAndRetain(
 ): Promise<void> {
   await projectChatEventSearchForTest([threadId], context.signal);
   await snapshotChatEventsForTest([threadId], [], context.signal);
-  const retained = await accept(
-    retentionClient().retain({ body: { chat_thread_ids: [threadId] } }),
-    [200],
-  );
-  expect(retained.body.deleted).toBe(eventIds.length);
+  const retained = await retainChatEventsForTest([threadId], context.signal);
+  expect(retained.deleted).toBe(eventIds.length);
   await expect(
     store.set(readRetentionEvents$, eventIds, context.signal),
   ).resolves.toHaveLength(0);
@@ -629,13 +627,11 @@ describe("archived chat event consumers", () => {
         context.signal,
       );
       expect(advanced.snapshots).toBe(1);
-      const retained = await accept(
-        retentionClient().retain({
-          body: { chat_thread_ids: [fixture.threadId] },
-        }),
-        [200],
+      const retained = await retainChatEventsForTest(
+        [fixture.threadId],
+        context.signal,
       );
-      expect(retained.body.deleted).toBe(
+      expect(retained.deleted).toBe(
         archivedTailIds.length + (revokerId === undefined ? 0 : 1),
       );
       const expectedLast = expectedTail.at(-1);

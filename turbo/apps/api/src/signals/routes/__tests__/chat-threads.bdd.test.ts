@@ -19,7 +19,6 @@ import {
 } from "@okouai/api-contracts/contracts/cron";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
 import { HttpResponse, http } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
@@ -51,7 +50,7 @@ import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
-import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
+import { compactChatThreadSnapshotsForTest } from "../../../test-fixtures/chat-thread-snapshot-compaction";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import {
@@ -726,24 +725,15 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     ...otherActors: readonly ApiTestUser[]
   ) {
     mockThreadSnapshotStorage();
-    const client = setupApp({
-      context,
-      routes: testChatThreadSnapshotCompactionRoutes,
-    })(testChatThreadSnapshotCompactionContract);
-    const response = await accept(
-      client.compact({
-        body: {
-          scopes: [actor, ...otherActors].map((ownedActor) => {
-            if (!ownedActor.orgId) {
-              throw new Error("Expected an organization-scoped snapshot actor");
-            }
-            return { user_id: ownedActor.userId, org_id: ownedActor.orgId };
-          }),
-        },
+    return await compactChatThreadSnapshotsForTest(
+      [actor, ...otherActors].map((ownedActor) => {
+        if (!ownedActor.orgId) {
+          throw new Error("Expected an organization-scoped snapshot actor");
+        }
+        return { userId: ownedActor.userId, orgId: ownedActor.orgId };
       }),
-      [200],
+      context.signal,
     );
-    return response.body;
   }
 
   it("preserves model settings through snapshot compaction and patch replay", async () => {
@@ -1670,7 +1660,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     mockNow(createdAt + 8 * DAY_MS);
     await expect(compactChatThreadSnapshots(actor)).resolves.toStrictEqual({
-      success: true,
       scopes: 1,
       eventsApplied: 1,
       eventsPruned: 2,
@@ -1747,31 +1736,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         title: "Newer snapshot boundary",
       }),
     );
-  });
-
-  it("rejects snapshot compaction test requests in production", async () => {
-    mockEnv("ENV", "production");
-    const client = setupApp({
-      context,
-      routes: testChatThreadSnapshotCompactionRoutes,
-    })(testChatThreadSnapshotCompactionContract);
-    const response = await client.compact({
-      body: {
-        scopes: [
-          { user_id: `user_${randomUUID()}`, org_id: `org_${randomUUID()}` },
-        ],
-      },
-    });
-    expect(response.status).toBe(404);
-  });
-
-  it("rejects snapshot compaction without explicitly owned scopes", async () => {
-    const client = setupApp({
-      context,
-      routes: testChatThreadSnapshotCompactionRoutes,
-    })(testChatThreadSnapshotCompactionContract);
-    const response = await client.compact({ body: { scopes: [] } });
-    expect(response.status).toBe(400);
   });
 
   it("prunes covered lifecycle events in retry-safe deterministic batches", async () => {

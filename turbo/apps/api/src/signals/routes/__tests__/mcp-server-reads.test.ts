@@ -8,6 +8,7 @@ import {
   seedRetentionOutputEvent$,
   seedRetentionPendingEvent$,
 } from "../../../test-fixtures/chat-event-retention";
+import { retainChatEventsForTest } from "../../../test-fixtures/chat-event-retention-worker";
 import { mcpGetChatInputOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-input";
 import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -22,7 +23,6 @@ import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contrac
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
 
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -40,7 +40,6 @@ import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { mcpServerRoutes } from "../mcp-server";
 import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
 import { snapshotChatEventsForTest } from "../../../test-fixtures/chat-event-snapshot-worker";
-import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 
 import {
   rejectSearchablePromptFixture,
@@ -1148,13 +1147,8 @@ describe("MCP canonical message reads", () => {
       context.signal,
     );
     await snapshotMessages(thread.id);
-    const retained = await accept(
-      setupApp({ context, routes: testChatEventRetentionRoutes })(
-        testChatEventRetentionContract,
-      ).retain({ body: { chat_thread_ids: [thread.id] } }),
-      [200],
-    );
-    expect(retained.body.deleted).toBe(1);
+    const retained = await retainChatEventsForTest([thread.id], context.signal);
+    expect(retained.deleted).toBe(1);
     const messages = await getMessages(f.auth.token(), { threadId: thread.id });
     expect(messages.messages).toMatchObject([
       {
@@ -1682,8 +1676,8 @@ describe("MCP original input observations", () => {
       agentId: f.agent.agentId,
     });
     // Public writes cannot backdate an origin beyond the retention cutoff.
-    // Only that timestamp setup uses the existing retention fixture; recall,
-    // snapshot, retention and all observations exercise the real endpoints.
+    // Only that timestamp setup uses the existing retention fixture. Snapshot
+    // and retention use scoped workers; recall and observations use HTTP.
     const eventId = await createStore().set(
       seedRetentionPendingEvent$,
       {
@@ -1703,13 +1697,8 @@ describe("MCP original input observations", () => {
     );
     await flushWaitUntilForTest();
     await snapshotMessages(thread.id);
-    const retained = await accept(
-      setupApp({ context, routes: testChatEventRetentionRoutes })(
-        testChatEventRetentionContract,
-      ).retain({ body: { chat_thread_ids: [thread.id] } }),
-      [200],
-    );
-    expect(retained.body.deleted).toBe(1);
+    const retained = await retainChatEventsForTest([thread.id], context.signal);
+    expect(retained.deleted).toBe(1);
     const selector = { threadId: thread.id, eventId };
     const token = f.auth.token({ scope: `${requiredScopes} okou:run:cancel` });
     const observed = mcpGetChatInputOutputSchema.parse(
@@ -2356,8 +2345,8 @@ describe("MCP message search", () => {
       agentId: f.agent.agentId,
     });
     // Infrastructure exception: public writes cannot backdate the event beyond
-    // the retention worker's database-clock cutoff. All projection, archival,
-    // retention, search and context reads below use their real HTTP routes.
+    // the retention worker's database-clock cutoff. Projection, archival and
+    // retention use real scoped workers; search and context reads use HTTP.
     const eventId = await createStore().set(
       seedRetentionOutputEvent$,
       {
@@ -2368,15 +2357,8 @@ describe("MCP message search", () => {
       context.signal,
     );
     await snapshotMessages(thread.id);
-    const retained = await accept(
-      setupApp({ context, routes: testChatEventRetentionRoutes })(
-        testChatEventRetentionContract,
-      ).retain({
-        body: { chat_thread_ids: [thread.id] },
-      }),
-      [200],
-    );
-    expect(retained.body.deleted).toBe(1);
+    const retained = await retainChatEventsForTest([thread.id], context.signal);
+    expect(retained.deleted).toBe(1);
     const token = f.auth.token();
     const args = { query: "retainedsearchneedle" };
     const page = await searchMessages(token, args);

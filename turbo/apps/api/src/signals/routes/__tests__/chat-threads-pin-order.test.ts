@@ -19,8 +19,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadPinOrderRoutes } from "../chat-threads-pin-order";
 import { chatThreadPinRoutes } from "../chat-threads-pin";
-import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
-import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
+import { compactChatThreadSnapshotsForTest } from "../../../test-fixtures/chat-thread-snapshot-compaction";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
 
@@ -171,17 +170,9 @@ describe("pinned thread ordering", () => {
         }),
     ).toStrictEqual([fixture.threadId, second.id]);
     mockChatThreadSnapshotStorage(context);
-    const compact = setupApp({
-      context,
-      routes: testChatThreadSnapshotCompactionRoutes,
-    })(testChatThreadSnapshotCompactionContract);
-    await accept(
-      compact.compact({
-        body: {
-          scopes: [{ user_id: fixture.userId, org_id: fixture.orgId }],
-        },
-      }),
-      [200],
+    await compactChatThreadSnapshotsForTest(
+      [{ userId: fixture.userId, orgId: fixture.orgId }],
+      context.signal,
     );
     const snapshot = await chat.getThreadSnapshot(fixture.actor);
     const compactedPin = snapshot.chatThreads.find((thread) => {
