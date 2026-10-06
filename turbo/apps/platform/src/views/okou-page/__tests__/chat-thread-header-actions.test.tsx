@@ -26,7 +26,6 @@ const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 async function setupHeaderPage(
-  enabled = true,
   threadEvents: readonly ChatThreadEvent[] = [],
   archiveEnabled = true,
 ) {
@@ -70,7 +69,6 @@ async function setupHeaderPage(
     context,
     path: `/chats/${THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ChatThreadHeaderActions]: enabled,
       [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
     },
   });
@@ -108,21 +106,6 @@ function menuItemNames() {
     return item.textContent?.trim();
   });
 }
-
-test.each([true, false])(
-  "Keep the existing header when the switch is off (desktop: %s)",
-  async (desktop) => {
-    context.mocks.browser.matchMedia(desktop);
-    await setupHeaderPage(false);
-    expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("More actions")).not.toBeInTheDocument();
-    expect(buttonNamed("Share messages")).toBeInTheDocument();
-    expect(
-      buttonNamed(desktop ? "Open artifacts" : "Open mobile artifacts"),
-    ).toBeInTheDocument();
-    expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
-  },
-);
 
 test("Keep rapid pin changes responsive across resize and save without a success toast", async () => {
   const viewport = context.mocks.browser.matchMedia(true);
@@ -162,7 +145,7 @@ test("Keep rapid pin changes responsive across resize and save without a success
       return respond(204);
     },
   );
-  await setupHeaderPage(true, events);
+  await setupHeaderPage(events);
   const title = screen.getByTestId("chat-thread-header-title");
   expect(title.closest("header")).toContainElement(buttonNamed("Pin chat"));
 
@@ -260,7 +243,7 @@ test("Archive from the mobile header and return to the thread's agent only after
       return respond(204);
     },
   );
-  await setupHeaderPage(true, events);
+  await setupHeaderPage(events);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Archive chat"));
@@ -300,7 +283,7 @@ test("Stay in the current thread and show the archive API error", async () => {
 
 test("Hide header archiving when the archive switch is off", async () => {
   context.mocks.browser.matchMedia(false);
-  await setupHeaderPage(true, [], false);
+  await setupHeaderPage([], false);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
@@ -330,7 +313,7 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
       return respond(204);
     },
   );
-  await setupHeaderPage(true, events);
+  await setupHeaderPage(events);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
@@ -363,7 +346,7 @@ test("Stay in the archived thread and show the unarchive API error", async () =>
   context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
     return respond(500, { error: { message: "Unarchive request failed" } });
   });
-  await setupHeaderPage(true, [
+  await setupHeaderPage([
     chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
   ]);
   click(buttonNamed("More actions"));

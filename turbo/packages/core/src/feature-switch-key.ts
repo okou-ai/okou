@@ -58,7 +58,6 @@ export enum FeatureSwitchKey {
   AvatarFraming = "avatarFraming",
   AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
-  ChatThreadHeaderActions = "chatThreadHeaderActions",
   ChatLastReadMarker = "chatLastReadMarker",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
