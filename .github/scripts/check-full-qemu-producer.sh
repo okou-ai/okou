@@ -27,9 +27,17 @@ runtime=$(python3 -B .github/scripts/prepare-qemu-gssapi-fixture.py --source-arc
 python3 -B - "$runtime" "$receipt" <<'PY'
 import hashlib,json,os,pathlib,platform,shutil,subprocess,sys
 root,out=map(pathlib.Path,sys.argv[1:])
-manifest=root/'provider.json'
-assert manifest.is_file() and not manifest.is_symlink()
+contract=root.parent/'contract'
+assert contract.resolve(strict=True)==contract and not contract.is_symlink()
+manifest=contract/'provider.json'
+assert manifest.is_file() and not manifest.is_symlink() and not (root/'provider.json').exists()
 data=json.loads(manifest.read_text());build=data['qemuBuild']
+assert data['fullQemuProvider']=='source-pinned-private-noble-v2'
+measurement=json.loads(subprocess.check_output([sys.executable,'-I','-S','-B','crates/rfb-client/tests/fixtures/qemu_gssapi.py',
+ '--runtime-dir',str(contract),'--inventory-only'],text=True,timeout=300,
+ env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'}))
+assert measurement['measurementOnly'] is True and measurement['runtimeVerified'] is False and measurement['attributionVerified'] is False
+assert measurement==json.loads((root.parent/'public-evidence/contract-inventory.json').read_text())
 binary=root/'usr/bin/qemu-system-x86_64'
 digest=hashlib.sha256(binary.read_bytes()).hexdigest()
 assert build['nativeArchitecture']==platform.machine() and build['binarySha256']==build['secondBuildSha256']==digest
@@ -47,6 +55,8 @@ for name,index_digest in data['signedIndexFiles'].items():
  'nativeArchitecture':platform.machine(),'binarySha256':digest,'packageLockSha256':data['packageLockSha256'],
  'recipeSha256':build['recipeSha256'],'providerSha256':hashlib.sha256(manifest.read_bytes()).hexdigest(),
  'runtimeInventorySha256':data['runtimeInventorySha256'],'inputClosureSha256':data['inputClosureSha256'],
+ 'immutableSchemaVersion':data['immutableTree']['schemaVersion'],'immutableMeasurementOnly':True,
+ 'contractInventorySha256':measurement['treeSha256'],'inputMeasurementSourceSha256':data['inputMeasurementSourceSha256'],
  'sourceAdmission':build['sourceAdmission'],'firmware':build['firmware'],'configure':build['configure'],
  'candidateProducerVerified':True,'runtimeVerified':False,'attributionVerified':False,
  'scope':'two actual private signed-sysroot native QEMU builds; NOT admission, full-ten/PNG, loader or K2 completion'},indent=2)+'\n')

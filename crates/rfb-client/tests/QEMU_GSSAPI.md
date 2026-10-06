@@ -96,13 +96,51 @@ presenting an incomplete inventory as an accepted provider; success-only receipt
 copying is not the sole evidence channel.
 Its receipt deliberately has `runtimeVerified: false` and
 `attributionVerified: false`: successful builds do not complete full-ten/PNG or
-loader acceptance. Independently reviewed actual binary/recipe/package-lock,
-complete regular-file/alias inventory, signed-index/bootstrap/transformations,
-source-admission, firmware and configure bindings must be recorded in `qemu_gssapi_full_pins.json` before the explicit
-`--source-built-full-private` mode can admit a producer. The initially empty pin
-map refuses before credentials/KDC/QEMU; an arbitrary rehashed tree cannot approve
-itself. This mode is distinct from legacy `--qemu`/`pinned-host` and
-`--controlled-peer-only`/`signed-private`; neither is reinterpreted as a fallback.
+loader acceptance. Source-built version2 now records every staging node, including
+root/empty directories, actual modes/UID/GID, complete streamed regular bytes/sizes,
+byte-exact names/aliases and in-tree resolution, all observable xattr names/value
+digests (including ACL/capability/security attributes and empty sets), and complete
+hardlink equivalence without golden inode/timestamp constants. Special nodes,
+escapes/loops, outside hardlinks, unreadable metadata, observed FD/dentry drift
+and finite node/path/byte bounds refuse. Held-descriptor directory enumeration
+is incremental: initially discovered entries (including pending children) reserve
+the 20,000-node ceiling, and all initial/rescan name bytes share an eight-MiB cap.
+Both passes refuse before excess names are collected/sorted/hex-encoded; neither
+truncates a directory nor relies on a later visitor guard/timeout to bound memory.
+Public tests include exact default 20,000-node CLI measurement and first excess,
+small exact/overflow aggregate-name limits, pending reservations and rescan refusal.
+Dangling aliases are exact measured data,
+not a documentation/locale-prefix exemption or executable admission.
+
+This is a **quiescent measurement, not a source seal**. Readonly binds do not stop
+an outside writer, and before/after metadata checks do not prove absence of a
+change-and-restore race. The owned producer stores `provider.json` in detached
+`contract/`, not inside the runtime tree; no provider pathname is skipped.
+The runtime retains the empty underlying `/contract` mountpoint, while public
+`contract-inventory.json` records the separate complete descriptor view. External
+reviewed values must eventually bind both views, provider bytes, source measurement
+identity and all existing binary/recipe/package-lock/index/bootstrap/transformation/
+source/firmware/configure identities. The bootstrap Python binary is recorded;
+its complete borrowed-tool/loader/stdlib TCB remains unproved, not exempted.
+
+The fixture's existing committed `--inventory-only` CLI performs only bounded
+public staging-tree measurement with `measurementOnly: true`, never native/helper
+execution, credential generation or admission. The CI test materializer still
+stages the same39 committed sources; no dynamic-import/search-path/helper override
+is introduced. Legacy/signed-private descriptor locations and profiles are unchanged.
+Source-built version1 does not fallback into version2.
+
+The `qemu_gssapi_full_pins.json` map remains empty and refuses before any
+credentials/KDC/QEMU. Pins alone cannot enable execution: the source-built mounted
+controller is explicitly unavailable until its independent source mutation barrier,
+namespace-local FD/mount epoch, separately validated repository/test/package/contract
+views, derived proc/dev/run/tmp grammar and actual attribution have been implemented
+and accepted. There is no recursive live-root inventory or manifest/path-authorized
+pruning. `/run` cannot be blanket `noexec`, nor can `/proc` blindly be readonly:
+unchanged worker bootstrap writes namespace mappings and provisions/spawns the sealed
+helper before Ready, then retains its minimal final root. These requirements are not
+replaced by metadata equality. This mode remains distinct from legacy `--qemu`/
+`pinned-host` and `--controlled-peer-only`/`signed-private`; neither is a fallback.
 
 Full-private execution additionally needs the private-root harness, actual
 interpreter/transitive/late-plugin/short-lived-tool and firmware/data attribution,

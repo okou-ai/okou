@@ -15,6 +15,7 @@ import pwd
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 
@@ -140,31 +141,23 @@ def source_member(name):
 
 
 def inventory(root):
-    files, aliases = {}, {}
-    for path in sorted(root.rglob("*")):
-        name = str(path.relative_to(root))
-        if path.is_symlink():
-            try:
-                target = path.resolve(strict=True)
-            except FileNotFoundError as error:
-                # Some signed Debian packages ship dangling documentation or
-                # non-C locale aliases. Preserve their exact declared identity,
-                # never use them as executable/library/configuration inputs.
-                if not name.startswith(("usr/share/doc/", "usr/share/man/", "usr/share/locale/")):
-                    raise ValueError("source-pinned fixture dangling runtime alias refused") from error
-                target = path.resolve(strict=False)
-            except (OSError, RuntimeError) as error:
-                raise ValueError("source-pinned fixture alias refused") from error
-            if not target.is_relative_to(root):
-                raise ValueError("source-pinned fixture alias escaped")
-            aliases[name] = os.readlink(path)
-        elif path.is_file():
-            if not path.resolve(strict=True).is_relative_to(root):
-                raise ValueError("source-pinned fixture file escaped")
-            files[name] = sha(path)
-        elif not path.is_dir():
-            raise ValueError("source-pinned fixture special file refused")
-    return files, aliases
+    # One committed measurement implementation, through its inert-only CLI.
+    # No dynamic import/search-path override or new materialized test source.
+    script = REPO / "crates/rfb-client/tests/fixtures/qemu_gssapi.py"
+    result = subprocess.run([sys.executable, "-I", "-S", "-B", str(script), "--runtime-dir", str(root), "--inventory-only"],
+                            capture_output=True, text=True, timeout=300,
+                            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
+    if result.returncode:
+        raise ValueError(f"source-pinned complete input measurement refused (exit {result.returncode}):\n{result.stderr}")
+    measured = json.loads(result.stdout)
+    tree = measured["tree"]
+    digest = hashlib.sha256(b"qemu-full-private-tree-v2\x00" + json.dumps(
+        tree, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+    if (tree["schemaVersion"] != 2 or measured["measurementOnly"] is not True
+            or measured["runtimeVerified"] is not False or measured["attributionVerified"] is not False
+            or measured["treeSha256"] != digest):
+        raise ValueError("source-pinned complete input measurement identity refused")
+    return tree, digest
 
 
 def extract_deb(archive, root):
@@ -346,7 +339,7 @@ def provision(base, arch, multiarch, origin):
             raise ValueError("signed public CA input bundle missing")
         ca_bundle.parent.mkdir(parents=True, exist_ok=True)
         ca_bundle.write_bytes(b"".join(path.read_bytes() for path in certificates))
-    for name in ("proc", "dev", "run", "repo", "build", "source", "tmp"):
+    for name in ("proc", "dev", "run", "repo", "contract", "build", "source", "tmp"):
         (root / name).mkdir(exist_ok=True)
     return {"mitVersion": MIT, "multiarch": multiarch, "architecture": arch,
             "signedIndexOrigin": origin, "snapshot": SNAPSHOT, "suite": "noble", "packages": packages,
@@ -492,7 +485,7 @@ def main():
             call(["bash", REPO / ".github/scripts/download-verified.sh", "https://download.qemu.org/qemu-9.2.0.tar.xz", QEMU_SHA256, archive])
         source = base / "qemu-9.2.0"
         epoch = extract_source(archive, source)
-        manifest["fullQemuProvider"] = "source-pinned-private-noble-v1"
+        manifest["fullQemuProvider"] = "source-pinned-private-noble-v2"
         stage = "build"
         manifest["qemuBuild"] = build(base, source, epoch, native)
         stage = "inventory"
@@ -500,15 +493,30 @@ def main():
                                 "worktreeDirty": bool(call(["git", "status", "--porcelain"], cwd=REPO).strip()),
                                 "ownerUid": os.geteuid(), "nativeArchitecture": native,
                                 "buildLogSha256": sha(base / "build.log")}
-        manifest["files"], manifest["aliases"] = inventory(base / "runtime")
-        manifest["runtimeInventorySha256"] = hashlib.sha256(json.dumps(
-            {name: manifest[name] for name in ("files", "aliases")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        manifest["immutableTree"], manifest["runtimeInventorySha256"] = inventory(base / "runtime")
+        manifest["files"] = {name: row["sha256"] for name, row in manifest["immutableTree"]["nodes"].items()
+                             if row["kind"] == "regular"}
+        manifest["aliases"] = {name: row["target"] for name, row in manifest["immutableTree"]["nodes"].items()
+                               if row["kind"] == "alias"}
+        manifest["inputMeasurementSourceSha256"] = sha(REPO / "crates/rfb-client/tests/fixtures/qemu_gssapi.py")
+        measurement_python = pathlib.Path(sys.executable).resolve(strict=True)
+        manifest["bootstrapInputs"][str(measurement_python)] = sha(measurement_python)
         manifest["inputClosureSha256"] = hashlib.sha256(json.dumps(
-            {name: manifest[name] for name in ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs")},
+            {name: manifest[name] for name in ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs", "inputMeasurementSourceSha256")},
             sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         manifest["packageLockSha256"] = hashlib.sha256(json.dumps(manifest["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         stage = "provider"
-        (base / "runtime/provider.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        # Detached public descriptor: no provider omission or self-hash cycle
+        # inside the complete runtime tree. External reviewed pins remain empty.
+        contract = base / "contract"
+        contract.mkdir(mode=0o700)
+        with (contract / "provider.json").open("x") as provider:
+            provider.write(json.dumps(manifest, indent=2, ensure_ascii=True) + "\n")
+        (contract / "provider.json").chmod(0o600)
+        tree, digest = inventory(contract)
+        with (base / "public-evidence/contract-inventory.json").open("x") as record:
+            json.dump({"tree": tree, "treeSha256": digest, "measurementOnly": True,
+                       "runtimeVerified": False, "attributionVerified": False}, record, ensure_ascii=True)
     except Exception:
         retain_public_inputs(base, stage + "-failed", manifest)
         raise

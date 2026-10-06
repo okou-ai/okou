@@ -3,6 +3,7 @@
 import ast
 import hashlib
 import importlib.util
+import json
 import pathlib
 import subprocess
 import tempfile
@@ -54,9 +55,14 @@ class ProducerInputs(unittest.TestCase):
             data = b"inert public inventory canary"
             (root / "public.canary").write_bytes(data)
             (root / "alias").symlink_to("public.canary")
-            files, aliases = self.producer.inventory(root)
-            self.assertEqual(files, {"public.canary": hashlib.sha256(data).hexdigest()})
-            self.assertEqual(aliases, {"alias": "public.canary"})
+            tree, digest = self.producer.inventory(root)
+            self.assertEqual(tree['schemaVersion'], 2)
+            self.assertEqual(set(tree['nodes']), {'.', 'public.canary', 'alias'})
+            self.assertEqual(tree['nodes']['public.canary']['sha256'], hashlib.sha256(data).hexdigest())
+            self.assertEqual(tree['nodes']['alias']['target'], 'public.canary')
+            self.assertEqual(tree['nodes']['alias']['resolution']['kind'], 'regular')
+            self.assertEqual(digest, hashlib.sha256(b'qemu-full-private-tree-v2\x00' + json.dumps(
+                tree, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()).hexdigest())
 
     def test_fresh_driver_creates_only_its_ignored_target_parent(self):
         # Execute only real shell preflight in an inert, local miniature repo.

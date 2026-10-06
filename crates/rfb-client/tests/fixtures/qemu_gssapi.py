@@ -100,36 +100,241 @@ def verify_full_private_programs(runtime, baseline):
                 raise ValueError("full-private executable role digest refused")
 
 
+IMMUTABLE_NODE_LIMIT = 20000
+# Count all initial/rescan entry-name bytes, before list/sort/hex allocation.
+IMMUTABLE_NAME_BYTE_LIMIT = 8 * 1024 * 1024
+
+
+def immutable_tree_digest(tree):
+    # Version/domain separation prevents reuse of a files/aliases-only digest.
+    return hashlib.sha256(b"qemu-full-private-tree-v2\x00" + json.dumps(
+        tree, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+
+
+def measure_immutable_tree(root):
+    """Measure a quiescent public staging tree; NEVER mint a mount/source seal.
+
+    No prefix exclusions, mounted-root pruning, native execution or secret
+    inputs. Descriptor/metadata checks detect observed drift, not an outside
+    writer's change-and-restore attack. A trusted controller remains required.
+    """
+    root = pathlib.Path(root).absolute()
+    if root == pathlib.Path("/") or root.is_symlink() or root.resolve(strict=True) != root:
+        raise ValueError("immutable staging root refused; mounted controller unavailable")
+    nodes, links, link_counts = {}, {}, {}
+    total = 0
+    name_bytes = 0
+    discovered_nodes = 1  # root plus every initially enumerated (even pending) child
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+                info.st_size, info.st_nlink, info.st_mtime_ns, info.st_ctime_ns)
+
+    def attributes(target, *, follow_symlinks=True):
+        names = os.listxattr(target, follow_symlinks=follow_symlinks) if isinstance(target, str) else os.listxattr(target)
+        if len(names) > 64:
+            raise ValueError("immutable attribute budget refused")
+        records, size = {}, 0
+        for name in sorted(names, key=os.fsencode):
+            data = (os.getxattr(target, name, follow_symlinks=follow_symlinks)
+                    if isinstance(target, str) else os.getxattr(target, name))
+            size += len(data)
+            if size > 65536:
+                raise ValueError("immutable attribute byte budget refused")
+            records[os.fsencode(name).hex()] = {"sizeBytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        return records
+
+    def list_children(fd, maximum, *, initial):
+        nonlocal name_bytes, discovered_nodes
+        names, seen = [], set()
+        # scandir(fd) advances the held directory incrementally. Refuse BEFORE
+        # collecting/sorting/hex-projecting its first excess entry, including
+        # on rescan; a timeout or later per-node guard cannot bound listdir.
+        with os.scandir(fd) as entries:
+            for entry in entries:
+                name = entry.name
+                width = len(os.fsencode(name))
+                if len(names) >= maximum:
+                    raise ValueError("immutable directory entry budget refused")
+                if name_bytes + width > IMMUTABLE_NAME_BYTE_LIMIT:
+                    raise ValueError("immutable directory name byte budget refused")
+                if name in seen:
+                    raise ValueError("immutable duplicate directory entry refused")
+                name_bytes += width
+                seen.add(name)
+                names.append(name)
+                if initial:
+                    discovered_nodes += 1
+        return sorted(names, key=os.fsencode)
+
+    def walk(parent, name, relative, depth):
+        nonlocal total
+        if depth > 128 or len(nodes) >= IMMUTABLE_NODE_LIMIT or len(os.fsencode(relative)) > 4096:
+            raise ValueError("immutable node/path budget refused")
+        before = os.fstat(parent) if name is None else os.stat(name, dir_fd=parent, follow_symlinks=False)
+        row = {"pathHex": os.fsencode(relative).hex(), "mode": stat.S_IMODE(before.st_mode),
+               "uid": before.st_uid, "gid": before.st_gid}
+        nodes[relative] = row
+        if stat.S_ISLNK(before.st_mode):
+            target = os.readlink(name, dir_fd=parent)
+            if target.startswith("/") or len(os.fsencode(target)) > 4096:
+                raise ValueError("immutable absolute/overlong alias refused")
+            if len(os.fsencode(target)) != before.st_size:
+                raise ValueError("immutable alias size changed")
+            # proc resolves only the held parent descriptor; the final alias is
+            # explicitly NOT followed. Missing/unreadable xattrs refuse.
+            attrs = attributes(f"/proc/self/fd/{parent}/{name}", follow_symlinks=False)
+            row.update(kind="alias", sizeBytes=before.st_size, target=target, targetHex=os.fsencode(target).hex(), xattrs=attrs)
+        elif stat.S_ISDIR(before.st_mode):
+            fd = os.dup(parent) if name is None else os.open(name, directory_flags, dir_fd=parent)
+            try:
+                if identity(os.fstat(fd)) != identity(before):
+                    raise ValueError("immutable directory identity changed")
+                children = list_children(fd, IMMUTABLE_NODE_LIMIT - discovered_nodes, initial=True)
+                row.update(kind="directory", children=[os.fsencode(child).hex() for child in children], xattrs=attributes(fd))
+                for child in children:
+                    walk(fd, child, child if relative == "." else relative + "/" + child, depth + 1)
+                if (children != list_children(fd, len(children), initial=False)
+                        or identity(os.fstat(fd)) != identity(before)):
+                    raise ValueError("immutable directory changed while measured")
+            finally:
+                os.close(fd)
+        elif stat.S_ISREG(before.st_mode):
+            total += before.st_size
+            if before.st_size > 128 * 1024 * 1024 or total > 2 * 1024 * 1024 * 1024:
+                raise ValueError("immutable regular byte budget refused")
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=parent)
+            try:
+                if identity(os.fstat(fd)) != identity(before):
+                    raise ValueError("immutable regular identity changed")
+                digest, size = hashlib.sha256(), 0
+                while data := os.read(fd, 1024 * 1024):
+                    size += len(data)
+                    if size > before.st_size:
+                        raise ValueError("immutable regular grew while measured")
+                    digest.update(data)
+                attrs = attributes(fd)
+                if size != before.st_size or identity(os.fstat(fd)) != identity(before):
+                    raise ValueError("immutable regular changed while measured")
+                row.update(kind="regular", sizeBytes=size, sha256=digest.hexdigest(), xattrs=attrs)
+            finally:
+                os.close(fd)
+        else:
+            raise ValueError("immutable special input refused")
+        # POSIX also permits hardlinked symlinks; their equivalence and outside
+        # links must not disappear just because target bytes happen to match.
+        if row["kind"] in ("regular", "alias"):
+            key = (before.st_dev, before.st_ino)
+            links.setdefault(key, []).append(relative)
+            link_counts[key] = before.st_nlink
+        after = os.fstat(parent) if name is None else os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if identity(after) != identity(before):
+            raise ValueError("immutable dentry changed while measured")
+
+    fd = os.open(root, directory_flags)
+    try:
+        if identity(os.fstat(fd)) != identity(root.lstat()):
+            raise ValueError("immutable root identity changed")
+        walk(fd, None, ".", 0)
+        if identity(os.fstat(fd)) != identity(root.lstat()):
+            raise ValueError("immutable root replaced while measured")
+    finally:
+        os.close(fd)
+    hardlinks = []
+    for key, paths in links.items():
+        if len(paths) != link_counts[key]:
+            raise ValueError("immutable external hardlink refused")
+        if len(paths) > 1:
+            hardlinks.append(sorted(paths, key=os.fsencode))
+
+    def resolve_alias(name):
+        pending, resolved, count = name.split("/"), [], 0
+        while pending:
+            part = pending.pop(0)
+            if part in ("", "."):
+                continue
+            if part == "..":
+                if not resolved:
+                    raise ValueError("immutable alias escaped")
+                resolved.pop()
+                continue
+            path = "/".join(resolved + [part])
+            node = nodes.get(path)
+            if node is None:
+                # Even a dangling suffix must not lexically escape the root.
+                # Missing inputs remain exact DATA, never executable admission.
+                suffix = resolved + [part]
+                for word in pending:
+                    if word in ("", "."):
+                        continue
+                    if word == "..":
+                        if not suffix:
+                            raise ValueError("immutable dangling alias escaped")
+                        suffix.pop()
+                    else:
+                        suffix.append(word)
+                return {"pathHex": os.fsencode("/".join(suffix) or ".").hex(),
+                        "missingPrefixHex": os.fsencode(path).hex(), "kind": "missing"}
+            if node["kind"] == "alias":
+                count += 1
+                if count > 40:
+                    raise ValueError("immutable alias loop/depth refused")
+                pending = node["target"].split("/") + pending
+            else:
+                if pending and node["kind"] != "directory":
+                    raise ValueError("immutable alias traverses nondirectory")
+                resolved.append(part)
+        path = "/".join(resolved) if resolved else "."
+        return {"pathHex": os.fsencode(path).hex(), "kind": nodes[path]["kind"]}
+
+    for name, row in nodes.items():
+        if row["kind"] == "alias":
+            row["resolution"] = resolve_alias(name)
+    return {"schemaVersion": 2, "nodes": nodes, "hardlinkGroups": sorted(hardlinks)}
+
+
 def full_private_inventory(runtime, baseline):
     verify_full_private_programs(runtime, baseline)
-    files, aliases = {}, {}
-    for path in sorted(runtime.rglob("*")):
-        name = str(path.relative_to(runtime))
-        if name == "provider.json":
-            continue
-        if path.is_symlink():
-            aliases[name] = os.readlink(path)
-        elif path.is_file():
-            if not path.resolve(strict=True).is_relative_to(runtime):
-                raise ValueError("full-private regular input escaped")
-            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-        elif not path.is_dir():
-            raise ValueError("full-private special input refused")
-    if files != baseline["files"] or aliases != baseline["aliases"]:
+    actual = measure_immutable_tree(runtime)
+    if actual != baseline["immutableTree"]:
         raise ValueError("full-private complete input inventory refused")
-    return hashlib.sha256(json.dumps({"files": files, "aliases": aliases},
-                                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    files = {name: row["sha256"] for name, row in actual["nodes"].items() if row["kind"] == "regular"}
+    aliases = {name: row["target"] for name, row in actual["nodes"].items() if row["kind"] == "alias"}
+    if files != baseline["files"] or aliases != baseline["aliases"]:
+        raise ValueError("full-private complete input projection refused")
+    return immutable_tree_digest(actual)
 
 
-def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False):
+def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, contract_root=None):
     # The producer must obtain these records from verified signed archives, not
     # hash an arbitrary installed tree. Rechecking bytes does not attest loader
     # resolution, transitive closure, host MIT or a historical runtime result.
-    manifest = runtime / "provider.json"
+    architecture = {"x86_64-linux-gnu": "amd64", "aarch64-linux-gnu": "arm64"}[multiarch]
+    if source_pinned_full:
+        pins = json.loads((REPO / "crates/rfb-client/tests/fixtures/qemu_gssapi_full_pins.json").read_text())
+        native = {"amd64": "x86_64", "arm64": "aarch64"}[architecture]
+        expected = pins["architectures"].get(native)
+        if expected is None:
+            raise ValueError("source-built QEMU lacks reviewed native producer pins")
+        if pins.get("schemaVersion") != 2 or pins.get("provider") != "source-pinned-private-noble-v2":
+            raise ValueError("source-built reviewed pin profile version refused")
+        # Complete quiescent measurements cannot authorize mounted execution.
+        # Never scan live / without an independently implemented controller.
+        if runtime == pathlib.Path("/"):
+            raise ValueError("source-built mounted-input controller unavailable")
+        if (contract_root is None or not contract_root.is_absolute() or contract_root.is_symlink()
+                or contract_root.resolve(strict=True) != contract_root.absolute()
+                or contract_root.is_relative_to(runtime)):
+            raise ValueError("detached source-built contract required")
+        manifest = contract_root / "provider.json"
+    else:
+        if contract_root is not None:
+            raise ValueError("detached source-built contract cannot override other profiles")
+        manifest = runtime / "provider.json"
     if not manifest.is_file() or manifest.is_symlink():
         raise ValueError("independent fixture provider manifest required")
     baseline = json.loads(manifest.read_text())
-    architecture = {"x86_64-linux-gnu": "amd64", "aarch64-linux-gnu": "arm64"}[multiarch]
     if baseline.get("architecture") != architecture:
         raise ValueError("independent fixture package architecture refused")
     if baseline["multiarch"] != multiarch or baseline["mitVersion"] != "1.20.1-6ubuntu2":
@@ -167,24 +372,21 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False):
         if not path.is_relative_to(runtime) or str(path.relative_to(runtime)) not in baseline["files"]:
             raise ValueError("independent fixture used input has no verified file record")
     if source_pinned_full:
-        if not full_qemu or baseline.get("fullQemuProvider") != "source-pinned-private-noble-v1":
-            raise ValueError("explicit full-private source provider required")
-        pins = json.loads((REPO / "crates/rfb-client/tests/fixtures/qemu_gssapi_full_pins.json").read_text())
-        native = {"amd64": "x86_64", "arm64": "aarch64"}[architecture]
-        expected = pins["architectures"].get(native)
-        # Only independently reviewed actual compiler outputs can fill these
-        # pins. A freshly rehashed arbitrary runtime cannot approve itself.
-        if expected is None:
-            raise ValueError("source-built QEMU lacks reviewed native producer pins")
+        if not full_qemu or baseline.get("fullQemuProvider") != "source-pinned-private-noble-v2":
+            raise ValueError("explicit version2 full-private source provider required")
         build = baseline["qemuBuild"]
         binary = runtime / "usr/bin/qemu-system-x86_64"
         recipe = REPO / ".github/scripts/prepare-qemu-gssapi-fixture.py"
         package_lock = hashlib.sha256(json.dumps(baseline["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         inventory_digest = full_private_inventory(runtime, baseline)
         closure_digest = hashlib.sha256(json.dumps({name: baseline[name] for name in
-                    ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs")},
+                    ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs", "inputMeasurementSourceSha256")},
                     sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        contract_digest = immutable_tree_digest(measure_immutable_tree(contract_root))
         if (inventory_digest != expected.get("runtimeInventorySha256")
+            or contract_digest != expected.get("contractInventorySha256")
+            or hashlib.sha256(manifest.read_bytes()).hexdigest() != expected.get("providerSha256")
+            or baseline["inputMeasurementSourceSha256"] != hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()
             or closure_digest != expected.get("inputClosureSha256")
             or build["sourceAdmission"] != expected.get("sourceAdmission")
             or build["firmware"] != expected.get("firmware")
@@ -198,11 +400,9 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False):
             or build["binarySha256"] != expected["binarySha256"] or build["secondBuildSha256"] != expected["binarySha256"]
             or hashlib.sha256(binary.read_bytes()).hexdigest() != expected["binarySha256"]):
             raise ValueError("source-built QEMU producer identity refused")
-        for name, target in baseline["aliases"].items():
-            relative = pathlib.PurePosixPath(name)
-            alias = runtime / relative
-            if relative.is_absolute() or ".." in relative.parts or not alias.is_symlink() or os.readlink(alias) != target or not alias.resolve(strict=not name.startswith(("usr/share/doc/", "usr/share/man/", "usr/share/locale/"))).is_relative_to(runtime):
-                raise ValueError("full-private input alias refused")
+        # These are complete DATA checks, not an authenticated mount epoch or
+        # loader/open witness. Keep execution unavailable even with data pins.
+        raise ValueError("source-built mounted-input controller unavailable")
 
 
 def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86_64-linux-gnu", source_pinned_full=False):
@@ -361,10 +561,21 @@ def main():
     mode.add_argument("--qemu", type=pathlib.Path)
     mode.add_argument("--controlled-peer-only", action="store_true")
     mode.add_argument("--source-built-full-private", action="store_true")
+    mode.add_argument("--inventory-only", action="store_true",
+                      help="bounded public staging-tree measurement; not admission or native execution")
+    parser.add_argument("--contract-root", type=pathlib.Path)
     parser.add_argument("--test-executable", type=pathlib.Path)
     parser.add_argument("--optimized-manifest", type=pathlib.Path,
                         help="original checked ci/release integration compiler manifest, never a helper override")
     args = parser.parse_args()
+    if args.inventory_only:
+        if any(value is not None for value in (args.contract_root, args.test_executable, args.optimized_manifest)):
+            parser.error("inventory-only does not accept runtime/program overrides")
+        tree = measure_immutable_tree(args.runtime_dir)
+        print(json.dumps({"tree": tree, "treeSha256": immutable_tree_digest(tree),
+                          "measurementOnly": True, "runtimeVerified": False, "attributionVerified": False},
+                         sort_keys=True, ensure_ascii=True))
+        return
     if args.optimized_manifest is not None:
         assert args.controlled_peer_only and args.test_executable is not None
 
@@ -373,7 +584,7 @@ def main():
     # Validate the actual private inputs in BOTH modes, before compiling,
     # creating secret trees or starting any KDC/QEMU. Host dpkg metadata is not
     # evidence for the private KDC/Cyrus/GnuTLS files used by the full fixture.
-    verify_runtime(runtime, multiarch, not args.controlled_peer_only, args.source_built_full_private)
+    verify_runtime(runtime, multiarch, not args.controlled_peer_only, args.source_built_full_private, args.contract_root)
     qemu = None
     if args.source_built_full_private:
         # This mode only runs inside the separately selected private-root
