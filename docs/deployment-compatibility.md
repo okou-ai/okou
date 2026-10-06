@@ -1,5 +1,28 @@
 # Deployment Compatibility
 
+## Organization OpenRouter preset override
+
+Migration `1324_org_openrouter_preset` adds nullable
+`org_metadata.openrouter_preset`. Apply the migration before deploying the new
+API. Old API/new database ignores the additive field and keeps its global
+catalog route; new API/old database is unsupported because org context reads
+the column. No Runner or Pi payload shape changes are required.
+
+For the Built-in `okou-1.0` OpenRouter route, new execution contexts use
+`org_metadata.openrouter_preset ?? model_routes.upstream_model`. The org-owned
+catalog projection never mutates the shared global catalog. Other models,
+BYOK and subscription routes are unchanged. Pi memory maintenance uses the
+same org-specific projection. Already launched Runs keep their captured route;
+operator changes apply to subsequent launches.
+
+The field is operator-managed in this change, with no product write endpoint
+or UI. Store a full `@preset/<slug>` reference accessible to the managed
+OpenRouter account. `NULL` clears the override. Empty or invalid values are not
+normalized to the default, and database/provider failures do not silently
+switch models. Presets must remain compatible with the `okou-1.0` runtime
+capability and token-limit contract; this change does not introduce dynamic
+backing-model metadata or different billing prices.
+
 ## Bounded official connector catalog initialization in CI preview
 
 `deploy-api` opts into `db:dev-seed --preview-onboarding-catalog` for the

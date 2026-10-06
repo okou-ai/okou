@@ -25,10 +25,11 @@ import {
   createOfficialWorkflowCatalog,
   type OfficialWorkflowContextFacts,
 } from "./official-workflow-context.signals";
-import type {
-  OrgModelBootstrap,
-  MemberModelBootstrap,
-  RunOrgMetadata,
+import {
+  modelFactsFromSnapshot,
+  type OrgModelBootstrap,
+  type MemberModelBootstrap,
+  type RunOrgMetadata,
 } from "./model-bootstrap.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { agents } from "@okouai/db/schema/agent";
@@ -86,7 +87,6 @@ import {
   executionExpiredCredits,
   executionOrgPolicies,
 } from "./execution-org-context.service";
-import { orgModelPolicyFactsFromSnapshot } from "./model-policy.service";
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
 import { createProviderContext } from "./execution-provider-context.service";
@@ -425,19 +425,13 @@ function createOrgContext(
         get(orgRows$),
       ]);
       const policies = executionOrgPolicies(rows);
-      return {
+      return modelFactsFromSnapshot(
         orgId,
-        org,
         capabilities,
+        org,
         catalog,
         policies,
-        policyFacts: orgModelPolicyFactsFromSnapshot({
-          catalog,
-          orgId,
-          orgPlanCapabilities: capabilities,
-          stored: policies,
-        }),
-      };
+      );
     });
   return {
     orgRows$,

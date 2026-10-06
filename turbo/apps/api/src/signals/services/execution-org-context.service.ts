@@ -20,6 +20,7 @@ const metadataSchema = z.object({
   credits: z.number(),
   modelMode: z.string(),
   defaultAgentId: z.string().nullable(),
+  openrouterPreset: z.string().nullable(),
 });
 const planSchema = z.object({
   planKey: z.string(),
@@ -92,7 +93,8 @@ export function createExecutionOrgRows(orgId: string) {
         metadata:
           sql`CASE WHEN ${orgMetadata.orgId} IS NULL THEN NULL ELSE jsonb_build_object(
         'credits', ${orgMetadata.credits}, 'modelMode', ${orgMetadata.modelMode},
-        'defaultAgentId', ${orgMetadata.defaultAgentId}) END`.mapWith(
+        'defaultAgentId', ${orgMetadata.defaultAgentId},
+        'openrouterPreset', ${orgMetadata.openrouterPreset}) END`.mapWith(
             rawDecoder,
           ),
         plan: sql`(SELECT jsonb_build_object(

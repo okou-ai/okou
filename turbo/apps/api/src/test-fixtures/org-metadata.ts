@@ -71,6 +71,29 @@ export async function setOrgDefaultAgentFixture(values: {
   }
 }
 
+/**
+ * Operator-only OpenRouter preset configuration has no product write API.
+ * This narrow exception configures only a test-owned org; route tests still
+ * observe the selected model through the Runner claim endpoint.
+ */
+export async function setOrgOpenrouterPresetFixture(values: {
+  readonly orgId: string;
+  readonly openrouterPreset: string | null;
+}): Promise<void> {
+  const rows = await createStore()
+    .set(writeDb$)
+    .update(orgMetadata)
+    .set({
+      openrouterPreset: values.openrouterPreset,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(orgMetadata.orgId, values.orgId))
+    .returning({ orgId: orgMetadata.orgId });
+  if (rows.length !== 1) {
+    throw new Error("Expected one org metadata row to configure");
+  }
+}
+
 export async function setOnboardingPaymentPendingFixture(values: {
   readonly orgId: string;
   readonly onboardingPaymentPending: boolean;

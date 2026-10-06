@@ -65,6 +65,26 @@ export type ModelCatalog = Readonly<{
   byModel: ReadonlyMap<string, CatalogModel>;
 }>;
 
+/** Project an org's preset without mutating the shared global catalog. */
+export function modelCatalogForOrg(
+  catalog: ModelCatalog,
+  openrouterPreset: string | null | undefined,
+): ModelCatalog {
+  return {
+    ...catalog,
+    routes: catalog.routes.map((route) => {
+      return route.model === "okou-1.0" &&
+        route.providerType === "built-in" &&
+        route.concreteProviderType === "openrouter-codex"
+        ? {
+            ...route,
+            upstreamModel: openrouterPreset ?? route.upstreamModel,
+          }
+        : route;
+    }),
+  };
+}
+
 export type CatalogModelResolution =
   | Readonly<{
       kind: "active";

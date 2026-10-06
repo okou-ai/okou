@@ -37,6 +37,7 @@ import {
 } from "@okouai/core/image-model-catalog";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { now, nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -69,6 +70,7 @@ import {
 import {
   frameworkForProviderSelection,
   loadModelCatalog$,
+  modelCatalogForOrg,
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
@@ -300,7 +302,16 @@ const admitMaintenance$ = command(
     if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
       throw new PiMaintenanceDispositionError("pi_memory_disabled");
     }
-    const catalog = await set(loadModelCatalog$, signal);
+    const [globalCatalog, [org]] = await Promise.all([
+      set(loadModelCatalog$, signal),
+      db
+        .select({ openrouterPreset: orgMetadata.openrouterPreset })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, job.orgId))
+        .limit(1),
+    ]);
+    signal.throwIfAborted();
+    const catalog = modelCatalogForOrg(globalCatalog, org?.openrouterPreset);
     const credential = await resolvePiMemoryPhase2Credential(
       catalog,
       db,

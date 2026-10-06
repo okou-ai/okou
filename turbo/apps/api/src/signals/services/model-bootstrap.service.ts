@@ -3,7 +3,10 @@ import { eq } from "drizzle-orm";
 import { createMemberModelSources } from "./model-source-context.service";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { db$ } from "../external/db";
-import { createModelCatalog } from "./model-catalog.service";
+import {
+  createModelCatalog,
+  modelCatalogForOrg,
+} from "./model-catalog.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { orgModelPolicyFactsFromSnapshot } from "./model-policy.service";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
@@ -19,6 +22,7 @@ export interface RunOrgMetadata {
   readonly credits: number;
   readonly modelMode: string;
   readonly defaultAgentId: string | null;
+  readonly openrouterPreset: string | null;
 }
 
 export function createModelFacts(
@@ -74,9 +78,10 @@ export function modelFactsFromSnapshot(
   orgId: string,
   capabilities: OrgPlanCapabilities | null,
   org: RunOrgMetadata | null,
-  catalog: import("./model-catalog.service").ModelCatalog,
+  globalCatalog: import("./model-catalog.service").ModelCatalog,
   policies: readonly (typeof orgModelPolicies.$inferSelect)[],
 ) {
+  const catalog = modelCatalogForOrg(globalCatalog, org?.openrouterPreset);
   return {
     orgId,
     org,
