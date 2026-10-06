@@ -28,26 +28,20 @@ describe("/api/feature-switches", () => {
       client().update({
         headers,
         body: {
-          switches: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
+          switches: { [FeatureSwitchKey.Dummy]: false },
         },
       }),
       [200],
     );
-    expect(
-      optedOut.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
-    ).toBeFalsy();
+    expect(optedOut.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeFalsy();
 
     clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(client().get({ headers }), [200]);
-    expect(
-      peer.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
-    ).toBeTruthy();
+    expect(peer.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeTruthy();
 
     clerk.session(optedOutUserId, orgId, "org:member");
     const original = await accept(client().get({ headers }), [200]);
-    expect(
-      original.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
-    ).toBeFalsy();
+    expect(original.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeFalsy();
   });
 
   it("applies an org-scoped override consistently across one organization", async () => {
@@ -100,7 +94,7 @@ describe("/api/feature-switches", () => {
       accept(
         api.update({
           headers,
-          body: { switches: { [FeatureSwitchKey.OpenRouterUsRouting]: false } },
+          body: { switches: { [FeatureSwitchKey.Dummy]: false } },
         }),
         [200],
       ),
@@ -108,7 +102,7 @@ describe("/api/feature-switches", () => {
     const current = await accept(api.get({ headers }), [200]);
     expect(current.body.switches).toStrictEqual({
       [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.OpenRouterUsRouting]: false,
+      [FeatureSwitchKey.Dummy]: false,
     });
   });
 
@@ -125,7 +119,7 @@ describe("/api/feature-switches", () => {
         body: {
           switches: {
             [FeatureSwitchKey.ChatPreference]: true,
-            [FeatureSwitchKey.OpenRouterUsRouting]: false,
+            [FeatureSwitchKey.Dummy]: false,
           },
         },
       }),
@@ -145,7 +139,7 @@ describe("/api/feature-switches", () => {
     );
     const expected = {
       [FeatureSwitchKey.ChatPreference]: false,
-      [FeatureSwitchKey.OpenRouterUsRouting]: false,
+      [FeatureSwitchKey.Dummy]: false,
     };
     expect(updated.body.switches).toStrictEqual(expected);
     const current = await accept(client().get({ headers }), [200]);
@@ -177,7 +171,7 @@ describe("/api/feature-switches", () => {
         headers,
         body: {
           switches: {
-            [FeatureSwitchKey.OpenRouterUsRouting]: true,
+            [FeatureSwitchKey.Dummy]: true,
           },
         },
       }),
@@ -191,7 +185,7 @@ describe("/api/feature-switches", () => {
     clerk.session(peer, orgId, "org:member");
     const peerState = await accept(client().get({ headers }), [200]);
     expect(peerState.body.switches).toStrictEqual({
-      [FeatureSwitchKey.OpenRouterUsRouting]: true,
+      [FeatureSwitchKey.Dummy]: true,
     });
     expect(
       peerState.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
@@ -209,7 +203,7 @@ describe("/api/feature-switches", () => {
         headers,
         body: {
           switches: {
-            [FeatureSwitchKey.OpenRouterUsRouting]: true,
+            [FeatureSwitchKey.Dummy]: true,
           },
         },
       }),
@@ -235,7 +229,7 @@ describe("/api/feature-switches", () => {
     clerk.session(peerId, orgId, "org:member");
     const current = await accept(client().get({ headers }), [200]);
     expect(current.body.switches).toStrictEqual({
-      [FeatureSwitchKey.OpenRouterUsRouting]: true,
+      [FeatureSwitchKey.Dummy]: true,
       [FeatureSwitchKey.LarkIntegration]: true,
     });
   });
@@ -255,7 +249,7 @@ describe("/api/feature-switches", () => {
         body: {
           switches: {
             simpleMorningBrief: true,
-            [FeatureSwitchKey.OpenRouterUsRouting]: true,
+            [FeatureSwitchKey.Dummy]: true,
           },
         },
       }),

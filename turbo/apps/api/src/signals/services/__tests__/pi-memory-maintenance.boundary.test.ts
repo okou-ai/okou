@@ -61,7 +61,6 @@ import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import { createModelSourceSnapshot } from "../execution-model-source.service";
 import { modelCatalog$ } from "../model-catalog.service";
 import { prepareManagedModelEnvironment } from "../model-provider.service";
-import { featureSwitchContextFromRows } from "../feature-switch-scope";
 import {
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
@@ -103,11 +102,8 @@ const cargo = JSON.parse(
 ) as { target_directory: string };
 const secretCandidate = "PRIVATE_CANDIDATE_31937";
 
-function maintenanceSwitches(usRouting = false) {
-  return {
-    [FeatureSwitchKey.PiMemory]: true,
-    [FeatureSwitchKey.OpenRouterUsRouting]: usRouting,
-  };
+function maintenanceSwitches() {
+  return { [FeatureSwitchKey.PiMemory]: true };
 }
 
 function sse(response: ServerResponse, index: number, failure: boolean) {
@@ -355,12 +351,7 @@ async function crossActiveCleanupBoundary(
   }
 }
 
-async function launch(
-  fault: Fault,
-  noDiff = false,
-  cleanupMode?: CleanupMode,
-  usRouting?: boolean,
-) {
+async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
   const scope = await createPhase2TestScope(`boundary-${fault}`, {
     emptyBase: true,
   });
@@ -369,7 +360,7 @@ async function launch(
   await updateFeatureSwitchesForUser(
     context,
     { orgId: scope.orgId, userId: scope.userId },
-    maintenanceSwitches(usRouting),
+    maintenanceSwitches(),
   );
   onTestFinished(async () => {
     await deleteFeatureSwitchesForUser(context, {
@@ -1028,78 +1019,72 @@ async function assertUsageReplay(
 }
 
 describe("maintenance routing admission and captured authority", () => {
-  it.each([false, true])(
-    "fails closed with only a historical direct key (US routing %s)",
-    async (usRouting) => {
-      const scope = await createPhase2TestScope("routing-closed", {
-        emptyBase: true,
-      });
-      await updateFeatureSwitchesForUser(
-        context,
-        { orgId: scope.orgId, userId: scope.userId },
-        maintenanceSwitches(usRouting),
-      );
-      onTestFinished(async () => {
-        await deleteFeatureSwitchesForUser(context, scope);
-      });
-      await seedOrgMetadata({
-        orgId: scope.orgId,
-        tier: "pro",
-        credits: 100_000,
-      });
-      await seedLegacyDirectMaintenanceKey();
-      await expect(readLegacyDirectMaintenanceRoute()).resolves.toMatchObject({
-        providerType: "deepseek",
-      });
-      await expect(
-        resolveBuiltInModelRouteFixture(
-          context,
-          PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-        ),
-      ).resolves.toBeNull();
-      configureNativeCliArtifact();
-      await insertPhase2Candidates(scope, [
-        {
-          piSessionId: randomUUID(),
-          sourceCompletedAt: nowDate(),
-          rawMemory: secretCandidate,
-          rolloutSummary: "private routing evidence",
-        },
-      ]);
-      const dispatchTime = nowDate();
-      await insertPendingPhase2Job(scope, phase2JobSeed("none", dispatchTime));
-      const result = await createStore().set(
-        createPiMemoryPhase2Worker(scope).execute$,
-        dispatchTime,
-        context.signal,
-      );
-      expect(result).toStrictEqual({
-        outcome: "failed",
-        errorClass: "model_route_unavailable",
-      });
-      await expect(readPhase2Job(scope)).resolves.toMatchObject({
-        maintenanceRunId: null,
-        lastErrorClass: "model_route_unavailable",
-      });
-      await expect(
-        db()
-          .select({ id: agentRuns.id })
-          .from(agentRuns)
-          .where(
-            and(
-              eq(agentRuns.orgId, scope.orgId),
-              eq(agentRuns.triggerSource, "agent"),
-            ),
+  it("fails closed with only a historical direct key", async () => {
+    const scope = await createPhase2TestScope("routing-closed", {
+      emptyBase: true,
+    });
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: scope.orgId, userId: scope.userId },
+      maintenanceSwitches(),
+    );
+    onTestFinished(async () => {
+      await deleteFeatureSwitchesForUser(context, scope);
+    });
+    await seedOrgMetadata({
+      orgId: scope.orgId,
+      tier: "pro",
+      credits: 100_000,
+    });
+    await seedLegacyDirectMaintenanceKey();
+    await expect(readLegacyDirectMaintenanceRoute()).resolves.toMatchObject({
+      providerType: "deepseek",
+    });
+    await expect(
+      resolveBuiltInModelRouteFixture(context, PI_MEMORY_PHASE2_BUILT_IN_MODEL),
+    ).resolves.toBeNull();
+    configureNativeCliArtifact();
+    await insertPhase2Candidates(scope, [
+      {
+        piSessionId: randomUUID(),
+        sourceCompletedAt: nowDate(),
+        rawMemory: secretCandidate,
+        rolloutSummary: "private routing evidence",
+      },
+    ]);
+    const dispatchTime = nowDate();
+    await insertPendingPhase2Job(scope, phase2JobSeed("none", dispatchTime));
+    const result = await createStore().set(
+      createPiMemoryPhase2Worker(scope).execute$,
+      dispatchTime,
+      context.signal,
+    );
+    expect(result).toStrictEqual({
+      outcome: "failed",
+      errorClass: "model_route_unavailable",
+    });
+    await expect(readPhase2Job(scope)).resolves.toMatchObject({
+      maintenanceRunId: null,
+      lastErrorClass: "model_route_unavailable",
+    });
+    await expect(
+      db()
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.orgId, scope.orgId),
+            eq(agentRuns.triggerSource, "agent"),
           ),
-      ).resolves.toStrictEqual([]);
-      await expect(
-        db()
-          .select({ id: usageEvent.id })
-          .from(usageEvent)
-          .where(eq(usageEvent.orgId, scope.orgId)),
-      ).resolves.toStrictEqual([]);
-    },
-  );
+        ),
+    ).resolves.toStrictEqual([]);
+    await expect(
+      db()
+        .select({ id: usageEvent.id })
+        .from(usageEvent)
+        .where(eq(usageEvent.orgId, scope.orgId)),
+    ).resolves.toStrictEqual([]);
+  });
 
   it.each(["current", "legacy"] as const)(
     "keeps catalog permission checks for a captured %s route",
@@ -1147,7 +1132,6 @@ describe("maintenance routing admission and captured authority", () => {
         framework: "codex" as const,
         selectedModelOverride: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
         builtInModelRuntimeRoute: route,
-        featureSwitchContext: featureSwitchContextFromRows(orgId, userId, []),
       };
       const permitted = await prepareManagedModelEnvironment(source, request);
       expect(permitted).toMatchObject({
@@ -1180,14 +1164,6 @@ describe("maintenance routing admission and captured authority", () => {
 });
 
 describe("private maintenance across CLI, Guest, generic checkpoint and real PostgreSQL", () => {
-  it("keeps the global OpenRouter route when US routing is enabled", async () => {
-    const run = await launch("none", false, undefined, true);
-    expect(run.exit, run.output).toBe(0);
-    expect(run.job?.status).toBe("idle");
-    expect(run.providerCount).toBeGreaterThan(0);
-    await assertUsageReplay(run, run.providerCount);
-  });
-
   it.each([
     { label: "none", fault: "none", cleanupMode: undefined },
     {

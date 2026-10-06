@@ -377,11 +377,7 @@ async function prepareMaintenanceModel(
   const { catalog, credential, selectedModel } = admitted;
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
     source.identity.kind === "built-in"
-      ? preparePiMemoryBuiltinEnvironment(
-          source,
-          credential.route ?? undefined,
-          admitted.featureSwitchContext,
-        )
+      ? preparePiMemoryBuiltinEnvironment(source, credential.route ?? undefined)
       : await prepareRegisteredModelEnvironment(source, selectedModel, {
           catalog,
           userId: job.userId,

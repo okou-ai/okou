@@ -5013,9 +5013,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       );
     }
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await createConnectorBddApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OpenRouterUsRouting]: true,
-    });
 
     await api.updateUserModelPreference(actor, selectedModel);
     const run = await api.createThreadRun(actor, {

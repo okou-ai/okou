@@ -113,20 +113,6 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("enables OpenRouter US routing for everyone and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, context),
-      ).toBe(true);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
-          ...context,
-          overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
-        }),
-      ).toBe(false);
-    }
-  });
-
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
   });

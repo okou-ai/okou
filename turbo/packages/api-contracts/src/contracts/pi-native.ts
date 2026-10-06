@@ -204,14 +204,13 @@ function validateMessagesEndpoint(
   } as const;
   if (config.route in expected) {
     const policy = expected[config.route as keyof typeof expected];
-    // Captured global contexts remain valid after rollout. US contexts remain
-    // valid after switch-off, but only for the verified platform-owned route.
+    // Captured global contexts remain valid; US is accepted only for the
+    // verified platform-owned route.
     const eligibleUsBase =
       config.route === "openrouter-api-key"
         ? getOpenRouterBaseUrl("messages", {
             credentialOwner: config.credentialOwner,
             model: config.model,
-            usRoutingEnabled: true,
           })
         : policy[0];
     if (
