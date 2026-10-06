@@ -893,6 +893,24 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
 
+    // Preserve successful creation with selections while Run authority exists.
+    await accept(
+      chatThreadsClient().create({
+        headers: sessionHeaders(actor),
+        body: {
+          agentId,
+          model: "claude-fable-5-1",
+          connectorSelections: [
+            {
+              connectionId: connection.id,
+              target: { kind: "builtin", connectorSlug: "openai" },
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+
     const catalogVersion = `api-test-without-openai-${randomUUID()}`;
     const catalogWithoutOpenAi = {
       ...API_TEST_CONNECTOR_CATALOG,
@@ -938,7 +956,10 @@ describe("CHAT-02: thread connector account selection", () => {
     expect(claimed.claim.secretConnectorMap?.OPENAI_TOKEN).toBe("openai");
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toBeUndefined();
+    ).toStrictEqual({
+      sourceType: "connector",
+      sourceId: connection.id,
+    });
     expect(
       claimed.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
     ).toMatchObject({
@@ -977,8 +998,9 @@ describe("CHAT-02: thread connector account selection", () => {
         };
       }),
     );
-    // New selection writes still validate the legacy Run target authority.
-    await accept(
+    // New writes still require the legacy Run target, unlike persisted account
+    // projection. Rejecting them must not erase the existing selected accounts.
+    const rejectedUpdate = await accept(
       chatThreadConnectorSelectionsClient().update({
         headers: sessionHeaders(actor),
         params: { id: thread.id },
@@ -987,9 +1009,9 @@ describe("CHAT-02: thread connector account selection", () => {
           target: { kind: "builtin", connectorSlug: "openai" },
         },
       }),
-      [200],
+      [400],
     );
-    await accept(
+    const rejectedCreate = await accept(
       chatThreadsClient().create({
         headers: sessionHeaders(actor),
         body: {
@@ -1003,7 +1025,25 @@ describe("CHAT-02: thread connector account selection", () => {
           ],
         },
       }),
-      [201],
+      [400],
+    );
+    for (const rejected of [rejectedUpdate, rejectedCreate]) {
+      expect(rejected.body).toStrictEqual({
+        error: {
+          message: "Connector target is unavailable",
+          code: "BAD_REQUEST",
+        },
+      });
+    }
+    const afterRejectedWrites = await accept(
+      chatThreadConnectorSelectionsClient().get({
+        headers: sessionHeaders(actor),
+        params: { id: thread.id },
+      }),
+      [200],
+    );
+    expect(afterRejectedWrites.body.selections).toStrictEqual(
+      expectedSelections,
     );
     await accept(
       chatThreadConnectorSelectionsClient().clear({

@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogDetail,
