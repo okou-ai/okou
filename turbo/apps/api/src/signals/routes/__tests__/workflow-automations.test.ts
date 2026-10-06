@@ -1,3 +1,8 @@
+import {
+  renewGmailWatchForTest,
+  renewGoogleCalendarWatchForTest,
+  renewGoogleFormsWatchForTest,
+} from "../../../test-fixtures/google-renewal";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -5,9 +10,6 @@ import {
   chatThreadMetadataContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { testGmailWatchRenewalContract } from "@okouai/api-contracts/contracts/test-gmail-watch-renewal";
-import { testGoogleCalendarWatchRenewalContract } from "@okouai/api-contracts/contracts/test-google-calendar-watch-renewal";
-import { testGoogleFormsWatchRenewalContract } from "@okouai/api-contracts/contracts/test-google-forms-watch-renewal";
 import {
   workflowAutomationsContract,
   workflowsDetailContract,
@@ -50,9 +52,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { cronRenewGmailWatchesRoutes } from "../cron-renew-gmail-watches";
 import { cronRenewGoogleCalendarWatchesRoutes } from "../cron-renew-google-calendar-watches";
 import { cronRenewGoogleFormsWatchesRoutes } from "../cron-renew-google-forms-watches";
-import { testGmailWatchRenewalRoutes } from "../test-gmail-watch-renewal";
-import { testGoogleCalendarWatchRenewalRoutes } from "../test-google-calendar-watch-renewal";
-import { testGoogleFormsWatchRenewalRoutes } from "../test-google-forms-watch-renewal";
 import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -117,24 +116,6 @@ async function runAutomationNow(
 function detailClient() {
   return setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
-  );
-}
-
-function renewGmailWatchScopeClient() {
-  return setupApp({ context, routes: testGmailWatchRenewalRoutes })(
-    testGmailWatchRenewalContract,
-  );
-}
-
-function renewGoogleCalendarWatchScopeClient() {
-  return setupApp({ context, routes: testGoogleCalendarWatchRenewalRoutes })(
-    testGoogleCalendarWatchRenewalContract,
-  );
-}
-
-function renewGoogleFormsWatchScopeClient() {
-  return setupApp({ context, routes: testGoogleFormsWatchRenewalRoutes })(
-    testGoogleFormsWatchRenewalContract,
   );
 }
 
@@ -1940,32 +1921,20 @@ describe("okou workflow automations", () => {
     );
     mockNow(startedAt + 6 * 24 * 60 * 60 * 1000);
 
-    const renewed = await accept(
-      renewGoogleFormsWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const renewed = await renewGoogleFormsWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    const unchanged = await accept(
-      renewGoogleFormsWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const unchanged = await renewGoogleFormsWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
 
-    expect(renewed.body).toStrictEqual({
-      success: true,
+    expect(renewed).toStrictEqual({
       renewed: 1,
       failed: 0,
     });
-    expect(unchanged.body).toStrictEqual({
-      success: true,
+    expect(unchanged).toStrictEqual({
       renewed: 0,
       failed: 0,
     });
@@ -2023,17 +1992,12 @@ describe("okou workflow automations", () => {
       ),
     );
 
-    const reconciled = await accept(
-      renewGoogleFormsWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const reconciled = await renewGoogleFormsWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
 
-    expect(reconciled.body).toMatchObject({ success: true, renewed: 0 });
+    expect(reconciled).toMatchObject({ renewed: 0 });
     expect(deleteCalls).toBe(2);
   });
 
@@ -3139,14 +3103,9 @@ describe("okou workflow automations", () => {
         },
       ),
     );
-    await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
     const actionRequired = await wf.readAutomation(automation.body.id);
     expect(actionRequired).toMatchObject({
@@ -3521,18 +3480,13 @@ describe("okou workflow automations", () => {
     );
     mockNow(startedAt + 6 * 24 * 60 * 60 * 1000 + 2000);
 
-    const renewed = await accept(
-      renewGmailWatchScopeClient().renew({
-        body: {
-          email_address: sharedEmail,
-          topic_name: GMAIL_TOPIC_NAME,
-        },
-      }),
-      [200],
+    const renewed = await renewGmailWatchForTest(
+      sharedEmail,
+      GMAIL_TOPIC_NAME,
+      context.signal,
     );
 
-    expect(renewed.body).toStrictEqual({
-      success: true,
+    expect(renewed).toStrictEqual({
       renewed: 1,
       failed: 0,
     });
@@ -3791,14 +3745,12 @@ describe("okou workflow automations", () => {
     await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
       enabled: false,
     });
-    const inactiveRenewal = await accept(
-      renewGmailWatchScopeClient().renew({
-        body: { email_address: email, topic_name: GMAIL_TOPIC_NAME },
-      }),
-      [200],
+    const inactiveRenewal = await renewGmailWatchForTest(
+      email,
+      GMAIL_TOPIC_NAME,
+      context.signal,
     );
-    expect(inactiveRenewal.body).toStrictEqual({
-      success: true,
+    expect(inactiveRenewal).toStrictEqual({
       renewed: 0,
       failed: 0,
     });
@@ -3825,17 +3777,12 @@ describe("okou workflow automations", () => {
       enabled: false,
     });
 
-    const reconciled = await accept(
-      renewGmailWatchScopeClient().renew({
-        body: {
-          email_address: email,
-          topic_name: GMAIL_TOPIC_NAME,
-        },
-      }),
-      [200],
+    const reconciled = await renewGmailWatchForTest(
+      email,
+      GMAIL_TOPIC_NAME,
+      context.signal,
     );
-    expect(reconciled.body).toStrictEqual({
-      success: true,
+    expect(reconciled).toStrictEqual({
       renewed: 0,
       failed: 0,
     });
@@ -3867,17 +3814,11 @@ describe("okou workflow automations", () => {
       enabled: false,
     });
 
-    const reconciled = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const reconciled = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(reconciled.body).toStrictEqual({
-      success: true,
+    expect(reconciled).toStrictEqual({
       renewed: 0,
       failed: 0,
     });
@@ -3929,18 +3870,12 @@ describe("okou workflow automations", () => {
     expect(initialWatch.watchCalls).toBe(1);
 
     const repairedWatch = configureGoogleCalendarWatchMock();
-    const reconciled = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const reconciled = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
 
-    expect(reconciled.body).toStrictEqual({
-      success: true,
+    expect(reconciled).toStrictEqual({
       renewed: 0,
       failed: 0,
     });
@@ -3994,32 +3929,20 @@ describe("okou workflow automations", () => {
       }),
     );
     mockNow(startedAt + 6 * 24 * 60 * 60 * 1000);
-    const renewed = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const renewed = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(renewed.body).toStrictEqual({
-      success: true,
+    expect(renewed).toStrictEqual({
       renewed: 1,
       failed: 0,
     });
 
-    const reconciled = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const reconciled = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(reconciled.body).toStrictEqual({
-      success: true,
+    expect(reconciled).toStrictEqual({
       renewed: 0,
       failed: 0,
     });
@@ -4121,17 +4044,11 @@ describe("okou workflow automations", () => {
       }),
     );
     mockNow(startedAt + 6 * 24 * 60 * 60 * 1000);
-    const renewed = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const renewed = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(renewed.body).toStrictEqual({
-      success: true,
+    expect(renewed).toStrictEqual({
       renewed: 1,
       failed: 0,
     });
@@ -4337,31 +4254,19 @@ describe("okou workflow automations", () => {
       [201],
     );
 
-    const firstRenewed = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: first.fixture.orgId,
-          user_id: first.fixture.userId,
-        },
-      }),
-      [200],
+    const firstRenewed = await renewGoogleCalendarWatchForTest(
+      { orgId: first.fixture.orgId, userId: first.fixture.userId },
+      context.signal,
     );
-    const secondRenewed = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: second.fixture.orgId,
-          user_id: second.fixture.userId,
-        },
-      }),
-      [200],
+    const secondRenewed = await renewGoogleCalendarWatchForTest(
+      { orgId: second.fixture.orgId, userId: second.fixture.userId },
+      context.signal,
     );
-    expect(firstRenewed.body).toStrictEqual({
-      success: true,
+    expect(firstRenewed).toStrictEqual({
       renewed: 1,
       failed: 0,
     });
-    expect(secondRenewed.body).toStrictEqual({
-      success: true,
+    expect(secondRenewed).toStrictEqual({
       renewed: 1,
       failed: 0,
     });
@@ -4520,17 +4425,11 @@ describe("okou workflow automations", () => {
       [201],
     );
 
-    const renewed = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const renewed = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(renewed.body).toStrictEqual({
-      success: true,
+    expect(renewed).toStrictEqual({
       renewed: 0,
       failed: 1,
     });
@@ -4680,17 +4579,11 @@ describe("okou workflow automations", () => {
     }
 
     targetAvailability = "missing";
-    const firstFailure = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const firstFailure = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(firstFailure.body).toStrictEqual({
-      success: true,
+    expect(firstFailure).toStrictEqual({
       renewed: 0,
       failed: 1,
     });
@@ -4699,17 +4592,11 @@ describe("okou workflow automations", () => {
       warning: "reconnect_required",
     });
 
-    const repeatedFailure = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const repeatedFailure = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(repeatedFailure.body).toStrictEqual({
-      success: true,
+    expect(repeatedFailure).toStrictEqual({
       renewed: 0,
       failed: 1,
     });
@@ -4737,17 +4624,11 @@ describe("okou workflow automations", () => {
     expect(incrementalCalls).toBe(0);
 
     targetAvailability = "available";
-    const recovered = await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
+    const recovered = await renewGoogleCalendarWatchForTest(
+      { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+      context.signal,
     );
-    expect(recovered.body).toStrictEqual({
-      success: true,
+    expect(recovered).toStrictEqual({
       renewed: 1,
       failed: 0,
     });
@@ -4842,17 +4723,11 @@ describe("okou workflow automations", () => {
     );
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      const result = await accept(
-        renewGoogleCalendarWatchScopeClient().renew({
-          body: {
-            org_id: scenario.fixture.orgId,
-            user_id: scenario.fixture.userId,
-          },
-        }),
-        [200],
+      const result = await renewGoogleCalendarWatchForTest(
+        { orgId: scenario.fixture.orgId, userId: scenario.fixture.userId },
+        context.signal,
       );
-      expect(result.body).toStrictEqual({
-        success: true,
+      expect(result).toStrictEqual({
         renewed: 0,
         failed: 1,
       });

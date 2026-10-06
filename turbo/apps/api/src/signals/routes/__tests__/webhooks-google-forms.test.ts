@@ -1,8 +1,8 @@
+import { renewGoogleFormsWatchForTest } from "../../../test-fixtures/google-renewal";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { testGoogleFormsWatchRenewalContract } from "@okouai/api-contracts/contracts/test-google-forms-watch-renewal";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -27,7 +27,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { testGoogleFormsWatchRenewalRoutes } from "../test-google-forms-watch-renewal";
 import { webhooksGoogleFormsRoutes } from "../webhooks-google-forms";
 
 const TEST_APP_ROUTES = Object.freeze([
@@ -415,15 +414,11 @@ describe("Google Forms Pub/Sub webhook", () => {
       throw new Error("Expected a Google Forms watch");
     }
     formsApi.remoteWatchIds.clear();
-    const renewal = setupApp({
-      context,
-      routes: testGoogleFormsWatchRenewalRoutes,
-    })(testGoogleFormsWatchRenewalContract);
-    const repair = await accept(
-      renewal.renew({ body: { org_id: actor.orgId, user_id: actor.userId } }),
-      [200],
+    const repair = await renewGoogleFormsWatchForTest(
+      { orgId: actor.orgId, userId: actor.userId },
+      context.signal,
     );
-    expect(repair.body).toMatchObject({ success: true, failed: 0 });
+    expect(repair).toMatchObject({ failed: 0 });
     const replacementWatchId = formsApi.watchIds.at(-1);
     if (!replacementWatchId || replacementWatchId === previousWatchId) {
       throw new Error("Expected a repaired Google Forms watch");
