@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -859,12 +859,51 @@ describe("usage pack subscription Stripe lifecycle", () => {
         userId: `user_${randomUUID()}`,
         invitationId: null,
       };
-      const owner = createPublicBillingZeroFixture(context, {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        email: `${fixture.userId}@example.com`,
-        orgRole: "org:admin",
-      });
+      let restoreBillingEnvironment: (() => void) | undefined;
+      const owner = createPublicBillingZeroFixture(
+        context,
+        {
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+          email: `${fixture.userId}@example.com`,
+          orgRole: "org:admin",
+        },
+        {
+          beforeOrganizationCleanup() {
+            // Snapshot after the global test teardown clears its environment,
+            // immediately before public deletion configures its own catalog.
+            const billingEnvironment = {
+              pro: env("OKOU_PRICE_PRO")?.join(","),
+              team: env("OKOU_PRICE_TEAM")?.join(","),
+              atom: env("ATOM_GRANT_PRICE"),
+              concurrency: env("OKOU_PRICE_CONCURRENCY")?.join(","),
+              campaign: JSON.stringify(env("OKOU_ONE_TIME_CAMPAIGN")),
+              stripeSecret: optionalEnv("STRIPE_WEBHOOK_SECRET"),
+              clerkSecret: optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET"),
+            };
+            restoreBillingEnvironment = () => {
+              mockEnv("OKOU_PRICE_PRO", billingEnvironment.pro);
+              mockEnv("OKOU_PRICE_TEAM", billingEnvironment.team);
+              mockEnv("ATOM_GRANT_PRICE", billingEnvironment.atom);
+              mockEnv("OKOU_PRICE_CONCURRENCY", billingEnvironment.concurrency);
+              mockEnv("OKOU_ONE_TIME_CAMPAIGN", billingEnvironment.campaign);
+              mockOptionalEnv(
+                "STRIPE_WEBHOOK_SECRET",
+                billingEnvironment.stripeSecret,
+              );
+              mockOptionalEnv(
+                "CLERK_WEBHOOK_SIGNING_SECRET",
+                billingEnvironment.clerkSecret,
+              );
+            };
+            return Promise.resolve();
+          },
+          afterOrganizationCleanup() {
+            restoreBillingEnvironment?.();
+            return Promise.resolve();
+          },
+        },
+      );
       await owner.run(async () => {
         await owner.initialize();
         // Key21 retains the original exact grant/allocation/subscription absence.
