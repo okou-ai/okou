@@ -23,7 +23,6 @@ switch models. Presets must remain compatible with the `okou-1.0` runtime
 capability and token-limit contract; this change does not introduce dynamic
 backing-model metadata or different billing prices.
 
-
 ## Custom model configuration retirement
 
 Migration 1325 deletes `org_model_policies`, `model_provider_surfaces`,
@@ -34,6 +33,11 @@ Custom-to-Auto and workspace-credential cleanup before merging/deploying.
 This retirement intentionally has no rolling API or old-client compatibility:
 the API, App/worker, CLI and iOS move together to `/api/run-models`. Do not run an
 old API against the contracted schema or roll back to an old policy writer.
+The rollback resolver enforces this floor using
+`.github/rollback-floors/custom-model-configuration-retired`: it resolves the
+first main commit adding the marker and rejects earlier targets before artifact
+or host access. A missing/invalid canonical floor also fails closed. This does
+not claim production activation or waive the operator-owned cutover.
 The historical global-catalog migration descriptions below are superseded for
 new model selection; they are not instructions to restore policy projection,
 organization BYOK, gateways or general platform-model routing.
