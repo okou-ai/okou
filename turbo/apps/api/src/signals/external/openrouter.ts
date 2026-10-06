@@ -23,29 +23,6 @@ export const OPENROUTER_DECISIONS_URL =
   "https://openrouter.ai/api/alpha/decisions";
 const OPENROUTER_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 
-/**
- * The default model for internal fast-path generation: recommended follow-ups,
- * notification summaries and run/activity summaries.
- * Chat and shared-thread titles use a separate, lighter model configured in
- * chat-title.service.ts.
- */
-export const FAST_PATH_MODEL = "google/gemini-3.8-flash";
-
-/**
- * Token budget for the short auxiliary text generations (chat and shared-thread
- * titles, notification summaries, run summaries, recommended follow-ups).
- *
- * `FAST_PATH_MODEL` reports `reasoning.mandatory: true` with
- * `supported_efforts: ["high", "medium", "low"]` and no independent reasoning
- * budget, and Gemini 3 spends thinking and visible output from one combined
- * `max_output_tokens`. `effort: "low"` is already the model's floor, so the
- * only remaining lever is the ceiling: a budget sized for the answer alone lets
- * model-chosen thinking starve the answer to nothing. A ceiling is not billed —
- * only generated tokens are — and length stays governed by the prompts, so
- * raising it removes the starvation without buying longer answers.
- */
-export const AUXILIARY_TEXT_MAX_TOKENS = 2048;
-
 export interface OpenRouterTextPart {
   readonly type: "text";
   readonly text: string;
@@ -462,28 +439,6 @@ function generation(
  */
 export function isLlmConfigured(): boolean {
   return Boolean(optionalEnv("OPENROUTER_API_KEY"));
-}
-
-/**
- * Call OpenRouter chat completions and return the trimmed first-choice text.
- * Returns `null` when no API key is configured. HTTP/parse failures throw so
- * the caller can decide how to degrade (typically by wrapping in `settle`).
- */
-export async function generateText(
-  model: string,
-  messages: readonly OpenRouterMessage[],
-  maxTokens?: number,
-  options?: OpenRouterGenerateTextOptions,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const generation = await generateTextWithUsage(
-    model,
-    messages,
-    maxTokens,
-    options,
-    signal,
-  );
-  return generation?.text ?? null;
 }
 
 /**

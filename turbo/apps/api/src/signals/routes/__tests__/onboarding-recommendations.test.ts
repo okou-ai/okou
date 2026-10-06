@@ -1,3 +1,8 @@
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 
 import { onboardingRecommendationContract } from "@okouai/api-contracts/contracts/onboarding";
@@ -6,7 +11,6 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
@@ -28,7 +32,7 @@ const GMAIL_LABEL_URL =
 const GMAIL_MESSAGES_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const GITHUB_REPOSITORIES_URL = "https://api.github.com/user/repos";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GOOGLE_GENERATION_URL = VERTEX_TEXT_URL;
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
@@ -154,7 +158,7 @@ describe("onboarding recommendations", () => {
         state: githubState,
       });
 
-      mockOptionalEnv("OPENROUTER_API_KEY", "platform-openrouter-key");
+      mockGoogleText();
       let modelRequest = "";
       server.use(
         http.get(GMAIL_LABEL_URL, async ({ request }) => {
@@ -201,37 +205,45 @@ describe("onboarding recommendations", () => {
             { status: 503 },
           );
         }),
-        http.post(OPENROUTER_URL, async ({ request }) => {
-          modelRequest = await request.text();
+        http.post(GOOGLE_GENERATION_URL, async ({ request }) => {
+          const body = vertexTextRequest(await request.json(), request.url);
+          expect(body.model).toBe("gemini-3.1-flash-lite");
+          expect(body.generationConfig).toMatchObject({
+            responseMimeType: "application/json",
+            thinkingConfig: { thinkingLevel: "MINIMAL" },
+            responseJsonSchema: { type: "object" },
+          });
+          modelRequest = JSON.stringify(body);
           return HttpResponse.json({
-            id: "gen-onboarding-context",
-            model: "google/gemini-3.8-flash",
-            choices: [
+            candidates: [
               {
-                finish_reason: "stop",
-                message: {
-                  content: JSON.stringify({
-                    kind: "task",
-                    title: "Clear the important replies",
-                    outcome: "Three priority drafts ready for review",
-                    prompt:
-                      "Review my recent Gmail workload and draft the replies that need attention.",
-                    profile: {
-                      overview:
-                        "Your inbox shows a steady flow of work that needs follow-up.",
-                      professionalIdentity: [],
-                      communicationStyle: [],
-                      priorities: ["Keep up with important replies"],
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        kind: "task",
+                        title: "Clear the important replies",
+                        outcome: "Three priority drafts ready for review",
+                        prompt:
+                          "Review my recent Gmail workload and draft the replies that need attention.",
+                        profile: {
+                          overview:
+                            "Your inbox shows a steady flow of work that needs follow-up.",
+                          professionalIdentity: [],
+                          communicationStyle: [],
+                          priorities: ["Keep up with important replies"],
+                        },
+                      }),
                     },
-                  }),
+                  ],
                 },
               },
             ],
-            usage: {
-              prompt_tokens: 100,
-              completion_tokens: 25,
-              total_tokens: 125,
-              cost: 0.0001,
+            usageMetadata: {
+              promptTokenCount: 100,
+              candidatesTokenCount: 25,
+              totalTokenCount: 125,
             },
           });
         }),

@@ -67,7 +67,7 @@ export const polishVoiceTranscript$ = command(
     const generated = await settle(
       generateVertexVoice(
         {
-          model: "google/gemini-3.8-flash",
+          model: "google/gemini-3.1-flash-lite",
           maxOutputTokens: VERTEX_VOICE_MAX_OUTPUT_TOKENS,
           systemPrompt: VOICE_IO_POLISH_SYSTEM_PROMPT,
           content: JSON.stringify(body),

@@ -22,7 +22,11 @@ import { homeTaskRecommendationRoutes } from "../../routes/home-task-recommendat
 import { createChatEventsFixture } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
 
-const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextResponse,
+} from "../../routes/__tests__/helpers/google-text";
 const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 const context = testContext();
 const fixture = createChatEventsFixture(context);
@@ -103,6 +107,7 @@ describe("home task recommendation cache recovery", () => {
     mockNow(base);
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     server.use(
       http.post(OPENROUTER_DECISIONS_URL, () => {
         return HttpResponse.json({
@@ -119,25 +124,17 @@ describe("home task recommendation cache recovery", () => {
           usage: { input_tokens: 200, output_tokens: 0 },
         });
       }),
-      http.post(OPENROUTER_CHAT_URL, () => {
-        return HttpResponse.json({
-          choices: [
+      http.post(VERTEX_TEXT_URL, () => {
+        return vertexTextResponse(
+          JSON.stringify([
             {
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify([
-                  {
-                    candidateId: "c1",
-                    title: "Prepare the customer follow-up",
-                    prompt: "Draft the customer follow-up for my review.",
-                    rationale: "A recent conversation needs a follow-up",
-                  },
-                ]),
-              },
+              candidateId: "c1",
+              title: "Prepare the customer follow-up",
+              prompt: "Draft the customer follow-up for my review.",
+              rationale: "A recent conversation needs a follow-up",
             },
-          ],
-          usage: { prompt_tokens: 100, completion_tokens: 20 },
-        });
+          ]),
+        );
       }),
     );
     await updateFeatureSwitchesForUser(
@@ -219,6 +216,7 @@ describe("home task recommendation cache recovery", () => {
     mockNow(base);
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },

@@ -77,6 +77,44 @@ function persistedConnectorCatalogValidationAuthority(args: {
       };
 }
 
+export function connectorCatalogRuntimeProjectionSetValues(args: {
+  readonly sourceId: string;
+  readonly identity: {
+    readonly catalogVersion: string;
+    readonly catalogDigest: string;
+  };
+  readonly artifact: ConnectorCatalogArtifact;
+  readonly validator: ConnectorCatalogValidatorIdentity;
+}) {
+  return {
+    sourceId: args.sourceId,
+    schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+    catalogVersion: args.identity.catalogVersion,
+    catalogDigest: args.identity.catalogDigest,
+    projectionVersion: CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
+    connectorCount: args.artifact.connectors.length,
+    catalogValidationBackendVersion: args.validator.validatorVersion,
+    catalogValidationBuildCommitSha: args.validator.buildCommitSha,
+  };
+}
+
+export function connectorCatalogRuntimeProjectionEntryValues(
+  projectionSetId: string,
+  artifact: ConnectorCatalogArtifact,
+) {
+  return artifact.connectors.map((connector) => {
+    const connectorPayload =
+      connectorCatalogRuntimeProjectionPayload(connector);
+    return {
+      projectionSetId,
+      connectorSlug: connector.slug,
+      connectorDigest:
+        connectorCatalogRuntimeProjectionDigest(connectorPayload),
+      connectorPayload,
+    };
+  });
+}
+
 export async function persistConnectorCatalogRuntimeProjection(args: {
   readonly db: Db;
   readonly sourceId: string;
@@ -100,33 +138,26 @@ export async function persistConnectorCatalogRuntimeProjection(args: {
     );
   const [projectionSet] = await args.db
     .insert(connectorCatalogRuntimeProjectionSets)
-    .values({
-      sourceId: args.sourceId,
-      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-      catalogVersion: args.identity.catalogVersion,
-      catalogDigest: args.identity.catalogDigest,
-      projectionVersion: CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
-      connectorCount: args.artifact.connectors.length,
-      catalogValidationBackendVersion: args.validator.validatorVersion,
-      catalogValidationBuildCommitSha: args.validator.buildCommitSha,
-    })
+    .values(
+      connectorCatalogRuntimeProjectionSetValues({
+        sourceId: args.sourceId,
+        identity: args.identity,
+        artifact: args.artifact,
+        validator: args.validator,
+      }),
+    )
     .returning({ id: connectorCatalogRuntimeProjectionSets.id });
   if (projectionSet === undefined) {
     throw new Error("Connector runtime projection set insert returned no row");
   }
-  await args.db.insert(connectorCatalogRuntimeProjections).values(
-    args.artifact.connectors.map((connector) => {
-      const connectorPayload =
-        connectorCatalogRuntimeProjectionPayload(connector);
-      return {
-        projectionSetId: projectionSet.id,
-        connectorSlug: connector.slug,
-        connectorDigest:
-          connectorCatalogRuntimeProjectionDigest(connectorPayload),
-        connectorPayload,
-      };
-    }),
-  );
+  await args.db
+    .insert(connectorCatalogRuntimeProjections)
+    .values(
+      connectorCatalogRuntimeProjectionEntryValues(
+        projectionSet.id,
+        args.artifact,
+      ),
+    );
 }
 
 async function queryProjectionIdentity(

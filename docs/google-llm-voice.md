@@ -117,7 +117,7 @@ the project's live Maps Grounding entitlement are verified.
 | Use                                | Native model            | Location / hostname                       | Thinking | Output tokens |
 | ---------------------------------- | ----------------------- | ----------------------------------------- | -------- | ------------- |
 | Voice input segments               | `gemini-3.1-flash-lite` | `us` / `aiplatform.us.rep.googleapis.com` | MINIMAL  | see below     |
-| Independent `/api/voice-io/polish` | `gemini-3.8-flash`      | `us` / `aiplatform.us.rep.googleapis.com` | LOW      | 65,536        |
+| Independent `/api/voice-io/polish` | `gemini-3.1-flash-lite` | `us` / `aiplatform.us.rep.googleapis.com` | MINIMAL  | 65,536        |
 
 Voice input output caps bound generation time as well as size: a model that
 loops instead of stopping generates until the cap. A partial segment transcript
@@ -129,9 +129,11 @@ the model maximum of 65,536.
 Both model cards currently list US/EU multi-region and global, with no Oregon
 region. US multi-region is an explicit exception and does not guarantee Oregon
 processing. Never use `us-aiplatform.googleapis.com`. Voice input retains
-temperature 0. 3.8 omits unsupported sampling controls and does not accept
-MINIMAL. Independent text polish does not change generic `FAST_PATH_MODEL`
-consumers.
+temperature 0, as does independent voice-draft polish. Generic auxiliary text
+uses the separate [Vertex text boundary](./gemini-auxiliary-vertex.md): follow-ups
+retain 3.8 Flash with LOW thinking; other auxiliary prose uses Flash-Lite with
+MINIMAL thinking. 3.8 omits unsupported sampling controls and does not accept
+MINIMAL.
 
 STS uses `https://sts.us-west1.rep.googleapis.com/v1/token`. WIF pool/provider
 resources remain `locations/global`, their only supported location. Project,

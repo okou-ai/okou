@@ -77,7 +77,7 @@ export function createPublicConnectorCatalog(
     onTestFinished(cleanup);
   }
 
-  async function publish(catalog: ConnectorCatalogArtifact) {
+  function stage(catalog: ConnectorCatalogArtifact) {
     if (cleaned) {
       throw new Error("Public connector catalog was already cleaned up");
     }
@@ -129,6 +129,14 @@ export function createPublicConnectorCatalog(
       return previous(...args);
     });
     storage = context.mocks.s3.send.getMockImplementation();
+    return {
+      catalogVersion,
+      catalogDigest: `sha256:${createHash("sha256").update(catalogBytes).digest("hex")}`,
+    };
+  }
+
+  async function publish(catalog: ConnectorCatalogArtifact) {
+    stage(catalog);
     const synced = await accept(
       setupApp({ context, routes: cronConnectorCatalogRoutes })(
         cronConnectorCatalogContract,
@@ -147,6 +155,7 @@ export function createPublicConnectorCatalog(
   }
 
   return {
+    stage,
     publish,
     cleanup,
     onCleanup(ownedCleanup: () => Promise<void>) {
