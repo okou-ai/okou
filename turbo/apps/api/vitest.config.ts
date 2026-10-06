@@ -21,6 +21,10 @@ const catalogTests = [
   "src/signals/routes/__tests__/model-catalog.test.ts",
   "src/signals/routes/__tests__/test-runtime-state.test.ts",
   "src/signals/routes/__tests__/model-providers.test.ts",
+  // Disable real personal routes after capture: the catalog is shared by
+  // ordinary run readers, so these mutations must not overlap their requests.
+  "src/signals/routes/__tests__/workflow-queue.test.ts",
+  "src/signals/routes/__tests__/webhooks-workflow-automations.test.ts",
 ];
 
 // Only generation-changing contracts belong here, never their former sibling
