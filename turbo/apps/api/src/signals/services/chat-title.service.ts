@@ -22,13 +22,16 @@ import {
 import { logger } from "../../lib/log";
 import { stripMarkdown } from "../../lib/strip-markdown";
 import { command } from "ccstate";
+import { gcpLlmConfiguration } from "../external/gcp-llm-auth";
 import {
-  AUXILIARY_TEXT_MAX_TOKENS,
-  FAST_PATH_MODEL,
-  generateTextWithUsage,
-  isLlmConfigured,
-  openRouterTokenCounts,
-} from "../external/openrouter";
+  VERTEX_TEXT_MODEL,
+  VERTEX_FOLLOWUP_MODEL,
+  type VertexModel,
+} from "../external/vertex-models";
+import {
+  VERTEX_AUXILIARY_MAX_TOKENS,
+  generateVertexTextWithUsage,
+} from "../external/vertex-text";
 import { publishThreadListChanged } from "../external/realtime";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -56,7 +59,7 @@ import {
 } from "./canonical-chat-event-read.service";
 
 const log = logger("api:chat-title");
-const TITLE_MODEL = "google/gemini-3.1-flash-lite";
+const TITLE_MODEL = VERTEX_TEXT_MODEL;
 const TITLE_CONTEXT_CHAR_CAP = 150;
 const TITLE_PRIOR_MESSAGE_CAP = 10;
 const FOLLOWUP_CONTEXT_CHAR_CAP = 700;
@@ -172,9 +175,9 @@ function chatCompletionContextMessage(
 }
 
 async function generateFastPathText(
-  model: typeof TITLE_MODEL | typeof FAST_PATH_MODEL,
+  model: VertexModel,
   messages: readonly ChatMessageForGeneration[],
-  maxTokens = AUXILIARY_TEXT_MAX_TOKENS,
+  maxTokens = VERTEX_AUXILIARY_MAX_TOKENS,
   options?: {
     readonly stripMarkdown?: boolean;
     readonly acceptTruncatedText?: boolean;
@@ -182,12 +185,11 @@ async function generateFastPathText(
   },
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const generation = await generateTextWithUsage(
+  const generation = await generateVertexTextWithUsage(
     model,
     messages,
     maxTokens,
     {
-      reasoning: { effort: model === TITLE_MODEL ? "minimal" : "low" },
       temperature: 0.3,
       ...(options?.acceptTruncatedText === true
         ? { acceptTruncatedText: true }
@@ -200,7 +202,7 @@ async function generateFastPathText(
   }
   options?.record?.({
     truncated: generation.truncated === true,
-    tokens: openRouterTokenCounts(generation.usage),
+    tokens: generation.tokens,
   });
   return options?.stripMarkdown === false
     ? generation.text
@@ -245,7 +247,7 @@ function generateChatTitle(
         content: sections.join("\n\n"),
       },
     ],
-    AUXILIARY_TEXT_MAX_TOKENS,
+    VERTEX_AUXILIARY_MAX_TOKENS,
     { record },
     signal,
   );
@@ -281,7 +283,7 @@ export async function generateSharedThreadTitle(
               content: conversation,
             },
           ],
-          AUXILIARY_TEXT_MAX_TOKENS,
+          VERTEX_AUXILIARY_MAX_TOKENS,
           { record },
           signal,
         );
@@ -406,7 +408,7 @@ export const generateAndPersistChatThreadTitle$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    if (!isLlmConfigured() || args.prompt.trim().length === 0) {
+    if (!gcpLlmConfiguration() || args.prompt.trim().length === 0) {
       return;
     }
     await tapError(
@@ -480,7 +482,7 @@ export async function generateChatNotificationSummary(
           // A shortened notification sentence still tells the user their task
           // finished; the alternative is a notification with no summary at all.
           return generateFastPathText(
-            FAST_PATH_MODEL,
+            VERTEX_TEXT_MODEL,
             [
               {
                 role: "system",
@@ -492,7 +494,7 @@ export async function generateChatNotificationSummary(
                 content: `User request:\n${args.prompt.slice(0, TITLE_CONTEXT_CHAR_CAP)}\n\nAssistant reply:\n${args.resultText.slice(0, TITLE_CONTEXT_CHAR_CAP)}`,
               },
             ],
-            AUXILIARY_TEXT_MAX_TOKENS,
+            VERTEX_AUXILIARY_MAX_TOKENS,
             { acceptTruncatedText: true, record },
             signal,
           );
@@ -563,7 +565,7 @@ async function generateRecommendedFollowups(
   // The output must parse as JSON, so a truncated array is unusable by
   // construction and stays rejected.
   const text = await generateFastPathText(
-    FAST_PATH_MODEL,
+    VERTEX_FOLLOWUP_MODEL,
     [
       {
         role: "system",
@@ -574,7 +576,7 @@ async function generateRecommendedFollowups(
         content: `Recent conversation:\n${context}`,
       },
     ],
-    AUXILIARY_TEXT_MAX_TOKENS,
+    VERTEX_AUXILIARY_MAX_TOKENS,
     { stripMarkdown: false, record },
     signal,
   );

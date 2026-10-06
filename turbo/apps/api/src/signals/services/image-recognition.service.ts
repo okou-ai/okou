@@ -42,16 +42,14 @@ const IMAGE_RECOGNITION_OPERATION = "image-recognition";
 const IMAGE_RECOGNITION_MAX_TOKENS = 8192;
 
 /**
- * Reasoning control for `IMAGE_RECOGNITION_MODEL`, recorded the way
- * `AUXILIARY_TEXT_MAX_TOKENS` records `FAST_PATH_MODEL`. From
+ * Reasoning control for `IMAGE_RECOGNITION_MODEL`. From
  * `GET /api/v1/models` and its `/endpoints` detail, checked 2026-09-21: the
  * model reports `reasoning: { mandatory: false }` with no `supported_efforts`,
  * no `default_effort` and no `supports_max_tokens`, and each of its six
  * provider endpoints lists `reasoning` and `include_reasoning` among the
  * supported parameters but never `reasoning_effort`. An omitted
  * `supported_efforts` is documented as a model that exposes no effort
- * selection, so the `effort: "low"` that run summaries send to
- * `FAST_PATH_MODEL` has nothing to select here and would be dropped rather
+ * selection, so a graded `effort: "low"` has nothing to select here and would be dropped rather
  * than honored; `mandatory: false` is exactly what leaves the remaining
  * control, the on/off switch, valid to send.
  *

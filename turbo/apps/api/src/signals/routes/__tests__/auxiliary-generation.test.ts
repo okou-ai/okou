@@ -1,3 +1,4 @@
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
@@ -17,9 +18,9 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 
 const context = testContext();
 beforeEach(() => {
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 });
-const endpoint = "https://openrouter.ai/api/v1/chat/completions";
+const endpoint = VERTEX_TEXT_URL;
 // Never part of a request an external caller makes, so anything carrying it
 // into a thread came from the provider response.
 const secret = "private-provider-payload";
@@ -27,7 +28,18 @@ const prompt = "Prepare the launch checklist";
 
 function completion(content = "A usable summary") {
   return HttpResponse.json({
-    choices: [{ finish_reason: "stop", message: { content } }],
+    candidates: [
+      {
+        finishReason: "STOP",
+        content: {
+          parts: [
+            {
+              text: content,
+            },
+          ],
+        },
+      },
+    ],
   });
 }
 
@@ -109,7 +121,7 @@ type TitleCompletion =
   | { readonly content: string; readonly finishReason: "length" };
 
 function mockTitleCompletion(response: () => TitleCompletion) {
-  createChatCallbacksApi(context).mockOpenRouterCompletions((body) => {
+  createChatCallbacksApi(context).mockVertexCompletions((body) => {
     return body.messages[0]?.content.includes(
       "Generate a short, descriptive title",
     )
@@ -163,7 +175,7 @@ const untitledCases = Object.freeze([
 describe("auxiliary generation outcomes", () => {
   it("titles the thread from a usable completion", async () => {
     const title = await prepareChatTitle();
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     mockTitleCompletion(() => {
       return completion();
     });
@@ -181,8 +193,8 @@ describe("auxiliary generation outcomes", () => {
         release.resolve(undefined);
       }
     });
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
-    createChatCallbacksApi(context).mockOpenRouterCompletions(async (body) => {
+    mockGoogleText();
+    createChatCallbacksApi(context).mockVertexCompletions(async (body) => {
       if (
         body.messages[0]?.content.includes(
           "Generate a short, descriptive title",
@@ -210,7 +222,7 @@ describe("auxiliary generation outcomes", () => {
     "leaves the thread untitled after $name",
     async ({ response }) => {
       const title = await prepareChatTitle();
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       mockTitleCompletion(response);
       await title.create();
       await flushWaitUntilForTest();
@@ -229,7 +241,7 @@ describe("auxiliary generation outcomes", () => {
 
   it("leaves the thread untitled and calls no provider when configuration is missing", async () => {
     const title = await prepareChatTitle();
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
     let requests = 0;
     server.use(
       http.post(endpoint, () => {
@@ -258,7 +270,7 @@ describe("auxiliary generation outcomes", () => {
         release.resolve(undefined);
       }
     });
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     server.use(
       http.post(endpoint, async () => {
         entered.resolve(undefined);
@@ -288,8 +300,8 @@ describe("auxiliary generation outcomes", () => {
         releaseTitle.resolve(undefined);
       }
     });
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
-    createChatCallbacksApi(context).mockOpenRouterCompletions(async (body) => {
+    mockGoogleText();
+    createChatCallbacksApi(context).mockVertexCompletions(async (body) => {
       if (
         body.messages[0]?.content.includes(
           "Generate a short, descriptive title",

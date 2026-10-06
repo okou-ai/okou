@@ -193,6 +193,31 @@ async function readExistingVersions(
   );
 }
 
+export function connectorCatalogSkillRegistrationValues(
+  artifact: ConnectorCatalogArtifact,
+  existingVersions: readonly ExistingStorageVersion[],
+): readonly PreparedConnectorSkillRegistration[] {
+  const existingByVersion = new Map(
+    existingVersions.map((row) => {
+      return [row.id, row] as const;
+    }),
+  );
+  return artifact.connectors.flatMap((connector) => {
+    if (connector.skill.kind !== "bundled") {
+      return [];
+    }
+    const registration = registrationFromSkill(connector.skill);
+    const existing = existingByVersion.get(connector.skill.versionId);
+    if (!existing) {
+      return [registration];
+    }
+    if (!existingVersionMatchesRegistration(existing, registration)) {
+      fail("invalid-reference", false);
+    }
+    return [{ ...registration, provenance: "existing" as const }];
+  });
+}
+
 export async function prepareConnectorCatalogSkills(
   args: {
     readonly db: ReadonlyDb;
@@ -210,17 +235,9 @@ export async function prepareConnectorCatalogSkills(
     }),
     signal,
   );
-  return bundledSkills.map((skill) => {
-    const registration = registrationFromSkill(skill);
-    const existing = existingByVersion.get(skill.versionId);
-    if (!existing) {
-      return registration;
-    }
-    if (!existingVersionMatchesRegistration(existing, registration)) {
-      fail("invalid-reference", false);
-    }
-    return { ...registration, provenance: "existing" };
-  });
+  return connectorCatalogSkillRegistrationValues(args.artifact, [
+    ...existingByVersion.values(),
+  ]);
 }
 
 async function missingRegistrations(

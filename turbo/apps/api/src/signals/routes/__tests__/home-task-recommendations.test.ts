@@ -1,3 +1,4 @@
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 
 import { cronRefreshHomeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/cron";
@@ -30,7 +31,7 @@ import {
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const FAILURE_COOLDOWN_ELAPSED_MS = 5 * 60 * 1000 + 1;
-const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_CHAT_URL = VERTEX_TEXT_URL;
 const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 const GMAIL_LIST_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages";
@@ -166,6 +167,7 @@ describe("GET /api/home-task-recommendations", () => {
     let textCalls = 0;
     let decisionCalls = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     server.use(
       http.post(OPENROUTER_CHAT_URL, async ({ request }) => {
@@ -206,13 +208,22 @@ describe("GET /api/home-task-recommendations", () => {
                 },
               ]);
         return HttpResponse.json({
-          choices: [
+          candidates: [
             {
-              finish_reason: "stop",
-              message: { content },
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: content,
+                  },
+                ],
+              },
             },
           ],
-          usage: { prompt_tokens: 100, completion_tokens: 20 },
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 20,
+          },
         });
       }),
       http.post(OPENROUTER_DECISIONS_URL, async ({ request }) => {
@@ -487,6 +498,7 @@ describe("GET /api/home-task-recommendations", () => {
       { [FeatureSwitchKey.HomeTaskRecommendations]: true },
     );
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
 
     let gmailListCalls = 0;
@@ -582,6 +594,7 @@ describe("GET /api/home-task-recommendations", () => {
       { [FeatureSwitchKey.HomeTaskRecommendations]: true },
     );
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     const base = now();
     mockNow(base);
@@ -710,27 +723,35 @@ describe("GET /api/home-task-recommendations", () => {
       http.post(OPENROUTER_CHAT_URL, () => {
         textBeforeDecision = !decisionsCalled;
         return HttpResponse.json({
-          choices: [
+          candidates: [
             {
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify([
+              finishReason: "STOP",
+              content: {
+                parts: [
                   {
-                    candidateId: workflowCandidateId,
-                    title: "Assess a weekly sales Workflow",
-                    prompt:
-                      "Review the completed sales summaries below. Decide whether a reusable Workflow fits, check existing Workflows, and ask me for any missing constraints before creating one.",
-                    rationale: "I have repeated this work three times",
+                    text: JSON.stringify([
+                      {
+                        candidateId: workflowCandidateId,
+                        title: "Assess a weekly sales Workflow",
+                        prompt:
+                          "Review the completed sales summaries below. Decide whether a reusable Workflow fits, check existing Workflows, and ask me for any missing constraints before creating one.",
+                        rationale: "I have repeated this work three times",
+                      },
+                    ]),
                   },
-                ]),
+                ],
               },
             },
           ],
-          usage: { prompt_tokens: 100, completion_tokens: 20 },
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 20,
+          },
         });
       }),
     );
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     await updateFeatureSwitchesForUser(
       context,
@@ -812,7 +833,7 @@ describe("GET /api/home-task-recommendations", () => {
       initialClaim.sandboxHeaders,
     );
     // Run completion schedules title generation through waitUntil. Settle that
-    // owned work before this test gives the shared OpenRouter endpoint a
+    // owned work before this test gives the shared Vertex endpoint a
     // phase-sensitive handler, so an unrelated title request cannot consume
     // the card writer's first response.
     await flushWaitUntilForTest();
@@ -820,6 +841,7 @@ describe("GET /api/home-task-recommendations", () => {
     const base = now();
     mockNow(base);
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockGoogleText();
     mockEnv("CRON_SECRET", "home-task-cron-secret");
     let writerOutputIsInvalid = false;
     let textCalls = 0;
@@ -844,8 +866,22 @@ describe("GET /api/home-task-recommendations", () => {
               },
             ]);
         return HttpResponse.json({
-          choices: [{ finish_reason: "stop", message: { content } }],
-          usage: { prompt_tokens: 100, completion_tokens: 20 },
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: content,
+                  },
+                ],
+              },
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 20,
+          },
         });
       }),
       http.post(OPENROUTER_DECISIONS_URL, () => {

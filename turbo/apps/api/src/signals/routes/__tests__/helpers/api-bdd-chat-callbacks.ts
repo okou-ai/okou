@@ -4,7 +4,6 @@ import { HttpResponse, http } from "msw";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { z } from "zod";
 
 import { mockOptionalEnv } from "../../../../lib/env";
 import { nowDate } from "../../../../lib/time";
@@ -23,36 +22,28 @@ import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { installArtifactReferenceStorage } from "./artifact-reference-storage";
-import { openRouterModelContractError } from "./openrouter-model-contract";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+  vertexTextResponse,
+} from "./google-text";
 import type { AgentEvent } from "../../../../lib/event-consumer/verify";
 
 const CHAT_CALLBACK_URL = "http://localhost:3000/api/internal/callbacks/chat";
-const OPENROUTER_COMPLETIONS_URL =
-  "https://openrouter.ai/api/v1/chat/completions";
-
-const openRouterCompletionBodySchema = z.object({
-  model: z.string(),
-  max_tokens: z.number().optional(),
-  reasoning: z.object({ effort: z.string() }).optional(),
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
-});
-
-type OpenRouterCompletionBody = z.infer<typeof openRouterCompletionBodySchema>;
+type VertexCompletionBody = ReturnType<typeof vertexTextRequest>;
 
 /**
  * A completion the upstream cut short. Whether the partial text survives is a
  * per-caller decision: prose summaries keep it, while immutably persisted
  * titles and JSON output reject it. Tests use this to prove both halves.
  */
-interface TruncatedOpenRouterCompletion {
+interface TruncatedVertexCompletion {
   readonly content: string;
   readonly finishReason: "length";
 }
 
-type OpenRouterCompletionResult =
-  | string
-  | TruncatedOpenRouterCompletion
-  | Response;
+type VertexCompletionResult = string | TruncatedVertexCompletion | Response;
 
 interface StoredS3Object {
   readonly bucket: string;
@@ -414,47 +405,31 @@ export function createChatCallbacksApi(context: TestContext) {
       }
     },
 
-    /**
-     * Single OpenRouter completions endpoint serving title, follow-up, run
-     * summary, and notification summary prompts. The handler branches on the
-     * system prompt and returns the completion text.
-     */
-    mockOpenRouterCompletions(
+    /** Native Vertex completions serving title, follow-up and summary fixtures. */
+    mockVertexCompletions(
       handler: (
-        body: OpenRouterCompletionBody,
-      ) => OpenRouterCompletionResult | Promise<OpenRouterCompletionResult>,
+        body: VertexCompletionBody,
+      ) => VertexCompletionResult | Promise<VertexCompletionResult>,
     ): void {
+      mockGoogleText();
       server.use(
-        http.post(OPENROUTER_COMPLETIONS_URL, async ({ request }) => {
-          const body = openRouterCompletionBodySchema.parse(
-            await request.json(),
-          );
-          const contractError = openRouterModelContractError(body);
-          if (contractError) {
-            return contractError;
-          }
+        http.post(VERTEX_TEXT_URL, async ({ request }) => {
+          const body = vertexTextRequest(await request.json(), request.url);
           const result = await handler(body);
           if (result instanceof Response) {
             return result;
           }
-          return HttpResponse.json({
-            choices: [
-              typeof result === "string"
-                ? { finish_reason: "stop", message: { content: result } }
-                : {
-                    finish_reason: result.finishReason,
-                    native_finish_reason: "MAX_TOKENS",
-                    message: { content: result.content },
-                  },
-            ],
-          });
+          return typeof result === "string"
+            ? vertexTextResponse(result)
+            : vertexTextResponse(result.content, "MAX_TOKENS");
         }),
       );
     },
 
-    mockOpenRouterFailure(): void {
+    mockVertexFailure(): void {
+      mockGoogleText();
       server.use(
-        http.post(OPENROUTER_COMPLETIONS_URL, () => {
+        http.post(VERTEX_TEXT_URL, () => {
           return new HttpResponse("Internal Server Error", { status: 500 });
         }),
       );

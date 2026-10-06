@@ -1158,7 +1158,7 @@ describe("shared thread routes", () => {
 
     mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
     const titlePrompts: string[] = [];
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("for this shared conversation")) {
         titlePrompts.push(body.messages[1]?.content ?? "");
@@ -1304,7 +1304,7 @@ describe("shared thread routes", () => {
     if (!promptEvent) {
       throw new Error("Expected an associated prompt event");
     }
-    chatCallbacks.mockOpenRouterCompletions(() => {
+    chatCallbacks.mockVertexCompletions(() => {
       return "Private launch plan";
     });
 

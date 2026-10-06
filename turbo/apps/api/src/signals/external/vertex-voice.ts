@@ -15,28 +15,10 @@ import {
 } from "./gcp-llm-transport";
 import type { VoiceCompletionRequest } from "./voice-completion-types";
 import { requestVoiceProvider } from "./voice-provider-request";
+import { VERTEX_MODELS, type VertexModel } from "./vertex-models";
 
 const L = logger("VertexVoice");
-const MODELS = {
-  "google/gemini-3.1-flash-lite": {
-    model: "gemini-3.1-flash-lite",
-    location: "us",
-    host: "aiplatform.us.rep.googleapis.com",
-    generationConfig: {
-      thinkingConfig: { thinkingLevel: "MINIMAL" },
-      temperature: 0,
-    },
-  },
-  "google/gemini-3.8-flash": {
-    model: "gemini-3.8-flash",
-    location: "us",
-    host: "aiplatform.us.rep.googleapis.com",
-    generationConfig: {
-      thinkingConfig: { thinkingLevel: "LOW" },
-    },
-  },
-} as const;
-type VertexVoiceModel = keyof typeof MODELS;
+type VertexVoiceModel = VertexModel;
 
 /** The largest output either voice model accepts. */
 export const VERTEX_VOICE_MAX_OUTPUT_TOKENS = 65_536;
@@ -279,7 +261,7 @@ export async function generateVertexVoice<T>(
   if (!configuration) {
     return null;
   }
-  const model = MODELS[args.model];
+  const model = VERTEX_MODELS[args.model];
   const parts =
     typeof args.content === "string"
       ? [{ text: args.content }]

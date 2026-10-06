@@ -5,7 +5,8 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { activityExcerpt, activityPhrases } from "../../lib/run-activity";
 import type { Db } from "../external/db";
-import { FAST_PATH_MODEL, generateText } from "../external/openrouter";
+import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
+import { generateVertexText } from "../external/vertex-text";
 import { settleIncludingAbort } from "../utils";
 import { generateAuxiliary } from "./auxiliary-generation.service";
 import { activityClock } from "./run-activity.service";
@@ -77,14 +78,14 @@ async function generatePhrase(
       {
         feature: "chat_activity_summary",
         generate: () => {
-          return generateText(
-            FAST_PATH_MODEL,
+          return generateVertexText(
+            VERTEX_TEXT_MODEL,
             [
               { role: "system", content: SYSTEM_PROMPT },
               { role: "user", content: JSON.stringify(input) },
             ],
             1024,
-            { reasoning: { effort: "low" } },
+            undefined,
             generationSignal,
           );
         },

@@ -3,11 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  FAST_PATH_MODEL,
-  OpenRouterRequestError,
-  generateTextWithUsage,
-} from "../openrouter";
+import { OpenRouterRequestError, generateTextWithUsage } from "../openrouter";
 import {
   openRouterFailureReason,
   type OpenRouterDiagnostics,
@@ -144,7 +140,7 @@ const cases = Object.freeze([
 ]);
 
 async function rejectedGeneration() {
-  return await generateTextWithUsage(FAST_PATH_MODEL, [
+  return await generateTextWithUsage("synthetic/model", [
     { role: "user", content: "Summarize the launch plan" },
   ]).then(
     () => {
@@ -177,7 +173,7 @@ describe("OpenRouter request error diagnostics", () => {
       );
       const diagnostics: OpenRouterDiagnostics = { phase: "configuration" };
       const generation = generateTextWithUsage(
-        FAST_PATH_MODEL,
+        "synthetic/model",
         [{ role: "user", content: "Describe" }],
         100,
         observe ? { diagnostics } : {},
@@ -213,7 +209,7 @@ describe("OpenRouter request error diagnostics", () => {
       const diagnostics: OpenRouterDiagnostics = { phase: "configuration" };
       await expect(
         generateTextWithUsage(
-          FAST_PATH_MODEL,
+          "synthetic/model",
           [{ role: "user", content: "Summarize" }],
           100,
           { acceptTruncatedText: true, ...(observe ? { diagnostics } : {}) },
