@@ -24,10 +24,16 @@ export async function createPhase2CodexProvider(
   owner: { orgId: string; userId: string },
   {
     subscription,
-  }: { subscription?: { accountId: string; expired: boolean } } = {},
+    registerCleanup = onTestFinished,
+    miscApi,
+  }: {
+    subscription?: { accountId: string; expired: boolean };
+    registerCleanup?: (cleanup: () => Promise<void>) => void;
+    miscApi?: ReturnType<typeof createMiscRoutesApi>;
+  } = {},
 ) {
   const actor = createBddApi(context).user({ ...owner, orgRole: "org:admin" });
-  const misc = createMiscRoutesApi(context);
+  const misc = miscApi ?? createMiscRoutesApi(context);
   await updateFeatureSwitchesForUser(context, owner, {
     [FeatureSwitchKey.PiMemory]: true,
   });
@@ -54,7 +60,7 @@ export async function createPhase2CodexProvider(
   if (created.status !== 200 && created.status !== 201) {
     throw new Error("Missing subscription account");
   }
-  onTestFinished(async () => {
+  registerCleanup(async () => {
     await misc.deletePersonalModelProvider(
       actor,
       "codex-oauth-token",

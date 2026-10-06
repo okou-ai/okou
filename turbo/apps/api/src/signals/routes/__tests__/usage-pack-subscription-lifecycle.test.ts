@@ -1,3 +1,4 @@
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { randomUUID } from "node:crypto";
 
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
@@ -12,7 +13,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -858,67 +859,104 @@ describe("usage pack subscription Stripe lifecycle", () => {
         userId: `user_${randomUUID()}`,
         invitationId: null,
       };
-      await seedOrgMetadata({
-        orgId: fixture.orgId,
-        tier: "limited-free-1",
-        credits: 0,
-      });
-      onTestFinished(async () => {
-        await usagePackStateAction({
-          action: "cleanup",
+      let restoreBillingEnvironment: (() => void) | undefined;
+      const owner = createPublicBillingZeroFixture(
+        context,
+        {
           orgId: fixture.orgId,
-          usagePackSubscriptionId: fixture.usagePackSubscriptionId,
-          deleteGrants: true,
-          deleteOrgMetadata: true,
-        });
-      });
-      const grantPeriod = period(0);
-      await postStripeEvent(
-        stripeEvent("invoice.paid", {
-          id: `in_${randomUUID()}`,
-          customer: fixture.customerId,
-          status: "paid",
-          paid: true,
-          parent: null,
-          metadata: {
-            type: "atom_grant",
-            purpose: "atom_grant",
-            source: "atom_entitlement",
-            planVersion,
-            operationId: `sub_${randomUUID()}`,
-            orgId: fixture.orgId,
-            tier,
-            planId: tier,
-            duration: "30d",
-            atomGrantExpiresAt: new Date(grantPeriod.end * 1000).toISOString(),
+          userId: fixture.userId,
+          email: `${fixture.userId}@example.com`,
+          orgRole: "org:admin",
+        },
+        {
+          beforeOrganizationCleanup() {
+            // Snapshot after the global test teardown clears its environment,
+            // immediately before public deletion configures its own catalog.
+            const billingEnvironment = {
+              pro: env("OKOU_PRICE_PRO")?.join(","),
+              team: env("OKOU_PRICE_TEAM")?.join(","),
+              atom: env("ATOM_GRANT_PRICE"),
+              concurrency: env("OKOU_PRICE_CONCURRENCY")?.join(","),
+              campaign: JSON.stringify(env("OKOU_ONE_TIME_CAMPAIGN")),
+              stripeSecret: optionalEnv("STRIPE_WEBHOOK_SECRET"),
+              clerkSecret: optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET"),
+            };
+            restoreBillingEnvironment = () => {
+              mockEnv("OKOU_PRICE_PRO", billingEnvironment.pro);
+              mockEnv("OKOU_PRICE_TEAM", billingEnvironment.team);
+              mockEnv("ATOM_GRANT_PRICE", billingEnvironment.atom);
+              mockEnv("OKOU_PRICE_CONCURRENCY", billingEnvironment.concurrency);
+              mockEnv("OKOU_ONE_TIME_CAMPAIGN", billingEnvironment.campaign);
+              mockOptionalEnv(
+                "STRIPE_WEBHOOK_SECRET",
+                billingEnvironment.stripeSecret,
+              );
+              mockOptionalEnv(
+                "CLERK_WEBHOOK_SIGNING_SECRET",
+                billingEnvironment.clerkSecret,
+              );
+            };
+            return Promise.resolve();
           },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_${randomUUID()}`,
-                amount: 0,
-                subtotal: 0,
-                quantity: 1,
-                price: { id: TEST_PRICE_ATOM_GRANT },
-                period: grantPeriod,
-                parent: { type: "invoice_item_details" },
-              },
-            ],
+          afterOrganizationCleanup() {
+            restoreBillingEnvironment?.();
+            return Promise.resolve();
           },
-        }),
-        200,
+        },
       );
+      await owner.run(async () => {
+        await owner.initialize();
+        // Key21 retains the original exact grant/allocation/subscription absence.
+        const grantPeriod = period(0);
+        await postStripeEvent(
+          stripeEvent("invoice.paid", {
+            id: `in_${randomUUID()}`,
+            customer: fixture.customerId,
+            status: "paid",
+            paid: true,
+            parent: null,
+            metadata: {
+              type: "atom_grant",
+              purpose: "atom_grant",
+              source: "atom_entitlement",
+              planVersion,
+              operationId: `sub_${randomUUID()}`,
+              orgId: fixture.orgId,
+              tier,
+              planId: tier,
+              duration: "30d",
+              atomGrantExpiresAt: new Date(
+                grantPeriod.end * 1000,
+              ).toISOString(),
+            },
+            lines: {
+              has_more: false,
+              data: [
+                {
+                  id: `il_${randomUUID()}`,
+                  amount: 0,
+                  subtotal: 0,
+                  quantity: 1,
+                  price: { id: TEST_PRICE_ATOM_GRANT },
+                  period: grantPeriod,
+                  parent: { type: "invoice_item_details" },
+                },
+              ],
+            },
+          }),
+          200,
+        );
 
-      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-        tier,
-        showUsagePack,
-        subscriptionStatus: "atom_grant",
+        await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+          tier,
+          showUsagePack,
+          subscriptionStatus: "atom_grant",
+        });
+        const state = await readUsagePackState(fixture);
+        expect(state.subscription).toBeNull();
+        expect(state.allocations).toHaveLength(0);
+        expect(state.grants).toHaveLength(0);
       });
-      const state = await readUsagePackState(fixture);
-      expect(state.subscription).toBeNull();
-      expect(state.allocations).toHaveLength(0);
-      expect(state.grants).toHaveLength(0);
     },
   );
 

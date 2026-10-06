@@ -13,19 +13,27 @@ import { configureNativeCliArtifact } from "./chat-events-fixture";
 import { createPublicFirewallFixture } from "./public-firewall-fixture";
 
 export function memoryArchive(path: string, content: string): Buffer {
-  const bytes = Buffer.from(content, "utf8");
-  const header = Buffer.alloc(512);
-  new Header({ path, size: bytes.length, type: "File", mode: 0o644 }).encode(
-    header,
-  );
-  return gzipSync(
-    Buffer.concat([
+  return memoryFilesArchive([{ path, content }]);
+}
+
+export function memoryFilesArchive(
+  files: readonly { path: string; content: string }[],
+): Buffer {
+  const blocks: Buffer[] = [];
+  for (const { path, content } of files) {
+    const bytes = Buffer.from(content, "utf8");
+    const header = Buffer.alloc(512);
+    new Header({ path, size: bytes.length, type: "File", mode: 0o644 }).encode(
+      header,
+    );
+    blocks.push(
       header,
       bytes,
       Buffer.alloc((512 - (bytes.length % 512)) % 512),
-      Buffer.alloc(1024),
-    ]),
-  );
+    );
+  }
+  blocks.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(blocks));
 }
 
 /** Ordinary storage owners originate in paid onboarding and real Runner claims. */

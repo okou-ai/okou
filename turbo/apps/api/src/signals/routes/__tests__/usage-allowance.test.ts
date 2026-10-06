@@ -1,3 +1,4 @@
+import { createPublicUsageWallet } from "./helpers/public-usage-wallet";
 import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
@@ -97,6 +98,44 @@ async function builtInAllowanceActor(args: {
     visibility: "private",
   });
   return { actor, orgId, agentId: agent.agentId };
+}
+
+function publicFundedAllowanceFixture(args: {
+  credits: -10 | 10 | 100;
+  allowance: AllowanceEntitlementArgs;
+}) {
+  const bdd = createBddApi(context);
+  const actor = bdd.user();
+  const fixture = createPublicUsageWallet(context, actor, {
+    credits: args.credits,
+    otherMember: true,
+  });
+  return {
+    ...fixture,
+    async initializeAllowance() {
+      await seedBuiltInDefaultModelKeyState(context, fixture.registerCleanup);
+      await fixture.initialize();
+      // Setup usage belongs to the other actual member; keep the original mine scope.
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(0);
+      await postUsageAllowanceInvoicePaid(context.signal, {
+        orgId: fixture.orgId,
+        userId: actor.userId,
+        customerId: fixture.customerId,
+        subscriptionId: usageAllowanceSubscriptionId(fixture.orgId),
+        effectiveAt: nowDate(),
+        expiresAt: addDays(nowDate(), 365),
+        shortWindowSeconds: args.allowance.shortWindowSeconds ?? 5 * 60 * 60,
+        shortWindowUnits: args.allowance.shortWindowUnits,
+        weeklyWindowSeconds: 7 * 24 * 60 * 60,
+        weeklyWindowUnits: args.allowance.weeklyWindowUnits,
+      });
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Usage allowance agent",
+        visibility: "private",
+      });
+      return { actor, agentId: agent.agentId };
+    },
+  };
 }
 
 function publicAllowanceFixture(tier: "pro" | "limited-free-1") {
@@ -373,73 +412,96 @@ describe("Usage Allowance", () => {
   );
 
   it("applies usage allowance before legacy org credits", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: 10,
       allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
     });
-    const run = await createBuiltInRun(
-      actor,
-      agentId,
-      "allowance-covered usage",
-    );
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 80,
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
+      const run = await createBuiltInRun(
+        actor,
+        agentId,
+        "allowance-covered usage",
+      );
+      fixture.registerRun(run.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 80,
+      });
+
+      await processOrgUsageEvents(actor);
+
+      await expect(readOrgCredits(actor)).resolves.toBe(10);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
     });
-
-    await processOrgUsageEvents(actor);
-
-    await expect(readOrgCredits(actor)).resolves.toBe(10);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
   });
 
   it("settles multiple events and runs against shared allowance windows", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: 100,
       allowance: { shortWindowUnits: 100, weeklyWindowUnits: 90 },
     });
-    const firstRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "batched first run",
-    );
-    const secondRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "batched second run",
-    );
-    const provider = usageProvider();
-    await recordPendingUsageEvents({
-      actor,
-      runId: firstRun.runId,
-      provider,
-      quantities: [30, 40],
-    });
-    await recordPendingUsage({
-      actor,
-      runId: secondRun.runId,
-      provider,
-      quantity: 50,
-    });
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
+      const firstRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "batched first run",
+      );
+      fixture.registerRun(firstRun.runId);
+      const secondRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "batched second run",
+      );
+      fixture.registerRun(secondRun.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsageEvents({
+        actor,
+        runId: firstRun.runId,
+        provider,
+        quantities: [30, 40],
+      });
+      await recordPendingUsage({
+        actor,
+        runId: secondRun.runId,
+        provider,
+        quantity: 50,
+      });
 
-    await processOrgUsageEvents(actor);
+      await processOrgUsageEvents(actor);
 
-    await expect(readOrgCredits(actor)).resolves.toBe(70);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(120);
-    const status = await createRunsApi(context).readBillingStatus(actor);
-    if (!status.usageAllowance) {
-      throw new Error("Expected usage allowance windows");
-    }
-    expect(
-      Object.fromEntries(
-        status.usageAllowance.windows.map((window) => {
-          return [window.kind, window.consumedUnits];
-        }),
-      ),
-    ).toStrictEqual({ short: 90, weekly: 90 });
+      await expect(readOrgCredits(actor)).resolves.toBe(70);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(120);
+      const status = await createRunsApi(context).readBillingStatus(actor);
+      if (!status.usageAllowance) {
+        throw new Error("Expected usage allowance windows");
+      }
+      expect(
+        Object.fromEntries(
+          status.usageAllowance.windows.map((window) => {
+            return [window.kind, window.consumedUnits];
+          }),
+        ),
+      ).toStrictEqual({ short: 90, weekly: 90 });
+    });
   });
 
   it("settles reverse-inserted run anchors across distinct short windows and a shared weekly window", async () => {
@@ -515,181 +577,239 @@ describe("Usage Allowance", () => {
   });
 
   it("falls back to org credits after the binding window cap is exhausted", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: 100,
       allowance: { shortWindowUnits: 100, weeklyWindowUnits: 60 },
     });
-    const run = await createBuiltInRun(
-      actor,
-      agentId,
-      "weekly cap binds first",
-    );
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 80,
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
+      const run = await createBuiltInRun(
+        actor,
+        agentId,
+        "weekly cap binds first",
+      );
+      fixture.registerRun(run.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 80,
+      });
+
+      await processOrgUsageEvents(actor);
+
+      await expect(readOrgCredits(actor)).resolves.toBe(80);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
     });
-
-    await processOrgUsageEvents(actor);
-
-    await expect(readOrgCredits(actor)).resolves.toBe(80);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
   });
 
   it("charges org credits after the short window is exhausted", async () => {
     onTestFinished(() => {
       clearMockNow();
     });
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: 100,
       allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
     });
-    const startedAt = nowDate();
-    mockNow(startedAt);
-    const firstRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "exhausts short window",
-    );
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: firstRun.runId,
-      provider,
-      quantity: 100,
-    });
-    await processOrgUsageEvents(actor);
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
+      const startedAt = nowDate();
+      mockNow(startedAt);
+      const firstRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "exhausts short window",
+      );
+      fixture.registerRun(firstRun.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: firstRun.runId,
+        provider,
+        quantity: 100,
+      });
+      await processOrgUsageEvents(actor);
 
-    mockNow(addHours(startedAt, 1));
-    const secondRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "same short window",
-    );
-    await recordPendingUsage({
-      actor,
-      runId: secondRun.runId,
-      provider,
-      quantity: 50,
-    });
-    await processOrgUsageEvents(actor);
+      mockNow(addHours(startedAt, 1));
+      const secondRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "same short window",
+      );
+      fixture.registerRun(secondRun.runId);
+      await recordPendingUsage({
+        actor,
+        runId: secondRun.runId,
+        provider,
+        quantity: 50,
+      });
+      await processOrgUsageEvents(actor);
 
-    await expect(readOrgCredits(actor)).resolves.toBe(50);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(150);
+      await expect(readOrgCredits(actor)).resolves.toBe(50);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(150);
+    });
   });
 
   it("refreshes the short window while continuing the active weekly window", async () => {
     onTestFinished(() => {
       clearMockNow();
     });
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: 100,
       allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
     });
-    const startedAt = nowDate();
-    mockNow(startedAt);
-    const firstRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "exhausts short window",
-    );
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: firstRun.runId,
-      provider,
-      quantity: 100,
-    });
-    await processOrgUsageEvents(actor);
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
+      const startedAt = nowDate();
+      mockNow(startedAt);
+      const firstRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "exhausts short window",
+      );
+      fixture.registerRun(firstRun.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: firstRun.runId,
+        provider,
+        quantity: 100,
+      });
+      await processOrgUsageEvents(actor);
 
-    mockNow(addHours(startedAt, 6));
-    const secondRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "fresh short window",
-    );
-    await recordPendingUsage({
-      actor,
-      runId: secondRun.runId,
-      provider,
-      quantity: 50,
-    });
-    await processOrgUsageEvents(actor);
+      mockNow(addHours(startedAt, 6));
+      const secondRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "fresh short window",
+      );
+      fixture.registerRun(secondRun.runId);
+      await recordPendingUsage({
+        actor,
+        runId: secondRun.runId,
+        provider,
+        quantity: 50,
+      });
+      await processOrgUsageEvents(actor);
 
-    await expect(readOrgCredits(actor)).resolves.toBe(100);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(150);
+      await expect(readOrgCredits(actor)).resolves.toBe(100);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(150);
+    });
   });
 
   it("refreshes the weekly window for runs after the weekly window expires", async () => {
     onTestFinished(() => {
       clearMockNow();
     });
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: 100,
       allowance: { shortWindowUnits: 100, weeklyWindowUnits: 120 },
     });
-    const startedAt = nowDate();
-    mockNow(startedAt);
-    const firstRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "first weekly window",
-    );
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: firstRun.runId,
-      provider,
-      quantity: 80,
-    });
-    await processOrgUsageEvents(actor);
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
+      const startedAt = nowDate();
+      mockNow(startedAt);
+      const firstRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "first weekly window",
+      );
+      fixture.registerRun(firstRun.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: firstRun.runId,
+        provider,
+        quantity: 80,
+      });
+      await processOrgUsageEvents(actor);
 
-    mockNow(addDays(startedAt, 8));
-    const secondRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "fresh weekly window",
-    );
-    await recordPendingUsage({
-      actor,
-      runId: secondRun.runId,
-      provider,
-      quantity: 50,
-    });
-    await processOrgUsageEvents(actor);
+      mockNow(addDays(startedAt, 8));
+      const secondRun = await createBuiltInRun(
+        actor,
+        agentId,
+        "fresh weekly window",
+      );
+      fixture.registerRun(secondRun.runId);
+      await recordPendingUsage({
+        actor,
+        runId: secondRun.runId,
+        provider,
+        quantity: 50,
+      });
+      await processOrgUsageEvents(actor);
 
-    // A continued weekly window would only have 40 units left (120 - 80), so
-    // full coverage of the 50-unit event proves the weekly window refreshed.
-    await expect(readOrgCredits(actor)).resolves.toBe(100);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(50);
+      // A continued weekly window would only have 40 units left (120 - 80), so
+      // full coverage of the 50-unit event proves the weekly window refreshed.
+      await expect(readOrgCredits(actor)).resolves.toBe(100);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(50);
+    });
   });
 
   it("admits built-in model runs with shared debt when allowance remains", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: -10,
       allowance: { shortWindowUnits: 10, weeklyWindowUnits: 10 },
     });
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
 
-    const run = await createBuiltInRun(
-      actor,
-      agentId,
-      "built-in model run admitted by allowance under shared debt",
-    );
+      const run = await createBuiltInRun(
+        actor,
+        agentId,
+        "built-in model run admitted by allowance under shared debt",
+      );
+      fixture.registerRun(run.runId);
 
-    expect(run.runId).toStrictEqual(expect.any(String));
-    // The activated windows fully cover usage without repaying shared debt.
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 10,
+      expect(run.runId).toStrictEqual(expect.any(String));
+      // The activated windows fully cover usage without repaying shared debt.
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 10,
+      });
+      await processOrgUsageEvents(actor);
+      await expect(readOrgCredits(actor)).resolves.toBe(-10);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(10);
     });
-    await processOrgUsageEvents(actor);
-    await expect(readOrgCredits(actor)).resolves.toBe(-10);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(10);
   });
 
   it("fails the selected allowance preload without rereading Stripe and recovers only on the next request", async () => {
@@ -1030,32 +1150,48 @@ describe("Usage Allowance", () => {
   });
 
   it("applies allowance to non-built-in runs inside active allowance windows", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
+    const fixture = publicFundedAllowanceFixture({
       credits: 100,
       allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
     });
-    await createBuiltInRun(actor, agentId, "activate allowance windows");
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance();
+      const activation = await createBuiltInRun(
+        actor,
+        agentId,
+        "activate allowance windows",
+      );
+      fixture.registerRun(activation.runId);
 
-    const api = createRunsApi(context);
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    await api.ensurePersonalSubscriptionModel(actor);
-    const run = await api.createThreadRun(actor, {
-      agentId,
-      prompt: "non-built-in run inside active allowance window",
+      const api = createRunsApi(context);
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
+      await api.ensurePersonalSubscriptionModel(actor);
+      const run = await api.createThreadRun(actor, {
+        agentId,
+        prompt: "non-built-in run inside active allowance window",
+      });
+      fixture.registerRun(run.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 80,
+      });
+
+      await processOrgUsageEvents(actor);
+
+      await expect(readOrgCredits(actor)).resolves.toBe(100);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
     });
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 80,
-    });
-
-    await processOrgUsageEvents(actor);
-
-    await expect(readOrgCredits(actor)).resolves.toBe(100);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
   });
 
   it("does not apply newly created allowance to older runs", async () => {
@@ -1064,31 +1200,58 @@ describe("Usage Allowance", () => {
     });
     const runCreatedAt = nowDate();
     mockNow(runCreatedAt);
-    const { actor, orgId, agentId } = await builtInAllowanceActor({
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    const fixture = createPublicUsageWallet(context, actor, {
       credits: 100,
+      otherMember: true,
     });
-    const run = await createBuiltInRun(
-      actor,
-      agentId,
-      "run before entitlement",
-    );
-    mockNow(addHours(runCreatedAt, 1));
-    await seedAllowanceEntitlement(actor, orgId, {
-      shortWindowUnits: 100,
-      weeklyWindowUnits: 200,
-    });
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 80,
-    });
+    await fixture.run(async () => {
+      await seedBuiltInDefaultModelKeyState(context, fixture.registerCleanup);
+      await fixture.initialize();
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Usage allowance agent",
+        visibility: "private",
+      });
+      const run = await createBuiltInRun(
+        actor,
+        agent.agentId,
+        "run before entitlement",
+      );
+      fixture.registerRun(run.runId);
+      mockNow(addHours(runCreatedAt, 1));
+      await postUsageAllowanceInvoicePaid(context.signal, {
+        orgId: fixture.orgId,
+        userId: actor.userId,
+        customerId: fixture.customerId,
+        subscriptionId: usageAllowanceSubscriptionId(fixture.orgId),
+        effectiveAt: nowDate(),
+        expiresAt: addDays(nowDate(), 365),
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: 100,
+        weeklyWindowSeconds: 7 * 24 * 60 * 60,
+        weeklyWindowUnits: 200,
+      });
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 80,
+      });
 
-    await processOrgUsageEvents(actor);
+      await processOrgUsageEvents(actor);
 
-    await expect(readOrgCredits(actor)).resolves.toBe(20);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
+      await expect(readOrgCredits(actor)).resolves.toBe(20);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
+    });
   });
 
   it("anchors allowance to the original run start after the run row is deleted", async () => {

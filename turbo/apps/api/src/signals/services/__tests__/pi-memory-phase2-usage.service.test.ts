@@ -1,5 +1,17 @@
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { settleIncludingAbort } from "../../utils";
+import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
+import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
+import {
+  createFirewallApi,
+  secretTemplate,
+} from "../../routes/__tests__/helpers/api-bdd-firewall";
+import {
+  expectCanonicalStorageManifest,
+  createRunsApi,
+} from "../../routes/__tests__/helpers/api-bdd-runs";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createPublicPiMemorySource } from "../../routes/__tests__/helpers/public-pi-memory-source";
-import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createHash, randomUUID } from "node:crypto";
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
@@ -7,7 +19,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -32,10 +43,7 @@ import { seedBuiltInModelCandidateKeys } from "../../routes/__tests__/helpers/ru
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
-import {
-  piMemoryPhase2MaintenanceCallbackPayloadSchema,
-  handlePiMemoryPhase2MaintenanceCallback,
-} from "../pi-memory-phase2-maintenance.service";
+import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "../pi-memory-phase2-maintenance.service";
 import {
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   PI_MEMORY_PHASE2_PERSONAL_MODEL,
@@ -44,14 +52,10 @@ import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import {
   createPhase2TestScope,
   insertPendingPhase2Job,
-  insertPhase2StorageVersion,
-  setPhase2StorageHead,
   insertPhase2CandidatesWithSources as insertPhase2Candidates,
-  readPhase2Job,
 } from "./pi-memory-phase2-job.test-fixture";
 import {
   claimPhase2Execution,
-  phase2RuntimeModel,
   executePhase2Runtime,
 } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
 import {
@@ -59,16 +63,12 @@ import {
   disconnectPhase2Codex,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
 
-// Private maintenance has no public launch/control/ledger API. Seed only its
-// infrastructure-owned cron input and terminal faults; the real dispatcher
-// persists the binding, and the real proxy HTTP ingress owns all usage writes.
+// The original named key10 harness keeps exact corrupt identities and financial
+// vectors that public reports do not represent. The legacy constructor below
+// remains only for the separately inventoried terminal-fault callback.
 const context = testContext();
 
-async function dispatchMaintenance(
-  type?: "codex-oauth-token",
-
-  represented?: "valid" | "invalid",
-) {
+async function dispatchMaintenance(type?: "codex-oauth-token") {
   const scope = await createPhase2TestScope("usage", { emptyBase: true });
   // PiMemory is off for everyone by default; the dispatcher only runs for
   // owners whose explicit override enables it.
@@ -110,49 +110,6 @@ async function dispatchMaintenance(
     };
   });
   await insertPhase2Candidates(scope, candidates, provider?.binding);
-  const baseFiles: { path: string; content: string }[] = [];
-  if (represented) {
-    baseFiles.push(
-      { path: "MEMORY.md", content: "# Task Group: source\n" },
-      {
-        path: "memory_summary.md",
-        content:
-          represented === "valid"
-            ? "v1\n## User Profile\n- source\n"
-            : "invalid summary",
-      },
-      ...candidates.map((candidate) => {
-        return {
-          path: `rollout_summaries/pi/${createHash("sha256").update(candidate.piSessionId).digest("hex")}.md`,
-          content: [
-            `pi_session_id: ${JSON.stringify(candidate.piSessionId)}`,
-            `source_run_id: ${JSON.stringify(candidate.sourceRunId)}`,
-            `source_history_hash: ${JSON.stringify(candidate.sourceHistoryHash)}`,
-            `source_completed_at: ${JSON.stringify(candidate.sourceCompletedAt.toISOString())}`,
-            "",
-            candidate.rolloutSummary,
-            "",
-          ].join("\n"),
-        };
-      }),
-    );
-    const hashes = baseFiles
-      .map((file) => {
-        return `${file.path}:${createHash("sha256").update(file.content).digest("hex")}`;
-      })
-      .sort();
-    const version = await insertPhase2StorageVersion(scope, "represented", {
-      versionId: createHash("sha256")
-        .update(`storage:${scope.memoryStorageId}\n${hashes.join("\n")}`)
-        .digest("hex"),
-      fileCount: baseFiles.length,
-      size: baseFiles.reduce((sum, file) => {
-        return sum + Buffer.byteLength(file.content);
-      }, 0),
-      archiveSize: 1,
-    });
-    await setPhase2StorageHead(scope, version);
-  }
   const currentTime = nowDate();
   await insertPendingPhase2Job(scope, { updatedAt: currentTime });
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
@@ -183,16 +140,12 @@ async function dispatchMaintenance(
   const binding = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse(
     callback?.payload,
   );
-  return { scope, run, runId, binding, provider, baseFiles };
+  return { scope, run, runId, binding, provider };
 }
 
-async function launchMaintenance(
-  type?: "codex-oauth-token",
-
-  represented?: "valid" | "invalid",
-) {
-  const { scope, run, runId, binding, provider, baseFiles } =
-    await dispatchMaintenance(type, represented);
+async function launchMaintenance(type?: "codex-oauth-token") {
+  const { scope, run, runId, binding, provider } =
+    await dispatchMaintenance(type);
   // One proxy flush aggregates two provider responses.
   const events = [
     { category: "tokens.input", quantity: 6 },
@@ -236,7 +189,6 @@ async function launchMaintenance(
     events,
     headers,
     provider,
-    baseFiles,
     async proxy() {
       return await accept(
         client(webhookUsageEventContract).send({
@@ -273,7 +225,7 @@ async function launchMaintenance(
 
 async function launchPublicMaintenance(
   fixture: ReturnType<typeof createPublicPiMemorySource>,
-  type?: "codex-oauth-token",
+  { type }: { type?: "codex-oauth-token"; credentialScope?: "member" } = {},
 ) {
   const at = new Date(now() + 24 * 3_600_000);
   const scope = await fixture.prepare(at);
@@ -281,18 +233,28 @@ async function launchPublicMaintenance(
     {
       rawMemory: "first private candidate",
       rolloutSummary: "first complete evidence",
+      sourceText: "first complete evidence",
     },
     {
       rawMemory: "second private candidate",
       rolloutSummary: "second complete evidence",
+      sourceText: "second complete evidence",
     },
   ]);
   await expect(fixture.extract()).resolves.toMatchObject({
     claimed: 2,
     succeeded: 2,
   });
-  if (!type) {
-    await fixture.disconnect(scope.subscription.accountSourceId);
+  await fixture.disconnect(scope.subscription.accountSourceId);
+  let provider:
+    | Awaited<ReturnType<typeof createPhase2CodexProvider>>
+    | undefined;
+  if (type) {
+    provider = await createPhase2CodexProvider(context, scope, {
+      registerCleanup: fixture.registerCleanup,
+      miscApi: fixture.misc,
+    });
+  } else {
     await seedBuiltInModelCandidateKeys(
       context,
       PI_MEMORY_PHASE2_BUILT_IN_MODEL,
@@ -327,7 +289,7 @@ async function launchPublicMaintenance(
         : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
     };
   });
-  await createUsagePricingFixture({
+  const pricing = await createUsagePricingFixture({
     registerCleanup: fixture.registerCleanup,
     configured: events.map((event) => {
       return {
@@ -344,9 +306,31 @@ async function launchPublicMaintenance(
     context,
     routes: webhooksAgentHealthUsageTelemetryRoutes,
   });
+  const maintenance = execution.piLaunchConfig?.maintenance;
+  if (!maintenance) {
+    throw new Error("Expected authenticated maintenance identity");
+  }
+  const binding = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse({
+    schemaVersion: 1,
+    memoryStorageId: maintenance.memoryStorageId,
+    orgId: scope.orgId,
+    userId: scope.userId,
+    leaseToken: maintenance.leaseToken,
+    claimedRevision: maintenance.claimedRevision,
+    claimedBaseVersionId: maintenance.claimedBaseVersionId,
+    selectionDigest: maintenance.selectionDigest,
+    selected: maintenance.selected.map(({ piSessionId, sourceHistoryHash }) => {
+      return {
+        piSessionId,
+        sourceHistoryHash,
+      };
+    }),
+  });
   return {
     scope,
     run,
+    provider,
+    binding,
     runId,
     execution,
     events,
@@ -356,6 +340,19 @@ async function launchPublicMaintenance(
         client(webhookUsageEventContract).send({
           headers,
           body: { runId, events },
+        }),
+        [200],
+      );
+    },
+    async cleanup() {
+      fixture.registerRunDeletion(runId);
+      return await accept(
+        setupApp({
+          context,
+          routes: testCronCleanupSandboxesStateRoutes,
+          usagePricingResolution: pricing.resolution,
+        })(testCronCleanupSandboxesStateContract).cleanup({
+          body: { chatThreadIds: [], runIds: [runId], exportJobIds: [] },
         }),
         [200],
       );
@@ -505,196 +502,343 @@ describe("Pi memory Phase 2 proxy billing", () => {
   it.each(["missing-callback", "mismatched-owner", "non-pi", "owned-thread"])(
     "cannot turn %s into a private maintenance billing exemption",
     async (fault) => {
-      const run = await launchMaintenance();
-      if (fault === "missing-callback") {
-        await db()
-          .delete(agentRunCallbacks)
-          .where(eq(agentRunCallbacks.runId, run.runId));
-      } else if (fault === "mismatched-owner") {
-        await db()
-          .update(agentRunCallbacks)
-          .set({ payload: { ...run.binding, userId: randomUUID() } })
-          .where(eq(agentRunCallbacks.runId, run.runId));
-      } else if (fault === "owned-thread") {
-        const threadId = randomUUID();
-        await db().insert(chatThreads).values({
-          id: threadId,
-          userId: run.scope.userId,
-        });
-        onTestFinished(async () => {
-          await db().delete(chatThreads).where(eq(chatThreads.id, threadId));
-        });
-        await db()
-          .update(agentRuns)
-          .set({ chatThreadId: threadId })
-          .where(eq(agentRuns.id, run.runId));
-      } else {
-        await db()
-          .update(agentRuns)
-          .set({
-            launchSnapshot: {
-              schemaVersion: 1,
-              framework: "codex",
-              runnerProfile: "vm0/test",
-            },
-          })
-          .where(eq(agentRuns.id, run.runId));
-      }
-      await run.proxy();
-      await expect(run.ledger()).resolves.toHaveLength(4);
-      await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
+      const fixture = createPublicPiMemorySource(context, {
+        cashCredits: 100_000,
+        sources: ["first complete evidence", "second complete evidence"],
+      });
+      await fixture.run(async () => {
+        const run = await launchPublicMaintenance(fixture);
+        // Original named key10 corruption matrix only; ordinary ownership is public.
+        const outcome = await settleIncludingAbort(
+          (async () => {
+            if (fault === "missing-callback") {
+              await db()
+                .delete(agentRunCallbacks)
+                .where(eq(agentRunCallbacks.runId, run.runId));
+            } else if (fault === "mismatched-owner") {
+              await db()
+                .update(agentRunCallbacks)
+                .set({ payload: { ...run.binding, userId: randomUUID() } })
+                .where(eq(agentRunCallbacks.runId, run.runId));
+            } else if (fault === "owned-thread") {
+              const threadId = randomUUID();
+              const threads = createChatFilesBddApi(context);
+              fixture.registerCleanup(async () => {
+                await threads.deleteThread(fixture.actor, threadId);
+              });
+              await threads.createThread(fixture.actor, {
+                agentId: run.scope.sourceAgentId,
+                clientThreadId: threadId,
+                model: AUTO_RUN_MODEL,
+              });
+              await db()
+                .update(agentRuns)
+                .set({ chatThreadId: threadId })
+                .where(eq(agentRuns.id, run.runId));
+            } else {
+              await db()
+                .update(agentRuns)
+                .set({
+                  launchSnapshot: {
+                    schemaVersion: 1,
+                    framework: "codex",
+                    runnerProfile: "vm0/test",
+                  },
+                })
+                .where(eq(agentRuns.id, run.runId));
+            }
+            await run.proxy();
+            await expect(run.ledger()).resolves.toHaveLength(4);
+            await expect(run.ledger()).resolves.toStrictEqual(
+              canonicalLedger(run),
+            );
+          })(),
+        );
+        const restored = await settleIncludingAbort(
+          (async () => {
+            // Restore the intentionally mismatched capture before real-token cleanup ACK.
+            if (fault === "mismatched-owner") {
+              await db()
+                .update(agentRunCallbacks)
+                .set({ payload: run.binding })
+                .where(eq(agentRunCallbacks.runId, run.runId));
+            }
+          })(),
+        );
+        if (!outcome.ok) {
+          throw outcome.error;
+        }
+        if (!restored.ok) {
+          throw restored.error;
+        }
+      });
     },
   );
 
   it.each([
     {
-      type: "codex-oauth-token",
-      scope: "member",
+      type: "codex-oauth-token" as const,
+      scope: "member" as const,
       url: "https://chatgpt.com/backend-api/codex/responses",
       model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
     },
-  ] as const)(
+  ])(
     "executes exact $type/$scope HTTP and drops replayed model usage",
     async ({ type, scope, url, model }) => {
-      const run = await launchMaintenance(type);
-      expect(run.run).toMatchObject({
-        modelProvider: type,
-        modelProviderId: run.provider?.binding.modelProviderId,
-        modelProviderCredentialScope: scope,
-        selectedModel: PI_MEMORY_PHASE2_PERSONAL_MODEL,
-        chatThreadId: null,
-        creditAdmitted: false,
+      const fixture = createPublicPiMemorySource(context, {
+        cashCredits: 100_000,
+        sources: ["first complete evidence", "second complete evidence"],
       });
-      const actual = await executePhase2Runtime(context, run.runId);
-      expect(
-        actual.execution.piLaunchConfig?.maintenance?.selected,
-      ).toHaveLength(2);
-      expect(actual.execution.connectorRuntimeTargets).toStrictEqual([]);
-      expect(actual.execution.secretValues).not.toContain(
-        actual.execution.sandboxToken,
-      );
-      expect(actual.requests).toHaveLength(3);
-      for (const request of actual.requests) {
-        expect(request.url).toBe(url);
-        expect(request.body).toMatchObject({
-          model,
-          reasoning: { effort: "medium" },
+      await fixture.run(async () => {
+        const run = await launchPublicMaintenance(fixture, {
+          type,
+          credentialScope: scope,
         });
-        expect(request.body).not.toHaveProperty("text.format");
-        expect(request.body).not.toHaveProperty("service_tier");
-        {
+        expect(run.run.source).toMatchObject({
+          providerType: type,
+          model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
+          credentialScope: scope,
+        });
+        expect(run.execution.piSessionId).toBe(run.runId);
+        // Original exact financial admission bit has no public response field.
+        await expect(
+          db()
+            .select({ creditAdmitted: agentRuns.creditAdmitted })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, run.runId)),
+        ).resolves.toStrictEqual([{ creditAdmitted: false }]);
+        const actual = await executePhase2Runtime(context, run.runId, {
+          execution: run.execution,
+          registerCleanup: fixture.registerCleanup,
+        });
+        expect(
+          actual.execution.piLaunchConfig?.maintenance?.selected,
+        ).toHaveLength(2);
+        expect(actual.execution.connectorRuntimeTargets).toStrictEqual([]);
+        expect(actual.execution.secretValues).not.toContain(
+          actual.execution.sandboxToken,
+        );
+        expect(actual.requests).toHaveLength(3);
+        for (const request of actual.requests) {
+          expect(request.url).toBe(url);
+          expect(request.body).toMatchObject({
+            model,
+            reasoning: { effort: "medium" },
+          });
+          expect(request.body).not.toHaveProperty("text.format");
+          expect(request.body).not.toHaveProperty("service_tier");
           expect(request.headers.get("authorization")).toBe(
             `Bearer ${run.provider?.key}`,
           );
+          if (type === "codex-oauth-token") {
+            expect(request.headers.get("chatgpt-account-id")).toBe(
+              run.provider?.account,
+            );
+          }
         }
-        if (type === "codex-oauth-token") {
-          expect(request.headers.get("chatgpt-account-id")).toBe(
-            run.provider?.account,
-          );
-        }
-      }
-      await Promise.all([run.proxy(), run.proxy()]);
-      await run.proxy();
-      await expect(run.ledger()).resolves.toStrictEqual([]);
+        await Promise.all([run.proxy(), run.proxy()]);
+        await run.proxy();
+        await expect(run.ledger()).resolves.toStrictEqual([]);
+      });
     },
   );
 
   it.each(["codex-oauth-token"] as const)(
     "drops %s usage after a real provider failure",
     async (type) => {
-      const run = await launchMaintenance(type);
-      const actual = await executePhase2Runtime(context, run.runId, {
-        failure: true,
+      const fixture = createPublicPiMemorySource(context, {
+        cashCredits: 100_000,
+        sources: ["first complete evidence", "second complete evidence"],
       });
-      expect(actual.requests).toHaveLength(1);
-      await run.proxy();
-      await expect(run.ledger()).resolves.toStrictEqual([]);
+      await fixture.run(async () => {
+        const run = await launchPublicMaintenance(fixture, {
+          type,
+          credentialScope: "member",
+        });
+        const actual = await executePhase2Runtime(context, run.runId, {
+          failure: true,
+          execution: run.execution,
+          registerCleanup: fixture.registerCleanup,
+        });
+        expect(actual.requests).toHaveLength(1);
+        await run.proxy();
+        await expect(run.ledger()).resolves.toStrictEqual([]);
+      });
     },
   );
 });
 
 test("retains the committed Codex account and uses the current account for a new retry", async () => {
-  const run = await dispatchMaintenance("codex-oauth-token");
-  if (!run.provider) {
-    throw new Error("Missing subscription fixture");
-  }
-  const execution = await claimPhase2Execution(context, run.runId);
-  await disconnectPhase2Codex(
-    context,
-    run.scope,
-    run.provider.binding.modelProviderId,
-  );
-  const replacement = await createPhase2CodexProvider(context, run.scope);
-  expect(replacement.binding.modelProviderId).not.toBe(
-    run.provider.binding.modelProviderId,
-  );
-  const retained = await phase2RuntimeModel(context, execution);
-  expect(retained.apiKey).toBe(run.provider.key);
-  expect(retained.accountId).toBe(run.provider.account);
-  const completedAt = nowDate();
-  // Runner cancellation is infrastructure-owned for private threadless work.
-  await db()
-    .update(agentRuns)
-    .set({ status: "cancelled", completedAt })
-    .where(eq(agentRuns.id, run.runId));
-  await handlePiMemoryPhase2MaintenanceCallback(db(), {
-    runId: run.runId,
-    payload: run.binding,
-    status: "failed",
-    error: "Cancelled private maintenance",
+  const fixture = createPublicPiMemorySource(context, {
+    cashCredits: 100_000,
+    sources: ["first complete evidence", "second complete evidence"],
   });
-  const retry = await readPhase2Job(run.scope);
-  if (!retry?.retryAt) {
-    throw new Error("Missing scheduled retry");
-  }
-  let retryRunId: string | undefined;
-  await withMockNowForTest(new Date(retry.retryAt.getTime() + 1), async () => {
-    const result = await createStore().set(
-      createPiMemoryPhase2Worker(run.scope).execute$,
-      nowDate(),
-      context.signal,
-    );
-    expect(result.outcome).toBe("dispatched");
-    if (result.outcome !== "dispatched") {
-      throw new Error("Expected retry to use the replacement account");
-    }
-    retryRunId = result.runId;
-    const [retryRun] = await db()
-      .select({
-        providerId: agentRuns.modelProviderId,
-        sessionId: agentRuns.sessionId,
-      })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, result.runId));
-    if (!retryRun) {
-      throw new Error("Missing retry maintenance run");
-    }
-    expect(retryRun.providerId).toBe(replacement.binding.modelProviderId);
-    onTestFinished(async () => {
-      await db()
-        .delete(agentSessions)
-        .where(eq(agentSessions.id, retryRun.sessionId));
+  await fixture.run(async () => {
+    const run = await launchPublicMaintenance(fixture, {
+      type: "codex-oauth-token",
+      credentialScope: "member",
     });
-  });
-  await expect(readPhase2Job(run.scope)).resolves.toMatchObject({
-    completedRevision: 0,
-    maintenanceRunId: retryRunId,
-    retryCount: 1,
+    if (!run.provider) {
+      throw new Error("Missing subscription fixture");
+    }
+    await disconnectPhase2Codex(
+      context,
+      run.scope,
+      run.provider.binding.modelProviderId,
+    );
+    const replacement = await createPhase2CodexProvider(context, run.scope, {
+      registerCleanup: fixture.registerCleanup,
+      miscApi: fixture.misc,
+    });
+    expect(replacement.binding.modelProviderId).not.toBe(
+      run.provider.binding.modelProviderId,
+    );
+    const authFor = async (execution: typeof run.execution) => {
+      if (!execution.encryptedSecrets) {
+        throw new Error("Expected captured credentials");
+      }
+      const auth = await createFirewallApi(context).requestFirewallAuth(
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        {
+          encryptedSecrets: execution.encryptedSecrets,
+          authHeaders: {
+            "x-selected-token": secretTemplate("CHATGPT_ACCESS_TOKEN"),
+            "x-selected-account": secretTemplate("CHATGPT_ACCOUNT_ID"),
+          },
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      if (auth.status !== 200) {
+        throw new Error("Expected captured firewall authorization");
+      }
+      return auth.body.headers;
+    };
+    await expect(authFor(run.execution)).resolves.toMatchObject({
+      "x-selected-token": run.provider.key,
+      "x-selected-account": run.provider.account,
+    });
+    const api = createRunsApi(context);
+    await api.requestCancelRun(fixture.actor, run.runId, [200]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "Cancelled private maintenance" },
+      run.headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const cancelled = await api.readRun(fixture.actor, run.runId);
+    expect(cancelled.status).toBe("cancelled");
+    if (!cancelled.completedAt) {
+      throw new Error("Expected real terminal time");
+    }
+    await withMockNowForTest(
+      new Date(new Date(cancelled.completedAt).getTime() + 3_600_001),
+      async () => {
+        const result = await createStore().set(
+          createPiMemoryPhase2Worker(run.scope).execute$,
+          nowDate(),
+          context.signal,
+        );
+        expect(result.outcome).toBe("dispatched");
+        if (result.outcome !== "dispatched") {
+          throw new Error("Expected retry to use replacement");
+        }
+        fixture.registerRun(result.runId);
+        expect(result.runId).not.toBe(run.runId);
+        const execution = await claimPhase2Execution(context, result.runId);
+        fixture.registerClaim(result.runId, execution.sandboxToken);
+        await expect(authFor(execution)).resolves.toMatchObject({
+          "x-selected-token": replacement.key,
+          "x-selected-account": replacement.account,
+        });
+        expect(
+          (await api.readRun(fixture.actor, result.runId)).source,
+        ).toMatchObject({
+          providerType: "codex-oauth-token",
+          account: { id: replacement.binding.modelProviderId },
+        });
+        expect(execution.piLaunchConfig?.maintenance).toMatchObject({
+          memoryStorageId: run.binding.memoryStorageId,
+          claimedBaseVersionId: run.binding.claimedBaseVersionId,
+          selected: run.binding.selected,
+        });
+      },
+    );
   });
 });
 
 test.each(["valid", "invalid"] as const)(
-  "preserves BYOK E3 represented %s artifacts",
+  "preserves personal subscription E3 represented %s artifacts",
   async (represented) => {
-    const run = await launchMaintenance("codex-oauth-token", represented);
-    const actual = await executePhase2Runtime(context, run.runId, {
-      baseFiles: run.baseFiles,
-      noDiff: represented === "valid",
+    let baseFiles: { path: string; content: string }[] = [];
+    const fixture = createPublicPiMemorySource(context, {
+      cashCredits: 100_000,
+      sources: ["first complete evidence", "second complete evidence"],
+      memoryFiles(sources) {
+        baseFiles = [
+          { path: "MEMORY.md", content: "# Task Group: source\n" },
+          {
+            path: "memory_summary.md",
+            content:
+              represented === "valid"
+                ? "v1\n## User Profile\n- source\n"
+                : "invalid summary",
+          },
+          ...sources.map((source, index) => {
+            return {
+              // Real Stage1 uses rolloutSlug "source"; the runtime persists a
+              // bounded hashed slug, not that raw provider string.
+              path: `rollout_summaries/pi/${createHash("sha256").update(source.threadId).digest("hex")}-slug-${createHash("sha256").update("source").digest("hex").slice(0, 43)}.md`,
+              content: [
+                `pi_session_id: ${JSON.stringify(source.threadId)}`,
+                `source_run_id: ${JSON.stringify(source.runId)}`,
+                `source_history_hash: ${JSON.stringify(source.hash)}`,
+                `source_completed_at: ${JSON.stringify(source.completedAt)}`,
+                "",
+                index === 0
+                  ? "first complete evidence"
+                  : "second complete evidence",
+                "",
+              ].join("\n"),
+            };
+          }),
+        ];
+        return baseFiles;
+      },
     });
-    expect(actual.requests).toHaveLength(represented === "valid" ? 0 : 3);
-    await run.proxy();
-    await run.proxy();
-    await expect(run.ledger()).resolves.toStrictEqual([]);
+    await fixture.run(async () => {
+      const run = await launchPublicMaintenance(fixture, {
+        type: "codex-oauth-token",
+      });
+      for (const [index, source] of run.scope.sources.entries()) {
+        expect(
+          run.execution.piLaunchConfig?.maintenance?.selected.find((entry) => {
+            return entry.piSessionId === source.threadId;
+          }),
+        ).toMatchObject({
+          sourceRunId: source.runId,
+          sourceHistoryHash: source.hash,
+          sourceCompletedAt: source.completedAt,
+          rolloutSummary:
+            index === 0
+              ? "first complete evidence"
+              : "second complete evidence",
+          rolloutSlug: "source",
+        });
+      }
+      const actual = await executePhase2Runtime(context, run.runId, {
+        baseFiles,
+        execution: run.execution,
+        registerCleanup: fixture.registerCleanup,
+        noDiff: represented === "valid",
+      });
+      expect(actual.requests).toHaveLength(represented === "valid" ? 0 : 3);
+      await run.proxy();
+      await run.proxy();
+      await expect(run.ledger()).resolves.toStrictEqual([]);
+    });
   },
 );
 
@@ -704,7 +848,9 @@ test("preserves non-model usage for a genuinely launched personal subscription r
     sources: ["first complete evidence", "second complete evidence"],
   });
   await fixture.run(async () => {
-    const run = await launchPublicMaintenance(fixture, "codex-oauth-token");
+    const run = await launchPublicMaintenance(fixture, {
+      type: "codex-oauth-token",
+    });
     const event = {
       idempotencyKey: randomUUID(),
       kind: "connector" as const,
@@ -780,51 +926,90 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
 });
 
 test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
-  "does not retain malformed BYOK private identity: %s",
+  "does not retain malformed personal subscription private identity: %s",
   async (fault) => {
-    const run = await launchMaintenance("codex-oauth-token");
-    const completedAt = nowDate();
-    await db()
-      .update(agentRuns)
-      .set({
-        status: "completed",
-        completedAt,
-        ...(fault === "missing-id" ? { modelProviderId: null } : {}),
-        ...(fault === "missing-scope"
-          ? { modelProviderCredentialScope: null }
-          : {}),
-        ...(fault === "wrong-framework"
-          ? {
-              launchSnapshot: {
-                schemaVersion: 1,
-                framework: "codex" as const,
-                runnerProfile: "vm0/test",
+    const fixture = createPublicPiMemorySource(context, {
+      cashCredits: 100_000,
+      sources: ["first complete evidence", "second complete evidence"],
+    });
+    await fixture.run(async () => {
+      const run = await launchPublicMaintenance(fixture, {
+        type: "codex-oauth-token",
+      });
+      const memory = expectCanonicalStorageManifest(
+        run.execution.storageManifest,
+      )?.storageMounts.find((entry) => {
+        return entry.name === "memory";
+      });
+      if (!memory) {
+        throw new Error("Expected maintenance Memory mount");
+      }
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 0,
+          checkpoint: {
+            cliAgentType: "pi",
+            cliAgentSessionId: run.runId,
+            cliAgentSessionHistoryDisposition: "unavailable",
+            artifactSnapshots: [
+              {
+                name: memory.name,
+                mountPath: memory.mountPath,
+                version: run.binding.claimedBaseVersionId,
               },
-            }
-          : {}),
-      })
-      .where(eq(agentRuns.id, run.runId));
-    await db()
-      .update(agentRunCallbacks)
-      .set({
-        status: "delivered",
-        ...(fault === "wrong-owner"
-          ? { payload: { ...run.binding, userId: "other-owner" } }
-          : {}),
-      })
-      .where(eq(agentRunCallbacks.runId, run.runId));
-    await db()
-      .delete(runnerJobQueue)
-      .where(eq(runnerJobQueue.runId, run.runId));
-    await db()
-      .update(piMemoryPhase2Jobs)
-      .set({ leaseExpiresAt: new Date(completedAt.getTime() - 1) })
-      .where(eq(piMemoryPhase2Jobs.memoryStorageId, run.scope.memoryStorageId));
-    await withMockNowForTest(
-      new Date(completedAt.getTime() + 10 * 60_000),
-      async () => {
-        expect((await run.cleanup()).body.threadlessRuns.deleted).toBe(1);
-      },
-    );
+            ],
+          },
+        },
+        run.headers,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const completed = await createRunsApi(context).readRun(
+        fixture.actor,
+        run.runId,
+      );
+      expect(completed.status).toBe("completed");
+      if (!completed.completedAt) {
+        throw new Error("Expected real terminal completion");
+      }
+      const completedAt = new Date(completed.completedAt);
+      // Original key10 malformed captured identity; lifecycle above is real.
+      if (fault !== "wrong-owner") {
+        await db()
+          .update(agentRuns)
+          .set({
+            ...(fault === "missing-id" ? { modelProviderId: null } : {}),
+            ...(fault === "missing-scope"
+              ? { modelProviderCredentialScope: null }
+              : {}),
+            ...(fault === "wrong-framework"
+              ? {
+                  launchSnapshot: {
+                    schemaVersion: 1,
+                    framework: "codex" as const,
+                    runnerProfile: "vm0/test",
+                  },
+                }
+              : {}),
+          })
+          .where(eq(agentRuns.id, run.runId));
+      } else {
+        await db()
+          .update(agentRunCallbacks)
+          .set(
+            fault === "wrong-owner"
+              ? { payload: { ...run.binding, userId: "other-owner" } }
+              : {},
+          )
+          .where(eq(agentRunCallbacks.runId, run.runId));
+      }
+      await withMockNowForTest(
+        new Date(completedAt.getTime() + 10 * 60_000),
+        async () => {
+          expect((await run.cleanup()).body.threadlessRuns.deleted).toBe(1);
+        },
+      );
+    });
   },
 );
