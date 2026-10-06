@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.378.13](https://github.com/okou-ai/okou/compare/cli-v9.378.12...cli-v9.378.13) (2026-10-06)
+
+
+### Refactoring
+
+* retire organization custom model configuration ([#37746](https://github.com/okou-ai/okou/issues/37746)) ([014fe18](https://github.com/okou-ai/okou/commit/014fe1867c6d1830fd35b03c3d77491da5aaa36a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.537.6
+    * @okouai/core bumped to 8.733.3
+    * @okouai/pi-agent-runtime bumped to 1.46.13
+
 ## [9.378.12](https://github.com/okou-ai/okou/compare/cli-v9.378.11...cli-v9.378.12) (2026-10-06)
 
 

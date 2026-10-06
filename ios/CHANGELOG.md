@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/okou-ai/okou/compare/ios-v0.6.0...ios-v0.6.1) (2026-10-06)
+
+
+### Refactoring
+
+* retire organization custom model configuration ([#37746](https://github.com/okou-ai/okou/issues/37746)) ([014fe18](https://github.com/okou-ai/okou/commit/014fe1867c6d1830fd35b03c3d77491da5aaa36a))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/ios-v0.5.0...ios-v0.6.0) (2026-10-03)
 
 

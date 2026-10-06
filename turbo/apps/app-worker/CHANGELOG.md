@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.189](https://github.com/okou-ai/okou/compare/app-worker-v1.8.188...app-worker-v1.8.189) (2026-10-06)
+
+
+### Refactoring
+
+* retire organization custom model configuration ([#37746](https://github.com/okou-ai/okou/issues/37746)) ([014fe18](https://github.com/okou-ai/okou/commit/014fe1867c6d1830fd35b03c3d77491da5aaa36a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.733.3
+
 ## [1.8.188](https://github.com/okou-ai/okou/compare/app-worker-v1.8.187...app-worker-v1.8.188) (2026-10-06)
 
 
