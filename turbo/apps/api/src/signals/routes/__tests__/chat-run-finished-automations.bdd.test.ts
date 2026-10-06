@@ -1,11 +1,9 @@
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { createHash, randomUUID } from "node:crypto";
 import { removeSnapshottedRunEvents } from "../../../test-fixtures/chat-event-retention";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
+import { snapshotChatEventsForTest } from "../../../test-fixtures/chat-event-snapshot-worker";
 import { installFakeChatEventR2 } from "./helpers/fake-chat-event-r2";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -350,18 +348,8 @@ async function archiveAutomationThreadForRetry(
     }
     return previous(command);
   });
-  await accept(
-    setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
-      testChatEventSearchProjectionContract,
-    ).project({ body: { chat_thread_ids: [threadId] } }),
-    [200],
-  );
-  await accept(
-    setupApp({ context, routes: testChatEventSnapshotRoutes })(
-      testChatEventSnapshotContract,
-    ).snapshot({ body: { chat_thread_ids: [threadId], r2_object_keys: [] } }),
-    [200],
-  );
+  await projectChatEventSearchForTest([threadId], context.signal);
+  await snapshotChatEventsForTest([threadId], [], context.signal);
   // Retention is infrastructure-only. The existing fixture refuses deletion
   // unless this thread has a durable snapshot covering the removed events.
   await removeSnapshottedRunEvents(threadId);

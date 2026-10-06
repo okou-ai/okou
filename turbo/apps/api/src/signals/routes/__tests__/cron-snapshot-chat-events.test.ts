@@ -3,8 +3,6 @@ import { gunzipSync, gzipSync } from "node:zlib";
 
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { cronSnapshotChatEventsContract } from "@okouai/api-contracts/contracts/cron";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import {
   validate as validateUuid,
   version as uuidVersion,
@@ -15,11 +13,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
+import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
+import { snapshotChatEventsForTest } from "../../../test-fixtures/chat-event-snapshot-worker";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { cronSnapshotChatEventsRoutes } from "../cron-snapshot-chat-events";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -58,35 +56,13 @@ function snapshotCronClient() {
 async function runSnapshotCron(
   chatThreadIds: readonly string[],
   r2ObjectKeys: readonly string[] = [],
-  signal?: AbortSignal,
+  signal: AbortSignal = context.signal,
 ) {
-  const client = setupApp({
-    context,
-    routes: testChatEventSnapshotRoutes,
-    signal,
-  })(testChatEventSnapshotContract);
-  const response = await accept(
-    client.snapshot({
-      body: {
-        chat_thread_ids: [...chatThreadIds],
-        r2_object_keys: [...r2ObjectKeys],
-      },
-    }),
-    [200],
-  );
-  return response.body;
+  return await snapshotChatEventsForTest(chatThreadIds, r2ObjectKeys, signal);
 }
 
 async function projectChatEventSearch(...chatThreadIds: readonly string[]) {
-  const client = setupApp({
-    context,
-    routes: testChatEventSearchProjectionRoutes,
-  })(testChatEventSearchProjectionContract);
-  const response = await accept(
-    client.project({ body: { chat_thread_ids: [...chatThreadIds] } }),
-    [200],
-  );
-  return response.body;
+  return await projectChatEventSearchForTest(chatThreadIds, context.signal);
 }
 
 async function sendNoCreditMessage(
@@ -303,7 +279,6 @@ describe("cron snapshot chat events", () => {
     await projectChatEventSearch(threadId);
 
     const first = await runSnapshotCron([threadId]);
-    expect(first.success).toBeTruthy();
     expect(first.snapshots).toBeGreaterThanOrEqual(1);
 
     const firstPuts = putsForThread(threadId);
@@ -336,8 +311,7 @@ describe("cron snapshot chat events", () => {
       prompt: `${marker} third`,
     });
     await projectChatEventSearch(threadId);
-    const second = await runSnapshotCron([threadId]);
-    expect(second.success).toBeTruthy();
+    await runSnapshotCron([threadId]);
 
     const secondPuts = putsForThread(threadId);
     expect(secondPuts).toHaveLength(2);
@@ -497,8 +471,7 @@ describe("cron snapshot chat events", () => {
     installFakeChatEventR2(context, recordedPuts);
     await projectChatEventSearch(threadId);
 
-    const result = await runSnapshotCron([threadId]);
-    expect(result.success).toBeTruthy();
+    await runSnapshotCron([threadId]);
     const put = putsForThread(threadId)[0];
     if (put === undefined) {
       throw new Error("Expected a failure-reason snapshot object");
@@ -538,7 +511,6 @@ describe("cron snapshot chat events", () => {
 
     const result = await runSnapshotCron([failedThreadId, repairableThreadId]);
     expect(result).toMatchObject({
-      success: true,
       selectedCandidates: 2,
       processedCandidates: 2,
       deferredCandidates: 0,
@@ -589,7 +561,6 @@ describe("cron snapshot chat events", () => {
     releaseFirstWave.resolve(undefined);
     const first = await firstRun;
     expect(first).toMatchObject({
-      success: true,
       selectedCandidates: 9,
       processedCandidates: 8,
       deferredCandidates: 1,
@@ -600,7 +571,6 @@ describe("cron snapshot chat events", () => {
     mockNow(new Date(startedAt.getTime() + 11 * 60 * 1000));
     const resumed = await runSnapshotCron(threadIds);
     expect(resumed).toMatchObject({
-      success: true,
       selectedCandidates: 1,
       processedCandidates: 1,
       deferredCandidates: 0,
@@ -640,7 +610,6 @@ describe("cron snapshot chat events", () => {
 
     const first = await runSnapshotCron(threadIds);
     expect(first).toMatchObject({
-      success: true,
       selectedCandidates: 2,
       processedCandidates: 2,
       deferredCandidates: 0,
@@ -652,7 +621,6 @@ describe("cron snapshot chat events", () => {
     context.mocks.abortSignal.timeout.mockReset();
     const resumed = await runSnapshotCron(threadIds);
     expect(resumed).toMatchObject({
-      success: true,
       selectedCandidates: 1,
       processedCandidates: 1,
       deferredCandidates: 0,
@@ -687,7 +655,6 @@ describe("cron snapshot chat events", () => {
     mockNow(new Date(now() + lagMs));
     const pending = await runSnapshotCron([threadId]);
     expect(pending).toMatchObject({
-      success: true,
       selectedCandidates: 1,
       snapshots: 1,
     });
@@ -696,7 +663,6 @@ describe("cron snapshot chat events", () => {
     // Nothing is eligible once the thread converges, so the batch has no lag.
     const converged = await runSnapshotCron([threadId]);
     expect(converged).toMatchObject({
-      success: true,
       selectedCandidates: 0,
       snapshots: 0,
       oldestCandidateAgeMs: 0,
@@ -734,7 +700,10 @@ describe("cron snapshot chat events", () => {
 
     await expect(
       runSnapshotCron([threadId], [], controller.signal),
-    ).rejects.toThrow("Unknown response status 500");
+    ).rejects.toMatchObject({
+      name: "AbortError",
+      message: "Snapshot request cancelled",
+    });
     expect(controller.signal.aborted).toBeTruthy();
     await expect(
       readChatEventSnapshotHead(context, threadId),
@@ -1017,8 +986,7 @@ describe("cron snapshot chat events", () => {
 
     await reserveChatEventSequenceGap(context, threadId, 1);
     await projectChatEventSearch(threadId);
-    const result = await runSnapshotCron([threadId]);
-    expect(result.success).toBeTruthy();
+    await runSnapshotCron([threadId]);
 
     const put = putsForThread(threadId)[0];
     if (put === undefined) {

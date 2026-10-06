@@ -9,15 +9,13 @@ import {
   chatThreadEventsContract,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
+import { snapshotChatEventsForTest } from "../../../test-fixtures/chat-event-snapshot-worker";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -109,33 +107,17 @@ async function runSnapshotCron(
   chatThreadIds: readonly string[],
   r2ObjectKeys: readonly string[] = [],
 ) {
-  const client = setupApp({
-    context,
-    routes: testChatEventSnapshotRoutes,
-  })(testChatEventSnapshotContract);
-  const response = await accept(
-    client.snapshot({
-      body: {
-        chat_thread_ids: [...chatThreadIds],
-        r2_object_keys: [...r2ObjectKeys],
-      },
-    }),
-    [200],
+  return await snapshotChatEventsForTest(
+    chatThreadIds,
+    r2ObjectKeys,
+    context.signal,
   );
-  return response.body;
 }
 
 async function projectChatEventSearch(
   ...chatThreadIds: readonly string[]
 ): Promise<void> {
-  const client = setupApp({
-    context,
-    routes: testChatEventSearchProjectionRoutes,
-  })(testChatEventSearchProjectionContract);
-  await accept(
-    client.project({ body: { chat_thread_ids: [...chatThreadIds] } }),
-    [200],
-  );
+  await projectChatEventSearchForTest(chatThreadIds, context.signal);
 }
 
 async function sendNoCreditMessage(

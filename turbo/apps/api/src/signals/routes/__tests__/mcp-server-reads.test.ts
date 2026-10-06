@@ -22,8 +22,6 @@ import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contrac
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
 
 import { createStore } from "ccstate";
@@ -40,8 +38,8 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 
 import { mcpServerRoutes } from "../mcp-server";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
+import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
+import { snapshotChatEventsForTest } from "../../../test-fixtures/chat-event-snapshot-worker";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 
 import {
@@ -228,12 +226,7 @@ async function searchMessages(token: string, args: Record<string, unknown>) {
 }
 
 async function projectSearchMessages(threadIds: string[]) {
-  await accept(
-    setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
-      testChatEventSearchProjectionContract,
-    ).project({ body: { chat_thread_ids: threadIds } }),
-    [200],
-  );
+  await projectChatEventSearchForTest(threadIds, context.signal);
 }
 
 async function messageFixture() {
@@ -270,18 +263,8 @@ async function messageFixture() {
 }
 
 async function snapshotMessages(threadId: string) {
-  await accept(
-    setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
-      testChatEventSearchProjectionContract,
-    ).project({ body: { chat_thread_ids: [threadId] } }),
-    [200],
-  );
-  await accept(
-    setupApp({ context, routes: testChatEventSnapshotRoutes })(
-      testChatEventSnapshotContract,
-    ).snapshot({ body: { chat_thread_ids: [threadId], r2_object_keys: [] } }),
-    [200],
-  );
+  await projectChatEventSearchForTest([threadId], context.signal);
+  await snapshotChatEventsForTest([threadId], [], context.signal);
 }
 
 async function threadFixture() {

@@ -18,8 +18,6 @@ import {
 } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
 import {
   chatEventRowSchema,
@@ -43,11 +41,11 @@ import {
   seedRetentionRun$,
 } from "../../../test-fixtures/chat-event-retention";
 import { withChatEventDeletedAfterReadFixture } from "../../../test-fixtures/chat-events";
+import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
+import { snapshotChatEventsForTest } from "../../../test-fixtures/chat-event-snapshot-worker";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { sharedThreadRoutes } from "../shared-threads";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -87,18 +85,6 @@ function withHiddenCitation(visible: string): string {
   return `${visible.replace(escapedOpen, PI_MEMORY_CITATION_OPEN)}${PI_MEMORY_CITATION_OPEN}<citation_entries>memory.md:1-1|note=[private]</citation_entries>${PI_MEMORY_CITATION_CLOSE}`;
 }
 
-function searchClient() {
-  return setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
-    testChatEventSearchProjectionContract,
-  );
-}
-
-function snapshotClient() {
-  return setupApp({ context, routes: testChatEventSnapshotRoutes })(
-    testChatEventSnapshotContract,
-  );
-}
-
 function retentionClient() {
   return setupApp({ context, routes: testChatEventRetentionRoutes })(
     testChatEventRetentionContract,
@@ -132,16 +118,8 @@ async function archiveAndRetain(
   threadId: string,
   eventIds: readonly string[],
 ): Promise<void> {
-  await accept(
-    searchClient().project({ body: { chat_thread_ids: [threadId] } }),
-    [200],
-  );
-  await accept(
-    snapshotClient().snapshot({
-      body: { chat_thread_ids: [threadId], r2_object_keys: [] },
-    }),
-    [200],
-  );
+  await projectChatEventSearchForTest([threadId], context.signal);
+  await snapshotChatEventsForTest([threadId], [], context.signal);
   const retained = await accept(
     retentionClient().retain({ body: { chat_thread_ids: [threadId] } }),
     [200],
@@ -346,12 +324,7 @@ async function createAdvancingExportFixture(
   if (!projectedLast || !revokeTargetId) {
     throw new Error("Expected a tail longer than one export page");
   }
-  await accept(
-    searchClient().project({
-      body: { chat_thread_ids: [fixture.threadId] },
-    }),
-    [200],
-  );
+  await projectChatEventSearchForTest([fixture.threadId], context.signal);
   if (advancement === "within-bound") {
     // The snapshotter follows the committed search watermark. These rows
     // extend the export bound while remaining outside the next snapshot.
@@ -648,20 +621,14 @@ describe("archived chat event consumers", () => {
           context.signal,
         );
         expectedTail = await readChatTailRows(fixture, prefix);
-        await accept(
-          searchClient().project({
-            body: { chat_thread_ids: [fixture.threadId] },
-          }),
-          [200],
-        );
+        await projectChatEventSearchForTest([fixture.threadId], context.signal);
       }
-      const advanced = await accept(
-        snapshotClient().snapshot({
-          body: { chat_thread_ids: [fixture.threadId], r2_object_keys: [] },
-        }),
-        [200],
+      const advanced = await snapshotChatEventsForTest(
+        [fixture.threadId],
+        [],
+        context.signal,
       );
-      expect(advanced.body.snapshots).toBe(1);
+      expect(advanced.snapshots).toBe(1);
       const retained = await accept(
         retentionClient().retain({
           body: { chat_thread_ids: [fixture.threadId] },

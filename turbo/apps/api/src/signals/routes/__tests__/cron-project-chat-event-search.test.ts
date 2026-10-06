@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
 import {
   insertChatSearchProjectionCoverageFixture,
   readChatEventSearchProjectionFixture,
@@ -20,7 +20,6 @@ import { withChatSearchStatementFailureFixture } from "../../../test-fixtures/ch
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
@@ -47,18 +46,7 @@ function cronClient() {
  * counters describe exactly those threads in the shared database.
  */
 async function projectOwnedChatEventSearch(chatThreadIds: readonly string[]) {
-  const client = setupApp({
-    context,
-    routes: testChatEventSearchProjectionRoutes,
-    rethrowErrors: true,
-  })(testChatEventSearchProjectionContract);
-  const response = await accept(
-    client.project({
-      body: { chat_thread_ids: [...chatThreadIds] },
-    }),
-    [200],
-  );
-  return response.body;
+  return await projectChatEventSearchForTest(chatThreadIds, context.signal);
 }
 
 interface ProjectionFixture {
@@ -174,7 +162,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
     }
 
     const tick = await projectOwnedChatEventSearch([run.threadId]);
-    expect(tick.success).toBeTruthy();
     expect(tick.threads).toBe(1);
     // Both prompts and the assistant reply; error and lifecycle rows are skipped.
     expect(tick.indexedEvents).toBe(3);
@@ -306,7 +293,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
 
     const projected = await tick;
-    expect(projected.success).toBeTruthy();
     expect(projected.threads).toBe(1);
     await expect(heldDeletion.firstBlockedStatementKind()).resolves.toBeNull();
 

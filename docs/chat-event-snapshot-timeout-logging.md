@@ -61,5 +61,5 @@ maximum of `oldestCandidateAgeMs` shows no sustained upward trend.
 
 The observed base rate is roughly one timeout per 40,000 candidates, so a quiet
 window without an exercised timeout is not recovery evidence. Correlate at
-least one real downgraded event, or exercise the fixtures snapshot route, and
+least one real downgraded event, or exercise the scoped snapshot test driver, and
 record the limitation otherwise.

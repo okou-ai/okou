@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { cronProjectChatEventSearchResponseSchema } from "@okouai/api-contracts/contracts/cron";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { describe, expect, it } from "vitest";
-import type { z } from "zod";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
+import { projectChatEventSearchForTest } from "../../../test-fixtures/chat-event-search-projection";
 import {
   insertChatSearchProjectionCoverageFixture,
   insertSearchableMessageBatchFixture,
@@ -18,7 +15,6 @@ import {
   updateChatSearchSourceThreadFixture,
 } from "../../../test-fixtures/chat-event-search";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -27,22 +23,9 @@ const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
-type ChatSearchProjectionResponse = z.infer<
-  typeof cronProjectChatEventSearchResponseSchema
->;
 
-async function requestChatSearchProjection(
-  chatThreadIds: readonly string[],
-): Promise<ChatSearchProjectionResponse> {
-  const client = setupApp({
-    context,
-    routes: testChatEventSearchProjectionRoutes,
-  })(testChatEventSearchProjectionContract);
-  const response = await accept(
-    client.project({ body: { chat_thread_ids: [...chatThreadIds] } }),
-    [200],
-  );
-  return response.body;
+async function requestChatSearchProjection(chatThreadIds: readonly string[]) {
+  return await projectChatEventSearchForTest(chatThreadIds, context.signal);
 }
 
 async function projectChatSearchMessages(
