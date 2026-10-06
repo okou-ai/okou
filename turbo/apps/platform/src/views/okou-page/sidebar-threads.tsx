@@ -545,8 +545,6 @@ function ChatThreadItemLink({
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
   const isPinned = useGet(signals.pinned$);
   const select = useSet(signals.select$);
-  const openRename = useSet(signals.openRename$);
-  const pageSignal = useGet(pageSignal$);
 
   return (
     <Link
@@ -561,10 +559,6 @@ function ChatThreadItemLink({
         if (select(e.altKey ? "sidebar" : "main")) {
           e.preventDefault();
         }
-      }}
-      onDoubleClick={(e) => {
-        e.preventDefault();
-        detach(openRename(pageSignal), Reason.DomCallback);
       }}
       className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${
         isHighlighted

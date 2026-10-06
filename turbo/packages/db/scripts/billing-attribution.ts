@@ -35,7 +35,7 @@ assert.ok(process.env.DATABASE_URL, "DATABASE_URL is required");
 // no billing function after application trigger retirement.
 function billingUsageSource(column: string): string {
   return `CASE WHEN ${column} = 'web' THEN 'chat'
-    WHEN ${column} IN ('automation-schedule', 'automation-event', 'goal') THEN 'automation'
+    WHEN ${column} IN ('automation-schedule', 'automation-event') THEN 'automation'
     WHEN ${column} IN ('slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent') THEN ${column}
     ELSE 'other' END`;
 }

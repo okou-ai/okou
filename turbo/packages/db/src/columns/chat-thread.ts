@@ -111,7 +111,7 @@ export function chatThreadColumns() {
     /**
      * Most recent message timestamp, denormalized from chat_events.
      * Maintained app-side for direct user messages and terminal run-finished
-     * markers via GREATEST() — monotonic, never rewound. Triggered/goal user
+     * markers via GREATEST() — monotonic, never rewound. Triggered user
      * messages, billing rows, and other control rows do not advance it. Powers
      * the sidebar recency and unread watermark comparisons with index-driven
      * thread queries.
