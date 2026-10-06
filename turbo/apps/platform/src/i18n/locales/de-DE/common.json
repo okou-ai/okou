@@ -5196,10 +5196,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Drücken Sie zum Senden ⌘/Strg+Eingabetaste und für eine neue Zeile die Eingabetaste",
-        "description": "Wählen Sie aus, wie Nachrichten im Chat gesendet werden sollen.",
         "enter": "Enter",
         "enterDescription": "Drücken Sie die Eingabetaste zum Senden, Umschalt+Eingabetaste für eine neue Zeile",
-        "sectionTitle": "Enter",
         "title": "Nachricht senden mit"
       },
       "timezone": {

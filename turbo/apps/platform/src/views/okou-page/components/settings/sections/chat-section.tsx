@@ -1,5 +1,4 @@
 import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLastResolved, useLoadable } from "ccstate-react";
@@ -8,7 +7,6 @@ import { Cpu, Globe, Keyboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { cloudBrowserEnabledByDefault$ } from "../../../../../signals/cloud-browser-preference.ts";
-import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../../../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../../../../signals/external/run-models.ts";
 import { userModelPreference$ } from "../../../../../signals/external/user-model-preference.ts";
@@ -107,7 +105,7 @@ function CloudBrowserDefaultPreference() {
   );
 }
 
-export function SendModePreference() {
+function SendModePreference() {
   const { t } = useTranslation();
   const prefsLoadable = useLoadable(sendMode$);
   const current: SendMode =
@@ -167,18 +165,11 @@ export function SendModePreference() {
 }
 
 export function ChatSection() {
-  const features = useGet(featureSwitch$);
-  const showChatPreferences =
-    features[FeatureSwitchKey.ChatPreference] ?? false;
   return (
     <section className="flex flex-col gap-3">
-      {showChatPreferences ? (
-        <>
-          <DefaultModelPreference />
-          <CloudBrowserDefaultPreference />
-          <SendModePreference />
-        </>
-      ) : null}
+      <DefaultModelPreference />
+      <CloudBrowserDefaultPreference />
+      <SendModePreference />
     </section>
   );
 }

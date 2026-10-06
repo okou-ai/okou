@@ -112,7 +112,6 @@ test("Edit only the model for an existing thread", async () => {
     path: RUN_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
 

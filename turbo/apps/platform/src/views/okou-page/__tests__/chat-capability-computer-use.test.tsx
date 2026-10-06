@@ -3,7 +3,6 @@ import {
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -220,7 +219,6 @@ test("Use the saved Cloud browser default for an untouched new chat", async () =
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatPreference]: true },
   });
 
   await readyChat();

@@ -83,7 +83,6 @@ async function setupPanel(
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
       [FeatureSwitchKey.ComposerModelPanel]: true,
     },
   });
@@ -131,7 +130,6 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
       [FeatureSwitchKey.ComposerModelPanel]: true,
     },
   });

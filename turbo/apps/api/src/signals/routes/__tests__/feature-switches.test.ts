@@ -86,7 +86,7 @@ describe("/api/feature-switches", () => {
         api.update({
           headers,
           body: {
-            switches: { [FeatureSwitchKey.ChatPreference]: true },
+            switches: { [FeatureSwitchKey.PwaNavigation]: true },
           },
         }),
         [200],
@@ -101,7 +101,7 @@ describe("/api/feature-switches", () => {
     ]);
     const current = await accept(api.get({ headers }), [200]);
     expect(current.body.switches).toStrictEqual({
-      [FeatureSwitchKey.ChatPreference]: true,
+      [FeatureSwitchKey.PwaNavigation]: true,
       [FeatureSwitchKey.Dummy]: false,
     });
   });
@@ -118,7 +118,7 @@ describe("/api/feature-switches", () => {
         headers,
         body: {
           switches: {
-            [FeatureSwitchKey.ChatPreference]: true,
+            [FeatureSwitchKey.PwaNavigation]: true,
             [FeatureSwitchKey.Dummy]: false,
           },
         },
@@ -130,7 +130,7 @@ describe("/api/feature-switches", () => {
         headers,
         body: {
           switches: {
-            [FeatureSwitchKey.ChatPreference]: false,
+            [FeatureSwitchKey.PwaNavigation]: false,
             unregisteredFeature: true,
           },
         },
@@ -138,7 +138,7 @@ describe("/api/feature-switches", () => {
       [200],
     );
     const expected = {
-      [FeatureSwitchKey.ChatPreference]: false,
+      [FeatureSwitchKey.PwaNavigation]: false,
       [FeatureSwitchKey.Dummy]: false,
     };
     expect(updated.body.switches).toStrictEqual(expected);
@@ -159,7 +159,7 @@ describe("/api/feature-switches", () => {
         body: {
           switches: {
             [FeatureSwitchKey.LarkIntegration]: true,
-            [FeatureSwitchKey.ChatPreference]: true,
+            [FeatureSwitchKey.PwaNavigation]: true,
           },
         },
       }),
@@ -216,7 +216,7 @@ describe("/api/feature-switches", () => {
         body: {
           switches: {
             [FeatureSwitchKey.LarkIntegration]: true,
-            [FeatureSwitchKey.ChatPreference]: false,
+            [FeatureSwitchKey.PwaNavigation]: false,
           },
         },
       }),
@@ -224,7 +224,7 @@ describe("/api/feature-switches", () => {
     );
     expect(updated.body.switches).toStrictEqual({
       [FeatureSwitchKey.LarkIntegration]: true,
-      [FeatureSwitchKey.ChatPreference]: false,
+      [FeatureSwitchKey.PwaNavigation]: false,
     });
     clerk.session(peerId, orgId, "org:member");
     const current = await accept(client().get({ headers }), [200]);

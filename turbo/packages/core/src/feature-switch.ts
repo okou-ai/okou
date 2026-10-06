@@ -281,12 +281,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Workday HCM and finance connector",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatPreference]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable dedicated Chat settings and explicit new-chat default actions.",
-    enabled: true,
-  },
   [FeatureSwitchKey.RealAgentInPreview]: {
     maintainer: "ethan@okou.ai",
     description:

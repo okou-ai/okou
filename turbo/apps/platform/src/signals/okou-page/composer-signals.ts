@@ -18,10 +18,8 @@ import {
   type AvailablePaidToolId,
 } from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   createPendingRemoteAccessSignals,
   threadRemoteAccess$,
@@ -416,11 +414,8 @@ function createRemoveQueuedMessage(
 function createTemporaryModelNoticeEnabled(
   options: CreateComposerSignalsOptions,
 ): Computed<boolean> {
-  return computed((get): boolean => {
-    return (
-      options.threadId === undefined &&
-      (get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false)
-    );
+  return computed((): boolean => {
+    return options.threadId === undefined;
   });
 }
 

@@ -5175,10 +5175,8 @@
       "send": {
         "cmdEnter": "⌘ 入力してください",
         "cmdEnterDescription": "⌘/Ctrl+Enter を押して送信し、Enter を押して改行します",
-        "description": "チャットでメッセージを送信する方法を選択します。",
         "enter": "入力してください",
         "enterDescription": "Enter を押して送信し、Shift+Enter を押して改行します",
-        "sectionTitle": "入力してください",
         "title": "メッセージを送信する"
       },
       "timezone": {

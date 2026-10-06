@@ -5196,10 +5196,8 @@
       "send": {
         "cmdEnter": "⌘ दर्ज करें",
         "cmdEnterDescription": "भेजने के लिए ⌘/Ctrl+Enter दबाएँ, नई लाइन के लिए Enter दबाएँ",
-        "description": "चैट में संदेश भेजने का तरीका चुनें.",
         "enter": "एंटर",
         "enterDescription": "भेजने के लिए Enter दबाएँ, नई लाइन के लिए Shift+Enter दबाएँ",
-        "sectionTitle": "एंटर",
         "title": "के साथ संदेश भेजें"
       },
       "timezone": {

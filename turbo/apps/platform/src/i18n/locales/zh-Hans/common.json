@@ -5175,10 +5175,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "按⌘/Ctrl+Enter发送，按Enter换行",
-        "description": "选择在对话中发送消息的方式。",
         "enter": "Enter",
         "enterDescription": "按Enter发送，按Shift+Enter换行",
-        "sectionTitle": "Enter",
         "title": "发送消息的按键"
       },
       "timezone": {
