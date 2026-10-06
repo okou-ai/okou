@@ -1203,28 +1203,17 @@ function pricingStepTitle(step: PricingStep): string {
    The dialog is mounted only while the flow is open, so the plan catalog and
    the subscription it loads stay owned by the flow rather than by every visit
    to the billing tab. */
-function PricingStepDialog({
+export function BillingPricingDialog({
   children,
-  flush = false,
-  onBack,
   onClose,
   onOpenChangeComplete,
-  open = true,
-  step,
-  title,
-  total,
+  open,
 }: {
   readonly children: ReactNode;
-  readonly flush?: boolean;
-  readonly onBack?: () => void;
   readonly onClose: () => void;
   readonly onOpenChangeComplete?: (open: boolean) => void;
-  readonly open?: boolean;
-  readonly step: PricingStep;
-  readonly title?: string;
-  readonly total: PricingStepTotal;
+  readonly open: boolean;
 }) {
-  const { t } = useTranslation();
   return (
     <Dialog
       open={open}
@@ -1242,40 +1231,68 @@ function PricingStepDialog({
         height={688}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
-        {/* The close button is an item in this row rather than a box pinned to
-            the frame, so the title, the step counter and the close glyph share
-            one centre line and one right inset. */}
-        <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 space-y-0 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
-          {onBack && <PricingBackButton onBack={onBack} />}
-          <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
-            {title ?? pricingStepTitle(step)}
-          </DialogTitle>
-          <PricingStepIndicator current={step} total={total} />
-          <DialogClose
-            render={
-              <IconButton
-                className="-ml-1 shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label={t(($) => {
-                  return $.settings.shared.close;
-                })}
-              />
-            }
-          >
-            <X size={20} />
-          </DialogClose>
-        </DialogHeader>
-        {/* No bottom inset on the scrolling body: a step that ends in an action
-            bar lets the bar sit on the frame's edge. Otherwise the bar would
-            float a padding's width above the frame whenever the body is short
-            enough not to scroll. */}
-        <DialogBody
-          scrollable={!flush}
-          className={cn("flex flex-col", !flush && "overflow-y-auto px-5 pt-5")}
-        >
-          {children}
-        </DialogBody>
+        {children}
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function PricingStepContent({
+  children,
+  flush = false,
+  onBack,
+  step,
+  title,
+  total,
+}: {
+  readonly children: ReactNode;
+  readonly flush?: boolean;
+  readonly onBack?: () => void;
+} & (
+  | {
+      readonly step: PricingStep;
+      readonly total: PricingStepTotal;
+      readonly title?: string;
+    }
+  | {
+      readonly step?: undefined;
+      readonly total?: undefined;
+      readonly title: string;
+    }
+)) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {/* The close button shares the header row with its title and steps. */}
+      <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 space-y-0 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
+        {onBack && <PricingBackButton onBack={onBack} />}
+        <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
+          {title ?? (step !== undefined && pricingStepTitle(step))}
+        </DialogTitle>
+        {step !== undefined && (
+          <PricingStepIndicator current={step} total={total} />
+        )}
+        <DialogClose
+          render={
+            <IconButton
+              className="-ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label={t(($) => {
+                return $.settings.shared.close;
+              })}
+            />
+          }
+        >
+          <X size={20} />
+        </DialogClose>
+      </DialogHeader>
+      {/* No bottom inset: a step's action bar sits on the frame's edge. */}
+      <DialogBody
+        scrollable={!flush}
+        className={cn("flex flex-col", !flush && "overflow-y-auto px-5 pt-5")}
+      >
+        {children}
+      </DialogBody>
+    </>
   );
 }
 
@@ -3302,15 +3319,13 @@ function UsagePackMigrationPage({
   );
 }
 
-export function UsagePackMigrationDialogs({
+export function UsagePackMigrationContent({
   currentTier,
   migration,
   migrationOpen,
   migrationTargetTier,
   onBack,
   onClose,
-  onOpenChangeComplete,
-  open,
   onSelect,
 }: {
   readonly currentTier: BillingTier;
@@ -3319,8 +3334,6 @@ export function UsagePackMigrationDialogs({
   readonly migrationTargetTier: UsagePackPlanTier | null;
   readonly onBack: () => void;
   readonly onClose: () => void;
-  readonly onOpenChangeComplete?: (open: boolean) => void;
-  readonly open?: boolean;
   readonly onSelect: (tier: UsagePackPlanTier) => void;
 }) {
   const migrationPreview = useGet(usagePackMigrationPreview$);
@@ -3346,7 +3359,7 @@ export function UsagePackMigrationDialogs({
     configuring &&
     (revising ? migrationRevisionPreview !== null : migrationPreview !== null);
   return (
-    <PricingStepDialog
+    <PricingStepContent
       flush={!configuring}
       step={reviewing ? 3 : configuring ? 2 : 1}
       title={
@@ -3357,8 +3370,6 @@ export function UsagePackMigrationDialogs({
           : undefined
       }
       total={3}
-      open={open}
-      onOpenChangeComplete={onOpenChangeComplete}
       onBack={
         reviewing
           ? revising
@@ -3368,7 +3379,6 @@ export function UsagePackMigrationDialogs({
             ? onBack
             : undefined
       }
-      onClose={onClose}
     >
       {configurationStep ? (
         <UsagePackMigrationPage
@@ -3386,25 +3396,19 @@ export function UsagePackMigrationDialogs({
           onSelect={onSelect}
         />
       )}
-    </PricingStepDialog>
+    </PricingStepContent>
   );
 }
 
-export function UsagePackPricingDialogs({
+export function UsagePackPricingContent({
   checkoutAllowed,
   currentTier,
   grantedPlanCheckoutAllowed,
-  onClose,
-  onOpenChangeComplete,
-  open,
   onReplaceCancellationWithPro,
 }: {
   readonly checkoutAllowed: boolean;
   readonly currentTier: BillingTier;
   readonly grantedPlanCheckoutAllowed: boolean;
-  readonly onClose: () => void;
-  readonly onOpenChangeComplete?: (open: boolean) => void;
-  readonly open?: boolean;
   readonly onReplaceCancellationWithPro?: () => void;
 }) {
   const selectedPlanTier = useGet(selectedUsagePackPlan$);
@@ -3438,12 +3442,10 @@ export function UsagePackPricingDialogs({
   const preview = management === null ? null : changePreview;
   const reviewing = selectedPlan !== undefined && preview !== null;
   return (
-    <PricingStepDialog
+    <PricingStepContent
       flush={!selectedPlan}
       step={reviewing ? 3 : selectedPlan ? 2 : 1}
       total={management === null ? 2 : 3}
-      open={open}
-      onOpenChangeComplete={onOpenChangeComplete}
       onBack={
         reviewing
           ? closePreview
@@ -3453,7 +3455,6 @@ export function UsagePackPricingDialogs({
               }
             : undefined
       }
-      onClose={onClose}
     >
       {!catalog || !managementLoaded ? (
         <div
@@ -3511,6 +3512,6 @@ export function UsagePackPricingDialogs({
           }}
         />
       )}
-    </PricingStepDialog>
+    </PricingStepContent>
   );
 }

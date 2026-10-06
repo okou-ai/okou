@@ -9,14 +9,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import {
-  ExternalLink,
-  ArrowLeft,
-  ChevronRight,
-  Coins,
-  Minus,
-  Plus,
-} from "lucide-react";
+import { ExternalLink, ChevronRight, Coins, Minus, Plus } from "lucide-react";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
   CONCURRENCY_SUBSCRIPTION_QUANTITY_MAX,
@@ -54,14 +47,7 @@ import {
   type ConcurrencyChangeMode,
   type ConcurrencyConfirmDialogState,
 } from "../../../../signals/okou-page/billing.ts";
-import {
-  Badge,
-  Button,
-  DialogBody,
-  Input,
-  buttonVariants,
-  cn,
-} from "@okouai/ui";
+import { Badge, Button, Input, buttonVariants, cn } from "@okouai/ui";
 import type {
   BillingStatusResponse,
   ConcurrencySubscriptionChangePreviewResponse,
@@ -100,9 +86,12 @@ import {
   dismissBillingPlans$,
   openSettingsUsagePackUpgrade$,
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
+import { billingPricingMode$ } from "../../../../signals/okou-page/settings/billing-pricing.ts";
 import {
-  UsagePackMigrationDialogs,
-  UsagePackPricingDialogs,
+  BillingPricingDialog,
+  PricingStepContent,
+  UsagePackMigrationContent,
+  UsagePackPricingContent,
 } from "./usage-pack-pricing-page.tsx";
 
 type ScheduledBillingChange = BillingStatusResponse["scheduledChange"];
@@ -1885,121 +1874,6 @@ function UsagePackMigrationAvailability({
   );
 }
 
-function UsagePackMigrationProgressPage({
-  migration,
-  onBack,
-}: {
-  readonly migration: UsagePackMigrationStateResponse;
-  readonly onBack: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex items-center gap-3">
-        <Button
-          showTooltip
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={onBack}
-          aria-label={i18n.t(($) => {
-            return $.billing.common.back;
-          })}
-        >
-          <ArrowLeft size={16} strokeWidth={1.8} />
-        </Button>
-        <h3 className="text-sm font-medium text-foreground">
-          {i18n.t(($) => {
-            return $.billing.plans.usagePacks.migration.title;
-          })}
-        </h3>
-      </div>
-      <UsagePackMigrationAvailability migration={migration} />
-    </div>
-  );
-}
-
-function StandaloneBillingPricingDialog({
-  children,
-  open,
-  onClose,
-  onOpenChangeComplete,
-}: {
-  readonly children: React.ReactNode;
-  readonly open: boolean;
-  readonly onClose: () => void;
-  readonly onOpenChangeComplete?: (open: boolean) => void;
-}) {
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          onClose();
-        }
-      }}
-      onOpenChangeComplete={onOpenChangeComplete}
-    >
-      <DialogContent
-        aria-describedby={undefined}
-        maxWidth={860}
-        height={688}
-        contentClassName="flex flex-col gap-0 overflow-hidden p-0"
-      >
-        <DialogTitle className="sr-only">
-          {i18n.t(($) => {
-            return $.settings.dialog.sections.billing.title;
-          })}
-        </DialogTitle>
-        <DialogBody className="flex flex-col overflow-y-auto p-5">
-          {children}
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function billingPricingReplacement({
-  onStandaloneClose,
-  onStandaloneOpenChangeComplete,
-  pricingFlow,
-  pricingOpen,
-  pricingPage,
-  standaloneOpen,
-  standalonePlans,
-  usagePackPlanDialogs,
-}: {
-  readonly onStandaloneClose: () => void;
-  readonly onStandaloneOpenChangeComplete?: (open: boolean) => void;
-  readonly pricingFlow: React.ReactNode;
-  readonly pricingOpen: boolean;
-  readonly pricingPage: React.ReactNode;
-  readonly standaloneOpen: boolean;
-  readonly standalonePlans: boolean;
-  readonly usagePackPlanDialogs: boolean;
-}): React.ReactNode | null {
-  if (!pricingOpen) {
-    return null;
-  }
-  if (!usagePackPlanDialogs) {
-    return standalonePlans ? (
-      <StandaloneBillingPricingDialog
-        open={standaloneOpen}
-        onClose={onStandaloneClose}
-        onOpenChangeComplete={onStandaloneOpenChangeComplete}
-      >
-        {pricingPage}
-      </StandaloneBillingPricingDialog>
-    ) : (
-      pricingPage
-    );
-  }
-  if (standalonePlans) {
-    return pricingFlow;
-  }
-  return null;
-}
-
 function canStartUsagePackCheckout(
   status: BillingStatusResponse | null,
 ): boolean {
@@ -2016,25 +1890,6 @@ function usagePackMigrationInProgress(
   migration: UsagePackMigrationStateResponse | null,
 ): boolean {
   return migration?.status === "applying";
-}
-
-function usagePackMigrationNeedsProgressPage(
-  migration: UsagePackMigrationStateResponse | null,
-): boolean {
-  return (
-    usagePackMigrationInProgress(migration) ||
-    (migration?.status === "scheduled" && !migration.configuration)
-  );
-}
-
-/* All actionable usage pack pricing steps live in a dialog over the billing
-   tab, including conversion from a legacy plan. Only the loading skeleton and
-   a migration that can only report progress still keep the tab sub-page. */
-function showsUsagePackPlanDialogs(
-  migrationLoading: boolean,
-  migration: UsagePackMigrationStateResponse | null,
-): boolean {
-  return !migrationLoading && !usagePackMigrationNeedsProgressPage(migration);
 }
 
 function usagePackMigrationConfigurable(
@@ -2108,83 +1963,80 @@ function CurrentPlanTitle({
   );
 }
 
-function UsagePackPricingFlowDialogs({
-  checkoutAllowed,
-  currentTier,
-  grantedPlanCheckoutAllowed,
-  migration,
+function UsagePackPricingFlowContent({
   migrationOpen,
   migrationTargetTier,
   onMigrationBack,
   onClose,
-  onOpenChangeComplete,
-  open,
   onReplaceCancellationWithPro,
   onSelectMigration,
 }: {
-  readonly checkoutAllowed: boolean;
-  readonly currentTier: BillingTier;
-  readonly grantedPlanCheckoutAllowed: boolean;
-  readonly migration: UsagePackMigrationStateResponse | null;
   readonly migrationOpen: boolean;
   readonly migrationTargetTier: "pro" | "team" | null;
   readonly onMigrationBack: () => void;
   readonly onClose: () => void;
-  readonly onOpenChangeComplete?: (open: boolean) => void;
-  readonly open: boolean;
   readonly onReplaceCancellationWithPro?: () => void;
   readonly onSelectMigration: (tier: "pro" | "team") => void;
 }) {
-  if (migration) {
+  const modeLoadable = useLastLoadable(billingPricingMode$);
+  if (modeLoadable.state !== "hasData") {
     return (
-      <UsagePackMigrationDialogs
+      <PricingStepContent
+        title={i18n.t(($) => {
+          return $.settings.dialog.sections.billing.title;
+        })}
+      >
+        {modeLoadable.state === "loading" ? (
+          <div
+            role="status"
+            className="flex-1 animate-pulse rounded-xl bg-muted/40"
+          />
+        ) : (
+          <p role="status" className="text-sm text-muted-foreground">
+            {i18n.t(($) => {
+              return $.billing.plans.loadError;
+            })}
+          </p>
+        )}
+      </PricingStepContent>
+    );
+  }
+
+  const mode = modeLoadable.data;
+  const currentTier = apiTierToBillingTier(mode.status.tier);
+  if (mode.kind === "migration-progress") {
+    return (
+      <PricingStepContent
+        onBack={onClose}
+        title={i18n.t(($) => {
+          return $.billing.plans.usagePacks.migration.title;
+        })}
+      >
+        <UsagePackMigrationAvailability migration={mode.migration} />
+      </PricingStepContent>
+    );
+  }
+  if (mode.kind === "migration") {
+    return (
+      <UsagePackMigrationContent
         currentTier={currentTier}
-        migration={migration}
+        migration={mode.migration}
         migrationOpen={migrationOpen}
         migrationTargetTier={migrationTargetTier}
         onBack={onMigrationBack}
         onClose={onClose}
-        onOpenChangeComplete={onOpenChangeComplete}
-        open={open}
         onSelect={onSelectMigration}
       />
     );
   }
   return (
-    <UsagePackPricingDialogs
-      checkoutAllowed={checkoutAllowed}
+    <UsagePackPricingContent
+      checkoutAllowed={canStartUsagePackCheckout(mode.status)}
       currentTier={currentTier}
-      grantedPlanCheckoutAllowed={grantedPlanCheckoutAllowed}
-      onClose={onClose}
-      onOpenChangeComplete={onOpenChangeComplete}
-      open={open}
+      grantedPlanCheckoutAllowed={canConfigureGrantedUsagePackPlan(mode.status)}
       onReplaceCancellationWithPro={onReplaceCancellationWithPro}
     />
   );
-}
-
-/* Only the loading skeleton and the progress page remain on the tab sub-page;
-   every actionable pricing step lives in the usage pack dialogs. */
-function BillingSubPage({
-  migration,
-  migrationLoading,
-  onBack,
-}: {
-  readonly migration: UsagePackMigrationStateResponse | null;
-  readonly migrationLoading: boolean;
-  readonly onBack: () => void;
-}) {
-  if (migrationLoading) {
-    return (
-      <div
-        role="status"
-        className="h-80 animate-pulse rounded-xl bg-muted/40"
-      />
-    );
-  }
-  return migration && usagePackMigrationNeedsProgressPage(migration) ? (
-    <UsagePackMigrationProgressPage migration={migration} onBack={onBack} />
-  ) : null;
 }
 
 export function OrgBillingTab({
@@ -2229,7 +2081,6 @@ export function OrgBillingTab({
 
   const status = loadableDataOrNull(statusLoadable);
   const migration = loadableDataOrNull(migrationLoadable);
-  const migrationLoading = migrationLoadable.state === "loading";
   const migrationInProgress = usagePackMigrationInProgress(migration);
   const canConvertLegacyPlan = usagePackMigrationConfigurable(migration);
   const statusLoading = statusLoadable.state === "loading";
@@ -2298,47 +2149,25 @@ export function OrgBillingTab({
     );
   };
 
-  const usagePackPlanDialogs = showsUsagePackPlanDialogs(
-    migrationLoading,
-    migration,
-  );
-
   const pricingFlow = (
-    <UsagePackPricingFlowDialogs
-      checkoutAllowed={canStartUsagePackCheckout(status)}
-      currentTier={currentTier}
-      grantedPlanCheckoutAllowed={canConfigureGrantedUsagePackPlan(status)}
-      migration={migration}
-      migrationOpen={migrationOpen}
-      migrationTargetTier={migrationTargetTier}
-      onMigrationBack={closeMigrationSubPage}
+    <BillingPricingDialog
       onClose={dismissPlans}
       onOpenChangeComplete={onStandaloneOpenChangeComplete}
       open={standaloneOpen}
-      onReplaceCancellationWithPro={replaceCancellationWithPro}
-      onSelectMigration={openMigrationPage}
-    />
+    >
+      <UsagePackPricingFlowContent
+        migrationOpen={migrationOpen}
+        migrationTargetTier={migrationTargetTier}
+        onMigrationBack={closeMigrationSubPage}
+        onClose={dismissPlans}
+        onReplaceCancellationWithPro={replaceCancellationWithPro}
+        onSelectMigration={openMigrationPage}
+      />
+    </BillingPricingDialog>
   );
-  const pricingPage = (
-    <BillingSubPage
-      migration={migration}
-      migrationLoading={migrationLoading}
-      onBack={dismissPlans}
-    />
-  );
-  const pricingReplacement = billingPricingReplacement({
-    onStandaloneClose: dismissPlans,
-    onStandaloneOpenChangeComplete,
-    pricingFlow,
-    pricingOpen,
-    pricingPage,
-    standaloneOpen,
-    standalonePlans,
-    usagePackPlanDialogs,
-  });
 
-  if (pricingReplacement) {
-    return pricingReplacement;
+  if (standalonePlans) {
+    return pricingFlow;
   }
 
   return (
