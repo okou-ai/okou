@@ -295,3 +295,29 @@ success is not live activation or performance acceptance.
 Remaining selections and full-snapshot/chat-captured cohorts, P5/P6/P7, final
 pointer cutover and S1–S3 acceptance remain separate. No rollback window or GC is
 introduced under Ethan v5.
+
+## Temporary31-hop diagnostic checkpoints (not a repair)
+
+Starting from main-integrated `6af828c4ed288a2ac55055baddc95d4a81072e77`, only
+the existing Official31-hop case gains local synchronous entry/exit checkpoints.
+The fixed tag, numeric hop, fixed phase/event and monotonic elapsed value contain
+no identities or business data. Output is capped at512 records, with the last
+record marked LIMIT. Hop0 denotes setup/source launch,1–31 the unchanged serial
+chain,32 the final idle launch,33 exhaustion, and-1 existing cleanup. Public
+launch helpers remain combined drain/read phases; their internals are not timed.
+A missing exit may mean timeout, abort or throw, not a uniquely attributed hang.
+No catch, wrapper Promise, timer, production hook or shared state is introduced.
+Logging cost is included; elapsed is not historical timing or improvement proof.
+
+The c5 timeout,2543's eventual successful execution and6af API4 timeout remain
+separate historical receipts. Current6af recorded30 intentional terminal commit
+warnings over4595.157ms and case5063ms; those markers precede callback/HTTP
+completion and do not certify30 completed hops. Neither cumulative budget
+consumption nor the last await is uniquely proven. No root-cause closure or flake
+classification follows from a diagnostic PASS. Requests,31 real hops, assertions,
+paired cursors/full-history exhaustion, drain/cleanup, signals and5000ms timeout
+remain unchanged. Only one new natural CI cohort is authorized; first substantive
+failure stops general observation, with only its already-existing API4 diagnostic
+log collectible afterwards. No old recovery allowance is revived. The new delta
+needs non-author review; actual repair and diagnostic removal need a separate
+decision. This diagnostic must not be left in place for merge.
