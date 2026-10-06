@@ -53,7 +53,6 @@ export enum FeatureSwitchKey {
   OpenRouterUsRouting = "openRouterUsRouting",
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
-  AvatarFraming = "avatarFraming",
   ConnectorDirectory = "connectorDirectory",
   ChatLastReadMarker = "chatLastReadMarker",
   ChatThreadArchiving = "chatThreadArchiving",

@@ -197,7 +197,7 @@ function contentScale({ top, bottom }: AvatarContentBounds): number {
   return Math.sqrt(AVATAR_CONTENT_TARGET_FILL / ((bottom - top) / 380));
 }
 
-/** Where the artwork sits in its box, once the two switches have been read. */
+/** Where the artwork sits in its box. */
 interface AvatarPlacement {
   /** Percentage translation applied before the scale. */
   readonly contentOffsetY: number;
@@ -263,9 +263,10 @@ export function avatarSvgContentTransform(
  * Every composer avatar wears the shared neck and sweater, with the head moved
  * so each chin meets the same collar.
  *
- * `framing` is the `avatarFraming` switch. With it off `contentScale` stays at
- * the scale each family already shipped with, so only the callers that ask for
- * centering get it.
+ * `framing` centers the visible artwork and moves it halfway to a shared fill
+ * (see `contentScale`). Only the pinned rows turn it off, to keep every collar
+ * on the shared chin baseline; there `contentScale` stays at the scale each
+ * family already shipped with.
  *
  * `bottomAnchored` replaces the centering with `bottomAnchoredOffsetY`. Only
  * the chat home greeting asks for it, because it is the only avatar with

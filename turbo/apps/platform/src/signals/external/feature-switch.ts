@@ -88,8 +88,6 @@ export const featureSwitch$ = computed((get) => {
   return get(featureSwitchState$);
 });
 
-export const avatarFramingEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.AvatarFraming] ?? false;
 });
 
 export const applyFeatureSwitches$ = command(

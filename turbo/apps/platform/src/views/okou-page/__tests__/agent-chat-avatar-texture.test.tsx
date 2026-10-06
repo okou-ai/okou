@@ -28,7 +28,6 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -126,10 +125,6 @@ async function setupChatPage(): Promise<void> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      // Framing on, so the artwork carries a scale the anchor has to survive.
-      [FeatureSwitchKey.AvatarFraming]: true,
-    },
   });
   await waitFor(() => {
     expect(avatarFrame()).toBeInTheDocument();
@@ -169,9 +164,6 @@ test("Leave an agent that cannot take a texture exactly as it was", async () => 
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.AvatarFraming]: true,
-    },
   });
   await waitFor(() => {
     expect(avatarFrame()).toBeInTheDocument();
@@ -217,9 +209,6 @@ test("Give the organization default agent its own texture", async () => {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.AvatarFraming]: true,
-    },
   });
   await waitFor(() => {
     expect(avatarFrame()).toBeInTheDocument();
