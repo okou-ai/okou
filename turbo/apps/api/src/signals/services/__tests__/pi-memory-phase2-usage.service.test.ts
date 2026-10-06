@@ -250,10 +250,12 @@ async function launchPublicMaintenance(
     {
       rawMemory: "first private candidate",
       rolloutSummary: "first complete evidence",
+      sourceText: "first complete evidence",
     },
     {
       rawMemory: "second private candidate",
       rolloutSummary: "second complete evidence",
+      sourceText: "second complete evidence",
     },
   ]);
   await expect(fixture.extract()).resolves.toMatchObject({
@@ -855,6 +857,22 @@ test.each(["valid", "invalid"] as const)(
       const run = await launchPublicMaintenance(fixture, {
         type: "openai-api-key",
       });
+      for (const [index, source] of run.scope.sources.entries()) {
+        expect(
+          run.execution.piLaunchConfig?.maintenance?.selected.find((entry) => {
+            return entry.piSessionId === source.threadId;
+          }),
+        ).toMatchObject({
+          sourceRunId: source.runId,
+          sourceHistoryHash: source.hash,
+          sourceCompletedAt: source.completedAt,
+          rolloutSummary:
+            index === 0
+              ? "first complete evidence"
+              : "second complete evidence",
+          rolloutSlug: "source",
+        });
+      }
       const actual = await executePhase2Runtime(context, run.runId, {
         baseFiles,
         execution: run.execution,

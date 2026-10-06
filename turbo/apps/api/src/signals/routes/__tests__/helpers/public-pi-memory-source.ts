@@ -15,6 +15,7 @@ import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { storageTextFile } from "./api-bdd-storage-files";
 import { memoryFilesArchive } from "./public-runner-memory";
 import { randomUUID } from "node:crypto";
+import { zstdDecompressSync } from "node:zlib";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect } from "vitest";
@@ -363,9 +364,14 @@ export function createPublicPiMemorySource(
   function installExtractionProvider(
     output:
       | string
-      | readonly { rawMemory: string; rolloutSummary: string }[] = "raw memory",
+      | readonly {
+          rawMemory: string;
+          rolloutSummary: string;
+          sourceText?: string;
+        }[] = "raw memory",
   ) {
     let index = 0;
+    const consumedOutputs = new Set<object>();
     server.use(
       http.post(
         options.sourceProvider === "built-in"
@@ -376,14 +382,49 @@ export function createPublicPiMemorySource(
               ? "https://phase2-gateway.example/v1/responses"
               : /https:\/\/chatgpt\.com\/.*\/responses/u,
         async ({ request }) => {
-          await request.arrayBuffer();
+          const bytes = Buffer.from(await request.arrayBuffer());
+          const requestBody = (
+            request.headers.get("content-encoding") === "zstd"
+              ? zstdDecompressSync(bytes)
+              : bytes
+          ).toString("utf8");
+          // Extraction follows actual selected sessions, not source creation or
+          // request arrival order. Bind distinct outputs to their real history.
+          const sourceBound =
+            typeof output !== "string" &&
+            output.some((entry) => {
+              return entry.sourceText !== undefined;
+            });
+          const matches =
+            sourceBound && typeof output !== "string"
+              ? output.filter((entry) => {
+                  return (
+                    entry.sourceText !== undefined &&
+                    requestBody.includes(entry.sourceText)
+                  );
+                })
+              : [];
+          const [matched] = matches;
+          if (
+            sourceBound &&
+            (matches.length !== 1 ||
+              matched === undefined ||
+              consumedOutputs.has(matched))
+          ) {
+            throw new Error(
+              "Expected one unused output for the actual source history",
+            );
+          }
           const selected =
             typeof output === "string"
               ? { rawMemory: output, rolloutSummary: "rollout summary" }
-              : output[index++];
+              : sourceBound
+                ? matched
+                : output[index++];
           if (!selected) {
             throw new Error("Unexpected source extraction request");
           }
+          consumedOutputs.add(selected);
           const text = JSON.stringify({
             raw_memory: selected.rawMemory,
             rollout_summary: selected.rolloutSummary,
