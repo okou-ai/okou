@@ -7,7 +7,8 @@ import { createApp } from "../../../app-factory";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { stageLegacyChatThreadSelectedModelFixture } from "../../../test-fixtures/model-catalog";
+import { disableModelRoutesFixture } from "../../../test-fixtures/model-route-capabilities";
+import { onTestFinished } from "vitest";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -350,6 +351,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     const { actor, workflowId } = await setupFixture();
     const runsApi = createRunsApi(context);
     runsApi.configureRunnerGroup();
+    await runsApi.ensurePersonalSubscriptionModel(actor);
     const webhook = await createWebhookAutomation(workflowId);
     const rawBody = JSON.stringify({ event: "restore-model-route" });
     const timestamp = Math.floor(now() / 1000);
@@ -359,14 +361,10 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       secret: webhook.secret,
       timestamp,
     };
-    // A legacy thread selection of a retired model resolves to its
-    // replacement at enqueue. The workspace has no route for the replacement
-    // (Opus 5.5 is not one of its policies), so capturing the input's model
-    // fails explicitly instead of falling back to the system default.
-    await stageLegacyChatThreadSelectedModelFixture({
-      threadId: webhook.threadId,
-      model: "claude-opus-4-8",
-    });
+    // Disabling the thread's personal route makes capture fail explicitly;
+    // a catalog row identifies ownership but does not grant execution.
+    const restore = await disableModelRoutesFixture("claude-fable-5-1");
+    onTestFinished(restore);
     await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
       status: 500,
       body: { error: "Internal server error" },
@@ -378,11 +376,9 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       lastReceivedAt: null,
     });
 
-    // Adding a compatible route for the replacement lets the same delivery
-    // be admitted: the failed attempt did not consume its key.
-    await runsApi.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-opus-5-5",
-    });
+    // Restoring route authority lets the same delivery be admitted: the
+    // failed capture did not consume its key.
+    await restore();
     await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
       status: 200,
       body: { success: true, duplicate: false },
