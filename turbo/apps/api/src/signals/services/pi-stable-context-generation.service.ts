@@ -182,17 +182,51 @@ export function invalidatePiStableContextsForOrgSql(
 export function invalidateAllPiStableContextsSql(at: Date): SQL {
   return invalidateSetSql(sql`TRUE`, sql`TRUE`, at);
 }
-export function invalidatePiStableContextsForCatalogSourceSql(
-  sourceId: string,
+/** Legacy source IDs are only used to retire persisted old-shape demands. */
+export function catalogDependentPiHeadCondition(
+  schemaVersion: number,
+  legacySourceId: string,
+): SQL {
+  return sql`${isNotNull(piStableContextHeads.input)} AND (
+    ${piStableContextHeads.input} -> 'source' -> 'catalog' ->> 'schemaVersion' = ${String(schemaVersion)}
+    OR ${piStableContextHeads.input} -> 'source' ->> 'catalogSourceId' = ${legacySourceId}
+  )`;
+}
+
+export function catalogDependentPiGenerationCondition(
+  schemaVersion: number,
+  legacySourceId: string,
+): SQL {
+  return sql`${eq(piStableContextGenerations.subject, PI_STABLE_CONTEXT_AGENT_SUBJECT)} AND ${exists(sql`SELECT 1 FROM ${piStableContextHeads}
+    WHERE ${eq(piStableContextHeads.orgId, piStableContextGenerations.orgId)} AND ${eq(piStableContextHeads.agentId, piStableContextGenerations.agentId)}
+    AND ${catalogDependentPiHeadCondition(schemaVersion, legacySourceId)}`)}`;
+}
+
+export function invalidateCatalogDependentPiOwnerSql(
+  owner: { readonly orgId: string; readonly agentId: string },
+  schemaVersion: number,
+  legacySourceId: string,
   at: Date,
 ): SQL {
-  const sourceHeads = sql`${isNotNull(piStableContextHeads.input)} AND ${piStableContextHeads.input} -> 'source' ->> 'catalogSourceId' = ${sourceId}`;
-  return sql`WITH owners AS (SELECT DISTINCT org_id, agent_id, user_id FROM ${piStableContextHeads} WHERE ${sourceHeads}),
-    advanced AS (UPDATE ${piStableContextGenerations} SET generation = generation + 1,
-      updated_at = ${at.toISOString()}::timestamp WHERE EXISTS (SELECT 1 FROM owners WHERE
-        owners.org_id = ${piStableContextGenerations.orgId} AND owners.agent_id = ${piStableContextGenerations.agentId}
-        AND (${piStableContextGenerations.subject} = '@agent' OR ${piStableContextGenerations.subject} = owners.user_id)) RETURNING subject)
-    UPDATE ${piStableContextHeads} SET ${missingHeadAssignments(at)} WHERE ${sourceHeads}`;
+  const generations: SQL = requireCondition(
+    and(
+      eq(piStableContextGenerations.orgId, owner.orgId),
+      eq(piStableContextGenerations.agentId, owner.agentId),
+      eq(piStableContextGenerations.subject, PI_STABLE_CONTEXT_AGENT_SUBJECT),
+    ),
+    "catalog owner generation",
+  );
+  // Retain dependency facts, not serving/worker authority, on a missing head.
+  // A genuine registration replaces them. No auxiliary registry or epoch.
+  return sql`WITH advanced AS (UPDATE ${piStableContextGenerations}
+    SET generation = generation + 1, updated_at = ${at.toISOString()}::timestamp
+    WHERE ${generations} RETURNING subject)
+    UPDATE ${piStableContextHeads} SET generation = generation + 1,
+      status = 'missing', input_digest = NULL, artifact_digest = NULL,
+      validity_horizon = NULL, lease_id = NULL, lease_expires_at = NULL,
+      available_at = ${at.toISOString()}::timestamp, attempt_count = 0,
+      last_error_class = NULL, updated_at = ${at.toISOString()}::timestamp
+    WHERE ${headScopeCondition(owner)} AND ${catalogDependentPiHeadCondition(schemaVersion, legacySourceId)}`;
 }
 
 /** The reservation's scope generation and exact key/token are one statement. */

@@ -5,10 +5,10 @@ import {
 } from "./connector-catalog-immutable.service";
 import { isDeepStrictEqual } from "node:util";
 import {
-  invalidateAllPiStableContextsSql,
-  invalidatePiStableContextsForCatalogSourceSql,
+  catalogDependentPiHeadCondition,
+  catalogDependentPiGenerationCondition,
+  invalidateCatalogDependentPiOwnerSql,
 } from "./pi-stable-context-generation.service";
-
 import type {
   ConnectorCatalogSyncFailureCode,
   ConnectorCatalogDiagnostics,
@@ -23,8 +23,11 @@ import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-con
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import {
+  piStableContextHeads,
+  piStableContextGenerations,
+} from "@okouai/db/schema/pi-stable-context";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -75,7 +78,6 @@ import {
 } from "./connector-catalog-skill-registration.service";
 import {
   connectorCatalogSource,
-  connectorCatalogSourceIsTestScoped,
   type ConnectorCatalogSource,
 } from "./connector-catalog-source";
 import {
@@ -84,7 +86,6 @@ import {
 } from "./connector-catalog-runtime.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { persistConnectorCatalogRuntimeProjection } from "./connector-catalog-runtime-projection.service";
-
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
@@ -896,13 +897,191 @@ function candidateCommitOutcome(
   throw new ConnectorCatalogPersistenceError();
 }
 
+function requireCurrentImmutableHash(
+  actual: string | undefined,
+  expected: string,
+): void {
+  if (actual !== expected) {
+    throw new CandidateCommitRetry();
+  }
+}
+function requireCatalogCasWinner(receipts: readonly unknown[]): void {
+  if (receipts.length !== 1) {
+    throw new CandidateCommitRetry();
+  }
+}
+function acceptedCatalogOutcome(
+  switched: boolean,
+): "accepted" | "accepted-without-switch" {
+  return switched ? "accepted" : "accepted-without-switch";
+}
+
+function catalogDependentPiOwnerColumns() {
+  return {
+    orgId: piStableContextHeads.orgId,
+    agentId: piStableContextHeads.agentId,
+  };
+}
+function piCutoverNeedsInvalidation(
+  args: CandidateCommitInput,
+  switched: boolean,
+): boolean {
+  // An absent mirror restored at the already accepted hash is not a cutover.
+  // An existing immutable hash change is, regardless of legacy acceptance.
+  return (
+    switched && (args.baselineHash !== null || servingCatalogChanged(args))
+  );
+}
+function immutableValuesForCandidate(args: CandidateCommitInput) {
+  return immutableCatalogValues(
+    args.candidate.artifact,
+    args.candidate.identity.catalogDigest,
+    args.attemptedAt,
+  );
+}
+
+const commitCandidateSql$ = command(
+  async (
+    { set },
+    args: CandidateCommitInput,
+    signal: AbortSignal,
+  ): Promise<"accepted" | "accepted-without-switch"> => {
+    const db = set(writeDb$);
+    return await db.transaction(
+      async (tx) => {
+        // Current is the first write/lock: registrations take FOR SHARE before
+        // owner/generation/head locks, including their very first head.
+        const hash = args.candidate.identity.catalogDigest;
+        const values = immutableValuesForCandidate(args);
+        let switched = false;
+        if (args.baselineHash === hash) {
+          const [current] = await tx
+            .select({ hash: connectorCatalog.hash })
+            .from(connectorCatalog)
+            .where(eq(connectorCatalog.schemaVersion, values.schemaVersion));
+          requireCurrentImmutableHash(current?.hash, hash);
+        } else {
+          const changed =
+            args.baselineHash === null
+              ? await tx
+                  .insert(connectorCatalog)
+                  .values(values)
+                  .onConflictDoNothing()
+                  .returning({ hash: connectorCatalog.hash })
+              : await tx
+                  .update(connectorCatalog)
+                  .set(values)
+                  .where(
+                    immutableHashCondition(
+                      values.schemaVersion,
+                      args.baselineHash,
+                    ),
+                  )
+                  .returning({ hash: connectorCatalog.hash });
+          requireCatalogCasWinner(changed);
+          switched = servingCatalogChanged(args);
+        }
+        const nextRevision = (args.baseline?.revision ?? 0) + 1;
+        const stateValues = acceptedStateValues(args);
+        const accepted = !args.baseline
+          ? await tx
+              .insert(connectorCatalogSyncState)
+              .values({
+                sourceId: args.sourceId,
+                schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+                revision: nextRevision,
+                ...stateValues,
+              })
+              .onConflictDoNothing()
+              .returning({ sourceId: connectorCatalogSyncState.sourceId })
+          : await tx
+              .update(connectorCatalogSyncState)
+              .set({ revision: nextRevision, ...stateValues })
+              .where(
+                legacyAcceptanceCondition(
+                  args.sourceId,
+                  args.baseline.revision,
+                ),
+              )
+              .returning({ sourceId: connectorCatalogSyncState.sourceId });
+        requireCatalogCasWinner(accepted);
+        const snapshot = acceptedSnapshotPlan(args);
+        await tx
+          .insert(connectorCatalogActiveSnapshot)
+          .values(snapshot.insert)
+          .onConflictDoUpdate(snapshot.update);
+        await persistConnectorCatalogCompatibility({
+          db: tx,
+          sourceId: args.sourceId,
+          identity: args.candidate.identity,
+          artifact: args.candidate.artifact,
+          capability: args.capability,
+          validator: args.validator,
+        });
+        await persistConnectorCatalogRuntimeProjection({
+          db: tx,
+          sourceId: args.sourceId,
+          identity: args.candidate.identity,
+          artifact: args.candidate.artifact,
+          validator: args.validator,
+        });
+        if (piCutoverNeedsInvalidation(args, switched)) {
+          // A separate READ COMMITTED statement, AFTER the conditional
+          // current write has waited, sees registrations committed before it.
+          const dependentHeads = catalogDependentPiHeadCondition(
+            values.schemaVersion,
+            args.sourceId,
+          );
+          await tx
+            .select({ subject: piStableContextGenerations.subject })
+            .from(piStableContextGenerations)
+            .where(
+              catalogDependentPiGenerationCondition(
+                values.schemaVersion,
+                args.sourceId,
+              ),
+            )
+            .orderBy(
+              asc(piStableContextGenerations.orgId),
+              asc(piStableContextGenerations.agentId),
+              asc(piStableContextGenerations.subject),
+            )
+            .for("update");
+          // Fresh again after generation lock waits; never use a CTE's
+          // pre-wait head snapshot. Current blocks any new dependent entrant.
+          const owners = await tx
+            .selectDistinct(catalogDependentPiOwnerColumns())
+            .from(piStableContextHeads)
+            .where(dependentHeads)
+            .orderBy(
+              asc(piStableContextHeads.orgId),
+              asc(piStableContextHeads.agentId),
+            );
+          for (const owner of owners) {
+            await tx.execute(
+              invalidateCatalogDependentPiOwnerSql(
+                owner,
+                values.schemaVersion,
+                args.sourceId,
+                args.attemptedAt,
+              ),
+            );
+          }
+        }
+        signal.throwIfAborted();
+        return acceptedCatalogOutcome(switched);
+      },
+      { isolationLevel: "read committed" },
+    );
+  },
+);
+
 const commitCandidate$ = command(
   async (
     { set },
     args: CandidateCommitInput,
     signal: AbortSignal,
   ): Promise<CandidateCommitResult> => {
-    const db = set(writeDb$);
     const result = await settle(
       (async () => {
         await set(
@@ -919,108 +1098,7 @@ const commitCandidate$ = command(
           },
           signal,
         );
-        return await db.transaction(async (tx) => {
-          const nextRevision = (args.baseline?.revision ?? 0) + 1;
-          const stateValues = acceptedStateValues(args);
-          const accepted = !args.baseline
-            ? await tx
-                .insert(connectorCatalogSyncState)
-                .values({
-                  sourceId: args.sourceId,
-                  schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                  revision: nextRevision,
-                  ...stateValues,
-                })
-                .onConflictDoNothing()
-                .returning({ sourceId: connectorCatalogSyncState.sourceId })
-            : await tx
-                .update(connectorCatalogSyncState)
-                .set({ revision: nextRevision, ...stateValues })
-                .where(
-                  legacyAcceptanceCondition(
-                    args.sourceId,
-                    args.baseline.revision,
-                  ),
-                )
-                .returning({ sourceId: connectorCatalogSyncState.sourceId });
-          if (accepted.length !== 1) {
-            throw new CandidateCommitRetry();
-          }
-          const snapshot = acceptedSnapshotPlan(args);
-          await tx
-            .insert(connectorCatalogActiveSnapshot)
-            .values(snapshot.insert)
-            .onConflictDoUpdate(snapshot.update);
-          await persistConnectorCatalogCompatibility({
-            db: tx,
-            sourceId: args.sourceId,
-            identity: args.candidate.identity,
-            artifact: args.candidate.artifact,
-            capability: args.capability,
-            validator: args.validator,
-          });
-          await persistConnectorCatalogRuntimeProjection({
-            db: tx,
-            sourceId: args.sourceId,
-            identity: args.candidate.identity,
-            artifact: args.candidate.artifact,
-            validator: args.validator,
-          });
-          const hash = args.candidate.identity.catalogDigest;
-          const values = immutableCatalogValues(
-            args.candidate.artifact,
-            hash,
-            args.attemptedAt,
-          );
-          let switched = false;
-          if (args.baselineHash === hash) {
-            const [current] = await tx
-              .select({ hash: connectorCatalog.hash })
-              .from(connectorCatalog)
-              .where(eq(connectorCatalog.schemaVersion, values.schemaVersion));
-            if (current?.hash !== hash) {
-              throw new CandidateCommitRetry();
-            }
-          } else {
-            const changed =
-              args.baselineHash === null
-                ? await tx
-                    .insert(connectorCatalog)
-                    .values(values)
-                    .onConflictDoNothing()
-                    .returning({ hash: connectorCatalog.hash })
-                : await tx
-                    .update(connectorCatalog)
-                    .set(values)
-                    .where(
-                      immutableHashCondition(
-                        values.schemaVersion,
-                        args.baselineHash,
-                      ),
-                    )
-                    .returning({ hash: connectorCatalog.hash });
-            if (changed.length !== 1) {
-              throw new CandidateCommitRetry();
-            }
-            switched = servingCatalogChanged(args);
-            // Initializing an additive mirror of an already-serving identity
-            // is not an activation and must not replay Pi/wakeup effects.
-            if (switched) {
-              await tx.execute(
-                connectorCatalogSourceIsTestScoped()
-                  ? invalidatePiStableContextsForCatalogSourceSql(
-                      args.sourceId,
-                      args.attemptedAt,
-                    )
-                  : invalidateAllPiStableContextsSql(args.attemptedAt),
-              );
-            }
-          }
-          signal.throwIfAborted();
-          return switched
-            ? ("accepted" as const)
-            : ("accepted-without-switch" as const);
-        });
+        return await set(commitCandidateSql$, args, signal);
       })(),
     );
     signal.throwIfAborted();

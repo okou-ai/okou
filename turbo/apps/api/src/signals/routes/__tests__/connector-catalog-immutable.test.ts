@@ -1,12 +1,17 @@
 /* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
-/* oxlint-disable vitest/warn-todo -- N1 belongs to the later publisher pointer stage. */
+import { eq } from "drizzle-orm";
+import { piStableContextHeads } from "@okouai/db/schema/pi-stable-context";
 import { readFile, readdir } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { connectorCatalogSource } from "../../services/connector-catalog-source";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
-import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
+import {
+  immutableConnectorRuntimeSelection,
+  type ImmutableConnectorRuntimeSelection,
+} from "../../services/connector-catalog-entries.service";
 import {
   resolveConnectorRuntimeTargets$,
   resolveConnectorRuntimeDiagnosticTargets$,
@@ -50,6 +55,16 @@ import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 import { createExecutionStorageObjects } from "../../services/execution-storage.service";
 import { mockApiTestConnectorProviderConfiguration } from "../../../test-fixtures/connector-catalog";
+import {
+  preparePiStableContext,
+  piStableContextVariantDigest,
+} from "../../services/pi-stable-context.service";
+import { buildAgentIdentityPrompt } from "../../services/agent-identity-prompt.service";
+import {
+  buildAgentToolsPrompt,
+  buildAgentToolsPromptInputs,
+} from "../../services/agent-tools-prompt.service";
+/* oxlint-disable vitest/warn-todo -- N1 belongs to the later publisher pointer stage. */
 
 const binding = vi.hoisted(() => {
   return {
@@ -424,6 +439,105 @@ async function runtimeDiagnostics(
   );
 }
 
+async function seedNativePiMetadata(
+  actor: Awaited<ReturnType<typeof ownedMcpRun>>,
+) {
+  if (!engine) {
+    throw new Error("Missing Pi metadata case engine");
+  }
+  const customConnectorId = randomUUID();
+  await engine.query(
+    "INSERT INTO org_members_cache (org_id, user_id, role) VALUES ($1, $2, 'member')",
+    [actor.orgId, actor.userId],
+  );
+  await engine.query(
+    "INSERT INTO org_custom_connectors (id, org_id, slug, display_name, created_by, auth_mode, permission_bundle_ref) VALUES ($1, $2, '_pi_metadata', 'Pi metadata-only', $3, 'none', $4)",
+    [
+      customConnectorId,
+      actor.orgId,
+      actor.userId,
+      `builtin:${actor.connectorSlug}@1`,
+    ],
+  );
+  await engine.query(
+    "INSERT INTO user_custom_connectors (org_id, user_id, agent_id, custom_connector_id) VALUES ($1, $2, $3, $4)",
+    [actor.orgId, actor.userId, actor.agentId, customConnectorId],
+  );
+  return customConnectorId;
+}
+
+function nativePiInputs(
+  actor: Awaited<ReturnType<typeof ownedMcpRun>>,
+  catalog: ImmutableConnectorRuntimeSelection["catalogIdentity"],
+  customConnectorId: string,
+) {
+  const owner = {
+    orgId: actor.orgId,
+    userId: actor.userId,
+    agentId: actor.agentId,
+    resourceOwner: { orgId: actor.orgId, userId: actor.userId },
+  };
+  const promptInputs = buildAgentToolsPromptInputs({
+    featureSwitchContext: {
+      orgId: actor.orgId,
+      userId: actor.userId,
+      overrides: {},
+    },
+    triggerSource: "web",
+    cloudBrowserEnabled: false,
+  });
+  const connectorScope = {
+    allowedConnectorSlugs: [],
+    allowedCustomConnectorIds: [customConnectorId],
+    customConnectorGrants: [{ customConnectorId, permissionNames: [] }],
+    customConnectorDefinitions: [
+      {
+        customConnectorId,
+        connectorSlug: "_pi_metadata",
+        storageVersion: 1,
+        skillStorageVersionId: null,
+        isMcp: false,
+        permissionBundleRef: `builtin:${actor.connectorSlug}@1`,
+      },
+    ],
+    workflows: [],
+  };
+  const agentIdentity =
+    buildAgentIdentityPrompt({
+      id: actor.agentId,
+      defaultAgentId: null,
+      displayName: null,
+      description: null,
+      sound: null,
+    }) ?? "";
+  return {
+    owner,
+    variantDigest: piStableContextVariantDigest({ native: "metadata-only" }),
+    semantic: { promptInputs, connectorScope },
+    source: {
+      catalog,
+      agentIdentityDigest: piStableContextVariantDigest(agentIdentity),
+      featurePromptDigest: piStableContextVariantDigest(promptInputs),
+      permissionDigest: piStableContextVariantDigest(null),
+      connectorScopeDigest: piStableContextVariantDigest(connectorScope),
+      validityHorizon: null,
+      promptSchemaVersion: 1,
+      runtimeSchemaVersion: 1,
+    },
+    mounts: [],
+    persistedStorageMounts: [],
+    eligible: true,
+    checkedAt: new Date(now()),
+    buildPrompt() {
+      return {
+        agentIdentity,
+        executionLimit: "native captured limit",
+        tools: buildAgentToolsPrompt(promptInputs),
+      };
+    },
+  };
+}
+
 async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
   // Real agent tokens still resolve the owner's organization membership.
   // Bound only this owned actor; unrelated users receive a valid empty list.
@@ -709,9 +823,20 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       "INSERT INTO pi_stable_context_generations (org_id, agent_id, subject) VALUES ('catalog-lifecycle-org', $1, '@agent')",
       [agentId],
     );
+    // Historical JSONB is deliberately old-shaped, with the actual catalog
+    // source ID (not a fabricated per-case authority). CAS must retire it too.
     await engine.query(
-      "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2)",
-      [agentId, "a".repeat(64)],
+      "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest, input) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2, $3::jsonb)",
+      [
+        agentId,
+        "a".repeat(64),
+        JSON.stringify({
+          source: {
+            catalogSourceId: connectorCatalogSource().sourceId,
+            catalogIdentity: first.hash,
+          },
+        }),
+      ],
     );
     const caseEngine = engine;
     context.mocks.ably.batchPublish.mockImplementation(async (spec) => {
@@ -769,7 +894,8 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
+          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          [agentId],
         )
       ).rows,
     ).toStrictEqual([{ generation: 2 }]);
@@ -797,7 +923,8 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
+          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          [agentId],
         )
       ).rows,
     ).toStrictEqual([{ generation: 2 }]);
@@ -816,8 +943,47 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       "Competing runtime update",
       true,
     );
+    const piActor = await ownedMcpRun(first);
+    const piCustomId = await seedNativePiMetadata(piActor);
+    const piCaptured = await createStore().get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: [],
+        metadataConnectorSlugs: [connector.slug],
+      }),
+    );
+    const piArgs = {
+      ...nativePiInputs(piActor, piCaptured.catalogIdentity, piCustomId),
+      db: createStore().set(writeDb$),
+    };
     serve(concurrent);
-    const competed = await Promise.all([sync(), sync()]);
+    // Genuine competing requests plus the real Pi admission path; PGlite's
+    // scheduler still cannot establish PostgreSQL row-lock race acceptance.
+    const [left, right, piPrepared] = await Promise.all([
+      sync(),
+      sync(),
+      createStore().get(preparePiStableContext(piArgs, context.signal)),
+    ]);
+    const competed = [left, right];
+    expect(piPrepared.kind).toBe("missing");
+    const [piHead] = await createStore()
+      .get(db$)
+      .select({
+        status: piStableContextHeads.status,
+        input: piStableContextHeads.input,
+        artifactDigest: piStableContextHeads.artifactDigest,
+      })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.agentId, piActor.agentId));
+    if (!piHead?.input) {
+      throw new Error("Expected the native Pi demand input");
+    }
+    expect(piHead.artifactDigest).toBeNull();
+    if (piHead.input.source.catalog?.hash === first.hash) {
+      expect(piHead.status).toBe("missing");
+    } else {
+      expect(piHead.input.source.catalog?.hash).toBe(concurrent.hash);
+      expect(piHead.status).toBe("pending");
+    }
     expect(
       competed
         .map((response) => {
@@ -831,7 +997,8 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
+          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          [agentId],
         )
       ).rows,
     ).toStrictEqual([{ generation: 3 }]);
@@ -882,7 +1049,8 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
+          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          [agentId],
         )
       ).rows,
     ).toStrictEqual([{ generation: 4 }]);
@@ -937,6 +1105,103 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     expect(statements).toHaveLength(1);
     expect(captured.catalogIdentity.hash).toBe(first.hash);
+    if (!engine || !binding.database) {
+      throw new Error("Missing Pi case database");
+    }
+    const customConnectorId = await seedNativePiMetadata(actor);
+    const piInputs = nativePiInputs(
+      actor,
+      captured.catalogIdentity,
+      customConnectorId,
+    );
+    statements = [];
+    const undeclared = {
+      ...piInputs,
+      variantDigest: "0".repeat(64),
+      source: { ...piInputs.source, catalog: null },
+      semantic: {
+        ...piInputs.semantic,
+        connectorScope: {
+          allowedConnectorSlugs: [],
+          allowedCustomConnectorIds: [],
+          customConnectorGrants: [],
+          customConnectorDefinitions: [],
+          workflows: [],
+        },
+      },
+    };
+    await expect(
+      createStore().get(
+        preparePiStableContext(
+          { ...undeclared, db: createStore().set(writeDb$) },
+          context.signal,
+        ),
+      ),
+    ).resolves.toMatchObject({ kind: "missing" });
+    expect(
+      statements.some((query) => {
+        return (
+          query.includes('from "connector_catalog"') &&
+          /for share\b/u.test(query)
+        );
+      }),
+    ).toBeFalsy();
+    await expect(
+      createStore()
+        .get(db$)
+        .select({ id: piStableContextHeads.id })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.agentId, actor.agentId)),
+    ).resolves.toStrictEqual([]);
+    statements = [];
+    await createStore().get(
+      preparePiStableContext(
+        { ...piInputs, db: createStore().set(writeDb$) },
+        context.signal,
+      ),
+    );
+    const share = statements.findIndex((query) => {
+      return (
+        query.includes('from "connector_catalog"') && /for share\b/u.test(query)
+      );
+    });
+    const ownerLock = statements.findIndex((query, index) => {
+      return (
+        index > share &&
+        query.includes('from "org_members_cache"') &&
+        /for key share\b/u.test(query)
+      );
+    });
+    const generations = statements.findIndex((query, index) => {
+      return (
+        index > ownerLock &&
+        query.includes('from "pi_stable_context_generations"') &&
+        /for update\b/u.test(query)
+      );
+    });
+    expect(share).toBeGreaterThanOrEqual(0);
+    expect(ownerLock).toBeGreaterThan(share);
+    expect(generations).toBeGreaterThan(ownerLock);
+    expect(
+      (
+        await engine.query(
+          "SELECT status, input -> 'source' -> 'catalog' AS catalog, input -> 'semantic' -> 'connectorScope' -> 'customConnectorDefinitions' AS definitions FROM pi_stable_context_heads WHERE agent_id = $1",
+          [actor.agentId],
+        )
+      ).rows,
+    ).toMatchObject([
+      {
+        status: "ready",
+        catalog: captured.catalogIdentity,
+        definitions: [
+          {
+            permissionBundleRef: `builtin:${slug}@1`,
+            storageVersion: 1,
+            isMcp: false,
+          },
+        ],
+      },
+    ]);
     serve(next);
     expect((await sync()).body).toMatchObject({ outcome: "accepted" });
     expect((await mcpDirectory(actor)).body).toMatchObject({
@@ -944,6 +1209,30 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         { displayName: "New MCP catalog", connectionId: actor.connectionId },
       ],
     });
+    // A stale canonical caller keeps its normal miss path. Registration captures
+    // the new fixed hash, but may not bind the old caller's canonical snapshot.
+    await expect(
+      createStore().get(
+        preparePiStableContext(
+          { ...piInputs, db: createStore().set(writeDb$) },
+          context.signal,
+        ),
+      ),
+    ).resolves.toMatchObject({ kind: "missing" });
+    expect(
+      (
+        await engine.query(
+          "SELECT status, artifact_digest, input -> 'source' -> 'catalog' ->> 'hash' AS hash FROM pi_stable_context_heads WHERE agent_id = $1",
+          [actor.agentId],
+        )
+      ).rows,
+    ).toStrictEqual([
+      {
+        status: "pending",
+        artifact_digest: null,
+        hash: next.hash,
+      },
+    ]);
     statements = [];
     await expect(runtimeSync(actor)).resolves.toMatchObject([
       { state: "available" },
