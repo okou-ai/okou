@@ -573,16 +573,13 @@ test("Exiting Create mode sends the ordinary draft and template", async () => {
   );
 });
 
-async function setupComposerWithChipCover(
-  chipCover: boolean,
-): Promise<HTMLElement> {
+async function setupComposerWithTemplatePanel(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
-      [FeatureSwitchKey.ComposerTemplateChipCover]: chipCover,
     },
   });
   return await findComposerEditor();
@@ -609,23 +606,10 @@ async function addPresentationTemplate(
   });
 }
 
-test("The template chip cover stays off until the Lab switch is on", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposerWithChipCover(false);
-  const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
-  if (!first) {
-    throw new Error("Expected a presentation template");
-  }
-  await addPresentationTemplate(editor, first.title);
-  expect(inlineTemplateCover()).toBeNull();
-  expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
-});
-
 async function setupCoveredPresentationTemplate() {
   setupModels();
   mockChatLifecycle(context);
-  const editor = await setupComposerWithChipCover(true);
+  const editor = await setupComposerWithTemplatePanel();
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -639,12 +623,13 @@ test("An inline template chip shows the chosen cover", async () => {
   await waitFor(() => {
     expect(inlineTemplateCover()?.getAttribute("src")).toContain(first.slug);
   });
+  expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
 });
 
 test("A template with no cover keeps the template glyph on its chip", async () => {
   setupModels();
   mockChatLifecycle(context);
-  await setupComposerWithChipCover(true);
+  await setupComposerWithTemplatePanel();
   const [template] = WEBSITE_TEMPLATE_ITEMS;
   if (!template) {
     throw new Error("Expected a website template");

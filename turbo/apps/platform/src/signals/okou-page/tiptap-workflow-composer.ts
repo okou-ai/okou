@@ -35,7 +35,6 @@ import {
   VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
@@ -59,10 +58,7 @@ import {
   splitAgentMentionSegments,
   type ComposerAgentSuggestion,
 } from "./composer-agent-suggestion-domain.ts";
-import {
-  avatarFramingEnabled$,
-  featureSwitch$,
-} from "../external/feature-switch.ts";
+import { avatarFramingEnabled$ } from "../external/feature-switch.ts";
 import {
   agentMentionText,
   createAgentMentionAvatarRuntime,
@@ -1084,8 +1080,6 @@ function createTemplateAttachmentNodeView(
  */
 interface InlineTemplateNodeActions {
   readonly openTemplate: (category: string) => void;
-  /** Read per render so a Lab toggle applies to the next mounted composer. */
-  readonly coverEnabled: () => boolean;
 }
 
 function createInlineTemplateNodeView(
@@ -1103,8 +1097,8 @@ function createInlineTemplateNodeView(
   const openButton = document.createElement("button");
   openButton.type = "button";
   openButton.className = INLINE_TEMPLATE_NAME_ZONE_CLASS;
-  // The template was chosen from a grid of covers, so under
-  // ComposerTemplateChipCover the chip leads with that cover. 18px inside this
+  // The template was chosen from a grid of covers, so the chip leads with that
+  // cover. 18px inside this
   // 28px chip keeps the cover at the proportion the block template-attachment
   // chip above uses: a 20px cover inside its 32px chip.
   const glyph = document.createElement("span");
@@ -1115,8 +1109,8 @@ function createInlineTemplateNodeView(
   cover.alt = "";
   cover.className = "h-full w-full object-cover";
   // Mirrors Lucide's SwatchBook, which the composer template picker button and
-  // sent-message template chips also use. It stands in whenever the cover is
-  // switched off or the template's catalog entry carries no cover image.
+  // sent-message template chips also use. It stands in whenever the template's
+  // catalog entry carries no cover image.
   const icon = createComposerIcon(13, 1.7, [
     "M11 17a4 4 0 0 1-8 0V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2Z",
     "M16.7 13H19a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7",
@@ -1136,9 +1130,7 @@ function createInlineTemplateNodeView(
     title.textContent = attachment.title;
     // The node is rewritten in place when the picker changes the selection, so
     // the cover has to follow the new attributes rather than only the first.
-    const coverUrl = actions.coverEnabled()
-      ? attachment.previewImageUrl
-      : undefined;
+    const coverUrl = attachment.previewImageUrl;
     if (coverUrl === undefined) {
       glyph.replaceChildren(icon);
     } else {
@@ -1600,8 +1592,6 @@ interface WorkflowComposerRuntime {
   removeFeedback(id: number): void;
   localizedUi: Set<() => void>;
   feedbackPlaceholder: () => string;
-  /** Read on every chip render so Lab updates apply without remounting. */
-  templateChipCover: () => boolean;
 }
 
 function createTemplateAttachmentNode(
@@ -1694,12 +1684,7 @@ function createInlineTemplateNode(
         };
         return createInlineTemplateNodeView(
           node,
-          {
-            openTemplate,
-            coverEnabled: () => {
-              return runtime.templateChipCover();
-            },
-          },
+          { openTemplate },
           runtime.localizedUi,
         );
       };
@@ -1931,9 +1916,6 @@ function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
   runtime.removeTemplate = () => {};
   runtime.replaceFeedbackItems = () => {};
   runtime.removeFeedback = () => {};
-  runtime.templateChipCover = () => {
-    return false;
-  };
 }
 
 function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
@@ -2208,9 +2190,6 @@ function createMountEditorCommand({
 }: MountEditorOptions) {
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      runtime.templateChipCover = () => {
-        return get(featureSwitch$)[FeatureSwitchKey.ComposerTemplateChipCover];
-      };
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2837,9 +2816,6 @@ function createWorkflowComposerRuntime(
     removeFeedback(_id: number): void {},
     localizedUi: new Set(),
     feedbackPlaceholder: resolveFeedbackPlaceholder,
-    templateChipCover: () => {
-      return false;
-    },
   };
 }
 
