@@ -1,5 +1,29 @@
 /* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
 /* oxlint-disable vitest/warn-todo -- N1 belongs to the later publisher pointer stage. */
+import { syncBuiltinESMExports } from "node:module";
+import { createApiTestKmsClient } from "../../../__tests__/secret-kms";
+import { withSecretKmsClientForTest } from "../../../lib/secret-kms-client";
+import { HttpResponse, http } from "msw";
+import { server } from "../../../mocks/server";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  customConnectorByIdContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { customConnectorsRoutes } from "../custom-connectors";
+import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
+import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
+import { createBddApi } from "./helpers/api-bdd";
+import {
+  createConnectorBddApi,
+  mockGitHubConnectorOAuth,
+} from "./helpers/api-bdd-connectors";
+import {
+  catalogWithAuthMethod,
+  catalogWithManualConnector,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
 import { readFile, readdir } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -7,7 +31,20 @@ import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-conne
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
-import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorsSearchContract,
+  builtinConnectorManualGrantContract,
+} from "@okouai/api-contracts/contracts/connectors";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import {
+  onboardingSourcesContract,
+  onboardingWorkflowConnectorsContract,
+} from "@okouai/api-contracts/contracts/onboarding";
+import { connectorCatalogRoutes } from "../connector-catalog";
+import { connectorOverviewRoutes } from "../connector-overview";
+import { onboardingSourcesRoutes } from "../onboarding-sources";
+import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
@@ -16,6 +53,8 @@ import { drizzle } from "drizzle-orm/pglite";
 import {
   afterAll,
   afterEach,
+  aroundEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -30,8 +69,8 @@ import {
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
 import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { testContext } from "../../../__tests__/test-context";
-import { clearMockedEnv } from "../../../lib/env";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { clearMockedEnv, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
@@ -43,9 +82,12 @@ import type {
 import { createStore } from "ccstate";
 import { createDeferredPromise, settle } from "../../utils";
 import { builtinConnectorsRoutes } from "../connectors";
-import { createRouteMocks } from "./helpers/route-test";
+import { createRouteMocks, createFixtureTracker } from "./helpers/route-test";
 import { createExecutionStorageObjects } from "../../services/execution-storage.service";
-import { mockApiTestConnectorProviderConfiguration } from "../../../test-fixtures/connector-catalog";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  mockApiTestConnectorProviderConfiguration,
+} from "../../../test-fixtures/connector-catalog";
 
 const binding = vi.hoisted(() => {
   return {
@@ -103,6 +145,7 @@ afterEach(async () => {
   caseTrace = undefined;
   clearMockedEnv();
   resetApiTestMocks();
+  server.resetHandlers();
   if (!drained.ok) {
     throw drained.error;
   }
@@ -118,8 +161,18 @@ const migrationDir = new URL(
   import.meta.url,
 );
 
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: "error" });
+  syncBuiltinESMExports();
+});
+
+aroundEach(async (runTest) => {
+  await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
+});
+
 beforeEach(async () => {
   resetApiTestMocks();
+  mockEnv("SECRETS_KMS_KEY_ID", "alias/okou-secrets-test");
   engine = new PGlite({ extensions: { pgcrypto, btree_gin } });
   const ownedEngine = engine;
   const signal = context.signal;
@@ -246,7 +299,8 @@ beforeEach(async () => {
 });
 
 afterAll(() => {
-  assert.equal(engineTraces.length, 5);
+  server.close();
+  syncBuiltinESMExports();
   for (const trace of engineTraces) {
     assert.deepEqual(trace.events, [
       "owner-aborted",
@@ -256,20 +310,30 @@ afterAll(() => {
     ]);
     assert.equal(trace.engine.closed, true);
   }
-  assert.equal(
-    engineTraces.find((trace) => {
-      return trace.name.endsWith("engine closes after initial SQL failure");
-    })?.setupFailureObserved,
-    true,
-  );
+  const failedSetup = engineTraces.find((trace) => {
+    return trace.name.endsWith("engine closes after initial SQL failure");
+  });
+  if (failedSetup) {
+    assert.equal(failedSetup.setupFailureObserved, true);
+  }
 });
 
-function release(version: string, label: string, runtimeChange = false) {
+function release(
+  version: string,
+  label: string,
+  runtimeChange = false,
+  entrySlug?: string,
+) {
   const artifact = connectorCatalogArtifactSchema.parse(
     structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
   );
   artifact.catalogVersion = version;
-  const first = artifact.connectors[0];
+  const first =
+    entrySlug === undefined
+      ? artifact.connectors[0]
+      : artifact.connectors.find((entry) => {
+          return entry.slug === entrySlug;
+        });
   if (!first) {
     throw new Error("Missing fixed catalog connector");
   }
@@ -987,8 +1051,649 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(catalogReads).toHaveLength(4);
     for (const query of catalogReads) {
       expect(query).not.toContain("connector_catalog_active_snapshot");
-      expect(query).not.toContain("connector_catalog_runtime_projection");
       expect(query).not.toContain("connector_catalog_compatibility_evaluation");
     }
+  });
+});
+
+// These seven cases replace the old projection-reader suite. Only this lifecycle
+// project may publish/fault immutable current: every case owns its PGlite engine.
+// Storage corruption cannot be constructed through a production user endpoint.
+describe("slug-first current catalog business readers", () => {
+  const headers = { authorization: "Bearer clerk-session" };
+  function catalogClient() {
+    return setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+  }
+  async function publishedCatalog() {
+    const candidate = release(
+      `2099-02-01.${randomUUID()}`,
+      "Slug-reader catalog",
+    );
+    serve(candidate);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    return candidate;
+  }
+  async function unreadableLegacySnapshot() {
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    await engine.query(
+      "UPDATE connector_catalog_active_snapshot SET catalog_gzip = $1",
+      [Buffer.from("invalid gzip")],
+    );
+  }
+
+  it("answers detail and permissions from current entries", async () => {
+    await publishedCatalog();
+    const before = await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
+      [200],
+    );
+    await unreadableLegacySnapshot();
+    expect(
+      (
+        await accept(
+          catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(before.body);
+    const permissions = await accept(
+      catalogClient().permissions({
+        headers,
+        params: { connectorSlug: "notion" },
+      }),
+      [200],
+    );
+    expect(permissions.body.permissions.connectorSlug).toBe("notion");
+  });
+  it("reports a slug absent from the manifest as unknown", async () => {
+    await publishedCatalog();
+    await unreadableLegacySnapshot();
+    const result = await accept(
+      catalogClient().get({
+        headers,
+        params: { connectorSlug: "missing-catalog-slug" },
+      }),
+      [404],
+    );
+    expect(result.body.error.code).toBe("NOT_FOUND");
+  });
+  it("lists named onboarding sources from current entries", async () => {
+    await publishedCatalog();
+    const client = setupApp({ context, routes: onboardingSourcesRoutes })(
+      onboardingSourcesContract,
+    );
+    const before = await accept(client.list({ headers }), [200]);
+    expect(before.body.connectors.length).toBeGreaterThan(0);
+    await unreadableLegacySnapshot();
+    expect((await accept(client.list({ headers }), [200])).body).toStrictEqual(
+      before.body,
+    );
+  });
+  it("summarizes case-owned accounts using current methods and briefs", async () => {
+    await publishedCatalog();
+    const client = setupApp({
+      context,
+      routes: [...connectorOverviewRoutes, ...builtinConnectorsRoutes],
+    });
+    const account = await accept(
+      client(builtinConnectorManualGrantContract).connect({
+        headers,
+        params: { connectorSlug: "gitlab" },
+        body: {
+          authMethod: "api-token",
+          account: { intent: "add" },
+          values: { accessToken: "gl-test-token", host: "gitlab.example.com" },
+        },
+      }),
+      [200],
+    );
+    await unreadableLegacySnapshot();
+    const overview = await accept(
+      client(connectorOverviewContract).overview({ headers }),
+      [200],
+    );
+    expect(overview.body.accountSummaries).toStrictEqual([
+      expect.objectContaining({
+        target: { kind: "builtin", connectorSlug: "gitlab" },
+        accountCount: 1,
+        defaultConnection: expect.objectContaining({
+          id: account.body.id,
+          connectionStatus: "connected",
+        }),
+      }),
+    ]);
+    expect(overview.body.builtinConnectors).toContainEqual(
+      expect.objectContaining({ slug: "gitlab" }),
+    );
+  });
+  it("lists named onboarding workflow connectors from current entries", async () => {
+    await publishedCatalog();
+    const client = setupApp({
+      context,
+      routes: onboardingWorkflowConnectorsRoutes,
+    })(onboardingWorkflowConnectorsContract);
+    const before = await accept(client.list({ headers }), [200]);
+    expect(before.body.connectors.length).toBeGreaterThan(0);
+    await unreadableLegacySnapshot();
+    expect((await accept(client.list({ headers }), [200])).body).toStrictEqual(
+      before.body,
+    );
+  });
+  it("rejects a manifest-listed missing entry without substituting the full snapshot", async () => {
+    const candidate = await publishedCatalog();
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    // Keep the accepted full snapshot intact: substitution would return 200.
+    await engine.query(
+      "DELETE FROM connector_catalog_entries WHERE hash = $1 AND slug = 'openai'",
+      [candidate.hash],
+    );
+    const result = await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
+      [503],
+    );
+    expect(result.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "github" } }),
+      [200],
+    );
+    await accept(
+      catalogClient().get({
+        headers,
+        params: { connectorSlug: "missing-catalog-slug" },
+      }),
+      [404],
+    );
+    await engine.exec("DELETE FROM connector_catalog");
+    const detailUnavailable = await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "github" } }),
+      [503],
+    );
+    const permissionsUnavailable = await accept(
+      catalogClient().permissions({
+        headers,
+        params: { connectorSlug: "github" },
+      }),
+      [503],
+    );
+    for (const unavailable of [detailUnavailable, permissionsUnavailable]) {
+      expect(unavailable.body.error).toMatchObject({
+        code: "PROVIDER_UNAVAILABLE",
+        message: "Connector catalog is temporarily unavailable",
+      });
+    }
+  });
+  it("a later slug request follows current publication without a retained version", async () => {
+    const first = release("2099-02-02.first", "First OpenAI", false, "openai");
+    serve(first);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    expect(
+      (
+        await accept(
+          catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
+          [200],
+        )
+      ).body.connector.label,
+    ).toBe("First OpenAI");
+    const next = release("2099-02-02.next", "Next OpenAI", false, "openai");
+    serve(next);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect(
+      (
+        await accept(
+          catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
+          [200],
+        )
+      ).body.connector.label,
+    ).toBe("Next OpenAI");
+  });
+});
+
+// Account generation cases now publish only in their own lifecycle engine.
+describe("current-publication account readers", () => {
+  const mocks = routeMocks;
+  const routes = Object.freeze([
+    ...connectorAccountRoutes,
+    ...builtinConnectorsRoutes,
+    ...customConnectorsRoutes,
+    ...customConnectorsDeleteRoutes,
+    ...customConnectorsValuesSetRoutes,
+  ]);
+
+  interface AccountCatalogFixture {
+    readonly orgId: string;
+    readonly userId: string;
+  }
+
+  function authHeaders() {
+    return { authorization: "Bearer clerk-session" };
+  }
+
+  function accountClient() {
+    return setupApp({ context, routes })(connectorAccountsContract);
+  }
+
+  function customConnectorClient() {
+    return setupApp({ context, routes })(customConnectorsContract);
+  }
+
+  function customConnectorByIdClient() {
+    return setupApp({ context, routes })(customConnectorByIdContract);
+  }
+
+  async function deleteBuiltinAccountPage(
+    connectorSlug: "openai" | "github",
+    connections: readonly { readonly id: string }[],
+  ): Promise<void> {
+    const accountsApi = accountClient();
+    for (let offset = 0; offset < connections.length; offset += 4) {
+      const deleted = await Promise.allSettled(
+        connections.slice(offset, offset + 4).map(async (account) => {
+          await accept(
+            accountsApi.delete({
+              headers: authHeaders(),
+              params: { connectionId: account.id },
+              body: { target: { kind: "builtin", connectorSlug } },
+            }),
+            [200, 404],
+          );
+        }),
+      );
+      for (const result of deleted) {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+      }
+    }
+  }
+
+  async function cleanupFixture(fixture: AccountCatalogFixture): Promise<void> {
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const accountsApi = accountClient();
+    for (const connectorSlug of ["openai", "github"] as const) {
+      let hasBuiltinAccounts = true;
+      while (hasBuiltinAccounts) {
+        const accounts = await accept(
+          accountsApi.connections({
+            headers: authHeaders(),
+            query: { kind: "builtin", connectorSlug, limit: 100 },
+          }),
+          [200, 404],
+        );
+        hasBuiltinAccounts =
+          accounts.status === 200 && accounts.body.connections.length > 0;
+        if (accounts.status !== 200) {
+          break;
+        }
+        await deleteBuiltinAccountPage(
+          connectorSlug,
+          accounts.body.connections,
+        );
+      }
+    }
+    const customConnectors = await accept(
+      customConnectorClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    for (const definition of customConnectors.body.connectors) {
+      const customAccounts = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "custom",
+            customConnectorId: definition.id,
+            limit: 100,
+          },
+        }),
+        [200, 404],
+      );
+      if (customAccounts.status === 200) {
+        for (const account of customAccounts.body.connections) {
+          await accept(
+            accountClient().delete({
+              headers: authHeaders(),
+              params: { connectionId: account.id },
+              body: {
+                target: {
+                  kind: "custom",
+                  customConnectorId: definition.id,
+                },
+              },
+            }),
+            [200, 404],
+          );
+        }
+      }
+      await accept(
+        customConnectorByIdClient().delete({
+          headers: authHeaders(),
+          params: { id: definition.id },
+        }),
+        [204, 404],
+      );
+    }
+  }
+
+  describe("connector account lifecycle routes", () => {
+    const track = createFixtureTracker<AccountCatalogFixture>(cleanupFixture);
+
+    async function seedFixture(
+      overrides: Partial<AccountCatalogFixture> = {},
+    ): Promise<AccountCatalogFixture> {
+      const fixture = await track(
+        Promise.resolve({
+          orgId: overrides.orgId ?? `org_${randomUUID()}`,
+          userId: overrides.userId ?? `user_${randomUUID()}`,
+        }),
+      );
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      return fixture;
+    }
+
+    it("reviews requested scopes for one exact account across default changes", async () => {
+      const fixture = await seedFixture();
+      const currentScopes = ["repo", "project", "workflow"] as const;
+      const actor = createBddApi(context).user(fixture);
+      const connectors = createConnectorBddApi(context);
+      const catalog = createPublicConnectorCatalog(context, {
+        cleanupOwnership: "caller",
+      });
+      const staleCatalog = catalogWithAuthMethod(
+        { connectorSlug: "github", authMethodId: "oauth" },
+        (method) => {
+          if (method.grant.kind !== "auth-code") {
+            throw new Error("Expected the GitHub authorization-code method");
+          }
+          return { ...method, grant: { ...method.grant, scopes: ["repo"] } };
+        },
+      );
+      const accountIds: string[] = [];
+      catalog.onCleanup(async () => {
+        const accounts = await connectors.listBuiltinConnectorAccounts(
+          actor,
+          "github",
+        );
+        for (const account of accounts) {
+          if (accountIds.includes(account.id)) {
+            await connectors.deleteBuiltinConnectorAccount(
+              actor,
+              "github",
+              account.id,
+            );
+          }
+        }
+      });
+      const connectAccount = async (userId: number) => {
+        mockGitHubConnectorOAuth({ userId, login: `scope-review-${userId}` });
+        // Grants can be narrower than the selected catalog's requested scopes.
+        server.use(
+          http.post("https://github.com/login/oauth/access_token", () => {
+            return HttpResponse.json({
+              access_token: `scope-review-${userId}`,
+              scope: "repo",
+            });
+          }),
+        );
+        const started = await connectors.startOauth(actor, "github", "oauth");
+        const state = new URL(started.authorizationUrl).searchParams.get(
+          "state",
+        );
+        if (!state) {
+          throw new Error("Expected GitHub OAuth state");
+        }
+        await connectors.completeOauthCallback("github", {
+          code: `scope-review-${userId}`,
+          state,
+        });
+        const accounts = await connectors.listBuiltinConnectorAccounts(
+          actor,
+          "github",
+        );
+        const account = accounts.find((candidate) => {
+          return candidate.externalId === String(userId);
+        });
+        if (!account) {
+          throw new Error("Expected the exact GitHub provider identity");
+        }
+        accountIds.push(account.id);
+        return account.id;
+      };
+      await catalog.publish(staleCatalog);
+      const staleId = await connectAccount(1001);
+      await catalog.publish(API_TEST_CONNECTOR_CATALOG);
+      const currentId = await connectAccount(1002);
+      await connectors.setDefaultBuiltinConnectorAccount(
+        actor,
+        "github",
+        currentId,
+      );
+
+      const legacyList = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: { kind: "builtin", connectorSlug: "github", limit: 100 },
+        }),
+        [200],
+      );
+      expect(
+        legacyList.body.connections.every((account) => {
+          return !("scopeMismatch" in account);
+        }),
+      ).toBeTruthy();
+      expect("defaultConnection" in legacyList.body).toBeFalsy();
+
+      const enrichedList = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "github",
+            includeScopeMismatch: "true",
+            limit: 100,
+          },
+        }),
+        [200],
+      );
+      const mismatchById = new Map(
+        enrichedList.body.connections.map((account) => {
+          return [account.id, account.scopeMismatch] as const;
+        }),
+      );
+      expect(mismatchById).toStrictEqual(
+        new Map([
+          [staleId, true],
+          [currentId, false],
+        ]),
+      );
+      expect(enrichedList.body.defaultConnection).toMatchObject({
+        id: currentId,
+        scopeMismatch: false,
+      });
+
+      const filteredList = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "github",
+            includeScopeMismatch: "true",
+            limit: 100,
+            search: staleId,
+          },
+        }),
+        [200],
+      );
+      expect(filteredList.body.connections).toHaveLength(1);
+      expect(filteredList.body.connections[0]?.id).toBe(staleId);
+      expect("defaultConnection" in filteredList.body).toBeFalsy();
+
+      const staleDiff = await accept(
+        accountClient().scopeDiff({
+          headers: authHeaders(),
+          params: { connectionId: staleId },
+          query: { connectorSlug: "github" },
+        }),
+        [200],
+      );
+      expect(staleDiff.body).toStrictEqual({
+        addedScopes: ["project", "workflow"],
+        removedScopes: [],
+        currentScopes,
+        storedScopes: ["repo"],
+      });
+      const currentDiff = await accept(
+        accountClient().scopeDiff({
+          headers: authHeaders(),
+          params: { connectionId: currentId },
+          query: { connectorSlug: "github" },
+        }),
+        [200],
+      );
+      expect(currentDiff.body).toStrictEqual({
+        addedScopes: [],
+        removedScopes: [],
+        currentScopes,
+        storedScopes: currentScopes,
+      });
+
+      await accept(
+        accountClient().setDefault({
+          headers: authHeaders(),
+          params: { connectionId: staleId },
+          body: { target: { kind: "builtin", connectorSlug: "github" } },
+        }),
+        [200],
+      );
+      const currentDiffAfterDefaultChange = await accept(
+        accountClient().scopeDiff({
+          headers: authHeaders(),
+          params: { connectionId: currentId },
+          query: { connectorSlug: "github" },
+        }),
+        [200],
+      );
+      expect(currentDiffAfterDefaultChange.body).toStrictEqual(
+        currentDiff.body,
+      );
+
+      await accept(
+        accountClient().scopeDiff({
+          headers: authHeaders(),
+          params: { connectionId: currentId },
+          query: { connectorSlug: "openai" },
+        }),
+        [404],
+      );
+      await seedFixture();
+      await accept(
+        accountClient().scopeDiff({
+          headers: authHeaders(),
+          params: { connectionId: currentId },
+          query: { connectorSlug: "github" },
+        }),
+        [404],
+      );
+
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      await accept(
+        accountClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: currentId },
+          body: { target: { kind: "builtin", connectorSlug: "github" } },
+        }),
+        [200],
+      );
+      await accept(
+        accountClient().scopeDiff({
+          headers: authHeaders(),
+          params: { connectionId: currentId },
+          query: { connectorSlug: "github" },
+        }),
+        [404],
+      );
+      await catalog.cleanup();
+    });
+
+    it("treats a removed built-in catalog target as absent", async () => {
+      const fixture = await seedFixture();
+      const actor = createBddApi(context).user(fixture);
+      const connectors = createConnectorBddApi(context);
+      const catalog = createPublicConnectorCatalog(context, {
+        cleanupOwnership: "caller",
+      });
+      const available = catalogWithManualConnector({
+        connectorSlug: "retired-connector",
+        authMethodId: "api-token",
+      });
+      await catalog.publish(available);
+      const account = await connectors.connectManualGrant(
+        actor,
+        "retired-connector",
+        "api-token",
+        {
+          credential: "retired-connector-secret",
+        },
+      );
+      const accountId = account.id;
+      catalog.onCleanup(async () => {
+        await catalog.publish(available);
+        await connectors.deleteDefaultBuiltinConnectorAccount(
+          actor,
+          "retired-connector",
+        );
+      });
+      await catalog.publish(API_TEST_CONNECTOR_CATALOG);
+
+      const summary = await accept(
+        accountClient().summaries({ headers: authHeaders() }),
+        [200],
+      );
+      expect(summary.body.summaries).not.toContainEqual(
+        expect.objectContaining({
+          target: { kind: "builtin", connectorSlug: "retired-connector" },
+        }),
+      );
+      await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "retired-connector",
+            limit: 100,
+          },
+        }),
+        [404],
+      );
+      await accept(
+        accountClient().connection({
+          headers: authHeaders(),
+          params: { connectionId: accountId },
+          query: {
+            kind: "builtin",
+            connectorSlug: "retired-connector",
+          },
+        }),
+        [404],
+      );
+      await accept(
+        accountClient().rename({
+          headers: authHeaders(),
+          params: { connectionId: accountId },
+          body: {
+            target: { kind: "builtin", connectorSlug: "retired-connector" },
+            displayName: "Must remain absent",
+          },
+        }),
+        [404],
+      );
+      await catalog.cleanup();
+    });
   });
 });

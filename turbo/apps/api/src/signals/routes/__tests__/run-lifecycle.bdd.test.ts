@@ -78,7 +78,6 @@ import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   corruptApiTestConnectorCatalogActiveSnapshotPayload,
-  corruptApiTestConnectorCatalogRuntimeProjectionDigest,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
 import {
@@ -1532,7 +1531,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-reusable-projection-authority-${randomUUID()}`,
-      runtimeProjection: true,
     });
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     await fw.seedTestConnector(actor, {
@@ -6222,7 +6220,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("uses exact runtime projections and authoritative fallback for mixed sync", async () => {
+  it("uses exact current-catalog builtin accounts and custom metadata for mixed sync", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const catalogBucket = `test-run-lifecycle-runtime-sync-projection-${randomUUID()}`;
@@ -6302,7 +6300,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
 
     const run = await api.createThreadRun(actor, {
       agentId,
-      prompt: "refresh lark through exact runtime projections",
+      prompt: "refresh lark through exact current-catalog accounts",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6325,9 +6323,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
 
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-runtime-sync-projection-${randomUUID()}`,
-      runtimeProjection: true,
     });
-    await corruptApiTestConnectorCatalogRuntimeProjectionDigest("figma");
     await corruptApiTestConnectorCatalogActiveSnapshotPayload();
 
     const [projectedBuiltin, projectedPermissioned, projectedPlain] =
@@ -6374,46 +6370,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       firewall: { sourceId: plainTarget.sourceId },
       baseUrlVars: {},
     });
-
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-runtime-sync-fallback-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    await corruptApiTestConnectorCatalogRuntimeProjectionDigest("slack");
-
-    const fallbackRuntimes = await api.syncConnectorRuntime(run.runId, {
-      targets: mixedTargets,
-    });
-    expect(fallbackRuntimes).toMatchObject([
-      {
-        target: { kind: "builtin", connectorSlug: "lark" },
-        state: "available",
-      },
-      {
-        target: {
-          kind: "custom",
-          customConnectorId: permissionedCustom.id,
-        },
-        state: "available",
-        firewall: { sourceId: permissionedTarget.sourceId },
-        baseUrlVars: {},
-      },
-      {
-        target: { kind: "custom", customConnectorId: plainCustom.id },
-        state: "available",
-        firewall: { sourceId: plainTarget.sourceId },
-        baseUrlVars: {},
-      },
-    ]);
-    const fallbackPermissioned = availableCustomConnectorRuntime(
-      fallbackRuntimes[1],
-    );
-    expect(fallbackPermissioned.networkPolicy).toStrictEqual(
-      permissionedRuntime.networkPolicy,
-    );
-    expect(
-      fallbackPermissioned.firewall.firewall.apis[0]?.permissions,
-    ).toStrictEqual(permissionedRuntime.firewall.firewall.apis[0]?.permissions);
 
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);

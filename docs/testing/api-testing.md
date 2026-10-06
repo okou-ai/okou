@@ -186,11 +186,13 @@ source module is not removed by the additive schema PR.
 
 `connector-catalog-immutable.test.ts` is the sole PGlite catalog lifecycle entry.
 Its `api-immutable-catalog` Vitest project does not run shared real-DB setup;
-each implemented case will own a fresh in-process database and close it at
-teardown. File-level lint exceptions are confined to that mechanism file.
-N1–N5 are currently TODO, not passing acceptance tests. Subsequent sync/reader
-PRs must implement them through their real entry points. All ordinary API tests
-continue using real PostgreSQL. The new tables have no production reader yet.
+each case owns a fresh in-process database and closes it after owner abort and
+work drainage. File-level lint exceptions are confined to that mechanism file.
+Current-entry publication, missing-entry faults and account-generation cases
+belong to this lifecycle engine, not a per-case shared PostgreSQL publisher.
+Its external KMS mock is async-local and shared with ordinary setup; HTTP uses
+MSW. N1 remains TODO and is not acceptance evidence. All ordinary API tests
+continue using real PostgreSQL and the startup-installed fixed current catalog.
 
 Do not hold advisory locks, inspect `pg_locks`, or install internal admission
 gates to construct or assert an API scenario. Exercise concurrent requests and

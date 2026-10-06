@@ -32,9 +32,9 @@
       "import": "./src/connector-catalog/contracts.ts",
       "types": "./src/connector-catalog/contracts.ts"
     },
-    "./connector-catalog/runtime-projection": {
-      "import": "./src/connector-catalog/runtime-projection.ts",
-      "types": "./src/connector-catalog/runtime-projection.ts"
+    "./connector-catalog/entry-payload": {
+      "import": "./src/connector-catalog/entry-payload.ts",
+      "types": "./src/connector-catalog/entry-payload.ts"
     },
     "./connector-catalog/version": {
       "import": "./src/connector-catalog/version.ts",

@@ -1,17 +1,9 @@
-import { performance } from "node:perf_hooks";
-
-import { now } from "../../lib/time";
-import { safeSync } from "../utils";
 import {
   measureApiDispatchTiming,
   type ApiDispatchTimingActionType,
   type ApiDispatchTimingCollector,
   type ApiDispatchTimingDimensions,
 } from "./api-dispatch-timing.service";
-import type {
-  ConnectorCatalogRuntimeProjectionFallbackReason,
-  ConnectorCatalogRuntimeProjectionValidationTiming,
-} from "./connector-catalog-runtime-projection.service";
 
 type AcceptedConnectorCatalogCacheOutcome = "hit" | "miss" | "in_flight";
 type AcceptedConnectorCatalogCacheMissReason =
@@ -19,27 +11,6 @@ type AcceptedConnectorCatalogCacheMissReason =
   | "catalog_identity_changed"
   | "capability_identity_changed";
 type ConnectorRuntimeSnapshotCacheOutcome = "hit" | "miss";
-type ConnectorRuntimeProjectionCacheOutcome =
-  | "hit"
-  | "miss"
-  | "in_flight"
-  | "not_applicable";
-export type ConnectorRuntimeProjectionCacheObservation =
-  | "first_observation"
-  | "identity_changed"
-  | "not_in_recent_history"
-  | "reuse_1"
-  | "reuse_2"
-  | "reuse_3_4"
-  | "reuse_5_8"
-  | "reuse_9_16";
-type ConnectorRuntimeSelectionSource = "projection" | "full_fallback";
-type ConnectorRuntimeProjectionReadiness =
-  | "ready"
-  | "not_ready"
-  | "unsupported"
-  | "compatibility_not_ready"
-  | "invalid_compatibility";
 type ConnectorCatalogValidationResult =
   | { readonly outcome: "attested" }
   | {
@@ -174,26 +145,6 @@ function acceptedCacheOutcomeRank(
   }
 }
 
-function projectionReadiness(
-  fallbackReason: ConnectorCatalogRuntimeProjectionFallbackReason | undefined,
-): ConnectorRuntimeProjectionReadiness {
-  switch (fallbackReason) {
-    case "not_ready":
-    case "unsupported":
-    case "compatibility_not_ready":
-    case "invalid_compatibility": {
-      return fallbackReason;
-    }
-    case "incomplete":
-    case "malformed":
-    case "digest_mismatch":
-    case "unstable":
-    case undefined: {
-      return "ready";
-    }
-  }
-}
-
 export class ConnectorCatalogLoadTiming {
   private acceptedCacheOutcome:
     | AcceptedConnectorCatalogCacheOutcome
@@ -202,16 +153,6 @@ export class ConnectorCatalogLoadTiming {
     | AcceptedConnectorCatalogCacheMissReason
     | undefined;
   private runtimeCacheOutcome: ConnectorRuntimeSnapshotCacheOutcome | undefined;
-  private projectionCacheOutcome:
-    | ConnectorRuntimeProjectionCacheOutcome
-    | undefined;
-  private projectionCacheObservation:
-    | ConnectorRuntimeProjectionCacheObservation
-    | undefined;
-  private runtimeSelectionSource: ConnectorRuntimeSelectionSource | undefined;
-  private projectionFallbackReason:
-    | ConnectorCatalogRuntimeProjectionFallbackReason
-    | undefined;
   private validationResult: ConnectorCatalogValidationResult | undefined;
   private catalogRawSize: number | undefined;
   private catalogCompressedSize: number | undefined;
@@ -257,22 +198,6 @@ export class ConnectorCatalogLoadTiming {
     this.runtimeCacheOutcome = outcome;
   }
 
-  recordProjectionResult(args: {
-    readonly source: ConnectorRuntimeSelectionSource;
-    readonly cacheOutcome: ConnectorRuntimeProjectionCacheOutcome;
-    readonly fallbackReason?: ConnectorCatalogRuntimeProjectionFallbackReason;
-  }): void {
-    this.runtimeSelectionSource = args.source;
-    this.projectionCacheOutcome = args.cacheOutcome;
-    this.projectionFallbackReason = args.fallbackReason;
-  }
-
-  recordProjectionCacheObservation(
-    observation: ConnectorRuntimeProjectionCacheObservation,
-  ): void {
-    this.projectionCacheObservation = observation;
-  }
-
   recordValidationResult(result: ConnectorCatalogValidationResult): void {
     this.validationResult = result;
   }
@@ -315,76 +240,6 @@ export class ConnectorCatalogLoadTiming {
     return this.collector.measureSync(actionType, "nested", operation);
   }
 
-  measureProjectionRowValidation<T>(
-    operation: (timing: ConnectorCatalogRuntimeProjectionValidationTiming) => T,
-  ): T {
-    const collector = this.collector;
-    if (!collector) {
-      return operation({
-        measureParse<T>(phaseOperation: () => T): T {
-          return phaseOperation();
-        },
-        measureDigest<T>(phaseOperation: () => T): T {
-          return phaseOperation();
-        },
-      });
-    }
-    let parseDurationMs = 0;
-    let digestDurationMs = 0;
-    const measurePhase = <T>(
-      phase: "parse" | "digest",
-      phaseOperation: () => T,
-    ): T => {
-      const startedAt = performance.now();
-      const result = safeSync(phaseOperation);
-      const durationMs = performance.now() - startedAt;
-      if (phase === "parse") {
-        parseDurationMs += durationMs;
-      } else {
-        digestDurationMs += durationMs;
-      }
-      if ("error" in result) {
-        throw result.error;
-      }
-      return result.ok;
-    };
-    const timing: ConnectorCatalogRuntimeProjectionValidationTiming = {
-      measureParse<T>(phaseOperation: () => T): T {
-        return measurePhase("parse", phaseOperation);
-      },
-      measureDigest<T>(phaseOperation: () => T): T {
-        return measurePhase("digest", phaseOperation);
-      },
-    };
-    return this.measureSync(
-      "api_dispatch_connector_catalog_validate_projection_rows",
-      () => {
-        const result = safeSync(() => {
-          return operation(timing);
-        });
-        // Validation short-circuits per requested connector. Accumulate its
-        // interleaved phases instead of reordering work or logging per row.
-        const finishedAt = now();
-        collector.recordDuration(
-          "api_dispatch_connector_catalog_parse_projection_rows",
-          "nested",
-          parseDurationMs,
-          finishedAt,
-        );
-        collector.recordDuration(
-          "api_dispatch_connector_catalog_verify_projection_row_digests",
-          "nested",
-          digestDurationMs,
-          finishedAt,
-        );
-        if ("error" in result) {
-          throw result.error;
-        }
-        return result.ok;
-      },
-    );
-  }
-
   async measureComplete<T>(operation: () => T | Promise<T>): Promise<T> {
     return await measureApiDispatchTiming(
       this.collector,
@@ -414,33 +269,6 @@ export class ConnectorCatalogLoadTiming {
         ? {}
         : {
             connector_catalog_runtime_cache_outcome: this.runtimeCacheOutcome,
-          }),
-      ...(this.runtimeSelectionSource === undefined
-        ? {}
-        : {
-            connector_catalog_runtime_selection_source:
-              this.runtimeSelectionSource,
-          }),
-      ...(this.projectionCacheOutcome === undefined
-        ? {}
-        : {
-            connector_catalog_projection_cache_outcome:
-              this.projectionCacheOutcome,
-            connector_catalog_projection_readiness: projectionReadiness(
-              this.projectionFallbackReason,
-            ),
-          }),
-      ...(this.projectionFallbackReason === undefined
-        ? {}
-        : {
-            connector_catalog_projection_fallback_reason:
-              this.projectionFallbackReason,
-          }),
-      ...(this.projectionCacheObservation === undefined
-        ? {}
-        : {
-            connector_catalog_projection_cache_observation:
-              this.projectionCacheObservation,
           }),
       ...(this.validationResult === undefined
         ? {}

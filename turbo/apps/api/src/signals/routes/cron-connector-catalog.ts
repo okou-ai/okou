@@ -6,7 +6,6 @@ import type { RouteEntry } from "../route-entry";
 import { seedPreviewOnboardingCatalog$ } from "../services/preview-onboarding-catalog.service";
 import { reconcileConnectorCatalogCompatibility$ } from "../services/connector-catalog-compatibility.service";
 import { connectorCatalogDiagnostics$ } from "../services/connector-catalog-diagnostics.service";
-import { reconcileConnectorCatalogRuntimeProjection$ } from "../services/connector-catalog-runtime-reconciliation.service";
 import { syncConnectorCatalog$ } from "../services/connector-catalog-sync.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
@@ -18,7 +17,6 @@ const syncConnectorCatalogRoute$ = command(
 
     const result = await set(syncConnectorCatalog$, signal);
     await set(reconcileConnectorCatalogCompatibility$, signal);
-    await set(reconcileConnectorCatalogRuntimeProjection$, signal);
     const diagnostics = await set(connectorCatalogDiagnostics$, signal);
     return {
       status: 200 as const,

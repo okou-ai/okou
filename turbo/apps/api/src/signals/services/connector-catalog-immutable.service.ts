@@ -9,7 +9,7 @@ import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { connectorCatalogRuntimeProjectionPayload } from "@okouai/connectors/connector-catalog/runtime-projection";
+import { connectorCatalogEntryPayload } from "@okouai/connectors/connector-catalog/entry-payload";
 import { db$, writeDb$ } from "../external/db";
 
 export const immutableCatalogHash$ = command(
@@ -64,9 +64,9 @@ export const prepareImmutableCatalogEntries$ = command(
       signal.throwIfAborted();
       if (
         !stored ||
-        !connectorCatalogRuntimeProjectionPayload(
+        !connectorCatalogEntryPayload(
           connectorCatalogArtifactConnectorSchema.parse(stored.payload),
-        ).equals(connectorCatalogRuntimeProjectionPayload(connector))
+        ).equals(connectorCatalogEntryPayload(connector))
       ) {
         throw new Error("Immutable connector catalog entry content conflicts");
       }

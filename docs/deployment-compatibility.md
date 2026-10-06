@@ -32,8 +32,8 @@ source/workflow contracts and the six existing Runner E2E connectors. The
 current union is 31 connectors. Immutable entry rows are inserted in one batch,
 with no per-entry SQL readback. The current manifest lists only those rows;
 the publication version, digest and full attested compressed snapshot remain
-unchanged. Compatibility and runtime projections, and bundled skills, are
-prepared only for the selected entries. This is a preview projection, not a
+unchanged. Compatibility evaluations and bundled skills are prepared only for
+the selected entries. This is a preview projection, not a
 new publication or a promise that every official connector is available there.
 
 Before aliasing the deployed preview or starting downstream E2E, CI calls

@@ -94,6 +94,8 @@ surface; the index does not replace their detailed rules.
   publication-order evidence.
 - [Connector catalog v4 consumption](./connector-catalog-v4.md): v4 sync, the
   v4-only accepted-snapshot reader, capability filtering and rollback boundaries.
+- [Slug-first projection-reader retirement](./connector-catalog-projection-reader-retirement.md):
+  eight-site reader closure, transaction ownership, physical retirement and test mapping.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the

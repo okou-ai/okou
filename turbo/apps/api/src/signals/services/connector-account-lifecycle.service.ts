@@ -67,10 +67,16 @@ import {
   connectorCredentialStatusForAccess,
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
+import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
 import {
-  loadConnectorRuntimeSelection,
-  type ConnectorRuntimeSelection,
-} from "./connector-catalog-runtime.service";
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/schema/connector-catalog";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+  connectorCatalogSlugRuntimeFromRows,
+} from "./connector-catalog-slug-source.service";
 
 const log = logger("connector-account-lifecycle");
 
@@ -402,7 +408,7 @@ async function customTargetIsVisible(
 
 function builtinConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: ConnectorRuntimeLookup,
   now: Date,
   includeScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -557,7 +563,7 @@ function customConnection(
 
 function projectConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeSelection | null,
+  snapshot: ConnectorRuntimeLookup | null,
   now: Date,
   includeBuiltinScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -575,7 +581,7 @@ type ConnectorAccountSummaryGroup = Awaited<
 
 function projectSummaryGroup(
   row: ConnectorAccountSummaryGroup,
-  snapshot: ConnectorRuntimeSelection | null,
+  snapshot: ConnectorRuntimeLookup | null,
   now: Date,
 ): {
   readonly target: ConnectorAccountTarget;
@@ -715,7 +721,7 @@ export async function listConnectorAccountSummaries(
 async function loadConnectorTargetRuntimeSelection(
   db: ReadonlyDb,
   target: ConnectorAccountTarget,
-): Promise<ConnectorRuntimeSelection | null> {
+): Promise<ConnectorRuntimeLookup | null> {
   return target.kind === "builtin"
     ? await loadConnectorAccountRuntimeSelection(db, [
         { connectorSlug: target.connectorSlug },
@@ -836,7 +842,7 @@ export async function getConnectorAccount(
 async function loadConnectorAccountRuntimeSelection(
   db: ReadonlyDb,
   rows: readonly { readonly connectorSlug: string | null }[],
-): Promise<ConnectorRuntimeSelection | null> {
+): Promise<ConnectorRuntimeLookup | null> {
   const connectorSlugs = rows.flatMap((row) => {
     const slug = connectorSlugSchema.safeParse(row.connectorSlug);
     return slug.success ? [slug.data] : [];
@@ -845,9 +851,28 @@ async function loadConnectorAccountRuntimeSelection(
     return null;
   }
   const result = await settle(
-    loadConnectorRuntimeSelection(db, {
-      requestedConnectorSlugs: connectorSlugs,
-    }),
+    (async () => {
+      const catalogRows = await db
+        .select({
+          current: {
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
+            header: connectorCatalog.catalogHeader,
+            entrySlugs: connectorCatalog.entrySlugs,
+          },
+          entry: {
+            slug: connectorCatalogEntries.slug,
+            payload: connectorCatalogEntries.payload,
+          },
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin(connectorSlugs),
+        )
+        .where(connectorCatalogCurrentWhere());
+      return connectorCatalogSlugRuntimeFromRows(catalogRows, connectorSlugs);
+    })(),
   );
   if (result.ok) {
     return result.value;

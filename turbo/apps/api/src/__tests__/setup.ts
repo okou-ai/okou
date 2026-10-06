@@ -3,12 +3,8 @@ import { resetApiTestMocks } from "./mocks";
 import { afterAll, afterEach, aroundEach, beforeAll, beforeEach } from "vitest";
 
 import { clearMockedEnv, mockEnv } from "../lib/env";
-import {
-  type SecretKmsClient,
-  type SecretKmsDataKey,
-  type SecretKmsGenerateDataKeyRequest,
-  withSecretKmsClientForTest,
-} from "../lib/secret-kms-client";
+import { withSecretKmsClientForTest } from "../lib/secret-kms-client";
+import { createApiTestKmsClient } from "./secret-kms";
 import { clearMockNow } from "../lib/time";
 import { server } from "../mocks/server";
 import { clearAllDetached } from "../signals/utils";
@@ -18,28 +14,6 @@ import {
   installSharedApiTestConnectorCatalog,
   mockApiTestConnectorProviderConfiguration,
 } from "../test-fixtures/connector-catalog";
-
-const testDataKey = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
-
-function createApiTestKmsClient(): SecretKmsClient {
-  return {
-    generateDataKey(
-      request: SecretKmsGenerateDataKeyRequest,
-    ): Promise<SecretKmsDataKey> {
-      return Promise.resolve({
-        keyId: request.keyId,
-        plaintext: testDataKey,
-        encryptedDataKey: Buffer.from(
-          `encrypted-data-key:${request.keyId}`,
-          "utf8",
-        ),
-      });
-    },
-    decrypt(): Promise<Uint8Array> {
-      return Promise.resolve(testDataKey);
-    },
-  };
-}
 
 aroundEach(async (runTest) => {
   await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);

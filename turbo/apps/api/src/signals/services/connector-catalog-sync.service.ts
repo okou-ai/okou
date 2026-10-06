@@ -83,7 +83,6 @@ import {
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
-import { persistConnectorCatalogRuntimeProjection } from "./connector-catalog-runtime-projection.service";
 
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
@@ -957,13 +956,6 @@ const commitCandidate$ = command(
             identity: args.candidate.identity,
             artifact: args.candidate.artifact,
             capability: args.capability,
-            validator: args.validator,
-          });
-          await persistConnectorCatalogRuntimeProjection({
-            db: tx,
-            sourceId: args.sourceId,
-            identity: args.candidate.identity,
-            artifact: args.candidate.artifact,
             validator: args.validator,
           });
           const hash = args.candidate.identity.catalogDigest;

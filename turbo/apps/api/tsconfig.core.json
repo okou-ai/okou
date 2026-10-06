@@ -217,7 +217,6 @@
     "src/signals/services/connector-catalog-feature-states.ts",
     "src/signals/services/connector-catalog-load-timing.service.ts",
     "src/signals/services/connector-catalog-reader.service.ts",
-    "src/signals/services/connector-catalog-runtime-projection.service.ts",
     "src/signals/services/connector-catalog-runtime.service.ts",
     "src/signals/services/connector-catalog-entries.service.ts",
     "src/signals/services/connector-catalog-view.ts",
