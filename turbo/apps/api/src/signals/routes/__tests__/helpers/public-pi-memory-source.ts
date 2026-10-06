@@ -1,3 +1,5 @@
+import { createPhase2Provider } from "../../../../test-fixtures/pi-memory-phase2-credential";
+import { seedBuiltInModelKey } from "./runtime-state";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import {
   makeCodexAuthJson,
@@ -11,7 +13,7 @@ import { meModelProviderAccountRoutes } from "../../me-model-provider-accounts";
 import { createRouteMocks } from "./route-test";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { storageTextFile } from "./api-bdd-storage-files";
-import { memoryArchive } from "./public-runner-memory";
+import { memoryFilesArchive } from "./public-runner-memory";
 import { randomUUID } from "node:crypto";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -38,7 +40,20 @@ export function createPublicPiMemorySource(
   context: TestContext,
   options: {
     readonly cashCredits?: 100_000;
+    readonly sourceProvider?:
+      | "built-in"
+      | "openai-api-key"
+      | "custom-openai-responses";
+    readonly beforeMemoryPublication?: (agentId: string) => Promise<void>;
     readonly sources?: readonly string[];
+    readonly memoryFiles?: (
+      sources: readonly {
+        runId: string;
+        threadId: string;
+        hash: string;
+        completedAt: string;
+      }[],
+    ) => readonly { path: string; content: string }[];
     readonly memoryFile?: { readonly path: string; readonly content: string };
   } = {},
 ) {
@@ -51,6 +66,65 @@ export function createPublicPiMemorySource(
   const account = `public-memory-${randomUUID()}`;
   let memoryStorageId: string | undefined;
   let sourceMemoryVersionId: string | undefined;
+  async function configureSource(subscriptionId: string) {
+    if (!fixture.actor.orgId) {
+      throw new Error("Expected source organization");
+    }
+    let sourceModel: "gpt-6-luna" | "gpt-5.6-luna" | "deepseek-v4.1-flash" =
+      "gpt-6-luna";
+    let sourceProvider:
+      | Awaited<ReturnType<typeof createPhase2Provider>>
+      | undefined;
+    if (options.sourceProvider) {
+      // The common consent owner remains real, but must not influence the
+      // original built-in/API-key source route in these worker scenarios.
+      await disconnect(subscriptionId);
+      sourceModel =
+        options.sourceProvider === "built-in"
+          ? "deepseek-v4.1-flash"
+          : "gpt-5.6-luna";
+      if (options.sourceProvider === "built-in") {
+        await seedBuiltInModelKey(
+          context,
+          sourceModel,
+          fixture.registerCleanup,
+        );
+      } else {
+        sourceProvider = await createPhase2Provider(
+          context,
+          { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+          options.sourceProvider,
+          "org",
+          { registerCleanup: fixture.registerCleanup, miscApi: misc },
+        );
+      }
+      await chat.api.updateOrgModelPolicies(fixture.actor, [
+        {
+          model: sourceModel,
+          preferred: true,
+          defaultProviderType: options.sourceProvider,
+          credentialScope: "org",
+          modelProviderId:
+            options.sourceProvider === "custom-openai-responses"
+              ? null
+              : (sourceProvider?.binding.modelProviderId ?? null),
+          ...(options.sourceProvider === "custom-openai-responses"
+            ? {
+                modelProviderSurfaceId: sourceProvider?.binding.modelProviderId,
+              }
+            : {}),
+        },
+      ]);
+    }
+    return { sourceModel, sourceProvider };
+  }
+  function sourceIdentity(model: string) {
+    return {
+      providerType: options.sourceProvider ?? "codex-oauth-token",
+      model,
+      credentialScope: options.sourceProvider ? "org" : "member",
+    };
+  }
   async function prepare(at: Date) {
     // Callers schedule the first work one day ahead. A new Thread's activity
     // uses the database clock, so creating it under a past app clock cannot
@@ -85,6 +159,9 @@ export function createPublicPiMemorySource(
           Math.floor(Math.max(now(), at.getTime()) / 1000) + 72 * 3600,
       });
     });
+    const { sourceModel, sourceProvider } = await configureSource(
+      subscription.accountSourceId,
+    );
     const agent = await chat.bdd.createAgent(fixture.actor, {
       displayName: "Public Memory source",
       visibility: "private",
@@ -96,6 +173,7 @@ export function createPublicPiMemorySource(
       threadId: string;
       hash: string;
       objectKey: string;
+      completedAt: string;
     }[] = [];
     let publishedMemory: { versionId: string; archiveKey: string } | undefined;
     for (const content of options.sources ?? [
@@ -104,7 +182,7 @@ export function createPublicPiMemorySource(
       const source = await chat.sendChatRun(fixture.actor, {
         agentId: agent.agentId,
         prompt: "Remember this source",
-        model: "gpt-6-luna",
+        model: sourceModel,
       });
       fixture.registerRun(source.runId);
       const claimed = await chat.claimChatRun(runnerGroup, source.runId);
@@ -127,10 +205,17 @@ export function createPublicPiMemorySource(
         claimed.sandboxHeaders,
         content,
       );
-      sources.push({ ...source, ...history });
-      expect((await chat.api.readRun(fixture.actor, source.runId)).status).toBe(
-        "completed",
-      );
+      const completed = await chat.api.readRun(fixture.actor, source.runId);
+      expect(completed.status).toBe("completed");
+      expect(completed.source).toMatchObject(sourceIdentity(sourceModel));
+      if (!completed.completedAt) {
+        throw new Error("Expected source completion time");
+      }
+      sources.push({
+        ...source,
+        ...history,
+        completedAt: completed.completedAt,
+      });
     }
     if (!memoryStorageId) {
       throw new Error("Expected at least one real source");
@@ -139,11 +224,14 @@ export function createPublicPiMemorySource(
     const trigger = await chat.sendChatRun(fixture.actor, {
       agentId: agent.agentId,
       prompt: "Request the next Memory day",
-      model: "gpt-6-luna",
+      model: sourceModel,
     });
     fixture.registerRun(trigger.runId);
     let triggerToken: string | undefined;
-    if (options.memoryFile) {
+    const memoryFiles =
+      options.memoryFiles?.(sources) ??
+      (options.memoryFile ? [options.memoryFile] : []);
+    if (memoryFiles.length > 0) {
       // Publish only after this existing trigger has prepared its empty mount.
       // Otherwise its admission caches the new archive URL before Phase2 can
       // exercise the original external presign interruption boundary.
@@ -160,9 +248,11 @@ export function createPublicPiMemorySource(
       }
       expect(memory.storageId).toBe(memoryStorageId);
       expect(memory.empty).toBeTruthy();
-      const file = options.memoryFile;
-      const files = [storageTextFile(file.path, file.content)];
-      const archive = memoryArchive(file.path, file.content);
+      await options.beforeMemoryPublication?.(agent.agentId);
+      const files = memoryFiles.map((file) => {
+        return storageTextFile(file.path, file.content);
+      });
+      const archive = memoryFilesArchive(memoryFiles);
       const objects = new Map<string, Buffer>();
       const transport = context.mocks.s3.send.getMockImplementation();
       if (!transport) {
@@ -244,6 +334,7 @@ export function createPublicPiMemorySource(
       sources,
       triggerRunId: trigger.runId,
       subscription,
+      sourceProvider,
       publishedMemory,
       orgId: fixture.actor.orgId,
       userId: fixture.actor.userId,
@@ -277,7 +368,13 @@ export function createPublicPiMemorySource(
     let index = 0;
     server.use(
       http.post(
-        /https:\/\/chatgpt\.com\/.*\/responses/u,
+        options.sourceProvider === "built-in"
+          ? "https://openrouter.ai/api/v1/responses"
+          : options.sourceProvider === "openai-api-key"
+            ? "https://api.openai.com/v1/responses"
+            : options.sourceProvider === "custom-openai-responses"
+              ? "https://phase2-gateway.example/v1/responses"
+              : /https:\/\/chatgpt\.com\/.*\/responses/u,
         async ({ request }) => {
           await request.arrayBuffer();
           const selected =
@@ -400,6 +497,7 @@ export function createPublicPiMemorySource(
   }
   return {
     ...fixture,
+    misc,
     prepare,
     extract,
     installExtractionProvider,

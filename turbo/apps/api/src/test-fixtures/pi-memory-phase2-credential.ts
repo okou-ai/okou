@@ -54,20 +54,47 @@ async function createPhase2CustomProvider(
   context: TestContext,
   owner: { orgId: string; userId: string },
   mapsSelectedModel: boolean,
+  registerCleanup: (cleanup: () => Promise<void>) => void,
 ) {
   const key = `phase2-key-${randomUUID()}`;
+  const displayName = `Phase 2 source ${randomUUID()}`;
   createRouteMocks(context).clerk.session(
     owner.userId,
     owner.orgId,
     "org:admin",
   );
+  registerCleanup(async () => {
+    createRouteMocks(context).clerk.session(
+      owner.userId,
+      owner.orgId,
+      "org:admin",
+    );
+    const client = setupApp({ context, routes: modelProviderGatewayRoutes });
+    const list = await accept(
+      client(modelProviderConnectionsMainContract).list({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    for (const connection of list.body.connections.filter((entry) => {
+      return entry.displayName === displayName;
+    })) {
+      await accept(
+        client(modelProviderConnectionsByIdContract).delete({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { id: connection.id },
+        }),
+        [204],
+      );
+    }
+  });
   const created = await accept(
     setupApp({ context, routes: modelProviderGatewayRoutes })(
       modelProviderConnectionsMainContract,
     ).create({
       headers: { authorization: "Bearer clerk-session" },
       body: {
-        displayName: "Phase 2 source",
+        displayName,
         secret: key,
         surfaces: [
           {
@@ -88,25 +115,11 @@ async function createPhase2CustomProvider(
   if (!surface) {
     throw new Error("Missing custom surface");
   }
-  onTestFinished(async () => {
-    createRouteMocks(context).clerk.session(
-      owner.userId,
-      owner.orgId,
-      "org:admin",
-    );
-    await accept(
-      setupApp({ context, routes: modelProviderGatewayRoutes })(
-        modelProviderConnectionsByIdContract,
-      ).delete({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { id: created.body.id },
-      }),
-      [204],
-    );
-  });
   return {
     key,
     account: undefined,
+    connectionId: created.body.id,
+    displayName,
     binding: {
       modelProvider: "custom-openai-responses",
       modelProviderId: surface.id,
@@ -123,19 +136,28 @@ export async function createPhase2Provider(
   {
     mapsSelectedModel = true,
     subscription,
+    registerCleanup = onTestFinished,
+    miscApi,
   }: {
+    miscApi?: ReturnType<typeof createMiscRoutesApi>;
     mapsSelectedModel?: boolean;
+    registerCleanup?: (cleanup: () => Promise<void>) => void;
     subscription?: { accountId: string; expired: boolean };
   } = {},
 ) {
   const actor = createBddApi(context).user({ ...owner, orgRole: "org:admin" });
-  const misc = createMiscRoutesApi(context);
+  const misc = miscApi ?? createMiscRoutesApi(context);
   const key = `phase2-key-${randomUUID()}`;
   if (type !== "codex-oauth-token") {
     await misc.configureCustomModelMode(actor);
   }
   if (type === "custom-openai-responses") {
-    return await createPhase2CustomProvider(context, owner, mapsSelectedModel);
+    return await createPhase2CustomProvider(
+      context,
+      owner,
+      mapsSelectedModel,
+      registerCleanup,
+    );
   }
   if (type === "codex-oauth-token") {
     await updateFeatureSwitchesForUser(context, owner, {
@@ -145,6 +167,9 @@ export async function createPhase2Provider(
     const token = makeCodexJwt({
       exp: Math.floor(now() / 1000) + (subscription?.expired ? -60 : 7200),
       identity: account,
+    });
+    registerCleanup(async () => {
+      await misc.deletePersonalModelProvider(actor, type, [204, 404]);
     });
     const created = await misc.upsertPersonalModelProvider(
       actor,
@@ -164,9 +189,6 @@ export async function createPhase2Provider(
     if (created.status !== 200 && created.status !== 201) {
       throw new Error("Missing subscription account");
     }
-    onTestFinished(async () => {
-      await misc.deletePersonalModelProvider(actor, type, [204, 404]);
-    });
     return {
       key: token,
       account,
@@ -177,16 +199,12 @@ export async function createPhase2Provider(
       } satisfies Phase2SourceBinding,
     };
   }
-  const created = await misc.upsertOrgModelProvider(
-    actor,
-    { type, secret: key },
-    [200, 201],
-  );
-  if (created.status !== 200 && created.status !== 201) {
-    throw new Error("Missing API-key provider");
-  }
-  const id = created.body.provider.id;
+  const createdProvider: { id?: string } = {};
   const historicalOwner = async (userId: string) => {
+    const id = createdProvider.id;
+    if (!id) {
+      return;
+    }
     // Historical member API keys no longer have a settings write API.
     const [provider] = await db()
       .update(modelProviders)
@@ -200,15 +218,25 @@ export async function createPhase2Provider(
         .where(eq(secrets.id, provider.secretId));
     }
   };
-  if (scope === "member") {
-    await historicalOwner(owner.userId);
-  }
-  onTestFinished(async () => {
+  registerCleanup(async () => {
     if (scope === "member") {
       await historicalOwner("__org__");
     }
     await misc.deleteOrgModelProvider(actor, type, [204, 404]);
   });
+  const created = await misc.upsertOrgModelProvider(
+    actor,
+    { type, secret: key },
+    [200, 201],
+  );
+  if (created.status !== 200 && created.status !== 201) {
+    throw new Error("Missing API-key provider");
+  }
+  const id = created.body.provider.id;
+  createdProvider.id = id;
+  if (scope === "member") {
+    await historicalOwner(owner.userId);
+  }
   return {
     key,
     account: undefined,

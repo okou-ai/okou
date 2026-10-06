@@ -1,3 +1,4 @@
+import { createPublicUsageWallet } from "./helpers/public-usage-wallet";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
@@ -41,10 +42,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  generatedStripeCustomerId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
+import { postUsageAllowanceInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { createRouteMocks } from "./helpers/route-test";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -333,8 +331,11 @@ function webSearchPricingKey(): UsagePricingKey {
   };
 }
 
-async function setupConfiguredWebSearchPricing(): Promise<UsagePricingFixture> {
+async function setupConfiguredWebSearchPricing(
+  registerCleanup: (cleanup: () => Promise<void>) => void = onTestFinished,
+): Promise<UsagePricingFixture> {
   const fixture = await createUsagePricingFixture({
+    registerCleanup,
     configured: [
       {
         ...webSearchPricingKey(),
@@ -342,9 +343,6 @@ async function setupConfiguredWebSearchPricing(): Promise<UsagePricingFixture> {
         unitSize: 1,
       },
     ],
-  });
-  onTestFinished(async () => {
-    await fixture.cleanup();
   });
   return fixture;
 }
@@ -674,63 +672,68 @@ describe("okou web-search route", () => {
 
   it("accepts agent tokens and attributes usage to their run", async () => {
     const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("Web Search test actor must belong to an organization");
-    }
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    await api.grantProEntitlement(actor);
-    await fundActor(actor);
-    const pricing = await setupConfiguredWebSearchPricing();
-    configureProvider();
-    api.configureRunnerGroup();
-    await api.ensureOrgModelProvider(actor);
-    const agent = await createBddApi(context).createAgent(actor, {
-      displayName: "Tool usage agent",
-      description: "Calls a paid tool from its run.",
-      visibility: "private",
-    });
-    const run = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "Find current public information",
-    });
-    const token = api.okouTokenForRunWithCapabilities(actor, run.runId, [
-      "web-search:read",
-    ]);
-    server.use(
-      http.post(PERPLEXITY_SEARCH_URL, () => {
-        return HttpResponse.json(providerResponse());
-      }),
-    );
-    context.mocks.ably.publish.mockClear();
+    const fixture = createPublicUsageWallet(context, actor, { credits: 1000 });
+    await fixture.run(async () => {
+      await fixture.initialize();
+      if (!actor.orgId) {
+        throw new Error("Web Search test actor must belong to an organization");
+      }
+      const bdd = createBddApi(context);
+      const api = createRunsApi(context);
+      bdd.acceptAgentStorageWrites();
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
+      const pricing = await setupConfiguredWebSearchPricing(
+        fixture.registerCleanup,
+      );
+      configureProvider();
+      api.configureRunnerGroup();
+      await api.ensureOrgModelProvider(actor);
+      const agent = await createBddApi(context).createAgent(actor, {
+        displayName: "Tool usage agent",
+        description: "Calls a paid tool from its run.",
+        visibility: "private",
+      });
+      const run = await api.createThreadRun(actor, {
+        agentId: agent.agentId,
+        prompt: "Find current public information",
+      });
+      fixture.registerRun(run.runId);
+      const token = api.okouTokenForRunWithCapabilities(actor, run.runId, [
+        "web-search:read",
+      ]);
+      server.use(
+        http.post(PERPLEXITY_SEARCH_URL, () => {
+          return HttpResponse.json(providerResponse());
+        }),
+      );
+      context.mocks.ably.publish.mockClear();
 
-    const response = await accept(
-      client(pricing.resolution)(webSearchContract).search({
-        headers: { authorization: `Bearer ${token}` },
-        body: defaultRequest(),
-      }),
-      [200],
-    );
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        {
-          id: actor.userId,
-          primaryEmailAddressId: `email_${actor.userId}`,
-          emailAddresses: [
-            {
-              id: `email_${actor.userId}`,
-              emailAddress: `${actor.userId}@example.com`,
-            },
-          ],
-        },
-      ],
-    });
-    const usage = await accept(
-      setupApp({ context, routes: usageRecordRoutes })(usageRecordContract).get(
-        {
+      const response = await accept(
+        client(pricing.resolution)(webSearchContract).search({
+          headers: { authorization: `Bearer ${token}` },
+          body: defaultRequest(),
+        }),
+        [200],
+      );
+      context.mocks.clerk.users.getUserList.mockResolvedValue({
+        data: [
+          {
+            id: actor.userId,
+            primaryEmailAddressId: `email_${actor.userId}`,
+            emailAddresses: [
+              {
+                id: `email_${actor.userId}`,
+                emailAddress: `${actor.userId}@example.com`,
+              },
+            ],
+          },
+        ],
+      });
+      const usage = await accept(
+        setupApp({ context, routes: usageRecordRoutes })(
+          usageRecordContract,
+        ).get({
           headers: authenticate(actor),
           query: {
             page: 1,
@@ -739,23 +742,23 @@ describe("okou web-search route", () => {
             range: "24h",
             tz: "UTC",
           },
-        },
-      ),
-      [200],
-    );
+        }),
+        [200],
+      );
 
-    expect(response.body.creditsCharged).toBe(5);
-    expect(usage.body.rows).toStrictEqual([
-      expect.objectContaining({
-        title: null,
-        threadId: run.threadId,
-        credits: 5,
-      }),
-    ]);
-    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-      "billing:changed",
-      null,
-    );
+      expect(response.body.creditsCharged).toBe(5);
+      expect(usage.body.rows).toStrictEqual([
+        expect.objectContaining({
+          title: null,
+          threadId: run.threadId,
+          credits: 5,
+        }),
+      ]);
+      expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+        "billing:changed",
+        null,
+      );
+    });
   });
 
   it("rejects invalid filters before calling Perplexity", async () => {
@@ -823,128 +826,140 @@ describe("okou web-search route", () => {
 
   it("returns insufficient credits before calling Perplexity", async () => {
     const actor = createBddApi(context).user();
-    let providerRequests = 0;
-    configureProvider();
-    const pricing = await setupConfiguredWebSearchPricing();
-    await bootstrapOnboarding(actor);
-    await setActorCredits(actor, 0);
-    server.use(
-      http.post(PERPLEXITY_SEARCH_URL, () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
+    const fixture = createPublicUsageWallet(context, actor, { credits: 0 });
+    await fixture.run(async () => {
+      await fixture.initialize();
+      let providerRequests = 0;
+      configureProvider();
+      const pricing = await setupConfiguredWebSearchPricing(
+        fixture.registerCleanup,
+      );
+      server.use(
+        http.post(PERPLEXITY_SEARCH_URL, () => {
+          providerRequests += 1;
+          return HttpResponse.json(providerResponse());
+        }),
+      );
 
-    const response = await accept(
-      client(pricing.resolution)(webSearchContract).search({
-        headers: authenticate(actor),
-        body: defaultRequest(),
-      }),
-      [402],
-    );
+      const response = await accept(
+        client(pricing.resolution)(webSearchContract).search({
+          headers: authenticate(actor),
+          body: defaultRequest(),
+        }),
+        [402],
+      );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(providerRequests).toBe(0);
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expect(providerRequests).toBe(0);
+    });
   });
 
   it("uses allowance for runless searches under shared debt", async () => {
     const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("Web Search test actor must belong to an organization");
-    }
-    let providerRequests = 0;
-    configureProvider();
-    const pricing = await setupConfiguredWebSearchPricing();
-    await bootstrapOnboarding(actor);
-    await setActorCredits(actor, -10);
-    const effectiveAt = nowDate();
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      customerId: generatedStripeCustomerId(),
-      subscriptionId: `sub_web_search_allowance_${randomUUID()}`,
-      effectiveAt,
-      expiresAt: new Date(effectiveAt.getTime() + 365 * 24 * 60 * 60 * 1000),
-      shortWindowSeconds: 5 * 60 * 60,
-      shortWindowUnits: 10,
-      weeklyWindowSeconds: 7 * 24 * 60 * 60,
-      weeklyWindowUnits: 10,
+    const fixture = createPublicUsageWallet(context, actor, { credits: -10 });
+    await fixture.run(async () => {
+      await fixture.initialize();
+      if (!actor.orgId) {
+        throw new Error("Web Search test actor must belong to an organization");
+      }
+      let providerRequests = 0;
+      configureProvider();
+      const pricing = await setupConfiguredWebSearchPricing(
+        fixture.registerCleanup,
+      );
+      const effectiveAt = nowDate();
+      await postUsageAllowanceInvoicePaid(context.signal, {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        customerId: fixture.customerId,
+        subscriptionId: `sub_web_search_allowance_${randomUUID()}`,
+        effectiveAt,
+        expiresAt: new Date(effectiveAt.getTime() + 365 * 24 * 60 * 60 * 1000),
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: 10,
+        weeklyWindowSeconds: 7 * 24 * 60 * 60,
+        weeklyWindowUnits: 10,
+      });
+      server.use(
+        http.post(PERPLEXITY_SEARCH_URL, () => {
+          providerRequests += 1;
+          return HttpResponse.json(providerResponse());
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(webSearchContract).search({
+          headers: authenticate(actor),
+          body: defaultRequest(),
+        }),
+        [200],
+      );
+      const status = await accept(
+        client()(billingStatusContract).get({
+          headers: authenticate(actor),
+        }),
+        [200],
+      );
+
+      expect(response.body.creditsCharged).toBe(0);
+      expect(providerRequests).toBe(1);
+      expect(status.body.credits).toBe(-10);
+      expect(
+        Object.fromEntries(
+          status.body.usageAllowance?.windows.map((window) => {
+            return [window.kind, window.consumedUnits];
+          }) ?? [],
+        ),
+      ).toStrictEqual({ short: 5, weekly: 5 });
     });
-    server.use(
-      http.post(PERPLEXITY_SEARCH_URL, () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
-
-    const response = await accept(
-      client(pricing.resolution)(webSearchContract).search({
-        headers: authenticate(actor),
-        body: defaultRequest(),
-      }),
-      [200],
-    );
-    const status = await accept(
-      client()(billingStatusContract).get({
-        headers: authenticate(actor),
-      }),
-      [200],
-    );
-
-    expect(response.body.creditsCharged).toBe(0);
-    expect(providerRequests).toBe(1);
-    expect(status.body.credits).toBe(-10);
-    expect(
-      Object.fromEntries(
-        status.body.usageAllowance?.windows.map((window) => {
-          return [window.kind, window.consumedUnits];
-        }) ?? [],
-      ),
-    ).toStrictEqual({ short: 5, weekly: 5 });
   });
 
   it("rejects runless searches when allowance cannot cover the exact price under shared debt", async () => {
     const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("Web Search test actor must belong to an organization");
-    }
-    let providerRequests = 0;
-    configureProvider();
-    const pricing = await setupConfiguredWebSearchPricing();
-    await bootstrapOnboarding(actor);
-    await setActorCredits(actor, -10);
-    const effectiveAt = nowDate();
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      customerId: generatedStripeCustomerId(),
-      subscriptionId: `sub_web_search_partial_allowance_${randomUUID()}`,
-      effectiveAt,
-      expiresAt: new Date(effectiveAt.getTime() + 365 * 24 * 60 * 60 * 1000),
-      shortWindowSeconds: 5 * 60 * 60,
-      shortWindowUnits: 4,
-      weeklyWindowSeconds: 7 * 24 * 60 * 60,
-      weeklyWindowUnits: 4,
+    const fixture = createPublicUsageWallet(context, actor, { credits: -10 });
+    await fixture.run(async () => {
+      await fixture.initialize();
+      if (!actor.orgId) {
+        throw new Error("Web Search test actor must belong to an organization");
+      }
+      let providerRequests = 0;
+      configureProvider();
+      const pricing = await setupConfiguredWebSearchPricing(
+        fixture.registerCleanup,
+      );
+      const effectiveAt = nowDate();
+      await postUsageAllowanceInvoicePaid(context.signal, {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        customerId: fixture.customerId,
+        subscriptionId: `sub_web_search_partial_allowance_${randomUUID()}`,
+        effectiveAt,
+        expiresAt: new Date(effectiveAt.getTime() + 365 * 24 * 60 * 60 * 1000),
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: 4,
+        weeklyWindowSeconds: 7 * 24 * 60 * 60,
+        weeklyWindowUnits: 4,
+      });
+      server.use(
+        http.post(PERPLEXITY_SEARCH_URL, () => {
+          providerRequests += 1;
+          return HttpResponse.json(providerResponse());
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(webSearchContract).search({
+          headers: authenticate(actor),
+          body: defaultRequest(),
+        }),
+        [402],
+      );
+
+      expectApiError(response.body);
+      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      expect(providerRequests).toBe(0);
     });
-    server.use(
-      http.post(PERPLEXITY_SEARCH_URL, () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
-
-    const response = await accept(
-      client(pricing.resolution)(webSearchContract).search({
-        headers: authenticate(actor),
-        body: defaultRequest(),
-      }),
-      [402],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(providerRequests).toBe(0);
   });
 
   it("translates filtered searches and records successful usage", async () => {

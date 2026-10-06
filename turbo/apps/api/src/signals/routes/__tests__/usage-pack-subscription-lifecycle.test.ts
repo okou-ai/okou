@@ -1,3 +1,4 @@
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { randomUUID } from "node:crypto";
 
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
@@ -858,67 +859,65 @@ describe("usage pack subscription Stripe lifecycle", () => {
         userId: `user_${randomUUID()}`,
         invitationId: null,
       };
-      await seedOrgMetadata({
+      const owner = createPublicBillingZeroFixture(context, {
         orgId: fixture.orgId,
-        tier: "limited-free-1",
-        credits: 0,
+        userId: fixture.userId,
+        email: `${fixture.userId}@example.com`,
+        orgRole: "org:admin",
       });
-      onTestFinished(async () => {
-        await usagePackStateAction({
-          action: "cleanup",
-          orgId: fixture.orgId,
-          usagePackSubscriptionId: fixture.usagePackSubscriptionId,
-          deleteGrants: true,
-          deleteOrgMetadata: true,
-        });
-      });
-      const grantPeriod = period(0);
-      await postStripeEvent(
-        stripeEvent("invoice.paid", {
-          id: `in_${randomUUID()}`,
-          customer: fixture.customerId,
-          status: "paid",
-          paid: true,
-          parent: null,
-          metadata: {
-            type: "atom_grant",
-            purpose: "atom_grant",
-            source: "atom_entitlement",
-            planVersion,
-            operationId: `sub_${randomUUID()}`,
-            orgId: fixture.orgId,
-            tier,
-            planId: tier,
-            duration: "30d",
-            atomGrantExpiresAt: new Date(grantPeriod.end * 1000).toISOString(),
-          },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_${randomUUID()}`,
-                amount: 0,
-                subtotal: 0,
-                quantity: 1,
-                price: { id: TEST_PRICE_ATOM_GRANT },
-                period: grantPeriod,
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
-        }),
-        200,
-      );
+      await owner.run(async () => {
+        await owner.initialize();
+        // Key21 retains the original exact grant/allocation/subscription absence.
+        const grantPeriod = period(0);
+        await postStripeEvent(
+          stripeEvent("invoice.paid", {
+            id: `in_${randomUUID()}`,
+            customer: fixture.customerId,
+            status: "paid",
+            paid: true,
+            parent: null,
+            metadata: {
+              type: "atom_grant",
+              purpose: "atom_grant",
+              source: "atom_entitlement",
+              planVersion,
+              operationId: `sub_${randomUUID()}`,
+              orgId: fixture.orgId,
+              tier,
+              planId: tier,
+              duration: "30d",
+              atomGrantExpiresAt: new Date(
+                grantPeriod.end * 1000,
+              ).toISOString(),
+            },
+            lines: {
+              has_more: false,
+              data: [
+                {
+                  id: `il_${randomUUID()}`,
+                  amount: 0,
+                  subtotal: 0,
+                  quantity: 1,
+                  price: { id: TEST_PRICE_ATOM_GRANT },
+                  period: grantPeriod,
+                  parent: { type: "invoice_item_details" },
+                },
+              ],
+            },
+          }),
+          200,
+        );
 
-      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-        tier,
-        showUsagePack,
-        subscriptionStatus: "atom_grant",
+        await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+          tier,
+          showUsagePack,
+          subscriptionStatus: "atom_grant",
+        });
+        const state = await readUsagePackState(fixture);
+        expect(state.subscription).toBeNull();
+        expect(state.allocations).toHaveLength(0);
+        expect(state.grants).toHaveLength(0);
       });
-      const state = await readUsagePackState(fixture);
-      expect(state.subscription).toBeNull();
-      expect(state.allocations).toHaveLength(0);
-      expect(state.grants).toHaveLength(0);
     },
   );
 

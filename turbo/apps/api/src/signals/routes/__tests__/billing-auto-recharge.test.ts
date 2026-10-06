@@ -5,7 +5,6 @@ import StripeSDK from "stripe";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
@@ -47,18 +46,6 @@ function createActor(
     throw new Error("Expected auto-recharge test actor to have an org");
   }
   return { ...user, orgId: user.orgId };
-}
-
-async function createOnboardedActor(): Promise<AutoRechargeActor> {
-  const admin = createActor();
-  const completed = await bdd.completeOnboarding(admin);
-  expect(completed.status).toBe(200);
-  await seedOrgMetadata({
-    orgId: admin.orgId,
-    tier: "limited-free-1",
-    credits: 0,
-  });
-  return admin;
 }
 
 async function createProActor(
@@ -215,23 +202,30 @@ describe("PUT /api/billing/auto-recharge", () => {
   });
 
   it("enables auto-recharge for custom tier org", async () => {
-    const admin = await createOnboardedActor();
-    await seedOrgMetadata({
-      orgId: admin.orgId,
-      tier: "custom",
-      credits: 0,
+    const admin = createActor();
+    const owner = createPublicBillingZeroFixture(context, admin, {
+      foreverCustom: {
+        priceId: `price_custom_${randomUUID()}`,
+        webhookSecret: `whsec_custom_${randomUUID()}`,
+      },
     });
+    await owner.run(async () => {
+      await owner.initialize();
+      context.mocks.stripe.paymentMethods.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      const response = await billingApi.updateAutoRecharge(
+        admin,
+        { enabled: true, threshold: 1000, amount: 5000 },
+        [200],
+      );
 
-    const response = await billingApi.updateAutoRecharge(
-      admin,
-      { enabled: true, threshold: 1000, amount: 5000 },
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      enabled: true,
-      threshold: 1000,
-      amount: 5000,
+      expect(response.body).toStrictEqual({
+        enabled: true,
+        threshold: 1000,
+        amount: 5000,
+      });
     });
   });
 
