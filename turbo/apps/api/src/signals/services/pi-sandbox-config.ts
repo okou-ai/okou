@@ -29,7 +29,7 @@ import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 import {
   AUTO_RUN_MODEL,
   AUTO_RUN_PROVIDER,
-  AUTO_RUN_UPSTREAM_MODEL,
+  isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
 import { env } from "../../lib/env";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
@@ -232,7 +232,7 @@ function resolvePiRouteModelConfig(
     !isBuiltInModelProviderType(provider.type) ||
     provider.selectedModel !== AUTO_RUN_MODEL ||
     provider.concreteType !== AUTO_RUN_PROVIDER ||
-    provider.upstreamModel !== AUTO_RUN_UPSTREAM_MODEL
+    !isAutoRunPreset(provider.upstreamModel)
   ) {
     return null;
   }

@@ -1,4 +1,8 @@
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import {
+  createPublicRunnerMemory,
+  memoryArchive,
+} from "./helpers/public-runner-memory";
 import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
@@ -77,7 +81,6 @@ import {
   installApiTestConnectorCatalog,
   replaceApiTestConnectorCatalogFilteredAuthMethods,
 } from "../../../test-fixtures/connector-catalog";
-import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import {
   readSessionHistoryBlobRefCountFixture,
   setRunModelProviderFixture,
@@ -2330,137 +2333,129 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   });
 
   it("keeps a committed artifact head after initial empty artifact creation", async () => {
-    const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
-    const initialRun = await api.createThreadRun(actor, {
-      agentId,
-      prompt: "initial empty artifact creation should not block later commits",
-    });
-    onTestFinished(async () => {
-      await api.requestCancelRun(actor, initialRun.runId, [200]);
-    });
-    const initialClaim = await api.claimRunnerJob(initialRun.runId);
-    const initialMemory = expectCanonicalStorageManifest(
-      initialClaim.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory";
-    });
-    expect(initialMemory).toMatchObject({
-      empty: true,
-      versionId: expect.any(String),
-    });
-    expect(initialMemory?.archiveUrl).toBeUndefined();
-    const initialMemoryVersionId = initialMemory?.versionId;
-    if (!initialMemoryVersionId) {
-      throw new Error("Expected initial memory artifact version id");
-    }
-
-    context.mocks.s3.send.mockClear();
-    const preparedInitialEmpty = await storages.prepareStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      files: [],
-    });
-    expect(preparedInitialEmpty).toStrictEqual({
-      versionId: initialMemoryVersionId,
-      existing: true,
-    });
-    const committedInitialEmpty = await storages.commitStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      versionId: initialMemoryVersionId,
-      files: [],
-    });
-    expect(committedInitialEmpty).toMatchObject({
-      success: true,
-      versionId: initialMemoryVersionId,
-      fileCount: 0,
-      deduplicated: true,
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-
-    const artifactFile = storageTextFile(
-      "artifact.txt",
-      `committed artifact ${randomUUID()}`,
-    );
-    context.mocks.s3.send.mockClear();
-    const prepared = await storages.prepareStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      baseVersion: initialMemoryVersionId,
-      changes: {
-        added: [artifactFile.path],
-        modified: [],
-        deleted: [],
-      },
-      files: [artifactFile],
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const memoryPrefix = await readStorageS3PrefixFixture({
-      orgId: actor.orgId,
-      userId: actor.userId,
-      name: "memory",
-    });
-    const emptyBaseManifestReads = context.mocks.s3.send.mock.calls.filter(
-      ([command]) => {
-        return (
-          s3CommandName(command) === "GetObjectCommand" &&
-          s3CommandKey(command) ===
-            `${memoryPrefix}/${initialMemoryVersionId}/manifest.json`
+    const fixture = createPublicRunnerMemory(context);
+    await fixture.run(async () => {
+      const agentId = await fixture.initializeNative();
+      const initial = await fixture.claim(
+        agentId,
+        "initial empty artifact creation should not block later commits",
+      );
+      const initialMemory = initial.memory;
+      expect(initialMemory).toMatchObject({
+        empty: true,
+        versionId: expect.any(String),
+      });
+      expect(initialMemory.archiveUrl).toBeUndefined();
+      const initialMemoryVersionId = initialMemory.versionId;
+      if (!initialMemoryVersionId) {
+        throw new Error("Expected initial memory artifact version id");
+      }
+      context.mocks.s3.send.mockClear();
+      const preparedInitialEmpty =
+        await fixture.webhooks.requestAgentStoragePrepare(
+          {
+            runId: initial.run.runId,
+            storageId: initialMemory.storageId,
+            files: [],
+          },
+          initial.headers,
+          [200],
         );
-      },
-    );
-    expect(emptyBaseManifestReads).toHaveLength(0);
-    await storages.commitStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      versionId: prepared.versionId,
-      files: [artifactFile],
-    });
-    await expect(
-      storages.downloadStorage(actor, {
-        name: "memory",
-        owner: "user",
-      }),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({
-        versionId: prepared.versionId,
+      expect(preparedInitialEmpty.body).toStrictEqual({
+        versionId: initialMemoryVersionId,
+        existing: true,
+      });
+      const committedInitialEmpty =
+        await fixture.webhooks.requestAgentStorageCommit(
+          {
+            runId: initial.run.runId,
+            storageId: initialMemory.storageId,
+            versionId: initialMemoryVersionId,
+            files: [],
+          },
+          initial.headers,
+          [200],
+        );
+      expect(committedInitialEmpty.body).toMatchObject({
+        success: true,
+        versionId: initialMemoryVersionId,
+        fileCount: 0,
+        deduplicated: true,
+      });
+      expect(context.mocks.s3.send).not.toHaveBeenCalled();
+      const content = "committed artifact " + randomUUID();
+      const artifactFile = storageTextFile("artifact.txt", content);
+      fixture.installObjects();
+      context.mocks.s3.send.mockClear();
+      const prepared = await fixture.webhooks.requestAgentStoragePrepare(
+        {
+          runId: initial.run.runId,
+          storageId: initialMemory.storageId,
+          baseVersion: initialMemoryVersionId,
+          changes: { added: [artifactFile.path], modified: [], deleted: [] },
+          files: [artifactFile],
+        },
+        initial.headers,
+        [200],
+      );
+      if (prepared.status !== 200 || !prepared.body.uploads) {
+        throw new Error("Expected real artifact upload targets");
+      }
+      const suffix = "/" + prepared.body.versionId + "/archive.tar.gz";
+      expect(prepared.body.uploads.archive.key.endsWith(suffix)).toBeTruthy();
+      const memoryPrefix = prepared.body.uploads.archive.key.slice(
+        0,
+        -suffix.length,
+      );
+      const emptyBaseManifestReads = context.mocks.s3.send.mock.calls.filter(
+        ([command]) => {
+          return (
+            s3CommandName(command) === "GetObjectCommand" &&
+            s3CommandKey(command) ===
+              memoryPrefix + "/" + initialMemoryVersionId + "/manifest.json"
+          );
+        },
+      );
+      expect(emptyBaseManifestReads).toHaveLength(0);
+      fixture.objects.set(
+        prepared.body.uploads.archive.key,
+        memoryArchive(artifactFile.path, content),
+      );
+      fixture.objects.set(
+        prepared.body.uploads.manifest.key,
+        Buffer.from(
+          JSON.stringify({
+            version: 1,
+            files: [artifactFile],
+            createdAt: new Date(0).toISOString(),
+          }),
+        ),
+      );
+      const committed = await fixture.webhooks.requestAgentStorageCommit(
+        {
+          runId: initial.run.runId,
+          storageId: initialMemory.storageId,
+          versionId: prepared.body.versionId,
+          files: [artifactFile],
+        },
+        initial.headers,
+        [200],
+      );
+      expect(committed.body).toMatchObject({
+        success: true,
+        versionId: prepared.body.versionId,
         fileCount: 1,
-      }),
-    );
-
-    const committedRun = await api.createThreadRun(actor, {
-      agentId,
-      prompt: "committed artifact head should stay non-empty",
+      });
+      const next = await fixture.claim(
+        agentId,
+        "committed artifact head should stay non-empty",
+      );
+      expect(next.memory).toMatchObject({
+        archiveUrl: expect.any(String),
+        versionId: prepared.body.versionId,
+      });
+      expect(next.memory.empty).toBeUndefined();
     });
-    onTestFinished(async () => {
-      await api.requestCancelRun(actor, committedRun.runId, [200]);
-    });
-    const committedClaim = await api.claimRunnerJob(committedRun.runId);
-    const committedMemory = expectCanonicalStorageManifest(
-      committedClaim.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory";
-    });
-    expect(committedMemory).toMatchObject({
-      archiveUrl: expect.any(String),
-      versionId: prepared.versionId,
-    });
-    expect(committedMemory?.empty).toBeUndefined();
-    await expect(
-      storages.downloadStorage(actor, {
-        name: "memory",
-        owner: "user",
-      }),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({
-        versionId: prepared.versionId,
-        fileCount: 1,
-      }),
-    );
   });
 
   it("keeps a direct launch claimable when run-context ingest fails", async () => {

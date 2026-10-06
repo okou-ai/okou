@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.998.6](https://github.com/okou-ai/okou/compare/app-v0.998.5...app-v0.998.6) (2026-10-06)
+
+
+### Bug Fixes
+
+* **platform:** remove model and byok plan highlights ([#37797](https://github.com/okou-ai/okou/issues/37797)) ([486298e](https://github.com/okou-ai/okou/commit/486298e628e544d65810cb37b0b7e2aec4b3fa49))
+
+## [0.998.5](https://github.com/okou-ai/okou/compare/app-v0.998.4...app-v0.998.5) (2026-10-06)
+
+
+### Performance Improvements
+
+* **ci:** build app once and remove deployment probes ([#37794](https://github.com/okou-ai/okou/issues/37794)) ([c0a3dfd](https://github.com/okou-ai/okou/commit/c0a3dfdbaa222244926ff14f6e50cdab5384acc4))
+
 ## [0.998.4](https://github.com/okou-ai/okou/compare/app-v0.998.3...app-v0.998.4) (2026-10-06)
 
 

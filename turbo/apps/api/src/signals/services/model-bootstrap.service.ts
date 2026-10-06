@@ -1,6 +1,10 @@
 import { computed } from "ccstate";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
-import { createModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import {
+  createModelCatalog,
+  modelCatalogForOrg,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import { createMemberModelSources } from "./model-source-context.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
@@ -13,6 +17,7 @@ export type MemberModelBootstrap = Awaited<
 export interface RunOrgMetadata {
   readonly credits: number;
   readonly defaultAgentId: string | null;
+  readonly openrouterPreset: string | null;
 }
 
 export function createModelFacts(
@@ -64,7 +69,8 @@ export function modelFactsFromSnapshot(
   orgId: string,
   capabilities: OrgPlanCapabilities | null,
   org: RunOrgMetadata | null,
-  catalog: ModelCatalog,
+  globalCatalog: ModelCatalog,
 ) {
+  const catalog = modelCatalogForOrg(globalCatalog, org?.openrouterPreset);
   return { orgId, org, capabilities, catalog };
 }

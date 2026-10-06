@@ -102,8 +102,31 @@ export type ModelCatalog = Readonly<{
   systemDefault: CatalogModel;
   /** The system default's model ID; it always has a runnable Built-in route. */
   systemDefaultModel: string;
+  /** Operator-owned Auto preset; catalog metadata never selects vendors. */
+  autoUpstreamModel: string;
   byModel: ReadonlyMap<string, CatalogModel>;
 }>;
+
+/** Project an org's preset without mutating the shared global catalog. */
+export function modelCatalogForOrg(
+  catalog: ModelCatalog,
+  openrouterPreset: string | null | undefined,
+): ModelCatalog {
+  return {
+    ...catalog,
+    autoUpstreamModel: openrouterPreset ?? catalog.autoUpstreamModel,
+    routes: catalog.routes.map((route) => {
+      return route.model === "okou-1.0" &&
+        route.providerType === "built-in" &&
+        route.concreteProviderType === "openrouter-codex"
+        ? {
+            ...route,
+            upstreamModel: openrouterPreset ?? route.upstreamModel,
+          }
+        : route;
+    }),
+  };
+}
 
 export type CatalogModelResolution =
   | Readonly<{
@@ -190,6 +213,7 @@ export function validateModelCatalog(
     ],
     systemDefault,
     systemDefaultModel: systemDefault.model,
+    autoUpstreamModel: AUTO_RUN_UPSTREAM_MODEL,
     byModel,
   };
 }
@@ -246,7 +270,7 @@ export function catalogBuiltInRoute(
 ): CatalogRoute | null {
   if (model === AUTO_RUN_MODEL) {
     return concreteProviderType === AUTO_RUN_PROVIDER
-      ? autoCatalogRoute()
+      ? { ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }
       : null;
   }
   return (
@@ -340,10 +364,12 @@ export function isCatalogModelRunnable(
 
 /** Platform admission is fixed Auto, never a catalog fallback directory. */
 export function catalogBuiltInCandidates(
-  _catalog: ModelCatalog,
+  catalog: ModelCatalog,
   model: string,
 ): readonly CatalogRoute[] {
-  return model === AUTO_RUN_MODEL ? [autoCatalogRoute()] : [];
+  return model === AUTO_RUN_MODEL
+    ? [{ ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }]
+    : [];
 }
 
 /**

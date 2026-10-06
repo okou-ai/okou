@@ -5,7 +5,7 @@ import {
 import {
   AUTO_RUN_MODEL,
   AUTO_RUN_PROVIDER,
-  AUTO_RUN_UPSTREAM_MODEL,
+  isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
@@ -39,7 +39,10 @@ export function getCatalogBuiltInModelRouteCandidates(
   selectedModel: string,
   routePricing?: BuiltInRoutePricing,
 ): readonly BuiltInModelRouteTarget[] {
-  if (selectedModel !== AUTO_RUN_MODEL) {
+  if (
+    selectedModel !== AUTO_RUN_MODEL ||
+    !isAutoRunPreset(catalog.autoUpstreamModel)
+  ) {
     return [];
   }
   const [pricingRoute] = catalogBuiltInCandidates(catalog, AUTO_RUN_MODEL);
@@ -53,7 +56,7 @@ export function getCatalogBuiltInModelRouteCandidates(
     {
       selectedModel: AUTO_RUN_MODEL,
       providerType: AUTO_RUN_PROVIDER,
-      upstreamModel: AUTO_RUN_UPSTREAM_MODEL,
+      upstreamModel: catalog.autoUpstreamModel,
       vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[AUTO_RUN_PROVIDER].vendor,
     },
   ];
@@ -120,20 +123,16 @@ function eligibleBuiltInModelRouteCandidates(
   );
 }
 
-/** A captured platform route must still match the fixed Auto route. */
+/** Captured Auto presets survive later operator edits, never vendor changes. */
 export function isBuiltInModelRuntimeRoutePermitted(
-  catalog: ModelCatalog,
+  _catalog: ModelCatalog,
   route: BuiltInModelRuntimeRoute,
 ): boolean {
-  return getCatalogBuiltInModelRouteCandidates(
-    catalog,
-    route.selectedModel,
-  ).some((candidate) => {
-    return (
-      candidate.providerType === route.providerType &&
-      candidate.upstreamModel === route.upstreamModel
-    );
-  });
+  return (
+    route.selectedModel === AUTO_RUN_MODEL &&
+    route.providerType === AUTO_RUN_PROVIDER &&
+    isAutoRunPreset(route.upstreamModel)
+  );
 }
 
 /** Operator-managed key id for each vendor; the vendor column is unique. */

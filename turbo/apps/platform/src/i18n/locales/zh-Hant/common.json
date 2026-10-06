@@ -1152,9 +1152,6 @@
       "downgradesOn": "將於{{date}}降級為{{plan}}",
       "downgradeTo": "降級到{{plan}}",
       "endsOn": "{{date}}結束",
-      "features": {
-        "byok": "自帶大模型金鑰"
-      },
       "free": {
         "name": "免費版"
       },
@@ -1169,7 +1166,6 @@
         "everythingInBuiltForTeams": "包含{{plan}}的全部功能，併為團隊打造",
         "included": "已包含",
         "liveBrowser": "實時觀看智能體的瀏覽器，隨時接管",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "更多自定義連接器和渠道整合",
         "supportEmail": "郵件支援",
         "supportPriority": "優先支援",

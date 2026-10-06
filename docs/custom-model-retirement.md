@@ -5,8 +5,13 @@
 Chat has two credential sources, not two organization modes:
 
 - **Auto:** the platform route is `okou-1.0` through `openrouter-codex` to
-  `@preset/okou-1-0`. It uses platform billing. Model policy rows and a global
-  default-model lookup do not select that route.
+  `@preset/okou-1-0` by default. The operator-only organization preset from
+  #37799 can override the upstream preset, never the logical model, vendor,
+  pricing or token limits. NULL/absent metadata uses the ordinary default;
+  blank/invalid values fail closed without default substitution. Captured
+  launches keep their preset after operator edits. No preset management API/UI
+  or Custom/BYOK configuration is restored. It uses platform billing. Model
+  policy rows and a global default-model lookup do not select that route.
 - **Personal subscription:** the member chooses models offered by their own
   connected ChatGPT/Codex or Claude subscription. Ownership, account capture,
   reconnect state, supported efforts and service tiers remain enforced. Claude
@@ -77,7 +82,8 @@ retain their ownership and reconnect safeguards.
 ## Validation boundary (2026-10-05)
 
 The unified PR includes the complete former #37758 cleanup, the resolved main
-integration, and generator-produced migrations 1324–1326. The physical cleanup
+integration, and generator-produced migrations 1325–1327, after main's
+historical `1324_org_openrouter_preset`. Its nullable preset column is retained. The physical cleanup
 remains deletion-only. A separate, narrow data migration preserves the native
 subscription launch defaults previously supplied by retired mirror routes; it
 never changes explicit defaults, disabled/future routes, or member preferences.
@@ -102,7 +108,10 @@ deployment approval or protection bypass is authorized by local validation.
 
 ## Required acceptance scenarios
 
-- An unconnected member sees only Auto; it starts the fixed OpenRouter preset.
+- An unconnected member sees only Auto; it starts the ordinary OpenRouter
+  preset or the operator-owned organization preset, without changing vendors.
+- Organization presets are isolated; clearing an override restores the ordinary
+  default, invalid values reject, and already captured launches stay pinned.
 - A connected member can select their own subscription model, including its
   valid effort/service tier; a different member cannot borrow that account.
 - Disconnect/reconnect handling preserves executable selections or explicitly

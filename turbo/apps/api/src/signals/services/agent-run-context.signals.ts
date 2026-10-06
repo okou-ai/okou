@@ -34,10 +34,11 @@ import {
   type ConnectorSourceRow,
 } from "./execution-connector-sources.service";
 import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
-import type {
-  MemberModelBootstrap,
-  OrgModelBootstrap,
-  RunOrgMetadata,
+import {
+  modelFactsFromSnapshot,
+  type MemberModelBootstrap,
+  type OrgModelBootstrap,
+  type RunOrgMetadata,
 } from "./model-bootstrap.service";
 import {
   createManagedModelKeys,
@@ -413,7 +414,7 @@ function createOrgContext(
         get(orgMetadata$),
         get(modelCatalog$),
       ]);
-      return { orgId, org, capabilities, catalog };
+      return modelFactsFromSnapshot(orgId, capabilities, org, catalog);
     });
   return {
     orgRows$,

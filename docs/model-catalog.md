@@ -4,12 +4,16 @@
 
 There are two execution sources:
 
-1. Platform **Auto**: `okou-1.0` → `openrouter-codex` → `@preset/okou-1-0`.
+1. Platform **Auto**: `okou-1.0` → `openrouter-codex` → `@preset/okou-1-0`
+   by default, with #37799's operator-only organization preset override.
 2. A member's connected personal ChatGPT/Codex or Claude subscription.
 
 Auto is defined by `@okouai/core/auto-run-model`, not an organization policy or a
 mutable platform-model directory. Catalog entries cannot add platform candidates,
-change Auto's upstream, or provide a vendor fallback. Auto runs use Pi/OpenRouter;
+change Auto's upstream, or provide a vendor fallback. Only nullable operator
+metadata projects an organization preset: NULL/absent uses the ordinary default,
+invalid values reject, and captured launches retain their preset. Logical model,
+vendor, pricing and token limits stay fixed; there is no preset management API/UI. Auto runs use Pi/OpenRouter;
 personal Codex follows its admitted runtime capabilities and personal Claude
 continues through the vendor harness.
 

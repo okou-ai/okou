@@ -327,7 +327,9 @@ function phase2CandidateRow(
 }
 
 export async function insertPendingPhase2Job(
-  scope: Phase2TestScope,
+  scope: Pick<Phase2TestScope, "memoryStorageId" | "orgId" | "userId"> & {
+    readonly baseVersion: Pick<Phase2TestVersion, "versionId">;
+  },
   overrides: Partial<typeof piMemoryPhase2Jobs.$inferInsert> = {},
 ): Promise<void> {
   await db()
@@ -356,7 +358,9 @@ export async function insertPendingPhase2Job(
     });
 }
 
-export async function readPhase2Job(scope: Phase2TestScope) {
+export async function readPhase2Job(
+  scope: Pick<Phase2TestScope, "memoryStorageId" | "orgId" | "userId">,
+) {
   const [job] = await db()
     .select()
     .from(piMemoryPhase2Jobs)

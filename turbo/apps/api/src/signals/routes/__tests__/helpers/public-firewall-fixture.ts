@@ -31,6 +31,8 @@ export function createPublicFirewallFixture(
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const agentIds = new Set<string>();
   const runIds = new Set<string>();
+  const claims = new Map<string, string>();
+  let deleteOwnedUser = false;
   const builtinAccounts = new Map<ConnectorSlug, Set<string>>();
   const builtinDeletionIntents = new Map<ConnectorSlug, Set<string>>();
   const customAccounts = new Map<string, Set<string>>();
@@ -44,10 +46,26 @@ export function createPublicFirewallFixture(
     const runs = createRunsApi(context);
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
+    const accepted = await createRunReadsApi(context).requestListLogs(
+      actor,
+      { limit: 100 },
+      [200],
+    );
+    for (const run of accepted.body.data) {
+      runIds.add(run.id);
+    }
     for (const runId of runIds) {
       const run = await runs.readRun(actor, runId);
       if (run.status === "pending" || run.status === "running") {
         await runs.requestCancelRun(actor, runId, [200]);
+      }
+      const token = claims.get(runId);
+      if (token && ["pending", "running", "cancelled"].includes(run.status)) {
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          { runId, exitCode: 1, error: "Owned carrier cancelled" },
+          { authorization: `Bearer ${token}` },
+          [200],
+        );
       }
     }
     await flushWaitUntilForTest();
@@ -139,6 +157,14 @@ export function createPublicFirewallFixture(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
+    if (deleteOwnedUser) {
+      webhooks.verifyNextClerkWebhook({
+        type: "user.deleted",
+        data: { id: actor.userId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+    }
     for (const agentId of agentIds) {
       await createBddApi(context).requestReadAgent(actor, agentId, [404]);
     }
@@ -157,7 +183,10 @@ export function createPublicFirewallFixture(
   return {
     actor,
     run: owner.run,
-    async fund() {
+    async fund(fundingActor = actor) {
+      if (fundingActor.orgId !== orgId) {
+        throw new Error("Funding must belong to the owned organization");
+      }
       const storage = context.mocks.s3.send.getMockImplementation();
       const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
       restoreStorage = () => {
@@ -168,15 +197,22 @@ export function createPublicFirewallFixture(
           context.mocks.s3.getSignedUrl.mockImplementation(presign);
         }
       };
-      createFirewallApi(context).seedClerkDirectory(actor);
+      createFirewallApi(context).seedClerkDirectory(fundingActor);
       // Selected scenarios observe authorization, not the old synthetic 100000.
-      return await createRunsApi(context).grantProEntitlement(actor, {
+      return await createRunsApi(context).grantProEntitlement(fundingActor, {
         customerId,
         subscriptionId,
       });
     },
     registerAgent(agentId: string): void {
       agentIds.add(agentId);
+    },
+    registerClaim(runId: string, token: string): void {
+      runIds.add(runId);
+      claims.set(runId, token);
+    },
+    registerOwnedUserDeletion(): void {
+      deleteOwnedUser = true;
     },
     registerRun(runId: string): void {
       runIds.add(runId);

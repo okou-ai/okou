@@ -1,12 +1,11 @@
 {
   "name": "@okouai/app",
-  "version": "0.998.4",
+  "version": "0.998.6",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --port 3002",
     "build": "vite build",
-    "build:verify-hashes": "node scripts/check-build-hash-stability.node.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "i18n:extract": "i18next-cli extract",

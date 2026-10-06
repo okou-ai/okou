@@ -429,6 +429,12 @@ test("Compare both usage-pack prices before choosing a plan", async () => {
   const { choosePlanHeading, proPlan, teamPlan } =
     await openUsagePackPlanSelection();
   expect(choosePlanHeading).toBeInTheDocument();
+  expect(
+    within(proPlan).getByText("3 agents running at once"),
+  ).toBeInTheDocument();
+  expect(
+    within(proPlan).getByText("Scheduled and event automations"),
+  ).toBeInTheDocument();
   // The plan steps are a dialog over the billing tab, not a page that
   // replaces it, so the plan the workspace is deciding against stays visible.
   expect(screen.getByText("No active plan")).toBeInTheDocument();
@@ -804,7 +810,8 @@ async function openLegacyConversionEligibility() {
 
 test("Gate legacy conversion eligibility before Pro configuration", async () => {
   const migrationReady = await openLegacyConversionEligibility();
-  expect(screen.getByRole("status")).toBeInTheDocument();
+  const loadingModal = await screen.findByRole("dialog", { name: "Billing" });
+  expect(within(loadingModal).getByRole("status")).toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Choose a plan" }),
   ).not.toBeInTheDocument();

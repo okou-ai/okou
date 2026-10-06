@@ -1,3 +1,4 @@
+import { setOrgOpenrouterPresetFixture } from "../../../test-fixtures/org-metadata";
 import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -893,15 +894,15 @@ describe("CHAT-02: model-first provider policies", () => {
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
   }, 90_000);
 
-  it.each([
-    {
-      model: "okou-1.0",
-      preset: "@preset/okou-1-0",
-    },
-  ] as const)(
-    "routes the fixed default built-in $model only through its OpenRouter Preset",
-    async ({ model, preset }) => {
+  it.each([null, "@preset/org-premium"] as const)(
+    "routes built-in okou-1.0 with org preset %s and falls back only for null",
+    async (openrouterPreset) => {
+      const model = "okou-1.0";
       const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await setOrgOpenrouterPresetFixture({
+        orgId: requireOrgId(actor),
+        openrouterPreset,
+      });
       await seedBuiltInModelCandidateKeys(context, model);
       await preparePiResourceHandoff(actor, agentId);
       await chat.updateUserModelPreference(actor, null);
@@ -911,19 +912,94 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         prompt: "capture the managed Okou Preset route",
       });
+      // The launched Run keeps its route even if operator config changes.
+      await setOrgOpenrouterPresetFixture({
+        orgId: requireOrgId(actor),
+        openrouterPreset: "@preset/changed-after-launch",
+      });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       expect(claim.cliAgentType).toBe("pi");
       expect(claim.modelUsageProvider).toBe(model);
       expect(claim.piModelConfig).toMatchObject({
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        model: preset,
+        model: openrouterPreset ?? "@preset/okou-1-0",
         catalogModel: model,
       });
       expect(claim.billableFirewalls).toContain(
         "model-provider:openrouter-codex",
       );
       await cancelChatRun(actor, run.runId);
+    },
+  );
+
+  it("isolates org presets and restores the catalog route when cleared", async () => {
+    const first = await entitledChatActor();
+    const second = await entitledChatActor();
+    await seedBuiltInModelCandidateKeys(context, "okou-1.0");
+    await preparePiResourceHandoff(first.actor, first.agentId);
+    await preparePiResourceHandoff(second.actor, second.agentId);
+    await setOrgOpenrouterPresetFixture({
+      orgId: requireOrgId(first.actor),
+      openrouterPreset: "@preset/first-org",
+    });
+    await setOrgOpenrouterPresetFixture({
+      orgId: requireOrgId(second.actor),
+      openrouterPreset: "@preset/second-org",
+    });
+
+    for (const [owner, expected] of [
+      [first, "@preset/first-org"],
+      [second, "@preset/second-org"],
+    ] as const) {
+      const run = await sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        model: "okou-1.0",
+        prompt: "use this organization's preset",
+      });
+      const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
+      expect(claim.piModelConfig).toMatchObject({
+        model: expected,
+        catalogModel: "okou-1.0",
+      });
+      await cancelChatRun(owner.actor, run.runId);
+    }
+
+    await setOrgOpenrouterPresetFixture({
+      orgId: requireOrgId(first.actor),
+      openrouterPreset: null,
+    });
+    const reset = await sendChatRun(first.actor, {
+      agentId: first.agentId,
+      model: "okou-1.0",
+      prompt: "use the catalog route after clearing the override",
+    });
+    const { claim } = await claimChatRun(first.runnerGroup, reset.runId);
+    expect(claim.piModelConfig).toMatchObject({
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+    });
+    await cancelChatRun(first.actor, reset.runId);
+  });
+
+  it.each(["", "not-a-preset", "@preset/"])(
+    "rejects invalid operator preset %s without substituting Auto's default",
+    async (openrouterPreset) => {
+      const { actor, agentId } = await entitledChatActor();
+      await seedBuiltInModelCandidateKeys(context, "okou-1.0");
+      await setOrgOpenrouterPresetFixture({
+        orgId: requireOrgId(actor),
+        openrouterPreset,
+      });
+      const { picked } = await sendUntilPicked(actor, {
+        agentId,
+        prompt: "operator configuration must fail closed",
+        model: "okou-1.0",
+      });
+      expect(picked).toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
+      });
     },
   );
 

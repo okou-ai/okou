@@ -1153,9 +1153,6 @@
       "downgradesOn": "Downgrade auf {{plan}} auf {{date}}",
       "downgradeTo": "Downgrade auf {{plan}}",
       "endsOn": "Endet am {{date}}",
-      "features": {
-        "byok": "Bringen Sie Ihre eigenen LLM-Schlüssel mit"
-      },
       "free": {
         "name": "Frei"
       },
@@ -1170,7 +1167,6 @@
         "everythingInBuiltForTeams": "Alles aus {{plan}}, gemacht für Teams",
         "included": "Enthalten",
         "liveBrowser": "Dem Live-Browser eines Agents zusehen und übernehmen",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "Mehr Custom Connectors & Kanal-Integrationen",
         "supportEmail": "E-Mail-Support",
         "supportPriority": "Priorisierter Support",

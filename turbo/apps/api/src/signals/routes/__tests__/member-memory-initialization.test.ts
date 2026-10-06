@@ -1,3 +1,8 @@
+import { gunzipSync } from "node:zlib";
+import {
+  createPublicRunnerMemory,
+  memoryArchive,
+} from "./helpers/public-runner-memory";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { describe, expect, it } from "vitest";
 
@@ -111,28 +116,85 @@ describe("member memory account initialization", () => {
   });
 
   it("preserves published memory when either initialization entry is repeated", async () => {
-    const actor = api.user({ orgRole: "org:member" });
-    await completeOnboarding(actor);
-    const files = [storageTextFile("memory.md", "Keep this existing memory")];
-    storages.mockStorageObjectsExist();
-    const prepared = await storages.prepareStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      files,
+    const fixture = createPublicRunnerMemory(context, {
+      orgRole: "org:member",
     });
-    await storages.commitStorage(actor, {
-      storageName: "memory",
-      storageOwner: "user",
-      versionId: prepared.versionId,
-      files,
+    await fixture.run(async () => {
+      const actor = fixture.actor;
+      const agentId = await fixture.initializeNative();
+      const initial = await fixture.claim(
+        agentId,
+        "Publish existing member Memory",
+      );
+      const content = "Keep this existing memory";
+      const files = [storageTextFile("memory.md", content)];
+      const archive = memoryArchive("memory.md", content);
+      fixture.installObjects();
+      const prepared = await webhooks.requestAgentStoragePrepare(
+        {
+          runId: initial.run.runId,
+          storageId: initial.memory.storageId,
+          files,
+        },
+        initial.headers,
+        [200],
+      );
+      if (prepared.status !== 200 || !prepared.body.uploads) {
+        throw new Error("Expected real Memory uploads");
+      }
+      fixture.objects.set(prepared.body.uploads.archive.key, archive);
+      fixture.objects.set(
+        prepared.body.uploads.manifest.key,
+        Buffer.from(
+          JSON.stringify({
+            version: 1,
+            files,
+            createdAt: new Date(0).toISOString(),
+          }),
+        ),
+      );
+      const published = await webhooks.requestAgentStorageCommit(
+        {
+          runId: initial.run.runId,
+          storageId: initial.memory.storageId,
+          versionId: prepared.body.versionId,
+          files,
+        },
+        initial.headers,
+        [200],
+      );
+      expect(published.body).toMatchObject({
+        versionId: prepared.body.versionId,
+        fileCount: 1,
+      });
+      await completeOnboarding(actor);
+      await membershipCreated(actor);
+      const repeated = await fixture.claim(
+        agentId,
+        "Read preserved member Memory",
+      );
+      expect(repeated.memory).toMatchObject({
+        storageId: initial.memory.storageId,
+        versionId: prepared.body.versionId,
+        archiveUrl: expect.any(String),
+      });
+      expect(repeated.memory.empty).toBeUndefined();
+      if (!repeated.memory.archiveUrl) {
+        throw new Error("Expected the published Memory archive URL");
+      }
+      const downloaded = await fetch(repeated.memory.archiveUrl, {
+        signal: context.signal,
+      });
+      expect(downloaded.status).toBe(200);
+      const bytes = Buffer.from(await downloaded.arrayBuffer());
+      expect(bytes).toStrictEqual(archive);
+      const tar = gunzipSync(bytes);
+      expect(
+        tar.subarray(0, 100).toString("utf8").split(String.fromCharCode(0))[0],
+      ).toBe("memory.md");
+      expect(
+        tar.subarray(512, 512 + Buffer.byteLength(content)).toString("utf8"),
+      ).toBe(content);
     });
-    const published = await memoryDownload(actor);
-    expect(published).toMatchObject({
-      versionId: prepared.versionId,
-      fileCount: 1,
-    });
-    await completeOnboarding(actor);
-    await membershipCreated(actor);
-    await expect(memoryDownload(actor)).resolves.toStrictEqual(published);
   });
 });

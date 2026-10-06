@@ -27,6 +27,7 @@ function orgMetadataColumnsBeforeFirstPartySource() {
       .notNull()
       .default(false),
     onboardingComplete: boolean("onboarding_complete").notNull().default(false),
+    openrouterPreset: text("openrouter_preset"),
     // The field answered in the source-first onboarding flow. Null for every
     // org that finished onboarding without being asked, so readers must treat
     // an absent answer as "not collected" rather than a missing value.
