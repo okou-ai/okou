@@ -45,14 +45,21 @@ shell/tools and development seeds are explicit. Dash `0.5.12-6ubuntu5` supplies
 the archive-provided `sh` realization required by the pinned configure's
 `#!/bin/sh`; Bash alone does not satisfy it. Signed `bzip2` `1.0.8-5.1`
 supplies the CLI required by the selected `x86_64-softmmu` installed-firmware
-Meson path; `libbz2` alone does not provide that executable. The firmware/options
-are not disabled to avoid this requirement. Before any source execution the
-producer checks contained, executable native bytes for that exact interpreter
-and required compiler/Python/build tools, retaining their file/mode/hash roles in
+Meson path; `libbz2` alone does not provide that executable. Signed `diffutils`
+`1:3.10-1build1` supplies the unconditional QAPI-schema Meson-setup `diff` lookup;
+disabling docs/tools does not remove it. The firmware/options and upstream setup
+are not changed to avoid these requirements. Before any source execution the
+producer checks contained, executable native bytes for that exact interpreter,
+configure/generator coreutils, `sort`, archive/assembler/symbol tools, private
+GCC `cc1`/`collect2` and required compiler/Python/build tools, retaining their file/mode/hash roles in
 the input-closure binding. Full-private admission rechecks each declared role's
 actual contained canonical target, native header, digest and exact executable
 mode, rather than trusting a mode hashed only in metadata. This is not complete
-transitive loaded-byte attribution.
+transitive loaded-byte attribution, complete Python/venv/compiler data closure,
+or proof of which subordinate tools actually ran. The private-root package
+inventory still needs a separately reviewed exact immutable/mutable mount
+contract; repository/proc/device/ephemeral mounts cannot be equated with the
+pre-mount extracted tree or excluded by broad pathname prefixes.
 Archive hashes are checked against signed metadata before collision/path-safe
 extraction. No package installation or maintainer script runs. Declared usrmerge,
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace

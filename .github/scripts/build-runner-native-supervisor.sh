@@ -15,10 +15,17 @@ for profile in ci release; do
   output="$CARGO_TARGET_DIR/f5-supervisor-$profile"
   [[ ! -e "$output" && ! -L "$output" ]] || exit 1
   mkdir -m 700 "$output"
+  compiler_source="$PWD"
+  if [[ "$profile" == ci ]]; then
+    # Runner ci compiles from its verified materialized production tree. The
+    # immutable native ELF retains DWARF source paths, so tests must use that
+    # same REAL source context, not strip or replace its sealed helper bytes.
+    compiler_source=$(python3 -B .github/scripts/runner-native-supervisor.py prepare-ci "$output" \
+      --profile "$profile" --target "$TARGET_TRIPLE" --source-sha "$SOURCE_SHA")
+  fi
   (
-    # Cargo discovers .cargo/config.toml from CWD, not --manifest-path. Preserve
-    # the exact musl target linker/static configuration of the real producer.
-    cd crates
+    # Preserve Cargo configuration discovery, original output paths and profile.
+    cd "$compiler_source/crates"
     CARGO_INCREMENTAL=0 cargo test --manifest-path Cargo.toml --locked --profile "$profile" \
       --target "$TARGET_TRIPLE" -j 1 -p kerberos-worker \
       --test process --test parent_death --test cleanup_unknown --no-run \

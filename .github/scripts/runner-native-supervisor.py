@@ -16,6 +16,7 @@ TARGETS = ('x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl')
 PROFILES = ('ci', 'release')
 WORKER = {'process': 16, 'parent_death': 1, 'cleanup_unknown': 1}
 PEER_GROUPS = ('pinned_native_acquisition', 'pinned_native_renew', 'pinned_completed_gss', 'pinned_rfb_finality')
+TEST_TREES = ('crates/kerberos-worker/tests', 'crates/rfb-client/tests')
 
 
 def require(condition, message):
@@ -101,6 +102,83 @@ def write(path, value):
         output.write(json.dumps(value, indent=2) + '\n')
 
 
+def test_sources(head):
+    records = {}
+    for entry in git('ls-tree', '-r', '-z', head, '--', *TEST_TREES).split(b'\0'):
+        if not entry:
+            continue
+        metadata, name = entry.decode().split('\t', 1)
+        mode, kind, object_id = metadata.split()
+        relative = Path(name)
+        require(mode in ('100644', '100755') and kind == 'blob'
+                and not relative.is_absolute() and '..' not in relative.parts
+                and any(name.startswith(tree + '/') for tree in TEST_TREES), 'invalid committed ci test input')
+        payload = regular(ROOT / relative, 2 * 1024 * 1024)
+        require(git('hash-object', '--no-filters', '--', str(ROOT / relative)).decode() == object_id,
+                'ci test source differs from committed producer input')
+        records[name] = (mode, payload)
+    require(records, 'committed ci test sources are missing')
+    return records
+
+
+def stage_ci_tests(context_root, head):
+    require(context_root.is_dir() and context_root.resolve() == context_root.absolute(),
+            'invalid original Runner ci source context')
+    records = test_sources(head)
+    # The normal Runner inventory deliberately excludes integration tests. Add
+    # only exact committed test sources, never a helper/library/output byte.
+    for name in records:
+        destination = context_root / name
+        require(not destination.exists() and not destination.is_symlink()
+                and destination.resolve() == destination.absolute(), 'ci test source destination already exists or escaped')
+    for name, (mode, payload) in records.items():
+        destination = context_root / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open('xb') as output:
+            output.write(payload)
+        destination.chmod(int(mode[-3:], 8))
+    return {name: sha(payload) for name, (_, payload) in records.items()}
+
+
+def prepare_ci(out, target, head):
+    require(target in TARGETS and git('rev-parse', 'HEAD').decode() == head
+            and not git('status', '--porcelain', '--untracked-files=no')
+            and not git('ls-files', '--others', '--exclude-standard', '--', 'crates', '.github'),
+            'ci compiler source is not the clean selected producer revision')
+    require(not os.environ.get('RUNNER_BINARY_CONTEXT_ROOT'), 'unselected ci source context override')
+    env = {**os.environ, 'TARGET_TRIPLE': target, 'RUNNER_BINARY_GIT_REVISION': head,
+           'CARGO_TARGET_DIR': str(ROOT / 'crates/target')}
+    expected = Path(env.get('RUNNER_TEMP') or env['CARGO_TARGET_DIR']) / ('runner-binary-build-context-' + target)
+    result = subprocess.check_output(['bash', str(ROOT / '.github/scripts' / 'runner-binary-build/build.sh'),
+                                      'materialize'], cwd=ROOT, env=env, text=True)
+    roots = re.findall(r'^context-root=(.+)$', result, re.MULTILINE)
+    require(roots == [str(expected)] and expected.resolve() == expected.absolute(),
+            'original Runner ci materializer selected another source root')
+    hashes = stage_ci_tests(expected, head)
+    write(out / 'ci-source-context.json', {'kind': 'runner-ci-materialized', 'root': str(expected),
+          'headSha': head, 'treeSha': git('rev-parse', 'HEAD^{tree}').decode(),
+          'target': target, 'testInputSha256': hashes})
+    print(expected)
+
+
+def compiler_source(library, build, source_root):
+    require(library['target']['src_path'] == str(source_root / 'crates/kerberos-worker/src/lib.rs')
+            and library['package_id'].split('#', 1)[0] == 'path+' + (source_root / 'crates/kerberos-worker').as_uri()
+            and build['package_id'] == library['package_id'], 'optimized native compiler used another source context')
+
+
+def check_ci_source_record(record, target, head):
+    source_root = Path(record['root'])
+    require(source_root.is_absolute() and '..' not in source_root.parts
+            and record['headSha'] == head and record['treeSha'] == git('rev-parse', 'HEAD^{tree}').decode()
+            and record['target'] == target
+            and record['testInputSha256'] == {name: sha(payload) for name, (_, payload) in test_sources(head).items()},
+            'original compiler test-source inventory changed')
+    require(record['kind'] == 'runner-ci-materialized'
+            and source_root.name == 'runner-binary-build-context-' + target, 'ci compiler source kind changed')
+    return source_root
+
+
 def finish(out, profile, target, head):
     require(profile in PROFILES and target in TARGETS and git('rev-parse', 'HEAD').decode() == head,
             'optimized source/target/profile mismatch')
@@ -114,13 +192,17 @@ def finish(out, profile, target, head):
             and context['producer']['runAttempt'] == int(os.environ['GITHUB_RUN_ATTEMPT'])
             and context['cli']['commitSha'] == head,
             'optimized compiler lost original same-source producer/CLI context')
+    compiler_context = json.loads(regular(out / 'ci-source-context.json', 65536)) if profile == 'ci' else None
+    compiler_root = check_ci_source_record(compiler_context, target, head) if profile == 'ci' else None
     compilers = {}; artifacts = {}; native = None
     for kind, names in (('worker', set(WORKER)), ('peer', {'qemu_gssapi'})):
         data = regular(out / (kind + '-compiler.json'), 8 * 1024 * 1024)
         events = [json.loads(line) for line in data.splitlines()]
         selected = test_artifacts(events, names)
-        production_library(events)
+        library = production_library(events)
         build, identity = native_identity(events)
+        if profile == 'ci':
+            compiler_source(library, build, compiler_root)
         require(identity['nativeTarget'] == target and (native is None or native == identity),
                 'optimized consumers select different native helper builds')
         native = identity
@@ -131,6 +213,10 @@ def finish(out, profile, target, head):
                 'native compiler bytes differ from the sealed identities')
         compilers[kind] = sha(data)
         for name, artifact in selected.items():
+            relative = ('crates/rfb-client/tests/qemu_gssapi/main.rs' if name == 'qemu_gssapi'
+                        else 'crates/kerberos-worker/tests/' + name + '.rs')
+            if profile == 'ci':
+                require(artifact['target']['src_path'] == str(compiler_root / relative), 'optimized integration source path changed')
             path = Path(artifact['executable'])
             require(path.parent == ROOT / 'crates/target' / target / profile / 'deps'
                     and re.fullmatch(re.escape(name) + r'-[0-9a-f]+', path.name),
@@ -154,6 +240,7 @@ def finish(out, profile, target, head):
           'profileContract': profile_contract(profile), 'target': target,
           'producer': context['producer'], 'compiler': context['compiler'], 'cli': context['cli'],
           'distributionContextSha256': sha(context_bytes), 'compilerSha256': compilers,
+          **({'ciCompilerSource': compiler_context} if profile == 'ci' else {}),
           'nativePackage': native, 'executables': artifacts, 'runtimeVerified': False,
           'scope': 'optimized Rust integration consumers; not distributed Runner execution, full QEMU PNG or K3'})
 
@@ -180,13 +267,20 @@ def validate(out, package, profile, target, head):
             and context['compiler'] == manifest['compiler']
             and context['toolchainImage'] == 'ghcr.io/okou-ai/vm0-toolchain-rust:20260825',
             'original optimized compiler/source/CLI context changed')
+    compiler_root = check_ci_source_record(manifest['ciCompilerSource'], target, head) if profile == 'ci' else None
     for kind, names in (('worker', set(WORKER)), ('peer', {'qemu_gssapi'})):
         data = regular(out / (kind + '-compiler.json'), 8 * 1024 * 1024)
         events = [json.loads(line) for line in data.splitlines()]
-        production_library(events)
+        library = production_library(events)
+        if profile == 'ci':
+            compiler_source(library, native_identity(events)[0], compiler_root)
         require(sha(data) == manifest['compilerSha256'][kind]
                 and native_identity(events)[1] == manifest['nativePackage'], 'original compiler identity changed')
         for name, artifact in test_artifacts(events, names).items():
+            relative = ('crates/rfb-client/tests/qemu_gssapi/main.rs' if name == 'qemu_gssapi'
+                        else 'crates/kerberos-worker/tests/' + name + '.rs')
+            if profile == 'ci':
+                require(artifact['target']['src_path'] == str(compiler_root / relative), 'original integration source path changed')
             item = manifest['executables'][name]
             require(artifact['executable'] == item['compilerPath'] and item['file'] == Path(item['compilerPath']).name
                     and re.fullmatch(re.escape(name) + r'-[0-9a-f]+', item['file']), 'compiler/output binding changed')
@@ -256,12 +350,15 @@ def runtime_finish(out, result):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('finish', 'validate', 'runtime-finish'))
+    parser.add_argument('action', choices=('prepare-ci', 'finish', 'validate', 'runtime-finish'))
     parser.add_argument('out', type=Path)
     parser.add_argument('--profile', choices=PROFILES); parser.add_argument('--target', choices=TARGETS)
     parser.add_argument('--source-sha'); parser.add_argument('--package', type=Path); parser.add_argument('--result', type=Path)
     args = parser.parse_args(); out = args.out.absolute()
-    if args.action == 'finish':
+    if args.action == 'prepare-ci':
+        require(args.profile == 'ci', 'ci source preparation cannot relabel another profile')
+        prepare_ci(out, args.target, args.source_sha)
+    elif args.action == 'finish':
         finish(out, args.profile, args.target, args.source_sha)
     elif args.action == 'validate':
         validate(out, args.package.absolute(), args.profile, args.target, args.source_sha)

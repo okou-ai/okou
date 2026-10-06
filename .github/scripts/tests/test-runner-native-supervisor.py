@@ -101,6 +101,66 @@ class OptimizedSupervisor(unittest.TestCase):
             'controlled_peer::pinned_rfb_finality_padding_and_security_result_use_actual_mutual_gss',
             'controlled_peer::pinned_rfb_finality_stalled_peer_closes_at_acquired_ticket_and_gss_expiry'})
 
+    def test_ci_compiler_uses_original_runner_materializer_not_checkout_native_sources(self):
+        source = (ROOT / '.github/scripts/build-runner-native-supervisor.sh').read_text()
+        self.assertIn('prepare-ci', source)
+        self.assertIn('cd "$compiler_source/crates"', source)
+        preparation = source.split('runner-native-supervisor.py prepare-ci', 1)[1].split(')', 1)[0]
+        self.assertIn('--profile "$profile"', preparation)
+        implementation = (ROOT / '.github/scripts/runner-native-supervisor.py').read_text()
+        self.assertIn("'runner-binary-build/build.sh'", implementation)
+        self.assertIn("'materialize'", implementation)
+        self.assertNotIn('strip-debug', implementation)
+
+    def test_ci_source_inventory_stages_only_exact_committed_test_files(self):
+        import hashlib
+        import subprocess
+        import tempfile
+        self.assertTrue(callable(module().stage_ci_tests))
+        with tempfile.TemporaryDirectory(dir=ROOT / 'crates/target') as directory:
+            repo = Path(directory) / 'repo'; repo.mkdir()
+            subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+            files = {'crates/kerberos-worker/tests/process.rs': b'public inert test source\n',
+                     'crates/rfb-client/tests/qemu_gssapi/main.rs': b'public inert peer source\n'}
+            for name, value in files.items():
+                path = repo / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(value)
+            subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+            subprocess.run(['git', '-C', str(repo), '-c', 'user.name=inert', '-c', 'user.email=inert@example.invalid',
+                            'commit', '-qm', 'inert source inventory'], check=True)
+            head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+            context = Path(directory) / 'runner-binary-build-context-x86_64-unknown-linux-musl'; context.mkdir()
+            implementation = module(); implementation.ROOT = repo
+            result = implementation.stage_ci_tests(context, head)
+            self.assertEqual(result, {name: hashlib.sha256(value).hexdigest() for name, value in files.items()})
+            for name, value in files.items(): self.assertEqual((context / name).read_bytes(), value)
+            record = {'kind': 'runner-ci-materialized', 'root': str(context), 'headSha': head,
+                      'treeSha': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
+                      'target': 'x86_64-unknown-linux-musl', 'testInputSha256': result}
+            implementation.check_ci_source_record(record, record['target'], head)
+            record['testInputSha256'] = {**result, next(iter(files)): '0' * 64}
+            with self.assertRaises(ValueError): implementation.check_ci_source_record(record, record['target'], head)
+            with self.assertRaises(ValueError): implementation.stage_ci_tests(context, head)  # never overwrite
+            link = Path(directory) / 'context-link'; link.symlink_to(context, target_is_directory=True)
+            with self.assertRaises(ValueError): implementation.stage_ci_tests(link, head)
+            # Dirty or symlinked source cannot become a same-source compiler input.
+            selected = repo / next(iter(files)); selected.write_bytes(b'changed inert source\n')
+            with self.assertRaises(ValueError): implementation.stage_ci_tests(context, head)
+            selected.unlink(); selected.symlink_to(context / next(iter(files)))
+            with self.assertRaises(ValueError): implementation.stage_ci_tests(context, head)
+
+    def test_ci_compiler_source_refuses_checkout_path_before_receipt_acceptance(self):
+        validate = module().compiler_source
+        source = Path('/producer/tmp/runner-binary-build-context-x86_64-unknown-linux-musl')
+        library = {'package_id': 'path+' + (source / 'crates/kerberos-worker').as_uri() + '#0.1.0',
+                   'target': {'src_path': str(source / 'crates/kerberos-worker/src/lib.rs')}}
+        build = {'package_id': library['package_id']}
+        validate(library, build, source)
+        library['target']['src_path'] = '/producer/checkout/crates/kerberos-worker/src/lib.rs'
+        with self.assertRaises(ValueError): validate(library, build, source)
+        library['target']['src_path'] = str(source / 'crates/kerberos-worker/src/lib.rs')
+        build['package_id'] = 'path+file:///producer/other/crates/kerberos-worker#0.1.0'
+        with self.assertRaises(ValueError): validate(library, build, source)
+
     def test_profile_target_matrix_requires_original_package_and_failure_gate(self):
         jobs = json.loads(Path(os.environ['RUNNER_NATIVE_WORKFLOW_JSON']).read_text())['jobs']
         consumer = jobs['native-supervisor-runtime']

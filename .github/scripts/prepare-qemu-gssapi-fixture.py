@@ -52,11 +52,11 @@ KERBEROS = ("krb5-user", "krb5-kdc", "krb5-admin-server", "libgssapi-krb5-2",
             "libkrb5-3", "libk5crypto3", "libkrb5support0", "libkdb5-10t64",
             "libkadm5clnt-mit12", "libkadm5srv-mit12", "libgssrpc4t64")
 REQUIRED = (*KERBEROS, "libverto-libevent1t64", "libsasl2-2", "libsasl2-modules-gssapi-mit",
-            "libgnutls30t64", "bash", "dash", "bzip2", "coreutils", "grep", "sed", "gawk", "findutils", "iproute2",
+            "libgnutls30t64", "bash", "dash", "bzip2", "diffutils", "coreutils", "grep", "sed", "gawk", "findutils", "iproute2",
             "make", "gcc", "g++", "gcc-13", "g++-13", "binutils", "libc6-dev", "pkgconf",
             "ninja-build", "python3", "python3-venv", "python3.12", "python3.12-venv", "libglib2.0-dev",
             "libpixman-1-dev", "libfdt-dev", "zlib1g-dev", "libgnutls28-dev", "libsasl2-dev", "openssl")
-SEEDS = {"dash": "0.5.12-6ubuntu5", "bzip2": "1.0.8-5.1", "gcc-13": "13.2.0-23ubuntu4", "g++-13": "13.2.0-23ubuntu4", "binutils": "2.42-4ubuntu2",
+SEEDS = {"dash": "0.5.12-6ubuntu5", "bzip2": "1.0.8-5.1", "diffutils": "1:3.10-1build1", "gcc-13": "13.2.0-23ubuntu4", "g++-13": "13.2.0-23ubuntu4", "binutils": "2.42-4ubuntu2",
          "libc6-dev": "2.39-0ubuntu8", "libglib2.0-dev": "2.80.0-6ubuntu1", "libpixman-1-dev": "0.42.2-1build1",
          "libfdt-dev": "1.7.0-2build1", "zlib1g-dev": "1:1.3.dfsg-3.1ubuntu2", "python3.12": "3.12.3-1",
          "python3.12-venv": "3.12.3-1", "python3": "3.12.3-0ubuntu1", "python3-venv": "3.12.3-0ubuntu1",
@@ -205,9 +205,15 @@ def required_build_inputs(root, native):
     # graph. Check actual contained executable bytes before downloaded source
     # runs, including configure's /bin/sh and its signed Dash realization.
     records = {}
+    multiarch = {"x86_64": "x86_64-linux-gnu", "aarch64": "aarch64-linux-gnu"}[native]
+    compiler_private = "usr/libexec/gcc/" + multiarch
     for name in ("bin/sh", "bin/bash", "usr/bin/env", "usr/bin/cc", "usr/bin/c++",
                  "usr/bin/make", "usr/bin/ninja", "usr/bin/python3", "usr/bin/pkg-config",
-                 "usr/bin/grep", "usr/bin/sed", "usr/bin/awk", "usr/bin/find", "usr/bin/ld", "usr/bin/bzip2"):
+                 "usr/bin/grep", "usr/bin/sed", "usr/bin/awk", "usr/bin/find", "usr/bin/ld", "usr/bin/bzip2",
+                 "usr/bin/diff", "usr/bin/expr", "usr/bin/tr", "usr/bin/date", "usr/bin/dirname", "usr/bin/basename",
+                 "usr/bin/rm", "usr/bin/mkdir", "usr/bin/ln", "usr/bin/mv", "usr/bin/cat", "usr/bin/chmod",
+                 "usr/bin/sort", "usr/bin/nm", "usr/bin/ar", "usr/bin/as",
+                 compiler_private + "/13/cc1", compiler_private + "/13/collect2"):
         path = root / name
         try:
             actual = path.resolve(strict=True)

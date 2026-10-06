@@ -105,6 +105,22 @@ class ProducerInputs(unittest.TestCase):
         roles = [node.value for node in ast.walk(preflight) if isinstance(node, ast.Constant)]
         self.assertIn('usr/bin/bzip2', roles)
 
+    def test_unconditional_schema_setup_and_source_tools_are_explicit_inputs(self):
+        self.assertIn('diffutils', self.producer.REQUIRED)
+        self.assertEqual(self.producer.SEEDS['diffutils'], '1:3.10-1build1')
+        # Reviewed configure/generator/compiler paths, not their execution or
+        # complete transitive loader attribution. diff lookup is unconditional.
+        module = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        preflight = next(node for node in module.body if isinstance(node, ast.FunctionDef)
+                         and node.name == 'required_build_inputs')
+        roles = {node.value for node in ast.walk(preflight) if isinstance(node, ast.Constant)
+                 and isinstance(node.value, str)}
+        for name in ('diff', 'expr', 'tr', 'date', 'dirname', 'basename', 'rm', 'mkdir',
+                     'ln', 'mv', 'cat', 'chmod', 'sort', 'nm', 'ar', 'as'):
+            self.assertIn('usr/bin/' + name, roles)
+        self.assertIn('/13/cc1', roles)
+        self.assertIn('/13/collect2', roles)
+
     def test_required_program_preflight_refuses_missing_interpreter_without_execution(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             with self.assertRaisesRegex(ValueError, 'required private build program missing: bin/sh'):
