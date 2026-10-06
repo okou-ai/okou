@@ -1,3 +1,7 @@
+import {
+  cleanupExpiredEmailOutboxItemsForTest,
+  drainEmailOutboxItemsForTest,
+} from "../../../test-fixtures/email-outbox-workers";
 import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
@@ -1760,10 +1764,11 @@ async function drainResultEmails(
     sourceWorkflowAutomationId,
   });
   if (items.length > 0) {
-    await outbox.drainItems(
+    await drainEmailOutboxItemsForTest(
       items.map((item) => {
         return item.id;
       }),
+      context.signal,
     );
   }
 }
@@ -8454,9 +8459,12 @@ describe("Official Workflow Run admission", () => {
     }
 
     await withMockNowForTest(now() + 16 * 60 * 1000, async () => {
-      await expect(outbox.cleanupExpiredItems([originalItem.id])).resolves.toBe(
-        1,
-      );
+      await expect(
+        cleanupExpiredEmailOutboxItemsForTest(
+          [originalItem.id],
+          context.signal,
+        ),
+      ).resolves.toBe(1);
     });
     await expect(
       outbox.findSourceState({

@@ -1,3 +1,7 @@
+import {
+  cleanupExpiredEmailOutboxItemsForTest,
+  drainEmailOutboxItemsForTest,
+} from "../../../test-fixtures/email-outbox-workers";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkUsers } from "./helpers/clerk-users";
@@ -510,7 +514,9 @@ describe("Official Automation result email callbacks", () => {
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     const send = context.mocks.resend.send.mock.calls[0]?.[0];
     expect(send).toMatchObject({
@@ -879,11 +885,11 @@ describe("Official Automation result email callbacks", () => {
           error: { message: "Official result provider unavailable" },
         });
         mockNow(cleanupBaseTime);
-        await outbox.drainItems([originalItem.id]);
+        await drainEmailOutboxItemsForTest([originalItem.id], context.signal);
         mockNow(cleanupBaseTime + 1000);
-        await outbox.drainItems([originalItem.id]);
+        await drainEmailOutboxItemsForTest([originalItem.id], context.signal);
         mockNow(cleanupBaseTime + 5000);
-        await outbox.drainItems([originalItem.id]);
+        await drainEmailOutboxItemsForTest([originalItem.id], context.signal);
       }
       expect(context.mocks.resend.send).toHaveBeenCalledTimes(
         cleanupStatus === "failed" ? 3 : 0,
@@ -904,9 +910,12 @@ describe("Official Automation result email callbacks", () => {
       );
 
       mockNow(cleanupBaseTime + OUTBOX_TTL_MS + 60_000);
-      await expect(outbox.cleanupExpiredItems([originalItem.id])).resolves.toBe(
-        1,
-      );
+      await expect(
+        cleanupExpiredEmailOutboxItemsForTest(
+          [originalItem.id],
+          context.signal,
+        ),
+      ).resolves.toBe(1);
       const afterCleanup = await outbox.findSourceState({
         sourceRunId: runId,
         sourceWorkflowAutomationId: scenario.automationId,

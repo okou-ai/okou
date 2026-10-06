@@ -16,7 +16,6 @@ import { command } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { now } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
@@ -24,8 +23,6 @@ import type { RouteEntry } from "../route-entry";
 import {
   buildOneClickUnsubscribeUrl,
   buildUnsubscribeHeaders,
-  cleanupExpiredEmailOutboxItems$,
-  drainEmailOutboxItems$,
 } from "../services/email-common.service";
 import {
   isTestEndpointAllowed,
@@ -33,8 +30,6 @@ import {
 } from "./test-endpoint-helpers";
 
 const actionBody$ = bodyResultOf(testEmailOutboxStateContract.action);
-const drainBody$ = bodyResultOf(testEmailOutboxStateContract.drain);
-const cleanupBody$ = bodyResultOf(testEmailOutboxStateContract.cleanup);
 
 const historicalNativeMailTemplate = {
   template: "morning-brief-result",
@@ -504,57 +499,9 @@ const mutateTestEmailOutboxState$ = command(
   },
 );
 
-const drainTestEmailOutboxState$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(drainBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-    const drained = await set(
-      drainEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: bodyResult.data.item_ids },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { drained } };
-  },
-);
-
-const cleanupTestEmailOutboxState$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(cleanupBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-    const cleaned = await set(
-      cleanupExpiredEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: bodyResult.data.item_ids },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { cleaned } };
-  },
-);
-
 export const testEmailOutboxStateRoutes: readonly RouteEntry[] = [
   {
     route: testEmailOutboxStateContract.action,
     handler: mutateTestEmailOutboxState$,
-  },
-  {
-    route: testEmailOutboxStateContract.drain,
-    handler: drainTestEmailOutboxState$,
-  },
-  {
-    route: testEmailOutboxStateContract.cleanup,
-    handler: cleanupTestEmailOutboxState$,
   },
 ];

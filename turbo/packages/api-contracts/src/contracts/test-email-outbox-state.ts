@@ -135,22 +135,6 @@ export const testEmailOutboxStateActionResponseSchema = z.discriminatedUnion(
   ],
 );
 
-export const testEmailOutboxStateDrainBodySchema = z.object({
-  item_ids: emailOutboxItemIdListSchema,
-});
-
-export const testEmailOutboxStateDrainResponseSchema = z.object({
-  drained: z.number().int().nonnegative(),
-});
-
-export const testEmailOutboxStateCleanupBodySchema = z.object({
-  item_ids: emailOutboxItemIdListSchema,
-});
-
-export const testEmailOutboxStateCleanupResponseSchema = z.object({
-  cleaned: z.number().int().nonnegative(),
-});
-
 export const testEmailOutboxStateContract = c.router({
   action: {
     method: "POST",
@@ -161,26 +145,6 @@ export const testEmailOutboxStateContract = c.router({
       404: z.string(),
     },
     summary: "Mutate and read email outbox API test support state",
-  },
-  drain: {
-    method: "POST",
-    path: "/api/test/email-outbox-state/drain",
-    body: testEmailOutboxStateDrainBodySchema,
-    responses: {
-      200: testEmailOutboxStateDrainResponseSchema,
-      404: z.string(),
-    },
-    summary: "Drain selected email outbox items in API tests",
-  },
-  cleanup: {
-    method: "POST",
-    path: "/api/test/email-outbox-state/cleanup",
-    body: testEmailOutboxStateCleanupBodySchema,
-    responses: {
-      200: testEmailOutboxStateCleanupResponseSchema,
-      404: z.string(),
-    },
-    summary: "Clean up selected expired email outbox items in API tests",
   },
 });
 

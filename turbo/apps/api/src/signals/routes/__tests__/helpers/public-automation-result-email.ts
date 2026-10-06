@@ -1,3 +1,4 @@
+import { drainEmailOutboxItemsForTest } from "../../../../test-fixtures/email-outbox-workers";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/official-workflow-catalog";
@@ -268,10 +269,11 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
     });
     return items.length === 0
       ? 0
-      : await outbox.drainItems(
+      : await drainEmailOutboxItemsForTest(
           items.map((item) => {
             return item.id;
           }),
+          context.signal,
         );
   }
 

@@ -1,3 +1,4 @@
+import { drainEmailOutboxItemsForTest } from "../../../test-fixtures/email-outbox-workers";
 import { createHash } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
@@ -389,12 +390,16 @@ test("recovers the completion email without repeating the export or requiring an
     toAddress: user.email,
     subject: readySubject,
   });
-  await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+  await expect(
+    drainEmailOutboxItemsForTest([item.id], context.signal),
+  ).resolves.toBe(1);
   await work(user, started.body.jobId, "run", 200);
   await expect(
     outbox.findItems({ toAddress: user.email, subject: readySubject }),
   ).resolves.toHaveLength(1);
-  await expect(outbox.drainItems([item.id])).resolves.toBe(0);
+  await expect(
+    drainEmailOutboxItemsForTest([item.id], context.signal),
+  ).resolves.toBe(0);
   expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
       to: user.email,
@@ -502,8 +507,12 @@ test("concurrent resumptions keep one downloadable archive and one completion em
     error: null,
   });
   mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
-  await expect(outbox.drainItems([email.id])).resolves.toBe(1);
-  await expect(outbox.drainItems([email.id])).resolves.toBe(0);
+  await expect(
+    drainEmailOutboxItemsForTest([email.id], context.signal),
+  ).resolves.toBe(1);
+  await expect(
+    drainEmailOutboxItemsForTest([email.id], context.signal),
+  ).resolves.toBe(0);
   expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ to: user.email, subject: readySubject }),
     expect.anything(),
@@ -659,8 +668,8 @@ test("excludes agents owned by other members from a subject data export", async 
     return email.id;
   });
   if (itemIds.length > 0) {
-    await outbox.drainItems(itemIds);
-    await outbox.drainItems(itemIds);
+    await drainEmailOutboxItemsForTest(itemIds, context.signal);
+    await drainEmailOutboxItemsForTest(itemIds, context.signal);
   }
   expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({

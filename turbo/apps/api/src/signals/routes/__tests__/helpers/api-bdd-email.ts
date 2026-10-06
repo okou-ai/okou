@@ -1,3 +1,4 @@
+import { drainEmailOutboxItemsForTest } from "../../../../test-fixtures/email-outbox-workers";
 import { mockClerkUsers } from "./clerk-users";
 
 import type { TestEmailOutboxStateItem } from "@okouai/api-contracts/contracts/test-email-outbox-state";
@@ -110,7 +111,7 @@ export function createEmailApi(context: TestContext) {
     },
 
     async drainEmailOutboxItems(itemIds: readonly string[]): Promise<number> {
-      return await outbox.drainItems(itemIds);
+      return await drainEmailOutboxItemsForTest(itemIds, context.signal);
     },
   };
 }

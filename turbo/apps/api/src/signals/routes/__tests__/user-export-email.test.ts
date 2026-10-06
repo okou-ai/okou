@@ -1,3 +1,4 @@
+import { drainEmailOutboxItemsForTest } from "../../../test-fixtures/email-outbox-workers";
 import { randomUUID } from "node:crypto";
 
 import { CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
@@ -125,7 +126,7 @@ test.each(["cold", "warm"])(
       toAddress: current.email,
       subject,
     });
-    await current.outbox.drainItems([item.id]);
+    await drainEmailOutboxItemsForTest([item.id], context.signal);
     expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         to: current.email,
@@ -220,10 +221,11 @@ test("sends a requested export once after completion even when optional emails a
     subject,
   });
   if (beforeCompletionItems.length > 0) {
-    await current.outbox.drainItems(
+    await drainEmailOutboxItemsForTest(
       beforeCompletionItems.map((item) => {
         return item.id;
       }),
+      context.signal,
     );
   }
   expect(context.mocks.resend.send).not.toHaveBeenCalled();
@@ -248,8 +250,12 @@ test("sends a requested export once after completion even when optional emails a
     return item.id;
   });
   if (itemIds.length > 0) {
-    await expect(current.outbox.drainItems(itemIds)).resolves.toBe(1);
-    await expect(current.outbox.drainItems(itemIds)).resolves.toBe(0);
+    await expect(
+      drainEmailOutboxItemsForTest(itemIds, context.signal),
+    ).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest(itemIds, context.signal),
+    ).resolves.toBe(0);
   }
   expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
@@ -278,10 +284,11 @@ test.each([
       subject,
     });
     if (items.length > 0) {
-      await current.outbox.drainItems(
+      await drainEmailOutboxItemsForTest(
         items.map((item) => {
           return item.id;
         }),
+        context.signal,
       );
     }
     expect(context.mocks.resend.send).not.toHaveBeenCalled();

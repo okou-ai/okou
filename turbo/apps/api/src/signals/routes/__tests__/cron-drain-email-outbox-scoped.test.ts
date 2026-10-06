@@ -1,3 +1,7 @@
+import {
+  cleanupExpiredEmailOutboxItemsForTest,
+  drainEmailOutboxItemsForTest,
+} from "../../../test-fixtures/email-outbox-workers";
 import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -24,7 +28,6 @@ function providerKey(itemId: string): string {
 // inside that window.
 const SEND_LEASE_MS = 60_000;
 const FIRST_BACKOFF_MS = 1000;
-const DRAIN_ROUTE = "POST /api/test/email-outbox-state/drain";
 
 const providerOptionsSchema = z.object({ idempotencyKey: z.string() });
 
@@ -167,7 +170,10 @@ describe("scoped email outbox drain", () => {
       createdAt: expiredAt,
     });
 
-    const drained = await outbox.drainItems([dueItem.id]);
+    const drained = await drainEmailOutboxItemsForTest(
+      [dueItem.id],
+      context.signal,
+    );
 
     expect(drained).toBe(1);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
@@ -187,10 +193,10 @@ describe("scoped email outbox drain", () => {
       "failed",
     );
 
-    const cleaned = await outbox.cleanupExpiredItems([
-      expiredPending.id,
-      expiredFailed.id,
-    ]);
+    const cleaned = await cleanupExpiredEmailOutboxItemsForTest(
+      [expiredPending.id, expiredFailed.id],
+      context.signal,
+    );
 
     expect(cleaned).toBe(2);
     await expect(outbox.readItem(expiredPending.id)).resolves.toBeNull();
@@ -220,7 +226,9 @@ describe("email outbox provider replay", () => {
       },
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "pending",
@@ -246,7 +254,9 @@ describe("email outbox provider replay", () => {
     });
     mockNow(baseTime + FIRST_BACKOFF_MS);
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
 
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
     const second = providerCall(1);
@@ -262,7 +272,9 @@ describe("email outbox provider replay", () => {
       has_provider_request: false,
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(0);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(0);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
   });
 
@@ -289,10 +301,15 @@ describe("email outbox provider replay", () => {
       error: null,
     });
 
-    const unresolvedDrain = outbox.drainItems([item.id]);
+    const unresolvedDrain = drainEmailOutboxItemsForTest(
+      [item.id],
+      context.signal,
+    );
     await sendStarted.promise;
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(0);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(0);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "sending",
@@ -304,7 +321,9 @@ describe("email outbox provider replay", () => {
     // The worker never recorded that acceptance. After its lease, recovery
     // replays the committed request instead of rendering a new one.
     mockNow(baseTime + SEND_LEASE_MS);
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
 
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
     expect(providerCall(1).payload).toStrictEqual(providerCall(0).payload);
@@ -341,7 +360,9 @@ describe("email outbox provider replay", () => {
       },
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
 
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
@@ -352,7 +373,9 @@ describe("email outbox provider replay", () => {
       last_error: expect.stringContaining("invalid_idempotent_request"),
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(0);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(0);
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     expect((await outbox.readItem(item.id))?.provider_idempotency_key).toBe(
       key,
@@ -372,9 +395,13 @@ describe("email outbox provider replay", () => {
       },
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     mockNow(baseTime + FIRST_BACKOFF_MS);
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     const thirdAttemptAt = baseTime + FIRST_BACKOFF_MS + FIRST_BACKOFF_MS * 4;
 
     // The last permitted attempt reaches the provider and never records its
@@ -392,14 +419,19 @@ describe("email outbox provider replay", () => {
       return { data: { id: "resend-last-attempt" }, error: null };
     });
     mockNow(thirdAttemptAt);
-    const unresolvedDrain = outbox.drainItems([item.id]);
+    const unresolvedDrain = drainEmailOutboxItemsForTest(
+      [item.id],
+      context.signal,
+    );
     await sendStarted.promise;
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
 
     // Recovery after the lease must respect the retry bound instead of
     // replaying indefinitely.
     mockNow(thirdAttemptAt + SEND_LEASE_MS);
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
 
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
@@ -428,7 +460,9 @@ describe("email outbox provider replay", () => {
       },
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "pending",
       attempts: 1,
@@ -441,7 +475,9 @@ describe("email outbox provider replay", () => {
       error: null,
     });
     mockNow(baseTime + FIRST_BACKOFF_MS);
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
 
     expect(providerCall(1).payload).toStrictEqual(providerCall(0).payload);
     expect([providerCall(0).options, providerCall(1).options]).toStrictEqual([
@@ -466,7 +502,9 @@ describe("email outbox provider replay", () => {
       error: null,
     });
 
-    await expect(outbox.drainItems([expired.id, due.id])).resolves.toBe(2);
+    await expect(
+      drainEmailOutboxItemsForTest([expired.id, due.id], context.signal),
+    ).resolves.toBe(2);
 
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     expect(providerCall(0).payload).toMatchObject({ to: due.toAddress });
@@ -483,7 +521,9 @@ describe("email outbox provider replay", () => {
       resend_id: "resend-due-item",
     });
 
-    await expect(outbox.cleanupExpiredItems([expired.id])).resolves.toBe(1);
+    await expect(
+      cleanupExpiredEmailOutboxItemsForTest([expired.id], context.signal),
+    ).resolves.toBe(1);
     await expect(outbox.readItem(expired.id)).resolves.toBeNull();
   });
 
@@ -500,9 +540,14 @@ describe("email outbox provider replay", () => {
     onTestFinished(restoreCompletion);
 
     // The provider accepts the request and the worker then fails to record it.
-    await expect(outbox.drainItems([item.id])).rejects.toThrow(
-      `Unknown response status 500 for ${DRAIN_ROUTE}`,
-    );
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        code: "23514",
+        message: "Test email outbox completion write failed",
+      }),
+    });
 
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     expect(provider.accepted()).toHaveLength(1);
@@ -518,7 +563,9 @@ describe("email outbox provider replay", () => {
 
     await restoreCompletion();
     mockNow(baseTime + SEND_LEASE_MS);
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
 
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
     expect(providerCall(1).payload).toStrictEqual(providerCall(0).payload);

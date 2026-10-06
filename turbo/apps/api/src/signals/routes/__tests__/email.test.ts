@@ -1,3 +1,4 @@
+import { drainEmailOutboxItemsForTest } from "../../../test-fixtures/email-outbox-workers";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -123,7 +124,9 @@ describe("retired Native Morning Brief email", () => {
       await outbox.deleteItems([item.id]);
     });
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "failed",
       last_error: "Morning Brief email has no native delivery provenance",
@@ -161,7 +164,9 @@ describe("retired Native Morning Brief email", () => {
     );
 
     await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "failed",
       last_error:
@@ -203,14 +208,18 @@ describe("retired Native Morning Brief email", () => {
       },
     );
 
-    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "sent",
       resend_id: "resend-test-id",
       provider_idempotency_key: `okou-email-outbox/v1/${item.id}`,
     });
     await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
-    await expect(outbox.drainItems([item.id])).resolves.toBe(0);
+    await expect(
+      drainEmailOutboxItemsForTest([item.id], context.signal),
+    ).resolves.toBe(0);
     expect(resendMocks.send).toHaveBeenCalledTimes(1);
     expect(resendMocks.send).toHaveBeenCalledWith(
       expect.objectContaining({ subject: "Historical Native Morning Brief" }),

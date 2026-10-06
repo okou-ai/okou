@@ -192,21 +192,5 @@ export function createEmailOutboxStateApi(context: TestContext) {
       }
       return response.deleted;
     },
-
-    async drainItems(itemIds: readonly string[]): Promise<number> {
-      const response = await accept(
-        stateClient(context).drain({ body: { item_ids: [...itemIds] } }),
-        [200],
-      );
-      return response.body.drained;
-    },
-
-    async cleanupExpiredItems(itemIds: readonly string[]): Promise<number> {
-      const response = await accept(
-        stateClient(context).cleanup({ body: { item_ids: [...itemIds] } }),
-        [200],
-      );
-      return response.body.cleaned;
-    },
   };
 }
