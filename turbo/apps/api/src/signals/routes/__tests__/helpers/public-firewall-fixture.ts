@@ -170,14 +170,17 @@ export function createPublicFirewallFixture(
       data: [],
       has_more: false,
     });
-    context.mocks.stripe.subscriptions.retrieve.mockImplementation((id) => {
-      return Promise.resolve({ id, status: "active", metadata: {} });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      id: subscriptionId,
+      status: "active",
+      metadata: {},
     });
-    context.mocks.stripe.subscriptions.update.mockImplementation((id) => {
-      return Promise.resolve({ id });
+    context.mocks.stripe.subscriptions.update.mockResolvedValue({
+      id: subscriptionId,
     });
-    context.mocks.stripe.subscriptions.cancel.mockImplementation((id) => {
-      return Promise.resolve({ id, status: "canceled" });
+    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+      id: subscriptionId,
+      status: "canceled",
     });
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({

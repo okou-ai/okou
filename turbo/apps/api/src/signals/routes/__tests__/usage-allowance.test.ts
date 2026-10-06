@@ -1200,31 +1200,58 @@ describe("Usage Allowance", () => {
     });
     const runCreatedAt = nowDate();
     mockNow(runCreatedAt);
-    const { actor, orgId, agentId } = await builtInAllowanceActor({
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    const fixture = createPublicUsageWallet(context, actor, {
       credits: 100,
+      otherMember: true,
     });
-    const run = await createBuiltInRun(
-      actor,
-      agentId,
-      "run before entitlement",
-    );
-    mockNow(addHours(runCreatedAt, 1));
-    await seedAllowanceEntitlement(actor, orgId, {
-      shortWindowUnits: 100,
-      weeklyWindowUnits: 200,
-    });
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 80,
-    });
+    await fixture.run(async () => {
+      await seedBuiltInDefaultModelKeyState(context, fixture.registerCleanup);
+      await fixture.initialize();
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Usage allowance agent",
+        visibility: "private",
+      });
+      const run = await createBuiltInRun(
+        actor,
+        agent.agentId,
+        "run before entitlement",
+      );
+      fixture.registerRun(run.runId);
+      mockNow(addHours(runCreatedAt, 1));
+      await postUsageAllowanceInvoicePaid(context.signal, {
+        orgId: fixture.orgId,
+        userId: actor.userId,
+        customerId: fixture.customerId,
+        subscriptionId: usageAllowanceSubscriptionId(fixture.orgId),
+        effectiveAt: nowDate(),
+        expiresAt: addDays(nowDate(), 365),
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: 100,
+        weeklyWindowSeconds: 7 * 24 * 60 * 60,
+        weeklyWindowUnits: 200,
+      });
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 80,
+      });
 
-    await processOrgUsageEvents(actor);
+      await processOrgUsageEvents(actor);
 
-    await expect(readOrgCredits(actor)).resolves.toBe(20);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
+      await expect(readOrgCredits(actor)).resolves.toBe(20);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
+    });
   });
 
   it("anchors allowance to the original run start after the run row is deleted", async () => {

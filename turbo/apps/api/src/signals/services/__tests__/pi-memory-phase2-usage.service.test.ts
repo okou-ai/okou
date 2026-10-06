@@ -239,8 +239,10 @@ async function launchMaintenance(
 
 async function launchPublicMaintenance(
   fixture: ReturnType<typeof createPublicPiMemorySource>,
-  type?: Phase2ProviderType,
-  credentialScope: "org" | "member" = "org",
+  {
+    type,
+    credentialScope = "org",
+  }: { type?: Phase2ProviderType; credentialScope?: "org" | "member" } = {},
 ) {
   const at = new Date(now() + 24 * 3_600_000);
   const scope = await fixture.prepare(at);
@@ -619,7 +621,10 @@ describe("Pi memory Phase 2 proxy billing", () => {
         sources: ["first complete evidence", "second complete evidence"],
       });
       await fixture.run(async () => {
-        const run = await launchPublicMaintenance(fixture, type, scope);
+        const run = await launchPublicMaintenance(fixture, {
+          type,
+          credentialScope: scope,
+        });
         expect(run.run.source).toMatchObject({
           providerType: type,
           model: "gpt-5.6-luna",
@@ -687,11 +692,10 @@ describe("Pi memory Phase 2 proxy billing", () => {
       sources: ["first complete evidence", "second complete evidence"],
     });
     await fixture.run(async () => {
-      const run = await launchPublicMaintenance(
-        fixture,
+      const run = await launchPublicMaintenance(fixture, {
         type,
-        type === "codex-oauth-token" ? "member" : "org",
-      );
+        credentialScope: type === "codex-oauth-token" ? "member" : "org",
+      });
       const actual = await executePhase2Runtime(context, run.runId, {
         failure: true,
         execution: run.execution,
@@ -710,11 +714,10 @@ test("retains the committed Codex account and uses the current account for a new
     sources: ["first complete evidence", "second complete evidence"],
   });
   await fixture.run(async () => {
-    const run = await launchPublicMaintenance(
-      fixture,
-      "codex-oauth-token",
-      "member",
-    );
+    const run = await launchPublicMaintenance(fixture, {
+      type: "codex-oauth-token",
+      credentialScope: "member",
+    });
     if (!run.provider) {
       throw new Error("Missing subscription fixture");
     }
@@ -828,7 +831,9 @@ test.each(["valid", "invalid"] as const)(
           },
           ...sources.map((source, index) => {
             return {
-              path: `rollout_summaries/pi/${createHash("sha256").update(source.threadId).digest("hex")}-source.md`,
+              // Real Stage1 uses rolloutSlug "source"; the runtime persists a
+              // bounded hashed slug, not that raw provider string.
+              path: `rollout_summaries/pi/${createHash("sha256").update(source.threadId).digest("hex")}-slug-${createHash("sha256").update("source").digest("hex").slice(0, 43)}.md`,
               content: [
                 `pi_session_id: ${JSON.stringify(source.threadId)}`,
                 `source_run_id: ${JSON.stringify(source.runId)}`,
@@ -847,7 +852,9 @@ test.each(["valid", "invalid"] as const)(
       },
     });
     await fixture.run(async () => {
-      const run = await launchPublicMaintenance(fixture, "openai-api-key");
+      const run = await launchPublicMaintenance(fixture, {
+        type: "openai-api-key",
+      });
       const actual = await executePhase2Runtime(context, run.runId, {
         baseFiles,
         execution: run.execution,
@@ -868,7 +875,9 @@ test("preserves non-model usage for a genuinely launched BYOK run", async () => 
     sources: ["first complete evidence", "second complete evidence"],
   });
   await fixture.run(async () => {
-    const run = await launchPublicMaintenance(fixture, "openai-api-key");
+    const run = await launchPublicMaintenance(fixture, {
+      type: "openai-api-key",
+    });
     const event = {
       idempotencyKey: randomUUID(),
       kind: "connector" as const,
@@ -951,7 +960,9 @@ test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
       sources: ["first complete evidence", "second complete evidence"],
     });
     await fixture.run(async () => {
-      const run = await launchPublicMaintenance(fixture, "openai-api-key");
+      const run = await launchPublicMaintenance(fixture, {
+        type: "openai-api-key",
+      });
       const memory = expectCanonicalStorageManifest(
         run.execution.storageManifest,
       )?.storageMounts.find((entry) => {

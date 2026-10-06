@@ -1,4 +1,3 @@
-import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import {
   createPublicRunnerMemory,
   memoryArchive,
@@ -13841,345 +13840,336 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
 describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhooks", () => {
   it("reports artifacts, volumes, model usage, and telemetry through sandbox webhooks", async () => {
     const api = createRunsApi(context);
+    const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const fixture = createPublicFirewallFixture(context);
-    fixture.registerOwnedUserDeletion();
-    await fixture.run(async () => {
-      const { actor, agentId, runnerGroup } = await entitledRunActor(
-        fixture.actor,
-        NATIVE_RUNNER_ROUTE,
-      );
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-      fixture.registerAgent(agentId);
-      // An Agent workflow's Storage is the run's versioned read-only volume.
-      const workflowName = `bdd-cache-${randomUUID().slice(0, 8)}`;
-      const workflow = await createMiscRoutesApi(context).createWorkflow(
-        actor,
-        agentId,
-        workflowName,
-        { content: "# Cache\nUse for snapshot reporting." },
-        [201],
-      );
-      if (workflow.status !== 201) {
-        throw new Error("Expected workflow creation to succeed");
-      }
-      const cacheVolume = getCustomSkillStorageName(workflow.body.id);
-      const cacheMountPath = `/home/user/.claude/skills/${workflowName}`;
-
-      const created = await api.createThreadRun(actor, {
-        agentId,
-        prompt: "report snapshots and telemetry",
-      });
-      fixture.registerRun(created.runId);
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(created.runId);
-      fixture.registerClaim(created.runId, claim.sandboxToken);
-      const storageMounts =
-        expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts ??
-        [];
-      const cachePrepared = storageMounts.find((mount) => {
-        return mount.name === cacheVolume && mount.mountPath === cacheMountPath;
-      });
-      if (!cachePrepared) {
-        throw new Error("Expected actual Workflow HEAD mount");
-      }
-      expect(cachePrepared.writeback ?? false).toBeFalsy();
-      const mountPaths = storageMounts.map((storage) => {
-        return storage.mountPath;
-      });
-      expect(mountPaths).toContain(cacheMountPath);
-      const seedMountPaths = new Set(
-        SEED_SKILLS.map((skillName) => {
-          return `/home/user/.claude/skills/${skillName}`;
-        }),
-      );
-      expect(
-        storageMounts
-          .filter((mount) => {
-            return mount.baselineCandidate === true;
-          })
-          .map((mount) => {
-            return mount.mountPath;
-          })
-          .sort(),
-      ).toStrictEqual(
-        mountPaths
-          .filter((mountPath) => {
-            return seedMountPaths.has(mountPath);
-          })
-          .sort(),
-      );
-      for (const mount of storageMounts.filter((entry) => {
-        return !seedMountPaths.has(entry.mountPath);
-      })) {
-        expect(mount).not.toHaveProperty("baselineCandidate");
-      }
-      const memoryArtifact = storageMounts.find((mount) => {
-        return mount.name === "memory";
-      });
-      if (!memoryArtifact) {
-        throw new Error("Expected the run to mount memory");
-      }
-      const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
-      const telemetryIngests: {
-        readonly dataset: string;
-        readonly events: readonly unknown[];
-      }[] = [];
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/:dataset/ingest",
-          async ({ params, request }) => {
-            const events: unknown = await request.json();
-            if (!Array.isArray(events)) {
-              throw new Error("Expected an Axiom telemetry event array");
-            }
-            telemetryIngests.push({
-              dataset: String(params.dataset),
-              events,
-            });
-            return HttpResponse.json({
-              ingested: events.length,
-              failed: 0,
-              processedBytes: 123,
-              blocksCreated: 1,
-              walLength: 456,
-            });
-          },
-        ),
-      );
-
-      await webhooks.requestAgentTelemetryUnchecked(
-        {
-          runId: created.runId,
-          networkLogs: [
-            {
-              timestamp: nowDate().toISOString(),
-              host: "api.example.test",
-              port: 443,
-              method: "GET",
-              url: "[truncated]",
-              url_truncated: true,
-              url_original_char_count: 1_000_001,
-              status: 200,
-              latency_ms: 12,
-              request_size: 100,
-              response_size: 256,
-              request_headers: { accept: "application/json" },
-              request_headers_truncated: true,
-              response_headers: { server: "***" },
-              response_headers_truncated: true,
-              model_catalog_cache_status: "model_catalog_cold_stored",
-              model_catalog_cache_upstream_encoding: "br",
-              model_catalog_cache_entry_age_ms: 4000,
-              connector_diagnostic_slug: "github",
-            },
-            {
-              timestamp: nowDate().toISOString(),
-              type: "http",
-              action: "BLOCK",
-              host: "blocked.example.test",
-              port: 443,
-              method: "POST",
-              url: "https://blocked.example.test/v1/connect",
-              status: 424,
-              latency_ms: 4,
-              request_size: 0,
-              response_size: 128,
-              firewall_name: "blocked-service",
-              firewall_error: "connector_not_configured",
-              connector_diagnostic_slug: "slack",
-            },
-          ],
-          sandboxOperations: [
-            {
-              ts: nowDate().toISOString(),
-              action_type: "session_history_download",
-              duration_ms: 8,
-              success: false,
-              error: "download timed out",
-              encoding: "gzip",
-              session_history_raw_size_bucket: "64_256_kib",
-              session_history_encoded_size_bucket: "lt_64_kib",
-              session_history_compression_ratio_bucket: "lt_0_25",
-              session_history_ref_seen_recently: "true",
-              session_history_ref_download_inflight: "false",
-              session_history_content_length_state: "matches_expected",
-              session_history_content_encoding_state: "absent",
-              session_history_transfer_encoding_state: "chunked",
-              session_history_download_source: "configured_public_endpoint",
-              session_history_ref_hash: "should-not-forward",
-            },
-            {
-              ts: nowDate().toISOString(),
-              action_type: "api_to_spawn",
-              duration_ms: 125,
-              success: true,
-              runner_startup_path: "workspace",
-              sandbox_reuse_result: "poolMiss",
-            },
-            {
-              ts: nowDate().toISOString(),
-              action_type: "session_history_prune",
-              duration_ms: 4,
-              success: true,
-              outcome: "ineligible",
-              reason: "source_within_guard",
-            },
-            {
-              ts: nowDate().toISOString(),
-              action_type: "storage_cache_fresh_delivery_scan_suffix",
-              duration_ms: 0,
-              success: true,
-              outcome: "5_8",
-              reason: "3_4",
-            },
-          ],
-        },
-        sandboxHeaders,
-        [200],
-      );
-      const networkIngestCall = telemetryIngests.find((call) => {
-        return call.dataset === "sandbox-telemetry-network";
-      });
-      expect(networkIngestCall).toBeDefined();
-      expect(networkIngestCall?.events).toHaveLength(2);
-      expect(networkIngestCall?.events).toStrictEqual([
-        expect.objectContaining({
-          runId: created.runId,
-          host: "api.example.test",
-          status: 200,
-          url: "[truncated]",
-          url_truncated: true,
-          url_original_char_count: 1_000_001,
-          request_headers: { accept: "application/json" },
-          request_headers_truncated: true,
-          response_headers: { server: "***" },
-          response_headers_truncated: true,
-          model_catalog_cache_status: "model_catalog_cold_stored",
-          model_catalog_cache_upstream_encoding: "br",
-          model_catalog_cache_entry_age_ms: 4000,
-          connector_diagnostic_slug: "github",
-        }),
-        expect.objectContaining({
-          runId: created.runId,
-          action: "BLOCK",
-          host: "blocked.example.test",
-          firewall_error: "connector_not_configured",
-          connector_diagnostic_slug: "slack",
-        }),
-      ]);
-
-      let failedTelemetryRequests = 0;
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-          () => {
-            failedTelemetryRequests += 1;
-            return HttpResponse.text("unavailable", { status: 503 });
-          },
-        ),
-      );
-      const failedTelemetry = await webhooks.requestAgentTelemetry(
-        {
-          runId: created.runId,
-          networkLogs: [
-            {
-              timestamp: nowDate().toISOString(),
-              host: "failed.example.test",
-            },
-          ],
-        },
-        sandboxHeaders,
-        [500],
-      );
-      expect(failedTelemetry.status).toBe(500);
-      expect(failedTelemetryRequests).toBe(1);
-
-      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", undefined);
-      const unconfiguredTelemetry = await webhooks.requestAgentTelemetry(
-        {
-          runId: created.runId,
-          networkLogs: [
-            {
-              timestamp: nowDate().toISOString(),
-              host: "unconfigured.example.test",
-            },
-          ],
-        },
-        sandboxHeaders,
-        [200],
-      );
-      expect(unconfiguredTelemetry.status).toBe(200);
-      expect(failedTelemetryRequests).toBe(1);
-      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", "xaat-test-telemetry");
-
-      const artifactSnapshots = [
-        {
-          name: memoryArtifact.name,
-          version: memoryArtifact.versionId,
-          mountPath: memoryArtifact.mountPath,
-          ...(memoryArtifact.missingRootPolicy === undefined
-            ? {}
-            : { missingRootPolicy: memoryArtifact.missingRootPolicy }),
-        },
-      ];
-      const historyHash = createHash("sha256")
-        .update(`bdd snapshot history ${created.runId}`)
-        .digest("hex");
-      const completion = await webhooks.requestAgentComplete(
-        {
-          runId: created.runId,
-          exitCode: 0,
-          lastEventSequence: 3,
-          checkpoint: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
-            cliAgentSessionHistoryHash: historyHash,
-            artifactSnapshots,
-            volumeVersionsSnapshot: {
-              versions: { [cacheVolume]: cachePrepared.versionId },
-            },
-          },
-        },
-        sandboxHeaders,
-        [200],
-      );
-      expect(completion.body).toStrictEqual({
-        success: true,
-        status: "completed",
-      });
-
-      const completed = await api.readRun(actor, created.runId);
-      expect(completed.status).toBe("completed");
-      expect(completed.result?.artifact).toStrictEqual({
-        memory: memoryArtifact.versionId,
-      });
-      expect(completed.result?.volumes).toStrictEqual({
-        [cacheVolume]: cachePrepared.versionId,
-      });
-
-      // A late duplicate report cannot flip the settled run.
-      const duplicate = await webhooks.requestAgentComplete(
-        {
-          runId: created.runId,
-          exitCode: 1,
-          error: "late crash report",
-          lastEventSequence: 9,
-        },
-        sandboxHeaders,
-        [200],
-      );
-      if (duplicate.status !== 200) {
-        throw new Error("Expected the duplicate completion to be accepted");
-      }
-      expect(duplicate.body).toStrictEqual({
-        success: true,
-        status: "completed",
-      });
-      const settled = await api.readRun(actor, created.runId);
-      expect(settled.status).toBe("completed");
-      expect(settled.error ?? null).toBeNull();
+    // An Agent workflow's Storage is the run's versioned read-only volume.
+    const workflowName = `bdd-cache-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      workflowName,
+      { content: "# Cache\nUse for snapshot reporting." },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const cacheVolume = getCustomSkillStorageName(workflow.body.id);
+    const cachePrepared = await storages.downloadStorage(actor, {
+      name: cacheVolume,
+      owner: "organization",
     });
+    const cacheMountPath = `/home/user/.claude/skills/${workflowName}`;
+
+    const created = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "report snapshots and telemetry",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(created.runId);
+    const storageMounts =
+      expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts ??
+      [];
+    const mountPaths = storageMounts.map((storage) => {
+      return storage.mountPath;
+    });
+    expect(mountPaths).toContain(cacheMountPath);
+    const seedMountPaths = new Set(
+      SEED_SKILLS.map((skillName) => {
+        return `/home/user/.claude/skills/${skillName}`;
+      }),
+    );
+    expect(
+      storageMounts
+        .filter((mount) => {
+          return mount.baselineCandidate === true;
+        })
+        .map((mount) => {
+          return mount.mountPath;
+        })
+        .sort(),
+    ).toStrictEqual(
+      mountPaths
+        .filter((mountPath) => {
+          return seedMountPaths.has(mountPath);
+        })
+        .sort(),
+    );
+    for (const mount of storageMounts.filter((entry) => {
+      return !seedMountPaths.has(entry.mountPath);
+    })) {
+      expect(mount).not.toHaveProperty("baselineCandidate");
+    }
+    const memoryArtifact = storageMounts.find((mount) => {
+      return mount.name === "memory";
+    });
+    if (!memoryArtifact) {
+      throw new Error("Expected the run to mount memory");
+    }
+    const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+    const telemetryIngests: {
+      readonly dataset: string;
+      readonly events: readonly unknown[];
+    }[] = [];
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/:dataset/ingest",
+        async ({ params, request }) => {
+          const events: unknown = await request.json();
+          if (!Array.isArray(events)) {
+            throw new Error("Expected an Axiom telemetry event array");
+          }
+          telemetryIngests.push({
+            dataset: String(params.dataset),
+            events,
+          });
+          return HttpResponse.json({
+            ingested: events.length,
+            failed: 0,
+            processedBytes: 123,
+            blocksCreated: 1,
+            walLength: 456,
+          });
+        },
+      ),
+    );
+
+    await webhooks.requestAgentTelemetryUnchecked(
+      {
+        runId: created.runId,
+        networkLogs: [
+          {
+            timestamp: nowDate().toISOString(),
+            host: "api.example.test",
+            port: 443,
+            method: "GET",
+            url: "[truncated]",
+            url_truncated: true,
+            url_original_char_count: 1_000_001,
+            status: 200,
+            latency_ms: 12,
+            request_size: 100,
+            response_size: 256,
+            request_headers: { accept: "application/json" },
+            request_headers_truncated: true,
+            response_headers: { server: "***" },
+            response_headers_truncated: true,
+            model_catalog_cache_status: "model_catalog_cold_stored",
+            model_catalog_cache_upstream_encoding: "br",
+            model_catalog_cache_entry_age_ms: 4000,
+            connector_diagnostic_slug: "github",
+          },
+          {
+            timestamp: nowDate().toISOString(),
+            type: "http",
+            action: "BLOCK",
+            host: "blocked.example.test",
+            port: 443,
+            method: "POST",
+            url: "https://blocked.example.test/v1/connect",
+            status: 424,
+            latency_ms: 4,
+            request_size: 0,
+            response_size: 128,
+            firewall_name: "blocked-service",
+            firewall_error: "connector_not_configured",
+            connector_diagnostic_slug: "slack",
+          },
+        ],
+        sandboxOperations: [
+          {
+            ts: nowDate().toISOString(),
+            action_type: "session_history_download",
+            duration_ms: 8,
+            success: false,
+            error: "download timed out",
+            encoding: "gzip",
+            session_history_raw_size_bucket: "64_256_kib",
+            session_history_encoded_size_bucket: "lt_64_kib",
+            session_history_compression_ratio_bucket: "lt_0_25",
+            session_history_ref_seen_recently: "true",
+            session_history_ref_download_inflight: "false",
+            session_history_content_length_state: "matches_expected",
+            session_history_content_encoding_state: "absent",
+            session_history_transfer_encoding_state: "chunked",
+            session_history_download_source: "configured_public_endpoint",
+            session_history_ref_hash: "should-not-forward",
+          },
+          {
+            ts: nowDate().toISOString(),
+            action_type: "api_to_spawn",
+            duration_ms: 125,
+            success: true,
+            runner_startup_path: "workspace",
+            sandbox_reuse_result: "poolMiss",
+          },
+          {
+            ts: nowDate().toISOString(),
+            action_type: "session_history_prune",
+            duration_ms: 4,
+            success: true,
+            outcome: "ineligible",
+            reason: "source_within_guard",
+          },
+          {
+            ts: nowDate().toISOString(),
+            action_type: "storage_cache_fresh_delivery_scan_suffix",
+            duration_ms: 0,
+            success: true,
+            outcome: "5_8",
+            reason: "3_4",
+          },
+        ],
+      },
+      sandboxHeaders,
+      [200],
+    );
+    const networkIngestCall = telemetryIngests.find((call) => {
+      return call.dataset === "sandbox-telemetry-network";
+    });
+    expect(networkIngestCall).toBeDefined();
+    expect(networkIngestCall?.events).toHaveLength(2);
+    expect(networkIngestCall?.events).toStrictEqual([
+      expect.objectContaining({
+        runId: created.runId,
+        host: "api.example.test",
+        status: 200,
+        url: "[truncated]",
+        url_truncated: true,
+        url_original_char_count: 1_000_001,
+        request_headers: { accept: "application/json" },
+        request_headers_truncated: true,
+        response_headers: { server: "***" },
+        response_headers_truncated: true,
+        model_catalog_cache_status: "model_catalog_cold_stored",
+        model_catalog_cache_upstream_encoding: "br",
+        model_catalog_cache_entry_age_ms: 4000,
+        connector_diagnostic_slug: "github",
+      }),
+      expect.objectContaining({
+        runId: created.runId,
+        action: "BLOCK",
+        host: "blocked.example.test",
+        firewall_error: "connector_not_configured",
+        connector_diagnostic_slug: "slack",
+      }),
+    ]);
+
+    let failedTelemetryRequests = 0;
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+        () => {
+          failedTelemetryRequests += 1;
+          return HttpResponse.text("unavailable", { status: 503 });
+        },
+      ),
+    );
+    const failedTelemetry = await webhooks.requestAgentTelemetry(
+      {
+        runId: created.runId,
+        networkLogs: [
+          {
+            timestamp: nowDate().toISOString(),
+            host: "failed.example.test",
+          },
+        ],
+      },
+      sandboxHeaders,
+      [500],
+    );
+    expect(failedTelemetry.status).toBe(500);
+    expect(failedTelemetryRequests).toBe(1);
+
+    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", undefined);
+    const unconfiguredTelemetry = await webhooks.requestAgentTelemetry(
+      {
+        runId: created.runId,
+        networkLogs: [
+          {
+            timestamp: nowDate().toISOString(),
+            host: "unconfigured.example.test",
+          },
+        ],
+      },
+      sandboxHeaders,
+      [200],
+    );
+    expect(unconfiguredTelemetry.status).toBe(200);
+    expect(failedTelemetryRequests).toBe(1);
+    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", "xaat-test-telemetry");
+
+    const artifactSnapshots = [
+      {
+        name: memoryArtifact.name,
+        version: memoryArtifact.versionId,
+        mountPath: memoryArtifact.mountPath,
+        ...(memoryArtifact.missingRootPolicy === undefined
+          ? {}
+          : { missingRootPolicy: memoryArtifact.missingRootPolicy }),
+      },
+    ];
+    const historyHash = createHash("sha256")
+      .update(`bdd snapshot history ${created.runId}`)
+      .digest("hex");
+    const completion = await webhooks.requestAgentComplete(
+      {
+        runId: created.runId,
+        exitCode: 0,
+        lastEventSequence: 3,
+        checkpoint: {
+          cliAgentType: "claude-code",
+          cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
+          cliAgentSessionHistoryHash: historyHash,
+          artifactSnapshots,
+          volumeVersionsSnapshot: {
+            versions: { [cacheVolume]: cachePrepared.versionId },
+          },
+        },
+      },
+      sandboxHeaders,
+      [200],
+    );
+    expect(completion.body).toStrictEqual({
+      success: true,
+      status: "completed",
+    });
+
+    const completed = await api.readRun(actor, created.runId);
+    expect(completed.status).toBe("completed");
+    expect(completed.result?.artifact).toStrictEqual({
+      memory: memoryArtifact.versionId,
+    });
+    expect(completed.result?.volumes).toStrictEqual({
+      [cacheVolume]: cachePrepared.versionId,
+    });
+
+    // A late duplicate report cannot flip the settled run.
+    const duplicate = await webhooks.requestAgentComplete(
+      {
+        runId: created.runId,
+        exitCode: 1,
+        error: "late crash report",
+        lastEventSequence: 9,
+      },
+      sandboxHeaders,
+      [200],
+    );
+    if (duplicate.status !== 200) {
+      throw new Error("Expected the duplicate completion to be accepted");
+    }
+    expect(duplicate.body).toStrictEqual({
+      success: true,
+      status: "completed",
+    });
+    const settled = await api.readRun(actor, created.runId);
+    expect(settled.status).toBe("completed");
+    expect(settled.error ?? null).toBeNull();
   });
 });
 
