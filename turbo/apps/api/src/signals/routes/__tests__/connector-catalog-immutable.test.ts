@@ -539,6 +539,50 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: first.hash }]);
+    const expectedColumns = first.artifact.connectors
+      .map((entry) => {
+        return {
+          slug: entry.slug,
+          label: entry.label,
+          description: entry.description,
+          category: entry.category,
+          auth_methods: entry.authMethods,
+          firewall: entry.firewall,
+          storage_name:
+            entry.skill.kind === "bundled" ? entry.skill.storageName : null,
+          version_id:
+            entry.skill.kind === "bundled" ? entry.skill.versionId : null,
+          payload: entry,
+        };
+      })
+      .sort((a, b) => {
+        return a.slug.localeCompare(b.slug);
+      });
+    const readColumns = async () => {
+      if (!engine) {
+        throw new Error("Missing case engine");
+      }
+      return (
+        await engine.query(
+          `SELECT slug, label, description, category, auth_methods, firewall,
+                  storage_name, version_id, payload
+           FROM connector_catalog_entries WHERE hash = $1 ORDER BY slug`,
+          [first.hash],
+        )
+      ).rows;
+    };
+    await expect(readColumns()).resolves.toStrictEqual(expectedColumns);
+    // Simulate entries written by the outgoing payload-only API after the
+    // backfill. Removing only the mirror pointer drives real preparation again.
+    await engine.exec(`
+      UPDATE connector_catalog_entries SET label = NULL, description = NULL,
+        category = NULL, auth_methods = NULL, firewall = NULL,
+        storage_name = NULL, version_id = NULL;
+      DELETE FROM connector_catalog;
+    `);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    await expect(readColumns()).resolves.toStrictEqual(expectedColumns);
+    await directory(first);
     const next = release("2099-01-01.next", "Next lifecycle catalog");
     serve(next);
     const changed = await sync();

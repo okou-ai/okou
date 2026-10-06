@@ -1,5 +1,31 @@
 # Deployment Compatibility
 
+## Additive immutable connector entry columns
+
+Migrations `1325_connector_catalog_entry_columns` and
+`1326_backfill_connector_catalog_entry_columns` add and backfill `label`,
+`description`, `category`, `auth_methods`, `firewall`, `storage_name` and
+`version_id` on immutable entries. The complete `payload`, `(hash, slug)`
+identity, publication bytes and all reader contracts remain unchanged.
+Apply both migrations before deploying the new API; new API/old database is
+unsupported because full sync and preview initialization write the new columns.
+
+Old API/new database continues to read and write payload-only entries. The
+additive columns remain nullable for that overlap; old writers can leave them
+empty after the backfill. New full preparation fills matching entries on retry
+without overwriting conflicting immutable payloads. The unchanged-catalog
+shortcut is not a reconciliation pass. Do not switch readers to these columns
+until old writers have drained and any remaining payload-only rows have been
+reconciled in a separately authorized change. This PR does not switch readers
+or establish a query-performance improvement.
+
+Bundled skills project `storageName` and `versionId`; absent skills store NULL
+in both columns. The storage prefix is derivable as
+`__system__/volume/${storageName}/${versionId}` and is not an additional column.
+The original skill descriptor and its validation remain in `payload`. Rollback
+to the old API is supported without dropping columns or changing payloads.
+No production migration, deployment or storage write is executed by this PR.
+
 ## Organization OpenRouter preset override
 
 Migration `1324_org_openrouter_preset` adds nullable

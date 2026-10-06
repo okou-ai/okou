@@ -34,6 +34,7 @@ import {
   persistConnectorCatalogCompatibility,
 } from "../signals/services/connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
+import { immutableCatalogEntryColumns } from "../signals/services/connector-catalog-immutable.service";
 import {
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidationAuthority,
@@ -140,7 +141,12 @@ async function prepareSharedCatalogRows(args: {
     .insert(connectorCatalogEntries)
     .values(
       connectors.map((connector) => {
-        return { hash: args.hash, slug: connector.slug, payload: connector };
+        return {
+          hash: args.hash,
+          slug: connector.slug,
+          payload: connector,
+          ...immutableCatalogEntryColumns(connector),
+        };
       }),
     )
     .onConflictDoNothing();

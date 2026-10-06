@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -8,6 +8,7 @@ import {
   connectorCatalogArtifactConnectorSchema,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
+  type ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { connectorCatalogEntryPayload } from "@okouai/connectors/connector-catalog/entry-payload";
 import { db$, writeDb$ } from "../external/db";
@@ -49,8 +50,15 @@ export const prepareImmutableCatalogEntries$ = command(
           hash: args.hash,
           slug: connector.slug,
           payload: { ...connector },
+          ...immutableCatalogEntryColumns(connector),
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: [connectorCatalogEntries.hash, connectorCatalogEntries.slug],
+          set: immutableCatalogEntryColumns(connector),
+          // Repair columns left empty by old writers, never replace conflicting
+          // immutable content. The readback below still rejects such conflicts.
+          setWhere: sql`${connectorCatalogEntries.payload} = excluded.payload`,
+        });
       signal.throwIfAborted();
       const [stored] = await db
         .select({ payload: connectorCatalogEntries.payload })
@@ -94,6 +102,24 @@ export const prepareImmutableCatalogEntries$ = command(
     signal.throwIfAborted();
   },
 );
+
+// Shared by full sync, bounded preview initialization and fixture writers.
+// The complete publisher payload remains the immutable source of truth.
+export function immutableCatalogEntryColumns(
+  connector: ConnectorCatalogArtifactConnector,
+) {
+  return {
+    label: connector.label,
+    description: connector.description,
+    category: connector.category,
+    authMethods: connector.authMethods,
+    firewall: connector.firewall,
+    storageName:
+      connector.skill.kind === "bundled" ? connector.skill.storageName : null,
+    versionId:
+      connector.skill.kind === "bundled" ? connector.skill.versionId : null,
+  };
+}
 
 // Pure values only. The owning sync command performs CAS and Pi SQL in its
 // transaction callback, together with the unchanged legacy acceptance bridge.

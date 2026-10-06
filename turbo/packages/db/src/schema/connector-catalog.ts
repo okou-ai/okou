@@ -20,6 +20,8 @@ import type { JsonReadonlyStringArray } from "@okouai/db/jsonb-contracts/shared"
 import type {
   ImmutableConnectorCatalogHeader,
   ImmutableConnectorCatalogEntry,
+  ImmutableConnectorCatalogAuthMethods,
+  ImmutableConnectorCatalogFirewall,
 } from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
 
 export const connectorCatalog = pgTable("connector_catalog", {
@@ -39,6 +41,15 @@ export const connectorCatalogEntries = pgTable(
     hash: text("hash").notNull(),
     slug: text("slug").notNull(),
     payload: jsonb("payload").$type<ImmutableConnectorCatalogEntry>().notNull(),
+    // Nullable during the additive rollout: older writers only populate payload.
+    label: text("label"),
+    description: text("description"),
+    category: text("category"),
+    authMethods:
+      jsonb("auth_methods").$type<ImmutableConnectorCatalogAuthMethods>(),
+    firewall: jsonb("firewall").$type<ImmutableConnectorCatalogFirewall>(),
+    storageName: text("storage_name"),
+    versionId: text("version_id"),
   },
   (table) => {
     return [primaryKey({ columns: [table.hash, table.slug] })];

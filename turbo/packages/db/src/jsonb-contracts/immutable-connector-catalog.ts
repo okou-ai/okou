@@ -10,3 +10,7 @@ export type ImmutableConnectorCatalogHeader = Omit<
   "connectors"
 >;
 export type ImmutableConnectorCatalogEntry = ConnectorCatalogArtifactConnector;
+export type ImmutableConnectorCatalogAuthMethods =
+  ConnectorCatalogArtifactConnector["authMethods"];
+export type ImmutableConnectorCatalogFirewall =
+  ConnectorCatalogArtifactConnector["firewall"];

@@ -6,6 +6,7 @@ export const realDatabaseSetupFiles = [
 ];
 
 const immutableCatalogTests = [
+  "src/__tests__/connector-catalog-entry-columns-migration.test.ts",
   "src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
 ];
 
