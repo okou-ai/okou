@@ -1,3 +1,17 @@
+import { createMiscRoutesApi } from "./api-bdd-misc";
+import {
+  makeCodexAuthJson,
+  makeCodexJwt,
+  createAuthDeviceApiActions,
+  mockCodexDeviceAuthProvider,
+} from "./api-bdd-auth-device";
+import { createAuthDeviceSupportApi } from "./api-bdd-auth-device-support";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { meModelProviderAccountRoutes } from "../../me-model-provider-accounts";
+import { createRouteMocks } from "./route-test";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { storageTextFile } from "./api-bdd-storage-files";
+import { memoryArchive } from "./public-runner-memory";
 import { randomUUID } from "node:crypto";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -20,12 +34,23 @@ import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { completePublicPiHistory } from "./public-pi-history";
 
 /** A completed native source, followed by an independent real next-day admission. */
-export function createPublicPiMemorySource(context: TestContext) {
+export function createPublicPiMemorySource(
+  context: TestContext,
+  options: {
+    readonly cashCredits?: 100_000;
+    readonly sources?: readonly string[];
+    readonly memoryFile?: { readonly path: string; readonly content: string };
+  } = {},
+) {
   const fixture = createPublicFirewallFixture(context);
   fixture.registerOwnedUserDeletion();
   const chat = createChatEventsFixture(context);
+  // This route helper configures its own external object store. Initialize it
+  // before publishing the real checkpoint transport used by later credentials.
+  const misc = createMiscRoutesApi(context);
   const account = `public-memory-${randomUUID()}`;
   let memoryStorageId: string | undefined;
+  let sourceMemoryVersionId: string | undefined;
   async function prepare(at: Date) {
     // Callers schedule the first work one day ahead. A new Thread's activity
     // uses the database clock, so creating it under a past app clock cannot
@@ -39,7 +64,7 @@ export function createPublicPiMemorySource(context: TestContext) {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     configureNativeCliArtifact();
     const runnerGroup = chat.api.configureRunnerGroup();
-    await fixture.fund();
+    await fixture.fund(fixture.actor, options.cashCredits);
     if (!fixture.actor.orgId) {
       throw new Error("Expected an owned organization");
     }
@@ -52,8 +77,8 @@ export function createPublicPiMemorySource(context: TestContext) {
     );
     // Device consent is committed against the database wall clock. Authenticate
     // in that clock domain, then restore the historical source clock unchanged.
-    await withNowScopeForTest(async () => {
-      await chat.configureSubscriptionPiModel(fixture.actor, {
+    const subscription = await withNowScopeForTest(async () => {
+      return await chat.configureSubscriptionPiModel(fixture.actor, {
         accountId: account,
         refreshToken: `refresh-${account}`,
         accessTokenExpiresAt:
@@ -66,34 +91,115 @@ export function createPublicPiMemorySource(context: TestContext) {
     });
     fixture.registerAgent(agent.agentId);
     chat.mockPiCheckpointObjectStore();
-    const source = await chat.sendChatRun(fixture.actor, {
-      agentId: agent.agentId,
-      prompt: "Remember this source",
-      model: "gpt-6-luna",
-    });
-    fixture.registerRun(source.runId);
-    const claimed = await chat.claimChatRun(runnerGroup, source.runId);
-    fixture.registerClaim(source.runId, claimed.claim.sandboxToken);
-    expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.piSessionId).toBe(source.threadId);
-    const memory = expectCanonicalStorageManifest(
-      claimed.claim.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory" && mount.storageId;
-    });
-    if (!memory || !fixture.actor.orgId) {
-      throw new Error("Expected the real source Memory owner");
-    }
-    memoryStorageId = memory.storageId;
-    await completePublicPiHistory(
-      context,
-      source,
-      claimed.sandboxHeaders,
+    const sources: {
+      runId: string;
+      threadId: string;
+      hash: string;
+      objectKey: string;
+    }[] = [];
+    let publishedMemory: { versionId: string; archiveKey: string } | undefined;
+    for (const content of options.sources ?? [
       "A completed source for lease and quota behavior",
-    );
-    expect((await chat.api.readRun(fixture.actor, source.runId)).status).toBe(
-      "completed",
-    );
+    ]) {
+      const source = await chat.sendChatRun(fixture.actor, {
+        agentId: agent.agentId,
+        prompt: "Remember this source",
+        model: "gpt-6-luna",
+      });
+      fixture.registerRun(source.runId);
+      const claimed = await chat.claimChatRun(runnerGroup, source.runId);
+      fixture.registerClaim(source.runId, claimed.claim.sandboxToken);
+      expect(claimed.claim.cliAgentType).toBe("pi");
+      expect(claimed.claim.piSessionId).toBe(source.threadId);
+      const memory = expectCanonicalStorageManifest(
+        claimed.claim.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory" && mount.storageId;
+      });
+      if (!memory) {
+        throw new Error("Expected the real source Memory owner");
+      }
+      memoryStorageId = memory.storageId;
+      sourceMemoryVersionId = memory.versionId;
+      if (options.memoryFile && !publishedMemory) {
+        const file = options.memoryFile;
+        const files = [storageTextFile(file.path, file.content)];
+        const archive = memoryArchive(file.path, file.content);
+        const objects = new Map<string, Buffer>();
+        const transport = context.mocks.s3.send.getMockImplementation();
+        if (!transport) {
+          throw new Error("Expected the source object transport");
+        }
+        context.mocks.s3.send.mockImplementation((command: unknown) => {
+          if (
+            (command instanceof GetObjectCommand ||
+              command instanceof HeadObjectCommand) &&
+            command.input.Key &&
+            objects.has(command.input.Key)
+          ) {
+            const bytes = objects.get(command.input.Key);
+            if (!bytes) {
+              throw new Error("Expected owned Memory bytes");
+            }
+            return Promise.resolve({
+              ContentLength: bytes.length,
+              Body: {
+                async *[Symbol.asyncIterator]() {
+                  yield bytes;
+                },
+              },
+            });
+          }
+          return transport(command);
+        });
+        const prepared = await chat.webhooks.requestAgentStoragePrepare(
+          { runId: source.runId, storageId: memory.storageId, files },
+          claimed.sandboxHeaders,
+          [200],
+        );
+        if (prepared.status !== 200 || !prepared.body.uploads) {
+          throw new Error("Expected Memory upload targets");
+        }
+        objects.set(prepared.body.uploads.archive.key, archive);
+        objects.set(
+          prepared.body.uploads.manifest.key,
+          Buffer.from(
+            JSON.stringify({
+              version: 1,
+              files,
+              createdAt: new Date(0).toISOString(),
+            }),
+          ),
+        );
+        await chat.webhooks.requestAgentStorageCommit(
+          {
+            runId: source.runId,
+            storageId: memory.storageId,
+            versionId: prepared.body.versionId,
+            files,
+          },
+          claimed.sandboxHeaders,
+          [200],
+        );
+        publishedMemory = {
+          versionId: prepared.body.versionId,
+          archiveKey: prepared.body.uploads.archive.key,
+        };
+      }
+      const history = await completePublicPiHistory(
+        context,
+        source,
+        claimed.sandboxHeaders,
+        content,
+      );
+      sources.push({ ...source, ...history });
+      expect((await chat.api.readRun(fixture.actor, source.runId)).status).toBe(
+        "completed",
+      );
+    }
+    if (!memoryStorageId) {
+      throw new Error("Expected at least one real source");
+    }
     mockNow(at);
     const trigger = await chat.sendChatRun(fixture.actor, {
       agentId: agent.agentId,
@@ -105,6 +211,12 @@ export function createPublicPiMemorySource(context: TestContext) {
     await flushWaitUntilForTest();
     return {
       memoryStorageId,
+      sourceAgentId: agent.agentId,
+      sourceMemoryVersionId,
+      sources,
+      triggerRunId: trigger.runId,
+      subscription,
+      publishedMemory,
       orgId: fixture.actor.orgId,
       userId: fixture.actor.userId,
     };
@@ -129,17 +241,29 @@ export function createPublicPiMemorySource(context: TestContext) {
     );
     return response.body;
   }
-  function installExtractionProvider() {
-    const text = JSON.stringify({
-      raw_memory: "raw memory",
-      rollout_summary: "rollout summary",
-      rollout_slug: "source",
-    });
+  function installExtractionProvider(
+    output:
+      | string
+      | readonly { rawMemory: string; rolloutSummary: string }[] = "raw memory",
+  ) {
+    let index = 0;
     server.use(
       http.post(
         /https:\/\/chatgpt\.com\/.*\/responses/u,
         async ({ request }) => {
           await request.arrayBuffer();
+          const selected =
+            typeof output === "string"
+              ? { rawMemory: output, rolloutSummary: "rollout summary" }
+              : output[index++];
+          if (!selected) {
+            throw new Error("Unexpected source extraction request");
+          }
+          const text = JSON.stringify({
+            raw_memory: selected.rawMemory,
+            rollout_summary: selected.rolloutSummary,
+            rollout_slug: "source",
+          });
           // The Codex reader cancels after the terminal event. Close the source
           // before cancellation can wait on an unconsumed response clone.
           return new HttpResponse(
@@ -157,7 +281,106 @@ export function createPublicPiMemorySource(context: TestContext) {
       ),
     );
   }
-  return { ...fixture, prepare, extract, installExtractionProvider, account };
+  async function configureOrgApiKey(secret: string) {
+    fixture.registerCleanup(async () => {
+      await misc.deleteOrgModelProvider(
+        fixture.actor,
+        "openai-api-key",
+        [204, 404],
+      );
+    });
+    await misc.upsertOrgModelProvider(
+      fixture.actor,
+      { type: "openai-api-key", secret },
+      [200, 201],
+    );
+  }
+  async function disconnect(accountId: string) {
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.actor.orgId,
+      fixture.actor.orgRole,
+    );
+    await accept(
+      setupApp({ context, routes: meModelProviderAccountRoutes })(
+        personalModelProviderAccountsByIdContract,
+      ).delete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: accountId },
+      }),
+      [204],
+    );
+  }
+  async function expireCredential(accountId: string) {
+    const accessToken = makeCodexJwt({
+      exp: Math.floor(now() / 1000) - 60,
+      identity: account,
+    });
+    const result = await misc.upsertPersonalModelProvider(
+      fixture.actor,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accessToken,
+            accountId: account,
+            refreshToken: `refresh-${account}`,
+          }),
+        },
+      },
+      [200],
+    );
+    if (result.status !== 200) {
+      throw new Error("Expected credential replacement");
+    }
+    expect(result.body.provider.id).toBe(accountId);
+  }
+  async function activateAccount(identity: string) {
+    return await withNowScopeForTest(async () => {
+      const oauth = mockCodexDeviceAuthProvider({
+        tokenScope: "personal",
+        accountId: identity,
+        accessTokenExpiresAt: Math.floor(now() / 1000) + 72 * 3600,
+      });
+      const auth = createAuthDeviceApiActions(context);
+      const started = await auth.requestCodexStart(
+        fixture.actor,
+        "personal",
+        [200],
+        { mode: "add" },
+      );
+      if (started.status !== 200) {
+        throw new Error("Expected device auth start");
+      }
+      const result = await auth.requestCodexComplete(
+        fixture.actor,
+        started.body.sessionToken,
+        [200],
+      );
+      if (!("status" in result.body) || result.body.status !== "complete") {
+        throw new Error("Expected device auth completion");
+      }
+      await createAuthDeviceSupportApi(
+        context,
+      ).activatePersonalModelProviderAccount(
+        fixture.actor,
+        result.body.provider.id,
+      );
+      return { oauth, accountSourceId: result.body.provider.id, identity };
+    });
+  }
+  return {
+    ...fixture,
+    prepare,
+    extract,
+    installExtractionProvider,
+    account,
+    disconnect,
+    configureOrgApiKey,
+    expireCredential,
+    activateAccount,
+  };
 }
 
 function extractionSse(

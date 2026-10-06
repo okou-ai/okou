@@ -1,3 +1,4 @@
+import { now } from "../../../../lib/time";
 import { randomUUID } from "node:crypto";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -27,22 +28,21 @@ export function createPublicFirewallFixture(
   }
   const customerId = `cus_firewall_${randomUUID()}`;
   const subscriptionId = `sub_firewall_${randomUUID()}`;
+  const invoiceId = `in_public_cash_${randomUUID()}`;
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const agentIds = new Set<string>();
   const runIds = new Set<string>();
   const claims = new Map<string, string>();
-  let deleteOwnedUser = false;
+  const deletedRuns = new Set<string>();
+  const scenarioCleanups: (() => Promise<void>)[] = [];
+  const deletedUsers = new Set<string>();
   const builtinAccounts = new Map<ConnectorSlug, Set<string>>();
   const builtinDeletionIntents = new Map<ConnectorSlug, Set<string>>();
   const customAccounts = new Map<string, Set<string>>();
   let restoreStorage: (() => void) | undefined;
 
-  const owner = createFixtureOperationOwner(async () => {
-    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
-    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
-    restoreStorage?.();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+  async function cleanupRuns() {
     const runs = createRunsApi(context);
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -55,7 +55,18 @@ export function createPublicFirewallFixture(
       runIds.add(run.id);
     }
     for (const runId of runIds) {
-      const run = await runs.readRun(actor, runId);
+      const response = await runs.requestReadRun(
+        actor,
+        runId,
+        deletedRuns.has(runId) ? [200, 404] : [200],
+      );
+      if (response.status === 404 && deletedRuns.has(runId)) {
+        continue;
+      }
+      if (response.status !== 200) {
+        throw new Error("Expected the owned Run to remain readable");
+      }
+      const run = response.body;
       if (run.status === "pending" || run.status === "running") {
         await runs.requestCancelRun(actor, runId, [200]);
       }
@@ -69,7 +80,18 @@ export function createPublicFirewallFixture(
       }
     }
     await flushWaitUntilForTest();
+  }
 
+  const owner = createFixtureOperationOwner(async () => {
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+    restoreStorage?.();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    await cleanupRuns();
+
+    for (const cleanup of scenarioCleanups) {
+      await cleanup();
+    }
     const connectors = createConnectorBddApi(context);
     for (const [slug, ownedIds] of builtinAccounts) {
       const accounts = await connectors.listBuiltinConnectorAccounts(
@@ -157,10 +179,10 @@ export function createPublicFirewallFixture(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    if (deleteOwnedUser) {
+    for (const userId of deletedUsers) {
       webhooks.verifyNextClerkWebhook({
         type: "user.deleted",
-        data: { id: actor.userId },
+        data: { id: userId },
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
@@ -182,8 +204,16 @@ export function createPublicFirewallFixture(
 
   return {
     actor,
+    customerId,
+    subscriptionId,
     run: owner.run,
-    async fund(fundingActor = actor) {
+    registerCleanup(cleanup: () => Promise<void>): void {
+      scenarioCleanups.push(cleanup);
+    },
+    registerRunDeletion(runId: string): void {
+      deletedRuns.add(runId);
+    },
+    async fund(fundingActor = actor, cashCredits?: 100_000) {
       if (fundingActor.orgId !== orgId) {
         throw new Error("Funding must belong to the owned organization");
       }
@@ -198,7 +228,78 @@ export function createPublicFirewallFixture(
         }
       };
       createFirewallApi(context).seedClerkDirectory(fundingActor);
-      // Selected scenarios observe authorization, not the old synthetic 100000.
+      if (cashCredits !== undefined) {
+        const bdd = createBddApi(context);
+        const runs = createRunsApi(context);
+        const webhooks = createWebhookCallbackApi(context);
+        expect((await bdd.completeOnboarding(fundingActor)).status).toBe(200);
+        expect((await runs.readBillingStatus(fundingActor)).credits).toBe(0);
+        webhooks.configureStripeBillingEnv();
+        context.mocks.stripe.customers.retrieve.mockResolvedValue({
+          id: customerId,
+          metadata: { orgId },
+        });
+        const subscription = {
+          id: subscriptionId,
+          customer: customerId,
+          status: "active",
+          metadata: {},
+          cancel_at_period_end: false,
+          cancel_at: null,
+          schedule: null,
+          trial_end: null,
+          items: { data: [{ price: { id: "price_bdd_pro" } }] },
+        };
+        for (const type of [
+          "customer.subscription.created",
+          "customer.subscription.updated",
+        ]) {
+          await webhooks.postStripeEvent(
+            {
+              id: `evt_public_cash_${randomUUID()}`,
+              type,
+              created: Math.floor(now() / 1000),
+              data: { object: subscription },
+            },
+            [200],
+          );
+        }
+        await expect(
+          runs.readBillingStatus(fundingActor),
+        ).resolves.toMatchObject({ tier: "pro", status: "active", credits: 0 });
+        await webhooks.postStripeEvent(
+          {
+            id: `evt_public_cash_${randomUUID()}`,
+            type: "invoice.paid",
+            created: Math.floor(now() / 1000),
+            data: {
+              object: {
+                id: invoiceId,
+                customer: customerId,
+                amount_paid: cashCredits / 10,
+                metadata: {
+                  type: "auto_recharge",
+                  orgId,
+                  creditsAmount: String(cashCredits),
+                },
+                parent: null,
+                lines: { has_more: false, data: [] },
+              },
+            },
+          },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await expect(
+          runs.readBillingStatus(fundingActor),
+        ).resolves.toMatchObject({
+          tier: "pro",
+          status: "active",
+          credits: cashCredits,
+        });
+        return { customerId, subscriptionId, invoiceId };
+      }
+      // Default authorization fixtures retain their existing subscription grant.
       return await createRunsApi(context).grantProEntitlement(fundingActor, {
         customerId,
         subscriptionId,
@@ -211,8 +312,8 @@ export function createPublicFirewallFixture(
       runIds.add(runId);
       claims.set(runId, token);
     },
-    registerOwnedUserDeletion(): void {
-      deleteOwnedUser = true;
+    registerOwnedUserDeletion(userId = actor.userId): void {
+      deletedUsers.add(userId);
     },
     registerRun(runId: string): void {
       runIds.add(runId);

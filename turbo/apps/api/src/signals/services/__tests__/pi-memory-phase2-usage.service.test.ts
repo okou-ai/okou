@@ -1,3 +1,5 @@
+import { createPublicPiMemorySource } from "../../routes/__tests__/helpers/public-pi-memory-source";
+import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createHash, randomUUID } from "node:crypto";
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
@@ -16,7 +18,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { db } from "../../../lib/db";
 import { mockOptionalEnv } from "../../../lib/env";
-import { nowDate, withMockNowForTest } from "../../../lib/time";
+import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import {
   seedOrgMetadata,
   createUsagePricingFixture,
@@ -276,7 +278,118 @@ async function launchMaintenance(
   };
 }
 
-function canonicalLedger(run: Awaited<ReturnType<typeof launchMaintenance>>) {
+async function launchPublicMaintenance(
+  fixture: ReturnType<typeof createPublicPiMemorySource>,
+  type?: "openai-api-key",
+) {
+  const at = new Date(now() + 24 * 3_600_000);
+  const scope = await fixture.prepare(at);
+  fixture.installExtractionProvider([
+    {
+      rawMemory: "first private candidate",
+      rolloutSummary: "first complete evidence",
+    },
+    {
+      rawMemory: "second private candidate",
+      rolloutSummary: "second complete evidence",
+    },
+  ]);
+  await expect(fixture.extract()).resolves.toMatchObject({
+    claimed: 2,
+    succeeded: 2,
+  });
+  await fixture.disconnect(scope.subscription.accountSourceId);
+  if (type) {
+    await seedBuiltInModelKey(
+      context,
+      PI_MEMORY_PHASE2_BYOK_MODEL,
+      fixture.registerCleanup,
+    );
+    await fixture.configureOrgApiKey(`phase2-key-${randomUUID()}`);
+  } else {
+    await seedBuiltInModelCandidateKeys(
+      context,
+      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      fixture.registerCleanup,
+    );
+  }
+  const result = await createStore().set(
+    createPiMemoryPhase2Worker(scope).execute$,
+    at,
+    context.signal,
+  );
+  if (result.outcome !== "dispatched") {
+    throw new Error(`Maintenance dispatch failed: ${result.outcome}`);
+  }
+  const runId = result.runId;
+  fixture.registerRun(runId);
+  const execution = await claimPhase2Execution(context, runId);
+  fixture.registerClaim(runId, execution.sandboxToken);
+  const run = await createRunsApi(context).readRun(fixture.actor, runId);
+  const events = [
+    { category: "tokens.input", quantity: 6 },
+    { category: "tokens.output", quantity: 4186 },
+    { category: "tokens.cache_read", quantity: 87_690 },
+    { category: "tokens.cache_creation", quantity: 48_472 },
+  ].map((entry) => {
+    return {
+      ...entry,
+      idempotencyKey: randomUUID(),
+      kind: "model" as const,
+      provider: type
+        ? PI_MEMORY_PHASE2_BYOK_MODEL
+        : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+    };
+  });
+  await createUsagePricingFixture({
+    registerCleanup: fixture.registerCleanup,
+    configured: events.map((event) => {
+      return {
+        kind: event.kind,
+        provider: event.provider,
+        category: event.category,
+        unitPrice: 1,
+        unitSize: 1000,
+      };
+    }),
+  });
+  const headers = { authorization: `Bearer ${execution.sandboxToken}` };
+  const client = setupApp({
+    context,
+    routes: webhooksAgentHealthUsageTelemetryRoutes,
+  });
+  return {
+    scope,
+    run,
+    runId,
+    execution,
+    events,
+    headers,
+    async proxy() {
+      return await accept(
+        client(webhookUsageEventContract).send({
+          headers,
+          body: { runId, events },
+        }),
+        [200],
+      );
+    },
+    async ledger() {
+      // Original named Phase2 usage harness: exact financial identity/vector and
+      // replay population are not represented by aggregated public usage rows.
+      return await db()
+        .select()
+        .from(usageEvent)
+        .where(eq(usageEvent.orgId, scope.orgId));
+    },
+  };
+}
+
+function canonicalLedger(run: {
+  readonly events: Awaited<ReturnType<typeof launchMaintenance>>["events"];
+  readonly runId: string;
+  readonly scope: { readonly orgId: string; readonly userId: string };
+}) {
   return expect.arrayContaining(
     run.events.map((event) => {
       return expect.objectContaining({
@@ -291,11 +404,17 @@ function canonicalLedger(run: Awaited<ReturnType<typeof launchMaintenance>>) {
 
 describe("Pi memory Phase 2 proxy billing", () => {
   it("charges one provider vector with concurrent batches and retries", async () => {
-    const run = await launchMaintenance();
-    await Promise.all([run.proxy(), run.proxy()]);
-    await run.proxy();
-    await expect(run.ledger()).resolves.toHaveLength(4);
-    await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
+    const fixture = createPublicPiMemorySource(context, {
+      cashCredits: 100_000,
+      sources: ["first complete evidence", "second complete evidence"],
+    });
+    await fixture.run(async () => {
+      const run = await launchPublicMaintenance(fixture);
+      await Promise.all([run.proxy(), run.proxy()]);
+      await run.proxy();
+      await expect(run.ledger()).resolves.toHaveLength(4);
+      await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
+    });
   });
 
   it.each([
@@ -619,65 +738,84 @@ test.each(["valid", "invalid"] as const)(
 );
 
 test("preserves non-model usage for a genuinely launched BYOK run", async () => {
-  const run = await launchMaintenance("openai-api-key");
-  const event = {
-    idempotencyKey: randomUUID(),
-    kind: "connector" as const,
-    provider: "x",
-    category: "tweet.read",
-    quantity: 10,
-  };
-  const pricing = await createUsagePricingFixture({
-    configured: [{ ...event, unitPrice: 1, unitSize: 1 }],
+  const fixture = createPublicPiMemorySource(context, {
+    cashCredits: 100_000,
+    sources: ["first complete evidence", "second complete evidence"],
   });
-  onTestFinished(pricing.cleanup);
-  const client = setupApp({
-    context,
-    routes: webhooksAgentHealthUsageTelemetryRoutes,
+  await fixture.run(async () => {
+    const run = await launchPublicMaintenance(fixture, "openai-api-key");
+    const event = {
+      idempotencyKey: randomUUID(),
+      kind: "connector" as const,
+      provider: "x",
+      category: "tweet.read",
+      quantity: 10,
+    };
+    await createUsagePricingFixture({
+      registerCleanup: fixture.registerCleanup,
+      configured: [{ ...event, unitPrice: 1, unitSize: 1 }],
+    });
+    const client = setupApp({
+      context,
+      routes: webhooksAgentHealthUsageTelemetryRoutes,
+    });
+    const send = () => {
+      return accept(
+        client(webhookUsageEventContract).send({
+          headers: run.headers,
+          body: { runId: run.runId, events: [event] },
+        }),
+        [200],
+      );
+    };
+    await send();
+    await send();
+    await run.proxy();
+    await expect(run.ledger()).resolves.toMatchObject([
+      {
+        kind: "connector",
+        provider: "x",
+        category: "tweet.read",
+        quantity: 10,
+      },
+    ]);
   });
-  const send = () => {
-    return accept(
-      client(webhookUsageEventContract).send({
-        headers: run.headers,
-        body: { runId: run.runId, events: [event] },
-      }),
-      [200],
-    );
-  };
-  await send();
-  await send();
-  await run.proxy();
-  await expect(run.ledger()).resolves.toMatchObject([
-    { kind: "connector", provider: "x", category: "tweet.read", quantity: 10 },
-  ]);
 });
 
 test("keeps explicit built-in HTTP identity and cache-inclusive billing", async () => {
-  const run = await launchMaintenance();
-  const actual = await executePhase2Runtime(context, run.runId);
-  expect(actual.requests).toHaveLength(3);
-  for (const request of actual.requests) {
-    expect(request.url).toBe("https://openrouter.ai/api/v1/responses");
-    expect(request.headers.get("authorization")).toMatch(
-      /^Bearer built-in-key-runtime-fixture-/,
-    );
-    // V4.1 Flash publishes no `medium` step, so maintenance sends `high`.
-    expect(request.body).toMatchObject({
-      model: "deepseek/deepseek-v4.1-flash",
-      reasoning: { effort: "high" },
-    });
-    expect(request.body).not.toHaveProperty("service_tier");
-  }
-  expect(run.run).toMatchObject({
-    modelProvider: "built-in",
-    modelProviderId: null,
-    modelProviderCredentialScope: "org",
-    selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  const fixture = createPublicPiMemorySource(context, {
+    cashCredits: 100_000,
+    sources: ["first complete evidence", "second complete evidence"],
   });
-  await run.proxy();
-  await run.proxy();
-  await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
-  await expect(run.ledger()).resolves.toHaveLength(4);
+  await fixture.run(async () => {
+    const run = await launchPublicMaintenance(fixture);
+    const actual = await executePhase2Runtime(context, run.runId, {
+      execution: run.execution,
+      registerCleanup: fixture.registerCleanup,
+    });
+    expect(actual.requests).toHaveLength(3);
+    for (const request of actual.requests) {
+      expect(request.url).toBe("https://openrouter.ai/api/v1/responses");
+      expect(request.headers.get("authorization")).toMatch(
+        /^Bearer built-in-key-runtime-fixture-/,
+      );
+      // V4.1 Flash publishes no `medium` step, so maintenance sends `high`.
+      expect(request.body).toMatchObject({
+        model: "deepseek/deepseek-v4.1-flash",
+        reasoning: { effort: "high" },
+      });
+      expect(request.body).not.toHaveProperty("service_tier");
+    }
+    expect(run.run.source).toMatchObject({
+      providerType: "built-in",
+      model: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      credentialScope: "org",
+    });
+    await run.proxy();
+    await run.proxy();
+    await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
+    await expect(run.ledger()).resolves.toHaveLength(4);
+  });
 });
 
 test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(

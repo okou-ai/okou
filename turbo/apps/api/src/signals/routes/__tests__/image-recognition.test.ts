@@ -1,3 +1,4 @@
+import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
@@ -244,7 +245,8 @@ async function createPublicImageRecognitionActor() {
           )
         ).body.data,
       ).toStrictEqual([]);
-      // Production retains billing and usage history under these unique IDs.
+      // Organization deletion removes raw/hourly usage and allowances; immutable
+      // billing receipts remain isolated by these unique identities.
     });
     if (failures.length > 0) {
       throw new AggregateError(
@@ -457,10 +459,9 @@ async function createConfiguredImageRecognitionPricing(
 ): Promise<UsagePricingFixture> {
   const pricing = await createUsagePricingFixture({
     configured: IMAGE_RECOGNITION_PRICING_ROWS,
+    registerCleanup,
   });
-  if (registerCleanup) {
-    registerCleanup(pricing.cleanup);
-  } else {
+  if (!registerCleanup) {
     onTestFinished(async () => {
       await pricing.cleanup();
     });
@@ -520,6 +521,24 @@ async function expectNoUsage(actor: ImageRecognitionActor): Promise<void> {
       context.signal,
     ),
   ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
+}
+
+async function expectNoPublicRecognitionUsage(
+  actor: ThreadImageRecognitionActor,
+): Promise<void> {
+  const billing = createBillingMediaApi(context);
+  await billing.processOrgUsageEvents(actor);
+  const record = (await billing.readUsageRecord(actor)).body;
+  expect(record.rows).toStrictEqual([]);
+  expect(record.pagination.total).toBe(0);
+  expect(record.totalCredits).toBe(0);
+  expect(
+    (await billing.readUsageMembers(actor, { range: "24h", tz: "UTC" })).body
+      .members,
+  ).toStrictEqual([]);
+  expect((await billing.readBillingStatus(actor)).credits).toBe(
+    STARTING_CREDITS,
+  );
 }
 
 describe("POST /api/image-recognition", () => {
@@ -1193,96 +1212,119 @@ describe("POST /api/image-recognition", () => {
   });
 
   it("recognizes one owned image and settles each real invocation", async () => {
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    const requestBodies: unknown[] = [];
-    // The Thread send may call the provider itself; seed it first.
-    const actor = await seedImageRecognitionActor();
-    server.use(
-      http.post(OPENROUTER_URL, async ({ request }) => {
-        const body = await request.json();
-        requestBodies.push(body);
-        // The recognition model exposes no effort selection, so an effort sent
-        // to it is a parameter the gateway rejects rather than honors.
-        const contractError = openRouterModelContractError(body);
-        if (contractError) {
-          return contractError;
-        }
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: "A red warning banner is visible." },
-            },
-          ],
-          usage: {
-            prompt_tokens: 3000,
-            completion_tokens: 1000,
-            prompt_tokens_details: { cached_tokens: 1000 },
-          },
-        });
-      }),
-    );
-    const pricing = await seedImageRecognitionBilling(actor);
-    const fileId = randomUUID();
-    setStoredObjects([
-      { userId: actor.userId, id: fileId, filename: "screen.png", size: 1024 },
-    ]);
-    const clientRequestId = randomUUID();
-
-    for (let invocation = 0; invocation < 2; invocation += 1) {
-      const response = await requestImageRecognition({
-        token: okouToken(actor),
-        fileId,
-        prompt: "Read the warning",
-        clientRequestId,
-        usagePricingResolution: pricing.resolution,
-      });
-      expect(response.status).toBe(200);
-      expect(response.body).toStrictEqual({
-        text: "A red warning banner is visible.",
-        metadata: { creditsCharged: EXPECTED_CHARGE },
-      });
-    }
-
-    expect(requestBodies).toHaveLength(2);
-    expect(requestBodies[0]).toMatchObject({
-      model: "xiaomi/mimo-v2.5",
-      max_tokens: 8192,
-      // Thinking and the visible answer share max_tokens, so recognition asks
-      // for none of it and leaves the whole ceiling to the answer.
-      reasoning: { enabled: false },
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Read the warning" },
-            {
-              type: "image_url",
-              image_url: {
-                url: expect.stringMatching(
-                  new RegExp(`^https://r2\\.example\\.com/.+${fileId}`, "u"),
-                ),
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+      const requestBodies: unknown[] = [];
+      // Install the scenario responder only after public Run admission.
+      const actor = fixture.actor;
+      await expectNoPublicRecognitionUsage(actor);
+      server.use(
+        http.post(OPENROUTER_URL, async ({ request }) => {
+          const body = await request.json();
+          requestBodies.push(body);
+          // The recognition model exposes no effort selection, so an effort sent
+          // to it is a parameter the gateway rejects rather than honors.
+          const contractError = openRouterModelContractError(body);
+          if (contractError) {
+            return contractError;
+          }
+          return HttpResponse.json({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: { content: "A red warning banner is visible." },
               },
+            ],
+            usage: {
+              prompt_tokens: 3000,
+              completion_tokens: 1000,
+              prompt_tokens_details: { cached_tokens: 1000 },
             },
-          ],
+          });
+        }),
+      );
+      const pricing = await fixture.pricing();
+      const fileId = randomUUID();
+      setStoredObjects([
+        {
+          userId: actor.userId,
+          id: fileId,
+          filename: "screen.png",
+          size: 1024,
         },
-      ],
+      ]);
+      const clientRequestId = randomUUID();
+
+      for (let invocation = 0; invocation < 2; invocation += 1) {
+        const response = await requestImageRecognition({
+          token: okouToken(actor),
+          fileId,
+          prompt: "Read the warning",
+          clientRequestId,
+          usagePricingResolution: pricing.resolution,
+        });
+        expect(response.status).toBe(200);
+        expect(response.body).toStrictEqual({
+          text: "A red warning banner is visible.",
+          metadata: { creditsCharged: EXPECTED_CHARGE },
+        });
+      }
+
+      expect(requestBodies).toHaveLength(2);
+      expect(requestBodies[0]).toMatchObject({
+        model: "xiaomi/mimo-v2.5",
+        max_tokens: 8192,
+        // Thinking and the visible answer share max_tokens, so recognition asks
+        // for none of it and leaves the whole ceiling to the answer.
+        reasoning: { enabled: false },
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Read the warning" },
+              {
+                type: "image_url",
+                image_url: {
+                  url: expect.stringMatching(
+                    new RegExp(`^https://r2\\.example\\.com/.+${fileId}`, "u"),
+                  ),
+                },
+              },
+            ],
+          },
+        ],
+      });
+      const billing = createBillingMediaApi(context);
+      await billing.processOrgUsageEvents(actor, pricing.resolution);
+      const records = (await billing.readUsageRecord(actor)).body;
+      expect(records.pagination.total).toBe(1);
+      expect(records.totalCredits).toBe(EXPECTED_CHARGE * 2);
+      expect(
+        (await billing.readUsageMembers(actor, { range: "24h", tz: "UTC" }))
+          .body.members,
+      ).toStrictEqual([
+        expect.objectContaining({
+          userId: actor.userId,
+          inputTokens: 4000,
+          outputTokens: 2000,
+          cacheReadInputTokens: 2000,
+          cacheCreationInputTokens: 0,
+          creditsCharged: EXPECTED_CHARGE * 2,
+        }),
+      ]);
+      expect((await billing.readBillingStatus(actor)).credits).toBe(
+        STARTING_CREDITS - EXPECTED_CHARGE * 2,
+      );
+      await expect(readUsageRecord(actor)).resolves.toStrictEqual([
+        expect.objectContaining({
+          title: null,
+          threadId: actor.threadId,
+          tokens: 8000,
+          credits: EXPECTED_CHARGE * 2,
+        }),
+      ]);
     });
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "organization", id: actor.orgId },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 6, hourly: 0 });
-    await expect(readUsageRecord(actor)).resolves.toStrictEqual([
-      expect.objectContaining({
-        title: null,
-        threadId: actor.threadId,
-        tokens: 8000,
-        credits: EXPECTED_CHARGE * 2,
-      }),
-    ]);
   });
 
   it("signs a private input for image recognition after creation is disabled", async () => {
@@ -1452,46 +1494,50 @@ describe("POST /api/image-recognition", () => {
   });
 
   it("rejects non-owned and invalid uploaded image metadata", async () => {
-    const actor = await seedImageRecognitionActor();
-    const otherUserFileId = randomUUID();
-    const gifId = randomUUID();
-    const emptyId = randomUUID();
-    const oversizedId = randomUUID();
-    setStoredObjects([
-      {
-        userId: randomUUID(),
-        id: otherUserFileId,
-        filename: "other.png",
-        size: 10,
-      },
-      { userId: actor.userId, id: gifId, filename: "image.gif", size: 10 },
-      { userId: actor.userId, id: emptyId, filename: "empty.png", size: 0 },
-      {
-        userId: actor.userId,
-        id: oversizedId,
-        filename: "large.webp",
-        size: IMAGE_RECOGNITION_MAX_FILE_BYTES + 1,
-      },
-    ]);
-    const token = okouToken(actor);
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      const actor = fixture.actor;
+      await expectNoPublicRecognitionUsage(actor);
+      const otherUserFileId = randomUUID();
+      const gifId = randomUUID();
+      const emptyId = randomUUID();
+      const oversizedId = randomUUID();
+      setStoredObjects([
+        {
+          userId: randomUUID(),
+          id: otherUserFileId,
+          filename: "other.png",
+          size: 10,
+        },
+        { userId: actor.userId, id: gifId, filename: "image.gif", size: 10 },
+        { userId: actor.userId, id: emptyId, filename: "empty.png", size: 0 },
+        {
+          userId: actor.userId,
+          id: oversizedId,
+          filename: "large.webp",
+          size: IMAGE_RECOGNITION_MAX_FILE_BYTES + 1,
+        },
+      ]);
+      const token = okouToken(actor);
 
-    const cases = [
-      { fileId: otherUserFileId, status: 404, code: "NOT_FOUND" },
-      { fileId: gifId, status: 400, code: "UNSUPPORTED_IMAGE_TYPE" },
-      { fileId: emptyId, status: 400, code: "EMPTY_IMAGE" },
-      { fileId: oversizedId, status: 413, code: "IMAGE_TOO_LARGE" },
-    ] as const;
-    for (const testCase of cases) {
-      const response = await requestImageRecognition({
-        token,
-        fileId: testCase.fileId,
-      });
-      expect(response.status).toBe(testCase.status);
-      expect(response.body).toMatchObject({
-        error: { code: testCase.code },
-      });
-    }
-    await expectNoUsage(actor);
+      const cases = [
+        { fileId: otherUserFileId, status: 404, code: "NOT_FOUND" },
+        { fileId: gifId, status: 400, code: "UNSUPPORTED_IMAGE_TYPE" },
+        { fileId: emptyId, status: 400, code: "EMPTY_IMAGE" },
+        { fileId: oversizedId, status: 413, code: "IMAGE_TOO_LARGE" },
+      ] as const;
+      for (const testCase of cases) {
+        const response = await requestImageRecognition({
+          token,
+          fileId: testCase.fileId,
+        });
+        expect(response.status).toBe(testCase.status);
+        expect(response.body).toMatchObject({
+          error: { code: testCase.code },
+        });
+      }
+      await expectNoPublicRecognitionUsage(actor);
+    });
   });
 
   it("fails before the provider when credits or pricing are unavailable", async () => {
@@ -1536,145 +1582,157 @@ describe("POST /api/image-recognition", () => {
   });
 
   it("maps provider image errors without exposing raw provider text", async () => {
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    let providerCall = 0;
-    // The Thread send may call the provider itself; seed it first.
-    const actor = await seedImageRecognitionActor();
-    server.use(
-      http.post(OPENROUTER_URL, () => {
-        providerCall += 1;
-        return HttpResponse.json(
-          {
-            error: {
-              message: "raw-provider-secret-detail",
-              metadata: {
-                error_type:
-                  providerCall === 1
-                    ? "invalid_image"
-                    : "invalid_image\ninjected",
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+      let providerCall = 0;
+      // Install the scenario responder only after public Run admission.
+      const actor = fixture.actor;
+      await expectNoPublicRecognitionUsage(actor);
+      server.use(
+        http.post(OPENROUTER_URL, () => {
+          providerCall += 1;
+          return HttpResponse.json(
+            {
+              error: {
+                message: "raw-provider-secret-detail",
+                metadata: {
+                  error_type:
+                    providerCall === 1
+                      ? "invalid_image"
+                      : "invalid_image\ninjected",
+                },
               },
             },
-          },
-          { status: 400 },
-        );
-      }),
-    );
-    const pricing = await seedImageRecognitionBilling(actor);
-    const fileId = randomUUID();
-    setStoredObjects([
-      { userId: actor.userId, id: fileId, filename: "broken.png", size: 12 },
-    ]);
+            { status: 400 },
+          );
+        }),
+      );
+      const pricing = await fixture.pricing();
+      const fileId = randomUUID();
+      setStoredObjects([
+        { userId: actor.userId, id: fileId, filename: "broken.png", size: 12 },
+      ]);
 
-    const response = await requestImageRecognition({
-      token: okouToken(actor),
-      fileId,
-      usagePricingResolution: pricing.resolution,
-    });
-    expect(response.status).toBe(400);
-    const responseText = JSON.stringify(response.body);
-    expect(responseText).toContain("INVALID_IMAGE");
-    expect(responseText).not.toContain("raw-provider-secret-detail");
+      const response = await requestImageRecognition({
+        token: okouToken(actor),
+        fileId,
+        usagePricingResolution: pricing.resolution,
+      });
+      expect(response.status).toBe(400);
+      const responseText = JSON.stringify(response.body);
+      expect(responseText).toContain("INVALID_IMAGE");
+      expect(responseText).not.toContain("raw-provider-secret-detail");
 
-    const malformedType = await requestImageRecognition({
-      token: okouToken(actor),
-      fileId,
-      usagePricingResolution: pricing.resolution,
+      const malformedType = await requestImageRecognition({
+        token: okouToken(actor),
+        fileId,
+        usagePricingResolution: pricing.resolution,
+      });
+      expect(malformedType.status).toBe(502);
+      expect(JSON.stringify(malformedType.body)).not.toContain("injected");
+      await expectNoPublicRecognitionUsage(actor);
     });
-    expect(malformedType.status).toBe(502);
-    expect(JSON.stringify(malformedType.body)).not.toContain("injected");
-    await expectNoUsage(actor);
   });
 
   it("rejects usable text when provider usage metadata is incomplete", async () => {
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    const usages = [
-      undefined,
-      { prompt_tokens: 10 },
-      { completion_tokens: 10 },
-    ] as const;
-    const actor = await seedImageRecognitionActor();
-    const pricing = await seedImageRecognitionBilling(actor);
-    const fileId = randomUUID();
-    setStoredObjects([
-      { userId: actor.userId, id: fileId, filename: "screen.webp", size: 12 },
-    ]);
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+      const usages = [
+        undefined,
+        { prompt_tokens: 10 },
+        { completion_tokens: 10 },
+      ] as const;
+      const actor = fixture.actor;
+      await expectNoPublicRecognitionUsage(actor);
+      const pricing = await fixture.pricing();
+      const fileId = randomUUID();
+      setStoredObjects([
+        { userId: actor.userId, id: fileId, filename: "screen.webp", size: 12 },
+      ]);
 
-    for (const usage of usages) {
+      for (const usage of usages) {
+        server.use(
+          http.post(OPENROUTER_URL, () => {
+            return HttpResponse.json({
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: { content: "Unbilled result" },
+                },
+              ],
+              ...(usage === undefined ? {} : { usage }),
+            });
+          }),
+        );
+        const response = await requestImageRecognition({
+          token: okouToken(actor),
+          fileId,
+          usagePricingResolution: pricing.resolution,
+        });
+        expect(response.status).toBe(502);
+        expect(response.body).toMatchObject({
+          error: { code: "MISSING_PROVIDER_USAGE" },
+        });
+      }
+      await expectNoPublicRecognitionUsage(actor);
+    });
+  });
+
+  it("rejects incomplete or empty provider output without charging or reporting usage", async () => {
+    const fixture = await createPublicImageRecognitionActor();
+    await fixture.run(async () => {
+      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+      let providerCall = 0;
+      // Install the scenario responder only after public Run admission.
+      const actor = fixture.actor;
+      await expectNoPublicRecognitionUsage(actor);
       server.use(
         http.post(OPENROUTER_URL, () => {
+          providerCall += 1;
+          if (providerCall === 1) {
+            return HttpResponse.json({
+              choices: [
+                {
+                  finish_reason: "length",
+                  message: { content: "Incomplete result" },
+                },
+              ],
+              usage: { prompt_tokens: 10, completion_tokens: 10 },
+            });
+          }
           return HttpResponse.json({
             choices: [
               {
                 finish_reason: "stop",
-                message: { content: "Unbilled result" },
-              },
-            ],
-            ...(usage === undefined ? {} : { usage }),
-          });
-        }),
-      );
-      const response = await requestImageRecognition({
-        token: okouToken(actor),
-        fileId,
-        usagePricingResolution: pricing.resolution,
-      });
-      expect(response.status).toBe(502);
-      expect(response.body).toMatchObject({
-        error: { code: "MISSING_PROVIDER_USAGE" },
-      });
-    }
-    await expectNoUsage(actor);
-  });
-
-  it("rejects incomplete or empty provider output without recording usage", async () => {
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    let providerCall = 0;
-    // The Thread send may call the provider itself; seed it first.
-    const actor = await seedImageRecognitionActor();
-    server.use(
-      http.post(OPENROUTER_URL, () => {
-        providerCall += 1;
-        if (providerCall === 1) {
-          return HttpResponse.json({
-            choices: [
-              {
-                finish_reason: "length",
-                message: { content: "Incomplete result" },
+                message: { content: "   " },
               },
             ],
             usage: { prompt_tokens: 10, completion_tokens: 10 },
           });
-        }
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: "   " },
-            },
-          ],
-          usage: { prompt_tokens: 10, completion_tokens: 10 },
-        });
-      }),
-    );
-    const pricing = await seedImageRecognitionBilling(actor);
-    const fileId = randomUUID();
-    setStoredObjects([
-      { userId: actor.userId, id: fileId, filename: "screen.png", size: 12 },
-    ]);
+        }),
+      );
+      const pricing = await fixture.pricing();
+      const fileId = randomUUID();
+      setStoredObjects([
+        { userId: actor.userId, id: fileId, filename: "screen.png", size: 12 },
+      ]);
 
-    for (let invocation = 0; invocation < 2; invocation += 1) {
-      const response = await requestImageRecognition({
-        token: okouToken(actor),
-        fileId,
-        usagePricingResolution: pricing.resolution,
-      });
-      expect(response.status).toBe(502);
-      expect(response.body).toMatchObject({
-        error: { code: "IMAGE_RECOGNITION_FAILED" },
-      });
-    }
-    expect(providerCall).toBe(2);
-    await expectNoUsage(actor);
+      for (let invocation = 0; invocation < 2; invocation += 1) {
+        const response = await requestImageRecognition({
+          token: okouToken(actor),
+          fileId,
+          usagePricingResolution: pricing.resolution,
+        });
+        expect(response.status).toBe(502);
+        expect(response.body).toMatchObject({
+          error: { code: "IMAGE_RECOGNITION_FAILED" },
+        });
+      }
+      expect(providerCall).toBe(2);
+      await expectNoPublicRecognitionUsage(actor);
+    });
   });
 
   it("does not return text when settlement reports a billing error", async () => {
