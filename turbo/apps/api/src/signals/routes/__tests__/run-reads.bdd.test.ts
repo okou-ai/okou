@@ -1,3 +1,4 @@
+import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync } from "node:zlib";
@@ -1139,211 +1140,278 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
   });
 
   it("restores volumes, memory, and conversation state when continuing sessions", async () => {
-    mockEnv("S3_ENDPOINT", undefined);
-    mockEnv("S3_PUBLIC_ENDPOINT", undefined);
-    const storages = createStoragesBddApi(context);
-    const actor = await entitledActor();
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    const volumeArchiveSize = 12_345;
-    storages.mockStoragePresignedUrls();
-    storages.mockStorageObjectsExist(volumeArchiveSize);
+    const fixture = createPublicFirewallFixture(context);
+    await fixture.run(async () => {
+      mockEnv("S3_ENDPOINT", undefined);
+      mockEnv("S3_PUBLIC_ENDPOINT", undefined);
+      const storages = createStoragesBddApi(context);
+      const actor = fixture.actor;
+      bdd.acceptAgentStorageWrites();
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
+      api.configureRunnerGroup();
+      await fixture.fund();
+      await api.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
+      const volumeArchiveSize = 12_345;
+      storages.mockStoragePresignedUrls();
+      // An Agent workflow's exact Storage version is the run's volume; its
+      // archive is recorded at the mocked object size.
+      storages.mockStorageObjectsExist(volumeArchiveSize);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "BDD resume agent",
+        visibility: "private",
+      });
+      fixture.registerAgent(agent.agentId);
+      const workflowName = `bdd-resume-${randomUUID().slice(0, 8)}`;
+      const misc = createMiscRoutesApi(context);
+      const workflowWritesStart = context.mocks.s3.send.mock.calls.length;
+      const workflow = await misc.createWorkflow(
+        actor,
+        agent.agentId,
+        workflowName,
+        { content: "# Resume\nUse for session continuation." },
+        [201],
+      );
+      if (workflow.status !== 201) {
+        throw new Error("Expected workflow creation to succeed");
+      }
+      const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
+      const archiveWrites = context.mocks.s3.send.mock.calls
+        .slice(workflowWritesStart)
+        .flatMap(([command]: readonly unknown[]) => {
+          if (s3CommandName(command) !== "PutObjectCommand") {
+            return [];
+          }
+          const input = (
+            command as { readonly input?: { readonly Key?: string } }
+          ).input;
+          const version = input?.Key?.match(
+            /\/([a-f0-9]{64})\/archive\.tar\.gz$/u,
+          )?.[1];
+          return version ? [version] : [];
+        });
+      expect(archiveWrites).toHaveLength(1);
+      const workflowVersion = archiveWrites[0];
+      if (!workflowVersion) {
+        throw new Error("Expected the workflow's actual archive publication");
+      }
+      storages.mockStoragePresignedUrls();
 
-    const volumeName = `bdd-vol-${randomUUID().slice(0, 8)}`;
-    const volumeFile = storageTextFile("data/cache.txt", "bdd volume payload");
-    const prepared = await storages.prepareStorage(actor, {
-      storageName: volumeName,
-      storageOwner: "organization",
-      files: [volumeFile],
-    });
-    const volumeVersion = prepared.versionId;
-    await storages.commitStorage(actor, {
-      storageName: volumeName,
-      storageOwner: "organization",
-      versionId: volumeVersion,
-      files: [volumeFile],
-    });
-    const presignCount = context.mocks.s3.getSignedUrl.mock.calls.length;
-    context.mocks.s3.send.mockClear();
-    context.mocks.s3.send.mockRejectedValue(
-      new Error("Registered version reuse must not access R2"),
-    );
-    const repeatedPrepare = await storages.prepareStorage(actor, {
-      storageName: volumeName,
-      storageOwner: "organization",
-      files: [volumeFile],
-      force: true,
-    });
-    expect(repeatedPrepare).toStrictEqual({
-      versionId: volumeVersion,
-      existing: true,
-    });
-    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
-    await storages.commitStorage(actor, {
-      storageName: volumeName,
-      storageOwner: "organization",
-      versionId: volumeVersion,
-      files: [volumeFile],
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    storages.mockStorageObjectsExist(volumeArchiveSize);
-
-    // An Agent workflow's exact Storage version is the run's volume; its
-    // archive is recorded at the mocked object size.
-    storages.mockStorageObjectsExist(volumeArchiveSize);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD resume agent",
-      visibility: "private",
-    });
-    const workflowName = `bdd-resume-${randomUUID().slice(0, 8)}`;
-    const workflow = await createMiscRoutesApi(context).createWorkflow(
-      actor,
-      agent.agentId,
-      workflowName,
-      { content: "# Resume\nUse for session continuation." },
-      [201],
-    );
-    if (workflow.status !== 201) {
-      throw new Error("Expected workflow creation to succeed");
-    }
-    const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
-    const workflowVersion = (
-      await storages.downloadStorage(actor, {
-        name: workflowStorageName,
-        owner: "organization",
-      })
-    ).versionId;
-
-    // The session-history blob for checkpointed conversations is hash-only
-    // in R2 — answer the GetObject for it while keeping other s3 sends inert.
-    const history = '{"type":"init"}\n{"type":"human","text":"hi"}\n';
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const input = (command as { readonly input?: { readonly Key?: string } })
-        .input;
-      if (input?.Key === `blobs/${historyHash}.blob`) {
-        if (s3CommandName(command) === "HeadObjectCommand") {
+      // The session-history blob for checkpointed conversations is hash-only
+      // in R2 — answer the GetObject for it while keeping other s3 sends inert.
+      const history = '{"type":"init"}\n{"type":"human","text":"hi"}\n';
+      const historyHash = createHash("sha256").update(history).digest("hex");
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        const input = (
+          command as { readonly input?: { readonly Key?: string } }
+        ).input;
+        if (input?.Key === `blobs/${historyHash}.blob`) {
+          if (s3CommandName(command) === "HeadObjectCommand") {
+            return Promise.resolve({
+              ContentLength: Buffer.byteLength(history, "utf8"),
+            });
+          }
           return Promise.resolve({
-            ContentLength: Buffer.byteLength(history, "utf8"),
+            Body: {
+              async *[Symbol.asyncIterator]() {
+                yield Buffer.from(history, "utf8");
+              },
+            },
           });
         }
-        return Promise.resolve({
-          Body: {
-            async *[Symbol.asyncIterator]() {
-              yield Buffer.from(history, "utf8");
-            },
-          },
-        });
+        return Promise.resolve({});
+      });
+
+      const presignCallsBeforeRun =
+        context.mocks.s3.getSignedUrl.mock.calls.length;
+      const r1 = await api.createThreadRun(actor, {
+        agentId: agent.agentId,
+        prompt: "pin the workflow Storage version",
+      });
+      fixture.registerRun(r1.runId);
+      const claim1 = await api.claimRunnerJob(r1.runId);
+      fixture.registerClaim(r1.runId, claim1.sandboxToken);
+      expect(
+        expectCanonicalStorageManifest(claim1.storageManifest)?.storageMounts,
+      ).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: workflowStorageName,
+            mountPath: `/home/user/.claude/skills/${workflowName}`,
+            versionId: workflowVersion,
+            // The server packages the workflow, so its archive size is the one
+            // recorded for that version rather than a mocked object size.
+            archiveSize: expect.any(Number),
+          }),
+        ]),
+      );
+      const workflowMount = expectCanonicalStorageManifest(
+        claim1.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === workflowStorageName;
+      });
+      expect(workflowMount?.archiveSize).toBeGreaterThan(0);
+      const memory1 = expectCanonicalStorageManifest(
+        claim1.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory";
+      });
+      expect(memory1).toMatchObject({
+        mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+        empty: true,
+        storageId: expect.any(String),
+        versionId: expect.any(String),
+        missingRootPolicy: "preserveParentVersion",
+      });
+      if (!memory1) {
+        throw new Error("Expected the claim manifest to mount memory");
       }
-      return Promise.resolve({});
-    });
+      expect(memory1.archiveUrl).toBeUndefined();
+      expect("manifestUrl" in memory1).toBeFalsy();
+      expect(
+        hasManifestPresign(presignedUrlKeysSince(presignCallsBeforeRun)),
+      ).toBeFalsy();
 
-    const presignCallsBeforeRun =
-      context.mocks.s3.getSignedUrl.mock.calls.length;
-    const r1 = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "pin the workflow Storage version",
-    });
-    const claim1 = await api.claimRunnerJob(r1.runId);
-    expect(
-      expectCanonicalStorageManifest(claim1.storageManifest)?.storageMounts,
-    ).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: workflowStorageName,
-          mountPath: `/home/user/.claude/skills/${workflowName}`,
-          versionId: workflowVersion,
-          // The server packages the workflow, so its archive size is the one
-          // recorded for that version rather than a mocked object size.
-          archiveSize: expect.any(Number),
-        }),
-      ]),
-    );
-    const workflowMount = expectCanonicalStorageManifest(
-      claim1.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === workflowStorageName;
-    });
-    expect(workflowMount?.archiveSize).toBeGreaterThan(0);
-    const memory1 = expectCanonicalStorageManifest(
-      claim1.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory";
-    });
-    expect(memory1).toMatchObject({
-      mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-      empty: true,
-      storageId: expect.any(String),
-      versionId: expect.any(String),
-      missingRootPolicy: "preserveParentVersion",
-    });
-    if (!memory1) {
-      throw new Error("Expected the claim manifest to mount memory");
-    }
-    expect(memory1.archiveUrl).toBeUndefined();
-    expect("manifestUrl" in memory1).toBeFalsy();
-    expect(
-      hasManifestPresign(presignedUrlKeysSince(presignCallsBeforeRun)),
-    ).toBeFalsy();
+      const historyTransport = context.mocks.s3.send.getMockImplementation();
+      const volumeFile = storageTextFile(
+        "data/cache.txt",
+        "bdd volume payload",
+      );
+      const memoryHeaders = sandboxHeaders(claim1.sandboxToken);
+      storages.mockStorageObjectsExist(volumeArchiveSize);
+      const prepared = await webhooks.requestAgentStoragePrepare(
+        { runId: r1.runId, storageId: memory1.storageId, files: [volumeFile] },
+        memoryHeaders,
+        [200],
+      );
+      mustOk(prepared, "Memory publication prepare");
+      const volumeVersion = prepared.body.versionId;
+      await webhooks.requestAgentStorageCommit(
+        {
+          runId: r1.runId,
+          storageId: memory1.storageId,
+          versionId: volumeVersion,
+          files: [volumeFile],
+        },
+        memoryHeaders,
+        [200],
+      );
+      const presignCount = context.mocks.s3.getSignedUrl.mock.calls.length;
+      const requestCount = context.mocks.s3.send.mock.calls.length;
+      context.mocks.s3.send.mockRejectedValue(
+        new Error("Registered version reuse must not access R2"),
+      );
+      const repeatedPrepare = await webhooks.requestAgentStoragePrepare(
+        {
+          runId: r1.runId,
+          storageId: memory1.storageId,
+          files: [volumeFile],
+          force: true,
+        },
+        memoryHeaders,
+        [200],
+      );
+      mustOk(repeatedPrepare, "Memory publication reuse");
+      expect(repeatedPrepare.body).toStrictEqual({
+        versionId: volumeVersion,
+        existing: true,
+      });
+      expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
+      await webhooks.requestAgentStorageCommit(
+        {
+          runId: r1.runId,
+          storageId: memory1.storageId,
+          versionId: volumeVersion,
+          files: [volumeFile],
+        },
+        memoryHeaders,
+        [200],
+      );
+      expect(context.mocks.s3.send).toHaveBeenCalledTimes(requestCount);
+      const empty = await webhooks.requestAgentStoragePrepare(
+        { runId: r1.runId, storageId: memory1.storageId, files: [] },
+        memoryHeaders,
+        [200],
+      );
+      mustOk(empty, "Original empty Memory restore");
+      expect(empty.body.versionId).toBe(memory1.versionId);
+      await webhooks.requestAgentStorageCommit(
+        {
+          runId: r1.runId,
+          storageId: memory1.storageId,
+          versionId: empty.body.versionId,
+          files: [],
+        },
+        memoryHeaders,
+        [200],
+      );
+      if (!historyTransport) {
+        throw new Error("Expected the session history transport");
+      }
+      context.mocks.s3.send.mockImplementation(historyTransport);
 
-    const cliAgentSessionId = `bdd-cli-${r1.runId}`;
-    const headers1 = sandboxHeaders(claim1.sandboxToken);
-    await webhooks.requestAgentComplete(
-      {
-        runId: r1.runId,
-        exitCode: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId,
-          cliAgentSessionHistoryHash: historyHash,
-          artifactSnapshots: [
-            {
-              name: "memory",
-              version: memory1.versionId,
-              mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+      const cliAgentSessionId = `bdd-cli-${r1.runId}`;
+      const headers1 = sandboxHeaders(claim1.sandboxToken);
+      await webhooks.requestAgentComplete(
+        {
+          runId: r1.runId,
+          exitCode: 0,
+          checkpoint: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId,
+            cliAgentSessionHistoryHash: historyHash,
+            artifactSnapshots: [
+              {
+                name: "memory",
+                version: memory1.versionId,
+                mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+              },
+            ],
+            volumeVersionsSnapshot: {
+              versions: { [workflowStorageName]: workflowVersion },
             },
-          ],
-          volumeVersionsSnapshot: {
-            versions: { [workflowStorageName]: workflowVersion },
           },
         },
-      },
-      headers1,
-      [200],
-    );
+        headers1,
+        [200],
+      );
 
-    await flushWaitUntilForTest();
-    const continued = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
-      threadId: r1.threadId,
-      prompt: "continue the checkpointed session",
+      await flushWaitUntilForTest();
+      const continued = await api.createThreadRun(actor, {
+        agentId: agent.agentId,
+        threadId: r1.threadId,
+        prompt: "continue the checkpointed session",
+      });
+      fixture.registerRun(continued.runId);
+      const continuedClaim = await api.claimRunnerJob(continued.runId);
+      fixture.registerClaim(continued.runId, continuedClaim.sandboxToken);
+      expect(continuedClaim.vars).toStrictEqual(claim1.vars);
+      expect(continuedClaim.resumeSession).toStrictEqual({
+        sessionId: `bdd-cli-${r1.runId}`,
+        historyRef: {
+          kind: "blob",
+          hash: historyHash,
+          url: "https://r2.example.com/storages/presigned?sig=bdd",
+          encoding: "identity",
+          rawSize: Buffer.byteLength(history, "utf8"),
+          encodedSize: Buffer.byteLength(history, "utf8"),
+          downloadSource: SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
+        },
+      });
+      const continuedMemory = expectCanonicalStorageManifest(
+        continuedClaim.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory";
+      });
+      expect(continuedMemory).toMatchObject({
+        mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+        missingRootPolicy: "preserveParentVersion",
+      });
+      await api.requestCancelRun(actor, continued.runId, [200]);
+      await finishCancelledRun(continued.runId, continuedClaim.sandboxToken);
     });
-    const continuedClaim = await api.claimRunnerJob(continued.runId);
-    expect(continuedClaim.vars).toStrictEqual(claim1.vars);
-    expect(continuedClaim.resumeSession).toStrictEqual({
-      sessionId: `bdd-cli-${r1.runId}`,
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/storages/presigned?sig=bdd",
-        encoding: "identity",
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: Buffer.byteLength(history, "utf8"),
-        downloadSource: SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
-      },
-    });
-    const continuedMemory = expectCanonicalStorageManifest(
-      continuedClaim.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory";
-    });
-    expect(continuedMemory).toMatchObject({
-      mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-      missingRootPolicy: "preserveParentVersion",
-    });
-    await api.requestCancelRun(actor, continued.runId, [200]);
-    await finishCancelledRun(continued.runId, continuedClaim.sandboxToken);
   });
 });
 

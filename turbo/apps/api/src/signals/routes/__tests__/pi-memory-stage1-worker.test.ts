@@ -1,3 +1,4 @@
+import { observePublicUsage } from "./helpers/public-usage-observation";
 import { createPublicPiMemorySource } from "./helpers/public-pi-memory-source";
 import { mockStage1CostLogFailure } from "../../../__tests__/mocks";
 import {
@@ -12,7 +13,6 @@ import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts
 
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { createRouteMocks } from "./helpers/route-test";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createRunsApi,
@@ -23,12 +23,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import {
-  makeCodexAuthJson,
-  makeCodexJwt,
-  mockCodexDeviceAuthProvider,
-  createAuthDeviceApiActions,
-} from "./helpers/api-bdd-auth-device";
+import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
@@ -1948,39 +1943,6 @@ async function codexSource(
   };
 }
 
-async function activateAnotherCodexAccount(
-  storage: StorageFixture,
-  identity: string,
-) {
-  const actor = actorFor(storage);
-  await updateFeatureSwitchesForUser(
-    context,
-    { orgId: storage.org_id, userId: storage.user_id },
-    {
-      [FeatureSwitchKey.PiMemory]: true,
-    },
-  );
-  const auth = createAuthDeviceApiActions(context);
-  mockCodexDeviceAuthProvider({ tokenScope: "personal", accountId: identity });
-  const started = await auth.requestCodexStart(actor, "personal", [200], {
-    mode: "add",
-  });
-  if (started.status !== 200) {
-    throw new Error("Expected device auth start");
-  }
-  const result = await auth.requestCodexComplete(
-    actor,
-    started.body.sessionToken,
-    [200],
-  );
-  if (!("status" in result.body) || result.body.status !== "complete") {
-    throw new Error("Expected device auth completion");
-  }
-  await createAuthDeviceSupportApi(
-    context,
-  ).activatePersonalModelProviderAccount(actor, result.body.provider.id);
-}
-
 async function seedSource(
   storage: StorageFixture,
   source: SourceBinding,
@@ -2119,19 +2081,26 @@ describe("Stage 1 source credentials", () => {
   });
 
   it("does not select today's active subscription for a historical account", async () => {
-    const storage = createStorageFixture();
-    const original = await codexSource(storage);
-    await seedSource(storage, original.binding);
-    await activateAnotherCodexAccount(storage, "source-account-b");
-    const provider = installSourceProvider();
-    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
-    expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
-      original.identity,
-    );
-    expect(provider.calls[0]?.headers.get("authorization")).toBe(
-      `Bearer ${original.token}`,
-    );
-    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    const fixture = createPublicPiMemorySource(context);
+    await fixture.run(async () => {
+      const source = await fixture.prepare(new Date(now() + 24 * 3_600_000));
+      const baseline = await observePublicUsage(context, fixture.actor);
+      expect(baseline.record.rows).toStrictEqual([]);
+      expect(baseline.members).toStrictEqual([]);
+
+      await fixture.activateAccount("source-account-b");
+      const provider = installProvider();
+      await expect(fixture.extract()).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
+        fixture.account,
+      );
+      expect(provider.calls[0]?.headers.get("authorization")).toBe(
+        `Bearer ${source.subscription.oauth.oauthTokenResponses[0]?.access_token}`,
+      );
+      await expect(
+        observePublicUsage(context, fixture.actor),
+      ).resolves.toStrictEqual(baseline);
+    });
   });
 
   it.each(["codex"] as const)(
@@ -2325,85 +2294,83 @@ describe("Stage 1 credential lifecycle fences", () => {
   });
 
   it("refreshes the original subscription and then reads that same account ID", async () => {
-    const storage = createStorageFixture();
-    const original = await codexSource(storage, "refresh-account-a", true);
-    const candidate = await seedSource(storage, original.binding);
-    await activateAnotherCodexAccount(storage, "active-account-b");
-    const refreshed = makeCodexJwt({
-      exp: Math.floor(now() / 1000) + 7200,
-      identity: "refreshed-a",
-    });
-    const refreshes = installRefresh(original.identity, refreshed);
-    const provider = installSourceProvider();
-    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
-    expect(refreshes).toHaveLength(1);
-    expect(refreshes[0]).toContain("refresh-refresh-account-a");
-    expect(provider.calls).toHaveLength(1);
-    expect(provider.calls[0]?.headers.get("authorization")).toBe(
-      `Bearer ${refreshed}`,
-    );
-    expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
-      original.identity,
-    );
-    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-    await expect(inspect(candidate)).resolves.toMatchObject({
-      status: "succeeded",
+    const fixture = createPublicPiMemorySource(context);
+    await fixture.run(async () => {
+      const source = await fixture.prepare(new Date(now() + 24 * 3_600_000));
+      const baseline = await observePublicUsage(context, fixture.actor);
+      expect(baseline.record.rows).toStrictEqual([]);
+      expect(baseline.members).toStrictEqual([]);
+
+      await fixture.expireCredential(source.subscription.accountSourceId);
+      await fixture.activateAccount("active-account-b");
+      const refreshed = makeCodexJwt({
+        exp: Math.floor(now() / 1000) + 7200,
+        identity: "refreshed-a",
+      });
+      const refreshes = installRefresh(fixture.account, refreshed);
+      const provider = installProvider();
+      await expect(fixture.extract()).resolves.toMatchObject({ succeeded: 1 });
+      expect(refreshes).toHaveLength(1);
+      expect(refreshes[0]).toContain(`refresh-${fixture.account}`);
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.headers.get("authorization")).toBe(
+        `Bearer ${refreshed}`,
+      );
+      expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
+        fixture.account,
+      );
+      await expect(
+        observePublicUsage(context, fixture.actor),
+      ).resolves.toStrictEqual(baseline);
     });
   });
 
   it.each(["disconnected", "refresh-revoked", "provider-revoked"])(
     "settles %s without rapid retries or model credits",
     async (mode) => {
-      const storage = createStorageFixture();
-      const original = await codexSource(
-        storage,
-        "revoked-account",
-        mode === "refresh-revoked",
-      );
-      const candidate = await seedSource(storage, original.binding);
-      // Keep account controls enabled after the checkpoint fixture's PiMemory setup.
-      await updateFeatureSwitchesForUser(
-        context,
-        { orgId: storage.org_id, userId: storage.user_id },
-        {
-          [FeatureSwitchKey.PiMemory]: true,
-        },
-      );
-      if (mode === "disconnected") {
-        await disconnectCodex(storage, original.binding.modelProviderId);
-      }
-      const refreshes = installRefresh(
-        original.identity,
-        "unused-token",
-        undefined,
-        true,
-      );
-      const provider = installSourceProvider();
-      let denied = 0;
-      if (mode === "provider-revoked") {
-        server.use(
-          http.post("https://chatgpt.com/backend-api/codex/responses", () => {
-            denied += 1;
-            return HttpResponse.json(
-              { error: { message: "revoked synthetic credential" } },
-              { status: 401 },
-            );
-          }),
+      const fixture = createPublicPiMemorySource(context);
+      await fixture.run(async () => {
+        const source = await fixture.prepare(new Date(now() + 24 * 3_600_000));
+        const baseline = await observePublicUsage(context, fixture.actor);
+        expect(baseline.record.rows).toStrictEqual([]);
+        expect(baseline.members).toStrictEqual([]);
+
+        if (mode === "refresh-revoked") {
+          await fixture.expireCredential(source.subscription.accountSourceId);
+        }
+        if (mode === "disconnected") {
+          await fixture.disconnect(source.subscription.accountSourceId);
+        }
+        const refreshes = installRefresh(
+          fixture.account,
+          "unused-token",
+          undefined,
+          true,
         );
-      }
-      await expect(runScoped(storage)).resolves.toMatchObject({
-        terminalFailure: 1,
+        const provider = installProvider();
+        let denied = 0;
+        if (mode === "provider-revoked") {
+          server.use(
+            http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+              denied += 1;
+              return HttpResponse.json(
+                { error: { message: "revoked synthetic credential" } },
+                { status: 401 },
+              );
+            }),
+          );
+        }
+        await expect(fixture.extract()).resolves.toMatchObject({
+          terminalFailure: 1,
+        });
+        expect(provider.calls).toHaveLength(0);
+        expect(denied).toBe(mode === "provider-revoked" ? 1 : 0);
+        expect(refreshes).toHaveLength(mode === "refresh-revoked" ? 1 : 0);
+        await expect(fixture.extract()).resolves.toMatchObject({ claimed: 0 });
+        await expect(
+          observePublicUsage(context, fixture.actor),
+        ).resolves.toStrictEqual(baseline);
       });
-      await expect(inspect(candidate)).resolves.toMatchObject({
-        status: "terminal_failure",
-        last_error_class: "credential_unavailable",
-        successful_source_history_hash: null,
-      });
-      expect(provider.calls).toHaveLength(0);
-      expect(denied).toBe(mode === "provider-revoked" ? 1 : 0);
-      expect(refreshes).toHaveLength(mode === "refresh-revoked" ? 1 : 0);
-      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
     },
   );
 
@@ -2695,110 +2662,111 @@ describe("Stage 1 background credential availability", () => {
   );
 
   it("does not borrow an account retained for another active foreground run", async () => {
-    const storage = createStorageFixture();
-    const source = await codexSource(storage, "retained-foreground-account");
-    const candidate = await seedSource(storage, source.binding);
-    const actor = actorFor(storage);
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await updateFeatureSwitchesForUser(
-      context,
-      { orgId: storage.org_id, userId: storage.user_id },
-      {
-        [FeatureSwitchKey.PiMemory]: true,
-      },
-    );
-    await runs.updateUserModelPreference(actor, "gpt-6-astra");
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Retained source account",
-      visibility: "private",
-    });
-    const { runId } = await createChatFilesBddApi(context).sendAndLaunch(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "active foreground source",
-        model: "gpt-6-astra",
-      },
-    );
-    onTestFinished(async () => {
-      await runs.requestCancelRun(actor, runId, [200]);
-      // Cancellation schedules chat writes that must settle before fixture deletion.
-      await flushWaitUntilForTest();
-    });
-    const foregroundState = await runs.readRun(actor, runId);
-    expect(foregroundState.status, JSON.stringify(foregroundState)).toBe(
-      "pending",
-    );
-    await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(runId);
-    expect(
-      claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
-    ).toBe(source.binding.modelProviderId);
-    await disconnectCodex(storage, source.binding.modelProviderId);
-    if (!claim.encryptedSecrets) {
-      throw new Error("Expected retained runtime envelope");
-    }
-    const foreground = await createFirewallApi(context).requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-          "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+    const fixture = createPublicPiMemorySource(context);
+    await fixture.run(async () => {
+      const source = await fixture.prepare(new Date(now() + 24 * 3_600_000));
+      const baseline = await observePublicUsage(context, fixture.actor);
+      expect(baseline.record.rows).toStrictEqual([]);
+      expect(baseline.members).toStrictEqual([]);
+      const actor = fixture.actor;
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const runnerGroup = runs.configureRunnerGroup();
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Retained source account",
+        visibility: "private",
+      });
+      fixture.registerAgent(agent.agentId);
+      const { runId } = await createChatFilesBddApi(context).sendAndLaunch(
+        actor,
+        {
+          agentId: agent.agentId,
+          prompt: "active foreground source",
+          model: "gpt-6-astra",
         },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
-      },
-      [200],
-    );
-    expect(foreground.body).toMatchObject({
-      headers: { "ChatGPT-Account-ID": source.identity },
+      );
+      fixture.registerRun(runId);
+      const foregroundState = await runs.readRun(actor, runId);
+      expect(foregroundState.status, JSON.stringify(foregroundState)).toBe(
+        "pending",
+      );
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(runId);
+      fixture.registerClaim(runId, claim.sandboxToken);
+      expect(
+        claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
+      ).toBe(source.subscription.accountSourceId);
+      await fixture.disconnect(source.subscription.accountSourceId);
+      if (!claim.encryptedSecrets) {
+        throw new Error("Expected retained runtime envelope");
+      }
+      const foreground = await createFirewallApi(context).requestFirewallAuth(
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        {
+          encryptedSecrets: claim.encryptedSecrets,
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+            "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+          },
+          secretConnectorMap: claim.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            claim.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      expect(foreground.body).toMatchObject({
+        headers: { "ChatGPT-Account-ID": fixture.account },
+      });
+      const provider = installProvider();
+      await expect(fixture.extract()).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(
+        observePublicUsage(context, fixture.actor),
+      ).resolves.toStrictEqual(baseline);
     });
-    const provider = installSourceProvider();
-    await expect(runScoped(storage)).resolves.toMatchObject({
-      terminalFailure: 1,
-    });
-    expect(provider.calls).toHaveLength(0);
-    await expect(inspect(candidate)).resolves.toMatchObject({
-      last_error_class: "credential_unavailable",
-      successful_source_history_hash: null,
-    });
-    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 
   it("rechecks disconnection after serial preparation and before native HTTP", async () => {
-    const storage = createStorageFixture();
-    const source = await codexSource(storage, "prepared-subscription");
-    await seedSource(storage, source.binding, "source one");
-    await seedSource(storage, source.binding, "source two");
-    await updateFeatureSwitchesForUser(
-      context,
-      { orgId: storage.org_id, userId: storage.user_id },
-      {
-        [FeatureSwitchKey.PiMemory]: true,
-      },
-    );
-    const provider = installSourceProvider();
-    const read = context.mocks.s3.send.getMockImplementation();
-    let downloads = 0;
-    context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
-      if (commandValue instanceof GetObjectCommand && ++downloads === 2) {
-        await disconnectCodex(storage, source.binding.modelProviderId);
-      }
-      return read ? await read(commandValue) : {};
+    const fixture = createPublicPiMemorySource(context, {
+      sources: ["source one", "source two"],
     });
-    await expect(runScoped(storage)).resolves.toMatchObject({
-      terminalFailure: 2,
+    await fixture.run(async () => {
+      const source = await fixture.prepare(new Date(now() + 24 * 3_600_000));
+      const baseline = await observePublicUsage(context, fixture.actor);
+      expect(baseline.record.rows).toStrictEqual([]);
+      expect(baseline.members).toStrictEqual([]);
+
+      const provider = installProvider();
+      const read = context.mocks.s3.send.getMockImplementation();
+      const historyKeys = new Set(
+        source.sources.map((entry) => {
+          return entry.objectKey;
+        }),
+      );
+      let downloads = 0;
+      context.mocks.s3.send.mockImplementation(
+        async (commandValue: unknown) => {
+          if (
+            commandValue instanceof GetObjectCommand &&
+            commandValue.input.Key &&
+            historyKeys.has(commandValue.input.Key) &&
+            ++downloads === 2
+          ) {
+            await fixture.disconnect(source.subscription.accountSourceId);
+          }
+          return read ? await read(commandValue) : {};
+        },
+      );
+      await expect(fixture.extract()).resolves.toMatchObject({
+        terminalFailure: 2,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(
+        observePublicUsage(context, fixture.actor),
+      ).resolves.toStrictEqual(baseline);
     });
-    expect(provider.calls).toHaveLength(0);
-    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 });
 
@@ -2806,41 +2774,45 @@ describe("Stage 1 source quota at the model HTTP boundary", () => {
   it.each(nativeMemoryQuotaCases)(
     "$name",
     async ({ payload, raw, status, reason }) => {
-      const storage = createStorageFixture();
-      const native = await codexSource(storage);
-      const candidate = await seedSource(storage, native.binding);
-      const quotaRequests: Headers[] = [];
-      server.use(
-        http.get(
-          "https://chatgpt.com/backend-api/wham/usage",
-          ({ request }) => {
-            quotaRequests.push(request.headers);
-            return new HttpResponse(raw ?? JSON.stringify(payload), {
-              status: status ?? 200,
-              headers: { "content-type": "application/json" },
-            });
-          },
-        ),
-      );
-      const provider = installSourceProvider();
-      const result = await runScoped(storage);
-      expect(quotaRequests).toHaveLength(1);
-      expect(quotaRequests[0]?.get("authorization")).toBe(
-        `Bearer ${native.token}`,
-      );
-      expect(quotaRequests[0]?.get("chatgpt-account-id")).toBe(native.identity);
-      expect(provider.calls).toHaveLength(reason ? 0 : 1);
-      if (reason) {
-        expect(result).toMatchObject({ retryableFailure: 1, succeeded: 0 });
-        await expect(inspect(candidate)).resolves.toMatchObject({
-          status: "retryable_failure",
-          last_error_class: reason,
-          successful_source_history_hash: null,
-        });
-      } else {
-        expect(result).toMatchObject({ succeeded: 1 });
-      }
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      const fixture = createPublicPiMemorySource(context);
+      await fixture.run(async () => {
+        const source = await fixture.prepare(new Date(now() + 24 * 3_600_000));
+        const baseline = await observePublicUsage(context, fixture.actor);
+        expect(baseline.record.rows).toStrictEqual([]);
+        expect(baseline.members).toStrictEqual([]);
+
+        const quotaRequests: Headers[] = [];
+        server.use(
+          http.get(
+            "https://chatgpt.com/backend-api/wham/usage",
+            ({ request }) => {
+              quotaRequests.push(request.headers);
+              return new HttpResponse(raw ?? JSON.stringify(payload), {
+                status: status ?? 200,
+                headers: { "content-type": "application/json" },
+              });
+            },
+          ),
+        );
+        const provider = installProvider();
+        const result = await fixture.extract();
+        expect(quotaRequests).toHaveLength(1);
+        expect(quotaRequests[0]?.get("authorization")).toBe(
+          `Bearer ${source.subscription.oauth.oauthTokenResponses[0]?.access_token}`,
+        );
+        expect(quotaRequests[0]?.get("chatgpt-account-id")).toBe(
+          fixture.account,
+        );
+        expect(provider.calls).toHaveLength(reason ? 0 : 1);
+        if (reason) {
+          expect(result).toMatchObject({ retryableFailure: 1, succeeded: 0 });
+        } else {
+          expect(result).toMatchObject({ succeeded: 1 });
+        }
+        await expect(
+          observePublicUsage(context, fixture.actor),
+        ).resolves.toStrictEqual(baseline);
+      });
     },
   );
 

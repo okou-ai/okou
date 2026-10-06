@@ -1,3 +1,9 @@
+import { observePublicUsage } from "../../routes/__tests__/helpers/public-usage-observation";
+import { postUsageAllowanceInvoicePaid } from "../../routes/__tests__/helpers/stripe-billing-webhook";
+import {
+  createFirewallApi,
+  secretTemplate,
+} from "../../routes/__tests__/helpers/api-bdd-firewall";
 import { createPublicRunnerMemory } from "../../routes/__tests__/helpers/public-runner-memory";
 import { createPublicPiMemorySource } from "../../routes/__tests__/helpers/public-pi-memory-source";
 import { createRunReadsApi } from "../../routes/__tests__/helpers/api-bdd-run-reads";
@@ -57,7 +63,6 @@ import {
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
 import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import { deleteStoragesWithPiMemoryCandidates } from "../pi-memory-stage1-candidate.service";
-import { personalSubscriptionAccountIdentity } from "../personal-subscription-recovery.service";
 import { mockStripeClient } from "../../external/stripe-client";
 import { prepareStorageUploadForAuth$ } from "../storage-write.service";
 import {
@@ -67,7 +72,6 @@ import {
   insertPhase2StorageVersion,
   readPhase2Job,
   setPhase2StorageHead,
-  insertPhase2Candidates as insertMissingSourceCandidates,
   type Phase2SourceBinding,
 } from "./pi-memory-phase2-job.test-fixture";
 import {
@@ -92,7 +96,10 @@ import {
   makeCodexJwt,
   makeCodexAuthJson,
 } from "../../routes/__tests__/helpers/api-bdd-auth-device";
-import { executePhase2Runtime } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
+import {
+  executePhase2Runtime,
+  claimPhase2Execution,
+} from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
 import { createFixtureOperationOwner } from "../../routes/__tests__/helpers/fixture-operation-owner";
 
 const publicScopeContext = testContext();
@@ -279,193 +286,80 @@ async function enablePiMemoryForScope(scope: {
 
 describe("Pi memory Phase 2 sandbox dispatcher", () => {
   it("releases a switch-off job with pi_memory_disabled and dispatches nothing", async () => {
-    const now = new Date("2026-09-05T02:00:00.000Z");
-    const scope = await createPhase2TestScope("sandbox-pi-memory-disabled", {
-      emptyBase: true,
-    });
-    onTestFinished(async () => {
-      await deleteRunSessionsForScope(scope);
-    });
-    await seedOrgMetadata({
-      orgId: scope.orgId,
-      tier: "pro",
-      credits: 100_000,
-    });
-    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
-    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
-    configureNativeCliArtifact();
-    await insertPhase2Candidates(scope, [
-      {
-        piSessionId: randomUUID(),
-        rawMemory: "candidate waits while the owner has PiMemory off",
-      },
-    ]);
-    await insertPendingPhase2Job(scope, { updatedAt: now });
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    const store = createStore();
-
-    await expect(
-      withMockNowForTest(now, async () => {
-        return await store.set(
-          createPiMemoryPhase2Worker(scope).execute$,
-          now,
-          testContext().signal,
-        );
-      }),
-    ).resolves.toStrictEqual({
-      outcome: "failed",
-      errorClass: "pi_memory_disabled",
-    });
-    await expect(
-      db()
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.triggerSource, "agent"),
-            eq(agentRuns.orgId, scope.orgId),
-            eq(agentRuns.userId, scope.userId),
-          ),
-        ),
-    ).resolves.toStrictEqual([]);
-    await expect(readPhase2Job(scope)).resolves.toMatchObject({
-      status: "retryable_failure",
-      maintenanceRunId: null,
-      leaseToken: null,
-      sandboxLeaseToken: null,
-      retryCount: 1,
-      retryAt: new Date(now.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS),
-      lastErrorClass: "pi_memory_disabled",
-    });
-    const [candidate] = await db()
-      .select({ rawMemory: piMemoryStage1Candidates.rawMemory })
-      .from(piMemoryStage1Candidates)
-      .where(
-        eq(piMemoryStage1Candidates.memoryStorageId, scope.memoryStorageId),
+    const fixture = createPublicPiMemorySource(publicScopeContext);
+    await fixture.run(async () => {
+      const job = await createPublicPhase2WorkerFixture(
+        fixture,
+        new Date(now() + 24 * 3_600_000),
+        "candidate waits while the owner has PiMemory off",
       );
-    expect(candidate?.rawMemory).toBe(
-      "candidate waits while the owner has PiMemory off",
-    );
 
-    // Enabling exactly this owner lets the due retry dispatch as before.
-    await enablePiMemoryForScope(scope);
-    const retryTime = new Date(
-      now.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS + 1,
-    );
-    const retried = await withMockNowForTest(retryTime, async () => {
-      return await store.set(
-        createPiMemoryPhase2Worker(scope).execute$,
-        retryTime,
-        testContext().signal,
+      await updateFeatureSwitchesForUser(publicScopeContext, job.scope, {
+        [FeatureSwitchKey.PiMemory]: false,
+      });
+      await expect(job.work()).resolves.toStrictEqual({
+        outcome: "failed",
+        errorClass: "pi_memory_disabled",
+      });
+      await expect(publicMaintenanceRuns(fixture)).resolves.toStrictEqual([]);
+      await updateFeatureSwitchesForUser(publicScopeContext, job.scope, {
+        [FeatureSwitchKey.PiMemory]: true,
+      });
+      const retried = await job.work(
+        new Date(job.at.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS + 1),
       );
-    });
-    expect(retried.outcome).toBe("dispatched");
-    await expect(readPhase2Job(scope)).resolves.toMatchObject({
-      status: "leased",
-      retryCount: 1,
-      retryAt: null,
-      lastErrorClass: null,
+      expect(retried.outcome).toBe("dispatched");
+      if (retried.outcome !== "dispatched") {
+        throw new Error("Expected retry dispatch");
+      }
+      const execution = await claimPhase2Execution(
+        publicScopeContext,
+        retried.runId,
+      );
+      fixture.registerClaim(retried.runId, execution.sandboxToken);
+      expect(execution.piLaunchConfig?.maintenance?.selected).toStrictEqual([
+        expect.objectContaining({
+          rawMemory: "candidate waits while the owner has PiMemory off",
+        }),
+      ]);
     });
   });
 
   it("launches maintenance while the organization is at its run limit", async () => {
-    // Real time keeps the maintenance heartbeat fresh for later capacity checks.
-    const now = nowDate();
-    const scope = await createPhase2TestScope("sandbox-at-capacity", {
-      emptyBase: true,
-    });
-    await enablePiMemoryForScope(scope);
-    await seedOrgMetadata({
-      orgId: scope.orgId,
-      tier: "pro",
-      credits: 100_000,
-    });
-    const agentId = randomUUID();
-    const sourceSessionId = randomUUID();
-    const sourceRunId = randomUUID();
-    await db().insert(agents).values({
-      id: agentId,
-      orgId: scope.orgId,
-      owner: scope.userId,
-      name: "capacity-pi-agent",
-    });
-    await db().insert(agentSessions).values({
-      id: sourceSessionId,
-      orgId: scope.orgId,
-      userId: scope.userId,
-      agentId,
-    });
-    await db().transaction(async (tx) => {
-      await tx.insert(agentRuns).values({
-        id: sourceRunId,
-        sessionId: sourceSessionId,
-        orgId: scope.orgId,
-        userId: scope.userId,
-        status: "completed",
-        prompt: "Remember this while the organization is busy.",
-        modelProvider: "built-in",
-        modelProviderId: null,
-        modelProviderCredentialScope: "org",
-        triggerSource: "agent",
-        autonomyBudget: 0,
-        completedAt: now,
-      });
-      await captureFixtureRunBilling(tx, sourceRunId);
-    });
-    onTestFinished(async () => {
-      await deleteRunSessionsForScope(scope);
-      await db().delete(agents).where(eq(agents.id, agentId));
-    });
-    // A chat send fills the organization's only slot.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const chatFixture = createChatEventsFixture(testContext());
-    const chatActor = await chatFixture.entitledNativeChatActor({
-      orgId: scope.orgId,
-      userId: scope.userId,
-      orgRole: "org:admin",
-    });
-    const blocker = await chatFixture.sendChatRun(chatActor.actor, {
-      agentId: chatActor.agentId,
-      prompt: "Hold the organization's only slot.",
-    });
-    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
-    configureNativeCliArtifact();
-    await insertPhase2Candidates(scope, [
-      {
-        piSessionId: randomUUID(),
-        sourceRunId,
-        sourceCompletedAt: now,
-        rawMemory: "maintenance does not wait for chat capacity",
-        rolloutSummary: "maintenance does not wait for chat capacity",
-      },
-    ]);
-    await insertPendingPhase2Job(scope, { updatedAt: now });
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    const store = createStore();
-
-    const result = await withMockNowForTest(now, async () => {
-      return await store.set(
-        createPiMemoryPhase2Worker(scope).execute$,
-        now,
-        testContext().signal,
+    const fixture = createPublicPiMemorySource(publicScopeContext);
+    await fixture.run(async () => {
+      const job = await createPublicPhase2WorkerFixture(
+        fixture,
+        new Date(now() + 24 * 3_600_000),
+        "maintenance does not wait for chat capacity",
       );
-    });
 
-    expect(result.outcome).toBe("dispatched");
-    if (result.outcome !== "dispatched") {
-      throw new Error("Expected maintenance run dispatch at capacity");
-    }
-    const [run] = await db()
-      .select({ status: agentRuns.status, error: agentRuns.error })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, result.runId));
-    expect(run).toStrictEqual({ status: "pending", error: null });
-    // Maintenance still holds a slot: once the chat run is cancelled, a new
-    // chat input waits instead of launching.
-    await chatFixture.cancelChatRun(chatActor.actor, blocker.runId);
-    await chatFixture.sendWaitingChatInput(chatActor.actor, {
-      agentId: chatActor.agentId,
-      prompt: "Wait behind the maintenance run.",
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const chat = createChatEventsFixture(publicScopeContext);
+      const blocker = await chat.sendChatRun(fixture.actor, {
+        agentId: job.scope.sourceAgentId,
+        prompt: "Hold the organization's only slot.",
+        model: "gpt-6-luna",
+      });
+      fixture.registerRun(blocker.runId);
+      const result = await job.work();
+      expect(result.outcome).toBe("dispatched");
+      if (result.outcome !== "dispatched") {
+        throw new Error("Expected maintenance run dispatch at capacity");
+      }
+      const dispatched = await chat.api.readRun(fixture.actor, result.runId);
+      expect(dispatched).toMatchObject({ status: "pending" });
+      expect(dispatched).not.toHaveProperty("error");
+      await chat.cancelChatRun(fixture.actor, blocker.runId);
+      const waitingThread = await chat.chat.createThread(fixture.actor, {
+        agentId: job.scope.sourceAgentId,
+      });
+      fixture.registerQueuedThread(waitingThread.id);
+      await chat.sendWaitingChatInput(fixture.actor, {
+        agentId: job.scope.sourceAgentId,
+        threadId: waitingThread.id,
+        prompt: "Wait behind the maintenance run.",
+      });
     });
   });
 
@@ -617,89 +511,60 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
   });
 
   it("records the failed run when the built-in allowance refresh fails", async () => {
-    const now = new Date("2026-09-05T02:00:00.000Z");
-    const scope = await createPhase2TestScope("allowance-refresh-failure", {
-      emptyBase: true,
-    });
-    await enablePiMemoryForScope(scope);
-    await seedOrgMetadata({
-      orgId: scope.orgId,
-      tier: "pro",
-      credits: 100_000,
-    });
-    onTestFinished(async () => {
-      await deleteRunSessionsForScope(scope);
-      await db()
-        .delete(orgUsageAllowanceEntitlements)
-        .where(eq(orgUsageAllowanceEntitlements.orgId, scope.orgId));
-    });
-    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
-    configureNativeCliArtifact();
-    // An expired Stripe-backed allowance must be refreshed from Stripe before
-    // the run can open its allowance windows.
-    await db()
-      .insert(orgUsageAllowanceEntitlements)
-      .values({
-        orgId: scope.orgId,
-        source: "stripe",
-        status: "active",
+    const fixture = createPublicPiMemorySource(publicScopeContext);
+    await fixture.run(async () => {
+      const job = await createPublicPhase2WorkerFixture(
+        fixture,
+        new Date(now() + 24 * 3_600_000),
+        "candidate survives a failed allowance refresh",
+      );
+
+      await fixture.disconnect(job.scope.subscription.accountSourceId);
+      await seedBuiltInModelKey(
+        publicScopeContext,
+        "deepseek-v4.1-flash",
+        fixture.registerCleanup,
+      );
+      await postUsageAllowanceInvoicePaid(publicScopeContext.signal, {
+        orgId: job.scope.orgId,
+        userId: job.scope.userId,
+        customerId: fixture.customerId,
+        subscriptionId: fixture.subscriptionId,
         shortWindowSeconds: 18_000,
         shortWindowUnits: 10_000,
+        weeklyWindowSeconds: 604_800,
         weeklyWindowUnits: 100_000,
-        effectiveAt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
-        expiresAt: new Date(now.getTime() - 60 * 60 * 1000),
-        stripeSubscriptionId: `sub_${randomUUID()}`,
+        effectiveAt: new Date(job.at.getTime() - 30 * 24 * 3_600_000),
+        expiresAt: new Date(job.at.getTime() - 3_600_000),
       });
-    mockStripeClient(testContext().mocks.stripe);
-    testContext().mocks.stripe.subscriptions.retrieve.mockRejectedValue(
-      new Error("Stripe subscription read failed"),
-    );
-    await insertPhase2Candidates(scope, [
-      {
-        piSessionId: randomUUID(),
-        rawMemory: "candidate survives a failed allowance refresh",
-      },
-    ]);
-    await insertPendingPhase2Job(scope, { updatedAt: now });
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    const store = createStore();
-
-    await expect(
-      withMockNowForTest(now, async () => {
-        return await store.set(
-          createPiMemoryPhase2Worker(scope).execute$,
-          now,
-          testContext().signal,
-        );
-      }),
-    ).resolves.toStrictEqual({
-      outcome: "failed",
-      errorClass: "maintenance_dispatch_failed",
-    });
-    expect(
-      testContext().mocks.stripe.subscriptions.retrieve,
-    ).toHaveBeenCalledTimes(1);
-    // As in the shared launch preparation, the failed run is recorded.
-    await expect(
-      db()
-        .select({ status: agentRuns.status, error: agentRuns.error })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.triggerSource, "agent"),
-            eq(agentRuns.orgId, scope.orgId),
-            eq(agentRuns.userId, scope.userId),
-          ),
-        ),
-    ).resolves.toStrictEqual([
-      { status: "failed", error: "Stripe subscription read failed" },
-    ]);
-    await expect(readPhase2Job(scope)).resolves.toMatchObject({
-      status: "retryable_failure",
-      maintenanceRunId: null,
-      leaseToken: null,
-      retryCount: 1,
-      lastErrorClass: "maintenance_dispatch_failed",
+      await flushWaitUntilForTest();
+      mockStripeClient(publicScopeContext.mocks.stripe);
+      const retrieves =
+        publicScopeContext.mocks.stripe.subscriptions.retrieve.mock.calls
+          .length;
+      publicScopeContext.mocks.stripe.subscriptions.retrieve.mockRejectedValue(
+        new Error("Stripe subscription read failed"),
+      );
+      await expect(job.work()).resolves.toStrictEqual({
+        outcome: "failed",
+        errorClass: "maintenance_dispatch_failed",
+      });
+      expect(
+        publicScopeContext.mocks.stripe.subscriptions.retrieve,
+      ).toHaveBeenCalledTimes(retrieves + 1);
+      const failures = await publicMaintenanceRuns(fixture);
+      expect(failures).toHaveLength(1);
+      const failed = failures[0];
+      if (!failed) {
+        throw new Error("Expected the recorded failed Run");
+      }
+      fixture.registerRun(failed.id);
+      await expect(
+        createRunsApi(publicScopeContext).readRun(fixture.actor, failed.id),
+      ).resolves.toMatchObject({
+        status: "failed",
+        error: "Stripe subscription read failed",
+      });
     });
   });
 
@@ -1098,12 +963,67 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
 
 // Prepares test scope and worker execution; this helper returns no credentials.
 
+async function publicMaintenanceRuns(
+  fixture: ReturnType<typeof createPublicPiMemorySource>,
+) {
+  return (
+    await createRunReadsApi(publicScopeContext).requestListLogs(
+      fixture.actor,
+      { triggerSource: "agent", limit: 100 },
+      [200],
+    )
+  ).body.data;
+}
+
+function onPublicMemoryArchivePresign(
+  archiveKey: string,
+  fault: () => Promise<void> | void,
+) {
+  publicScopeContext.mocks.s3.getSignedUrl.mockImplementation(
+    async (_client: unknown, command: unknown) => {
+      const url = apiTestS3PresignedUrl(command);
+      if (new URL(url).searchParams.get("object")?.endsWith(`/${archiveKey}`)) {
+        await fault();
+      }
+      return url;
+    },
+  );
+}
+
+async function publicMemoryVersion(
+  fixture: ReturnType<typeof createPublicPiMemorySource>,
+  agentId: string,
+) {
+  const api = createRunsApi(publicScopeContext);
+  await api.ensurePersonalSubscriptionModel(fixture.actor, {
+    model: "claude-fable-5-1",
+  });
+  const run = await api.createThreadRun(fixture.actor, {
+    agentId,
+    prompt: "Read the preserved Memory",
+    model: "claude-fable-5-1",
+  });
+  fixture.registerRun(run.runId);
+  const execution = await api.claimRunnerJob(run.runId);
+  fixture.registerClaim(run.runId, execution.sandboxToken);
+  const memory = expectCanonicalStorageManifest(
+    execution.storageManifest,
+  )?.storageMounts.find((mount) => {
+    return mount.name === "memory";
+  });
+  if (!memory) {
+    throw new Error("Expected the same owner's Memory mount");
+  }
+  return memory.versionId;
+}
+
 async function createPublicPhase2WorkerFixture(
   fixture: ReturnType<typeof createPublicPiMemorySource>,
   at: Date,
+  rawMemory?: string,
 ) {
   const scope = await fixture.prepare(at);
-  fixture.installExtractionProvider();
+  fixture.installExtractionProvider(rawMemory);
   await expect(fixture.extract()).resolves.toMatchObject({
     claimed: 1,
     succeeded: 1,
@@ -1111,6 +1031,7 @@ async function createPublicPhase2WorkerFixture(
   const store = createStore();
   return {
     scope,
+    at,
     async work(time = at, signal = publicScopeContext.signal) {
       const result = await withMockNowForTest(time, async () => {
         return await store.set(
@@ -1353,43 +1274,80 @@ describe("Phase 2 current credential admission", () => {
     ).resolves.toStrictEqual([{ type: "built-in", id: null, scope: "org" }]);
   });
 
-  it("dispatches when the historical source run has expired", async () => {
-    const job = await createPhase2WorkerFixture("missing-source");
-    await insertMissingSourceCandidates(job.scope, [
-      { piSessionId: randomUUID() },
-    ]);
-    await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
+  it("dispatches when the historical source run no longer exists", async () => {
+    const fixture = createPublicPiMemorySource(publicScopeContext);
+    await fixture.run(async () => {
+      const job = await createPublicPhase2WorkerFixture(
+        fixture,
+        new Date(now() + 24 * 3_600_000),
+      );
+
+      await fixture.disconnect(job.scope.subscription.accountSourceId);
+      await seedBuiltInModelKey(
+        publicScopeContext,
+        "deepseek-v4.1-flash",
+        fixture.registerCleanup,
+      );
+      for (const source of job.scope.sources) {
+        fixture.registerRunDeletion(source.runId);
+      }
+      fixture.registerRunDeletion(job.scope.triggerRunId);
+      await createBddApi(publicScopeContext).deleteAgent(
+        fixture.actor,
+        job.scope.sourceAgentId,
+      );
+      await flushWaitUntilForTest();
+      for (const source of job.scope.sources) {
+        await createRunsApi(publicScopeContext).requestReadRun(
+          fixture.actor,
+          source.runId,
+          [404],
+        );
+      }
+      await expect(job.work()).resolves.toMatchObject({
+        outcome: "dispatched",
+      });
+    });
   });
 
   it("uses built-in after the only BYOK account is disconnected", async () => {
-    const job = await createPhase2WorkerFixture("disconnected-current-account");
-    const provider = await createPhase2CodexProvider(testContext(), job.scope);
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID() }],
-      provider.binding,
-    );
-    await disconnectPhase2Codex(
-      testContext(),
-      job.scope,
-      provider.binding.modelProviderId,
-    );
-    const result = await job.work();
-    expect(result.outcome).toBe("dispatched");
-    if (result.outcome !== "dispatched") {
-      throw new Error("Expected dispatch");
-    }
-    await expect(
-      db()
-        .select({
-          type: agentRuns.modelProvider,
-          model: agentRuns.selectedModel,
-        })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, result.runId)),
-    ).resolves.toStrictEqual([
-      { type: "built-in", model: "deepseek-v4.1-flash" },
-    ]);
+    const fixture = createPublicPiMemorySource(publicScopeContext);
+    await fixture.run(async () => {
+      const job = await createPublicPhase2WorkerFixture(
+        fixture,
+        new Date(now() + 24 * 3_600_000),
+      );
+
+      await fixture.disconnect(job.scope.subscription.accountSourceId);
+      await seedBuiltInModelKey(
+        publicScopeContext,
+        "deepseek-v4.1-flash",
+        fixture.registerCleanup,
+      );
+      const result = await job.work();
+      expect(result.outcome).toBe("dispatched");
+      if (result.outcome !== "dispatched") {
+        throw new Error("Expected dispatch");
+      }
+      const execution = await claimPhase2Execution(
+        publicScopeContext,
+        result.runId,
+      );
+      fixture.registerClaim(result.runId, execution.sandboxToken);
+      await expect(
+        createRunsApi(publicScopeContext).readRun(fixture.actor, result.runId),
+      ).resolves.toMatchObject({
+        source: {
+          providerType: "built-in",
+          model: "deepseek-v4.1-flash",
+          credentialScope: "org",
+        },
+      });
+      expect(execution.piModelConfig).toMatchObject({
+        provider: "openrouter",
+        model: "deepseek/deepseek-v4.1-flash",
+      });
+    });
   });
 
   it("ignores stale historical provider IDs when no BYOK is configured", async () => {
@@ -1483,238 +1441,287 @@ describe("Phase 2 current credential admission", () => {
 });
 
 test("does not admit a subscription disconnected during preparation", async () => {
-  const job = await createPhase2WorkerFixture(
-    "disconnect-before-admission",
-    false,
-  );
-  const provider = await createPhase2CodexProvider(testContext(), job.scope);
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID() }],
-    provider.binding,
-  );
-  let disconnected = false;
-  onMemoryArchivePresign(job, async () => {
-    if (!disconnected) {
-      disconnected = true;
-      await disconnectPhase2Codex(
-        testContext(),
-        job.scope,
-        provider.binding.modelProviderId,
-      );
-    }
+  const fixture = createPublicPiMemorySource(publicScopeContext, {
+    memoryFile: { path: "MEMORY.md", content: "Original owned Memory" },
   });
-  // Final admission rejects disconnected accounts after all source-row locks.
-  await expectNoDispatch(job, "credential_unavailable");
-  expect(disconnected).toBeTruthy();
+  await fixture.run(async () => {
+    const job = await createPublicPhase2WorkerFixture(
+      fixture,
+      new Date(now() + 24 * 3_600_000),
+    );
+
+    const published = job.scope.publishedMemory;
+    if (!published) {
+      throw new Error("Expected published Memory");
+    }
+    let disconnected = false;
+    onPublicMemoryArchivePresign(published.archiveKey, async () => {
+      if (!disconnected) {
+        disconnected = true;
+        await fixture.disconnect(job.scope.subscription.accountSourceId);
+      }
+    });
+    await expect(job.work()).resolves.toMatchObject({
+      outcome: "failed",
+      errorClass: "credential_unavailable",
+    });
+    await expect(publicMaintenanceRuns(fixture)).resolves.toStrictEqual([]);
+    expect(disconnected).toBeTruthy();
+    await expect(
+      publicMemoryVersion(fixture, job.scope.sourceAgentId),
+    ).resolves.toBe(published.versionId);
+  });
 });
 
 test("does not persist or dispatch when preparation is cancelled", async () => {
-  const job = await createPhase2WorkerFixture("cancel-before-admission", false);
-  const provider = await createPhase2CodexProvider(testContext(), job.scope);
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID() }],
-    provider.binding,
-  );
-  const controller = new AbortController();
-  const signal = AbortSignal.any([controller.signal, testContext().signal]);
-  onMemoryArchivePresign(job, () => {
-    controller.abort(new Error("Cancelled preparation"));
+  const fixture = createPublicPiMemorySource(publicScopeContext, {
+    memoryFile: { path: "MEMORY.md", content: "Original owned Memory" },
   });
-  await expect(job.work(undefined, signal)).rejects.toThrow(
-    "Cancelled preparation",
-  );
-  await expect(
-    db()
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.orgId, job.scope.orgId),
-          eq(agentRuns.triggerSource, "agent"),
-        ),
-      ),
-  ).resolves.toStrictEqual([]);
-  await expect(readPhase2Job(job.scope)).resolves.toMatchObject({
-    completedRevision: 0,
-    maintenanceRunId: null,
+  await fixture.run(async () => {
+    const job = await createPublicPhase2WorkerFixture(
+      fixture,
+      new Date(now() + 24 * 3_600_000),
+    );
+
+    const published = job.scope.publishedMemory;
+    if (!published) {
+      throw new Error("Expected published Memory");
+    }
+    const controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      publicScopeContext.signal,
+    ]);
+    onPublicMemoryArchivePresign(published.archiveKey, () => {
+      controller.abort(new Error("Cancelled preparation"));
+    });
+    await expect(job.work(undefined, signal)).rejects.toThrow(
+      "Cancelled preparation",
+    );
+    await expect(publicMaintenanceRuns(fixture)).resolves.toStrictEqual([]);
   });
 });
 
 test.each([false, true])(
   "refreshes the current subscription or rejects revocation=%s",
   async (revoke) => {
-    const job = await createPhase2WorkerFixture("refresh-exact-account");
-    const account = `account-${randomUUID()}`;
-    const provider = await createPhase2CodexProvider(testContext(), job.scope, {
-      subscription: { accountId: account, expired: true },
-    });
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
-      provider.binding,
-    );
-    const refreshed = makeCodexJwt({
-      exp: Math.floor(now() / 1000) + 7200,
-      identity: "refreshed-original",
-    });
-    const quotaHeaders: Headers[] = [];
-    server.use(
-      http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
-        quotaHeaders.push(request.headers);
-        return HttpResponse.json({
-          rate_limit: { primary_window: { used_percent: 75 } },
+    const fixture = createPublicPiMemorySource(publicScopeContext);
+    await fixture.run(async () => {
+      const job = await createPublicPhase2WorkerFixture(
+        fixture,
+        new Date(now() + 24 * 3_600_000),
+      );
+      const account = fixture.account;
+      await fixture.expireCredential(job.scope.subscription.accountSourceId);
+      const refreshed = makeCodexJwt({
+        exp: Math.floor(now() / 1000) + 7200,
+        identity: "refreshed-original",
+      });
+      const quotaHeaders: Headers[] = [];
+      server.use(
+        http.get(
+          "https://chatgpt.com/backend-api/wham/usage",
+          ({ request }) => {
+            quotaHeaders.push(request.headers);
+            return HttpResponse.json({
+              rate_limit: { primary_window: { used_percent: 75 } },
+            });
+          },
+        ),
+      );
+      const refreshes: string[] = [];
+      server.use(
+        http.post(
+          "https://auth.openai.com/oauth/token",
+          async ({ request }) => {
+            refreshes.push(await request.text());
+            if (revoke) {
+              return HttpResponse.json(
+                {
+                  error: "invalid_grant",
+                  error_description: "refresh_token_reused",
+                },
+                { status: 400 },
+              );
+            }
+            return HttpResponse.json({
+              access_token: refreshed,
+              refresh_token: `refreshed-${account}`,
+              token_type: "Bearer",
+              expires_in: 7200,
+              id_token: makeCodexJwt({
+                "https://api.openai.com/auth": {
+                  chatgpt_account_id: account,
+                  chatgpt_plan_type: "plus",
+                },
+              }),
+            });
+          },
+        ),
+      );
+      if (revoke) {
+        await expect(job.work(nowDate())).resolves.toMatchObject({
+          outcome: "failed",
+          errorClass: "credential_unavailable",
         });
-      }),
-    );
-    const refreshes: string[] = [];
-    server.use(
-      http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
-        refreshes.push(await request.text());
-        if (revoke) {
-          return HttpResponse.json(
-            {
-              error: "invalid_grant",
-              error_description: "refresh_token_reused",
-            },
-            { status: 400 },
+      } else {
+        const result = await job.work(nowDate());
+        if (result.outcome !== "dispatched") {
+          throw new Error(
+            `Expected subscription launch: ${JSON.stringify(result)}`,
           );
         }
-        return HttpResponse.json({
-          access_token: refreshed,
-          refresh_token: `refreshed-${account}`,
-          token_type: "Bearer",
-          expires_in: 7200,
-          id_token: makeCodexJwt({
-            "https://api.openai.com/auth": {
-              chatgpt_account_id: account,
-              chatgpt_plan_type: "plus",
+        const actual = await executePhase2Runtime(
+          publicScopeContext,
+          result.runId,
+          {
+            registerCleanup: fixture.registerCleanup,
+            onClaim: (execution) => {
+              fixture.registerClaim(result.runId, execution.sandboxToken);
             },
-          }),
-        });
-      }),
-    );
-    if (revoke) {
-      await expect(job.work(nowDate())).resolves.toMatchObject({
-        outcome: "failed",
-        errorClass: "credential_unavailable",
-      });
-    } else {
-      const result = await job.work(nowDate());
-      if (result.outcome !== "dispatched") {
-        throw new Error(
-          `Expected subscription launch: ${JSON.stringify(result)}`,
+          },
         );
+        expect(actual.requests).toHaveLength(3);
+        for (const request of actual.requests) {
+          expect(request.headers.get("authorization")).toBe(
+            `Bearer ${refreshed}`,
+          );
+          expect(request.headers.get("chatgpt-account-id")).toBe(account);
+        }
       }
-      // The exact subscription account is recorded on the run, as on main.
-      const [run] = await db()
-        .select({ identity: agentRuns.modelProviderAccountIdentity })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, result.runId));
-      expect(run?.identity).toBe(
-        personalSubscriptionAccountIdentity({
-          type: "codex-oauth-token",
-          externalAccountId: account,
-          accountEmail: null,
-          workspaceName: null,
-        }),
-      );
-      const actual = await executePhase2Runtime(testContext(), result.runId);
-      expect(actual.requests).toHaveLength(3);
-      for (const request of actual.requests) {
-        expect(request.headers.get("authorization")).toBe(
+      expect(refreshes).toHaveLength(1);
+      expect(refreshes[0]).toContain(`refresh-${account}`);
+      expect(quotaHeaders).toHaveLength(revoke ? 0 : 1);
+      if (!revoke) {
+        expect(quotaHeaders[0]?.get("authorization")).toBe(
           `Bearer ${refreshed}`,
         );
-        expect(request.headers.get("chatgpt-account-id")).toBe(account);
+        expect(quotaHeaders[0]?.get("chatgpt-account-id")).toBe(account);
       }
-    }
-    expect(refreshes).toHaveLength(1);
-    expect(refreshes[0]).toContain(`refresh-${account}`);
-    expect(quotaHeaders).toHaveLength(revoke ? 0 : 1);
-    if (!revoke) {
-      expect(quotaHeaders[0]?.get("authorization")).toBe(`Bearer ${refreshed}`);
-      expect(quotaHeaders[0]?.get("chatgpt-account-id")).toBe(account);
-    }
+    });
   },
 );
 
 test("selects the current active account after historical account replacement", async () => {
-  const job = await createPhase2WorkerFixture("active-account-replacement");
-  const old = await createPhase2CodexProvider(testContext(), job.scope);
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID() }],
-    old.binding,
-  );
-  await activateAnotherPhase2Codex(testContext(), job.scope);
-  server.use(
-    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-      return HttpResponse.json({
-        rate_limit: { primary_window: { used_percent: 0 } },
-      });
-    }),
-  );
-  const result = await job.work();
-  expect(result.outcome).toBe("dispatched");
-  if (result.outcome !== "dispatched") {
-    throw new Error("Expected dispatch");
-  }
-  const [run] = await db()
-    .select({ id: agentRuns.modelProviderId })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, result.runId));
-  expect(run?.id).not.toBe(old.binding.modelProviderId);
+  const fixture = createPublicPiMemorySource(publicScopeContext);
+  await fixture.run(async () => {
+    const job = await createPublicPhase2WorkerFixture(
+      fixture,
+      new Date(now() + 24 * 3_600_000),
+    );
+
+    const current = await fixture.activateAccount(
+      `replacement-${randomUUID()}`,
+    );
+    expect(current.accountSourceId).not.toBe(
+      job.scope.subscription.accountSourceId,
+    );
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        return HttpResponse.json({
+          rate_limit: { primary_window: { used_percent: 0 } },
+        });
+      }),
+    );
+    const result = await job.work();
+    expect(result.outcome).toBe("dispatched");
+    if (result.outcome !== "dispatched") {
+      throw new Error("Expected dispatch");
+    }
+    const execution = await claimPhase2Execution(
+      publicScopeContext,
+      result.runId,
+    );
+    fixture.registerClaim(result.runId, execution.sandboxToken);
+    if (!execution.encryptedSecrets) {
+      throw new Error("Expected current credentials");
+    }
+    const auth = await createFirewallApi(
+      publicScopeContext,
+    ).requestFirewallAuth(
+      { authorization: `Bearer ${execution.sandboxToken}` },
+      {
+        encryptedSecrets: execution.encryptedSecrets,
+        authHeaders: {
+          "x-selected-token": secretTemplate("CHATGPT_ACCESS_TOKEN"),
+          "x-selected-account": secretTemplate("CHATGPT_ACCOUNT_ID"),
+        },
+        secretConnectorMap: execution.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          execution.secretConnectorMetadataMap ?? undefined,
+      },
+      [200],
+    );
+    if (auth.status !== 200) {
+      throw new Error("Expected current-account firewall authorization");
+    }
+    expect(auth.body.headers).toMatchObject({
+      "x-selected-token": current.oauth.oauthTokenResponses[0]?.access_token,
+      "x-selected-account": current.identity,
+    });
+  });
 });
 
 describe("Phase 2 new-run quota boundary", () => {
   it.each(nativeMemoryQuotaCases)(
     "$name",
     async ({ payload, raw, status, reason }) => {
-      const job = await createPhase2WorkerFixture("quota");
-      const native = await createPhase2CodexProvider(testContext(), job.scope);
-      await insertPhase2Candidates(
-        job.scope,
-        [{ piSessionId: randomUUID() }],
-        native.binding,
-      );
-      const metadata: Headers[] = [];
-      let modelRequests = 0;
-      server.use(
-        http.post("https://chatgpt.com/backend-api/codex/responses", () => {
-          modelRequests++;
-          return new HttpResponse(null, { status: 500 });
-        }),
-        http.get(
-          "https://chatgpt.com/backend-api/wham/usage",
-          ({ request }) => {
-            metadata.push(request.headers);
-            return new HttpResponse(raw ?? JSON.stringify(payload), {
-              status: status ?? 200,
-              headers: { "content-type": "application/json" },
-            });
-          },
-        ),
-      );
-      if (reason) {
-        await expectNoDispatch(job, reason);
-        expect(modelRequests).toBe(0);
-        await expect(
-          db()
-            .select({ id: usageEvent.id })
-            .from(usageEvent)
-            .where(eq(usageEvent.orgId, job.scope.orgId)),
-        ).resolves.toStrictEqual([]);
-      } else {
-        const result = await job.work();
-        expect(result.outcome).toBe("dispatched");
-        if (result.outcome !== "dispatched") {
-          throw new Error("Expected admitted maintenance");
+      const fixture = createPublicPiMemorySource(publicScopeContext);
+      await fixture.run(async () => {
+        const job = await createPublicPhase2WorkerFixture(
+          fixture,
+          new Date(now() + 24 * 3_600_000),
+        );
+
+        const baseline = await observePublicUsage(
+          publicScopeContext,
+          fixture.actor,
+        );
+        expect(baseline.record.rows).toStrictEqual([]);
+        expect(baseline.members).toStrictEqual([]);
+        const metadata: Headers[] = [];
+        let modelRequests = 0;
+        server.use(
+          http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+            modelRequests++;
+            return new HttpResponse(null, { status: 500 });
+          }),
+          http.get(
+            "https://chatgpt.com/backend-api/wham/usage",
+            ({ request }) => {
+              metadata.push(request.headers);
+              return new HttpResponse(raw ?? JSON.stringify(payload), {
+                status: status ?? 200,
+                headers: { "content-type": "application/json" },
+              });
+            },
+          ),
+        );
+        if (reason) {
+          await expect(job.work()).resolves.toMatchObject({
+            outcome: "failed",
+            errorClass: reason,
+          });
+          await expect(publicMaintenanceRuns(fixture)).resolves.toStrictEqual(
+            [],
+          );
+          expect(modelRequests).toBe(0);
+          await expect(
+            observePublicUsage(publicScopeContext, fixture.actor),
+          ).resolves.toStrictEqual(baseline);
+          await expect(
+            publicMemoryVersion(fixture, job.scope.sourceAgentId),
+          ).resolves.toBe(job.scope.sourceMemoryVersionId);
+        } else {
+          const result = await job.work();
+          expect(result.outcome).toBe("dispatched");
         }
-      }
-      expect(metadata).toHaveLength(1);
-      expect(metadata[0]?.get("authorization")).toBe(`Bearer ${native.key}`);
-      expect(metadata[0]?.get("chatgpt-account-id")).toBe(native.account);
+        expect(metadata).toHaveLength(1);
+        expect(metadata[0]?.get("authorization")).toBe(
+          `Bearer ${job.scope.subscription.oauth.oauthTokenResponses[0]?.access_token}`,
+        );
+        expect(metadata[0]?.get("chatgpt-account-id")).toBe(fixture.account);
+      });
     },
   );
 });
@@ -2054,45 +2061,58 @@ test.each(["malformed-json", "network", "timeout"])(
 ); // Includes the real five-second metadata deadline.
 
 test("makes exactly one quota GET and no reset-credit request for a real native model attempt", async () => {
-  const job = await createPhase2WorkerFixture("native-quota-purity");
-  const native = await createPhase2CodexProvider(testContext(), job.scope);
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
-    native.binding,
-  );
-  let reads = 0;
-  let resetRequests = 0;
-  server.use(
-    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-      reads++;
-      return HttpResponse.json({
-        rate_limit: { primary_window: { used_percent: 75 } },
-      });
-    }),
-    http.all(
-      /https:\/\/chatgpt\.com\/backend-api\/wham\/rate-limit-reset-credits/u,
-      () => {
-        resetRequests++;
-        return HttpResponse.json({});
+  const fixture = createPublicPiMemorySource(publicScopeContext);
+  await fixture.run(async () => {
+    const job = await createPublicPhase2WorkerFixture(
+      fixture,
+      new Date(now() + 24 * 3_600_000),
+    );
+    const stripeRetrieves =
+      publicScopeContext.mocks.stripe.subscriptions.retrieve.mock.calls.length;
+    let reads = 0;
+    let resetRequests = 0;
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        reads++;
+        return HttpResponse.json({
+          rate_limit: { primary_window: { used_percent: 75 } },
+        });
+      }),
+      http.all(
+        /https:\/\/chatgpt\.com\/backend-api\/wham\/rate-limit-reset-credits/u,
+        () => {
+          resetRequests++;
+          return HttpResponse.json({});
+        },
+      ),
+    );
+    const result = await job.work(nowDate());
+    if (result.outcome !== "dispatched") {
+      throw new Error("Expected maintenance run");
+    }
+    const actual = await executePhase2Runtime(
+      publicScopeContext,
+      result.runId,
+      {
+        registerCleanup: fixture.registerCleanup,
+        onClaim: (execution) => {
+          fixture.registerClaim(result.runId, execution.sandboxToken);
+        },
       },
-    ),
-  );
-  const result = await job.work(nowDate());
-  if (result.outcome !== "dispatched") {
-    throw new Error("Expected maintenance run");
-  }
-  const actual = await executePhase2Runtime(testContext(), result.runId);
-  expect(actual.requests).toHaveLength(3);
-  for (const request of actual.requests) {
-    expect(request.headers.get("authorization")).toBe(`Bearer ${native.key}`);
-    expect(request.headers.get("chatgpt-account-id")).toBe(native.account);
-  }
-  expect(reads).toBe(1);
-  expect(resetRequests).toBe(0);
-  expect(
-    testContext().mocks.stripe.subscriptions.retrieve,
-  ).not.toHaveBeenCalled();
+    );
+    expect(actual.requests).toHaveLength(3);
+    for (const request of actual.requests) {
+      expect(request.headers.get("authorization")).toBe(
+        `Bearer ${job.scope.subscription.oauth.oauthTokenResponses[0]?.access_token}`,
+      );
+      expect(request.headers.get("chatgpt-account-id")).toBe(fixture.account);
+    }
+    expect(reads).toBe(1);
+    expect(resetRequests).toBe(0);
+    expect(
+      testContext().mocks.stripe.subscriptions.retrieve,
+    ).toHaveBeenCalledTimes(stripeRetrieves);
+  });
 });
 
 test.each([
@@ -2137,37 +2157,49 @@ test.each([
 );
 
 test("reports a run committed before an abort on the next pass, never as stale", async () => {
-  const job = await createPhase2WorkerFixture("abort-after-commit");
-  await insertPhase2Candidates(job.scope, [{ piSessionId: randomUUID() }]);
-  const controller = new AbortController();
-  const signal = AbortSignal.any([controller.signal, testContext().signal]);
-  // The Runner notification is published only after the run commits.
-  testContext().mocks.ably.publish.mockImplementation((event: unknown) => {
-    if (event === "job") {
-      controller.abort();
+  const fixture = createPublicPiMemorySource(publicScopeContext);
+  await fixture.run(async () => {
+    const job = await createPublicPhase2WorkerFixture(
+      fixture,
+      new Date(now() + 24 * 3_600_000),
+    );
+
+    await fixture.disconnect(job.scope.subscription.accountSourceId);
+    await seedBuiltInModelKey(
+      publicScopeContext,
+      "deepseek-v4.1-flash",
+      fixture.registerCleanup,
+    );
+    const controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      publicScopeContext.signal,
+    ]);
+    publicScopeContext.mocks.ably.publish.mockImplementation(
+      (event: unknown) => {
+        if (event === "job") {
+          controller.abort();
+        }
+        return Promise.resolve();
+      },
+    );
+    await expect(job.work(undefined, signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    const committed = await publicMaintenanceRuns(fixture);
+    expect(committed).toHaveLength(1);
+    const run = committed[0];
+    if (!run) {
+      throw new Error("Expected the committed run to stay bound");
     }
-    return Promise.resolve();
-  });
-
-  await expect(job.work(undefined, signal)).rejects.toMatchObject({
-    name: "AbortError",
-  });
-
-  const bound = await readPhase2Job(job.scope);
-  expect(bound).toMatchObject({ status: "leased", lastErrorClass: null });
-  const runId = bound?.maintenanceRunId;
-  if (!runId) {
-    throw new Error("Expected the committed run to stay bound");
-  }
-  await expect(
-    db()
-      .select({ status: agentRuns.status })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, runId)),
-  ).resolves.toStrictEqual([{ status: "pending" }]);
-  await expect(job.work()).resolves.toStrictEqual({
-    outcome: "dispatched",
-    runId,
+    fixture.registerRun(run.id);
+    await expect(
+      createRunsApi(publicScopeContext).readRun(fixture.actor, run.id),
+    ).resolves.toMatchObject({ status: "pending" });
+    await expect(job.work()).resolves.toStrictEqual({
+      outcome: "dispatched",
+      runId: run.id,
+    });
   });
 });
 

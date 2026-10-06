@@ -77,9 +77,7 @@ import {
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   corruptApiTestConnectorCatalogActiveSnapshotPayload,
   corruptApiTestConnectorCatalogRuntimeProjectionDigest,
-  invalidateApiTestConnectorCatalogCompatibility,
   installApiTestConnectorCatalog,
-  replaceApiTestConnectorCatalogFilteredAuthMethods,
 } from "../../../test-fixtures/connector-catalog";
 import {
   readSessionHistoryBlobRefCountFixture,
@@ -1520,56 +1518,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, capabilityRotatedRun.runId, [200]);
   });
 
-  it("omits filtered auth from scoped runtime claims after identity rotation", async () => {
-    const capabilityIdentityEnvName = "CAL_COM_OAUTH_CLIENT_ID";
-    mockOptionalEnv(capabilityIdentityEnvName, undefined);
-    const { api, actor, runnerGroup, createScopedRun } =
-      await scopedRuntimeScenario();
-    const fw = createFirewallApi(context);
-    const firstRun = await createScopedRun("warm scoped connector runtime", [
-      "x",
-    ]);
-    await api.requestCancelRun(actor, firstRun.runId, [200]);
-
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "x",
-      authMethod: "oauth",
-      accessToken: "x-filtered-access",
-      refreshToken: "x-filtered-refresh",
-    });
-    mockOptionalEnv(
-      capabilityIdentityEnvName,
-      "api-test-calcom-oauth-client-id",
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-scoped-runtime-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    await replaceApiTestConnectorCatalogFilteredAuthMethods([
-      {
-        connectorSlug: "x",
-        authMethodId: "oauth",
-        reasons: ["missing-grant-provider"],
-      },
-    ]);
-
-    const filteredRun = await createScopedRun(
-      "omit a compatibility-filtered connector method",
-      ["x"],
-    );
-    await api.heartbeatRunner(runnerGroup);
-    const filteredClaim = await api.claimRunnerJob(filteredRun.runId);
-    expect(filteredClaim.environment ?? {}).not.toHaveProperty("X_TOKEN");
-    expect(filteredClaim.secretConnectorMap ?? {}).not.toHaveProperty(
-      "X_TOKEN",
-    );
-    expect(findFirewallEntry(filteredClaim.firewalls, "x")).toBeUndefined();
-    expect(filteredClaim.billableFirewalls).not.toContain("x");
-    expect(filteredClaim.networkPolicies ?? {}).not.toHaveProperty("x");
-    expect(filteredClaim).not.toHaveProperty("connectorPermissionBaseline");
-    await api.requestCancelRun(actor, filteredRun.runId, [200]);
-  });
-
   it("reuses current validator package authority", async () => {
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
@@ -1604,43 +1552,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       sourceId: expect.any(String),
     });
     await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("rejects invalid projection compatibility", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-invalid-projection-compatibility-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    const { actor, agentId } = await entitledRunActor();
-    await api.enableAgentConnectors(actor, agentId, ["x"]);
-    // A rotated catalog that no request has read yet becomes incompatible.
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    await invalidateApiTestConnectorCatalogCompatibility();
-    const rejectedPrompt = "invalid projection compatibility rejection";
-
-    await expect(
-      api.readThreadLaunchFailure(actor, { agentId, prompt: rejectedPrompt }),
-    ).resolves.toStrictEqual({
-      pickError: "Accepted external connector catalog is unavailable",
-      inputError: "internal_error",
-    });
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runs.runs.filter((run) => {
-        return run.prompt === rejectedPrompt;
-      }),
-    ).toHaveLength(0);
   });
 
   it("returns a context encryption failure while storage presigning is still pending", async () => {

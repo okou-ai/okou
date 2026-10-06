@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
+  chatThreadArchiveContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadsContract,
@@ -18,13 +19,16 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { chatListEvent } from "./chat-list-test-helpers.ts";
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
+import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
+const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 async function setupHeaderPage(
   enabled = true,
   threadEvents: readonly ChatThreadEvent[] = [],
+  archiveEnabled = true,
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -67,6 +71,7 @@ async function setupHeaderPage(
     path: `/chats/${THREAD_ID}`,
     featureSwitches: {
       [FeatureSwitchKey.ChatThreadHeaderActions]: enabled,
+      [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
     },
   });
   await screen.findByText("Review the header layout");
@@ -227,6 +232,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Archive chat",
     "Artifacts",
   ]);
   click(menuItemNamed("Rename chat"));
@@ -234,6 +240,140 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   expect(within(dialog).getByPlaceholderText("Chat title")).toHaveValue(
     "😀 Header planning",
   );
+});
+
+test("Archive from the mobile header and return to the thread's agent only after saving", async () => {
+  context.mocks.browser.matchMedia(false);
+  const archiveResponse = context.mocks.deferred<void>();
+  const events: ChatThreadEvent[] = [];
+  context.mocks.api(
+    chatThreadArchiveContract.archive,
+    async ({ params, query, respond }) => {
+      await archiveResponse.promise;
+      events.push(
+        chatListEvent(951, 1, "archived", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  await setupHeaderPage(true, events);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Archive chat"));
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNamed("Unarchive chat")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
+
+  archiveResponse.resolve();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  });
+  expect(
+    screen.queryByText("Review the header layout"),
+  ).not.toBeInTheDocument();
+});
+
+test("Stay in the current thread and show the archive API error", async () => {
+  context.mocks.browser.matchMedia(false);
+  context.mocks.api(chatThreadArchiveContract.archive, ({ respond }) => {
+    return respond(500, { error: { message: "Archive request failed" } });
+  });
+  await setupHeaderPage();
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Archive chat"));
+  await expect(
+    screen.findByText("Archive request failed"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
+});
+
+test("Hide header archiving when the archive switch is off", async () => {
+  context.mocks.browser.matchMedia(false);
+  await setupHeaderPage(true, [], false);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNames()).toStrictEqual([
+    "Pin chat",
+    "Rename chat",
+    "Artifacts",
+  ]);
+});
+
+test("Unarchive from the mobile header and stay in the current thread", async () => {
+  context.mocks.browser.matchMedia(false);
+  const unarchiveResponse = context.mocks.deferred<void>();
+  const events: ChatThreadEvent[] = [
+    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
+  ];
+  context.mocks.api(
+    chatThreadArchiveContract.unarchive,
+    async ({ params, query, respond }) => {
+      await unarchiveResponse.promise;
+      events.push(
+        chatListEvent(951, 2, "unarchived", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  await setupHeaderPage(true, events);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNames()).toStrictEqual([
+    "Pin chat",
+    "Rename chat",
+    "Unarchive chat",
+    "Artifacts",
+  ]);
+  click(menuItemNamed("Unarchive chat"));
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNamed("Archive chat")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+
+  unarchiveResponse.resolve();
+  await waitFor(() => {
+    expect(menuItemNamed("Archive chat")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
+});
+
+test("Stay in the archived thread and show the unarchive API error", async () => {
+  context.mocks.browser.matchMedia(false);
+  context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
+    return respond(500, { error: { message: "Unarchive request failed" } });
+  });
+  await setupHeaderPage(true, [
+    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
+  ]);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Unarchive chat"));
+  await expect(
+    screen.findByText("Unarchive request failed"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
 });
 
 test("Open artifacts from the mobile menu", async () => {
@@ -281,6 +421,7 @@ test("Open linked automations from the mobile menu", async () => {
     expect(menuItemNames()).toStrictEqual([
       "Pin chat",
       "Rename chat",
+      "Archive chat",
       "Automations",
       "Artifacts",
     ]);

@@ -163,12 +163,19 @@ export async function executePhase2Runtime(
   context: TestContext,
   runId: string,
   options: {
+    execution?: Awaited<ReturnType<typeof claimPhase2Execution>>;
+    onClaim?: (
+      execution: Awaited<ReturnType<typeof claimPhase2Execution>>,
+    ) => void;
+    registerCleanup?: (cleanup: () => Promise<void>) => void;
     failure?: boolean;
     noDiff?: boolean;
     baseFiles?: readonly { path: string; content: string }[];
   } = {},
 ) {
-  const execution = await claimPhase2Execution(context, runId);
+  const execution =
+    options.execution ?? (await claimPhase2Execution(context, runId));
+  options.onClaim?.(execution);
   const maintenance = execution.piLaunchConfig?.maintenance;
   if (!maintenance) {
     throw new Error("Missing claimed selection");
@@ -210,7 +217,7 @@ export async function executePhase2Runtime(
     ),
   );
   const memoryRoot = await mkdtemp(join(tmpdir(), "phase2-source-"));
-  onTestFinished(async () => {
+  (options.registerCleanup ?? onTestFinished)(async () => {
     await rm(memoryRoot, { recursive: true, force: true });
   });
   for (const file of options.baseFiles ?? []) {

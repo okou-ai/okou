@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   connectorCatalog,
   connectorCatalogEntries,
+  connectorCatalogCompatibilityEvaluation,
 } from "@okouai/db/schema/connector-catalog";
 import type {
   ImmutableConnectorCatalogHeader,
@@ -10,7 +11,14 @@ import type {
 } from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorCatalogCompatibilityEvaluationSchema } from "@okouai/connectors/connector-catalog/compatibility";
 import { db$ } from "../external/db";
+import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
+import {
+  connectorCatalogValidationAuthorityIsCurrent,
+  currentConnectorCatalogValidatorIdentity,
+} from "./connector-catalog-validator-authority";
+import { connectorCatalogSource } from "./connector-catalog-source";
 import {
   connectorCatalogExecutableCapabilityState,
   evaluateConnectorCatalogCompatibility,
@@ -19,6 +27,7 @@ import {
   materializeConnectorRuntimeLookup,
   uniqueSortedConnectorSlugs,
   type ConnectorRuntimeLookup,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 
 export interface ImmutableConnectorCatalogCapture {
@@ -41,51 +50,111 @@ interface SelectionInput {
   readonly requestedConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
   readonly capturedCatalog?: ImmutableConnectorCatalogCapture;
+  readonly captureRuntimeCompatibility?: true;
+}
+
+interface CapturedEntries {
+  readonly input: SelectionInput;
+  readonly capturedCatalog: ImmutableConnectorCatalogCapture;
+  readonly entries: readonly ImmutableConnectorCatalogEntry[];
+  readonly runtimeCompatibility?: {
+    readonly backendVersion: string | null;
+    readonly validationRevision: string | null;
+    readonly filteredAuthMethods: unknown;
+  } | null;
 }
 
 /** One statement captures current and the requested union, including empty/unknown sets. */
-function capturedEntries(input: SelectionInput): Computed<
-  Promise<{
-    readonly capturedCatalog: ImmutableConnectorCatalogCapture;
-    readonly entries: readonly ImmutableConnectorCatalogEntry[];
-  }>
-> {
+function capturedEntries(
+  input$: Computed<Promise<SelectionInput>>,
+): Computed<Promise<CapturedEntries>>;
+function capturedEntries(
+  input$: Computed<Promise<SelectionInput | null>>,
+): Computed<Promise<CapturedEntries | null>>;
+function capturedEntries(
+  input$: Computed<Promise<SelectionInput | null>>,
+): Computed<Promise<CapturedEntries | null>> {
   return computed(async (get) => {
+    const input = await get(input$);
+    if (!input) {
+      return null;
+    }
     const slugs = uniqueSortedConnectorSlugs([
       ...input.requestedConnectorSlugs,
       ...(input.metadataConnectorSlugs ?? []),
     ]);
     const db = get(db$);
     let captured = input.capturedCatalog;
+    const currentQuery = db
+      .select({
+        current: {
+          schemaVersion: connectorCatalog.schemaVersion,
+          hash: connectorCatalog.hash,
+          header: connectorCatalog.catalogHeader,
+          entrySlugs: connectorCatalog.entrySlugs,
+        },
+        entry: {
+          slug: connectorCatalogEntries.slug,
+          payload: connectorCatalogEntries.payload,
+        },
+        ...(input.captureRuntimeCompatibility
+          ? {
+              runtimeCompatibility: {
+                backendVersion:
+                  connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+                validationRevision:
+                  connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+                filteredAuthMethods:
+                  connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+              },
+            }
+          : {}),
+      })
+      .from(connectorCatalog)
+      .leftJoin(
+        connectorCatalogEntries,
+        and(
+          eq(connectorCatalogEntries.hash, connectorCatalog.hash),
+          inArray(connectorCatalogEntries.slug, [...slugs]),
+        ),
+      )
+      .$dynamic();
     const rows =
       captured === undefined
-        ? await db
-            .select({
-              current: {
-                schemaVersion: connectorCatalog.schemaVersion,
-                hash: connectorCatalog.hash,
-                header: connectorCatalog.catalogHeader,
-                entrySlugs: connectorCatalog.entrySlugs,
-              },
-              entry: {
-                slug: connectorCatalogEntries.slug,
-                payload: connectorCatalogEntries.payload,
-              },
-            })
-            .from(connectorCatalog)
-            .leftJoin(
-              connectorCatalogEntries,
-              and(
-                eq(connectorCatalogEntries.hash, connectorCatalog.hash),
-                inArray(connectorCatalogEntries.slug, [...slugs]),
-              ),
-            )
-            .where(
-              eq(
-                connectorCatalog.schemaVersion,
-                SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-              ),
-            )
+        ? await (
+            input.captureRuntimeCompatibility
+              ? currentQuery.leftJoin(
+                  connectorCatalogCompatibilityEvaluation,
+                  and(
+                    eq(
+                      connectorCatalogCompatibilityEvaluation.sourceId,
+                      connectorCatalogSource().sourceId,
+                    ),
+                    eq(
+                      connectorCatalogCompatibilityEvaluation.schemaVersion,
+                      connectorCatalog.schemaVersion,
+                    ),
+                    eq(
+                      connectorCatalogCompatibilityEvaluation.catalogVersion,
+                      connectorCatalog.catalogVersion,
+                    ),
+                    eq(
+                      connectorCatalogCompatibilityEvaluation.catalogDigest,
+                      connectorCatalog.hash,
+                    ),
+                    eq(
+                      connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+                      connectorCatalogExecutableCapabilityState().digest,
+                    ),
+                  ),
+                )
+              : currentQuery
+          ).where(
+            eq(
+              connectorCatalog.schemaVersion,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+            ),
+          )
         : await db
             .select({
               slug: connectorCatalogEntries.slug,
@@ -98,10 +167,12 @@ function capturedEntries(input: SelectionInput): Computed<
                 inArray(connectorCatalogEntries.slug, [...slugs]),
               ),
             );
+    let runtimeCompatibility: CapturedEntries["runtimeCompatibility"];
     const entries = new Map<string, ImmutableConnectorCatalogEntry>();
     for (const row of rows) {
       if ("current" in row) {
         captured = row.current;
+        runtimeCompatibility = row.runtimeCompatibility;
         if (row.entry !== null) {
           entries.set(row.entry.slug, row.entry.payload);
         }
@@ -115,61 +186,146 @@ function capturedEntries(input: SelectionInput): Computed<
     if (captured.schemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION) {
       throw new Error("Immutable connector catalog schema is unsupported");
     }
-    const manifest = new Set(captured.entrySlugs);
-    const selected: ImmutableConnectorCatalogEntry[] = [];
-    for (const slug of slugs) {
-      if (!manifest.has(slug)) {
-        continue;
-      }
-      const entry = entries.get(slug);
-      if (entry === undefined) {
-        throw new Error(
-          "Immutable connector catalog manifest entry is missing",
-        );
-      }
-      selected.push(entry);
-    }
-    return { capturedCatalog: captured, entries: selected };
+    return {
+      input,
+      capturedCatalog: captured,
+      entries: selectManifestEntries(captured, entries, slugs),
+      ...(input.captureRuntimeCompatibility ? { runtimeCompatibility } : {}),
+    };
   });
+}
+
+function selectManifestEntries(
+  captured: ImmutableConnectorCatalogCapture,
+  entries: ReadonlyMap<string, ImmutableConnectorCatalogEntry>,
+  slugs: readonly ConnectorSlug[],
+): readonly ImmutableConnectorCatalogEntry[] {
+  const manifest = new Set(captured.entrySlugs);
+  const selected: ImmutableConnectorCatalogEntry[] = [];
+  for (const slug of slugs) {
+    if (!manifest.has(slug)) {
+      continue;
+    }
+    const entry = entries.get(slug);
+    if (entry === undefined) {
+      throw new Error("Immutable connector catalog manifest entry is missing");
+    }
+    selected.push(entry);
+  }
+  return selected;
 }
 
 /** No legacy identity, validator, projection, R2 or full-snapshot fallback. */
 export function immutableConnectorRuntimeSelection(
   input: SelectionInput,
 ): Computed<Promise<ImmutableConnectorRuntimeSelection>> {
-  const source$ = capturedEntries(input);
+  const input$ = computed(() => {
+    return Promise.resolve(input);
+  });
+  const source$ = capturedEntries(input$);
   return computed(async (get) => {
-    const { capturedCatalog, entries } = await get(source$);
-    // Only code/configuration capability filtering is derived here. Feature,
-    // account and grant filtering remain with their existing request owners.
-    // No derived cache crosses a capability digest or request boundary.
-    const capability = connectorCatalogExecutableCapabilityState();
-    const filtered = evaluateConnectorCatalogCompatibility({
-      artifact: { ...capturedCatalog.header, connectors: [...entries] },
-      capability,
-    });
-    const filteredMethodKeys = new Set(
-      filtered.map((method) => {
-        return `${method.connectorSlug}\0${method.authMethodId}`;
-      }),
-    );
+    return materializeImmutableSelection(input, await get(source$));
+  });
+}
+
+interface CatalogRequest {
+  readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
+  readonly metadataConnectorSlugs: readonly ConnectorSlug[];
+}
+
+export function createConnectorRuntimeSelection(
+  requested$: Computed<Promise<CatalogRequest | null>>,
+): Computed<Promise<ConnectorRuntimeSelection | null>> {
+  const input$ = computed(async (get) => {
+    const requested = await get(requested$);
+    if (!requested) {
+      return null;
+    }
     return {
-      ...materializeConnectorRuntimeLookup({
-        connectors: entries,
-        filteredMethodKeys,
-        runtimeConnectorSlugs: uniqueSortedConnectorSlugs(
-          input.requestedConnectorSlugs,
-        ),
-        metadataConnectorSlugs: uniqueSortedConnectorSlugs(
-          input.metadataConnectorSlugs ?? [],
-        ),
-      }),
-      capturedCatalog,
+      requestedConnectorSlugs: requested.runtimeConnectorSlugs,
+      metadataConnectorSlugs: requested.metadataConnectorSlugs,
+      captureRuntimeCompatibility: true as const,
+    };
+  });
+  const source$ = capturedEntries(input$);
+  return computed(async (get) => {
+    const source = await get(source$);
+    if (!source) {
+      return null;
+    }
+    const selection = materializeImmutableSelection(source.input, source);
+    // Preserve the existing Run/Pi/permission-baseline identity contract using
+    // the captured catalog facts, never a second read of current or a legacy
+    // projection generation identifier.
+    return {
+      ...selection,
       catalogIdentity: {
-        schemaVersion: capturedCatalog.schemaVersion,
-        hash: capturedCatalog.hash,
-        capabilityDigest: capability.digest,
+        sourceId: connectorCatalogSource().sourceId,
+        schemaVersion: selection.capturedCatalog.schemaVersion,
+        catalogVersion: selection.capturedCatalog.header.catalogVersion,
+        catalogDigest: selection.capturedCatalog.hash,
+        capabilityDigest: selection.catalogIdentity.capabilityDigest,
       },
     };
   });
+}
+
+function acceptedRuntimeCompatibility(payload: unknown) {
+  const parsed =
+    connectorCatalogCompatibilityEvaluationSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "invalid_compatibility_evaluation",
+    );
+  }
+  return parsed.data.filteredAuthMethods;
+}
+
+function materializeImmutableSelection(
+  input: SelectionInput,
+  { capturedCatalog, entries, runtimeCompatibility }: CapturedEntries,
+): ImmutableConnectorRuntimeSelection {
+  // Only code/configuration capability filtering is derived here. Feature,
+  // account and grant filtering remain with their existing request owners.
+  // No derived cache crosses a capability digest or request boundary.
+  const capability = connectorCatalogExecutableCapabilityState();
+  const filtered =
+    runtimeCompatibility !== null &&
+    runtimeCompatibility !== undefined &&
+    runtimeCompatibility.backendVersion !== null &&
+    connectorCatalogValidationAuthorityIsCurrent({
+      authority: {
+        validatorVersion: runtimeCompatibility.backendVersion,
+        buildCommitSha: runtimeCompatibility.validationRevision,
+      },
+      validator: currentConnectorCatalogValidatorIdentity(),
+    })
+      ? acceptedRuntimeCompatibility(runtimeCompatibility.filteredAuthMethods)
+      : evaluateConnectorCatalogCompatibility({
+          artifact: { ...capturedCatalog.header, connectors: [...entries] },
+          capability,
+        });
+  const filteredMethodKeys = new Set(
+    filtered.map((method) => {
+      return `${method.connectorSlug}\0${method.authMethodId}`;
+    }),
+  );
+  return {
+    ...materializeConnectorRuntimeLookup({
+      connectors: entries,
+      filteredMethodKeys,
+      runtimeConnectorSlugs: uniqueSortedConnectorSlugs(
+        input.requestedConnectorSlugs,
+      ),
+      metadataConnectorSlugs: uniqueSortedConnectorSlugs(
+        input.metadataConnectorSlugs ?? [],
+      ),
+    }),
+    capturedCatalog,
+    catalogIdentity: {
+      schemaVersion: capturedCatalog.schemaVersion,
+      hash: capturedCatalog.hash,
+      capabilityDigest: capability.digest,
+    },
+  };
 }
