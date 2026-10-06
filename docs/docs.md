@@ -35,6 +35,9 @@ surface; the index does not replace their detailed rules.
 - [Global model catalog](./model-catalog.md): the database model catalog and
   routes, replacement and default constraints, and the phased migration from
   code model lists.
+- [Personal subscription CLI and Reset Cards](./subscription-controls.md):
+  exact-account usage reads, subsequent-run switching, user-confirmed reset
+  links and capability rollout.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and credential
   storage/locking.

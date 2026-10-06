@@ -1067,6 +1067,8 @@ export const modelProviderResponseSchema = z.object({
   subscriptionResetPeriod: z.string().nullable().optional(),
   subscriptionNextResetAt: z.string().nullable().optional(),
   subscriptionUsage: modelProviderSubscriptionUsageSchema.nullable().optional(),
+  // A provider capability, independent of the currently available reset credits.
+  subscriptionResetSupported: z.boolean().optional(),
   subscriptionResetCredits: z
     .number()
     .int()

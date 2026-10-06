@@ -30,6 +30,7 @@ import { modelPoliciesRoutes } from "../model-policies";
 import { createRouteMocks } from "./helpers/route-test";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { modelCatalogRoutes } from "../model-catalog";
+import { signSandboxJwtForTests } from "../../auth/tokens";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -330,6 +331,80 @@ describe("GET /api/model-catalog", () => {
         return policy.model;
       }),
     ).toStrictEqual(["gpt-6-luna"]);
+  });
+
+  it.each(["okou", "sandbox"] as const)(
+    "allows authenticated %s tokens to read the catalog without a dedicated capability",
+    async (scope) => {
+      const actor = authOrgApi.user({ orgRole: "org:member" });
+      authOrgApi.mockClerkOrg(actor);
+      const seconds = Math.floor(now() / 1000);
+      const token = signSandboxJwtForTests({
+        scope,
+        userId: actor.userId,
+        orgId: requireOrgId(actor),
+        runId: randomUUID(),
+        capabilities: [],
+        iat: seconds,
+        exp: seconds + 60,
+      });
+
+      const response = await accept(
+        apiClient().get({ headers: { authorization: `Bearer ${token}` } }),
+        [200],
+      );
+
+      expect(response.body.models).toContainEqual(
+        expect.objectContaining({
+          model: response.body.systemDefaultModel,
+          displayName: "Auto",
+          isSystemDefault: true,
+        }),
+      );
+      expect(response.body.routes.length).toBeGreaterThan(0);
+    },
+  );
+
+  it("rejects an expired agent token", async () => {
+    const actor = authOrgApi.user({ orgRole: "org:member" });
+    authOrgApi.mockClerkOrg(actor);
+    const seconds = Math.floor(now() / 1000);
+    const token = signSandboxJwtForTests({
+      scope: "okou",
+      userId: actor.userId,
+      orgId: requireOrgId(actor),
+      runId: randomUUID(),
+      capabilities: [],
+      iat: seconds - 120,
+      exp: seconds - 60,
+    });
+
+    const response = await apiClient().get({
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects an agent token whose user is no longer an organization member", async () => {
+    const actor = authOrgApi.user({ orgRole: "org:member" });
+    authOrgApi.mockClerkOrg(actor, { members: [] });
+    const seconds = Math.floor(now() / 1000);
+    const token = signSandboxJwtForTests({
+      scope: "okou",
+      userId: actor.userId,
+      orgId: requireOrgId(actor),
+      runId: randomUUID(),
+      capabilities: [],
+      iat: seconds,
+      exp: seconds + 60,
+    });
+
+    const response = await apiClient().get({
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(401);
   });
 
   it("requires an authenticated organization session", async () => {

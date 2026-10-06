@@ -23,6 +23,7 @@ export const ROUTES = {
   sharedThread: "/share/threads/:id",
   browser: "/browsers/:browserThreadId",
   mailDraft: "/mail/drafts/:mailDraftId",
+  subscriptionReset: "/subscriptions/:subscriptionId/reset",
   browserUserAction: "/browser/actions/:browserActionToken",
   browserAuthorize: "/browser/authorize/:requestToken",
   ideas: "/ideas",
