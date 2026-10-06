@@ -113,28 +113,18 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
+  it("enables OpenRouter US routing for everyone and honors explicit overrides", () => {
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
         isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, context),
-      ).toBe(false);
+      ).toBe(true);
       expect(
         isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
           ...context,
-          overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: true },
+          overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
         }),
-      ).toBe(true);
+      ).toBe(false);
     }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
-      }),
-    ).toBe(false);
   });
 
   it("should return true for globally enabled switch", () => {
@@ -340,12 +330,10 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
-      false,
-    );
+    expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 

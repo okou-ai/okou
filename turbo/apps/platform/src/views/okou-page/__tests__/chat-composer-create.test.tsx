@@ -59,13 +59,17 @@ function button(label: string, container: ParentNode = document): HTMLElement {
   return result;
 }
 
-async function setupComposer(enabled = true): Promise<HTMLElement> {
+async function setupComposer(
+  enabled = true,
+  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
       [FeatureSwitchKey.ComposerTaskChips]: enabled,
+      ...featureSwitches,
     },
   });
   return await findComposerEditor();
@@ -296,7 +300,10 @@ test.each(createTemplateScenarios)(
   async ({ mode, pickerLabel, selectLabel, templates }) => {
     setupModels();
     mockChatLifecycle(context);
-    const editor = await setupComposer();
+    // The legacy model menu keeps the model's name as its whole label.
+    const editor = await setupComposer(true, {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
+    });
     const [first] = templates;
     if (!first) {
       throw new Error(`Expected a ${mode} template`);

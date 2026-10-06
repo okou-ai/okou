@@ -237,8 +237,6 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.PrivateArtifacts, "artifact:read"],
     [FeatureSwitchKey.PrivateArtifacts, "artifact:write"],
     [FeatureSwitchKey.Banking, "banking:read"],
-    [FeatureSwitchKey.SubscriptionControls, "subscription:read"],
-    [FeatureSwitchKey.SubscriptionControls, "subscription:switch"],
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
     [FeatureSwitchKey.DiscordIntegration, "discord:read"],
     [FeatureSwitchKey.DiscordIntegration, "discord:write"],
@@ -263,6 +261,28 @@ describe("auth tokens", () => {
         capability,
       );
       expect(verifyOkouToken(enabledToken)?.capabilities).toContain(capability);
+    },
+  );
+
+  it.each(["subscription:read", "subscription:switch"] as const)(
+    "grants %s by default unless subscription controls are switched off",
+    (capability) => {
+      const defaultToken = generateOkouToken(
+        "user_okou",
+        "run_okou",
+        "org_okou",
+      );
+      const disabledToken = generateOkouToken(
+        "user_okou",
+        "run_okou",
+        "org_okou",
+        { [FeatureSwitchKey.SubscriptionControls]: false },
+      );
+
+      expect(verifyOkouToken(defaultToken)?.capabilities).toContain(capability);
+      expect(verifyOkouToken(disabledToken)?.capabilities).not.toContain(
+        capability,
+      );
     },
   );
 

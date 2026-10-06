@@ -354,7 +354,12 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
 test("A user can save message-send and time-zone preferences", async () => {
   const updates = mockPreferences();
 
-  await setupPage({ context, path: "/settings", host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: "/settings",
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ChatPreference]: false },
+  });
 
   await expect(screen.findByText("Send message with")).resolves.toBeVisible();
   click(getFastRole("button", "⌘ Enter"));
@@ -413,7 +418,11 @@ test("A failed preference save shows its error and can be retried", async () => 
       return respond(200, preferences);
     },
   );
-  await setupPage({ context, path: "/agents?settings=preference" });
+  await setupPage({
+    context,
+    path: "/agents?settings=preference",
+    featureSwitches: { [FeatureSwitchKey.ChatPreference]: false },
+  });
 
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   const sendMode = getFastRole("button", "⌘ Enter", dialog);

@@ -21,33 +21,33 @@ describe("/api/feature-switches", () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const orgId = `org_${randomUUID()}`;
-    const enabledUserId = `user_${randomUUID()}`;
-    clerk.session(enabledUserId, orgId, "org:member");
+    const optedOutUserId = `user_${randomUUID()}`;
+    clerk.session(optedOutUserId, orgId, "org:member");
 
-    const enabled = await accept(
+    const optedOut = await accept(
       client().update({
         headers,
         body: {
-          switches: { [FeatureSwitchKey.OpenRouterUsRouting]: true },
+          switches: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
         },
       }),
       [200],
     );
     expect(
-      enabled.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
-    ).toBeTruthy();
+      optedOut.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
+    ).toBeFalsy();
 
     clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(client().get({ headers }), [200]);
     expect(
       peer.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
-    ).toBeFalsy();
+    ).toBeTruthy();
 
-    clerk.session(enabledUserId, orgId, "org:member");
+    clerk.session(optedOutUserId, orgId, "org:member");
     const original = await accept(client().get({ headers }), [200]);
     expect(
       original.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
-    ).toBeTruthy();
+    ).toBeFalsy();
   });
 
   it("applies an org-scoped override consistently across one organization", async () => {

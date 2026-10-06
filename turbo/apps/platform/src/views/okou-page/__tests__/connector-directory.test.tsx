@@ -231,7 +231,11 @@ test("Keep the existing dialog when the directory switch is off", async () => {
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({ catalog: directoryCatalog() });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
 
   await expect(screen.findByTestId("start-cards")).resolves.toBeVisible();
   await user.click(await findFastControl("button", "Connectors"));

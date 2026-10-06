@@ -74,6 +74,7 @@ async function openChat(
     path: NEW_CHAT_PATH,
     sharedWorkerTestTransport: transport,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });

@@ -60,6 +60,7 @@ test("The SSH directory summarizes attention and recovers without Agent grant co
   await setupPage({
     context,
     path: "/connectors?keywords=ssh",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -187,6 +188,7 @@ async function page(path = "/connectors") {
   await setupPage({
     context,
     path,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
   });
 }
 

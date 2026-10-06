@@ -226,6 +226,7 @@ test("Make a new-chat model choice the default immediately", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: false,
     },
   });
@@ -266,6 +267,7 @@ test("Temporarily choose a model for a new chat", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -303,7 +305,11 @@ test("Temporarily choose a model for a new chat", async () => {
 test("Follow model preference changes made in another session", async () => {
   installNewChat(["claude-fable-5-1", "claude-opus-5-5"], "claude-fable-5-1");
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+  });
 
   await readyComposer();
   await expect(modelPicker("Claude Fable 5.1")).resolves.toBeVisible();
@@ -338,6 +344,7 @@ test("Explain model availability by plan and provider", async () => {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyComposer();
@@ -382,6 +389,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -438,6 +446,7 @@ test("Keep unavailable routes disabled and open plan comparison from the menu", 
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyComposer();
   const list = await openModelMenu("DeepSeek V4 Flash");
@@ -465,6 +474,7 @@ test("Adjust effort from the composer without opening the model picker", async (
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -506,6 +516,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -560,6 +571,7 @@ test("Select the default effort on an existing thread without changing Fast", as
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyChat();
   click(await findButton("GPT 5.6 Sol Fast"));
@@ -598,6 +610,7 @@ test("Keep independent effort selections when changing models", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -668,7 +681,11 @@ test.each(["gpt-5.6-luna", "gpt-6-luna"])(
       },
     });
     configurePolicies([model]);
-    await setupPage({ context, path: RUN_PATH });
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+    });
     await readyChat();
     const settings = await openEffortPanel();
     const slider = await screen.findByRole("slider", { name: "Effort" });
@@ -706,6 +723,7 @@ test("Show the Pi fallback without overwriting a saved native preference", async
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyChat();
   const settings = await openEffortPanel();
@@ -736,6 +754,7 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -777,6 +796,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyChat();
   click(await findButton("Claude Sonnet 5"));
@@ -845,6 +865,7 @@ test.each([
     await setupPage({
       context,
       path: RUN_PATH,
+      featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
     });
     await readyChat();
     const label = mockCatalogDisplayName(model);

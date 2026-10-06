@@ -137,6 +137,7 @@ async function openUnconfirmedConversation(
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
     featureSwitches: {
+      [FeatureSwitchKey.ComposerModelPanel]: false,
       [FeatureSwitchKey.ChatThreadHeaderActions]:
         options.headerActionsEnabled ?? false,
     },
@@ -362,6 +363,7 @@ test("Server confirmation settles a new conversation without duplication", async
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(13, []),
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await selectClaudeSonnet();

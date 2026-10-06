@@ -181,7 +181,11 @@ async function openConnectorFilterCatalog() {
   mockConnectorAgentAccess(context, (agentId) => {
     return { enabledConnectorSlugs: agentId === researchId ? ["github"] : [] };
   });
-  await setupPage({ context, path: "/connectors" });
+  await setupPage({
+    context,
+    path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
   await expectCards({ github: true, asana: true });
   return { researchId };
 }
@@ -274,6 +278,7 @@ test("Search the full connector catalog", async () => {
   await setupPage({
     context,
     path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
   });
   await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
   await expect(
@@ -294,7 +299,11 @@ test("Search the full connector catalog", async () => {
 
 test("Switch between built-in and custom connectors", async () => {
   mockCustomConnectorStory(context);
-  await setupPage({ context, path: "/connectors?tab=custom" });
+  await setupPage({
+    context,
+    path: "/connectors?tab=custom",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
   const custom = await waitFor(() => {
     return getConnectorAction("tab", "Custom");
   });
