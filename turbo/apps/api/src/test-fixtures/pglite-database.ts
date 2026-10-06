@@ -44,8 +44,22 @@ export function pgliteDatabase() {
   return database;
 }
 
+// node-postgres returns int8/numeric as text. Match that real driver contract
+// before Drizzle maps fields, without losing precision or changing SQL results.
+const driverParsers = Object.freeze({
+  20: (value: string) => {
+    return value;
+  },
+  1700: (value: string) => {
+    return value;
+  },
+});
+
 async function migratedImage(): Promise<Blob> {
-  const engine = new PGlite({ extensions: { pgcrypto, btree_gin } });
+  const engine = new PGlite({
+    extensions: { pgcrypto, btree_gin },
+    parsers: driverParsers,
+  });
   return await releaseAfter(
     (async () => {
       const directory = new URL(
@@ -146,6 +160,7 @@ export async function withPgliteDatabase<T>(
   const engine = new PGlite({
     extensions: { pgcrypto, btree_gin },
     loadDataDir: await migrationImage(),
+    parsers: driverParsers,
   });
   const controller = new AbortController();
   return await withTestCaseOwner(controller, async () => {

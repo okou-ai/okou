@@ -197,20 +197,26 @@ Foreground work is aborted before API-based cleanup, which has its own live
 case-owned signal. Final teardown aborts both signals and drains detached/native
 work before engine close, including setup failures. `pglite-database.test.ts`
 verifies concurrent owner isolation, fail-closed access, cleanup-signal lifetime,
-initialization failure and failed drainage.
+initialization failure, failed drainage and node-postgres-compatible int8/numeric
+text decoding without precision loss.
 `api/no-test-database-binding` confines engine imports/construction to the
 harness (and the existing catalog mechanism) and prevents the migrated
-`model-providers.test.ts` from returning to a serialized project. The sole
+`model-providers.test.ts` and `test-runtime-state.test.ts` from returning to a
+serialized project. The sole
 central DB `vi.mock` is permitted; service mocks and case-local DB mocks remain
 forbidden. These lexical guards do not prove runtime isolation.
 
-PGlite has a single PostgreSQL session. It cannot replace pool/multi-session
-contracts, protocol cancellation or real lock competition. In particular,
-`test-runtime-state.test.ts` currently reaches a transaction that awaits reads
-through the outside pool; a direct PGlite binding stalls that path. It remains
-on native PostgreSQL pending genuine database isolation. Its existing serial
-scheduling is not a resolved ownership guarantee. Do not redirect outside
-queries into the active transaction or widen timeouts to make this pass.
+Both cooldown suites use this per-case harness without serial scheduling.
+The retired Custom bootstrap left an unused catalog argument/read in the
+publication transaction; removing that obsolete dependency makes the lifecycle
+suite portable without changing transaction boundaries or redirecting reads.
+The harness uses PGlite's driver parsers to preserve int8/numeric text exactly as
+node-postgres does, rather than rewriting SQL results or weakening row schemas.
+
+PGlite still has a single PostgreSQL session. It cannot replace pool/multi-session
+contracts, protocol cancellation or real lock competition. Keep those specific
+contracts on native PostgreSQL. Do not redirect outside queries into an active
+transaction or widen timeouts to make an incompatible suite pass.
 
 Do not hold advisory locks, inspect `pg_locks`, or install internal admission
 gates to construct or assert an API scenario. Exercise concurrent requests and

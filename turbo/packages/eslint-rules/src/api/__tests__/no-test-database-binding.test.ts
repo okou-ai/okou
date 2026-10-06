@@ -31,6 +31,10 @@ tester.run("no-test-database-binding", noTestDatabaseBinding, {
   ],
   invalid: [
     {
+      code: 'const catalog = ["src/signals/routes/__tests__/test-runtime-state.test.ts"]; defineConfig({test: {include: catalog, fileParallelism: false}});',
+      errors: [{ messageId: "serialization" }],
+    },
+    {
       code: 'import { PGlite } from "@electric-sql/pglite";',
       errors: [{ messageId: "harnessOnly" }],
     },

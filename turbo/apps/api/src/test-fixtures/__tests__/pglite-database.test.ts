@@ -20,6 +20,23 @@ describe("case-owned PGlite lifecycle", () => {
     }).toThrow("outside its test owner");
   });
 
+  it("matches node-postgres int8 and numeric text without precision loss", async () => {
+    await withPgliteDatabase(async (owner) => {
+      expect(
+        (
+          await owner.engine.query(
+            "SELECT 9007199254740993::bigint AS seq_id, 12345678901234567890.123456789::numeric AS amount",
+          )
+        ).rows,
+      ).toStrictEqual([
+        {
+          seq_id: "9007199254740993",
+          amount: "12345678901234567890.123456789",
+        },
+      ]);
+    });
+  });
+
   it("keeps concurrent owners on different engines without shared rows", async () => {
     const controller = new AbortController();
     const ready = createDeferredPromise<void>(controller.signal);

@@ -4,7 +4,10 @@ import { createRule } from "../utils.ts";
 const nativeHarness = "/src/test-fixtures/pglite-database.ts";
 const legacyHarness =
   "/src/signals/routes/__tests__/connector-catalog-immutable.test.ts";
-const isolatedSuite = "src/signals/routes/__tests__/model-providers.test.ts";
+const isolatedSuites = [
+  "src/signals/routes/__tests__/model-providers.test.ts",
+  "src/signals/routes/__tests__/test-runtime-state.test.ts",
+] as const;
 
 /** Bounded lexical guard; engine ownership/cleanup is verified by real SQL tests. */
 export const noTestDatabaseBinding = createRule({
@@ -22,7 +25,7 @@ export const noTestDatabaseBinding = createRule({
       harnessOnly:
         "Create/bind PGlite only in the case-owned database harness, not in individual API tests.",
       serialization:
-        "The isolated model-providers suite must not return to a serialized shared-database project.",
+        "A case-owned PGlite suite must not return to a serialized shared-database project.",
     },
   },
   create(context) {
@@ -38,7 +41,9 @@ export const noTestDatabaseBinding = createRule({
         return false;
       }
       if (node.type === AST_NODE_TYPES.Literal) {
-        return node.value === isolatedSuite;
+        return isolatedSuites.some((suite) => {
+          return node.value === suite;
+        });
       }
       if (node.type === AST_NODE_TYPES.ArrayExpression) {
         return node.elements.some((entry) => {

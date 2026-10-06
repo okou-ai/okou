@@ -29,7 +29,6 @@ import {
   DEFAULT_AGENT_NAME,
   DEFAULT_AGENT_SOUND,
 } from "./default-agent-profile";
-import { modelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   grantOnboardingCredits,
   LIMITED_FREE_ONBOARDING_CREDITS,
@@ -147,7 +146,6 @@ async function enqueueBootstrapPrefixCleanup(
 }
 
 async function publishBootstrap(
-  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: EnsureOrgLimitedFreeBootstrapArgs & {
     readonly agentId: string;
@@ -211,7 +209,7 @@ async function publishBootstrap(
     }
     const result = existingAgentId
       ? { bootstrapped: false, agentId: existingAgentId }
-      : await finalizeBootstrap(catalogSnapshot, tx, args);
+      : await finalizeBootstrap(tx, args);
     signal.throwIfAborted();
     return { result, cleanupJobIds };
   }
@@ -250,7 +248,7 @@ async function publishBootstrap(
       args.volume.version.versionId,
     );
   }
-  const result = await finalizeBootstrap(catalogSnapshot, tx, args);
+  const result = await finalizeBootstrap(tx, args);
   signal.throwIfAborted();
   return { result, cleanupJobIds };
 }
@@ -392,7 +390,6 @@ async function reserveBootstrapAgent(
 }
 
 async function finalizeBootstrap(
-  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: {
     readonly orgId: string;
@@ -462,9 +459,6 @@ async function finalizeBootstrap(
           tier: "limited-free-1",
           onboardingPaymentPending: false,
           onboardingComplete: false,
-          // A policy can be configured before metadata exists. Preserve the
-          // Custom policy contract on INSERT as well as on conflict. Unconfigured
-          // new organizations use Auto; the schema's Custom default is unchanged.
           updatedAt: nowDate(),
         })
         .onConflictDoUpdate({
@@ -473,9 +467,6 @@ async function finalizeBootstrap(
             defaultAgentId: agentRow.id,
             tier: "limited-free-1",
             onboardingPaymentPending: false,
-            // Another writer may have created the row first. Only an org with
-            // no configured non-default model becomes Auto; configured models
-            // keep the stored mode.
             updatedAt: nowDate(),
           },
           // The earlier tier read is not write authority. Stripe can commit
@@ -519,7 +510,7 @@ async function finalizeBootstrap(
 
 export const ensureOrgLimitedFreeBootstrap$ = command(
   async (
-    { get, set },
+    { set },
     args: EnsureOrgLimitedFreeBootstrapArgs,
     signal: AbortSignal,
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
@@ -555,7 +546,6 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       return await writeDb.transaction(
         async (tx) => {
           return await publishBootstrap(
-            await get(modelCatalog$),
             tx,
             { ...args, agentId: reservation.agentId, candidate, volume },
             signal,

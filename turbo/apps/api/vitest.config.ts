@@ -11,6 +11,7 @@ const immutableCatalogTests = [
 
 const isolatedDatabaseTests = [
   "src/signals/routes/__tests__/model-providers.test.ts",
+  "src/signals/routes/__tests__/test-runtime-state.test.ts",
 ];
 const databaseLifecycleTests = [
   "src/test-fixtures/__tests__/pglite-database.test.ts",
@@ -23,9 +24,6 @@ const catalogTests = [
   "src/signals/routes/__tests__/official-workflows.test.ts",
   "src/signals/routes/__tests__/official-workflows-schedule-claims.test.ts",
   "src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts",
-  // This suite still needs native multi-connection PostgreSQL semantics.
-  // PGlite migration is incomplete; this existing scheduling is not isolation.
-  "src/signals/routes/__tests__/test-runtime-state.test.ts",
 ];
 
 // Only generation-changing contracts belong here, never their former sibling
