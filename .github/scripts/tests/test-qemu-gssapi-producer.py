@@ -90,6 +90,26 @@ class ProducerInputs(unittest.TestCase):
             for hook in ("APT::Update::Post-Invoke", "APT::Update::Pre-Invoke", "DPkg::Pre-Invoke", "DPkg::Post-Invoke"):
                 self.assertTrue(hook not in config, "ambient hook survived private startup")
 
+    def test_every_provision_apt_query_selects_private_startup(self):
+        # Structural caller-boundary regression complements the real apt-config
+        # startup test; it is not a package/build/signature/runtime receipt.
+        module = ast.parse((ROOT / ".github/scripts/prepare-qemu-gssapi-fixture.py").read_text())
+        provision = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "provision")
+        queries = [node for node in ast.walk(provision) if isinstance(node, ast.Call)
+                   and isinstance(node.func, ast.Name) and node.func.id == "call"
+                   and node.args and isinstance(node.args[0], ast.List)
+                   and isinstance(node.args[0].elts[0], ast.Constant)
+                   and node.args[0].elts[0].value in ("apt-get", "apt-cache")]
+        self.assertEqual(len(queries), 3)
+        for query in queries:
+            self.assertTrue(any(keyword.arg == "cwd" and isinstance(keyword.value, ast.Name)
+                                and keyword.value.id == "base" for keyword in query.keywords),
+                            "APT metadata query omitted its private startup root")
+
+    def test_apt_without_explicit_private_startup_is_refused_before_invocation(self):
+        with self.assertRaisesRegex(ValueError, "private APT startup"):
+            self.producer.call(["apt-cache", "policy"])
+
     def test_public_failure_retains_exact_index_bytes_before_any_native_execution(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             base = pathlib.Path(directory)

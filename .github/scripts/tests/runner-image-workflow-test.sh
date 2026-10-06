@@ -226,11 +226,22 @@ jq -e '
 jq -e '
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] == ["compile", "prewarm-rust-cache"]) and
+    .key] | sort) == ["compile", "native-release-build", "prewarm-rust-cache"] and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
-    .key] == ["compile", "prewarm-rust-cache"])
-' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only compiler and main dependency prewarmer"
+    .key] | sort) == ["compile", "native-release-build", "prewarm-rust-cache"] and
+  .jobs["native-release-build"].needs == ["prepare"] and
+  .jobs["native-release-build"]["timeout-minutes"] == 25 and
+  .jobs["native-release-build"].container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
+  (.jobs["native-release-build"] | has("environment") | not) and
+  (.jobs["native-release-build"].if | contains("current-runner-image-needed")) and
+  .jobs["native-release-build"].env.SOURCE_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
+  .jobs["native-release-build"].env.TARGET_TRIPLE == "${{ matrix.target }}" and
+  any(.jobs["native-release-build"].steps[];
+    .run == "bash .github/scripts/build-runner-native-release.sh" and
+    (. | has("continue-on-error") | not)
+  )
+' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only ci compiler, main dependency prewarmer and source-bound full-LTO producer, never consumers"
 
 jq -e '
   .jobs.build.name == "Build runner image (${{ matrix.label }})" and

@@ -67,6 +67,8 @@ SEEDS = {"gcc-13": "13.2.0-23ubuntu4", "g++-13": "13.2.0-23ubuntu4", "binutils":
 def call(argv, *, cwd=None, timeout=300):
     environment = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
     if pathlib.Path(argv[0]).name in ("apt-get", "apt-cache", "apt-config"):
+        if cwd is None:
+            raise ValueError("private APT startup root required")
         configuration = pathlib.Path(cwd) / "apt.conf"
         if not configuration.is_file() or configuration.is_symlink() or configuration.stat().st_uid != os.geteuid():
             raise ValueError("private APT startup configuration required")
@@ -246,7 +248,7 @@ def provision(base, arch, multiarch, origin):
         name, version, package_arch = record["Package"], record["Version"], record["Architecture"]
         if package_arch not in (arch, "all") or name in packages or (name in pins and version != pins[name]):
             raise ValueError("source-pinned fixture package identity refused")
-        metadata = call(["apt-cache", *options, "show", name + "=" + version])
+        metadata = call(["apt-cache", *options, "show", name + "=" + version], cwd=base)
         candidates = []
         for paragraph in metadata.split("\n\n"):
             candidate = dict(line.split(": ", 1) for line in paragraph.splitlines() if line and not line.startswith(" ") and ": " in line)
