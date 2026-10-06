@@ -2,7 +2,6 @@ import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -14,7 +13,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -45,13 +43,11 @@ beforeEach(() => {
 async function page(
   path = "/connectors?scope=private-network",
   role: "admin" | "member" = "member",
-  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
 ) {
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
     path,
-    featureSwitches,
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -317,10 +313,8 @@ test("Cloudflare Access is managed in Connectors Private network", async () => {
 });
 
 test("Returning to Private network does not reopen an abandoned Access dialog", async () => {
-  await page("/connectors", "member", {
-    [FeatureSwitchKey.ConnectorDirectory]: false,
-  });
-  click(getConnectorAction("tab", "Private network"));
+  await page("/connectors");
+  click(screen.getByTestId("connectors-scope-private-network"));
   await screen.findByRole("heading", { name: "Cloudflare Access" });
   click(getAction("button", "Add Cloudflare Access"));
   await screen.findByRole("dialog", { name: "Add Cloudflare Access" });
@@ -329,8 +323,7 @@ test("Returning to Private network does not reopen an abandoned Access dialog", 
   await waitFor(() => {
     expect(window.location.search).toBe("");
   });
-  await screen.findByRole("heading", { name: "Remote access" });
-  click(getConnectorAction("tab", "Private network"));
+  click(screen.getByTestId("connectors-scope-private-network"));
   await waitFor(() => {
     expect(window.location.search).toBe("?scope=private-network");
     expect(screen.queryByRole("dialog")).toBeNull();

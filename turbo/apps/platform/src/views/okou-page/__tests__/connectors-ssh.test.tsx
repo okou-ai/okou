@@ -1,13 +1,11 @@
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -21,34 +19,65 @@ import {
   publicStatusItem,
   queryConnectorAction,
 } from "./connector-page-test-helpers.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const agentId = "c0000000-0000-4000-8000-000000000001";
 
-test("The SSH directory summarizes attention and recovers without Agent grant controls", async () => {
-  mockCatalog();
+const orgId = "org_ssh_card";
+
+function sshHost(index: number) {
+  return {
+    id: `b0000000-0000-4000-8000-00000000000${index}`,
+    displayName: `Host ${index}`,
+    host: `host-${index}.example.com`,
+    port: 22,
+    username: "deploy",
+    credentialId: "d0000000-0000-4000-8000-000000000001",
+    credentialName: "Deploy login",
+    generation: 1,
+    learnedHostKey: null,
+    createdAt: "2026-09-01T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+  };
+}
+
+function mockSshHosts(count: number) {
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 3 });
+    return respond(200, { configuredCount: count });
   });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, {
+      connections: Array.from({ length: count }, (_, index) => {
+        return sshHost(index + 1);
+      }),
+    });
+  });
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [] });
+  });
+}
+
+test("Remote control summarizes SSH hosts that need attention and recovers", async () => {
+  mockCatalog();
+  mockSshHosts(3);
   let failed = true;
   context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
     return respond(200, {
       observations: [
         {
-          connectionId: "b0000000-0000-4000-8000-000000000001",
+          connectionId: sshHost(1).id,
           generation: 1,
           observedAt: "2026-09-10T08:00:00.000Z",
           failureReason: failed ? "authentication_failed" : null,
         },
         {
-          connectionId: "b0000000-0000-4000-8000-000000000002",
+          connectionId: sshHost(2).id,
           generation: 1,
           observedAt: "2026-09-10T08:00:00.000Z",
           failureReason: failed ? "network_failure" : null,
         },
         {
-          connectionId: "b0000000-0000-4000-8000-000000000003",
+          connectionId: sshHost(3).id,
           generation: 1,
           observedAt: "2026-09-10T08:00:00.000Z",
           failureReason: null,
@@ -56,11 +85,9 @@ test("The SSH directory summarizes attention and recovers without Agent grant co
       ],
     });
   });
-  const orgId = "org_ssh_card";
   await setupPage({
     context,
-    path: "/connectors?keywords=ssh",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+    path: "/connectors?scope=remote-control&type=ssh",
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -69,39 +96,33 @@ test("The SSH directory summarizes attention and recovers without Agent grant co
       },
     },
   });
-  await screen.findByText("2/3 need attention");
-  expect(screen.queryByText("3 hosts configured")).toBeNull();
-  expect(screen.queryByText("Add access")).toBeNull();
-  expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
-    "href",
-    "/connectors?scope=remote-control&type=ssh",
-  );
+  await screen.findByRole("status", { name: "2 SSH hosts need attention" });
+  expect(screen.getByText("Host 3")).toBeInTheDocument();
   failed = false;
   context.mocks.ably.trigger("ssh:changed", { orgId });
-  await screen.findByText("3 hosts configured");
-  expect(screen.queryByText("2/3 need attention")).toBeNull();
-  expect(screen.queryByText("Add access")).toBeNull();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("status", { name: "2 SSH hosts need attention" }),
+    ).toBeNull();
+  });
+  expect(screen.getByText("Host 1")).toBeInTheDocument();
 });
 
-test("The SSH directory distinguishes unavailable diagnostics from failed hosts", async () => {
+test("Remote control distinguishes unavailable SSH diagnostics from failed hosts", async () => {
   mockCatalog();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 2 });
-  });
+  mockSshHosts(2);
   context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_SERVER_ERROR", message: "private error" },
     });
   });
-  await page("/connectors?keywords=ssh");
-  await screen.findByText("SSH connection status is unavailable");
+  await page("/connectors?scope=remote-control&type=ssh");
+  await screen.findByRole("status", {
+    name: "SSH connection status is unavailable",
+  });
   expect(screen.queryByText(/need attention/u)).toBeNull();
   expect(screen.queryByText("private error")).toBeNull();
-  expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
-    "href",
-    "/connectors?scope=remote-control&type=ssh",
-  );
-  expect(screen.queryByText("Add access")).toBeNull();
+  expect(screen.getByText("Host 2")).toBeInTheDocument();
 });
 
 test.each([2])(
@@ -139,13 +160,7 @@ test.each([2])(
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [customConnector()] });
     });
-    await setupPage({
-      context,
-      path: "/connectors",
-      featureSwitches: {
-        [FeatureSwitchKey.ConnectorDirectory]: true,
-      },
-    });
+    await setupPage({ context, path: "/connectors" });
     await screen.findByTestId("connector-shelf-communication-collaboration");
     expect(screen.queryByRole("heading", { name: "Remote access" })).toBeNull();
     expect(screen.queryByText("Acme Search")).toBeNull();
@@ -184,77 +199,9 @@ function mockCatalog() {
   mockPublicConnectorStatus(context, []);
 }
 
-async function page(path = "/connectors") {
-  await setupPage({
-    context,
-    path,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
+async function page(path: string) {
+  await setupPage({ context, path });
 }
-
-test("Opening the SSH card returns to connections after viewing credentials", async () => {
-  mockCatalog();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
-  });
-  await page();
-  click(getConnectorAction("tab", "Remote control"));
-  await screen.findByText("0 hosts configured");
-  click(getAction("radio", "Credentials"));
-  expect(getAction("radio", "Credentials")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  click(getConnectorAction("tab", "Built-in"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("link", "Manage SSH hosts");
-    }),
-  );
-  await screen.findByText("0 hosts configured");
-  expect(getAction("radio", "Connections")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-});
-
-test("SSH participates in search and configured filters without changing generic connector actions", async () => {
-  mockCatalog();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 2 });
-  });
-  await page();
-  await screen.findByText("2 hosts configured");
-  const search = screen.getByPlaceholderText("Find connectors");
-  await fill(search, "SSH");
-  await expect(
-    screen.findByText("2 hosts configured"),
-  ).resolves.toBeInTheDocument();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Not connected");
-    }),
-  );
-  await screen.findByText(/No connectors left to connect/);
-  expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Connected");
-    }),
-  );
-  await screen.findByText("2 hosts configured");
-  await fill(search, "unrelated-provider");
-  await screen.findByText(/No connected connectors/);
-  expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-});
 
 test("Thread remote access hides legacy Agent grants in Remote control", async () => {
   mockCatalog();
@@ -262,13 +209,7 @@ test("Thread remote access hides legacy Agent grants in Remote control", async (
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: 1 });
   });
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: true,
-    },
-  });
+  await page("/connectors?scope=remote-control");
   await screen.findByRole("heading", { name: "SSH" });
   expect(queryConnectorAction("button", "Manage SSH access")).toBeNull();
   expect(screen.queryByText("Add access")).toBeNull();

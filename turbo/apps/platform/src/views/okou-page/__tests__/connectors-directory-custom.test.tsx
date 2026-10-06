@@ -45,7 +45,6 @@ test("Show Custom and contextual creation without built-in shelves", async () =>
   await setupPage({
     context,
     path: "/connectors?scope=custom",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   const section = await screen.findByRole("region", {
     name: "Custom",
@@ -63,7 +62,6 @@ test("Separate same-name built-in and custom search results", async () => {
   await setupPage({
     context,
     path: "/connectors?keywords=acme",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   const builtin = await screen.findByRole("region", {
     name: "Built-in connectors",
@@ -87,7 +85,6 @@ test.each(["admin", "member"] as const)(
     await setupPage({
       context,
       path: "/connectors",
-      featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
     });
     await waitFor(() => {
       expect(getConnectorCard("GitHub")).toBeVisible();
@@ -121,7 +118,6 @@ test("Honor Custom deep links, scoped search, and returning to All", async () =>
   await setupPage({
     context,
     path: "/connectors?scope=custom&category=other&keywords=acme",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   await waitFor(() => {
     expect(getConnectorCard("Acme Reports")).toBeVisible();
@@ -152,7 +148,6 @@ test("Keep category search scoped and offer All for a custom-only match", async 
   await setupPage({
     context,
     path: "/connectors?category=engineering&keywords=acme",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   await expect(
     screen.findByText("No connectors match in this category."),
@@ -166,33 +161,7 @@ test("Keep category search scoped and offer All for a custom-only match", async 
   expect(locationSearch()).toContain("keywords=acme");
 });
 
-test("Preserve old connection filters and Custom tabs with directory disabled", async () => {
-  installCustomDirectory();
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "github",
-      label: "GitHub",
-      connected: false,
-    }),
-  ]);
-  await setupPage({
-    context,
-    path: "/connectors?connection=connected",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
-  await expect(
-    screen.findByText("No connected connectors"),
-  ).resolves.toBeVisible();
-  click(getConnectorAction("tab", "Custom"));
-  await waitFor(() => {
-    expect(getConnectorCard("Acme Reports")).toBeVisible();
-  });
-  expect(getConnectorAction("button", "New connector")).toBeVisible();
-  expect(queryConnectorAction("button", "New custom connector")).toBeNull();
-  expect(screen.queryByPlaceholderText("Find connectors")).toBeNull();
-});
-
-test("Legacy tabs open remote and private management with directory disabled", async () => {
+test("Remote control and Private network scopes omit VNC when its switch is off", async () => {
   installCustomDirectory();
   context.mocks.api(vncConnectionsContract.list, () => {
     throw new Error("VNC connections must stay disabled");
@@ -202,85 +171,45 @@ test("Legacy tabs open remote and private management with directory disabled", a
   });
   await setupPage({
     context,
-    path: "/connectors?tab=custom",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: false,
-      [FeatureSwitchKey.VncAccess]: false,
-    },
+    path: "/connectors?scope=custom",
+    featureSwitches: { [FeatureSwitchKey.VncAccess]: false },
   });
   await screen.findByText("Acme Reports");
 
-  click(getConnectorAction("tab", "Remote control"));
+  click(screen.getByTestId("connectors-scope-remote-control"));
   await screen.findByRole("heading", { name: "SSH" });
   expect(locationSearch()).toBe("?scope=remote-control");
   expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
-  expect(getConnectorAction("button", "Type: All")).toBeVisible();
   click(getConnectorAction("button", "Type: All"));
   const menu = await screen.findByRole("menu");
   expect(queryConnectorAction("menuitem", "VNC", menu)).toBeNull();
+  click(getConnectorAction("menuitem", "SSH", menu));
 
-  click(getConnectorAction("tab", "Private network"));
+  click(screen.getByTestId("connectors-scope-private-network"));
   await screen.findByRole("heading", { name: "Cloudflare Access" });
   expect(locationSearch()).toBe("?scope=private-network");
   expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
 
-  click(getConnectorAction("tab", "Custom"));
+  click(screen.getByTestId("connectors-scope-custom"));
   await screen.findByText("Acme Reports");
-  expect(locationSearch()).toBe("?tab=custom");
-
-  click(getConnectorAction("tab", "Built-in"));
-  await screen.findByRole("heading", { name: "Remote access" });
-  expect(locationSearch()).toBe("");
+  expect(locationSearch()).toBe("?scope=custom");
 });
 
-test("Legacy tab navigation returns directly to Remote control", async () => {
+test("Scope navigation returns directly to Remote control", async () => {
   installCustomDirectory();
-  await setupPage({
-    context,
-    path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
-  click(getConnectorAction("tab", "Remote control"));
+  await setupPage({ context, path: "/connectors" });
+  click(await screen.findByTestId("connectors-scope-remote-control"));
   await screen.findByRole("heading", { name: "SSH" });
-  click(getConnectorAction("tab", "Custom"));
+  click(screen.getByTestId("connectors-scope-custom"));
   await screen.findByText("Acme Reports");
-  expect(locationSearch()).toBe("?tab=custom");
+  expect(locationSearch()).toBe("?scope=custom");
 
   window.history.back();
   await waitFor(() => {
     expect(locationSearch()).toBe("?scope=remote-control");
-    expect(getConnectorAction("tab", "Remote control")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
   });
-});
-
-test("Legacy Remote control tab includes VNC when its switch is enabled", async () => {
-  installCustomDirectory();
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
-  });
-  await setupPage({
-    context,
-    path: "/connectors",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: false,
-      [FeatureSwitchKey.VncAccess]: true,
-    },
-  });
-
-  click(getConnectorAction("tab", "Remote control"));
-  await screen.findByRole("heading", { name: "VNC" });
-  click(getConnectorAction("button", "Type: All"));
-  const menu = await screen.findByRole("menu");
-  expect(getConnectorAction("menuitem", "VNC", menu)).toBeVisible();
+  await screen.findByRole("heading", { name: "SSH" });
+  expect(screen.queryByText("Acme Reports")).toBeNull();
 });
 
 test("Do not turn Custom loading failure into an empty search result", async () => {
@@ -301,7 +230,6 @@ test("Do not turn Custom loading failure into an empty search result", async () 
   await setupPage({
     context,
     path: "/connectors?keywords=recovered",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   const section = await screen.findByRole("region", {
     name: "Custom",
@@ -322,13 +250,7 @@ test("Keep Remote control and Custom in separate scopes", async () => {
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: 0 });
   });
-  await setupPage({
-    context,
-    path: "/connectors",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: true,
-    },
-  });
+  await setupPage({ context, path: "/connectors" });
   await screen.findByTestId("connectors-scope-remote-control");
   expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
   expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
@@ -349,7 +271,6 @@ test("Cancel and create a custom connector from the Custom scope", async () => {
   await setupPage({
     context,
     path: "/connectors?scope=custom&keywords=missing",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   const label = "New custom connector";
   const open = await waitFor(() => {
@@ -395,7 +316,6 @@ test("Search custom display names without matching endpoints or slugs", async ()
   await setupPage({
     context,
     path: "/connectors?keywords=%20aCmE%20%20",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   await waitFor(() => {
     expect(getConnectorCard("Acme Reports")).toBeVisible();

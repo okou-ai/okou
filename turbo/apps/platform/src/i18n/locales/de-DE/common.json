@@ -1822,8 +1822,6 @@
       "add": "{{connectorName}} hinzufügen",
       "addConnectors": "Integrationen hinzufügen",
       "authorized": "{{connectorName}} verbunden und autorisiert für {{agentName}}",
-      "available_one": "Verfügbare Integration ({{count}})",
-      "available_other": "Verfügbare Integrationen ({{count}})",
       "back": "Zurück",
       "configurePermissions": "Konfigurieren Sie {{connectorName}}-Berechtigungen",
       "customAuthorizeDescription": "Prüfen und verbinden Sie diese benutzerdefinierte Integration und autorisieren Sie sie für den Agenten.",
@@ -2960,7 +2958,6 @@
     "delete": "Cloudflare Access löschen",
     "deleteHelp": "Diesen Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden. Eigene Hosts müssen zuvor neu zugewiesen werden.",
     "deleteUncertain": "Der Löschvorgang konnte nicht bestätigt werden. Prüfen Sie die aktuellen Auswirkungen, bevor Sie es erneut versuchen.",
-    "description": "Greifen Sie mit Cloudflare Access Service-Tokens auf geschützte Anwendungen zu.",
     "edit": "Cloudflare Access bearbeiten",
     "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
     "forbidden": "Nur Organisationsadministratoren können gemeinsam genutzten Cloudflare Access ändern.",
@@ -2976,7 +2973,6 @@
     "latest": "Zuletzt gespeicherte Einstellungen",
     "loadFailed": "Cloudflare Access konnte nicht geladen werden. Versuchen Sie es erneut.",
     "loading": "Cloudflare Access wird geladen…",
-    "manage": "Cloudflare Access verwalten",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "Dieser Cloudflare Access ist nicht mehr verfügbar. Wählen oder erstellen Sie einen anderen.",
     "name": "Name",
@@ -3190,7 +3186,6 @@
           "menu": "Vertrieb und Geschäft"
         }
       },
-      "categoriesAria": "Integration-Kategorien",
       "description": "Verbinden Sie Dienste von Drittanbietern, damit Ihre Agenten sie nutzen können.",
       "descriptionWithCount": "Verbinden Sie {{value}} Dienste, damit Ihre Agenten sie nutzen können.",
       "directory": {
@@ -3209,8 +3204,6 @@
       "empty": {
         "agent": "Keine Integrationen für diesen Agenten",
         "connected": "Keine verbundenen Integrationen",
-        "matching": "{{message}} passend zu „{{search}}“",
-        "notConnected": "Keine weiteren Integrationen verfügbar",
         "search": "Keine Integrationen passend zu „{{search}}“",
         "unshared": "Jede Integration ist mit einem Agenten geteilt"
       },
@@ -3220,14 +3213,10 @@
         "all": "Alle",
         "allAgents": "Alle Agenten",
         "aria": "Integrationen filtern",
-        "connected": "Verbunden",
-        "notConnected": "Nicht verbunden",
-        "status": "Status",
         "unshared": "Mit keinem Agenten geteilt"
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Integrationssymbol nicht verfügbar",
-      "newConnector": "Neue Integration",
       "noConnectorsAlt": "Keine Integrationen",
       "otherCategory": "Andere",
       "remoteAccess": "Fernzugriff",
@@ -3254,10 +3243,6 @@
         "seeMore_one": "{{names}} und {{count}} weiteren ansehen",
         "seeMore_other": "{{names}} und {{count}} weitere ansehen",
         "top": "Top-Konnektoren"
-      },
-      "tabs": {
-        "builtin": "Eingebaut",
-        "custom": "Benutzerdefiniert"
       },
       "title": "Integrationen",
       "unnamedAgent": "Unbenannt"
@@ -3398,7 +3383,6 @@
       "edit": {
         "title": "Benutzerdefinierte Integration bearbeiten"
       },
-      "emptyAdmin": "Noch keine benutzerdefinierten Integrationen. Erstellen Sie eine, um eine API zu registrieren, die jedes Mitglied verwenden kann.",
       "emptyMember": "Ihre Organisation hat noch keine benutzerdefinierten Integrationen registriert.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",

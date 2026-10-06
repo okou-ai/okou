@@ -1822,8 +1822,6 @@
       "add": "Add {{connectorName}}",
       "addConnectors": "Add connectors",
       "authorized": "{{connectorName}} connected and authorized for {{agentName}}",
-      "available_one": "Available connectors to connect ({{count}})",
-      "available_other": "Available connectors to connect ({{count}})",
       "back": "Back",
       "configurePermissions": "Configure {{connectorName}} permissions",
       "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
@@ -2960,7 +2958,6 @@
     "delete": "Delete Cloudflare Access",
     "deleteHelp": "Delete this Cloudflare Access? Its stored Service Token cannot be recovered. Your own hosts must be rebound first.",
     "deleteUncertain": "We could not confirm the deletion. Review the latest impact before trying again.",
-    "description": "Access protected applications with Cloudflare Access Service Tokens.",
     "edit": "Edit Cloudflare Access",
     "failed": "Could not save the Cloudflare Access change. Try again.",
     "forbidden": "Only organization admins can change shared Cloudflare Access.",
@@ -2976,7 +2973,6 @@
     "latest": "Latest saved settings",
     "loadFailed": "Could not load Cloudflare Access. Try again.",
     "loading": "Loading Cloudflare Access…",
-    "manage": "Manage Cloudflare Access",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "This Cloudflare Access is no longer available. Select another one or create one.",
     "name": "Name",
@@ -3182,7 +3178,6 @@
           "menu": "Sales and business"
         }
       },
-      "categoriesAria": "Connector categories",
       "description": "Connect third-party services for your agents to use.",
       "descriptionWithCount": "Connect {{value}} services for your agents to use.",
       "directory": {
@@ -3201,8 +3196,6 @@
       "empty": {
         "agent": "No connectors for this agent",
         "connected": "No connected connectors",
-        "matching": "{{message}} matching \"{{search}}\"",
-        "notConnected": "No connectors left to connect",
         "search": "No connectors matching \"{{search}}\"",
         "unshared": "Every connector is shared with an agent"
       },
@@ -3212,14 +3205,10 @@
         "all": "All",
         "allAgents": "All agents",
         "aria": "Filter connectors",
-        "connected": "Connected",
-        "notConnected": "Not connected",
-        "status": "Status",
         "unshared": "Not shared with any agent"
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Connector icon unavailable",
-      "newConnector": "New connector",
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
       "remoteAccess": "Remote access",
@@ -3246,10 +3235,6 @@
         "seeMore_one": "See {{names}} and {{count}} more",
         "seeMore_other": "See {{names}} and {{count}} more",
         "top": "Top connectors"
-      },
-      "tabs": {
-        "builtin": "Built-in",
-        "custom": "Custom"
       },
       "title": "Connectors",
       "unnamedAgent": "Unnamed"
@@ -3390,7 +3375,6 @@
       "edit": {
         "title": "Edit custom connector"
       },
-      "emptyAdmin": "No custom connectors yet. Create one to register an API for every member to use.",
       "emptyMember": "Your org hasn't registered any custom connectors yet.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",

@@ -1851,9 +1851,6 @@
       "add": "Aggiungi {{connectorName}}",
       "addConnectors": "Aggiungi connettori",
       "authorized": "{{connectorName}} connesso e autorizzato per {{agentName}}",
-      "available_one": "Connettori disponibili per la connessione ({{count}})",
-      "available_many": "Connettori disponibili per la connessione ({{count}})",
-      "available_other": "Connettori disponibili per la connessione ({{count}})",
       "back": "Indietro",
       "configurePermissions": "Configura le autorizzazioni {{connectorName}}",
       "customAuthorizeDescription": "Esamina, connetti e autorizza questo connettore personalizzato per l'agente.",
@@ -3010,7 +3007,6 @@
     "delete": "Elimina Cloudflare Access",
     "deleteHelp": "Eliminare questo Cloudflare Access? Il Service Token salvato non sarà recuperabile. Prima ricollega i tuoi host a un'altra configurazione.",
     "deleteUncertain": "Impossibile confermare l'eliminazione. Controlla l'impatto aggiornato prima di riprovare.",
-    "description": "Accedi alle applicazioni protette con i token di servizio Cloudflare Access.",
     "edit": "Modifica Cloudflare Access",
     "failed": "Impossibile salvare la modifica Cloudflare Access. Riprova.",
     "forbidden": "Solo gli amministratori dell'organizzazione possono modificare Cloudflare Access condiviso.",
@@ -3027,7 +3023,6 @@
     "latest": "Ultime impostazioni salvate",
     "loadFailed": "Impossibile caricare Cloudflare Access. Riprova.",
     "loading": "Caricamento di Cloudflare Access…",
-    "manage": "Gestisci Cloudflare Access",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "Questo Cloudflare Access non è più disponibile. Selezionane un altro o creane uno.",
     "name": "Nome",
@@ -3247,7 +3242,6 @@
           "menu": "Vendite e affari"
         }
       },
-      "categoriesAria": "Categorie di connettori",
       "description": "Connetti servizi di terze parti affinché i tuoi agenti possano utilizzarli.",
       "descriptionWithCount": "Connetti {{value}} servizi affinché i tuoi agenti possano utilizzarli.",
       "directory": {
@@ -3266,8 +3260,6 @@
       "empty": {
         "agent": "Nessun connettore per questo agente",
         "connected": "Nessun connettore collegato",
-        "matching": "{{message}} corrispondente a \"{{search}}\"",
-        "notConnected": "Nessun connettore rimasto da collegare",
         "search": "Nessun connettore corrispondente a \"{{search}}\"",
         "unshared": "Ogni connettore è condiviso con un agente"
       },
@@ -3277,14 +3269,10 @@
         "all": "Tutto",
         "allAgents": "Tutti gli agenti",
         "aria": "Connettori filtro",
-        "connected": "Connesso",
-        "notConnected": "Non connesso",
-        "status": "Stato",
         "unshared": "Non condiviso con nessun agente"
       },
       "filterWith": "Filtro: {{category}}",
       "iconUnavailable": "Icona del connettore non disponibile",
-      "newConnector": "Nuovo connettore",
       "noConnectorsAlt": "Nessun connettore",
       "otherCategory": "Altro",
       "remoteAccess": "Accesso remoto",
@@ -3312,10 +3300,6 @@
         "seeMore_many": "Vedi {{names}} e altri {{count}}",
         "seeMore_other": "Vedi {{names}} e altri {{count}}",
         "top": "Connettori principali"
-      },
-      "tabs": {
-        "builtin": "Integrato",
-        "custom": "Personalizzato"
       },
       "title": "Connettori",
       "unnamedAgent": "Senza nome"
@@ -3456,7 +3440,6 @@
       "edit": {
         "title": "Modifica connettore personalizzato"
       },
-      "emptyAdmin": "Nessun connettore personalizzato ancora. Creane uno per registrare un API affinché ogni membro possa utilizzarlo.",
       "emptyMember": "La tua organizzazione non ha ancora registrato alcun connettore personalizzato.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",

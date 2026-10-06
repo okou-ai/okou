@@ -407,12 +407,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
   },
-  [FeatureSwitchKey.ConnectorDirectory]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Shelf-based connector browsing with Discover, Connected, Remote control, Private network, and Custom scopes on the connectors page, plus connector discovery in the chat composer.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatThreadHeaderActions]: {
     maintainer: "lancy@okou.ai",
     description:
