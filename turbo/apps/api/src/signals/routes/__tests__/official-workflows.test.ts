@@ -1797,13 +1797,7 @@ async function installIdleOfficialWorkflowScenario() {
   );
   onTestFinished(async () => {
     installCatalogStorageFixture();
-    const createdRuns = await runs.listAgentRuns(actor, {
-      agent: agentId,
-      limit: 100,
-    });
-    for (const run of createdRuns.runs) {
-      await runs.requestCancelRun(actor, run.id, [200, 400]);
-    }
+    await cancelAgentRunsThroughLogs(actor, agentId);
     await flushWaitUntilForTest();
   });
   runs.configureRunnerGroup();
