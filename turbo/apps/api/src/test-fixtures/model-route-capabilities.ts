@@ -31,6 +31,31 @@ export async function updateModelRouteCapabilitiesFixture(args: {
   }
 }
 
+/** Operators disable a route after capture and restore its exact enabled state. */
+export async function disableModelRoutesFixture(
+  model: string,
+): Promise<() => Promise<void>> {
+  const previous = await db()
+    .select({ id: modelRoutes.id, enabled: modelRoutes.enabled })
+    .from(modelRoutes)
+    .where(eq(modelRoutes.model, model));
+  if (previous.length === 0) {
+    throw new Error("Expected catalog routes to disable");
+  }
+  await db()
+    .update(modelRoutes)
+    .set({ enabled: false })
+    .where(eq(modelRoutes.model, model));
+  return async () => {
+    for (const route of previous) {
+      await db()
+        .update(modelRoutes)
+        .set({ enabled: route.enabled })
+        .where(eq(modelRoutes.id, route.id));
+    }
+  };
+}
+
 /**
  * Operators change a model's free-plan Built-in policy directly in the
  * database. Returns the restore of the previous value.

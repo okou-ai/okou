@@ -80,9 +80,19 @@ function unavailablePersonalPin(
   catalog: ModelCatalog,
   selectedModel: string | null,
 ): ModelFirstPin | null {
+  const requestedModel = selectedModel
+    ? catalogModelForSelectedId(catalog, selectedModel)
+    : null;
+  const resolution = requestedModel
+    ? resolveCatalogModel(catalog, requestedModel)
+    : null;
+  const canonicalModel =
+    resolution && resolution.kind !== "unknown"
+      ? resolution.resolvedModel
+      : null;
   const route = catalog.routes.find((candidate) => {
     return (
-      candidate.model === selectedModel &&
+      candidate.model === canonicalModel &&
       candidate.providerType === candidate.subscriptionType &&
       candidate.concreteProviderType === candidate.subscriptionType &&
       (candidate.subscriptionType === "codex-oauth-token" ||
@@ -94,7 +104,7 @@ function unavailablePersonalPin(
         modelProviderId: null,
         modelProviderType: route.providerType,
         modelProviderCredentialScope: "member",
-        selectedModel,
+        selectedModel: canonicalModel,
       }
     : null;
 }
@@ -271,21 +281,11 @@ export const resolveModelSelectionPin$ = command(
             "Select Auto or a model from your connected personal subscription",
           );
     }
-    const requestedCatalogModel = catalogModelForSelectedId(
-      facts.catalog,
-      params.modelSelection.selectedModel,
-    );
-    const resolution = requestedCatalogModel
-      ? resolveCatalogModel(facts.catalog, requestedCatalogModel)
-      : null;
     // Canonical personal metadata preserves ownership even when its route is disabled;
     // classification is not permission to execute that route.
     const unavailable = unavailablePersonalPin(
       facts.catalog,
-      selectedModel ??
-        (resolution && resolution.kind !== "unknown"
-          ? resolution.resolvedModel
-          : null),
+      params.modelSelection.selectedModel,
     );
     if (unavailable) {
       // Preserve the personal credential source, including replacement-chain aliases,
@@ -339,7 +339,10 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   if (personal) {
     return subscriptionPin(personal);
   }
-  return selectedModel === params.selectedModel
-    ? (unavailablePersonalPin(params.catalog, selectedModel) ?? autoModelPin())
-    : autoModelPin();
+  // Queued inputs can lose route authority after capture. Preserve canonical
+  // ownership across disabling and replacement; never settle them against Auto.
+  return (
+    unavailablePersonalPin(params.catalog, params.selectedModel) ??
+    autoModelPin()
+  );
 }

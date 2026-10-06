@@ -4,7 +4,7 @@ import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/cont
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { aroundEach, it, describe, beforeEach } from "vitest";
+import { aroundEach, it, describe, beforeEach, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -17,6 +17,7 @@ import {
   setWorkflowQueueEventCreatedAtFixture,
 } from "../../../test-fixtures/chat-events";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
+import { disableModelRoutesFixture } from "../../../test-fixtures/model-route-capabilities";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
@@ -1449,58 +1450,71 @@ describe("workflow queue", () => {
     );
   });
 
-  it("re-arms a recurring schedule whose queued tick the pick rejects", async () => {
-    mockNow(Date.UTC(2020, 0, 1));
-    const scenario = await setup();
-    const webhookAutomation = await createWebhookAutomation(scenario);
-    const busyRunId = await expectAcceptedRunId(
-      await postWorkflowWebhook(webhookAutomation, "busy"),
-      webhookAutomation.threadId,
-    );
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: { schedule: { type: "loop", intervalSeconds: 3600 } },
-      }),
-      [201],
-    );
-    expect(created.body.chatThreadId).toBe(webhookAutomation.threadId);
-    if (!created.body.nextRunAt) {
-      throw new Error("Expected a loop automation with a next run");
-    }
-    const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
-    mockNow(firedAt);
-    await executeDueWorkflowAutomations(created.body.id);
-    await expect(
-      pendingAutomationEvents(webhookAutomation.threadId),
-    ).resolves.toHaveLength(1);
+  it.each(["disconnected", "disabled"] as const)(
+    "re-arms a recurring schedule whose %s personal route the pick rejects",
+    async (routeState) => {
+      mockNow(Date.UTC(2020, 0, 1));
+      const scenario = await setup();
+      const webhookAutomation = await createWebhookAutomation(scenario);
+      const busyRunId = await expectAcceptedRunId(
+        await postWorkflowWebhook(webhookAutomation, "busy"),
+        webhookAutomation.threadId,
+      );
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId: scenario.workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+        }),
+        [201],
+      );
+      expect(created.body.chatThreadId).toBe(webhookAutomation.threadId);
+      if (!created.body.nextRunAt) {
+        throw new Error("Expected a loop automation with a next run");
+      }
+      const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
+      mockNow(firedAt);
+      await executeDueWorkflowAutomations(created.body.id);
+      await expect(
+        pendingAutomationEvents(webhookAutomation.threadId),
+      ).resolves.toHaveLength(1);
 
-    await accept(
-      modelProvidersByTypeClient().delete({
-        headers: authHeaders(),
-        params: { type: "claude-code-oauth-token" },
-      }),
-      [204],
-    );
-    await runsApi.requestCancelRun(scenario.actor, busyRunId, [200]);
-    await flushWaitUntilForTest();
+      // Auto remains available: a personal route losing authority must not
+      // silently execute against the platform account.
+      await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
+      if (routeState === "disabled") {
+        onTestFinished(await disableModelRoutesFixture("claude-fable-5-1"));
+      } else {
+        await accept(
+          modelProvidersByTypeClient().delete({
+            headers: authHeaders(),
+            params: { type: "claude-code-oauth-token" },
+          }),
+          [204],
+        );
+      }
+      await runsApi.requestCancelRun(scenario.actor, busyRunId, [200]);
+      await flushWaitUntilForTest();
 
-    // The tick was enqueued, then rejected by the pick: it shows in the
-    // thread and the schedule moves on to its next occurrence.
-    const events = await wf.readThreadEvents(webhookAutomation.threadId);
-    expect(events).toContainEqual(
-      expect.objectContaining({ eventType: "input.rejected" }),
-    );
-    await expect(
-      pendingAutomationEvents(webhookAutomation.threadId),
-    ).resolves.toHaveLength(0);
-    const automation = await wf.readAutomation(created.body.id);
-    expect(automation.enabled).toBeTruthy();
-    expect(automation.nextRunAt).toBe(
-      new Date(firedAt + 3600 * 1000).toISOString(),
-    );
-  });
+      // The tick was enqueued, then rejected by the pick: it shows in the
+      // thread and the schedule moves on to its next occurrence.
+      const events = await wf.readThreadEvents(webhookAutomation.threadId);
+      expect(events).toContainEqual(
+        expect.objectContaining({ eventType: "input.rejected" }),
+      );
+      await expect(
+        pendingAutomationEvents(webhookAutomation.threadId),
+      ).resolves.toHaveLength(0);
+      await expect(
+        workflowRunIds(webhookAutomation.threadId),
+      ).resolves.toStrictEqual([busyRunId]);
+      const automation = await wf.readAutomation(created.body.id);
+      expect(automation.enabled).toBeTruthy();
+      expect(automation.nextRunAt).toBe(
+        new Date(firedAt + 3600 * 1000).toISOString(),
+      );
+    },
+  );
 
   it("rejects a picked schedule tick after an infrastructure failure and settles its schedule", async () => {
     mockNow(Date.UTC(2020, 0, 1));
