@@ -54,7 +54,7 @@ import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { BootstrapAgent } from "./agent-data.service";
 
 import {
-  loadConnectorRuntimeSelection,
+  createConnectorRuntimeSelection,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
@@ -719,22 +719,6 @@ export function createEagerConnectorCredentialContext(
   return { credentials$ };
 }
 
-function bootstrapCatalogRequest(selection: AgentConnectorSelection) {
-  const scope = agentConnectorScopeFromRows({
-    connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-      return { connectorSlug };
-    }),
-    customConnectorRows: selection.customConnectors,
-  });
-  return scope.allowedConnectorSlugs.length === 0 &&
-    scope.allowedCustomConnectorIds.length === 0
-    ? null
-    : {
-        runtimeConnectorSlugs: scope.allowedConnectorSlugs,
-        metadataConnectorSlugs: catalogMetadataSlugs(selection),
-      };
-}
-
 const bootstrapVariablesDecoder = zodDriverValueDecoder(
   z.array(
     z.object({
@@ -1009,17 +993,26 @@ function createConnectorContextGroups(
     ]);
     return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
   });
-  const catalog$ = computed(
-    async (get): Promise<ConnectorRuntimeSelection | null> => {
-      const requested = bootstrapCatalogRequest(await get(connectorSelection$));
-      return requested
-        ? await loadConnectorRuntimeSelection(get(db$), {
-            requestedConnectorSlugs: requested.runtimeConnectorSlugs,
-            metadataConnectorSlugs: requested.metadataConnectorSlugs,
-          })
-        : null;
-    },
-  );
+  const requested$ = computed(async (get) => {
+    const selection = await get(connectorSelection$);
+    const scope = agentConnectorScopeFromRows({
+      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
+        return { connectorSlug };
+      }),
+      customConnectorRows: selection.customConnectors,
+    });
+    if (
+      scope.allowedConnectorSlugs.length === 0 &&
+      scope.allowedCustomConnectorIds.length === 0
+    ) {
+      return null;
+    }
+    return {
+      runtimeConnectorSlugs: scope.allowedConnectorSlugs,
+      metadataConnectorSlugs: catalogMetadataSlugs(selection),
+    };
+  });
+  const catalog$ = createConnectorRuntimeSelection(requested$);
   const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
     const snapshot = await get(connectorSnapshot$);
     return {
