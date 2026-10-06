@@ -1,3 +1,8 @@
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { randomUUID } from "node:crypto";
 import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
@@ -23,14 +28,14 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const routeMocks = createRouteMocks(context);
-const endpoint = "https://openrouter.ai/api/v1/chat/completions";
+const endpoint = VERTEX_TEXT_URL;
 const privateTitle = "Unshared confidential acquisition title";
 const privateContent = "Unselected confidential acquisition message";
 const providerSecret = "Private provider response and credential details";
 const selectedContent = "Publish the agreed launch checklist";
 
 beforeEach(() => {
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 });
 
 function client(rethrowErrors = false, signal = context.signal) {
@@ -49,13 +54,21 @@ function authenticate(actor: ApiTestUser) {
 
 function completion(content = "**Launch checklist**", finishReason = "stop") {
   return HttpResponse.json({
-    choices: [
+    candidates: [
       {
-        finish_reason: finishReason,
-        ...(finishReason === "length"
-          ? { native_finish_reason: "MAX_TOKENS" }
-          : {}),
-        message: { content },
+        finishReason:
+          finishReason === "length"
+            ? "MAX_TOKENS"
+            : finishReason === "stop"
+              ? "STOP"
+              : finishReason,
+        content: {
+          parts: [
+            {
+              text: content,
+            },
+          ],
+        },
       },
     ],
   });
@@ -209,11 +222,11 @@ describe("optional shared-thread titles", () => {
     "creates one private-content-safe snapshot with $name",
     async ({ response, title }) => {
       const fixture = await prepareShare();
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       const requests: unknown[] = [];
       server.use(
         http.post(endpoint, async ({ request }) => {
-          requests.push(await request.json());
+          requests.push(vertexTextRequest(await request.json(), request.url));
           return response();
         }),
       );
@@ -226,9 +239,11 @@ describe("optional shared-thread titles", () => {
       await expectSharedSnapshot(fixture, created.body.id, title);
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({
-        model: "google/gemini-3.1-flash-lite",
-        max_tokens: 2048,
-        reasoning: { effort: "minimal" },
+        model: "gemini-3.1-flash-lite",
+        generationConfig: {
+          maxOutputTokens: 2048,
+          thinkingConfig: { thinkingLevel: "MINIMAL" },
+        },
       });
       const prompt = JSON.stringify(requests[0]);
       expect(prompt).toContain(selectedContent);
@@ -341,7 +356,7 @@ describe("optional shared-thread titles", () => {
     "preserves a valid share when telemetry %s fails",
     async (mode) => {
       const fixture = await prepareShare();
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       server.use(
         http.post(endpoint, () => {
           return new HttpResponse(null, { status: 429 });
@@ -374,7 +389,7 @@ describe("optional shared-thread titles", () => {
     const controller = new AbortController();
     const reason = new DOMException("Caller cancelled", "AbortError");
     controller.abort(reason);
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     const requests: string[] = [];
     server.use(
       http.post(endpoint, ({ request }) => {
@@ -409,7 +424,7 @@ describe("optional shared-thread titles", () => {
       const entered = createDeferredPromise<AbortSignal>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       const returned = createDeferredPromise<void>(context.signal);
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+      mockGoogleText();
       server.use(
         http.post(endpoint, async ({ request }) => {
           entered.resolve(request.signal);
@@ -462,7 +477,7 @@ describe("optional shared-thread titles", () => {
 
   it("keeps authentication, ownership and selection failures outside optional generation", async () => {
     const fixture = await prepareShare();
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     await accept(
       client().create({ ...requestBody(fixture), headers: {} }),
       [401],
@@ -497,7 +512,7 @@ describe("optional shared-thread titles", () => {
 
   it("rejects oversized selections before title generation", async () => {
     const fixture = await prepareShare("A".repeat(2 * 1024 * 1024));
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     const response = await accept(client().create(requestBody(fixture)), [413]);
     expect(response.body.error.code).toBe("SHARED_THREAD_TOO_LARGE");
     await expectNoShare(fixture);
@@ -515,7 +530,7 @@ describe("optional shared-thread titles", () => {
       context.signal,
     );
     onTestFinished(release);
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     server.use(
       http.post(endpoint, () => {
         return new HttpResponse(null, { status: 429 });

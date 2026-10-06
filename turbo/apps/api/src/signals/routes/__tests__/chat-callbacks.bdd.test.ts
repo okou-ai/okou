@@ -631,7 +631,7 @@ describe("CHAT-02: completed chat callback", () => {
     const longFollowupPrompt =
       "Can you draft a new 90-minute workshop outline that focuses on the event-driven workflow of an AI Lead Operations Team and includes hands-on exercises?";
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
         titlePrompts.push(body.messages[1]?.content ?? "");
@@ -1019,7 +1019,7 @@ describe("CHAT-02: completed chat callback", () => {
     const followupSystemPrompts: string[] = [];
     const followupPrompts: string[] = [];
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
         titlePrompts.push(body.messages[1]?.content ?? "");
@@ -1138,7 +1138,7 @@ describe("CHAT-02: completed chat callback", () => {
 
     let followupRequests = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("recommended follow-up messages")) {
         followupRequests += 1;
@@ -1183,7 +1183,7 @@ describe("CHAT-02: completed chat callback", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("recommended follow-up messages")) {
         return JSON.stringify([
@@ -1294,7 +1294,7 @@ describe("CHAT-02: completed chat callback", () => {
       throw new Error("Expected an organization");
     }
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
       if (
         ![
@@ -1384,7 +1384,7 @@ describe("CHAT-02: completed chat callback", () => {
   ])("omits recommended follow-ups for $name", async ({ response }) => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
       if (
         system.includes(
@@ -1473,7 +1473,7 @@ describe("CHAT-02: completed chat callback", () => {
   ])("omits recommended follow-ups after $name", async ({ response }) => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
       if (
         system.includes(
@@ -1520,7 +1520,7 @@ describe("CHAT-02: completed chat callback", () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     // PostgreSQL rejects NUL in text. This induces a real write failure using
     // a provider response, without DB mocks or changing shared schema/state.
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
       if (
         system.includes("Generate a short, descriptive title") ||
@@ -1569,7 +1569,7 @@ describe("CHAT-02: completed chat callback", () => {
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions(() => {
+    chatCallbacks.mockVertexCompletions(() => {
       return new HttpResponse(null, { status: 503 });
     });
     context.mocks.webpush.sendNotification.mockRejectedValue(
@@ -1685,7 +1685,7 @@ describe("CHAT-02: completed chat callback", () => {
         authorization: `Bearer ${externalClaim.sandboxToken}`,
       };
       mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-      chatCallbacks.mockOpenRouterCompletions((body) => {
+      chatCallbacks.mockVertexCompletions((body) => {
         if (
           body.messages[0]?.content.includes("recommended follow-up messages")
         ) {
@@ -1929,17 +1929,23 @@ describe("CHAT-02: completed chat callback", () => {
 
     const requestsBySite = new Map<
       string,
-      { model: string; max_tokens?: number; reasoning?: { effort: string } }
+      {
+        model: string;
+        generationConfig: {
+          maxOutputTokens: number;
+          thinkingConfig: { thinkingLevel: string };
+        };
+      }
     >();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       const record = {
         model: body.model,
-        ...(body.max_tokens === undefined
-          ? {}
-          : { max_tokens: body.max_tokens }),
-        ...(body.reasoning === undefined ? {} : { reasoning: body.reasoning }),
+        generationConfig: {
+          maxOutputTokens: body.generationConfig.maxOutputTokens,
+          thinkingConfig: body.generationConfig.thinkingConfig,
+        },
       };
       if (systemContent.includes("Generate a short, descriptive title")) {
         requestsBySite.set("title", record);
@@ -1985,23 +1991,22 @@ describe("CHAT-02: completed chat callback", () => {
       }),
     ).toBeTruthy();
 
-    expect(requestsBySite.get("title")).toStrictEqual({
-      model: "google/gemini-3.1-flash-lite",
-      max_tokens: 2048,
-      reasoning: { effort: "minimal" },
-    });
-
-    // Reasoning tokens are drawn from the same budget as the answer, so a
-    // budget sized for a non-reasoning model starves the answer entirely. This
-    // model cannot disable thinking and "low" is already its floor, so the
-    // shared ceiling is the only lever that keeps the answer from being lost.
-    for (const site of ["followups", "notification", "runSummary"]) {
+    for (const site of ["title", "notification", "runSummary"]) {
       expect(requestsBySite.get(site)).toStrictEqual({
-        model: "google/gemini-3.8-flash",
-        max_tokens: 2048,
-        reasoning: { effort: "low" },
+        model: "gemini-3.1-flash-lite",
+        generationConfig: {
+          maxOutputTokens: 2048,
+          thinkingConfig: { thinkingLevel: "MINIMAL" },
+        },
       });
     }
+    expect(requestsBySite.get("followups")).toStrictEqual({
+      model: "gemini-3.8-flash",
+      generationConfig: {
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingLevel: "LOW" },
+      },
+    });
   });
 
   it("pushes a token-limited notification summary instead of discarding it", async () => {
@@ -2011,7 +2016,7 @@ describe("CHAT-02: completed chat callback", () => {
     const truncatedSummary = "The task finished by writing the migration pl";
     let notificationRequests = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("one short notification sentence")) {
         notificationRequests += 1;
@@ -2060,7 +2065,7 @@ describe("CHAT-02: completed chat callback", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("one short notification sentence")) {
         // Non-empty for the provider, nothing once the Markdown rule is
@@ -2114,7 +2119,7 @@ describe("CHAT-02: completed chat callback", () => {
 
     let titleRequests = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
         titleRequests += 1;
@@ -2149,7 +2154,7 @@ describe("CHAT-02: completed chat callback", () => {
 
     let followupRequests = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("recommended follow-up messages")) {
         followupRequests += 1;
@@ -3347,7 +3352,7 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     const beforeTitle = await readThreadTitleFromEvents(actor, first.threadId);
     expect(beforeTitle).toBeNull();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterFailure();
+    chatCallbacks.mockVertexFailure();
     const fourth = await startChatRun(actor, {
       agentId,
       threadId: first.threadId,
@@ -5229,7 +5234,7 @@ describe("CHAT-02: auto-send after failures", () => {
     });
     const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("recommended follow-up messages")) {
         followupRequests += 1;
@@ -5695,7 +5700,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
 
     const titlePrompts: string[] = [];
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
         titlePrompts.push(body.messages[1]?.content ?? "");

@@ -26,14 +26,17 @@ import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { publishHomeTaskRecommendationsChangedSafely } from "../external/realtime";
 import {
-  AUXILIARY_TEXT_MAX_TOKENS,
-  FAST_PATH_MODEL,
   generateDecisions,
-  generateTextWithUsage,
   isLlmConfigured,
   openRouterTokenCounts,
 } from "../external/openrouter";
 import { onRejection, safeJsonParse, settleIncludingAbort } from "../utils";
+import { gcpLlmConfiguration } from "../external/gcp-llm-auth";
+import { VERTEX_TEXT_MODEL, type VertexModel } from "../external/vertex-models";
+import {
+  VERTEX_AUXILIARY_MAX_TOKENS,
+  generateVertexTextWithUsage,
+} from "../external/vertex-text";
 import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
@@ -485,7 +488,7 @@ function parseJsonArray(text: string): unknown {
 
 async function generateJsonArray(
   request: {
-    readonly model: string;
+    readonly model: VertexModel;
     readonly system: string;
     readonly user: string;
     readonly maxTokens: number;
@@ -493,14 +496,14 @@ async function generateJsonArray(
   },
   signal: AbortSignal,
 ): Promise<unknown> {
-  const generation = await generateTextWithUsage(
+  const generation = await generateVertexTextWithUsage(
     request.model,
     [
       { role: "system", content: request.system },
       { role: "user", content: request.user },
     ],
     request.maxTokens,
-    { reasoning: { effort: "low" }, temperature: 0.3 },
+    { temperature: 0.3 },
     signal,
   );
   if (generation === null) {
@@ -508,7 +511,7 @@ async function generateJsonArray(
   }
   request.record({
     truncated: generation.truncated === true,
-    tokens: openRouterTokenCounts(generation.usage),
+    tokens: generation.tokens,
   });
   return parseJsonArray(generation.text);
 }
@@ -702,7 +705,7 @@ async function writeCards(
 ): Promise<readonly HomeTaskRecommendation[]> {
   const value = await generateJsonArray(
     {
-      model: FAST_PATH_MODEL,
+      model: VERTEX_TEXT_MODEL,
       system: writerSystemPrompt(language),
       user: JSON.stringify({
         intents: candidates.map((candidate) => {
@@ -716,7 +719,7 @@ async function writeCards(
           };
         }),
       }),
-      maxTokens: AUXILIARY_TEXT_MAX_TOKENS,
+      maxTokens: VERTEX_AUXILIARY_MAX_TOKENS,
       record,
     },
     signal,
@@ -1029,7 +1032,8 @@ export const refreshDueHomeTaskRecommendations$ = command(
   ): Promise<HomeTaskRecommendationCronResult> => {
     const db = set(writeDb$);
 
-    if (!isLlmConfigured()) {
+    // Candidate generation uses Vertex; retained Jev scoring still needs OpenRouter.
+    if (!gcpLlmConfiguration() || !isLlmConfigured()) {
       return {
         success: true,
         scanned: 0,

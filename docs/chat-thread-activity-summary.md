@@ -75,8 +75,9 @@ additionally redacted.
 - The model receives the run's prompt as a 700-character excerpt plus the
   retained activity entries. The summary never reads `chat_threads` or
   `chat_events`.
-- Reuse `FAST_PATH_MODEL` and `generateText`, a reasoning-inclusive 1024-token
-  budget with low reasoning, and a 10-second provider deadline, all through the
+- Use Gemini 3.1 Flash-Lite through native `generateVertexText`, a
+  reasoning-inclusive 1024-token budget with MINIMAL thinking and a 10-second
+  provider deadline, all through the
   shared `generateAuxiliary` boundary that every other optional generation uses.
   No request means no new summarizer call. An unconfigured, rejected or failed
   generation keeps the last phrase or `null`; it never retries inside the request.

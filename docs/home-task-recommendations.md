@@ -32,8 +32,8 @@ One refresh has three deliberately separate stages.
    actionability levels plus the two `Noul` probabilities. Candidates must pass
    both `HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY` and the Jev confidence
    gate.
-3. **Write.** `FAST_PATH_MODEL` receives only accepted intents and writes the
-   localized title, prompt, and rationale. For a Workflow task, the server
+3. **Write.** Gemini 3.1 Flash-Lite on native Vertex AI receives only accepted
+   intents and writes the localized title, prompt, and rationale. For a Workflow task, the server
    appends bounded completed-request examples to the prompt before storing it.
 
 The split is the boundary. No prose model selects candidates or scores them;

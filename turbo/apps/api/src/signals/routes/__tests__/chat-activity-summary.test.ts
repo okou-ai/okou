@@ -1,3 +1,8 @@
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
@@ -28,11 +33,6 @@ const chat = createChatFilesBddApi(context);
 const callbacks = createChatCallbacksApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
-const completionBody = z.object({
-  model: z.string(),
-  max_tokens: z.number(),
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
-});
 const evidenceSchema = z.object({
   messages: z.array(z.object({ role: z.string(), content: z.string() })),
   activity: z.array(
@@ -78,7 +78,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   callbacks.disableVapid();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   const group = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   const [{ providerId }, agent] = await Promise.all([
@@ -127,42 +127,52 @@ function provider(
   },
 ) {
   const inputs: Evidence[] = [];
-  mockOptionalEnv("OPENROUTER_API_KEY", "activity-test-key");
+  mockGoogleText();
   server.use(
-    http.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      async ({ request: upstream }) => {
-        const body = completionBody.parse(await upstream.json());
-        if (
-          !body.messages[0]?.content.startsWith(
-            "Write three short, distinct, user-visible progress messages",
-          )
-        ) {
-          return HttpResponse.json({
-            choices: [
+    http.post(VERTEX_TEXT_URL, async ({ request: upstream }) => {
+      const body = vertexTextRequest(await upstream.json(), upstream.url);
+      if (
+        !body.messages[0]?.content.startsWith(
+          "Write three short, distinct, user-visible progress messages",
+        )
+      ) {
+        return HttpResponse.json({
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: "Existing opening copy",
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      expect(body.model).toBe("gemini-3.1-flash-lite");
+      expect(body.generationConfig.maxOutputTokens).toBe(1024);
+      const input = evidenceSchema.parse(JSON.parse(body.messages[1]!.content));
+      inputs.push(input);
+      const output = await reply(input, inputs.length);
+      return typeof output === "string"
+        ? HttpResponse.json({
+            candidates: [
               {
-                finish_reason: "stop",
-                message: { content: "Existing opening copy" },
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: output,
+                    },
+                  ],
+                },
               },
             ],
-          });
-        }
-        expect(body.model).toBe("google/gemini-3.8-flash");
-        expect(body.max_tokens).toBe(1024);
-        const input = evidenceSchema.parse(
-          JSON.parse(body.messages[1]!.content),
-        );
-        inputs.push(input);
-        const output = await reply(input, inputs.length);
-        return typeof output === "string"
-          ? HttpResponse.json({
-              choices: [
-                { finish_reason: "stop", message: { content: output } },
-              ],
-            })
-          : output;
-      },
-    ),
+          })
+        : output;
+    }),
   );
   return inputs;
 }
@@ -199,13 +209,21 @@ const privatePayload = "private-provider-payload";
 
 function completion(content: unknown, finishReason = "stop") {
   return HttpResponse.json({
-    choices: [
+    candidates: [
       {
-        finish_reason: finishReason,
-        ...(finishReason === "length"
-          ? { native_finish_reason: "MAX_TOKENS" }
-          : {}),
-        message: { content },
+        finishReason:
+          finishReason === "length"
+            ? "MAX_TOKENS"
+            : finishReason === "stop"
+              ? "STOP"
+              : finishReason,
+        content: {
+          parts: [
+            {
+              text: content,
+            },
+          ],
+        },
       },
     ],
   });
@@ -626,7 +644,7 @@ describe("thread activity summary", () => {
     // New evidence plus an elapsed attempt interval make a fresh attempt legal.
     await deliver(f, [tool(0)]);
     await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
     const degraded = await summarize(f.actor, f.run);
     // The attempt still claims, writes and rereads, so the caller degrades to
     // the stored phrase instead of to an empty batch.
@@ -889,9 +907,9 @@ describe("thread activity summary", () => {
       // this client wraps as a synthetic 502; the reason decides, not the status.
       return index === 1
         ? HttpResponse.json({
-            choices: [
+            candidates: [
               {
-                finish_reason: "error",
+                finishReason: "ERROR",
                 error: {
                   code: "UNAVAILABLE",
                   message: "PRIVATE_PROVIDER_BODY",

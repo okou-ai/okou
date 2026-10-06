@@ -779,7 +779,7 @@ describe("archived chat event consumers", () => {
     );
     await archiveAndRetain(fixture.threadId, [eventId]);
     mockOptionalEnv("OPENROUTER_API_KEY", "test-sharing-key");
-    chatCallbacks.mockOpenRouterCompletions(() => {
+    chatCallbacks.mockVertexCompletions(() => {
       return new HttpResponse(null, { status: 503 });
     });
     const created = await accept(
@@ -869,7 +869,7 @@ describe("archived chat event consumers", () => {
     ).toStrictEqual([invisible.replacementId]);
 
     mockOptionalEnv("OPENROUTER_API_KEY", "archive-sharing-key");
-    chatCallbacks.mockOpenRouterCompletions(() => {
+    chatCallbacks.mockVertexCompletions(() => {
       return "Archived selection";
     });
     const created = await accept(
@@ -941,7 +941,7 @@ describe("archived chat event consumers", () => {
     );
 
     mockOptionalEnv("OPENROUTER_API_KEY", "hot-sharing-race-key");
-    chatCallbacks.mockOpenRouterCompletions(() => {
+    chatCallbacks.mockVertexCompletions(() => {
       return "Hot selection";
     });
     const created = await withChatEventDeletedAfterReadFixture({
@@ -1006,7 +1006,7 @@ describe("archived chat event consumers", () => {
       context.signal,
     );
     mockOptionalEnv("OPENROUTER_API_KEY", "failed-sharing-race-key");
-    chatCallbacks.mockOpenRouterCompletions(() => {
+    chatCallbacks.mockVertexCompletions(() => {
       return "Recovered selection";
     });
     const create = () => {
