@@ -3,8 +3,6 @@ import { randomUUID } from "node:crypto";
 import {
   connectorCatalogContract,
   isOneClickConnectorGrantKind,
-  type PublicConnectorCatalogListResponse,
-  type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -72,57 +70,6 @@ async function deleteFeatureSwitches(
 
 function currentSecond(): number {
   return Math.floor(now() / 1000);
-}
-
-function assertCategoryMetadataMatchesVisibleConnectors(
-  body:
-    | PublicConnectorCatalogListResponse
-    | PublicConnectorCatalogStatusResponse,
-): void {
-  const metadata = body.categoryMetadata;
-  expect(metadata).toBeDefined();
-  if (!metadata) {
-    return;
-  }
-  const connectorCategories = new Set(
-    body.connectors.map((connector) => {
-      return connector.category;
-    }),
-  );
-  const metadataCategoryIds = metadata.categories.map((category) => {
-    return category.id;
-  });
-  expect(metadataCategoryIds).toHaveLength(new Set(metadataCategoryIds).size);
-  expect(new Set(metadataCategoryIds)).toStrictEqual(connectorCategories);
-  const referencedGroupIds = new Set(
-    metadata.categories.flatMap((category) => {
-      return category.groupId ? [category.groupId] : [];
-    }),
-  );
-  const metadataGroupIds = metadata.groups.map((group) => {
-    return group.id;
-  });
-  expect(metadataGroupIds).toHaveLength(new Set(metadataGroupIds).size);
-  expect(new Set(metadataGroupIds)).toStrictEqual(referencedGroupIds);
-  for (const groupId of metadataGroupIds) {
-    expect(connectorCategories.has(groupId)).toBeFalsy();
-  }
-
-  expect(metadata.categories).toStrictEqual([
-    {
-      id: "test-connectors",
-      label: "Test Connectors",
-      menuLabel: "Test Connectors",
-      groupId: "test",
-    },
-  ]);
-  expect(metadata.groups).toStrictEqual([
-    {
-      id: "test",
-      label: "Test",
-      menuLabel: "Test",
-    },
-  ]);
 }
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -201,7 +148,7 @@ describe("GET /api/connector-catalog", () => {
       );
 
       assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-      assertCategoryMetadataMatchesVisibleConnectors(response.body);
+      expect(response.body.connectors.length).toBeGreaterThan(0);
       expect(response.body.connectors).toContainEqual(
         expect.objectContaining({
           slug: connectorSlug,
@@ -627,16 +574,8 @@ describe("GET /api/connector-catalog", () => {
       expect(connector.category).toBe(category);
     }
 
-    // The category list describes the catalog, not the response. A client
-    // offers the other categories from it, so collapsing it to the one being
-    // browsed would leave no way to reach any of them.
-    expect(
-      (scoped.body.categoryMetadata?.categories ?? [])
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual(Object.keys(counts).sort());
+    // Counts still describe the whole catalog, even for a category-scoped page.
+    expect(scoped.body.categoryConnectorCounts).toStrictEqual(counts);
 
     // Still ranked, and still without the connectors Okou runs for itself.
     const ranks = scoped.body.connectors.map((connector) => {
@@ -698,7 +637,7 @@ describe("GET /api/connector-catalog", () => {
     );
 
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    assertCategoryMetadataMatchesVisibleConnectors(response.body);
+    expect(response.body.connectors.length).toBeGreaterThan(0);
     const openai = response.body.connectors.find((connector) => {
       return connector.slug === "openai";
     });

@@ -855,8 +855,8 @@ async function loadConnectorAccountRuntimeSelection(
       const catalogRows = await db
         .select({
           current: {
-            header: connectorCatalog.catalogHeader,
-            entrySlugs: connectorCatalog.entrySlugs,
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
           },
           entry: {
             slug: connectorCatalogEntries.slug,

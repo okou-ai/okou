@@ -278,8 +278,6 @@ async function loadStableContextSourceSnapshot(
         current: {
           schemaVersion: connectorCatalog.schemaVersion,
           hash: connectorCatalog.hash,
-          header: connectorCatalog.catalogHeader,
-          entrySlugs: connectorCatalog.entrySlugs,
         },
         entry: {
           slug: connectorCatalogEntries.slug,

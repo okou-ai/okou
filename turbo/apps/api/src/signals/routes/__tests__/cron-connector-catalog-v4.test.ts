@@ -14,7 +14,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { corruptApiTestConnectorCatalogActiveSnapshotPayload } from "../../../test-fixtures/connector-catalog";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -489,21 +488,6 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
-  it("reports an accepted v4 catalog as unavailable when its snapshot is corrupt", async () => {
-    serveObjects(release({ label: "Accepted v4" }).objects);
-    expect((await sync()).body.outcome).toBe("accepted");
-
-    // Infrastructure-corruption exception: no production endpoint writes an
-    // invalid gzip snapshot. Corrupt before the first v4 read, so its original
-    // immutable bytes are not already in this process's accepted-reader cache.
-    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
-    const unavailable = await accept(
-      catalogClient().list({ headers: sessionHeaders }),
-      [503],
-    );
-    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-  });
-
   it("serves v4 HTTP and generic Automatic MCP methods through normal sync", async () => {
     const candidate = release({ label: "Accepted v4", mcpSlug: "notes-mcp" });
     serveObjects(candidate.objects);
@@ -873,29 +857,6 @@ describe("connector catalog v4 preparation", () => {
       filteredAuthMethods: [],
     });
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-
-  it("reports a cold catalog as unavailable until v4 is accepted", async () => {
-    serveObjects(new Map());
-    expect((await sync()).body).toMatchObject({
-      outcome: "rejected",
-      schemaVersion: 4,
-      state: "never-synced",
-      active: null,
-      lastAttempt: { failureCode: "source-unavailable" },
-    });
-
-    const unavailable = await accept(
-      catalogClient().list({ headers: sessionHeaders }),
-      [503],
-    );
-    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    serveObjects(release({}).objects);
-    expect((await sync()).body.outcome).toBe("accepted");
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { label: "HTTP" },
-    ]);
   });
 
   it("retains the last accepted v4 snapshot when a later candidate has an invalid protocol", async () => {

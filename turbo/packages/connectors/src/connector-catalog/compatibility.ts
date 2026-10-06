@@ -277,7 +277,7 @@ function evaluateMethod(args: {
 }
 
 export function evaluateConnectorCatalogCompatibility(args: {
-  readonly artifact: ConnectorCatalogArtifact;
+  readonly artifact: Pick<ConnectorCatalogArtifact, "connectors">;
   readonly capability: ExecutableCapabilityState;
 }) {
   const registrations = new Map(

@@ -45,16 +45,12 @@ import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   apiTestConnectorCatalogValidationAuthority,
-  corruptApiTestConnectorCatalogActiveSnapshotPayload,
-  deleteApiTestConnectorCatalogCompatibility,
   deleteApiTestConnectorCatalogCompatibilityEvaluation,
   installApiTestConnectorCatalog,
-  invalidateApiTestConnectorCatalogCompatibility,
   mockApiTestConnectorProviderConfiguration,
   readApiTestConnectorCatalogCompatibilityEvaluations,
   readApiTestConnectorCatalogSnapshot,
   readApiTestConnectorCatalogValidationAuthority,
-  replaceApiTestConnectorCatalogStoredBytes,
   setApiTestConnectorCatalogValidationAuthority,
 } from "../../../test-fixtures/connector-catalog";
 import { createDeferredPromise, settle } from "../../utils";
@@ -1387,29 +1383,6 @@ function runnerFirewallClient() {
   );
 }
 
-async function expectCatalogUnavailableRequestError(
-  reason: string,
-): Promise<void> {
-  const code = `CONNECTOR_CATALOG_UNAVAILABLE:${reason}`;
-  const response = await accept(
-    runnerFirewallClient().resolve({
-      headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
-      body: {},
-    }),
-    [500],
-  );
-
-  expect(response.body).toStrictEqual({ error: "Internal server error" });
-  const capturedError =
-    context.mocks.sentry.captureException.mock.calls.at(-1)?.[0];
-  expect(capturedError).toMatchObject({
-    name: "ExternalConnectorCatalogUnavailableError",
-    message: "Accepted external connector catalog is unavailable",
-    reason,
-    code,
-  });
-}
-
 interface VolumeStorageState {
   readonly s3_prefix: string;
   readonly size: number;
@@ -1629,44 +1602,6 @@ describe("connector catalog cron authentication and initial state", () => {
   });
 });
 
-describe("connector catalog unavailable request telemetry", () => {
-  it("classifies a missing current identity", async () => {
-    expect.hasAssertions();
-    configureSource();
-
-    const response = await accept(
-      runnerFirewallClient().resolve({
-        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
-        body: {},
-      }),
-      [500],
-    );
-    expect(response.body).toStrictEqual({ error: "Internal server error" });
-  });
-
-  it("classifies an invalid persisted compatibility evaluation", async () => {
-    expect.hasAssertions();
-    configureSource();
-    await installApiTestConnectorCatalog();
-    await invalidateApiTestConnectorCatalogCompatibility();
-
-    await expectCatalogUnavailableRequestError(
-      "invalid_compatibility_evaluation",
-    );
-  });
-
-  it("classifies a rejected persisted artifact", async () => {
-    expect.hasAssertions();
-    configureSource();
-    await installApiTestConnectorCatalog();
-    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
-
-    await expectCatalogUnavailableRequestError(
-      "invalid_artifact:invalid-compression",
-    );
-  });
-});
-
 describe("connector catalog valid lifecycle", () => {
   it("accepts, advances, rolls back, and serves the active database snapshot", async () => {
     const bucket = configureSource();
@@ -1816,17 +1751,6 @@ describe("connector catalog valid lifecycle", () => {
         hasCategories: true,
         hasDefaultPolicyOverrides: true,
       },
-    });
-    expect(list.body.categoryMetadata).toStrictEqual({
-      categories: [
-        {
-          id: "testing",
-          label: "Testing",
-          menuLabel: "Testing",
-          groupId: null,
-        },
-      ],
-      groups: [],
     });
     assertPublicConnectorCatalogHasNoPrivateFields(list.body);
 
@@ -1987,229 +1911,6 @@ describe("connector catalog valid lifecycle", () => {
 
     await accept(catalogClient.list({ headers }), [200]);
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforePublicReads);
-  });
-
-  it("fails closed when attested catalog integrity or identity is corrupted", async () => {
-    configureSource();
-    const digestRelease = buildRelease({
-      version: "2026-07-27.attested-digest-corruption",
-    });
-    serveObjects(catalogObjects([digestRelease], digestRelease));
-    await syncCatalog();
-    const changedBytes = Buffer.from(releaseCatalogBytes(digestRelease));
-    changedBytes[changedBytes.length - 1] = 0x20;
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: digestRelease.version,
-      rawBytes: changedBytes,
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-      retainCatalogDigest: true,
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const digestResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(digestResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const jsonRelease = buildRelease({
-      version: "2026-07-27.attested-json-corruption",
-    });
-    serveObjects(catalogObjects([jsonRelease], jsonRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: jsonRelease.version,
-      rawBytes: Buffer.from("{"),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const jsonResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(jsonResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const identityRelease = buildRelease({
-      version: "2026-07-27.attested-identity-corruption",
-    });
-    const mismatchedIdentity = buildRelease({
-      version: identityRelease.version,
-      mutateArtifact: (artifact) => {
-        artifact.catalogVersion = "different-catalog-version";
-      },
-    });
-    serveObjects(catalogObjects([identityRelease], identityRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: identityRelease.version,
-      rawBytes: releaseCatalogBytes(mismatchedIdentity),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const identityResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(identityResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const nonObjectRelease = buildRelease({
-      version: "2026-07-27.attested-non-object-corruption",
-    });
-    serveObjects(catalogObjects([nonObjectRelease], nonObjectRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: nonObjectRelease.version,
-      rawBytes: Buffer.from("null"),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const nonObjectResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(nonObjectResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const schemaRelease = buildRelease({
-      version: "2026-07-27.attested-schema-corruption",
-    });
-    serveObjects(catalogObjects([schemaRelease], schemaRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: schemaRelease.version,
-      rawBytes: jsonBytes({
-        artifactSchemaVersion: 5,
-        catalogVersion: schemaRelease.version,
-      }),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const schemaResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(schemaResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const shapeRelease = buildRelease({
-      version: "2026-07-27.attested-shape-corruption",
-    });
-    serveObjects(catalogObjects([shapeRelease], shapeRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: shapeRelease.version,
-      rawBytes: jsonBytes({
-        artifactSchemaVersion: 4,
-      }),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-    const shapeResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(shapeResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-  });
-
-  it("keeps corruption fail closed and derives missing compatibility", async () => {
-    configureSource();
-    const semanticRelease = buildRelease({
-      version: "2026-07-27.stale-semantic-corruption",
-    });
-    const invalidSemanticRelease = buildRelease({
-      version: semanticRelease.version,
-      mutateArtifact: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").label = "";
-      },
-    });
-    serveObjects(catalogObjects([semanticRelease], semanticRelease));
-    await syncCatalog();
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion: semanticRelease.version,
-      rawBytes: releaseCatalogBytes(invalidSemanticRelease),
-      catalogValidationAuthority: null,
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const semanticResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(semanticResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toBeNull();
-
-    configureSource();
-    const compatibilityRelease = buildRelease({
-      version: "2026-07-27.compatibility-corruption",
-    });
-    serveObjects(catalogObjects([compatibilityRelease], compatibilityRelease));
-    await syncCatalog();
-    await invalidateApiTestConnectorCatalogCompatibility();
-    const corruptedEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(corruptedEvaluations).toHaveLength(1);
-    const compatibilityResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [503],
-    );
-    expect(compatibilityResponse.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-
-    configureSource();
-    const missingRelease = buildRelease({
-      version: "2026-07-27.missing-compatibility",
-    });
-    serveObjects(catalogObjects([missingRelease], missingRelease));
-    await syncCatalog();
-    await deleteApiTestConnectorCatalogCompatibility();
-    const remainingEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(remainingEvaluations).toHaveLength(0);
-    const missingResponse = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(missingResponse.body).toMatchObject({
-      connectors: [
-        expect.objectContaining({ slug: missingRelease.connectorSlug }),
-      ],
-    });
-    await expect(
-      readApiTestConnectorCatalogCompatibilityEvaluations(),
-    ).resolves.toHaveLength(0);
   });
 
   it("applies compatibility and authored visibility to released connectors", async () => {
@@ -3287,7 +2988,7 @@ describe("connector catalog valid lifecycle", () => {
     expect(subset.body.catalogDigest).toBe(full.body.catalogDigest);
     expect(subset.body.catalogVersion).toBe(full.body.catalogVersion);
     const firstHex = createHash("sha256")
-      .update(JSON.stringify(full.body.firewalls, null, 2))
+      .update(JSON.stringify(canonicalJsonValue(full.body.firewalls), null, 2))
       .digest("hex");
     expect(full.body.catalogDigest).toBe(`sha256:${firstHex}`);
     expect(full.body.catalogVersion).toBe(`sha256-${firstHex.slice(0, 12)}`);
@@ -4550,45 +4251,6 @@ describe("connector catalog valid lifecycle", () => {
     expect(tampered.location).toContain("Invalid%20state%20signature");
   });
 
-  it("fails closed without accepted catalog state", async () => {
-    configureSource();
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const callsBeforeRead = context.mocks.s3.send.mock.calls.length;
-    const catalogClient = setupApp({
-      context,
-      routes: connectorCatalogRoutes,
-    })(connectorCatalogContract);
-    const headers = { authorization: "Bearer clerk-session" };
-
-    const catalogResponse = await accept(
-      catalogClient.list({ headers }),
-      [503],
-    );
-    const catalogStatusResponse = await accept(
-      catalogClient.status({ headers }),
-      [503],
-    );
-    const searchResponse = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsSearchContract,
-      ).search({
-        headers,
-        query: {},
-      }),
-      [503],
-    );
-    const expectedError = {
-      error: {
-        code: "PROVIDER_UNAVAILABLE",
-        message: "Connector catalog is temporarily unavailable",
-      },
-    };
-    expect(catalogResponse.body).toStrictEqual(expectedError);
-    expect(catalogStatusResponse.body).toStrictEqual(expectedError);
-    expect(searchResponse.body).toStrictEqual(expectedError);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeRead);
-  });
-
   it("accepts a complete generated firewall projection", async () => {
     configureSource();
     const release = buildRelease({
@@ -5355,7 +5017,6 @@ describe("connector catalog executable compatibility", () => {
       (await accept(catalogClient.list({ headers }), [200])).body,
     ).toStrictEqual({
       connectors: [],
-      categoryMetadata: { categories: [], groups: [] },
     });
     await accept(
       featureClient.update({

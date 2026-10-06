@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { canonicalJsonValue } from "../connector-catalog/entry-payload";
 
 import type { Firewall, FirewallBaseHostPolicy } from "../firewall-contracts";
 
@@ -79,7 +80,7 @@ export function createRunnerRuntimeFirewallCatalog(
     }),
   );
   const hex = createHash("sha256")
-    .update(JSON.stringify(catalog, null, 2))
+    .update(JSON.stringify(canonicalJsonValue(catalog), null, 2))
     .digest("hex");
   return {
     catalogDigest: `sha256:${hex}`,
