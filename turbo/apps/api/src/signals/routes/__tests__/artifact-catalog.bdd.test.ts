@@ -7,12 +7,12 @@ import { describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { reconcileArtifactCatalogFilesForTest } from "../../../test-fixtures/artifact-catalog-reconcile";
 import { testContext } from "../../../__tests__/test-context";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
-import { testArtifactCatalogReconcileRoutes } from "../test-artifact-catalog-reconcile";
 import { sharedThreadRoutes } from "../shared-threads";
 import {
   createBddApi,
@@ -682,18 +682,13 @@ describe("GET /api/artifacts/catalog", () => {
     const firstPage = await chat.listArtifactCatalog(owner.actor);
     expect(firstPage.artifacts).toHaveLength(20);
 
-    // The test-only route leaves durable pending rows; this worker call limits
-    // production recovery to IDs owned by this case instead of a global scan.
-    const recovery = await createAppWithRoutes({
-      signal: context.signal,
-      routes: testArtifactCatalogReconcileRoutes,
-    }).request("/api/test/artifact-catalog/reconcile", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fileIds }),
-    });
-    expect(recovery.status).toBe(200);
-    await expect(recovery.json()).resolves.toStrictEqual({
+    // The existing fixture leaves durable pending rows; scope production
+    // recovery to IDs owned by this case instead of a global scan.
+    const recovery = await reconcileArtifactCatalogFilesForTest(
+      fileIds,
+      context.signal,
+    );
+    expect(recovery).toStrictEqual({
       processed: 1,
       failed: 0,
     });
