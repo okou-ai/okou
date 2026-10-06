@@ -327,6 +327,7 @@ jobs:
           path: |
             runner-cli-intermediate/package.tgz
             runner-cli-intermediate/manifest.json
+            runner-cli-intermediate/ready.json
           overwrite: true
           if-no-files-found: error
           retention-days: 1
@@ -598,7 +599,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.source-head-sha }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -612,7 +613,11 @@ jobs:
           GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
           RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
         run: .github/scripts/runner-binary-build/digest.sh "${{ matrix.target }}"
-      - uses: ./.github/actions/setup-aws-cli
+      # Native Ubuntu workers already provide a native AWS CLI. The shared
+      # installer is x86-only and fails on preinstalled hosted-worker installs.
+      # Missing/broken native CLI fails; there is no install/architecture fallback.
+      - name: Require preinstalled native AWS CLI
+        run: aws --version
       - name: Consume existing validated Runner transport
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -648,6 +653,120 @@ jobs:
         with:
           name: native-runner-package-ci-${{ matrix.target }}
           path: crates/target/f5-native-package/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Fresh pre-merge release-profile conformance, NOT production release assets
+  # or Runner cache publication. Compilation stays on the existing pinned x86
+  # toolchain; only its matching native consumer may execute the output.
+  native-release-build:
+    name: Compile full-LTO native package consumer (${{ matrix.label }})
+    runs-on: ubuntu-latest-8-cores
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      actions: read
+      contents: read
+    needs: [prepare]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.prepare.result == 'success' &&
+        needs.prepare.outputs.current-runner-image-needed == 'true'
+      }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.source-head-sha }}
+      RUNNER_RELEASE_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source-head-sha }}
+      - name: Download same-source verified CLI build input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: runner-cli-${{ github.run_id }}
+          path: runner-cli-intermediate
+      - name: Setup R2 sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ matrix.id }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build and bind actual full-LTO guest and Runner consumers
+        run: bash .github/scripts/build-runner-native-release.sh
+      - name: Transfer this target's new conformance input to its native consumer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-runner-release-input-${{ matrix.target }}
+          path: crates/target/f5-release-input/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  native-release-package:
+    name: Actual full-LTO native Kerberos Runner package (${{ matrix.label }})
+    runs-on: ${{ matrix.id == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      actions: read
+      contents: read
+    needs: [prepare, native-release-build]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.prepare.result == 'success' &&
+        needs.prepare.outputs.current-runner-image-needed == 'true' &&
+        needs.native-release-build.result == 'success'
+      }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source-head-sha }}
+      - name: Download this target's actual pre-merge release build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: native-runner-release-input-${{ matrix.target }}
+          path: crates/target/f5-release-input
+      - name: Validate original release compiler/source/profile/target before execution
+        run: |
+          set -euo pipefail
+          python3 -B .github/scripts/runner-native-release.py validate crates/target/f5-release-input --source-sha "${{ needs.prepare.outputs.source-head-sha }}" --target "${{ matrix.target }}"
+          chmod 755 crates/target/f5-release-input/runner
+      - name: Verify actual full-LTO package and strict native protocol
+        run: |
+          bash .github/scripts/check-runner-native-package.sh crates/target/f5-release-input/runner crates/target/f5-release-input/metadata.json crates/target/f5-release-input/manifest.json "${{ matrix.target }}" crates/target/f5-release-package --profile release --compiler-receipt crates/target/f5-release-input/compiler.json
+      - name: Retain actual release exports and original compiler/source receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-runner-package-release-${{ matrix.target }}
+          path: |
+            crates/target/f5-release-package/
+            crates/target/f5-release-input/metadata.json
+            crates/target/f5-release-input/manifest.json
+            crates/target/f5-release-input/context.json
+            crates/target/f5-release-input/compiler.json
+            crates/target/f5-release-input/guest-compiler.json
           if-no-files-found: error
           retention-days: 1
 

@@ -19,6 +19,17 @@ import tarfile
 import tempfile
 
 SNAPSHOT = "20260521T000000Z"
+# The official snapshot's signed InRelease declares both amd64 and arm64
+# Packages indexes. Use the explicit frozen URI, not ports' unsupported APT
+# snapshot auto-negotiation or an unversioned/latest bootstrap repository.
+SNAPSHOT_ORIGIN = "https://snapshot.ubuntu.com/ubuntu/" + SNAPSHOT
+QEMU_MEMBER_COUNT = 81379
+QEMU_MEMBER_BYTES = 647679574
+QEMU_SOURCE_EPOCH = 1733874468
+# This archive-covered macOS EDK2 emulator development alias is not a
+# QEMU softmmu build input. Never extract it, normalize it to a host path or
+# disable the extraction filter. Exact source identity/shape still covers it.
+EXCLUDED_SOURCE_ALIAS = ("qemu-9.2.0/roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack", "/opt/X11/include")
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 QEMU_SHA256 = "f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894"
@@ -54,13 +65,56 @@ SEEDS = {"gcc-13": "13.2.0-23ubuntu4", "g++-13": "13.2.0-23ubuntu4", "binutils":
 
 
 def call(argv, *, cwd=None, timeout=300):
+    environment = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
+    if pathlib.Path(argv[0]).name in ("apt-get", "apt-cache", "apt-config"):
+        configuration = pathlib.Path(cwd) / "apt.conf"
+        if not configuration.is_file() or configuration.is_symlink() or configuration.stat().st_uid != os.geteuid():
+            raise ValueError("private APT startup configuration required")
+        environment["APT_CONFIG"] = str(configuration)
     result = subprocess.run([str(x) for x in argv], cwd=cwd, text=True, capture_output=True,
-                            timeout=timeout, env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
+                            timeout=timeout, env=environment)
     if result.returncode:
         if cwd and pathlib.Path(cwd).name.startswith("signed-noble-"):
             (pathlib.Path(cwd) / "provision-error.log").write_text(result.stdout + result.stderr)
         raise RuntimeError("source-pinned fixture step refused: " + pathlib.Path(argv[0]).name)
     return result.stdout
+
+
+def private_apt_config(base, arch):
+    if arch not in ("amd64", "arm64") or base.resolve() != base or base.is_symlink():
+        raise ValueError("private APT configuration root refused")
+    path = base / "apt.conf"
+    # APT_CONFIG is read BEFORE global fragments/main. CLI -o flags are too
+    # late to prevent ambient hooks or binary-specific startup configuration.
+    with path.open("x") as configuration:
+        configuration.write('Dir::Etc::Parts "-";\nDir::Etc::Main "-";\n'
+                            'Dir::Etc::trusted "-";\nDir::Etc::trustedparts "-";\n')
+    path.chmod(0o600)
+    return path
+
+
+def retain_public_inputs(base, stage, manifest=None):
+    # Retain originals on failures too. These contain only public package/build
+    # inputs; no fixture credentials exist in this producer.
+    evidence = base / "public-evidence"
+    evidence.mkdir(mode=0o700, exist_ok=True)
+    records = {}
+    for path in sorted((base / "state/lists").glob("*")):
+        if path.is_file() and not path.is_symlink() and (path.name.endswith("InRelease") or "_Packages" in path.name):
+            destination = evidence / path.name
+            if not destination.exists():
+                shutil.copyfile(path, destination)
+            if sha(destination) != sha(path):
+                raise ValueError("retained original signed index changed")
+            records[path.name] = {"sha256": sha(path), "sizeBytes": path.stat().st_size}
+    payload = {"stage": stage, "nativeArchitecture": platform.machine(), "snapshot": SNAPSHOT,
+               "originalIndexStorage": "APT retained InRelease and Packages; local compression is declared",
+               "indexes": records, "runtimeVerified": False, "attributionVerified": False}
+    if manifest is not None:
+        payload["provision"] = manifest
+    with (evidence / (stage + ".json")).open("x") as output:
+        json.dump(payload, output, indent=2)
+        output.write("\n")
 
 
 def sha(path):
@@ -152,8 +206,13 @@ def provision(base, arch, multiarch, origin):
         (base / name).mkdir(parents=True, mode=0o700)
     (base / "status").write_text("")
     (base / "preferences").write_text("Package: *\nPin: release a=noble\nPin-Priority: 1001\n")
+    if origin != SNAPSHOT_ORIGIN:
+        raise ValueError("explicit frozen Ubuntu snapshot origin refused")
+    private_apt_config(base, arch)
+    shutil.copyfile(keyring, base / "ubuntu-archive-keyring.gpg")
+    signing_root = base / "ubuntu-archive-keyring.gpg"
     (base / "sources.list").write_text("".join(
-        f"deb [arch={arch} signed-by={keyring} snapshot={SNAPSHOT}] {origin} {suite} main universe\n"
+        f"deb [arch={arch} signed-by={signing_root}] {origin} {suite} main universe\n"
         for suite in ("noble", "noble-updates", "noble-security")))
     settings = {"Dir::Etc::sourcelist": str(base / "sources.list"), "Dir::Etc::sourceparts": "-",
                 "Dir::State": str(base / "state"), "Dir::State::status": str(base / "status"),
@@ -196,7 +255,11 @@ def provision(base, arch, multiarch, origin):
         if len(candidates) != 1 or candidates[0].get("Origin") != "Ubuntu" or sha(archive) != candidates[0]["SHA256"]:
             raise ValueError("source-pinned fixture signed archive digest refused")
         extract_deb(archive, root)
-        packages[name] = {"version": version, "architecture": package_arch, "archiveSha256": sha(archive)}
+        packages[name] = {"version": version, "architecture": package_arch, "archiveSha256": sha(archive),
+                          "archiveSizeBytes": archive.stat().st_size, "repositoryPath": candidates[0]["Filename"],
+                          "depends": candidates[0].get("Depends", ""),
+                          "preDepends": candidates[0].get("Pre-Depends", ""),
+                          "provides": candidates[0].get("Provides", "")}
     if not set(REQUIRED).issubset(packages):
         raise ValueError("source-pinned fixture dependency closure incomplete")
     # Debian maintainer scripts never run. The reproducible usrmerge and compiler
@@ -230,8 +293,15 @@ def provision(base, arch, multiarch, origin):
         (root / name).mkdir(exist_ok=True)
     return {"mitVersion": MIT, "multiarch": multiarch, "architecture": arch,
             "signedIndexOrigin": origin, "snapshot": SNAPSHOT, "suite": "noble", "packages": packages,
-            "signingRootSha256": sha(keyring),
-            "signedIndexFiles": {str(p.relative_to(base)): sha(p) for p in sorted((base / "state/lists").glob("*InRelease"))}}
+            "signingRootSha256": sha(signing_root),
+            "bootstrapInputs": {str(path): sha(path.resolve(strict=True)) for path in
+                                (keyring, pathlib.Path("/usr/bin/apt-get"), pathlib.Path("/usr/bin/apt-cache"),
+                                 pathlib.Path("/usr/bin/gpgv"), pathlib.Path("/usr/bin/dpkg-deb"),
+                                 pathlib.Path("/usr/lib/apt/apt-helper"))},
+            "transformations": ["contained absolute package aliases", "usrmerge", "compiler aliases",
+                                "rmt alias", "UTC alias", "signed public CA concatenation"],
+            "signedIndexFiles": {str(p.relative_to(base)): sha(p) for p in sorted((base / "state/lists").glob("*"))
+                                 if p.is_file() and not p.is_symlink() and (p.name.endswith("InRelease") or "_Packages" in p.name)}}
 
 
 def extract_source(archive, source):
@@ -239,13 +309,24 @@ def extract_source(archive, source):
         raise ValueError("source-pinned QEMU archive digest refused")
     with tarfile.open(archive, "r:xz") as stream:
         members = stream.getmembers()
-        if len(members) > 50000 or sum(m.size for m in members) > 1024 * 1024 * 1024:
+        # The pinned official release was independently inspected: exact
+        # cardinality/size/epoch are part of this source admission profile.
+        # Retain finite budgets and fail any other shape, even after hashing.
+        if (len(members) != QEMU_MEMBER_COUNT or sum(m.size for m in members) != QEMU_MEMBER_BYTES
+                or QEMU_MEMBER_BYTES > 1024 * 1024 * 1024
+                or max(m.mtime for m in members) != QEMU_SOURCE_EPOCH):
             raise ValueError("source-pinned QEMU archive budget refused")
+        selected = []
         for member in members:
             source_member(member.name)
             if not (member.isfile() or member.isdir() or member.issym()):
                 raise ValueError("source-pinned QEMU archive type refused")
-        stream.extractall(source.parent, filter="data")
+            if member.issym() and (member.name, member.linkname) == EXCLUDED_SOURCE_ALIAS:
+                continue
+            if member.issym() and member.linkname.startswith("/"):
+                raise ValueError("source-pinned QEMU absolute alias refused")
+            selected.append(member)
+        stream.extractall(source.parent, members=selected, filter="data")
         epoch = max(m.mtime for m in members)
     if sha(source / "ui/vnc-auth-sasl.c") != VNC_SHA256:
         raise ValueError("source-pinned QEMU VNC source refused")
@@ -299,6 +380,9 @@ done
     (root / "usr/share/qemu").mkdir(exist_ok=True)
     return {"version": "9.2.0", "sourceArchiveSha256": QEMU_SHA256, "vncSourceSha256": VNC_SHA256,
             "firmware": FIRMWARE, "configure": CONFIGURE, "sourceDateEpoch": epoch,
+            "sourceAdmission": {"memberCount": QEMU_MEMBER_COUNT, "memberBytes": QEMU_MEMBER_BYTES,
+                                "excludedNonbuildAlias": list(EXCLUDED_SOURCE_ALIAS)},
+
             "nativeArchitecture": arch, "binarySha256": sha(first), "secondBuildSha256": sha(second),
             "recipeSha256": sha(pathlib.Path(__file__)), "target": "x86_64-softmmu"}
 
@@ -308,25 +392,41 @@ def main():
     parser.add_argument("--source-archive", type=pathlib.Path)
     args = parser.parse_args()
     native = platform.machine()
-    arch, multiarch, origin = {"x86_64": ("amd64", "x86_64-linux-gnu", "https://archive.ubuntu.com/ubuntu"),
-                             "aarch64": ("arm64", "aarch64-linux-gnu", "https://ports.ubuntu.com/ubuntu-ports")}[native]
+    arch, multiarch = {"x86_64": ("amd64", "x86_64-linux-gnu"),
+                       "aarch64": ("arm64", "aarch64-linux-gnu")}[native]
+    origin = SNAPSHOT_ORIGIN
     parent = REPO / "crates/target/qemu-full-fixture"
     parent.mkdir(parents=True, exist_ok=True)
     if parent.is_symlink() or parent.resolve() != parent or not call(["git", "check-ignore", str(parent)], cwd=REPO).strip():
         raise ValueError("source-pinned fixture work root refused")
     base = pathlib.Path(tempfile.mkdtemp(prefix="signed-noble-", dir=parent))
     base.chmod(0o700)
-    manifest = provision(base, arch, multiarch, origin)
-    if args.source_archive and args.source_archive.is_symlink():
-        raise ValueError("source archive alias refused")
-    archive = args.source_archive.resolve(strict=True) if args.source_archive else base / "qemu-9.2.0.tar.xz"
-    if not args.source_archive:
-        call(["bash", REPO / ".github/scripts/download-verified.sh", "https://download.qemu.org/qemu-9.2.0.tar.xz", QEMU_SHA256, archive])
-    source = base / "qemu-9.2.0"
-    epoch = extract_source(archive, source)
-    manifest["fullQemuProvider"] = "source-pinned-private-noble-v1"
-    manifest["qemuBuild"] = build(base, source, epoch, native)
+    stage, manifest = "provision", None
+    try:
+        manifest = provision(base, arch, multiarch, origin)
+        # Persist the resolved complete package/index linkage before the first
+        # fallible source extraction or compiler invocation.
+        retain_public_inputs(base, "provision-complete", manifest)
+        stage = "source"
+        if args.source_archive and args.source_archive.is_symlink():
+            raise ValueError("source archive alias refused")
+        archive = args.source_archive.resolve(strict=True) if args.source_archive else base / "qemu-9.2.0.tar.xz"
+        if not args.source_archive:
+            call(["bash", REPO / ".github/scripts/download-verified.sh", "https://download.qemu.org/qemu-9.2.0.tar.xz", QEMU_SHA256, archive])
+        source = base / "qemu-9.2.0"
+        epoch = extract_source(archive, source)
+        manifest["fullQemuProvider"] = "source-pinned-private-noble-v1"
+        stage = "build"
+        manifest["qemuBuild"] = build(base, source, epoch, native)
+    except Exception:
+        retain_public_inputs(base, stage + "-failed", manifest)
+        raise
     manifest["files"], manifest["aliases"] = inventory(base / "runtime")
+    manifest["runtimeInventorySha256"] = hashlib.sha256(json.dumps(
+        {name: manifest[name] for name in ("files", "aliases")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    manifest["inputClosureSha256"] = hashlib.sha256(json.dumps(
+        {name: manifest[name] for name in ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256")},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     manifest["packageLockSha256"] = hashlib.sha256(json.dumps(manifest["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     manifest["producer"] = {"head": call(["git", "rev-parse", "HEAD"], cwd=REPO).strip(),
                             "worktreeDirty": bool(call(["git", "status", "--porcelain"], cwd=REPO).strip()),

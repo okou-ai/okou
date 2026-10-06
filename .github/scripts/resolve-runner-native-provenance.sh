@@ -20,8 +20,8 @@ for run in "${runs[@]}"; do
   mkdir -m 700 "$candidate"
   if ! timeout 30s gh run download "$run" --repo "$GITHUB_REPOSITORY" -n "$name" -D "$candidate"; then continue; fi
   [[ -f "$candidate/manifest.json" && ! -L "$candidate/manifest.json" ]] || exit 1
-  if jq -e --arg target "$target" --arg digest "$digest" --slurpfile m "$transport/metadata.json" \
-    '.target==$target and .binaryInputDigest==$digest and .runner.sha256==$m[0].runnerSha256 and .runner.sizeBytes==$m[0].runnerSizeBytes' "$candidate/manifest.json" >/dev/null; then
+  if jq -e --arg target "$target" --arg digest "$digest" --argjson run "$run" --slurpfile m "$transport/metadata.json" \
+    '.producer.runId==$run and .target==$target and .binaryInputDigest==$digest and .runner.sha256==$m[0].runnerSha256 and .runner.sizeBytes==$m[0].runnerSizeBytes' "$candidate/manifest.json" >/dev/null; then
     cp -- "$candidate/manifest.json" "$transport/manifest.json"
     exit 0
   fi

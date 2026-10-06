@@ -281,7 +281,76 @@ async fn connect(
             .await?,
     ))
 }
-async fn framebuffer(root: &Path, mode: &str, relay: &mut Relay) {
+fn retain_frame(
+    directory: &Path,
+    root: &Path,
+    mode: &str,
+    occurrence: &str,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    assert!(directory.is_dir() && !directory.is_symlink());
+    assert!(matches!(
+        occurrence,
+        "sequential" | "concurrent" | "offline"
+    ));
+    let name = format!(
+        "{}-{mode}-{occurrence}.png",
+        root.file_name().unwrap().to_str().unwrap()
+    );
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(directory.join(name))?;
+    std::io::Write::write_all(&mut output, bytes)
+}
+
+#[test]
+fn capture_receipts_preserve_sequential_and_concurrent_occurrences_without_overwrite() {
+    // Public inert IO canary only; no PNG, TLS, GSS or native receipt is faked.
+    let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/qemu-gssapi-runtime-tests");
+    fs::create_dir_all(&parent).unwrap();
+    let directory = tempfile::tempdir_in(&parent).unwrap();
+    let root = Path::new("0");
+    retain_frame(
+        directory.path(),
+        root,
+        "keytab",
+        "sequential",
+        b"public first capture IO canary",
+    )
+    .unwrap();
+    retain_frame(
+        directory.path(),
+        root,
+        "keytab",
+        "concurrent",
+        b"public second capture IO canary",
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(directory.path().join("0-keytab-sequential.png")).unwrap(),
+        b"public first capture IO canary"
+    );
+    assert_eq!(
+        fs::read(directory.path().join("0-keytab-concurrent.png")).unwrap(),
+        b"public second capture IO canary"
+    );
+    assert_eq!(
+        retain_frame(
+            directory.path(),
+            root,
+            "keytab",
+            "sequential",
+            b"must not overwrite"
+        )
+        .unwrap_err()
+        .kind(),
+        std::io::ErrorKind::AlreadyExists
+    );
+    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+}
+
+async fn framebuffer(root: &Path, mode: &str, occurrence: &str, relay: &mut Relay) {
     let mut session = connect(root, mode, "localhost", relay, Duration::from_secs(60))
         .await
         .unwrap();
@@ -295,15 +364,14 @@ async fn framebuffer(root: &Path, mode: &str, relay: &mut Relay) {
     );
     assert!(frame.png().len() > 1000);
     if let Some(directory) = std::env::var_os("QEMU_GSSAPI_CAPTURE_DIR") {
-        let directory = PathBuf::from(directory);
-        assert!(directory.is_dir() && !directory.is_symlink());
-        let name = format!("{}-{mode}.png", root.file_name().unwrap().to_str().unwrap());
-        let mut output = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(directory.join(name))
-            .unwrap();
-        std::io::Write::write_all(&mut output, frame.png()).unwrap();
+        retain_frame(
+            &PathBuf::from(directory),
+            root,
+            mode,
+            occurrence,
+            frame.png(),
+        )
+        .unwrap();
     }
     drop(session);
     assert_eq!(fs::read_dir(root.join("private")).unwrap().count(), 0);
@@ -523,7 +591,7 @@ async fn pinned_online_password_keytab_and_concurrent_exact_realms() {
     let root = fixture(0);
     for mode in ["password", "keytab"] {
         let mut relay = Relay::new(&root);
-        framebuffer(&root, mode, &mut relay).await;
+        framebuffer(&root, mode, "sequential", &mut relay).await;
         assert!(relay.requests > 0);
         println!(
             "independent native QEMU263/{mode}: verified TLS, mutual GSS, complete ServerInit and PNG"
@@ -533,8 +601,8 @@ async fn pinned_online_password_keytab_and_concurrent_exact_realms() {
     let mut first = Relay::new(&root);
     let mut second = Relay::new(&other);
     tokio::join!(
-        framebuffer(&root, "keytab", &mut first),
-        framebuffer(&other, "password", &mut second)
+        framebuffer(&root, "keytab", "concurrent", &mut first),
+        framebuffer(&other, "password", "concurrent", &mut second)
     );
     assert!(first.requests > 0 && second.requests > 0);
     assert_ne!(first.realm, second.realm);
@@ -550,7 +618,7 @@ async fn pinned_offline_import_with_kdc_stopped_no_relay() {
     for index in 0..2 {
         let root = fixture(index);
         let mut relay = Relay::new(&root);
-        framebuffer(&root, "ticket", &mut relay).await;
+        framebuffer(&root, "ticket", "offline", &mut relay).await;
         assert_eq!(relay.requests, 0);
         for mode in ["password", "keytab"] {
             let mut unavailable = Relay::new(&root);

@@ -12,8 +12,18 @@ git check-ignore -q "$target"
 receipt="$target/full-qemu-producer-receipt"
 [[ ! -e "$receipt" && ! -L "$receipt" ]] || exit 1
 mkdir -m 700 "$receipt"
+source_cache="$target/qemu-full-fixture-source"
+[[ ! -L "$source_cache" ]] || exit 1
+mkdir -p -m 700 "$source_cache"
+[[ $(realpath "$source_cache") == "$source_cache" && $(stat -c %u "$source_cache") == "$(id -u)" ]] || exit 1
+archive="$source_cache/qemu-9.2.0.tar.xz"
+[[ ! -L "$archive" ]] || exit 1
+if [[ ! -e "$archive" ]]; then
+  bash .github/scripts/download-verified.sh https://download.qemu.org/qemu-9.2.0.tar.xz f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894 "$archive"
+fi
+printf '%s  %s\n' f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894 "$archive" | sha256sum -c -
 python3 -B .github/scripts/tests/test-qemu-gssapi-producer.py
-runtime=$(python3 -B .github/scripts/prepare-qemu-gssapi-fixture.py)
+runtime=$(python3 -B .github/scripts/prepare-qemu-gssapi-fixture.py --source-archive "$archive")
 python3 -B - "$runtime" "$receipt" <<'PY'
 import hashlib,json,os,pathlib,platform,shutil,subprocess,sys
 root,out=map(pathlib.Path,sys.argv[1:])
@@ -36,6 +46,8 @@ for name,index_digest in data['signedIndexFiles'].items():
 (out/'candidate.json').write_text(json.dumps({'head':data['producer']['head'],'ownerUid':os.geteuid(),
  'nativeArchitecture':platform.machine(),'binarySha256':digest,'packageLockSha256':data['packageLockSha256'],
  'recipeSha256':build['recipeSha256'],'providerSha256':hashlib.sha256(manifest.read_bytes()).hexdigest(),
+ 'runtimeInventorySha256':data['runtimeInventorySha256'],'inputClosureSha256':data['inputClosureSha256'],
+ 'sourceAdmission':build['sourceAdmission'],'firmware':build['firmware'],'configure':build['configure'],
  'candidateProducerVerified':True,'runtimeVerified':False,'attributionVerified':False,
  'scope':'two actual private signed-sysroot native QEMU builds; NOT admission, full-ten/PNG, loader or K2 completion'},indent=2)+'\n')
 PY

@@ -388,6 +388,17 @@ state, original producer, Runner/helper/notice identities, UID/kernel and its
 limited scope. It does not establish mutual GSS, Rust supervisor cancellation or
 non-root availability, and does not authorize production activation.
 
+Runner Image's pre-merge `native-release-build` producer uses the unchanged pinned
+release toolchain and the same-head verified CLI, then the ordinary two-phase
+`--locked --release` guest/Runner recipe. Its target-specific, one-day conformance
+input is not a production release asset or Runner cache entry. Original compiler
+JSON, clean source/tree and input identities, full-LTO profile, native build-script
+identities and payload hashes are validated before the matching Ubuntu x86/ARM
+consumer executes the actual Runner and exported helper. No target/profile label
+alone establishes that proof. A failed native probe retains available actual
+package evidence with `runtimeVerified: false` and still fails the job. Required
+optimized Rust-supervisor lifecycle evidence remains a separate mandatory gate.
+
 ## nbd-cow Benchmark
 
 The `nbd-cow` benchmark compares NBD COW with dm-snapshot using fio workloads. It is an opt-in,

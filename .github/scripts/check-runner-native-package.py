@@ -112,7 +112,7 @@ def send(process, sequence, kind, payload=b""):
 
 def native_probe(helper, work, scenario):
     root = pathlib.Path(tempfile.mkdtemp(prefix="native-", dir=work))
-    os.chmod(root, 0o700)
+    require(stat.S_IMODE(root.lstat().st_mode) == 0o700, "private native probe root mode changed")
     entries = {}
     process = None
     pidfd = None
@@ -265,6 +265,10 @@ def main():
             and identity["helperSizeBytes"] == len(helper)
             and identity["noticesSha256"] == sha(notices)
             and identity["noticesSizeBytes"] == len(notices), "sealed package identity mismatch")
+    if args.profile == "release":
+        require(provenance["nativeCompilerIdentity"] == {
+            "nativeTarget": identity["nativeTarget"], "helperSha256": sha(helper),
+            "noticesSha256": sha(notices)}, "exported release package differs from its actual compiler")
     require(helper in payload, "complete exported helper is not in actual Runner")
     require(notices == expected_notices and notices in payload,
             "complete redistribution notices missing from actual Runner/export")
@@ -272,8 +276,12 @@ def main():
     elf = subprocess.check_output(["readelf", "-h", "-l", "-d", str(args.out / "helper")],
                                   timeout=10)
     (args.out / "elf.txt").write_bytes(elf)
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
-    dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=REPO))
+    # sudo changes HOME/UID: checkout's owner-scoped safe.directory config does
+    # not follow it. Trust only this already-selected source checkout for these
+    # two read commands; never change global git or host policy.
+    git = ["git", "-c", f"safe.directory={REPO}"]
+    head = subprocess.check_output(git + ["rev-parse", "HEAD"], cwd=REPO, text=True).strip()
+    dirty = bool(subprocess.check_output(git + ["status", "--porcelain"], cwd=REPO))
     receipt = {"head": head, "worktreeDirty": dirty, "profile": args.profile,
                "profileBinding": "requires matching compiler/consumer context",
                "target": args.target, "runnerSha256": sha(payload),

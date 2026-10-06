@@ -61,7 +61,7 @@ class ProducerInputs(unittest.TestCase):
     def test_fresh_driver_creates_only_its_ignored_target_parent(self):
         # Execute only real shell preflight in an inert, local miniature repo.
         # No producer, archive fetch, native program or receipt runs here.
-        prefix = (ROOT / ".github/scripts/check-full-qemu-producer.sh").read_text().split("python3 -B .github/scripts/tests/", 1)[0]
+        prefix = (ROOT / ".github/scripts/check-full-qemu-producer.sh").read_text().split("\nsource_cache=", 1)[0]
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             root = pathlib.Path(directory)
             (root / "crates").mkdir()
@@ -77,6 +77,41 @@ class ProducerInputs(unittest.TestCase):
         for node in ast.walk(ast.parse(body)):
             if isinstance(node, ast.For):
                 self.assertNotIn("digest", [name.id for name in ast.walk(node.target) if isinstance(name, ast.Name)])
+
+    def test_private_apt_startup_excludes_ambient_main_fragments_and_hooks(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory).resolve()
+            self.producer.private_apt_config(base, "amd64")
+            # The real APT startup/configuration boundary, without update,
+            # downloads, hooks, package installation or host changes.
+            config = self.producer.call(["apt-config", "dump"], cwd=base)
+            for setting in ('Dir::Etc::Parts "-";', 'Dir::Etc::Main "-";', 'Dir::Etc::trusted "-";'):
+                self.assertTrue(setting.lower() in config.lower(), "private APT startup was not selected")
+            for hook in ("APT::Update::Post-Invoke", "APT::Update::Pre-Invoke", "DPkg::Pre-Invoke", "DPkg::Post-Invoke"):
+                self.assertTrue(hook not in config, "ambient hook survived private startup")
+
+    def test_public_failure_retains_exact_index_bytes_before_any_native_execution(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            lists = base / "state/lists"
+            lists.mkdir(parents=True)
+            original = lists / "inert_InRelease"
+            original.write_bytes(b"public storage canary; NOT signed provider metadata")
+            self.producer.retain_public_inputs(base, "source-failed")
+            retained = base / "public-evidence" / original.name
+            self.assertEqual(retained.read_bytes(), original.read_bytes())
+            self.assertTrue((base / "public-evidence/source-failed.json").is_file())
+
+    def test_actual_pinned_release_is_admitted_without_execution(self):
+        archive = ROOT / "crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz"
+        self.assertTrue(archive.is_file() and not archive.is_symlink(), "verified source prerequisite required; never silently skip it")
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            source = pathlib.Path(directory) / "qemu-9.2.0"
+            epoch = self.producer.extract_source(archive, source)
+            self.assertEqual(epoch, 1733874468)
+            self.assertEqual(self.producer.sha(source / "ui/vnc-auth-sasl.c"), self.producer.VNC_SHA256)
+            self.assertTrue((source / "python/wheels/meson-1.5.0-py3-none-any.whl").is_file())
+            self.assertFalse((source / "roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack").is_symlink())
 
     def test_source_and_bios_inputs_are_fixed_not_host_fallbacks(self):
         self.assertEqual(self.producer.QEMU_SHA256, "f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894")

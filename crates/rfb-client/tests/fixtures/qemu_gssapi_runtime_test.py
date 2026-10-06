@@ -127,6 +127,24 @@ class RuntimeInputs(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reviewed native producer pins"):
             qemu_gssapi.verify_runtime(self.runtime, "x86_64-linux-gnu", True, True)
 
+    def test_full_private_inventory_binds_every_regular_file_and_alias(self):
+        baseline = self.inputs(full_qemu=True)
+        baseline["aliases"] = {str(path.relative_to(self.runtime)): str(path.readlink())
+                               for path in self.runtime.rglob("*") if path.is_symlink()}
+        self.save(baseline)
+        expected = hashlib.sha256(json.dumps({name: baseline[name] for name in ("files", "aliases")},
+                                            sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        self.assertEqual(qemu_gssapi.full_private_inventory(self.runtime, baseline), expected)
+        # Rehashing a supplied manifest cannot hide a new unrecorded input.
+        (self.runtime / "unrecorded-public.canary").write_bytes(b"public inert inventory canary")
+        with self.assertRaisesRegex(ValueError, "complete input inventory"):
+            qemu_gssapi.full_private_inventory(self.runtime, baseline)
+        (self.runtime / "unrecorded-public.canary").unlink()
+        alias = self.runtime / "extra-public.alias"
+        alias.symlink_to("usr/sbin/krb5kdc")
+        with self.assertRaisesRegex(ValueError, "complete input inventory"):
+            qemu_gssapi.full_private_inventory(self.runtime, baseline)
+
     def test_full_mode_refuses_changed_private_kdc_bytes(self):
         self.inputs(full_qemu=True)
         (self.runtime / "usr/sbin/krb5kdc").write_bytes(b"changed public canary")

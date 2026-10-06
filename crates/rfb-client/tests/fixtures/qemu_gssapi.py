@@ -63,6 +63,26 @@ def run(argv, env, data=None):
     return result.stdout
 
 
+def full_private_inventory(runtime, baseline):
+    files, aliases = {}, {}
+    for path in sorted(runtime.rglob("*")):
+        name = str(path.relative_to(runtime))
+        if name == "provider.json":
+            continue
+        if path.is_symlink():
+            aliases[name] = os.readlink(path)
+        elif path.is_file():
+            if not path.resolve(strict=True).is_relative_to(runtime):
+                raise ValueError("full-private regular input escaped")
+            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        elif not path.is_dir():
+            raise ValueError("full-private special input refused")
+    if files != baseline["files"] or aliases != baseline["aliases"]:
+        raise ValueError("full-private complete input inventory refused")
+    return hashlib.sha256(json.dumps({"files": files, "aliases": aliases},
+                                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False):
     # The producer must obtain these records from verified signed archives, not
     # hash an arbitrary installed tree. Rechecking bytes does not attest loader
@@ -122,7 +142,16 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False):
         binary = runtime / "usr/bin/qemu-system-x86_64"
         recipe = REPO / ".github/scripts/prepare-qemu-gssapi-fixture.py"
         package_lock = hashlib.sha256(json.dumps(baseline["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        if (build["version"] != "9.2.0" or build["target"] != "x86_64-softmmu" or build["nativeArchitecture"] != native
+        inventory_digest = full_private_inventory(runtime, baseline)
+        closure_digest = hashlib.sha256(json.dumps({name: baseline[name] for name in
+                    ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256")},
+                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if (inventory_digest != expected.get("runtimeInventorySha256")
+            or closure_digest != expected.get("inputClosureSha256")
+            or build["sourceAdmission"] != expected.get("sourceAdmission")
+            or build["firmware"] != expected.get("firmware")
+            or build["configure"] != expected.get("configure")
+            or build["version"] != "9.2.0" or build["target"] != "x86_64-softmmu" or build["nativeArchitecture"] != native
             or build["sourceArchiveSha256"] != "f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894"
             or build["vncSourceSha256"] != "3dfd2c4be76597983641fde3d99b64ac5b0d6a56b59e4d6a08edacc95075bc2d"
             or baseline["snapshot"] != "20260521T000000Z" or package_lock != expected["packageLockSha256"]

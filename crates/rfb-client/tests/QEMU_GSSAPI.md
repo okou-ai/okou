@@ -34,8 +34,14 @@ bash .github/scripts/check-full-qemu-producer.sh
 
 The separate native x86_64/aarch64 CI producers download the complete
 Depends/Pre-Depends closure from signed Ubuntu snapshot `20260521T000000Z` into
-an empty private APT state. Exact MIT/Cyrus/GnuTLS identities above are retained;
-compiler, libc, Python/venv, shell/tools and development seeds are explicit.
+an empty private APT state. Both architectures select the official explicit
+`https://snapshot.ubuntu.com/ubuntu/20260521T000000Z` origin; no unsupported ports
+snapshot auto-negotiation, current pocket or unauthenticated fallback is used.
+An owned startup `APT_CONFIG` excludes global main/fragments/trust directories
+before APT loads them; the copied Ubuntu keyring and borrowed APT/gpgv/dpkg parser
+bytes are recorded separately from the private native compiler/runtime closure.
+Exact MIT/Cyrus/GnuTLS identities above are retained; compiler, libc, Python/venv,
+shell/tools and development seeds are explicit.
 Archive hashes are checked against signed metadata before collision/path-safe
 extraction. No package installation or maintainer script runs. Declared usrmerge,
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace
@@ -43,7 +49,13 @@ only their normal maintainer-generated inputs. Dangling package documentation
 and non-C locale aliases remain recorded, not executable/library/configuration
 inputs or host fallbacks.
 
-QEMU9.2 source and VNC hashes are unchanged. The producer runs the native signed
+QEMU9.2 source and VNC hashes are unchanged. Exact source admission requires
+81,379 members, 647,679,574 declared bytes and epoch 1733874468, still below the
+one-GiB ceiling. The archive-covered EDK2 macOS development alias
+`roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack` → `/opt/X11/include` is explicitly
+excluded as a nonbuild input; it is never extracted, followed or rewritten to a
+host path. Every other selected entry retains the path/type/data-filter checks.
+The producer runs the native signed
 compiler/Python in a private read-only input root, ordinary-owner build directories
 and disposable mount/PID/network namespaces. Archive-covered Meson wheels are
 used offline; subproject downloads, modules, plugins and KVM are disabled. Two
@@ -53,11 +65,17 @@ is separately hashed against exact members of the pinned QEMU release archive,
 not a host firmware directory.
 
 `full-qemu-producer-receipt/` retains actual candidate QEMU bytes, original signed
-InRelease indexes, compiler log, package/file/alias closure and producer identities.
+InRelease and APT-retained Packages indexes (declared local compression), compiler
+log, package/file/alias closure and producer identities. Exact archive hashes,
+repository paths, sizes and Depends/Pre-Depends/Provides fields are retained.
+Public failure-stage evidence is written after provisioning and before source
+extraction/compiler execution, and also on failure; success-only receipt copying
+is not the sole evidence channel.
 Its receipt deliberately has `runtimeVerified: false` and
 `attributionVerified: false`: successful builds do not complete full-ten/PNG or
-loader acceptance. Independently reviewed actual binary/recipe/package-lock pins
-must be recorded in `qemu_gssapi_full_pins.json` before the explicit
+loader acceptance. Independently reviewed actual binary/recipe/package-lock,
+complete regular-file/alias inventory, signed-index/bootstrap/transformations,
+source-admission, firmware and configure bindings must be recorded in `qemu_gssapi_full_pins.json` before the explicit
 `--source-built-full-private` mode can admit a producer. The initially empty pin
 map refuses before credentials/KDC/QEMU; an arbitrary rehashed tree cannot approve
 itself. This mode is distinct from legacy `--qemu`/`pinned-host` and
@@ -70,6 +88,9 @@ teardown. These mandatory inputs/executions are **not yet completed** by the
 candidate-producer patch. No K2, six-pass review, non-root or production readiness
 is implied. The optional `QEMU_GSSAPI_CAPTURE_DIR` is only a public image-receipt
 destination for actual fixture frames, never a backend or native-helper override.
+Sequential, concurrent and offline occurrences have distinct receipt names;
+`create_new` still refuses overwrites. Both online captures and the concurrent
+realm control remain in the unchanged ten-test acceptance.
 
 ## Native independent-acceptor CI
 
