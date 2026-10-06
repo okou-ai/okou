@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   ONBOARDING_WORKFLOW_CONNECTOR_SLUGS,
@@ -7,9 +8,14 @@ import {
   connectorCatalogEntries,
   connectorCatalogActiveSnapshot,
   connectorCatalogSyncState,
+  connectorCatalogCompatibilityEvaluation,
+  connectorCatalogRuntimeProjectionSets,
+  connectorCatalogRuntimeProjections,
 } from "@okouai/db/schema/connector-catalog";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
@@ -17,14 +23,15 @@ import {
   encodeConnectorCatalogSnapshot,
   parseConnectorCatalogActivePointer,
   validateConnectorCatalogCandidateBytes,
+  type ValidatedConnectorCatalogCandidate,
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 import { command } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
 import { immutableCatalogValues } from "./connector-catalog-immutable.service";
 import {
@@ -33,12 +40,21 @@ import {
 } from "./connector-catalog-source";
 import {
   connectorCatalogExecutableCapabilityState,
-  persistConnectorCatalogCompatibility,
+  connectorCatalogCompatibilityValues,
+  connectorCatalogCompatibilityEvaluationSchema,
+  evaluateConnectorCatalogCompatibility,
+  type ExecutableCapabilityState,
 } from "./connector-catalog-compatibility.service";
-import { persistConnectorCatalogRuntimeProjection } from "./connector-catalog-runtime-projection.service";
-import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 import {
-  prepareConnectorCatalogSkills,
+  connectorCatalogRuntimeProjectionSetValues,
+  connectorCatalogRuntimeProjectionEntryValues,
+} from "./connector-catalog-runtime-projection.service";
+import {
+  currentConnectorCatalogValidatorIdentity,
+  type ConnectorCatalogValidatorIdentity,
+} from "./connector-catalog-validator-authority";
+import {
+  connectorCatalogSkillRegistrationValues,
   registerPreparedConnectorCatalogSkills$,
 } from "./connector-catalog-skill-registration.service";
 
@@ -67,6 +83,37 @@ const loadPreviewCatalogCandidate$ = command(
   },
 );
 
+const preparePreviewCatalogSkills$ = command(
+  async ({ get }, artifact: ConnectorCatalogArtifact, signal: AbortSignal) => {
+    const versionIds = artifact.connectors.flatMap((entry) => {
+      return entry.skill.kind === "bundled" ? [entry.skill.versionId] : [];
+    });
+    if (versionIds.length === 0) {
+      return [];
+    }
+    const rows = await get(db$)
+      .select({
+        id: storageVersions.id,
+        storageId: storageVersions.storageId,
+        orgId: storages.orgId,
+        userId: storages.userId,
+        name: storages.name,
+        s3Prefix: storages.s3Prefix,
+        s3Key: storageVersions.s3Key,
+        size: storageVersions.size,
+        archiveSize: storageVersions.archiveSize,
+        fileCount: storageVersions.fileCount,
+        message: storageVersions.message,
+        createdBy: storageVersions.createdBy,
+      })
+      .from(storageVersions)
+      .innerJoin(storages, eq(storageVersions.storageId, storages.id))
+      .where(inArray(storageVersions.id, [...new Set(versionIds)]));
+    signal.throwIfAborted();
+    return connectorCatalogSkillRegistrationValues(artifact, rows);
+  },
+);
+
 function previewCatalogProjection(artifact: ConnectorCatalogArtifact) {
   const slugs = new Set<string>([
     ...ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
@@ -90,31 +137,70 @@ function previewCatalogProjection(artifact: ConnectorCatalogArtifact) {
   return { ...artifact, connectors };
 }
 
-// Preview materialization, not a new publication. The full validated official
-// snapshot/digest remains the source; only its onboarding/E2E rows are installed.
-export const seedPreviewOnboardingCatalog$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    if (env("ENV") !== "preview") {
-      throw new Error("Onboarding catalog seed is restricted to preview");
-    }
-    const source = connectorCatalogSource();
-    const candidate = await set(loadPreviewCatalogCandidate$, source, signal);
-    signal.throwIfAborted();
-    const projection = previewCatalogProjection(candidate.artifact);
-    const registrations = await prepareConnectorCatalogSkills(
-      { db: set(writeDb$), artifact: projection },
-      signal,
-    );
-    await set(registerPreparedConnectorCatalogSkills$, registrations, signal);
-    const timestamp = nowDate();
-    const validator = currentConnectorCatalogValidatorIdentity();
-    const capability = connectorCatalogExecutableCapabilityState();
-    const current = immutableCatalogValues(
+function previewCatalogWriteValues(args: {
+  readonly candidate: ValidatedConnectorCatalogCandidate;
+  readonly projection: ConnectorCatalogArtifact;
+  readonly sourceId: string;
+  readonly timestamp: Date;
+  readonly validator: ConnectorCatalogValidatorIdentity;
+  readonly capability: ExecutableCapabilityState;
+  readonly projectionSetId: string;
+}) {
+  const { candidate, projection, sourceId, timestamp, validator, capability } =
+    args;
+  const compatibility = connectorCatalogCompatibilityValues({
+    sourceId,
+    identity: candidate.identity,
+    capabilityDigest: capability.digest,
+    validator,
+    evaluatedAt: timestamp,
+    payload: connectorCatalogCompatibilityEvaluationSchema.parse({
+      filteredAuthMethods: evaluateConnectorCatalogCompatibility({
+        artifact: projection,
+        capability,
+      }),
+    }),
+  });
+  const projectionSet = {
+    id: args.projectionSetId,
+    ...connectorCatalogRuntimeProjectionSetValues({
+      sourceId,
+      identity: candidate.identity,
+      artifact: projection,
+      validator,
+    }),
+  };
+  return {
+    compatibilityDeleteWhere: and(
+      eq(connectorCatalogCompatibilityEvaluation.sourceId, sourceId),
+      eq(
+        connectorCatalogCompatibilityEvaluation.schemaVersion,
+        SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+      ),
+      ne(
+        connectorCatalogCompatibilityEvaluation.catalogDigest,
+        candidate.identity.catalogDigest,
+      ),
+    ),
+    projectionDeleteWhere: and(
+      eq(connectorCatalogRuntimeProjectionSets.sourceId, sourceId),
+      eq(
+        connectorCatalogRuntimeProjectionSets.schemaVersion,
+        SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+      ),
+    ),
+    compatibility,
+    projectionSet,
+    projectionEntries: connectorCatalogRuntimeProjectionEntryValues(
+      projectionSet.id,
+      projection,
+    ),
+    current: immutableCatalogValues(
       projection,
       candidate.identity.catalogDigest,
       timestamp,
-    );
-    const state = {
+    ),
+    state: {
       lastObservedCatalogVersion: candidate.identity.catalogVersion,
       lastObservedCatalogKey: candidate.identity.catalogKey,
       lastObservedCatalogDigest: candidate.identity.catalogDigest,
@@ -131,9 +217,9 @@ export const seedPreviewOnboardingCatalog$ = command(
       lastRejectedFailureCode: null,
       lastRejectedBackendVersion: null,
       lastRejectedBuildCommitSha: null,
-    };
-    const snapshot = {
-      sourceId: source.sourceId,
+    },
+    snapshot: {
+      sourceId,
       schemaVersion: candidate.artifact.artifactSchemaVersion,
       catalogVersion: candidate.identity.catalogVersion,
       catalogKey: candidate.identity.catalogKey,
@@ -141,7 +227,45 @@ export const seedPreviewOnboardingCatalog$ = command(
       catalogRawSize: candidate.rawBytes.length,
       catalogGzip: encodeConnectorCatalogSnapshot(candidate.rawBytes),
       activatedAt: timestamp,
-    };
+    },
+  };
+}
+
+// Preview materialization, not a new publication. The full validated official
+// snapshot/digest remains the source; only its onboarding/E2E rows are installed.
+export const seedPreviewOnboardingCatalog$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    if (env("ENV") !== "preview") {
+      throw new Error("Onboarding catalog seed is restricted to preview");
+    }
+    const source = connectorCatalogSource();
+    const candidate = await set(loadPreviewCatalogCandidate$, source, signal);
+    signal.throwIfAborted();
+    const projection = previewCatalogProjection(candidate.artifact);
+    const registrations = await set(
+      preparePreviewCatalogSkills$,
+      projection,
+      signal,
+    );
+    await set(registerPreparedConnectorCatalogSkills$, registrations, signal);
+    const {
+      compatibilityDeleteWhere,
+      projectionDeleteWhere,
+      compatibility,
+      projectionSet,
+      projectionEntries,
+      current,
+      state,
+      snapshot,
+    } = previewCatalogWriteValues({
+      candidate,
+      projection,
+      sourceId: source.sourceId,
+      timestamp: nowDate(),
+      validator: currentConnectorCatalogValidatorIdentity(),
+      capability: connectorCatalogExecutableCapabilityState(),
+      projectionSetId: randomUUID(),
+    });
     signal.throwIfAborted();
     await set(writeDb$).transaction(async (tx) => {
       await tx
@@ -162,6 +286,7 @@ export const seedPreviewOnboardingCatalog$ = command(
             revision: sql`${connectorCatalogSyncState.revision} + 1`,
           },
         });
+      signal.throwIfAborted();
       await tx
         .insert(connectorCatalogActiveSnapshot)
         .values(snapshot)
@@ -172,35 +297,60 @@ export const seedPreviewOnboardingCatalog$ = command(
           ],
           set: snapshot,
         });
+      signal.throwIfAborted();
       // Replace this preview generation atomically, including inherited rows.
       // No per-connector SQL or readback; published-byte validation is retained.
       await tx
         .delete(connectorCatalogEntries)
         .where(eq(connectorCatalogEntries.hash, current.hash));
+      signal.throwIfAborted();
       await tx.insert(connectorCatalogEntries).values(
         projection.connectors.map((entry) => {
           return { hash: current.hash, slug: entry.slug, payload: entry };
         }),
       );
+      signal.throwIfAborted();
       await tx.insert(connectorCatalog).values(current).onConflictDoUpdate({
         target: connectorCatalog.schemaVersion,
         set: current,
       });
-      await persistConnectorCatalogCompatibility({
-        db: tx,
-        sourceId: source.sourceId,
-        identity: candidate.identity,
-        artifact: projection,
-        capability,
-        validator,
-      });
-      await persistConnectorCatalogRuntimeProjection({
-        db: tx,
-        sourceId: source.sourceId,
-        identity: candidate.identity,
-        artifact: projection,
-        validator,
-      });
+      signal.throwIfAborted();
+      await tx
+        .delete(connectorCatalogCompatibilityEvaluation)
+        .where(compatibilityDeleteWhere);
+      signal.throwIfAborted();
+      await tx
+        .insert(connectorCatalogCompatibilityEvaluation)
+        .values(compatibility)
+        .onConflictDoUpdate({
+          target: [
+            connectorCatalogCompatibilityEvaluation.sourceId,
+            connectorCatalogCompatibilityEvaluation.schemaVersion,
+            connectorCatalogCompatibilityEvaluation.catalogVersion,
+            connectorCatalogCompatibilityEvaluation.catalogDigest,
+            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+          ],
+          set: {
+            catalogValidationBackendVersion:
+              compatibility.catalogValidationBackendVersion,
+            catalogValidationBuildCommitSha:
+              compatibility.catalogValidationBuildCommitSha,
+            evaluatedAt: compatibility.evaluatedAt,
+            filteredAuthMethods: compatibility.filteredAuthMethods,
+          },
+        });
+      signal.throwIfAborted();
+      await tx
+        .delete(connectorCatalogRuntimeProjectionSets)
+        .where(projectionDeleteWhere);
+      signal.throwIfAborted();
+      await tx
+        .insert(connectorCatalogRuntimeProjectionSets)
+        .values(projectionSet);
+      signal.throwIfAborted();
+      await tx
+        .insert(connectorCatalogRuntimeProjections)
+        .values(projectionEntries);
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
