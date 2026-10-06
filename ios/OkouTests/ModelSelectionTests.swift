@@ -11,9 +11,9 @@ final class ModelSelectionTests: XCTestCase {
     XCTAssertNil(catalog.resolve("unknown"))
   }
 
-  func testSavedPersonalPreferencePreservesReconnect() throws {
+  func testSavedPersonalPreferencePreservesReconnectAndPlanRestriction() throws {
     let catalog = try decodeCatalog(routes: [])
-    for availability in ["available", "reconnect_required"] {
+    for availability in ["available", "reconnect_required", "plan_restricted"] {
       let option = try decodeModel(availability: availability)
       XCTAssertTrue(option.hasUsableRoute(catalog: catalog), availability)
     }
