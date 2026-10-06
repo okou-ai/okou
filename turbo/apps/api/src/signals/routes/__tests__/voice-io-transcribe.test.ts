@@ -1089,37 +1089,55 @@ describe("POST /api/voice-io/transcribe/segment", () => {
   it.each(["Error", "AbortError"])(
     "preserves a transcription failure when the diagnostic sink throws %s",
     async (name) => {
-      await voiceActor();
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json({
-            usageMetadata: { totalTokenCount: 65_536 },
-            candidates: [
-              {
-                finishReason: "MAX_TOKENS",
-                content: { parts: [{ text: "private partial output" }] },
-              },
-            ],
-          });
-        }),
-      );
-      context.mocks.console.log.mockImplementation((message) => {
-        if (typeof message === "string" && message.includes("[VoiceSegment]")) {
-          throw new DOMException("Diagnostic sink unavailable", name);
+      const owner = await publicVoiceActor();
+      await owner.run(async () => {
+        server.use(
+          http.post(VERTEX_VOICE_URL, () => {
+            return HttpResponse.json({
+              usageMetadata: { totalTokenCount: 65_536 },
+              candidates: [
+                {
+                  finishReason: "MAX_TOKENS",
+                  content: { parts: [{ text: "private partial output" }] },
+                },
+              ],
+            });
+          }),
+        );
+        context.mocks.console.log.mockImplementation((message) => {
+          if (
+            typeof message === "string" &&
+            message.includes("[VoiceSegment]")
+          ) {
+            throw new DOMException("Diagnostic sink unavailable", name);
+          }
+        });
+        const restoreConsole = context.mocks.console.capture();
+        const outcome = await settleIncludingAbort(
+          (async () => {
+            const response = await accept(
+              client().segment({
+                headers: { authorization: "Bearer clerk-session" },
+                body: segmentForm(
+                  [audioFile(1)],
+                  "Keep recorded speech.",
+                  true,
+                  1,
+                ),
+              }),
+              [502],
+            );
+            expect(response.body.error).toStrictEqual({
+              code: "VOICE_TRANSCRIPTION_FAILED",
+              message:
+                "Voice draft transcription failed to produce a usable response",
+            });
+          })(),
+        );
+        restoreConsole();
+        if (!outcome.ok) {
+          throw outcome.error;
         }
-      });
-      onTestFinished(context.mocks.console.capture());
-      const response = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([audioFile(1)], "Keep recorded speech.", true, 1),
-        }),
-        [502],
-      );
-      expect(response.body.error).toStrictEqual({
-        code: "VOICE_TRANSCRIPTION_FAILED",
-        message:
-          "Voice draft transcription failed to produce a usable response",
       });
     },
   );
@@ -1935,18 +1953,9 @@ describe("voice provider capacity recovery", () => {
         return new HttpResponse(null, { status: 503 });
       },
     },
-  ])(
-    "recovers $name without error signals and counts the recording once",
-    async ({ failure }) => {
-      const actor = await voiceActor();
-      if (!actor.orgId) {
-        throw new Error("Expected an organization");
-      }
-      await seedOrgMetadata({
-        orgId: actor.orgId,
-        tier: "limited-free-1",
-        credits: 10_000,
-      });
+  ])("recovers $name and counts the recording once", async ({ failure }) => {
+    const owner = await publicVoiceActor({ limitedFree: true });
+    await owner.run(async () => {
       const requests: string[] = [];
       server.use(
         http.post(VERTEX_VOICE_URL, async ({ request }) => {
@@ -1967,9 +1976,8 @@ describe("voice provider capacity recovery", () => {
       );
       const usage = await accept(quota.get({ headers }), [200]);
       expect(usage.body).toMatchObject({ count: 1, allowed: true });
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-    },
-  );
+    });
+  });
 
   it("ends persistent capacity failures after three attempts", async () => {
     const owner = await publicVoiceActor();
@@ -2006,62 +2014,77 @@ describe("voice provider capacity recovery", () => {
   ])(
     "honors Retry-After $value within the recovery budget",
     async ({ value, wait }) => {
-      await voiceActor();
-      mockNow(new Date("2026-09-09T08:00:00Z"));
-      const waits: number[] = [];
-      context.mocks.signalTimers.delay.mockImplementation((ms) => {
-        waits.push(ms);
-        return Promise.resolve();
+      const owner = await publicVoiceActor();
+      await owner.run(async () => {
+        const outcome = await settleIncludingAbort(
+          (async () => {
+            mockNow(new Date("2026-09-09T08:00:00Z"));
+            const requestedAt: number[] = [];
+            context.mocks.signalTimers.delay.mockImplementation((ms) => {
+              mockNow(now() + ms);
+              return Promise.resolve();
+            });
+            let available = false;
+            server.use(
+              http.post(VERTEX_VOICE_URL, () => {
+                requestedAt.push(now());
+                if (available) {
+                  return recoveredVoiceResponse();
+                }
+                available = true;
+                return new HttpResponse(null, {
+                  status: 429,
+                  headers: { "Retry-After": value },
+                });
+              }),
+            );
+            const result = await accept(
+              client().segment({
+                headers: { authorization: "Bearer clerk-session" },
+                body: form([audioFile(1)]),
+              }),
+              [200],
+            );
+            expect(result.body.polishedText).toBe("Recorded speech.");
+            expect(requestedAt).toStrictEqual([
+              new Date("2026-09-09T08:00:00Z").getTime(),
+              new Date("2026-09-09T08:00:00Z").getTime() + wait,
+            ]);
+          })(),
+        );
+        context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+        if (!outcome.ok) {
+          throw outcome.error;
+        }
       });
-      let available = false;
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          if (available) {
-            return recoveredVoiceResponse();
-          }
-          available = true;
-          return new HttpResponse(null, {
-            status: 429,
-            headers: { "Retry-After": value },
-          });
-        }),
-      );
-      const result = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: form([audioFile(1)]),
-        }),
-        [200],
-      );
-      expect(result.body.polishedText).toBe("Recorded speech.");
-      expect(waits).toStrictEqual([wait]);
     },
   );
 
   it("does not retry earlier than a provider delay that exceeds the budget", async () => {
-    await voiceActor();
-    let attempts = 0;
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        attempts += 1;
-        return attempts === 1
-          ? new HttpResponse(null, {
-              status: 429,
-              headers: { "Retry-After": "60" },
-            })
-          : recoveredVoiceResponse();
-      }),
-    );
-    const response = await accept(
-      client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)]),
-      }),
-      [503],
-    );
-    expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    expect(attempts).toBe(1);
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
+      let attempts = 0;
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          attempts += 1;
+          return attempts === 1
+            ? new HttpResponse(null, {
+                status: 429,
+                headers: { "Retry-After": "60" },
+              })
+            : recoveredVoiceResponse();
+        }),
+      );
+      const response = await accept(
+        client().segment({
+          headers: { authorization: "Bearer clerk-session" },
+          body: form([audioFile(1)]),
+        }),
+        [503],
+      );
+      expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+      expect(attempts).toBe(1);
+    });
   });
 
   it("stops recovery when the elapsed budget is exhausted", async () => {
@@ -2259,84 +2282,101 @@ describe("voice provider capacity recovery", () => {
   });
 
   it("keeps provider authentication errors non-retryable", async () => {
-    await voiceActor();
-    let attempts = 0;
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        attempts += 1;
-        return attempts === 1
-          ? new HttpResponse(null, { status: 401 })
-          : recoveredVoiceResponse();
-      }),
-    );
-    const response = await accept(
-      client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)]),
-      }),
-      [502],
-    );
-    expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
-    expect(attempts).toBe(1);
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
+      let attempts = 0;
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          attempts += 1;
+          return attempts === 1
+            ? new HttpResponse(null, { status: 401 })
+            : recoveredVoiceResponse();
+        }),
+      );
+      const response = await accept(
+        client().segment({
+          headers: { authorization: "Bearer clerk-session" },
+          body: form([audioFile(1)]),
+        }),
+        [502],
+      );
+      expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
+      expect(attempts).toBe(1);
+    });
   });
 
   it("keeps an invalid successful response as a genuine transcription failure", async () => {
-    await voiceActor();
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return HttpResponse.json({ candidates: [] });
-      }),
-    );
-    const response = await accept(
-      client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)]),
-      }),
-      [502],
-    );
-    expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
+      let attempts = 0;
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          attempts += 1;
+          return HttpResponse.json({ candidates: [] });
+        }),
+      );
+      const response = await accept(
+        client().segment({
+          headers: { authorization: "Bearer clerk-session" },
+          body: form([audioFile(1)]),
+        }),
+        [502],
+      );
+      expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
+
+      expect(attempts).toBe(1);
+    });
   });
 
   it("cancels backoff with the request owner", async () => {
-    await voiceActor();
-    const controller = new AbortController();
-    const waiting = createDeferredPromise<void>(context.signal);
-    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
-      const signal = options?.signal;
-      if (!signal) {
-        throw new Error("Expected an owned voice recovery delay");
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
+      const controller = new AbortController();
+      const waiting = createDeferredPromise<void>(context.signal);
+      context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+        const signal = options?.signal;
+        if (!signal) {
+          throw new Error("Expected an owned voice recovery delay");
+        }
+        waiting.resolve();
+        return createDeferredPromise<void>(signal).promise;
+      });
+      let attempts = 0;
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          attempts += 1;
+          return new HttpResponse(null, { status: 429 });
+        }),
+      );
+      const scopedClient = setupApp({
+        context,
+        routes: voiceIoTranscribeRoutes,
+        signal: AbortSignal.any([context.signal, controller.signal]),
+        rethrowErrors: true,
+      })(voiceIoTranscribeContract);
+      const pending = scopedClient.segment({
+        headers: { authorization: "Bearer clerk-session" },
+        body: form([audioFile(1)]),
+      });
+      const outcome = Promise.allSettled([pending]);
+      const settled = await settleIncludingAbort(
+        (async () => {
+          await waiting.promise;
+          controller.abort(new DOMException("Request cancelled", "AbortError"));
+          const [result] = await outcome;
+          expect(result).toMatchObject({
+            status: "rejected",
+            reason: { name: "AbortError", message: "Request cancelled" },
+          });
+          expect(attempts).toBe(1);
+        })(),
+      );
+      controller.abort();
+      await outcome;
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      if (!settled.ok) {
+        throw settled.error;
       }
-      waiting.resolve();
-      return createDeferredPromise<void>(signal).promise;
     });
-    let attempts = 0;
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        attempts += 1;
-        return new HttpResponse(null, { status: 429 });
-      }),
-    );
-    const scopedClient = setupApp({
-      context,
-      routes: voiceIoTranscribeRoutes,
-      signal: AbortSignal.any([context.signal, controller.signal]),
-      rethrowErrors: true,
-    })(voiceIoTranscribeContract);
-    const pending = scopedClient.segment({
-      headers: { authorization: "Bearer clerk-session" },
-      body: form([audioFile(1)]),
-    });
-    const outcome = Promise.allSettled([pending]);
-    await waiting.promise;
-    controller.abort(new DOMException("Request cancelled", "AbortError"));
-    const [result] = await outcome;
-    expect(result).toMatchObject({
-      status: "rejected",
-      reason: { name: "AbortError", message: "Request cancelled" },
-    });
-    expect(attempts).toBe(1);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 });

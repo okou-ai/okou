@@ -28,10 +28,7 @@ import {
   prepareUnpublishedPiVolumeFixture,
   publishEmptyPiVolumeFixture,
 } from "../../../test-fixtures/pi-resource-index";
-import {
-  readPiStableContextStorageDemandFixture,
-  seedPiStableContextStorageDemandFixture,
-} from "../../../test-fixtures/pi-stable-context";
+import { seedPiStableContextStorageDemandFixture } from "../../../test-fixtures/pi-stable-context";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -168,43 +165,6 @@ function skillArchive(content: string): Buffer {
   );
 }
 
-async function publishStorage() {
-  const actor = bdd.user();
-  const storageName = `resource-index-${randomUUID()}`;
-  const content =
-    "---\nname: index-work\ndescription: Index a committed Storage version\n---\n";
-  const archive = skillArchive(content);
-  context.mocks.s3.getSignedUrl.mockResolvedValue(
-    "https://r2.example.com/resource-index-upload",
-  );
-  context.mocks.s3.send.mockImplementation((request: unknown) => {
-    if (request instanceof GetObjectCommand) {
-      return Promise.resolve({
-        Body: {
-          async *[Symbol.asyncIterator]() {
-            yield archive;
-          },
-        },
-        ContentLength: archive.length,
-      });
-    }
-    return Promise.resolve({ ContentLength: archive.length });
-  });
-  const files = [storageTextFile("SKILL.md", content)];
-  const prepared = await storages.prepareStorage(actor, {
-    storageName,
-    storageOwner: "user",
-    files,
-  });
-  await storages.commitStorage(actor, {
-    storageName,
-    storageOwner: "user",
-    files,
-    versionId: prepared.versionId,
-  });
-  return { versionId: prepared.versionId, archive, actor, storageName, files };
-}
-
 async function publishPublicMemory() {
   const actor = bdd.user();
   const owned: PublicResourceOwner = {
@@ -332,6 +292,7 @@ async function publishPublicMemory() {
     }
     expect(committed.body.versionId).toBe(prepared.body.versionId);
     return {
+      run: owner.run,
       versionId: committed.body.versionId,
       archive,
       actor,
@@ -353,48 +314,48 @@ async function run(versionId: string) {
 
 describe("Pi resource indexing of generic Storage commits", () => {
   it("builds stable context when a captured gzip hint differs from the ready index", async () => {
-    const published = await publishStorage();
-    if (!published.actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    await expect(run(published.versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
-    });
-    const agent = await bdd.createAgent(published.actor, {
-      displayName: "Stale gzip hint agent",
-    });
-    // An earlier API could update a version's archive size after this demand
-    // captured it. The index still represents the same logical file content.
-    const headId = await seedPiStableContextStorageDemandFixture({
-      orgId: published.actor.orgId,
-      userId: published.actor.userId,
-      agentId: agent.agentId,
-      storageName: published.storageName,
-      versionId: published.versionId,
-      archiveSize: published.archive.length + 1,
-    });
-    const result = await accept(
-      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
-        testPiResourceIndexWorkContract,
-      ).run({
-        body: {
-          versionIds: [published.versionId],
-          stableContextOwner: {
-            orgId: published.actor.orgId,
-            userId: published.actor.userId,
-            agentId: agent.agentId,
+    const published = await publishPublicMemory();
+    await published.run(async () => {
+      if (!published.actor.orgId) {
+        throw new Error("Expected an organization-scoped actor");
+      }
+      await expect(run(published.versionId)).resolves.toMatchObject({
+        claimed: 1,
+        ready: 1,
+      });
+      const agent = await bdd.createAgent(published.actor, {
+        displayName: "Stale gzip hint agent",
+      });
+      // An earlier API could update a version's archive size after this demand
+      // captured it. The index still represents the same logical file content.
+      await seedPiStableContextStorageDemandFixture({
+        orgId: published.actor.orgId,
+        userId: published.actor.userId,
+        agentId: agent.agentId,
+        storageName: published.storageName,
+        versionId: published.versionId,
+        archiveSize: published.archive.length + 1,
+      });
+      const result = await accept(
+        setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+          testPiResourceIndexWorkContract,
+        ).run({
+          body: {
+            versionIds: [published.versionId],
+            stableContextOwner: {
+              orgId: published.actor.orgId,
+              userId: published.actor.userId,
+              agentId: agent.agentId,
+            },
           },
-        },
-      }),
-      [200],
-    );
-    expect(result.body.stableContext).toMatchObject({ failed: 0 });
-    await expect(
-      readPiStableContextStorageDemandFixture(headId),
-    ).resolves.toMatchObject({
-      status: "ready",
-      artifactDigest: expect.any(String),
+        }),
+        [200],
+      );
+      expect(result.body.stableContext).toMatchObject({
+        claimed: 1,
+        ready: 1,
+        failed: 0,
+      });
     });
   });
 

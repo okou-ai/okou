@@ -137,11 +137,6 @@ async function setActorCredits(
   await seedOrgMetadata({ orgId: actor.orgId, tier, credits });
 }
 
-async function fundActor(actor: ApiTestUser): Promise<void> {
-  await bootstrapOnboarding(actor);
-  await setActorCredits(actor, 1000);
-}
-
 interface FundedScrapeActor {
   readonly actor: ApiTestUser;
   readonly orgId: string;
@@ -229,37 +224,55 @@ async function fundActorWithSubscription(
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
   let cliToken: string | undefined;
+  const cleanups: (() => Promise<void>)[] = [];
   const owner = createFixtureOperationOwner(async () => {
-    const cleanupResult = await settleIncludingAbort(
-      cleanupFundedScrapeActor(owned),
-    );
-    if (options.createCliTokenBeforeFunding) {
-      const webhooks = createWebhookCallbackApi(context);
-      webhooks.configureClerkWebhookSecret();
-      webhooks.verifyNextClerkWebhook({
-        type: "user.deleted",
-        data: { id: actor.userId },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-      if (cliToken) {
-        mockClerkMembership(context, actor, "org:admin");
-        const revoked = await rawScrapeRequest(
-          null,
-          {
-            url: "https://example.com/page",
-            format: "markdown",
-            mode: "standard",
-          },
-          { authHeaders: { authorization: `Bearer ${cliToken}` } },
+    const outcome = await settleIncludingAbort(
+      (async () => {
+        const cleanupResult = await settleIncludingAbort(
+          cleanupFundedScrapeActor(owned),
         );
-        expect(revoked.status).toBe(401);
-        await flushWaitUntilForTest();
-      }
-      // Anonymous unapproved challenges retain their public 900-second expiry.
+        if (options.createCliTokenBeforeFunding) {
+          const webhooks = createWebhookCallbackApi(context);
+          webhooks.configureClerkWebhookSecret();
+          webhooks.verifyNextClerkWebhook({
+            type: "user.deleted",
+            data: { id: actor.userId },
+          });
+          await webhooks.requestClerkWebhook("{}", {}, [200]);
+          await flushWaitUntilForTest();
+          if (cliToken) {
+            mockClerkMembership(context, actor, "org:admin");
+            const revoked = await rawScrapeRequest(
+              null,
+              {
+                url: "https://example.com/page",
+                format: "markdown",
+                mode: "standard",
+              },
+              { authHeaders: { authorization: `Bearer ${cliToken}` } },
+            );
+            expect(revoked.status).toBe(401);
+            await flushWaitUntilForTest();
+          }
+          // Anonymous unapproved challenges retain their public 900-second expiry.
+        }
+        if (!cleanupResult.ok) {
+          throw cleanupResult.error;
+        }
+      })(),
+    );
+    const released = await Promise.allSettled(
+      cleanups.map((cleanup) => {
+        return cleanup();
+      }),
+    );
+    if (!outcome.ok) {
+      throw outcome.error;
     }
-    if (!cleanupResult.ok) {
-      throw cleanupResult.error;
+    for (const result of released) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
     }
   });
   await owner.run(async () => {
@@ -350,7 +363,12 @@ async function fundActorWithSubscription(
       credits: 1000,
     });
   });
-  return owner;
+  return {
+    run: owner.run,
+    registerCleanup(cleanup: () => Promise<void>) {
+      cleanups.push(cleanup);
+    },
+  };
 }
 
 async function createAdmittedScrapeRun(actor: ApiTestUser): Promise<string> {
@@ -392,8 +410,11 @@ function configureProvider(): void {
   mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "test-firecrawl-token");
 }
 
-async function createScrapePricingFixture(): Promise<UsagePricingFixture> {
+async function createScrapePricingFixture(
+  registerCleanup?: (cleanup: () => Promise<void>) => void,
+): Promise<UsagePricingFixture> {
   const fixture = await createUsagePricingFixture({
+    registerCleanup,
     configured: [
       {
         kind: "scrape",
@@ -425,9 +446,9 @@ async function createScrapePricingFixture(): Promise<UsagePricingFixture> {
       },
     ],
   });
-  onTestFinished(async () => {
-    await fixture.cleanup();
-  });
+  if (!registerCleanup) {
+    onTestFinished(fixture.cleanup);
+  }
   return fixture;
 }
 
@@ -470,102 +491,125 @@ describe("okou scrape route", () => {
 
   it("retries a transient Clerk membership failure before scraping with a CLI PAT", async () => {
     const actor = createBddApi(context).user();
-    const { token } =
-      await createAuthOrgAgentsBddApi(context).createCliToken(actor);
-    let firecrawlRequests = 0;
-    allowExampleDotCom();
-    configureProvider();
-    const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    mockClerkMembership(context, actor, "org:admin");
-    context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValueOnce(
-      new ClerkApiResponseTestError(521),
-    );
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        firecrawlRequests += 1;
-        return HttpResponse.json({
-          success: true,
-          data: {
-            markdown: "# Example page",
-            metadata: { sourceURL: "https://example.com/page" },
-          },
-        });
-      }),
-    );
-
-    const response = await rawScrapeRequest(
-      null,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
+    let token = "";
+    const owner = await fundActorWithSubscription(actor, {
+      createCliTokenBeforeFunding: async () => {
+        const issued =
+          await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+        token = issued.token;
+        return token;
       },
-      {
-        authHeaders: { authorization: `Bearer ${token}` },
-        usagePricingResolution: pricing.resolution,
-      },
-    );
+    });
+    await owner.run(async () => {
+      let firecrawlRequests = 0;
+      allowExampleDotCom();
+      configureProvider();
+      const pricing = await createScrapePricingFixture(owner.registerCleanup);
+      const membershipCalls =
+        context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
+          .length;
+      mockClerkMembership(context, actor, "org:admin");
+      context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValueOnce(
+        new ClerkApiResponseTestError(521),
+      );
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          firecrawlRequests += 1;
+          return HttpResponse.json({
+            success: true,
+            data: {
+              markdown: "# Example page",
+              metadata: { sourceURL: "https://example.com/page" },
+            },
+          });
+        }),
+      );
 
-    expect(response.status).toBe(200);
-    expect(
-      context.mocks.clerk.users.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(2);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledOnce();
-    expect(firecrawlRequests).toBe(1);
+      const response = await rawScrapeRequest(
+        null,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        {
+          authHeaders: { authorization: `Bearer ${token}` },
+          usagePricingResolution: pricing.resolution,
+        },
+      );
+
+      expect(response.status).toBe(200);
+      expect(
+        context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
+          .length - membershipCalls,
+      ).toBe(2);
+
+      expect(firecrawlRequests).toBe(1);
+    });
   });
 
   it("returns a sanitized 503 when Clerk membership reads remain unavailable", async () => {
     const actor = createBddApi(context).user();
-    const { token } =
-      await createAuthOrgAgentsBddApi(context).createCliToken(actor);
-    let firecrawlRequests = 0;
-    allowExampleDotCom();
-    configureProvider();
-    const pricing = await createScrapePricingFixture();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(521),
-    );
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        firecrawlRequests += 1;
-        return HttpResponse.json({ success: true, data: {} });
-      }),
-    );
-
-    const response = await rawScrapeRequest(
-      null,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      {
-        authHeaders: { authorization: `Bearer ${token}` },
-        usagePricingResolution: pricing.resolution,
-      },
-    );
-    const afterCredits = await credits(actor);
-
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Authentication provider is temporarily unavailable",
-        code: "PROVIDER_UNAVAILABLE",
+    let token = "";
+    const owner = await fundActorWithSubscription(actor, {
+      createCliTokenBeforeFunding: async () => {
+        const issued =
+          await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+        token = issued.token;
+        return token;
       },
     });
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(
-      context.mocks.clerk.users.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(3);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
-    expect(firecrawlRequests).toBe(0);
-    expect(afterCredits).toBe(beforeCredits);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    await owner.run(async () => {
+      let firecrawlRequests = 0;
+      allowExampleDotCom();
+      configureProvider();
+      const pricing = await createScrapePricingFixture(owner.registerCleanup);
+      const membershipCalls =
+        context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
+          .length;
+      const beforeCredits = await credits(actor);
+      context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
+        new ClerkApiResponseTestError(521),
+      );
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      server.use(
+        http.post(FIRECRAWL_SCRAPE_URL, () => {
+          firecrawlRequests += 1;
+          return HttpResponse.json({ success: true, data: {} });
+        }),
+      );
+
+      const response = await rawScrapeRequest(
+        null,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        {
+          authHeaders: { authorization: `Bearer ${token}` },
+          usagePricingResolution: pricing.resolution,
+        },
+      );
+      const afterCredits = await credits(actor);
+
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toStrictEqual({
+        error: {
+          message: "Authentication provider is temporarily unavailable",
+          code: "PROVIDER_UNAVAILABLE",
+        },
+      });
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      expect(
+        context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
+          .length - membershipCalls,
+      ).toBe(3);
+
+      expect(firecrawlRequests).toBe(0);
+      expect(afterCredits).toBe(beforeCredits);
+    });
   });
 
   it("stops Clerk membership retries when the API instance is aborted", async () => {

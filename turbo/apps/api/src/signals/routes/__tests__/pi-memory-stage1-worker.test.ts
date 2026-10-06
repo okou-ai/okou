@@ -1,3 +1,4 @@
+import { createPublicPiMemorySource } from "./helpers/public-pi-memory-source";
 import { mockStage1CostLogFailure } from "../../../__tests__/mocks";
 import {
   builtinMemoryQuotaCases,
@@ -3285,40 +3286,41 @@ describe("Stage 1 source quota at the model HTTP boundary", () => {
   it.each(["malformed-json", "network", "timeout"])(
     "allows unknown %s through ordinary source admission",
     async (fault) => {
-      const storage = createStorageFixture();
-      const native = await codexSource(storage);
-      await seedSource(storage, native.binding);
-      server.use(
-        http.get(
-          "https://chatgpt.com/backend-api/wham/usage",
-          async ({ request }) => {
-            if (fault === "network") {
-              return HttpResponse.error();
-            }
-            if (fault === "timeout") {
-              const deadline = createDeferredPromise<void>(
-                testContext().signal,
-              );
-              if (request.signal.aborted) {
-                deadline.resolve();
-              } else {
-                request.signal.addEventListener(
-                  "abort",
-                  () => {
-                    deadline.resolve();
-                  },
-                  { once: true },
-                );
+      const fixture = createPublicPiMemorySource(context);
+      await fixture.run(async () => {
+        await fixture.prepare(new Date(now()));
+        server.use(
+          http.get(
+            "https://chatgpt.com/backend-api/wham/usage",
+            async ({ request }) => {
+              if (fault === "network") {
+                return HttpResponse.error();
               }
-              await deadline.promise;
-            }
-            return new HttpResponse("malformed JSON");
-          },
-        ),
-      );
-      const provider = installSourceProvider();
-      await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
-      expect(provider.calls).toHaveLength(1);
+              if (fault === "timeout") {
+                const deadline = createDeferredPromise<void>(context.signal);
+                if (request.signal.aborted) {
+                  deadline.resolve();
+                } else {
+                  request.signal.addEventListener(
+                    "abort",
+                    () => {
+                      deadline.resolve();
+                    },
+                    { once: true },
+                  );
+                }
+                await deadline.promise;
+              }
+              return new HttpResponse("malformed JSON");
+            },
+          ),
+        );
+        const provider = installSourceProvider();
+        await expect(fixture.extract()).resolves.toMatchObject({
+          succeeded: 1,
+        });
+        expect(provider.calls).toHaveLength(1);
+      });
     },
     10_000, // Includes the real five-second metadata deadline.
   );
