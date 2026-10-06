@@ -39,6 +39,10 @@ test("entry column migrations preserve payloads and backfill bundled and absent 
       authMethods: [{ id: "oauth" }],
       firewall: { kind: "none" },
       skill: { kind: "none" },
+      mcp: {
+        transport: "streamable-http",
+        endpoint: "https://mcp.example.com/mcp",
+      },
     },
   ];
   for (const entry of entries) {
@@ -50,6 +54,8 @@ test("entry column migrations preserve payloads and backfill bundled and absent 
   for (const name of [
     "1325_connector_catalog_entry_columns.sql",
     "1326_backfill_connector_catalog_entry_columns.sql",
+    "1327_connector_catalog_mcp_endpoint.sql",
+    "1328_backfill_connector_catalog_mcp_endpoint.sql",
   ]) {
     await db.exec(await readFile(new URL(name, migrationDirectory), "utf8"));
   }
@@ -65,6 +71,7 @@ test("entry column migrations preserve payloads and backfill bundled and absent 
       firewall: entry.firewall,
       storage_name: entry.skill.storageName ?? null,
       version_id: entry.skill.versionId ?? null,
+      mcp_endpoint: entry.mcp?.endpoint ?? null,
     };
   });
   expect(

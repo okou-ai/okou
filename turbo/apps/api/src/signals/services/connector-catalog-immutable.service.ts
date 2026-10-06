@@ -1,17 +1,19 @@
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/schema/connector-catalog";
 import {
-  connectorCatalogArtifactConnectorSchema,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
   type ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { connectorCatalogEntryPayload } from "@okouai/connectors/connector-catalog/entry-payload";
 import { db$, writeDb$ } from "../external/db";
+import {
+  prepareConnectorCatalogSkills,
+  registerPreparedConnectorCatalogSkills$,
+} from "./connector-catalog-skill-registration.service";
 
 export const immutableCatalogHash$ = command(
   async ({ get }, signal: AbortSignal): Promise<string | null> => {
@@ -30,8 +32,9 @@ export const immutableCatalogHash$ = command(
   },
 );
 
-// JSONB normalizes key order; compare canonical original payload bytes, not
-// capability-filtered projections. Partial inserts remain reusable on retry.
+// Entry existence is the preparation receipt: every writer must finish storage
+// registration before publishing an entry. Partial generations are reusable;
+// only the owning sync command can publish the catalog pointer afterward.
 export const prepareImmutableCatalogEntries$ = command(
   async (
     { set },
@@ -42,8 +45,30 @@ export const prepareImmutableCatalogEntries$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    for (const connector of args.artifact.connectors) {
-      signal.throwIfAborted();
+    signal.throwIfAborted();
+    const existing = await db
+      .select({ slug: connectorCatalogEntries.slug })
+      .from(connectorCatalogEntries)
+      .where(eq(connectorCatalogEntries.hash, args.hash));
+    signal.throwIfAborted();
+    const existingSlugs = new Set(
+      existing.map((entry) => {
+        return entry.slug;
+      }),
+    );
+    const missing = args.artifact.connectors.filter((entry) => {
+      return !existingSlugs.has(entry.slug);
+    });
+    if (missing.length === 0) {
+      return;
+    }
+    const registrations = await prepareConnectorCatalogSkills(
+      { db, artifact: { ...args.artifact, connectors: missing } },
+      signal,
+    );
+    await set(registerPreparedConnectorCatalogSkills$, registrations, signal);
+    signal.throwIfAborted();
+    for (const connector of missing) {
       await db
         .insert(connectorCatalogEntries)
         .values({
@@ -52,54 +77,9 @@ export const prepareImmutableCatalogEntries$ = command(
           payload: { ...connector },
           ...immutableCatalogEntryColumns(connector),
         })
-        .onConflictDoUpdate({
-          target: [connectorCatalogEntries.hash, connectorCatalogEntries.slug],
-          set: immutableCatalogEntryColumns(connector),
-          // Repair columns left empty by old writers, never replace conflicting
-          // immutable content. The readback below still rejects such conflicts.
-          setWhere: sql`${connectorCatalogEntries.payload} = excluded.payload`,
-        });
+        .onConflictDoNothing();
       signal.throwIfAborted();
-      const [stored] = await db
-        .select({ payload: connectorCatalogEntries.payload })
-        .from(connectorCatalogEntries)
-        .where(
-          and(
-            eq(connectorCatalogEntries.hash, args.hash),
-            eq(connectorCatalogEntries.slug, connector.slug),
-          ),
-        );
-      signal.throwIfAborted();
-      if (
-        !stored ||
-        !connectorCatalogEntryPayload(
-          connectorCatalogArtifactConnectorSchema.parse(stored.payload),
-        ).equals(connectorCatalogEntryPayload(connector))
-      ) {
-        throw new Error("Immutable connector catalog entry content conflicts");
-      }
     }
-    const rows = await db
-      .select({ slug: connectorCatalogEntries.slug })
-      .from(connectorCatalogEntries)
-      .where(eq(connectorCatalogEntries.hash, args.hash));
-    signal.throwIfAborted();
-    const expected = args.artifact.connectors
-      .map((entry) => {
-        return entry.slug;
-      })
-      .sort();
-    const actual = rows
-      .map((entry) => {
-        return entry.slug;
-      })
-      .sort();
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      throw new Error(
-        "Immutable connector catalog entry manifest does not match",
-      );
-    }
-    signal.throwIfAborted();
   },
 );
 
@@ -118,6 +98,7 @@ export function immutableCatalogEntryColumns(
       connector.skill.kind === "bundled" ? connector.skill.storageName : null,
     versionId:
       connector.skill.kind === "bundled" ? connector.skill.versionId : null,
+    mcpEndpoint: connector.mcp?.endpoint ?? null,
   };
 }
 

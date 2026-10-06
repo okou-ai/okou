@@ -50,6 +50,7 @@ export const connectorCatalogEntries = pgTable(
     firewall: jsonb("firewall").$type<ImmutableConnectorCatalogFirewall>(),
     storageName: text("storage_name"),
     versionId: text("version_id"),
+    mcpEndpoint: text("mcp_endpoint"),
   },
   (table) => {
     return [primaryKey({ columns: [table.hash, table.slug] })];

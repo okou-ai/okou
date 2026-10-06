@@ -2,19 +2,19 @@
 
 ## Additive immutable connector entry columns
 
-Migrations `1325_connector_catalog_entry_columns` and
-`1326_backfill_connector_catalog_entry_columns` add and backfill `label`,
-`description`, `category`, `auth_methods`, `firewall`, `storage_name` and
-`version_id` on immutable entries. The complete `payload`, `(hash, slug)`
+Migrations `1325_connector_catalog_entry_columns` through
+`1328_backfill_connector_catalog_mcp_endpoint` add and backfill `label`,
+`description`, `category`, `auth_methods`, `firewall`, `storage_name`,
+`version_id` and `mcp_endpoint` on immutable entries. The complete `payload`, `(hash, slug)`
 identity, publication bytes and all reader contracts remain unchanged.
-Apply both migrations before deploying the new API; new API/old database is
+Apply these migrations before deploying the new API; new API/old database is
 unsupported because full sync and preview initialization write the new columns.
 
 Old API/new database continues to read and write payload-only entries. The
 additive columns remain nullable for that overlap; old writers can leave them
-empty after the backfill. New full preparation fills matching entries on retry
-without overwriting conflicting immutable payloads. The unchanged-catalog
-shortcut is not a reconciliation pass. Do not switch readers to these columns
+empty after the backfill. Existing `(hash, slug)` entries are trusted preparation
+receipts and are never rewritten on retry. Neither full preparation nor the
+unchanged-catalog shortcut is a reconciliation pass. Do not switch readers to these columns
 until old writers have drained and any remaining payload-only rows have been
 reconciled in a separately authorized change. This PR does not switch readers
 or establish a query-performance improvement.
@@ -24,6 +24,33 @@ in both columns. The storage prefix is derivable as
 `__system__/volume/${storageName}/${versionId}` and is not an additional column.
 The original skill descriptor and its validation remain in `payload`. Rollback
 to the old API is supported without dropping columns or changing payloads.
+Catalog skill registration reuses the metadata owned by an already registered
+storage/version rather than comparing size, archive size, file count, message
+or creator against another catalog copy. New versions still receive their
+initial metadata from the validated artifact; concurrent registrations are
+idempotent and cannot overwrite an existing version. Canonical system owner,
+storage name, version and object-path identity remain enforced at the
+registration boundary. Other storage writers keep their existing contracts.
+The skill object path is derived from storage name and version without another
+prefix validation during registration; artifact validation owns that check.
+Readers continue using storage/version metadata for mount preparation.
+
+Full preparation first lists existing entries for the candidate hash and reuses
+them without revalidating payloads or their storage metadata. It registers all
+missing entries' storage versions before publishing those entries via
+`INSERT ... ON CONFLICT DO NOTHING`. Only after every entry write completes can
+the owning acceptance transaction CAS-update the schema-versioned catalog
+pointer. Entry existence is therefore a preparation receipt, and pointer
+publication is the completed-generation receipt. The payload readback and
+whole-generation manifest comparison are removed from preparation. Downloaded
+artifact validation and the existing acceptance CAS/legacy bridge remain.
+A losing or interrupted preparer may leave unreferenced storage versions or
+partial entries; they are reusable on retry, with no garbage collector added.
+
+Old and new APIs can coexist without changing storage/version or artifact
+shapes. The old API may still reject a catalog whose redundant metadata differs
+from the stored version; the new API accepts it and retains the storage-owned
+metadata. Rolling back restores that stricter catalog acceptance behavior.
 No production migration, deployment or storage write is executed by this PR.
 
 ## Organization OpenRouter preset override

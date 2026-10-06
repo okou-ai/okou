@@ -1,0 +1,1 @@
+ALTER TABLE "connector_catalog_entries" ADD COLUMN "mcp_endpoint" text;

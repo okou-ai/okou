@@ -1744,6 +1744,20 @@
       "when": 1791297001887,
       "tag": "1326_backfill_connector_catalog_entry_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1327,
+      "version": "7",
+      "when": 1791297926562,
+      "tag": "1327_connector_catalog_mcp_endpoint",
+      "breakpoints": true
+    },
+    {
+      "idx": 1328,
+      "version": "7",
+      "when": 1791297936524,
+      "tag": "1328_backfill_connector_catalog_mcp_endpoint",
+      "breakpoints": true
     }
   ]
 }

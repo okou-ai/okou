@@ -96,11 +96,6 @@ const preparePreviewCatalogSkills$ = command(
         name: storages.name,
         s3Prefix: storages.s3Prefix,
         s3Key: storageVersions.s3Key,
-        size: storageVersions.size,
-        archiveSize: storageVersions.archiveSize,
-        fileCount: storageVersions.fileCount,
-        message: storageVersions.message,
-        createdBy: storageVersions.createdBy,
       })
       .from(storageVersions)
       .innerJoin(storages, eq(storageVersions.storageId, storages.id))

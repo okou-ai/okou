@@ -68,10 +68,7 @@ import {
 } from "./connector-catalog-validator-authority";
 import {
   connectorCatalogSkillFailure,
-  prepareConnectorCatalogSkills,
-  registerPreparedConnectorCatalogSkills$,
   type ConnectorCatalogSkillFailure,
-  type PreparedConnectorSkillRegistration,
 } from "./connector-catalog-skill-registration.service";
 import {
   connectorCatalogSource,
@@ -809,7 +806,6 @@ interface CandidateCommitInput {
   readonly candidate: ValidatedConnectorCatalogCandidate;
   readonly catalogGzip: Buffer;
   readonly baselineHash: string | null;
-  readonly skillRegistrations: readonly PreparedConnectorSkillRegistration[];
   readonly pointerObservation: PointerObservation;
   readonly attemptedAt: Date;
   readonly capability: ExecutableCapabilityState;
@@ -904,12 +900,6 @@ const commitCandidate$ = command(
     const db = set(writeDb$);
     const result = await settle(
       (async () => {
-        await set(
-          registerPreparedConnectorCatalogSkills$,
-          args.skillRegistrations,
-          signal,
-        );
-        signal.throwIfAborted();
         await set(
           prepareImmutableCatalogEntries$,
           {
@@ -1311,7 +1301,6 @@ const commitValidatedCandidate$ = command(
     args: {
       readonly baseline: SyncStateSnapshot | undefined;
       readonly candidate: ValidatedConnectorCatalogCandidate;
-      readonly skillRegistrations: readonly PreparedConnectorSkillRegistration[];
       readonly pointerObservation: PointerObservation;
     },
     signal: AbortSignal,
@@ -1349,7 +1338,6 @@ const commitValidatedCandidate$ = command(
         baselineHash,
         capability: runtime.capability,
         validator: runtime.validator,
-        skillRegistrations: args.skillRegistrations,
         pointerObservation: args.pointerObservation,
         attemptedAt: nowDate(),
       },
@@ -1400,49 +1388,6 @@ const commitValidatedCandidate$ = command(
     return { kind: "complete", response };
   },
 );
-
-type CandidateSkillPreparationResult =
-  | SyncAttemptResult
-  | {
-      readonly kind: "prepared";
-      readonly registrations: readonly PreparedConnectorSkillRegistration[];
-    };
-
-async function prepareCandidateSkillsForSync(
-  runtime: ConnectorCatalogSyncRuntime,
-  baseline: SyncStateSnapshot | undefined,
-  candidate: ValidatedConnectorCatalogCandidate,
-  pointerObservation: PointerObservation,
-  signal: AbortSignal,
-): Promise<CandidateSkillPreparationResult> {
-  const prepared = await settle(
-    prepareConnectorCatalogSkills(
-      {
-        db: runtime.db,
-        artifact: candidate.artifact,
-      },
-      signal,
-    ),
-    signal,
-  );
-  if (prepared.ok) {
-    return { kind: "prepared", registrations: prepared.value };
-  }
-  const failure = connectorCatalogSkillFailure(prepared.error);
-  if (!failure) {
-    throw prepared.error;
-  }
-  return await rejectSyncAttempt(
-    runtime,
-    baseline,
-    failure.code,
-    {
-      pointerObservation,
-      cacheable: failure.cacheable,
-    },
-    signal,
-  );
-}
 
 const syncConnectorCatalogAttempt$ = command(
   async (
@@ -1548,23 +1493,12 @@ const syncConnectorCatalogAttempt$ = command(
     if (candidateResult.kind !== "loaded") {
       return candidateResult;
     }
-    const skillPreparation = await prepareCandidateSkillsForSync(
-      runtime,
-      baseline,
-      candidateResult.candidate,
-      pointerObservation,
-      signal,
-    );
-    if (skillPreparation.kind !== "prepared") {
-      return skillPreparation;
-    }
     return await set(
       commitValidatedCandidate$,
       input,
       {
         baseline,
         candidate: candidateResult.candidate,
-        skillRegistrations: skillPreparation.registrations,
         pointerObservation,
       },
       signal,
