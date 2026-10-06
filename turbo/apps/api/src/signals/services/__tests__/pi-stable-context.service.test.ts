@@ -1,3 +1,4 @@
+import { piCatalogIdentityForTest } from "../../../test-fixtures/pi-catalog-identity";
 import type {
   PiStableContextBuildInput,
   PiStableContextProjection,
@@ -13,6 +14,8 @@ import {
 } from "../pi-stable-context.service";
 import { customConnectorDefinitionHasStableSkill } from "../pi-stable-context-recapture.service";
 import { normalizeMountOverlay } from "../storage-mount-overlay";
+import { hasImmutablePiCatalogSource } from "../pi-stable-context-source.service";
+import { connectorCatalogSource } from "../connector-catalog-source";
 
 describe("Pi stable context projection", () => {
   const input: PiStableContextBuildInput = {
@@ -26,8 +29,7 @@ describe("Pi stable context projection", () => {
     source: {
       agentGeneration: 4,
       userGeneration: 7,
-      catalogIdentity: "catalog-a",
-      catalogSourceId: "source-a",
+      catalog: piCatalogIdentityForTest(),
       agentIdentityDigest: "agent-identity-a",
       featurePromptDigest: "feature-a",
       permissionDigest: "permission-a",
@@ -166,6 +168,52 @@ describe("Pi stable context projection", () => {
     ]);
   });
 
+  it("rejects old, corrupt and capability-incompatible source envelopes without upgrading them", () => {
+    // Capture after per-test provider configuration, not at describe-time
+    // before the test environment installs its executable capability vector.
+    const source = { ...input.source, catalog: piCatalogIdentityForTest() };
+    const capabilityDigest = source.catalog.capabilityDigest;
+    expect(hasImmutablePiCatalogSource(source, capabilityDigest)).toBeTruthy();
+    const { catalog, ...previous } = source;
+    expect(
+      hasImmutablePiCatalogSource(
+        {
+          ...previous,
+          catalogIdentity: piStableContextVariantDigest(catalog),
+          catalogSourceId: connectorCatalogSource().sourceId,
+        },
+        capabilityDigest,
+      ),
+    ).toBeFalsy();
+    expect(
+      hasImmutablePiCatalogSource(
+        {
+          ...source,
+          catalog: { ...catalog, hash: "corrupt" },
+        },
+        capabilityDigest,
+      ),
+    ).toBeFalsy();
+    expect(
+      hasImmutablePiCatalogSource(
+        { ...source, catalog: { ...catalog, schemaVersion: 2 } },
+        capabilityDigest,
+      ),
+    ).toBeFalsy();
+    expect(
+      hasImmutablePiCatalogSource(
+        source,
+        `sha256:${capabilityDigest.endsWith("0") ? "1".repeat(64) : "0".repeat(64)}`,
+      ),
+    ).toBeFalsy();
+    expect(
+      hasImmutablePiCatalogSource(
+        { ...source, catalog: null },
+        capabilityDigest,
+      ),
+    ).toBeTruthy();
+  });
+
   it("filters MCP custom skills when their feature is disabled", () => {
     const promptInputs: PiStableContextPromptInputs = {
       privateArtifactsEnabled: false,
@@ -186,6 +234,7 @@ describe("Pi stable context projection", () => {
       storageVersion: 1,
       skillStorageVersionId: "e".repeat(64),
       isMcp: true,
+      permissionBundleRef: null,
     };
 
     expect(
@@ -210,7 +259,13 @@ describe("Pi stable context projection", () => {
     };
     const newerCatalog: PiStableContextProjection = {
       ...projection,
-      source: { ...projection.source, catalogIdentity: "catalog-b" },
+      source: {
+        ...projection.source,
+        catalog: piCatalogIdentityForTest(
+          piCatalogIdentityForTest().schemaVersion,
+          "2026-10-06",
+        ),
+      },
     };
 
     expect(piStableContextArtifactDigest(otherOwner)).not.toBe(

@@ -935,6 +935,7 @@ describe("CHAT-02: thread connector account selection", () => {
       prompt: "Continue after the selected connector leaves the legacy catalog",
     });
     const claimed = await claimChatRun(runnerGroup, run.runId);
+    expect(claimed.claim.secretConnectorMap?.OPENAI_TOKEN).toBe("openai");
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toBeUndefined();
@@ -954,6 +955,10 @@ describe("CHAT-02: thread connector account selection", () => {
         sourceId: connection.id,
       }),
     );
+    expect(claimed.claim).not.toHaveProperty("connectorPermissionBaseline");
+    expect(
+      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN?.sourceId,
+    ).not.toBe(runtimeConnection.id);
 
     const selections = await accept(
       chatThreadConnectorSelectionsClient().get({
@@ -982,7 +987,7 @@ describe("CHAT-02: thread connector account selection", () => {
           target: { kind: "builtin", connectorSlug: "openai" },
         },
       }),
-      [400],
+      [200],
     );
     await accept(
       chatThreadsClient().create({
@@ -998,7 +1003,7 @@ describe("CHAT-02: thread connector account selection", () => {
           ],
         },
       }),
-      [400],
+      [201],
     );
     await accept(
       chatThreadConnectorSelectionsClient().clear({
@@ -1008,14 +1013,14 @@ describe("CHAT-02: thread connector account selection", () => {
       }),
       [204],
     );
-    const clearedSelections = await accept(
+    const postClearSelections = await accept(
       chatThreadConnectorSelectionsClient().get({
         headers: sessionHeaders(actor),
         params: { id: thread.id },
       }),
       [200],
     );
-    expect(clearedSelections.body.selections).toStrictEqual([
+    expect(postClearSelections.body.selections).toStrictEqual([
       {
         connectionId: runtimeConnection.id,
         target: { kind: "builtin", connectorSlug: "runtime" },
@@ -1030,7 +1035,7 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
     expect(restoredSelections.body.selections).toStrictEqual(
-      clearedSelections.body.selections,
+      postClearSelections.body.selections,
     );
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   });

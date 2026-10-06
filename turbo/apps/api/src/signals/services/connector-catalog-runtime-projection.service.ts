@@ -6,9 +6,9 @@ import {
   connectorCatalogRuntimeProjectionSets,
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
-import { and, count, eq, inArray, sql } from "drizzle-orm";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
-import { type Db, type ReadonlyDb, db$ } from "../external/db";
+import { and, count, eq, inArray } from "drizzle-orm";
+
+import type { Db, ReadonlyDb } from "../external/db";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
@@ -31,19 +31,13 @@ import {
 } from "@okouai/connectors/connector-catalog/runtime-projection";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
-import type { ExternalCatalogIdentity } from "./connector-catalog-view";
-import {
-  cachedAcceptedConnectorCatalogSnapshot,
-  type AcceptedConnectorCatalogSnapshot,
-  type decodeAcceptedConnectorCatalogPayload,
-} from "./connector-catalog-external-reader.service";
+
 import {
   connectorCatalogValidationAuthorityIsCurrent,
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidationAuthority,
   type ConnectorCatalogValidatorIdentity,
 } from "./connector-catalog-validator-authority";
-import { computed } from "ccstate";
 
 export {
   CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
@@ -325,11 +319,6 @@ export function resolveProjectionIdentity({
   };
 }
 
-export interface CapturedConnectorCatalogIdentity {
-  readonly identity: ExternalCatalogIdentity | undefined;
-  readonly projection: ConnectorCatalogRuntimeProjectionIdentityRead;
-}
-
 export async function readConnectorCatalogRuntimeProjectionIdentity(
   db: ReadonlyDb,
 ): Promise<ConnectorCatalogRuntimeProjectionIdentityRead> {
@@ -507,204 +496,4 @@ export async function reconcileConnectorCatalogRuntimeProjectionInTransaction(
     validator,
   });
   return true;
-}
-
-export type AgentCatalogProjectionRow = Pick<
-  typeof connectorCatalogRuntimeProjections.$inferSelect,
-  "connectorSlug" | "connectorDigest" | "connectorPayload"
->;
-
-export interface CapturedAgentCatalog extends CapturedConnectorCatalogIdentity {
-  readonly snapshot: AcceptedConnectorCatalogSnapshot | undefined;
-  readonly payload:
-    | Parameters<typeof decodeAcceptedConnectorCatalogPayload>[0]["row"]
-    | undefined;
-}
-
-/** Each graph instance reads the current global identity, never a request identity. */
-export function createAgentCatalogIdentity() {
-  return computed(async (get): Promise<CapturedAgentCatalog> => {
-    const sourceId = connectorCatalogSource().sourceId;
-    const capabilityDigest = connectorCatalogExecutableCapabilityState().digest;
-    const validator = currentConnectorCatalogValidatorIdentity();
-    const cached = cachedAcceptedConnectorCatalogSnapshot();
-    const reusable =
-      cached?.identity.sourceId === sourceId &&
-      cached.identity.capabilityDigest === capabilityDigest
-        ? cached
-        : undefined;
-    const row = await get(
-      createCapturedAgentCatalogRow(sourceId, capabilityDigest, reusable),
-    );
-    return {
-      // Capture fallback bytes in the same read as the identity. A later catalog
-      // replacement must not turn this request's snapshot into a second read.
-      payload:
-        row?.catalogGzip === null || row === undefined
-          ? undefined
-          : { ...row, catalogGzip: row.catalogGzip },
-      snapshot: row?.catalogGzip === null ? reusable : undefined,
-      identity:
-        row === undefined
-          ? undefined
-          : {
-              sourceId,
-              schemaVersion: row.schemaVersion,
-              catalogVersion: row.catalogVersion,
-              catalogDigest: row.catalogDigest,
-              capabilityDigest,
-            },
-      projection: resolveProjectionIdentity({
-        sourceId,
-        capabilityDigest,
-        validator,
-        row,
-      }),
-    };
-  });
-}
-
-export function createAgentCatalogProjectionRows(
-  projectionSetId: string,
-  connectorSlugs: readonly ConnectorSlug[],
-) {
-  return computed(
-    async (get): Promise<readonly AgentCatalogProjectionRow[]> => {
-      if (connectorSlugs.length === 0) {
-        return [];
-      }
-      return await get(db$)
-        .select({
-          connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
-          connectorDigest: connectorCatalogRuntimeProjections.connectorDigest,
-          connectorPayload: connectorCatalogRuntimeProjections.connectorPayload,
-        })
-        .from(connectorCatalogRuntimeProjections)
-        .where(
-          and(
-            eq(
-              connectorCatalogRuntimeProjections.projectionSetId,
-              projectionSetId,
-            ),
-            inArray(connectorCatalogRuntimeProjections.connectorSlug, [
-              ...connectorSlugs,
-            ]),
-          ),
-        );
-    },
-  );
-}
-
-function createCapturedAgentCatalogRow(
-  sourceId: string,
-  capabilityDigest: string,
-  reusable: AcceptedConnectorCatalogSnapshot | undefined,
-) {
-  return computed(async (get) => {
-    const catalogGzip =
-      reusable === undefined
-        ? connectorCatalogActiveSnapshot.catalogGzip
-        : sql`CASE WHEN ${and(
-            eq(
-              connectorCatalogActiveSnapshot.catalogVersion,
-              reusable.identity.catalogVersion,
-            ),
-            eq(
-              connectorCatalogActiveSnapshot.catalogDigest,
-              reusable.identity.catalogDigest,
-            ),
-          )} THEN NULL ELSE ${connectorCatalogActiveSnapshot.catalogGzip} END`.mapWith(
-            nullableDriverValueDecoder(
-              connectorCatalogActiveSnapshot.catalogGzip,
-            ),
-          );
-    const [row] = await get(db$)
-      .select({
-        catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-        catalogGzip,
-        catalogValidationBackendVersion:
-          connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-        catalogValidationBuildCommitSha:
-          connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-        executableCapabilityDigest:
-          connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-        projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-        schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-        catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-        catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-        projectionVersion:
-          connectorCatalogRuntimeProjectionSets.projectionVersion,
-        connectorCount: connectorCatalogRuntimeProjectionSets.connectorCount,
-        projectionValidationBackendVersion:
-          connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-        projectionValidationBuildCommitSha:
-          connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-        evaluatedCapabilityDigest:
-          connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-        compatibilityValidationBackendVersion:
-          connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-        compatibilityValidationBuildCommitSha:
-          connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-        filteredAuthMethods:
-          connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-      })
-      .from(connectorCatalogActiveSnapshot)
-      .leftJoin(
-        connectorCatalogRuntimeProjectionSets,
-        and(
-          eq(
-            connectorCatalogRuntimeProjectionSets.sourceId,
-            connectorCatalogActiveSnapshot.sourceId,
-          ),
-          eq(
-            connectorCatalogRuntimeProjectionSets.schemaVersion,
-            connectorCatalogActiveSnapshot.schemaVersion,
-          ),
-          eq(
-            connectorCatalogRuntimeProjectionSets.catalogVersion,
-            connectorCatalogActiveSnapshot.catalogVersion,
-          ),
-          eq(
-            connectorCatalogRuntimeProjectionSets.catalogDigest,
-            connectorCatalogActiveSnapshot.catalogDigest,
-          ),
-        ),
-      )
-      .leftJoin(
-        connectorCatalogCompatibilityEvaluation,
-        and(
-          eq(
-            connectorCatalogCompatibilityEvaluation.sourceId,
-            connectorCatalogActiveSnapshot.sourceId,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.schemaVersion,
-            connectorCatalogActiveSnapshot.schemaVersion,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.catalogVersion,
-            connectorCatalogActiveSnapshot.catalogVersion,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.catalogDigest,
-            connectorCatalogActiveSnapshot.catalogDigest,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-            capabilityDigest,
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-          eq(
-            connectorCatalogActiveSnapshot.schemaVersion,
-            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-          ),
-        ),
-      )
-      .limit(1);
-    return row;
-  });
 }

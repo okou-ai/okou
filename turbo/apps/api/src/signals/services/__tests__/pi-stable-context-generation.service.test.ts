@@ -1,3 +1,8 @@
+import {
+  piCatalogIdentityForTest,
+  historicalPiArtifactForTest,
+} from "../../../test-fixtures/pi-catalog-identity";
+import { connectorCatalogSource } from "../connector-catalog-source";
 import { parseRawRows } from "../../../lib/db-raw-rows";
 import {
   piStableContextGenerationReceiptSchema,
@@ -9,7 +14,7 @@ import {
   publicationReadinessSql,
   completePiStableContextPublicationSql,
   invalidatePiStableContextsForUserSql,
-  invalidatePiStableContextsForCatalogSourceSql,
+  invalidateCatalogDependentPiOwnerSql,
   retirePiStableContextPublicationSql,
   piStableContextDemandInputSql,
   piStableContextStorageDemandValues,
@@ -38,7 +43,7 @@ import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
@@ -136,8 +141,7 @@ describe("Pi stable context generation fences", () => {
       source: {
         agentGeneration: 1,
         userGeneration: 1,
-        catalogIdentity: null,
-        catalogSourceId: null,
+        catalog: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -449,16 +453,16 @@ describe("Pi stable context generation fences", () => {
     );
   });
 
-  it("keeps a test catalog source from mutating another source's work", async () => {
+  it("keeps a catalog-dependent owner invalidation from mutating another schema or owner", async () => {
     const first = await seed();
     const second = await seed();
     const firstInput = {
       ...first.input,
-      source: { ...first.input.source, catalogSourceId: "fixture-source-a" },
+      source: { ...first.input.source, catalog: piCatalogIdentityForTest() },
     };
     const secondInput = {
       ...second.input,
-      source: { ...second.input.source, catalogSourceId: "fixture-source-b" },
+      source: { ...second.input.source, catalog: piCatalogIdentityForTest(2) },
     };
     const leaseId = randomUUID();
     await db
@@ -512,8 +516,10 @@ describe("Pi stable context generation fences", () => {
     }
 
     await db.execute(
-      invalidatePiStableContextsForCatalogSourceSql(
-        "fixture-source-a",
+      invalidateCatalogDependentPiOwnerSql(
+        first.input.owner,
+        piCatalogIdentityForTest().schemaVersion,
+        connectorCatalogSource().sourceId,
         nowDate(),
       ),
     );
@@ -539,7 +545,7 @@ describe("Pi stable context generation fences", () => {
           artifactDigest: null,
           input: expect.objectContaining({
             source: expect.objectContaining({
-              catalogSourceId: "fixture-source-b",
+              catalog: piCatalogIdentityForTest(2),
             }),
           }),
         }),
@@ -824,8 +830,7 @@ describe("Pi stable context generation fences", () => {
         return prompt;
       },
       source: {
-        catalogIdentity: null,
-        catalogSourceId: null,
+        catalog: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -1018,8 +1023,7 @@ describe("Pi stable context generation fences", () => {
       },
       semantic,
       source: {
-        catalogIdentity: null,
-        catalogSourceId: null,
+        catalog: null,
         agentIdentityDigest: "captured-agent",
         featurePromptDigest: "captured-feature",
         permissionDigest: "captured-permission",
@@ -1209,8 +1213,7 @@ describe("Pi stable context generation fences", () => {
       tools: "captured tools",
     };
     const source = {
-      catalogIdentity: null,
-      catalogSourceId: null,
+      catalog: null,
       agentIdentityDigest: "captured-agent",
       featurePromptDigest: "captured-feature",
       permissionDigest: "captured-permission",
@@ -1486,8 +1489,7 @@ describe("Pi stable context generation fences", () => {
             };
           },
           source: {
-            catalogIdentity: null,
-            catalogSourceId: null,
+            catalog: null,
             agentIdentityDigest: "agent-identity",
             featurePromptDigest: "storage-feature",
             permissionDigest: "storage-permission",
@@ -1794,6 +1796,119 @@ describe("Pi stable context generation fences", () => {
     ).resolves.toHaveLength(0);
   });
 
+  it("rejects old-format pending work without upgrading its authority", async () => {
+    const fixture = await seed();
+    const { catalog: _catalog, ...remaining } = fixture.input.source;
+    const legacy = JSON.stringify({
+      ...remaining,
+      catalogIdentity: null,
+      catalogSourceId: null,
+    });
+    await db.execute(sql`update ${piStableContextHeads} set input = jsonb_set(${piStableContextHeads.input}, '{source}', ${legacy}::jsonb)
+      where ${eq(piStableContextHeads.id, fixture.headId)}`);
+    await expect(
+      executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
+    ).resolves.toMatchObject({ claimed: 0, ready: 0 });
+    await expect(
+      db
+        .select({
+          status: piStableContextHeads.status,
+          input: piStableContextHeads.input,
+          inputDigest: piStableContextHeads.inputDigest,
+          artifactDigest: piStableContextHeads.artifactDigest,
+          leaseId: piStableContextHeads.leaseId,
+        })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, fixture.headId)),
+    ).resolves.toStrictEqual([
+      {
+        status: "missing",
+        input: null,
+        inputDigest: null,
+        artifactDigest: null,
+        leaseId: null,
+      },
+    ]);
+  });
+
+  it("rejects old-format ready bindings and rebuilds a current reusable input", async () => {
+    const fixture = await seed();
+    const signal = AbortSignal.timeout(5000);
+    const args = {
+      db,
+      owner: fixture.input.owner,
+      variantDigest: "a".repeat(64),
+      buildPrompt: () => {
+        return fixture.input.prompt;
+      },
+      source: fixture.input.source,
+      mounts: [],
+      persistedStorageMounts: [],
+      eligible: true,
+      checkedAt: nowDate(),
+    };
+    await expect(
+      createStore().get(preparePiStableContext(args, signal)),
+    ).resolves.toMatchObject({ kind: "missing" });
+    await expect(
+      createStore().get(preparePiStableContext(args, signal)),
+    ).resolves.toMatchObject({ kind: "ready" });
+    const { catalog: _catalog, ...remaining } = fixture.input.source;
+    const legacy = JSON.stringify({
+      ...remaining,
+      catalogIdentity: null,
+      catalogSourceId: null,
+    });
+    const [current] = await db
+      .select({ projection: piStableContextArtifacts.projection })
+      .from(piStableContextHeads)
+      .innerJoin(
+        piStableContextArtifacts,
+        eq(
+          piStableContextArtifacts.digest,
+          piStableContextHeads.artifactDigest,
+        ),
+      )
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    if (!current) {
+      throw new Error("Expected the repaired artifact");
+    }
+    expect(historicalPiArtifactForTest(current.projection).digest).toBe(
+      piStableContextArtifactDigest(current.projection),
+    );
+    const historical = historicalPiArtifactForTest({
+      ...current.projection,
+      source: { ...remaining, catalogIdentity: null, catalogSourceId: null },
+    });
+    // Append historical bytes. Neither immutable artifact is updated in place.
+    await db.insert(piStableContextArtifacts).values({
+      digest: historical.digest,
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      agentId: fixture.agentId,
+      projection: sql`${historical.json}::jsonb`,
+    });
+    await db
+      .update(piStableContextHeads)
+      .set({
+        artifactDigest: historical.digest,
+        input: sql`jsonb_set(${piStableContextHeads.input}, '{source}', ${legacy}::jsonb)`,
+      })
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    await expect(
+      createStore().get(preparePiStableContext(args, signal)),
+    ).resolves.toMatchObject({ kind: "missing" });
+    await expect(
+      createStore().get(preparePiStableContext(args, signal)),
+    ).resolves.toMatchObject({ kind: "ready" });
+    await expect(
+      db
+        .select({ input: piStableContextHeads.input })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, fixture.headId)),
+    ).resolves.toMatchObject([{ input: { source: { catalog: null } } }]);
+  });
+
   it("recovers expired leases and terminally fails an exhausted lease", async () => {
     const fixture = await seed();
     await db
@@ -1819,8 +1934,7 @@ describe("Pi stable context generation fences", () => {
         };
       },
       source: {
-        catalogIdentity: null,
-        catalogSourceId: null,
+        catalog: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature-lease",
         permissionDigest: "permission-lease",
@@ -1929,8 +2043,7 @@ describe("Pi stable context generation fences", () => {
         };
       },
       source: {
-        catalogIdentity: null,
-        catalogSourceId: null,
+        catalog: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -2065,8 +2178,7 @@ describe("Pi stable context generation fences", () => {
         };
       },
       source: {
-        catalogIdentity: null,
-        catalogSourceId: null,
+        catalog: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -2182,8 +2294,7 @@ describe("Pi stable context generation fences", () => {
             };
           },
           source: {
-            catalogIdentity: null,
-            catalogSourceId: null,
+            catalog: null,
             agentIdentityDigest: "agent-identity",
             featurePromptDigest: "feature",
             permissionDigest: "permission",
