@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.998.7](https://github.com/okou-ai/okou/compare/app-v0.998.6...app-v0.998.7) (2026-10-06)
+
+
+### Bug Fixes
+
+* **app:** keep billing pricing dialog stable across async loading ([#37801](https://github.com/okou-ai/okou/issues/37801)) ([3a62e63](https://github.com/okou-ai/okou/commit/3a62e6375801e96fa6378104c95f1818aad9eb32))
+
 ## [0.998.6](https://github.com/okou-ai/okou/compare/app-v0.998.5...app-v0.998.6) (2026-10-06)
 
 
