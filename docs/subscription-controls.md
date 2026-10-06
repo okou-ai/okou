@@ -53,14 +53,13 @@ Claude Code exposes usage and natural recovery times, but does not support
 manual reset. `subscriptionResetSupported` expresses the provider capability
 independently of current credits; the card never enables a Claude Code reset.
 
-## Authorization and rollout
+## Authorization
 
-`SubscriptionControls` defaults to staff-organization rollout. It gates the new
-single-account read, the card's account loading, and issuance of
-`subscription:read` / `subscription:switch` run capabilities. The existing list
-and activate routes require the respective capability for agent credentials
-and recheck the switch on each request. Existing human settings reads and
-activation are unchanged when the switch is disabled.
+Run tokens always carry the `subscription:read` and `subscription:switch`
+capabilities. The list and single-account read routes require
+`subscription:read` for agent credentials, and activation requires
+`subscription:switch`. Human settings reads and activation use the user's own
+authenticated session.
 
 Reset endpoints do not accept agent-run credentials; no reset capability is
 issued. The user-confirmed Platform control uses the user's own authenticated

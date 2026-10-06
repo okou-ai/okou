@@ -139,7 +139,7 @@ and invalidation behavior remain unchanged.
 
 ## Personal subscription CLI and Reset Cards
 
-`SubscriptionControls` adds a staff-gated single-account usage GET at
+Subscription controls add a single-account usage GET at
 `/api/me/subscriptions/:id`, additive optional `subscriptionResetSupported`
 metadata, and `subscription:read` / `subscription:switch` run capabilities.
 Existing human list, activation, and Codex reset behavior remain unchanged.

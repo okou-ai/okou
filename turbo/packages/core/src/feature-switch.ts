@@ -339,12 +339,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.SubscriptionControls]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Read and switch personal subscriptions through the CLI and reset Codex usage through a user-confirmed chat card.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:

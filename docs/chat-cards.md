@@ -253,7 +253,7 @@ expose recovery times, remaining credits, expiry and confirmation copy outside
 the fixed frame, including on keyboard and touch. Inner copy uses div/span
 slots rather than Markdown headings or paragraphs, preventing transcript
 margins from squeezing required content. See
-[subscription controls](subscription-controls.md) for CLI commands and rollout.
+[subscription controls](subscription-controls.md) for CLI commands and authorization.
 
 ## Failure Recovery Classification
 
