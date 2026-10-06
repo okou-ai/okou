@@ -1934,6 +1934,7 @@ describe("CHAT-02: completed chat callback", () => {
         generationConfig: {
           maxOutputTokens: number;
           thinkingConfig: { thinkingLevel: string };
+          temperature?: number;
         };
       }
     >();
@@ -1942,10 +1943,7 @@ describe("CHAT-02: completed chat callback", () => {
       const systemContent = body.messages[0]?.content ?? "";
       const record = {
         model: body.model,
-        generationConfig: {
-          maxOutputTokens: body.generationConfig.maxOutputTokens,
-          thinkingConfig: body.generationConfig.thinkingConfig,
-        },
+        generationConfig: body.generationConfig,
       };
       if (systemContent.includes("Generate a short, descriptive title")) {
         requestsBySite.set("title", record);
@@ -1997,6 +1995,7 @@ describe("CHAT-02: completed chat callback", () => {
         generationConfig: {
           maxOutputTokens: 2048,
           thinkingConfig: { thinkingLevel: "MINIMAL" },
+          temperature: 0.3,
         },
       });
     }

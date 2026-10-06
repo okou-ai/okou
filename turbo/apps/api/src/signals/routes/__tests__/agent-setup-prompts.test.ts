@@ -74,76 +74,95 @@ describe("POST /api/agent-setup-prompts", () => {
     });
   });
 
-  it("returns Flash-Lite's polished message using Google authentication without an OpenRouter key", async () => {
-    mockGoogleText();
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-    await signIn({ featureEnabled: true });
-    const polished = [
-      "Hi Support Scout, here is your responsibility:",
-      "",
-      "- Every Monday, summarize open Zendesk tickets for the Acme account.",
-      "- Flag anything waiting more than 2 days and post it in #support-leads.",
-      "",
-      "Please update your description and instructions accordingly, then briefly confirm what you changed.",
-    ].join("\n");
-    const providerRequests: unknown[] = [];
-    server.use(
-      http.post(VERTEX_TEXT_URL, async ({ request }) => {
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer synthetic-google-token",
-        );
-        providerRequests.push(
-          vertexTextRequest(await request.json(), request.url),
-        );
-        return HttpResponse.json({
-          candidates: [
-            {
-              finishReason: "STOP",
-              content: {
-                parts: [
-                  {
-                    text: "Private reasoning must not enter the setup brief",
-                    thought: true,
-                  },
-                  { text: polished },
-                ],
-              },
-            },
-          ],
-          usageMetadata: { candidatesTokenCount: 60, thoughtsTokenCount: 10 },
-        });
-      }),
-    );
-    const response = await accept(
-      client().create({
-        headers,
-        body: { agentName: "Support Scout", responsibility },
-      }),
-      [200],
-    );
-    expect(response.body).toStrictEqual({ prompt: polished });
-    expect(providerRequests).toHaveLength(1);
-    expect(providerRequests[0]).toMatchObject({
-      model: "gemini-3.1-flash-lite",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: JSON.stringify({
-                agentName: "Support Scout",
-                responsibility,
-              }),
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        thinkingConfig: { thinkingLevel: "MINIMAL" },
-        maxOutputTokens: 2048,
+  it.each([
+    {
+      case: "valid usage metadata",
+      usageMetadata: { candidatesTokenCount: 60, thoughtsTokenCount: 10 },
+    },
+    {
+      case: "a malformed optional count",
+      usageMetadata: {
+        candidatesTokenCount: "untrusted-count",
+        thoughtsTokenCount: 10,
       },
-    });
-  });
+    },
+    {
+      case: "malformed optional metadata",
+      usageMetadata: "untrusted-metadata",
+    },
+  ])(
+    "returns Flash-Lite's polished message without an OpenRouter key with $case",
+    async ({ usageMetadata }) => {
+      mockGoogleText();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      await signIn({ featureEnabled: true });
+      const polished = [
+        "Hi Support Scout, here is your responsibility:",
+        "",
+        "- Every Monday, summarize open Zendesk tickets for the Acme account.",
+        "- Flag anything waiting more than 2 days and post it in #support-leads.",
+        "",
+        "Please update your description and instructions accordingly, then briefly confirm what you changed.",
+      ].join("\n");
+      const providerRequests: unknown[] = [];
+      server.use(
+        http.post(VERTEX_TEXT_URL, async ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer synthetic-google-token",
+          );
+          providerRequests.push(
+            vertexTextRequest(await request.json(), request.url),
+          );
+          return HttpResponse.json({
+            candidates: [
+              {
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: "Private reasoning must not enter the setup brief",
+                      thought: true,
+                    },
+                    { text: polished },
+                  ],
+                },
+              },
+            ],
+            usageMetadata,
+          });
+        }),
+      );
+      const response = await accept(
+        client().create({
+          headers,
+          body: { agentName: "Support Scout", responsibility },
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ prompt: polished });
+      expect(providerRequests).toHaveLength(1);
+      expect(providerRequests[0]).toMatchObject({
+        model: "gemini-3.1-flash-lite",
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: JSON.stringify({
+                  agentName: "Support Scout",
+                  responsibility,
+                }),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          thinkingConfig: { thinkingLevel: "MINIMAL" },
+          maxOutputTokens: 2048,
+        },
+      });
+    },
+  );
 
   it.each([
     {

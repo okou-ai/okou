@@ -61,22 +61,8 @@ interface VertexTextGeneration {
 
 const responseSchema = z.object({
   promptFeedback: z.object({ blockReason: z.string().optional() }).optional(),
-  usageMetadata: z
-    .object({
-      candidatesTokenCount: z
-        .number()
-        .int()
-        .nonnegative()
-        .max(Number.MAX_SAFE_INTEGER)
-        .optional(),
-      thoughtsTokenCount: z
-        .number()
-        .int()
-        .nonnegative()
-        .max(Number.MAX_SAFE_INTEGER)
-        .optional(),
-    })
-    .optional(),
+  // Optional diagnostics must not decide whether usable text is accepted.
+  usageMetadata: z.unknown().optional(),
   candidates: z
     .array(
       z.object({
@@ -97,6 +83,21 @@ const responseSchema = z.object({
     .optional(),
 });
 
+const usageMetadataSchema = z.object({
+  candidatesTokenCount: z.unknown().optional(),
+  thoughtsTokenCount: z.unknown().optional(),
+});
+const tokenCountSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+
+function optionalTokenCount(value: unknown): number | undefined {
+  const parsed = tokenCountSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 function parseGeneration(
   body: string,
   acceptTruncatedText: boolean,
@@ -105,10 +106,13 @@ function parseGeneration(
   if (!parsed.success) {
     throw new VertexTextError("invalid_output");
   }
-  const tokens: VertexTextTokens = {
-    completionTokens: parsed.data.usageMetadata?.candidatesTokenCount,
-    reasoningTokens: parsed.data.usageMetadata?.thoughtsTokenCount,
-  };
+  const usage = usageMetadataSchema.safeParse(parsed.data.usageMetadata);
+  const tokens: VertexTextTokens = usage.success
+    ? {
+        completionTokens: optionalTokenCount(usage.data.candidatesTokenCount),
+        reasoningTokens: optionalTokenCount(usage.data.thoughtsTokenCount),
+      }
+    : {};
   const candidate = parsed.data.candidates?.[0];
   if (
     parsed.data.promptFeedback?.blockReason ||
