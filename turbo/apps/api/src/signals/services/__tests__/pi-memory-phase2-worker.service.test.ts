@@ -1630,9 +1630,8 @@ describe("Phase 2 current credential admission", () => {
   it.each(["storage-head", "switch", "rotation", "replacement", "surface"])(
     "fences %s changes during asynchronous preparation",
     async (fault) => {
-      let carrier:
-        | Awaited<ReturnType<typeof claimOwnedMemoryCarrier>>
-        | undefined;
+      const concurrentMemory = "Concurrent preparation Memory";
+      let concurrentMemoryVersionId: string | undefined;
       const fixture = createPublicPiMemorySource(publicScopeContext, {
         cashCredits: 100_000,
         sourceProvider:
@@ -1649,7 +1648,11 @@ describe("Phase 2 current credential admission", () => {
         async beforeMemoryPublication(agentId) {
           // Claim the empty mount before initial publication can cache its archive URL.
           if (fault === "storage-head") {
-            carrier = await claimOwnedMemoryCarrier(fixture, agentId);
+            const carrier = await claimOwnedMemoryCarrier(fixture, agentId);
+            concurrentMemoryVersionId = await commitOwnedCarrierMemory(
+              carrier,
+              concurrentMemory,
+            );
           }
         },
       });
@@ -1667,7 +1670,8 @@ describe("Phase 2 current credential admission", () => {
         }
         const job = ownedPublicPhase2Job(fixture, scope, at);
         let changed = false;
-        let expectedHead = scope.publishedMemory.versionId;
+        const originalHead = scope.publishedMemory.versionId;
+        let expectedHead = originalHead;
         onPublicMemoryArchivePresign(
           scope.publishedMemory.archiveKey,
           async () => {
@@ -1676,13 +1680,34 @@ describe("Phase 2 current credential admission", () => {
             }
             changed = true;
             if (fault === "storage-head") {
-              if (!carrier) {
-                throw new Error("Expected pre-publication carrier");
+              if (!concurrentMemoryVersionId) {
+                throw new Error(
+                  "Expected publicly committed concurrent Memory",
+                );
               }
-              expectedHead = await commitOwnedCarrierMemory(
-                carrier,
-                "Concurrent preparation Memory",
-              );
+              // Key10 retains this exact original HEAD-only race input. A public
+              // commit here also notifies new input, changing retry semantics.
+              // Both nonempty versions were publicly committed before Stage1;
+              // only the original notification-free HEAD swap remains private.
+              expectedHead = concurrentMemoryVersionId;
+              const changedStorage = await db()
+                .update(storages)
+                .set({
+                  headVersionId: concurrentMemoryVersionId,
+                  size: Buffer.byteLength(concurrentMemory),
+                  fileCount: 1,
+                  updatedAt: new Date(now()),
+                })
+                .where(
+                  and(
+                    eq(storages.id, scope.memoryStorageId),
+                    eq(storages.orgId, scope.orgId),
+                    eq(storages.userId, scope.userId),
+                    eq(storages.headVersionId, originalHead),
+                  ),
+                )
+                .returning({ id: storages.id });
+              expect(changedStorage).toHaveLength(1);
             } else if (fault === "switch") {
               await updateFeatureSwitchesForUser(publicScopeContext, scope, {
                 [FeatureSwitchKey.PiMemory]: false,
