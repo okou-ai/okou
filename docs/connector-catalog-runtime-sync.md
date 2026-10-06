@@ -151,6 +151,55 @@ reproduced cause. The R1 source correction requires independent actual-delta
 review and natural exact-new-HEAD CI; author static checks are not acceptance.
 No local Vitest/native/PG execution or recovery-budget reuse is authorized.
 
+## Fixed-main alignment and minimal SCA repair
+
+After the independent R1 Scoped LGTM at `bf5f6a490eeb078c6f6f4b0d78fdb6a31786b5dc`,
+the coordinator authorized the original PR's normal retarget to main and one
+integration of fixed main `936ccb30e40aa238c19f7045462f5709099ec079`.
+P4a already merged at `f4137823742879fcc8f74b476734d18e8480e15c`; it is not an
+outstanding dependency. Retarget readback made the actual bf5 branch and PR head
+agree, but retarget alone is not a new-source CI acceptance result.
+
+Normal merge `c4a89222d13c9dee2c14f40bc7d1d2fcbdbc6d22` has ordered parents bf5,
+then fixed936. The sole conflicted path is the native immutable catalog test:
+main incorporates P4a's MCP coverage while runtime extends that same coverage.
+Resolution preserves the entire runtime/bf5 blob, including N3 competitors,
+N4/N5 runtime commands, seven reads and five-engine teardown. The automatically
+merged ordinary run-lifecycle file also equals bf5. The DB tree equals incoming
+main exactly; no migration, snapshot or journal is invented, and no C1323 or
+account/O1a business branch is imported. Incoming74-path main changes are
+inventory/integration facts, not an author claim of independent full review.
+Runtime selections, union/hash capture, final signal, Discord±301 and both R1
+policy files remain byte-identical to the independently reviewed bf5 source.
+
+The actual integrated lock still selected vulnerable proxy-addr2.0.7. A narrow
+`express>proxy-addr: ^2.0.8` floor now addresses GHSA-jqcg-44mw-7w3h through the
+existing override mechanism, with removal when upstream requires the patched
+floor. Repository pnpm10.33.4 generated the lock using normal
+`install --lockfile-only --ignore-scripts`; structural comparison shows only
+that leaf, Express edge and matching override changed. Importers, SDK1.30.0,
+Express5.2.1, forwarded0.2.0, ipaddr.js1.9.1, other leaves/patches and audit/age/CI
+policy remain unchanged. Registry integrity and the September15 release age
+were independently established for the same leaf in the separate account
+review; that prior approval does not approve this runtime author's new delta.
+
+Author validation uses an isolated tracked-source copy with its own frozen
+installation, not the shared dependency symlinks. Full API and the other three
+affected-workspace types, scoped warning-clean/type-aware checks, loader
+interface, format and diff results belong to the owner handoff. An initial Pi
+type check exposed a missing root fixture in the partial source copy; copying
+that unchanged tracked fixture closes the validation-copy gap, not a product
+repair. Loader harness corrections for ESM-only exports and pnpm ancestor
+resolution are not observed application failures or HTTP compatibility proof.
+Production audit reports critical0 and retains metadata high1; this is not a
+vulnerability-free claim. No local Vitest/native/PG/devserver execution.
+
+The actual merge resolution and dependency/ledger delta require new independent
+review. Natural final-HEAD CI/main-base/actual-checkout results remain separate
+from prior source LGTM and author static checks; original6376 FAIL and unique
+mutation UNKNOWN stay intact. No prior cohort, retarget effect or old recovery
+allowance is substituted for final-source acceptance.
+
 ## Verification boundary
 
 Read current main practices at `db21163887a248a206ba7bcfadfca4d8f73aaab5`, matching the prior authoritative review receipt. Use explicit-file ESLint/Oxlint with deny-warnings and repository type-aware configuration, formatting/diff checks, and the repository aggregate API type pipeline including regenerated complete test roots. Exact command results belong in the private owner handoff; none establishes runtime acceptance.
