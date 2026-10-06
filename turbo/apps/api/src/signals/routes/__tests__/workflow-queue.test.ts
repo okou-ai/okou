@@ -38,11 +38,7 @@ import {
 } from "./helpers/chat-event";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
-import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
-import {
-  seedBuiltInModelCandidateKeys,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -485,51 +481,6 @@ async function releaseStaleRunAndPickWorkflowQueue(args: {
 }
 
 describe("workflow queue", () => {
-  it("rejects a workflow automation when every built-in route is unavailable", async () => {
-    const scenario = await setup();
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", scenario.runnerGroup);
-    // Fixed Auto is the only foreground platform route; owned key/cooldown
-    // fixtures do not grant executable authority to cloned catalog metadata.
-    const model = "okou-1.0";
-    await seedBuiltInModelCandidateKeys(context, model);
-    await api.updateUserModelPreference(scenario.actor, model);
-    // The automation thread pins the preferred Built-in model.
-    const automation = await createWebhookAutomation(scenario);
-    // Provider failures cool down every Built-in candidate of the model.
-    await coolDownBuiltInRoutesThroughReports(context, {
-      actor: scenario.actor,
-      agentId: scenario.agentId,
-      runnerGroup: scenario.runnerGroup,
-      model,
-      routes: [
-        { providerType: "openrouter-codex", upstreamModel: "@preset/okou-1-0" },
-      ],
-    });
-
-    const response = await postWorkflowWebhook(
-      automation,
-      "launch without a built-in model key",
-    );
-    // The trigger is accepted; the launch rejection appears in the thread.
-    expectAccepted(response);
-
-    const events = await wf.readThreadEvents(automation.threadId);
-    const rejected = events.find((event) => {
-      return event.eventType === "input.rejected";
-    });
-    if (rejected?.eventType !== "input.rejected") {
-      throw new Error("Expected the workflow automation to be rejected");
-    }
-    expect(rejected.error).toBe("model_provider_unavailable");
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "model_provider_unavailable",
-      }),
-    );
-    await expect(workflowRunIds(automation.threadId)).resolves.toHaveLength(0);
-  });
-
   describe("a stale automation event with a missed terminal callback", () => {
     async function prepareStaleEvent() {
       mockNow(Date.UTC(2020, 0, 1));

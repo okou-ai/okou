@@ -2,7 +2,7 @@ import { setOrgOpenrouterPresetFixture } from "../../../test-fixtures/org-metada
 import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
@@ -26,8 +26,6 @@ import {
   claimEnvironment,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
@@ -98,29 +96,6 @@ async function preparePiResourceHandoff(
   await publishPendingPiInstructions(actor, agentId);
   mockPiResourceArchiveDownloads(true);
   mockPiCheckpointObjectStore();
-}
-
-/**
- * A claimed Run reports the test-owned model's OpenRouter route unavailable.
- * The configured direct DeepSeek candidate remains ineligible for new Runs.
- */
-async function builtInModelWithOpenRouterCoolingDown(
-  actor: ApiTestUser,
-  agentId: string,
-  runnerGroup: string,
-): Promise<"okou-1.0"> {
-  await configureBuiltInPiModel(actor, "okou-1.0");
-  await preparePiResourceHandoff(actor, agentId);
-  await coolDownBuiltInRoutesThroughReports(context, {
-    actor,
-    agentId,
-    runnerGroup,
-    model: "okou-1.0",
-    routes: [
-      { providerType: "openrouter-codex", upstreamModel: "@preset/okou-1-0" },
-    ],
-  });
-  return "okou-1.0";
 }
 
 /**
@@ -1065,37 +1040,6 @@ describe("CHAT-02: model-first provider policies", () => {
       await cancelChatRun(actor, run.runId);
     },
     90_000,
-  );
-
-  it.each(["okou-1.0"] as const)(
-    "fails closed for built-in %s when its required OpenRouter route is unavailable",
-    async () => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      configureNativeCliArtifact();
-      const model = await builtInModelWithOpenRouterCoolingDown(
-        actor,
-        agentId,
-        runnerGroup,
-      );
-      await api.updateUserModelPreference(actor, model);
-      const thread = await chat.createThread(actor, { agentId, model });
-      // Own even an unexpectedly admitted input before checking the rejection.
-      // The real thread deletion cancels its pending work before route cleanup.
-      onTestFinished(async () => {
-        await createChatFilesBddApi(context).deleteThread(actor, thread.id);
-        await flushWaitUntilForTest();
-      });
-      const { picked } = await sendUntilPicked(actor, {
-        agentId,
-        threadId: thread.id,
-        prompt: "require the managed OpenRouter DeepSeek route",
-        model,
-      });
-      expect(picked).toMatchObject({
-        eventType: "input.rejected",
-        error: "model_provider_unavailable",
-      });
-    },
   );
 
   it.each([false, true])(

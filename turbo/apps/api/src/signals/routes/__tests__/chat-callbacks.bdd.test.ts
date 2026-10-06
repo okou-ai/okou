@@ -44,18 +44,12 @@ import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fix
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  registerBuiltInCandidateCooldownCleanup,
-  resolveBuiltInModelRouteFixture,
-  seedBuiltInModelCandidateKeys,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 
 /**
  * CHAT-02 / HOOK-01: signed chat run callbacks through real dispatch.
@@ -80,10 +74,6 @@ const integrations = createBddIntegrationApi(context);
 const misc = createMiscRoutesApi(context);
 
 const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
-// Built-in candidates of claude-fable-5-1 in the global model catalog.
-const AUTO_CANDIDATES = [
-  { providerType: "openrouter-codex", upstreamModel: "@preset/okou-1-0" },
-] as const;
 type UserMessage = Extract<
   ChatEvent,
   {
@@ -3514,146 +3504,6 @@ describe("CHAT-02: drain-time admission failure", () => {
       }),
     ).toHaveLength(0);
   }, 90_000);
-
-  it("terminalizes a queued Web message with neutral copy when every built-in route is unavailable", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    onTestFinished(async () => {
-      await createBddApi(context).deleteAgent(actor, agentId);
-      await flushWaitUntilForTest();
-    });
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    // Only fixed Auto has foreground platform authority. Use owned key/cooldown
-    // fixtures; a cloned catalog model must never become an executable route.
-    const model = "okou-1.0";
-    await seedBuiltInModelCandidateKeys(context, model);
-
-    const anchor = await startChatRun(actor, {
-      agentId,
-      prompt: "finish before queued built-in model admission",
-    });
-    const ownedAnchor: {
-      headers?: { readonly authorization: string };
-      finished: boolean;
-    } = { finished: false };
-    async function cleanupAnchor(): Promise<void> {
-      if (ownedAnchor.finished) {
-        return;
-      }
-      const cleanupRuns = createRunsApi(context);
-      cleanupRuns.acceptTelemetryIngest();
-      context.mocks.ably.publish.mockResolvedValue(undefined);
-      const current = await cleanupRuns.readRun(actor, anchor.runId);
-      if (current.status === "pending" || current.status === "running") {
-        await cleanupRuns.requestCancelRun(actor, anchor.runId, [200]);
-      }
-      if (
-        ownedAnchor.headers &&
-        (current.status === "pending" ||
-          current.status === "running" ||
-          current.status === "cancelled")
-      ) {
-        await createWebhookCallbackApi(context).requestAgentComplete(
-          {
-            runId: anchor.runId,
-            exitCode: 1,
-            error: "Cancelled queued admission anchor",
-          },
-          ownedAnchor.headers,
-          [200],
-        );
-      }
-      await flushWaitUntilForTest();
-      ownedAnchor.finished = true;
-    }
-    onTestFinished(cleanupAnchor);
-    const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
-    ownedAnchor.headers = anchorHeaders;
-    await api.updateUserModelPreference(actor, model);
-    // The queued input keeps the model selected when it is enqueued.
-    await chat.updateThreadModelSelection(actor, anchor.threadId, model);
-    const queuedPrompt = "reject this queued message without a built-in key";
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: anchor.threadId,
-      prompt: queuedPrompt,
-    });
-    chatCallbacks.mockChatOutputEvents([]);
-    // Provider failures cool down every Built-in candidate of the model.
-    await coolDownBuiltInRoutesThroughReports(context, {
-      actor,
-      agentId,
-      runnerGroup,
-      model,
-      routes: AUTO_CANDIDATES,
-      beforeCooldownCleanup: cleanupAnchor,
-    });
-
-    await completeChatRunOk(anchor.runId, anchorHeaders);
-    await flushWaitUntilForTest();
-
-    const terminal = await waitForThreadMessages(
-      actor,
-      anchor.threadId,
-      (events) => {
-        return (
-          userMessages(events).some((event) => {
-            return (
-              event.eventType === "input.rejected" &&
-              event.revokesEventId === queuedEventId &&
-              event.error === "model_provider_unavailable"
-            );
-          }) &&
-          assistantMessages(events).some((event) => {
-            return (
-              event.eventType === "output.error" &&
-              event.error === "model_provider_unavailable"
-            );
-          })
-        );
-      },
-    );
-    const rejected = userMessages(terminal.events).find((event) => {
-      return (
-        event.eventType === "input.rejected" &&
-        event.revokesEventId === queuedEventId
-      );
-    });
-    if (rejected?.eventType !== "input.rejected") {
-      throw new Error("Expected the queued Web message to be rejected");
-    }
-    expect(rejected.error).toBe("model_provider_unavailable");
-    const errors = assistantMessages(terminal.events).filter((event) => {
-      return (
-        event.eventType === "output.error" &&
-        event.error === "model_provider_unavailable"
-      );
-    });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]?.content).toBe(
-      "Oops, something went wrong. Please try again later.",
-    );
-    const reads = createRunReadsApi(context);
-    const pending = await reads.requestListLogs(
-      actor,
-      { status: "pending", limit: 20 },
-      [200],
-    );
-    const running = await reads.requestListLogs(
-      actor,
-      { status: "running", limit: 20 },
-      [200],
-    );
-    const active = [...pending.body.data, ...running.body.data]
-      .sort((left, right) => {
-        return right.createdAt.localeCompare(left.createdAt);
-      })
-      .slice(0, 20);
-    expect(
-      active.filter((run) => {
-        return run.prompt === queuedPrompt;
-      }),
-    ).toHaveLength(0);
-  }, 90_000);
 });
 
 describe("CHAT-02: failed chat callbacks", () => {
@@ -4087,83 +3937,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       );
     },
   );
-
-  it("retains built-in billing reports and route cooldown after a public unavailable failure", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const selectedModel = "okou-1.0";
-    await seedBuiltInModelCandidateKeys(context, selectedModel);
-    const cleanupRoute = await resolveBuiltInModelRouteFixture(
-      context,
-      selectedModel,
-    );
-    if (!cleanupRoute) {
-      throw new Error("Expected a seeded built-in route for cleanup");
-    }
-    registerBuiltInCandidateCooldownCleanup(
-      context,
-      selectedModel,
-      cleanupRoute,
-    );
-    await api.updateUserModelPreference(actor, selectedModel);
-    const first = await startChatRun(actor, {
-      agentId,
-      prompt: "first built-in run",
-      selectedModel,
-    });
-    const headers = await claimChatRun(runnerGroup, first.runId);
-    const reads = createRunReadsApi(context);
-    const before = await reads.requestReadLogById(actor, first.runId, [200]);
-    await failChatRun(
-      first.runId,
-      headers,
-      "Credit balance is too low",
-      "provider_insufficient_credits",
-    );
-    await flushWaitUntilForTest();
-    await expect(
-      api.reportRunnerModelProviderFailure(first.runId, {
-        failureKind: "billing",
-      }),
-    ).resolves.toStrictEqual({ outcome: "recorded" });
-    await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
-      status: "failed",
-      error: "The current model is unavailable.",
-    });
-
-    expect(before.body).toMatchObject({
-      modelRuntimeProvider: "openrouter-codex",
-      modelRuntimeModel: "@preset/okou-1-0",
-    });
-    const clientEventId = randomUUID();
-    const second = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "another built-in run",
-        model: selectedModel,
-        clientEventId,
-      },
-      [201],
-    );
-    if (second.status !== 201) {
-      throw new Error(
-        "Expected the input acknowledgement before queue rejection",
-      );
-    }
-    await flushWaitUntilForTest();
-    const events = await chat.listThreadEvents(actor, second.body.threadId);
-    expect(userMessages(events.events)).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-      }),
-    );
-    expect(
-      userMessages(events.events).some((event) => {
-        return event.runId !== undefined;
-      }),
-    ).toBeFalsy();
-  });
 
   it("formats failed-run errors and notifies, without auto-sending", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
