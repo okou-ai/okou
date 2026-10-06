@@ -2,7 +2,12 @@
 # Compile real production-library integration consumers in the EXISTING producer.
 # No test execution/emulation, Runner cache publication or production release.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# Container UID differs from checkout ownership. Carry only this verified root's
+# trust into nested Git/materializer processes, never global/wildcard config.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$repo_root"
+[[ $(git -C "$repo_root" rev-parse --show-toplevel) == "$repo_root" ]]
+cd "$repo_root"
 : "${SOURCE_SHA:?missing optimized supervisor source SHA}" "${TARGET_TRIPLE:?missing optimized supervisor target}"
 . .github/scripts/runner-image-target.sh
 runner_image_validate_target "$TARGET_TRIPLE"

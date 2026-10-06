@@ -112,6 +112,41 @@ class OptimizedSupervisor(unittest.TestCase):
         self.assertIn("'materialize'", implementation)
         self.assertNotIn('strip-debug', implementation)
 
+    def test_original_materializer_git_lookup_inherits_only_exact_checkout_trust(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=ROOT / 'crates/target') as directory:
+            parent = Path(directory)
+            repo = parent / 'repo'; unrelated = parent / 'unrelated'
+            for path in (repo, unrelated):
+                subprocess.run(['git', 'init', '-q', str(path)], check=True)
+            scripts = repo / '.github/scripts'; scripts.mkdir(parents=True)
+            original_config = (repo / '.git/config').read_bytes()
+            env = {**os.environ, 'GIT_TEST_ASSUME_DIFFERENT_OWNER': '1',
+                   'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_COUNT': '0'}
+            env.pop('GIT_CONFIG_PARAMETERS', None)
+            refused = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--show-toplevel'],
+                                     env=env, capture_output=True, text=True)
+            self.assertEqual(refused.returncode, 128)
+            self.assertIn('dubious ownership', refused.stderr)
+            for name in ('build-runner-native-supervisor.sh', 'build-runner-native-release.sh'):
+                source = (ROOT / '.github/scripts' / name).read_text()
+                prefix = source.split(': "${SOURCE_SHA', 1)[0]
+                script = scripts / name
+                # Execute only the real caller startup and nested Git lookup,
+                # not a fake materializer/compiler/helper or native outcome.
+                script.write_text(prefix + '\nbash -c "git rev-parse --show-toplevel"\n'
+                                  + 'if git -C "$1" rev-parse --show-toplevel; then exit 9; fi\n')
+                result = subprocess.run(['bash', str(script), str(unrelated)], cwd=scripts,
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), [str(repo)])
+                self.assertIn('dubious ownership', result.stderr)
+                self.assertIn(str(unrelated), result.stderr)
+                self.assertEqual((repo / '.git/config').read_bytes(), original_config)
+                self.assertNotIn('config --global', prefix)
+                self.assertNotIn('safe.directory=*', prefix)
+
     def test_ci_source_inventory_stages_only_exact_committed_test_files(self):
         import hashlib
         import subprocess

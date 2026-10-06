@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Pre-merge distribution conformance only; no release, cache publication or deploy.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# Exact caller-scoped trust survives the container's nested Git processes; no
+# repository/global config write and no trust for unrelated checkouts.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$repo_root"
+[[ $(git -C "$repo_root" rev-parse --show-toplevel) == "$repo_root" ]]
+cd "$repo_root"
 : "${SOURCE_SHA:?missing release source SHA}" "${TARGET_TRIPLE:?missing release target}" \
   "${RUNNER_RELEASE_TOOLCHAIN_IMAGE:?missing release toolchain image}"
 . .github/scripts/runner-image-target.sh
