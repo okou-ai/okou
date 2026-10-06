@@ -1559,6 +1559,30 @@ function createTerminalSandboxStorageRetryVersion(
   });
 }
 
+function createTerminalSandboxStorageRetryLineage(
+  storageId: string,
+  versionId: string,
+  parentVersionId: string,
+  runId: string,
+) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [lineage] = await db
+      .select({ id: storageVersionLineage.id })
+      .from(storageVersionLineage)
+      .where(
+        and(
+          eq(storageVersionLineage.storageId, storageId),
+          eq(storageVersionLineage.versionId, versionId),
+          eq(storageVersionLineage.parentVersionId, parentVersionId),
+          eq(storageVersionLineage.runId, runId),
+        ),
+      )
+      .limit(1);
+    return lineage;
+  });
+}
+
 export function createSandboxStorageCommit(args: CommitStorageInput) {
   const commitInput: CommitStorageForStorageInput = {
     storageId: args.storageId,
@@ -1582,6 +1606,14 @@ export function createSandboxStorageCommit(args: CommitStorageInput) {
     args.storageId,
     args.versionId,
   );
+  const terminalRetryLineage$ = args.parentVersionId
+    ? createTerminalSandboxStorageRetryLineage(
+        args.storageId,
+        args.versionId,
+        args.parentVersionId,
+        args.auth.runId,
+      )
+    : undefined;
   const commit$ = command(
     async (
       { get, set },
@@ -1627,11 +1659,10 @@ export function createSandboxStorageCommit(args: CommitStorageInput) {
       }
       const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
       if (terminalRetry) {
-        const parentVersionId = args.parentVersionId;
         const version = await get(terminalRetryVersion$);
         signal.throwIfAborted();
         if (
-          !parentVersionId ||
+          !terminalRetryLineage$ ||
           !terminalStorageCommitPersistedStateMatches({
             storage: mounted.storage,
             version,
@@ -1641,18 +1672,7 @@ export function createSandboxStorageCommit(args: CommitStorageInput) {
           return notFound("Active agent run not found");
         }
 
-        const [lineage] = await writeDb
-          .select({ id: storageVersionLineage.id })
-          .from(storageVersionLineage)
-          .where(
-            and(
-              eq(storageVersionLineage.storageId, mounted.storage.id),
-              eq(storageVersionLineage.versionId, args.versionId),
-              eq(storageVersionLineage.parentVersionId, parentVersionId),
-              eq(storageVersionLineage.runId, args.auth.runId),
-            ),
-          )
-          .limit(1);
+        const lineage = await get(terminalRetryLineage$);
         signal.throwIfAborted();
         if (!lineage) {
           return notFound("Active agent run not found");
