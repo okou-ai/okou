@@ -23,7 +23,7 @@
     "upload:sentry": "node scripts/upload-sentry-artifacts.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@modelcontextprotocol/server-filesystem": "2026.1.14",
     "@sentry/electron": "^7.18.0",
     "@sentry/react": "^10.73.0",
