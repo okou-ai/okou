@@ -1,3 +1,4 @@
+import { cleanupSandboxFixturesForTest } from "../../../../test-fixtures/sandbox-cleanup-worker";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -39,16 +40,14 @@ export async function cleanupTimedOutRun(
     readonly chatThreadId: string;
   },
 ) {
-  return await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: {
+  return await cleanupSandboxFixturesForTest(
+    {
+      scope: {
         chatThreadIds: [args.chatThreadId],
         runIds: [args.runId],
         exportJobIds: [],
       },
-    }),
-    [200],
+    },
+    context.signal,
   );
 }

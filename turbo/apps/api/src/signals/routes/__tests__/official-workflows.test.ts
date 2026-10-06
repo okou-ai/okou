@@ -1,3 +1,4 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
@@ -20,7 +21,6 @@ import {
   officialWorkflowInstallationsContract,
   officialWorkflowsContract,
 } from "@okouai/api-contracts/contracts/official-workflows";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
@@ -70,7 +70,6 @@ import {
 import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
@@ -1217,22 +1216,16 @@ function storageClient() {
   })(testSystemStoragePresignedUrlCacheStateContract);
 }
 
-function staleQueueCleanupClient() {
-  return setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-    testCronCleanupSandboxesStateContract,
-  );
-}
-
 async function reconcileStaleQueuedMessages(threadId: string): Promise<void> {
-  await accept(
-    staleQueueCleanupClient().cleanup({
-      body: {
+  await cleanupSandboxFixturesForTest(
+    {
+      scope: {
         chatThreadIds: [threadId],
         runIds: [],
         exportJobIds: [],
       },
-    }),
-    [200],
+    },
+    context.signal,
   );
 }
 

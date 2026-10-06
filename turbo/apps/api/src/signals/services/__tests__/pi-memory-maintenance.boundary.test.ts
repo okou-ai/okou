@@ -1,3 +1,4 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { spawn, execFileSync } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -14,7 +15,6 @@ import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 import { executionContextSchema } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -33,8 +33,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { guestBoundaryEnvironment } from "../../../__tests__/env-stub";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockNow, nowDate } from "../../../lib/time";
 import { settle } from "../../utils";
 import { db } from "../../../lib/db";
@@ -44,7 +43,6 @@ import { runnersRoutes } from "../../routes/runners";
 import { webhooksAgentCompleteRoutes } from "../../routes/webhooks-agent-complete";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { webhooksAgentStorageRoutes } from "../../routes/webhooks-agent-storage";
-import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
@@ -232,19 +230,17 @@ interface ActiveMaintenanceFence {
 }
 
 async function cleanupMaintenanceRun(runId: string) {
-  const response = await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: {
+  const response = await cleanupSandboxFixturesForTest(
+    {
+      scope: {
         chatThreadIds: [],
         runIds: [runId],
         exportJobIds: [],
       },
-    }),
-    [200],
+    },
+    context.signal,
   );
-  return response.body;
+  return response;
 }
 
 async function readActiveMaintenanceFence(

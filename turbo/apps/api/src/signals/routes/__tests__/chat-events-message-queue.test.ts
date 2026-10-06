@@ -1,16 +1,14 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import {
   ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
 } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { expectApiError } from "./helpers/api-bdd";
 import { cleanupTimedOutRun } from "./helpers/api-bdd-run-timeout";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -45,17 +43,15 @@ Use the remaining time to leave the task in a resumable state and finish this tu
 
 /** Run the queue repair sweep over one owned thread. */
 async function sweepOwnedThreadQueue(chatThreadId: string): Promise<void> {
-  await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: {
+  await cleanupSandboxFixturesForTest(
+    {
+      scope: {
         chatThreadIds: [chatThreadId],
         runIds: [],
         exportJobIds: [],
       },
-    }),
-    [200],
+    },
+    context.signal,
   );
   await flushWaitUntilForTest();
 }
@@ -505,7 +501,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       runId: active.runId,
       chatThreadId: active.threadId,
     });
-    expect(cleanup.body).toMatchObject({ cleaned: 1, errors: 0 });
+    expect(cleanup).toMatchObject({ cleaned: 1, errors: 0 });
     await waitForRunStatus(actor, active.runId, "timeout");
     expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
       runId: active.runId,
@@ -598,7 +594,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       runId: active.runId,
       chatThreadId: active.threadId,
     });
-    expect(cleanup.body).toMatchObject({ cleaned: 1, errors: 0 });
+    expect(cleanup).toMatchObject({ cleaned: 1, errors: 0 });
     await waitForRunStatus(actor, active.runId, "timeout");
 
     const events = await chat.listThreadEvents(actor, active.threadId);

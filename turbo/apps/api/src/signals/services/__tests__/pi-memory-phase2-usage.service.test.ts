@@ -1,3 +1,4 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { settleIncludingAbort } from "../../utils";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
@@ -14,7 +15,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createPublicPiMemorySource } from "../../routes/__tests__/helpers/public-pi-memory-source";
 import { createHash, randomUUID } from "node:crypto";
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -41,7 +41,6 @@ import {
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelCandidateKeys } from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
-import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "../pi-memory-phase2-maintenance.service";
 import {
@@ -205,19 +204,16 @@ async function launchMaintenance(type?: "codex-oauth-token") {
         .where(eq(usageEvent.orgId, scope.orgId));
     },
     async cleanup() {
-      return await accept(
-        setupApp({
-          context,
-          routes: testCronCleanupSandboxesStateRoutes,
-          usagePricingResolution: pricing.resolution,
-        })(testCronCleanupSandboxesStateContract).cleanup({
-          body: {
+      return await cleanupSandboxFixturesForTest(
+        {
+          scope: {
             chatThreadIds: [],
             runIds: [runId],
             exportJobIds: [],
           },
-        }),
-        [200],
+          usagePricingResolution: pricing.resolution,
+        },
+        context.signal,
       );
     },
   };
@@ -346,15 +342,12 @@ async function launchPublicMaintenance(
     },
     async cleanup() {
       fixture.registerRunDeletion(runId);
-      return await accept(
-        setupApp({
-          context,
-          routes: testCronCleanupSandboxesStateRoutes,
+      return await cleanupSandboxFixturesForTest(
+        {
+          scope: { chatThreadIds: [], runIds: [runId], exportJobIds: [] },
           usagePricingResolution: pricing.resolution,
-        })(testCronCleanupSandboxesStateContract).cleanup({
-          body: { chatThreadIds: [], runIds: [runId], exportJobIds: [] },
-        }),
-        [200],
+        },
+        context.signal,
       );
     },
     async ledger() {
@@ -451,7 +444,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
         new Date(completedAt.getTime() + 10 * 60_000),
         async () => {
           const cleanup = await run.cleanup();
-          expect(cleanup.body.threadlessRuns.deleted).toBe(0);
+          expect(cleanup.threadlessRuns.deleted).toBe(0);
           await run.proxy();
           await run.proxy();
           await expect(run.ledger()).resolves.toHaveLength(type ? 0 : 4);
@@ -469,7 +462,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
       await withMockNowForTest(
         new Date(completedAt.getTime() + 3 * 60 * 60_000),
         async () => {
-          expect((await run.cleanup()).body.threadlessRuns.deleted).toBe(1);
+          expect((await run.cleanup()).threadlessRuns.deleted).toBe(1);
         },
       );
       const ledger = await run.ledger();
@@ -1007,7 +1000,7 @@ test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
       await withMockNowForTest(
         new Date(completedAt.getTime() + 10 * 60_000),
         async () => {
-          expect((await run.cleanup()).body.threadlessRuns.deleted).toBe(1);
+          expect((await run.cleanup()).threadlessRuns.deleted).toBe(1);
         },
       );
     });

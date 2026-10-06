@@ -778,7 +778,6 @@ export type CronRenewGoogleWorkspaceEventSubscriptionsContract =
 // Export schemas for reuse
 export {
   cleanupResultSchema,
-  cleanupResponseSchema,
   cronSnapshotChatEventsResponseSchema,
   cronProcessUsageEventsResponseSchema,
   cronReconcileSocialKitDownloadsResponseSchema,

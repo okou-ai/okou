@@ -1,7 +1,7 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { createHash, randomUUID } from "node:crypto";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { aroundEach, it, describe, beforeEach } from "vitest";
@@ -22,7 +22,6 @@ import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -82,13 +81,6 @@ function workflowAutomationExecutionClient() {
     context,
     routes: testWorkflowAutomationExecutionRoutes,
   })(testWorkflowAutomationExecutionContract);
-}
-
-function cleanupSandboxesClient() {
-  return setupApp({
-    context,
-    routes: testCronCleanupSandboxesStateRoutes,
-  })(testCronCleanupSandboxesStateContract);
 }
 
 function chatEventsClient() {
@@ -463,15 +455,15 @@ async function releaseStaleRunAndPickWorkflowQueue(args: {
 }): Promise<void> {
   // The scoped fixture releases only this test's terminal slot. The Stripe
   // webhook then exercises the production organization pick used by cron.
-  await accept(
-    cleanupSandboxesClient().cleanup({
-      body: {
+  await cleanupSandboxFixturesForTest(
+    {
+      scope: {
         chatThreadIds: [args.threadId],
         runIds: [...args.runIds],
         exportJobIds: [],
       },
-    }),
-    [200],
+    },
+    context.signal,
   );
   await refreshConcurrencyEntitlement(
     args.actor,

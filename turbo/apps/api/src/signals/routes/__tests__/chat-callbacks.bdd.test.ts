@@ -1,3 +1,4 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { http, HttpResponse } from "msw";
 import { createStore } from "ccstate";
 import {
@@ -14,7 +15,6 @@ import {
 } from "@okouai/api-contracts/contracts/errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
@@ -23,8 +23,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -35,7 +34,6 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -387,25 +385,19 @@ async function expectCancellationRecoveryPending(
   ).resolves.toBe(expected);
 }
 
-function cancellationRecoveryCleanupClient() {
-  return setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-    testCronCleanupSandboxesStateContract,
-  );
-}
-
 async function reconcileCancellationRecoveryFixtures(
   chatThreadId: string,
   ...additionalChatThreadIds: string[]
 ): Promise<void> {
-  await accept(
-    cancellationRecoveryCleanupClient().cleanup({
-      body: {
+  await cleanupSandboxFixturesForTest(
+    {
+      scope: {
         chatThreadIds: [chatThreadId, ...additionalChatThreadIds],
         runIds: [],
         exportJobIds: [],
       },
-    }),
-    [200],
+    },
+    context.signal,
   );
 }
 

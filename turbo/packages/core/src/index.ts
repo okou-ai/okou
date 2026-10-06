@@ -81,7 +81,6 @@ export {
   userExportContract,
   cronCleanupSandboxesContract,
   cleanupResultSchema,
-  cleanupResponseSchema,
   orgResponseSchema,
   updateOrgRequestSchema,
   orgTierSchema,

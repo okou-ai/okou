@@ -1,3 +1,4 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
@@ -18,7 +19,6 @@ import {
   cronCompactUsageEventsContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { HttpResponse, http } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
@@ -52,7 +52,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { compactChatThreadSnapshotsForTest } from "../../../test-fixtures/chat-thread-snapshot-compaction";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import {
   createBddApi,
   expectApiError,
@@ -2549,20 +2548,18 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const cleanupAt = now() + CANCELLATION_RECOVERY_STALE_AFTER_MS;
     mockNow(cleanupAt);
     onTestFinished(clearMockNow);
-    const cleanup = await accept(
-      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-        testCronCleanupSandboxesStateContract,
-      ).cleanup({
-        body: {
+    const cleanup = await cleanupSandboxFixturesForTest(
+      {
+        scope: {
           chatThreadIds: [],
           runIds: [main.runId, sibling.runId],
           exportJobIds: [],
         },
-      }),
-      [200],
+      },
+      context.signal,
     );
-    expect(cleanup.body.threadlessRuns.discovered).toBe(2);
-    expect(cleanup.body.threadlessRuns.deleted).toBe(2);
+    expect(cleanup.threadlessRuns.discovered).toBe(2);
+    expect(cleanup.threadlessRuns.deleted).toBe(2);
     await expect(
       api.requestReadRun(actor, main.runId, [404]),
     ).resolves.toMatchObject({ status: 404 });

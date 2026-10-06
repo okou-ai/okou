@@ -1,17 +1,18 @@
+import {
+  cleanupSandboxFixturesForTest,
+  type SandboxCleanupScope,
+} from "../../../test-fixtures/sandbox-cleanup-worker";
 import { createHash } from "node:crypto";
 
-import type { CronCleanupSandboxesResponse } from "@okouai/api-contracts/contracts/cron";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   runnersConnectorRuntimeSyncContract,
 } from "@okouai/api-contracts/contracts/runners";
-import {
-  testCronCleanupSandboxesStateContract,
-  type TestCronCleanupSandboxesStateActionBody,
-  type TestCronCleanupSandboxesStateActionResponse,
-  type TestCronCleanupSandboxesScope,
+import type {
+  TestCronCleanupSandboxesStateActionBody,
+  TestCronCleanupSandboxesStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import {
   afterEach,
@@ -113,16 +114,8 @@ async function postCronCleanupState(
   return await readJson<TestCronCleanupSandboxesStateActionResponse>(response);
 }
 
-async function cleanupScopedSandboxes(
-  scope: TestCronCleanupSandboxesScope,
-): Promise<CronCleanupSandboxesResponse> {
-  const response = await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({ body: scope }),
-    [200],
-  );
-  return response.body;
+async function cleanupScopedSandboxes(scope: SandboxCleanupScope) {
+  return await cleanupSandboxFixturesForTest({ scope }, context.signal);
 }
 
 function stringField(body: Record<string, unknown>, key: string): string {
@@ -282,16 +275,12 @@ describe("sandbox cleanup", () => {
     return fixture;
   }
 
-  async function cleanupRegisteredFixtures(): Promise<{
-    readonly body: CronCleanupSandboxesResponse;
-  }> {
-    return {
-      body: await cleanupScopedSandboxes({
-        chatThreadIds: [],
-        runIds: [...registeredRunIds],
-        exportJobIds: [],
-      }),
-    };
+  async function cleanupRegisteredFixtures() {
+    return await cleanupScopedSandboxes({
+      chatThreadIds: [],
+      runIds: [...registeredRunIds],
+      exportJobIds: [],
+    });
   }
 
   beforeEach(() => {
@@ -309,7 +298,7 @@ describe("sandbox cleanup", () => {
   it("returns an empty cleanup result for an empty fixture scope", async () => {
     const response = await cleanupRegisteredFixtures();
 
-    expect(response.body).toStrictEqual({
+    expect(response).toStrictEqual({
       cleaned: 0,
       errors: 0,
       results: [],
@@ -340,7 +329,7 @@ describe("sandbox cleanup", () => {
     );
     const response = await cleanupRegisteredFixtures();
 
-    expect(response.body.threadlessRuns.discovered).toBe(0);
+    expect(response.threadlessRuns.discovered).toBe(0);
     await expect(findRun(fixture.runId)).resolves.toMatchObject({
       status: "completed",
     });
@@ -378,7 +367,7 @@ describe("sandbox cleanup", () => {
     // are infrastructure-only; checkpoint persistence and the sweep are real.
     await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(1);
     const response = await cleanupRegisteredFixtures();
-    expect(response.body.threadlessRuns.deleted).toBe(1);
+    expect(response.threadlessRuns.deleted).toBe(1);
     await expect(findRun(fixture.runId)).resolves.toBeNull();
     await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
     await cleanupRegisteredFixtures();
@@ -418,8 +407,8 @@ describe("sandbox cleanup", () => {
 
     const response = await cleanupRegisteredFixtures();
 
-    expect(response.body.threadlessRuns.discovered).toBe(1);
-    expect(response.body.threadlessRuns.deleted).toBe(1);
+    expect(response.threadlessRuns.discovered).toBe(1);
+    expect(response.threadlessRuns.deleted).toBe(1);
     const state = await findRunOwnership(ownership);
     await expect(findRun(fixture.runId)).resolves.toBeNull();
     expect(recordField(state, "uploaded_file")).toStrictEqual({
@@ -468,9 +457,7 @@ describe("sandbox cleanup of publicly launched runs", () => {
     clearMockNow();
   });
 
-  async function cleanupOwnedRuns(
-    runIds: readonly string[],
-  ): Promise<CronCleanupSandboxesResponse> {
+  async function cleanupOwnedRuns(runIds: readonly string[]) {
     return await cleanupScopedSandboxes({
       chatThreadIds: [],
       runIds: [...runIds],

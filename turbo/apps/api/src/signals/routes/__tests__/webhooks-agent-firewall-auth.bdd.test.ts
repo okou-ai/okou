@@ -1,6 +1,4 @@
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { randomUUID } from "node:crypto";
 import { completePublicCodexHistory } from "./helpers/public-pi-history";
 
@@ -21,7 +19,7 @@ import {
 import { mockNow, now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -196,15 +194,11 @@ async function connectPublicTestOAuth(
 
 async function expirePublicFirewallRun(actor: ApiTestUser, runId: string) {
   mockNow(now() + 6 * 60_000);
-  const result = await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: { runIds: [runId], chatThreadIds: [], exportJobIds: [] },
-    }),
-    [200],
+  const result = await cleanupSandboxFixturesForTest(
+    { scope: { runIds: [runId], chatThreadIds: [], exportJobIds: [] } },
+    context.signal,
   );
-  expect(result.body).toMatchObject({ cleaned: 1, errors: 0 });
+  expect(result).toMatchObject({ cleaned: 1, errors: 0 });
   expect((await createRunsApi(context).readRun(actor, runId)).status).toBe(
     "timeout",
   );

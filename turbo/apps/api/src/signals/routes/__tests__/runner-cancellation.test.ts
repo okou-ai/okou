@@ -1,3 +1,4 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { randomUUID } from "node:crypto";
 import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
@@ -116,13 +117,11 @@ describe("Run cancellation reconciliation", () => {
     await withMockNowForTest(
       now() + CANCELLATION_RECOVERY_STALE_AFTER_MS,
       async () => {
-        const cleanup = await accept(
-          state.cleanup({
-            body: { runIds: [runId], chatThreadIds: [], exportJobIds: [] },
-          }),
-          [200],
+        const cleanup = await cleanupSandboxFixturesForTest(
+          { scope: { runIds: [runId], chatThreadIds: [], exportJobIds: [] } },
+          context.signal,
         );
-        expect(cleanup.body.threadlessRuns).toMatchObject({
+        expect(cleanup.threadlessRuns).toMatchObject({
           deleted: 1,
           failed: 0,
         });

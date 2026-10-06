@@ -1,11 +1,10 @@
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import {
   mockGoogleText,
   VERTEX_TEXT_URL,
   vertexTextRequest,
 } from "./helpers/google-text";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -233,13 +232,9 @@ function brokenBody(error: Error) {
 }
 // Runs the production sandbox cleanup sweep scoped to one run.
 async function sweepRun(runId: string) {
-  await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: { runIds: [runId], chatThreadIds: [], exportJobIds: [] },
-    }),
-    [200],
+  await cleanupSandboxFixturesForTest(
+    { scope: { runIds: [runId], chatThreadIds: [], exportJobIds: [] } },
+    context.signal,
   );
 }
 describe("thread activity summary", () => {

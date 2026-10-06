@@ -378,7 +378,6 @@ export {
   cronTelegramCleanupContract,
   cronTelegramCleanupResponseSchema,
   cleanupResultSchema,
-  cleanupResponseSchema,
   type CronCompactChatThreadSnapshotsContract,
   type CronCleanupSandboxesContract,
   type CronCleanupXResourceReadsContract,
