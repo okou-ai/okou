@@ -19,7 +19,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   publishHomeTaskRecommendationsChangedSafely,
   publishUserSignal,
@@ -676,13 +676,11 @@ const updateAgentMetadataInner$ = command(
   },
 );
 
-const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+const initialDeleteAgent$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const member = { userId: auth.userId, role: auth.orgRole ?? "member" };
   const params = get(pathParamsOf(agentsByIdContract.delete));
-
-  const writeDb = set(writeDb$);
-  const [agent] = await writeDb
+  const db = get(db$);
+  const [agent] = await db
     .select({
       id: agents.id,
       owner: agents.owner,
@@ -691,6 +689,15 @@ const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(agents)
     .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
     .limit(1);
+  return agent;
+});
+
+const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const member = { userId: auth.userId, role: auth.orgRole ?? "member" };
+  const params = get(pathParamsOf(agentsByIdContract.delete));
+
+  const agent = await get(initialDeleteAgent$);
   signal.throwIfAborted();
 
   if (!agent) {
