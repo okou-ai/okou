@@ -48,6 +48,10 @@ overrides:
   "@langfuse/tracing": 5.10.0
   "esbuild@>=0.27.3 <0.28.1": ">=0.28.1"
   "jayson>uuid": 11.1.1
+  # Miniflare pins vulnerable patch releases. Remove when upstream requires
+  # sharp >=0.35.4 (libheif) and undici >=7.29.1 (TLS validation and DoS fixes).
+  "miniflare>sharp": ^0.35.4
+  "miniflare>undici": ^7.29.1
   # Slack SDK 7.x still permits vulnerable axios releases. Remove when upstream
   # requires axios >=1.20.0, which fixes the data-URL parser ReDoS.
   "@slack/web-api>axios": 1.20.0
