@@ -54,9 +54,9 @@ import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { BootstrapAgent } from "./agent-data.service";
 
 import {
-  immutableConnectorRuntimeSelection,
-  type ImmutableConnectorRuntimeSelection as ConnectorRuntimeSelection,
-} from "./connector-catalog-entries.service";
+  loadConnectorRuntimeSelection,
+  type ConnectorRuntimeSelection,
+} from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
@@ -1013,12 +1013,10 @@ function createConnectorContextGroups(
     async (get): Promise<ConnectorRuntimeSelection | null> => {
       const requested = bootstrapCatalogRequest(await get(connectorSelection$));
       return requested
-        ? await get(
-            immutableConnectorRuntimeSelection({
-              requestedConnectorSlugs: requested.runtimeConnectorSlugs,
-              metadataConnectorSlugs: requested.metadataConnectorSlugs,
-            }),
-          )
+        ? await loadConnectorRuntimeSelection(get(db$), {
+            requestedConnectorSlugs: requested.runtimeConnectorSlugs,
+            metadataConnectorSlugs: requested.metadataConnectorSlugs,
+          })
         : null;
     },
   );

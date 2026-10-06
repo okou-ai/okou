@@ -15,7 +15,7 @@ import {
 } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { safeSync } from "../utils";
-import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorCredentialAccess } from "./custom-connector-credential-access.service";
 import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
@@ -248,7 +248,7 @@ function jsonArrayEqual(
 export interface BuildCustomConnectorRuntimeContextArgs {
   readonly rows: CustomConnectorRuntimeDataRows;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeLookup;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
   readonly grants: readonly AgentCustomConnectorGrant[] | undefined;
   readonly permissionBundlesByConnectorId?: ReadonlyMap<
     string,
@@ -308,7 +308,7 @@ function unavailableCustomConnectorRuntimeRow(
 
 export async function loadEffectiveCustomConnectorPermissionBundle(args: {
   readonly row: CustomConnectorRuntimeDataRows[number];
-  readonly snapshot: ConnectorRuntimeLookup;
+  readonly snapshot: ConnectorRuntimeSelection;
 }): Promise<CustomConnectorPermissionBundle | null | undefined> {
   if (args.row.connector.kind === "mcp") {
     return null;

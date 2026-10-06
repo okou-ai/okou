@@ -840,8 +840,8 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
   });
 
-  it("preserves immutable account selections when the legacy run catalog omits a built-in", async () => {
-    // Mutate only an owned legacy source, not immutable account authority.
+  it("starts the run when the runtime catalog no longer contains the selected built-in", async () => {
+    // Catalog rows are global by source, so isolate mutations from parallel test files.
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `test-chat-retired-catalog-connector-${randomUUID()}`,
@@ -893,24 +893,6 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
 
-    // Preserve successful creation with selections while Run authority exists.
-    await accept(
-      chatThreadsClient().create({
-        headers: sessionHeaders(actor),
-        body: {
-          agentId,
-          model: "claude-fable-5-1",
-          connectorSelections: [
-            {
-              connectionId: connection.id,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
-        },
-      }),
-      [201],
-    );
-
     const catalogVersion = `api-test-without-openai-${randomUUID()}`;
     const catalogWithoutOpenAi = {
       ...API_TEST_CONNECTOR_CATALOG,
@@ -925,61 +907,15 @@ describe("CHAT-02: thread connector account selection", () => {
       catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
     });
 
-    // This changes legacy Run authority, not the immutable account entries.
-    // A persisted, owned account selection must not disappear from its public
-    // projection solely because the still-live legacy Run reader omits it.
-    const expectedSelections = [
-      {
-        connectionId: connection.id,
-        target: { kind: "builtin" as const, connectorSlug: "openai" as const },
-      },
-      {
-        connectionId: runtimeConnection.id,
-        target: { kind: "builtin" as const, connectorSlug: "runtime" as const },
-      },
-    ];
-    const beforeRun = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-      }),
-      [200],
-    );
-    expect(beforeRun.body.selections).toStrictEqual(expectedSelections);
-
     const run = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
-      prompt: "Continue after the selected connector leaves the legacy catalog",
+      prompt: "Continue after the selected connector leaves the catalog",
     });
     const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim.secretConnectorMap?.OPENAI_TOKEN).toBe("openai");
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toStrictEqual({
-      sourceType: "connector",
-      sourceId: connection.id,
-    });
-    expect(
-      claimed.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
-    ).toMatchObject({
-      sourceType: "connector",
-      sourceId: runtimeConnection.id,
-    });
-    expect(claimed.claim.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({ kind: "builtin", connectorSlug: "openai" }),
-    );
-    expect(claimed.claim.firewalls).not.toContainEqual(
-      expect.objectContaining({
-        kind: "builtin",
-        name: "openai",
-        sourceId: connection.id,
-      }),
-    );
-    expect(claimed.claim).not.toHaveProperty("connectorPermissionBaseline");
-    expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN?.sourceId,
-    ).not.toBe(runtimeConnection.id);
+    ).toBeUndefined();
 
     const selections = await accept(
       chatThreadConnectorSelectionsClient().get({
@@ -988,19 +924,13 @@ describe("CHAT-02: thread connector account selection", () => {
       }),
       [200],
     );
-    expect(selections.body.selections).toStrictEqual(expectedSelections);
-    expect(selections.body.selectedConnections).toMatchObject(
-      expectedSelections.map((selection) => {
-        return {
-          id: selection.connectionId,
-          target: selection.target,
-          connectionStatus: "connected",
-        };
-      }),
-    );
-    // New writes still require the legacy Run target, unlike persisted account
-    // projection. Rejecting them must not erase the existing selected accounts.
-    const rejectedUpdate = await accept(
+    expect(selections.body.selections).toStrictEqual([
+      {
+        connectionId: runtimeConnection.id,
+        target: { kind: "builtin", connectorSlug: "runtime" },
+      },
+    ]);
+    await accept(
       chatThreadConnectorSelectionsClient().update({
         headers: sessionHeaders(actor),
         params: { id: thread.id },
@@ -1011,7 +941,7 @@ describe("CHAT-02: thread connector account selection", () => {
       }),
       [400],
     );
-    const rejectedCreate = await accept(
+    await accept(
       chatThreadsClient().create({
         headers: sessionHeaders(actor),
         body: {
@@ -1027,24 +957,6 @@ describe("CHAT-02: thread connector account selection", () => {
       }),
       [400],
     );
-    for (const rejected of [rejectedUpdate, rejectedCreate]) {
-      expect(rejected.body).toStrictEqual({
-        error: {
-          message: "Connector target is unavailable",
-          code: "BAD_REQUEST",
-        },
-      });
-    }
-    const afterRejectedWrites = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-      }),
-      [200],
-    );
-    expect(afterRejectedWrites.body.selections).toStrictEqual(
-      expectedSelections,
-    );
     await accept(
       chatThreadConnectorSelectionsClient().clear({
         headers: sessionHeaders(actor),
@@ -1053,19 +965,6 @@ describe("CHAT-02: thread connector account selection", () => {
       }),
       [204],
     );
-    const postClearSelections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-      }),
-      [200],
-    );
-    expect(postClearSelections.body.selections).toStrictEqual([
-      {
-        connectionId: runtimeConnection.id,
-        target: { kind: "builtin", connectorSlug: "runtime" },
-      },
-    ]);
     await installApiTestConnectorCatalog();
     const restoredSelections = await accept(
       chatThreadConnectorSelectionsClient().get({
@@ -1075,7 +974,7 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
     expect(restoredSelections.body.selections).toStrictEqual(
-      postClearSelections.body.selections,
+      selections.body.selections,
     );
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   });

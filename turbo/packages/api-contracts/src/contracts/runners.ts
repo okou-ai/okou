@@ -495,14 +495,29 @@ const connectorPermissionBaselineEntrySchema = z
     }
   });
 const connectorCatalogDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
+const connectorCatalogBackendVersionSchema = z
+  .string()
+  .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u);
+const connectorCatalogBuildCommitShaSchema = z
+  .string()
+  .regex(/^[a-f0-9]{40}$/u);
+
 export const storedConnectorPermissionBaselineSchema = z
   .object({
     version: z.literal(1),
     catalogIdentity: z
       .object({
+        sourceId: z.string().min(1),
         schemaVersion: z.number().int().positive(),
-        hash: connectorCatalogDigestSchema,
+        catalogVersion: z.string().min(1),
+        catalogDigest: connectorCatalogDigestSchema,
         capabilityDigest: connectorCatalogDigestSchema,
+      })
+      .strict(),
+    validationAuthority: z
+      .object({
+        backendVersion: connectorCatalogBackendVersionSchema,
+        buildCommitSha: connectorCatalogBuildCommitShaSchema.nullable(),
       })
       .strict(),
     connectors: z.record(

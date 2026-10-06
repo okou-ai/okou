@@ -88,7 +88,6 @@ export function createPublicConnectorCatalog(
       JSON.stringify({ ...catalog, catalogVersion }),
     );
     const catalogKey = `connectors/v4/releases/${catalogVersion}/catalog.json`;
-    const hash = `sha256:${createHash("sha256").update(catalogBytes).digest("hex")}`;
     const objects = new Map([
       [catalogKey, catalogBytes],
       [
@@ -97,7 +96,7 @@ export function createPublicConnectorCatalog(
           JSON.stringify({
             catalogVersion,
             catalogKey,
-            catalogDigest: hash,
+            catalogDigest: `sha256:${createHash("sha256").update(catalogBytes).digest("hex")}`,
           }),
         ),
       ],
@@ -146,12 +145,6 @@ export function createPublicConnectorCatalog(
     if (synced.body.outcome !== "accepted") {
       throw new Error(`Catalog publication failed: ${synced.body.outcome}`);
     }
-    if (synced.body.active?.catalogDigest !== hash) {
-      throw new Error(
-        "Accepted public generation does not match its published bytes",
-      );
-    }
-    return { hash, catalogVersion };
   }
 
   return {

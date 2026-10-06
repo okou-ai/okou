@@ -19,7 +19,6 @@ export interface CustomConnectorDefinitionVersion {
   readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
   readonly isMcp: boolean;
-  readonly permissionBundleRef: string | null;
 }
 
 export interface AgentConnectorScope {
@@ -43,7 +42,6 @@ export interface AgentCustomConnectorRow {
   readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
   readonly isMcp: boolean;
-  readonly permissionBundleRef: string | null;
 }
 
 async function loadAgentAllowedConnectorSlugRows(
@@ -81,7 +79,6 @@ async function loadAgentAllowedCustomConnectorRows(
       connectorSlug: orgCustomConnectors.slug,
       storageVersion: orgCustomConnectors.storageVersion,
       skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
-      permissionBundleRef: orgCustomConnectors.permissionBundleRef,
       isMcp: isNotNull(orgCustomConnectors.mcpEndpoint).mapWith(
         pgBooleanDecoder,
       ),
@@ -136,7 +133,6 @@ export function agentConnectorScopeFromRows(args: {
       storageVersion: row.storageVersion,
       skillStorageVersionId: row.skillStorageVersionId,
       isMcp: row.isMcp,
-      permissionBundleRef: row.permissionBundleRef,
     };
   });
   return {
@@ -164,6 +160,19 @@ export async function loadAgentConnectorScope(
   return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
 }
 
+/** Transaction-safe form for writers that hold one PostgreSQL client. */
+export async function loadAgentConnectorScopeSerial(
+  db: ReadonlyDb,
+  args: LoadAgentConnectorScopeArgs,
+): Promise<AgentConnectorScopeSnapshot> {
+  const connectorRows = await loadAgentAllowedConnectorSlugRows(db, args);
+  const customConnectorRows = await loadAgentAllowedCustomConnectorRows(
+    db,
+    args,
+  );
+  return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
+}
+
 export const loadAgentConnectorScope$ = command(
   async (
     { set },
@@ -187,7 +196,6 @@ export const loadAgentConnectorScope$ = command(
         connectorSlug: orgCustomConnectors.slug,
         storageVersion: orgCustomConnectors.storageVersion,
         skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
-        permissionBundleRef: orgCustomConnectors.permissionBundleRef,
         isMcp: isNotNull(orgCustomConnectors.mcpEndpoint).mapWith(
           pgBooleanDecoder,
         ),

@@ -11,7 +11,7 @@ import {
 } from "@okouai/core/storage-names";
 import {
   getConnectorRuntimeConnector,
-  type ConnectorRuntimeLookup,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
@@ -94,7 +94,7 @@ function agentStorageRequests(
   },
   workflows: readonly SelectedAgentWorkflow[],
   connectors: AgentConnectorSelection,
-  catalog: ConnectorRuntimeLookup | null,
+  catalog: ConnectorRuntimeSelection | null,
   official: OfficialWorkflowContextFacts,
 ): readonly StorageRequest[] {
   const { orgId, userId } = owner;
@@ -180,7 +180,7 @@ export function agentStorageReadPlan(
     BootstrapAgent | null,
     readonly SelectedAgentWorkflow[],
     AgentConnectorSelection,
-    ConnectorRuntimeLookup | null,
+    ConnectorRuntimeSelection | null,
     OfficialWorkflowContextFacts,
   ],
 ) {

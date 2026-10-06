@@ -165,10 +165,15 @@ function connectorPermissionBaselineFixture() {
   return {
     version: 1 as const,
     catalogIdentity: {
+      sourceId: "connector-catalog",
       schemaVersion: 1,
-      // Explicit contract-test identities, not a captured production catalog.
-      hash: `sha256:${"a".repeat(64)}`,
+      catalogVersion: "2026-07-28",
+      catalogDigest: `sha256:${"a".repeat(64)}`,
       capabilityDigest: `sha256:${"b".repeat(64)}`,
+    },
+    validationAuthority: {
+      backendVersion: "1.337.1",
+      buildCommitSha: "c".repeat(40),
     },
     connectors: {
       slack: {
@@ -1012,56 +1017,6 @@ describe("stored connector permission baseline contract", () => {
         parsed.connectorPermissionBaseline,
       ).success,
     ).toBe(false);
-  });
-
-  it("keeps legacy persisted baseline bytes for tolerant reconstruction only", () => {
-    const legacy = {
-      ...connectorPermissionBaselineFixture(),
-      catalogIdentity: {
-        sourceId: "connector-catalog",
-        schemaVersion: 1,
-        catalogVersion: "2026-07-28",
-        catalogDigest: `sha256:${"a".repeat(64)}`,
-        capabilityDigest: `sha256:${"b".repeat(64)}`,
-      },
-      validationAuthority: {
-        backendVersion: "1.337.1",
-        buildCommitSha: "c".repeat(40),
-      },
-    };
-    expect(
-      storedExecutionContextSchema.safeParse({
-        ...storedContext,
-        connectorPermissionBaseline: legacy,
-      }).success,
-    ).toBe(false);
-    const persisted = compatibleStoredExecutionContextSchema.parse({
-      ...storedContext,
-      connectorPermissionBaseline: legacy,
-    });
-    expect(persisted.connectorPermissionBaseline).toEqual(legacy);
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse(
-        persisted.connectorPermissionBaseline,
-      ).success,
-    ).toBe(false);
-  });
-
-  it("rejects malformed and extra immutable identity fields", () => {
-    const baseline = connectorPermissionBaselineFixture();
-    for (const catalogIdentity of [
-      { ...baseline.catalogIdentity, hash: "not-a-hash" },
-      { ...baseline.catalogIdentity, capabilityDigest: "not-a-digest" },
-      { ...baseline.catalogIdentity, schemaVersion: 0 },
-      { ...baseline.catalogIdentity, sourceId: "legacy" },
-    ]) {
-      expect(
-        storedConnectorPermissionBaselineSchema.safeParse({
-          ...baseline,
-          catalogIdentity,
-        }).success,
-      ).toBe(false);
-    }
   });
 
   it("allows a previous reader to ignore the new optional field", () => {

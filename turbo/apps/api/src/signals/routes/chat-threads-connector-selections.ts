@@ -5,7 +5,7 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 import { bestEffort } from "../utils";
 import {
@@ -22,13 +22,11 @@ import type { RouteEntry } from "../route-entry";
 const getSelectionsInner$ = computed(async (get): Promise<unknown> => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadConnectorSelectionContract.get));
-  const result = await get(
-    listChatThreadConnectorSelections({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      chatThreadId: params.id,
-    }),
-  );
+  const result = await listChatThreadConnectorSelections(get(db$), {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    chatThreadId: params.id,
+  });
   if (!result) {
     return notFound("Chat thread not found");
   }

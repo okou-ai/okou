@@ -73,6 +73,8 @@ import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org"
 import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
+  corruptApiTestConnectorCatalogActiveSnapshotPayload,
+  corruptApiTestConnectorCatalogRuntimeProjectionDigest,
   invalidateApiTestConnectorCatalogCompatibility,
   installApiTestConnectorCatalog,
   replaceApiTestConnectorCatalogFilteredAuthMethods,
@@ -1519,7 +1521,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, capabilityRotatedRun.runId, [200]);
   });
 
-  it("keeps immutable scoped auth when only retired legacy filters change", async () => {
+  it("omits filtered auth from scoped runtime claims after identity rotation", async () => {
     const capabilityIdentityEnvName = "CAL_COM_OAUTH_CLIENT_ID";
     mockOptionalEnv(capabilityIdentityEnvName, undefined);
     const { api, actor, runnerGroup, createScopedRun } =
@@ -1552,48 +1554,21 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     ]);
 
-    // This only modifies the retired legacy evaluation, not the accepted
-    // immutable entry or its request-owned capability evaluation. Actual
-    // filtered-method omission is covered by the public generation suite.
-    const unchangedRun = await createScopedRun(
-      "ignore retired legacy compatibility filters",
+    const filteredRun = await createScopedRun(
+      "omit a compatibility-filtered connector method",
       ["x"],
     );
     await api.heartbeatRunner(runnerGroup);
-    const unchangedClaim = await api.claimRunnerJob(unchangedRun.runId);
-    expect(unchangedClaim.environment).toHaveProperty(
+    const filteredClaim = await api.claimRunnerJob(filteredRun.runId);
+    expect(filteredClaim.environment ?? {}).not.toHaveProperty("X_TOKEN");
+    expect(filteredClaim.secretConnectorMap ?? {}).not.toHaveProperty(
       "X_TOKEN",
-      "fixture-x-token",
     );
-    const ownedAccount = (
-      await createConnectorBddApi(context).listBuiltinConnectorAccounts(
-        actor,
-        "x",
-      )
-    ).find((account) => {
-      return account.isDefault;
-    });
-    if (!ownedAccount) {
-      throw new Error("Missing owned default X account");
-    }
-    // secretConnectorMap is a slug routing key; metadata/firewalls carry the
-    // exact credential owner. These contracts must not be conflated.
-    expect(unchangedClaim.secretConnectorMap?.X_TOKEN).toBe("x");
-    expect(unchangedClaim.secretConnectorMetadataMap?.X_TOKEN).toMatchObject({
-      sourceType: "connector",
-      sourceId: ownedAccount.id,
-    });
-    expect(findFirewallEntry(unchangedClaim.firewalls, "x")).toMatchObject({
-      kind: "builtin",
-      name: "x",
-      sourceId: ownedAccount.id,
-    });
-    expect(unchangedClaim.billableFirewalls).toContain("x");
-    expect(unchangedClaim.networkPolicies ?? {}).toHaveProperty("x");
-    expect(unchangedClaim).not.toHaveProperty("connectorPermissionBaseline");
-    expect(JSON.stringify(unchangedClaim)).not.toContain("x-filtered-access");
-    expect(JSON.stringify(unchangedClaim)).not.toContain("x-filtered-refresh");
-    await api.requestCancelRun(actor, unchangedRun.runId, [200]);
+    expect(findFirewallEntry(filteredClaim.firewalls, "x")).toBeUndefined();
+    expect(filteredClaim.billableFirewalls).not.toContain("x");
+    expect(filteredClaim.networkPolicies ?? {}).not.toHaveProperty("x");
+    expect(filteredClaim).not.toHaveProperty("connectorPermissionBaseline");
+    await api.requestCancelRun(actor, filteredRun.runId, [200]);
   });
 
   it("reuses current validator package authority", async () => {
@@ -1632,7 +1607,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("ignores malformed retired projection compatibility during immutable admission", async () => {
+  it("rejects invalid projection compatibility", async () => {
     const api = createRunsApi(context);
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
@@ -1644,26 +1619,29 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
     const { actor, agentId } = await entitledRunActor();
     await api.enableAgentConnectors(actor, agentId, ["x"]);
-    // Rotate the actual immutable identity, then corrupt only the legacy
-    // compatibility row. Missing/current-member corruption lives in N5.
+    // A rotated catalog that no request has read yet becomes incompatible.
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
       runtimeProjection: true,
     });
     await invalidateApiTestConnectorCatalogCompatibility();
-    const prompt = "ignore malformed retired projection compatibility";
-    const admitted = await api.createThreadRun(actor, { agentId, prompt });
-    expect((await api.readRun(actor, admitted.runId)).status).toBe("pending");
+    const rejectedPrompt = "invalid projection compatibility rejection";
+
+    await expect(
+      api.readThreadLaunchFailure(actor, { agentId, prompt: rejectedPrompt }),
+    ).resolves.toStrictEqual({
+      pickError: "Accepted external connector catalog is unavailable",
+      inputError: "internal_error",
+    });
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
     });
     expect(
       runs.runs.filter((run) => {
-        return run.prompt === prompt;
+        return run.prompt === rejectedPrompt;
       }),
-    ).toMatchObject([{ id: admitted.runId, prompt }]);
-    await api.requestCancelRun(actor, admitted.runId, [200]);
+    ).toHaveLength(0);
   });
 
   it("returns a context encryption failure while storage presigning is still pending", async () => {
@@ -6338,9 +6316,12 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("syncs builtin runtimes and custom permission metadata from immutable entries", async () => {
+  it("uses exact runtime projections and authoritative fallback for mixed sync", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
+    const catalogBucket = `test-run-lifecycle-runtime-sync-projection-${randomUUID()}`;
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
+    await installApiTestConnectorCatalog();
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
     await connectors.updateFeatureSwitches(actor, {});
@@ -6375,6 +6356,8 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       }),
     );
     onTestFinished(async () => {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
+      await installApiTestConnectorCatalog();
       await connectors.deleteCustomConnector(
         actor,
         permissionedCustom.id,
@@ -6432,33 +6415,22 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       claim,
       plainCustom.id,
     );
-    const unknownTarget = {
-      kind: "builtin" as const,
-      connectorSlug: "unknown-runtime-sync",
-    };
-    const mixedTargets = [
-      larkTarget,
-      permissionedTarget,
-      plainTarget,
-      unknownTarget,
-    ];
+    const mixedTargets = [larkTarget, permissionedTarget, plainTarget];
 
-    const [
-      projectedBuiltin,
-      projectedPermissioned,
-      projectedPlain,
-      unknownRuntime,
-    ] = await api.syncConnectorRuntime(run.runId, {
-      targets: mixedTargets,
+    await installApiTestConnectorCatalog({
+      catalogVersion: `api-test-runtime-sync-projection-${randomUUID()}`,
+      runtimeProjection: true,
     });
+    await corruptApiTestConnectorCatalogRuntimeProjectionDigest("figma");
+    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
+
+    const [projectedBuiltin, projectedPermissioned, projectedPlain] =
+      await api.syncConnectorRuntime(run.runId, {
+        targets: mixedTargets,
+      });
     expect(projectedBuiltin).toMatchObject({
       target: { kind: "builtin", connectorSlug: "lark" },
       state: "available",
-    });
-    expect(unknownRuntime).toStrictEqual({
-      target: unknownTarget,
-      state: "absent",
-      reason: "connector-unavailable",
     });
     const permissionedRuntime = availableCustomConnectorRuntime(
       projectedPermissioned,
@@ -6497,28 +6469,44 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       baseUrlVars: {},
     });
 
-    const metadataOnlyRuntimes = await api.syncConnectorRuntime(run.runId, {
-      targets: [permissionedTarget],
+    await installApiTestConnectorCatalog({
+      catalogVersion: `api-test-runtime-sync-fallback-${randomUUID()}`,
+      runtimeProjection: true,
     });
-    // Slack supplies permission metadata, not an executable builtin target or
-    // a Slack firewall. The sole returned runtime is the owned custom target.
-    expect(metadataOnlyRuntimes).toHaveLength(1);
-    const metadataOnlyRuntime = availableCustomConnectorRuntime(
-      metadataOnlyRuntimes[0],
-    );
-    expect(metadataOnlyRuntime.target).toStrictEqual({
-      kind: "custom",
-      customConnectorId: permissionedCustom.id,
+    await corruptApiTestConnectorCatalogRuntimeProjectionDigest("slack");
+
+    const fallbackRuntimes = await api.syncConnectorRuntime(run.runId, {
+      targets: mixedTargets,
     });
-    expect(metadataOnlyRuntime.firewall.firewall.apis).toHaveLength(1);
-    expect(metadataOnlyRuntime.firewall.firewall.apis[0]?.base).toBe(
-      "https://runtime-projection-permissioned.example.test/api/",
+    expect(fallbackRuntimes).toMatchObject([
+      {
+        target: { kind: "builtin", connectorSlug: "lark" },
+        state: "available",
+      },
+      {
+        target: {
+          kind: "custom",
+          customConnectorId: permissionedCustom.id,
+        },
+        state: "available",
+        firewall: { sourceId: permissionedTarget.sourceId },
+        baseUrlVars: {},
+      },
+      {
+        target: { kind: "custom", customConnectorId: plainCustom.id },
+        state: "available",
+        firewall: { sourceId: plainTarget.sourceId },
+        baseUrlVars: {},
+      },
+    ]);
+    const fallbackPermissioned = availableCustomConnectorRuntime(
+      fallbackRuntimes[1],
     );
-    expect(metadataOnlyRuntime.networkPolicy).toStrictEqual(
+    expect(fallbackPermissioned.networkPolicy).toStrictEqual(
       permissionedRuntime.networkPolicy,
     );
     expect(
-      metadataOnlyRuntime.firewall.firewall.apis[0]?.permissions,
+      fallbackPermissioned.firewall.firewall.apis[0]?.permissions,
     ).toStrictEqual(permissionedRuntime.firewall.firewall.apis[0]?.permissions);
 
     await api.requestCancelRun(actor, run.runId, [200]);

@@ -7,7 +7,6 @@ import {
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
 import { and, count, eq, inArray } from "drizzle-orm";
-
 import type { Db, ReadonlyDb } from "../external/db";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
@@ -25,12 +24,12 @@ import {
   type ConnectorCatalogRuntimeProjectionIdentity,
   type ConnectorCatalogRuntimeProjectionReadyIdentity,
   type ConnectorCatalogRuntimeProjectionRow,
+  type ConnectorCatalogRuntimeProjectionRowsRead,
   type ConnectorCatalogRuntimeProjectionRowSetIdentity,
   type ConnectorCatalogRuntimeProjectionValidationTiming,
 } from "@okouai/connectors/connector-catalog/runtime-projection";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
-
 import {
   connectorCatalogValidationAuthorityIsCurrent,
   currentConnectorCatalogValidatorIdentity,
@@ -46,6 +45,7 @@ export type {
   ConnectorCatalogRuntimeProjectionFallbackReason,
   ConnectorCatalogRuntimeProjectionIdentity,
   ConnectorCatalogRuntimeProjectionReadyIdentity,
+  ConnectorCatalogRuntimeProjectionRowsRead,
   ConnectorCatalogRuntimeProjectionValidationTiming,
 };
 

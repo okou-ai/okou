@@ -200,7 +200,8 @@ export async function seedPiStableContextStorageDemandFixture(args: {
     source: {
       agentGeneration,
       userGeneration,
-      catalog: null,
+      catalogIdentity: null,
+      catalogSourceId: null,
       agentIdentityDigest: "fixture-agent-identity",
       featurePromptDigest: "fixture-feature-prompt",
       permissionDigest: "fixture-permission",

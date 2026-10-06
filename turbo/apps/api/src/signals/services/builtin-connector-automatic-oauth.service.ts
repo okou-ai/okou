@@ -42,14 +42,10 @@ import {
 } from "./builtin-connector-automatic-dcr.service";
 import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.service";
 import {
-  immutableConnectorRuntimeSelection,
-  type ImmutableConnectorRuntimeSelection,
-} from "./connector-catalog-entries.service";
-import {
   getConnectorRuntimeMethod,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeLookup,
+  type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
 import {
@@ -117,6 +113,7 @@ type BuiltinAutomaticMethod = Extract<
   { readonly grant: { readonly kind: "automatic" } }
 >;
 interface BuiltinAutomaticContract {
+  readonly catalogIdentity: ConnectorRuntimeSnapshot["catalogIdentity"];
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly storageVersion: number;
@@ -141,6 +138,7 @@ interface Failure {
 function contractFromMethod(
   runtime: ConnectorRuntimeMethod,
   endpoint: string | undefined,
+  catalogIdentity: ConnectorRuntimeSnapshot["catalogIdentity"],
 ): BuiltinAutomaticContract | null {
   const { connectorSlug, authMethodId, method } = runtime;
   if (
@@ -165,6 +163,7 @@ function contractFromMethod(
     connectorSlug,
     authMethodId,
     endpoint,
+    catalogIdentity,
     storageVersion: method.storage.version,
     contractHash,
     method: {
@@ -177,7 +176,7 @@ function contractFromMethod(
 }
 
 function currentContractFromSnapshot(
-  snapshot: ConnectorRuntimeLookup,
+  snapshot: ConnectorRuntimeSnapshot,
   connectorSlug: string,
   authMethodId: string,
 ): BuiltinAutomaticContract | null {
@@ -191,6 +190,7 @@ function currentContractFromSnapshot(
     ? contractFromMethod(
         runtime,
         snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint,
+        snapshot.catalogIdentity,
       )
     : null;
 }
@@ -209,17 +209,11 @@ async function currentContract(
 
 const currentBuiltinAutomaticContract$ = command(
   async (
-    { get },
+    { set },
     args: { readonly connectorSlug: string; readonly authMethodId: string },
     signal: AbortSignal,
   ): Promise<BuiltinAutomaticContract | null> => {
-    const snapshot = await get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: [
-          connectorSlugSchema.parse(args.connectorSlug),
-        ],
-      }),
-    );
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     return currentContractFromSnapshot(
       snapshot,
@@ -345,7 +339,6 @@ const prepareBuiltinAutomaticAuthorization$ = command(
     args: {
       readonly orgId: string;
       readonly contract: BuiltinAutomaticContract;
-      readonly catalogIdentity: ImmutableConnectorRuntimeSelection["catalogIdentity"];
       readonly redirectUri: string;
       readonly state: string;
       readonly cimdClientId: string;
@@ -386,7 +379,7 @@ const prepareBuiltinAutomaticAuthorization$ = command(
               createBuiltinDcrRegistration$,
               {
                 owner: contractOwner(args.orgId, contract),
-                catalogIdentity: args.catalogIdentity,
+                catalogIdentity: contract.catalogIdentity,
                 value,
               },
               createSignal,
@@ -407,7 +400,7 @@ const prepareBuiltinAutomaticAuthorization$ = command(
 interface StartBuiltinAutomaticArgs {
   readonly orgId: string;
   readonly userId: string;
-  readonly resolved: ResolvedConnectorActionMethod<ImmutableConnectorRuntimeSelection>;
+  readonly resolved: ResolvedConnectorActionMethod;
   readonly account: ConnectorAccountMutationIntent;
   readonly agentId: string | null;
   readonly authorizeAgent: boolean;
@@ -434,6 +427,7 @@ export const startBuiltinConnectorAutomatic$ = command(
     const contract = contractFromMethod(
       args.resolved.runtimeMethod,
       args.resolved.catalogConnector.mcp?.endpoint,
+      args.resolved.snapshot.catalogIdentity,
     );
     if (!contract) {
       return { kind: "error", reason: "stale-contract" };
@@ -460,7 +454,6 @@ export const startBuiltinConnectorAutomatic$ = command(
         {
           orgId: args.orgId,
           contract,
-          catalogIdentity: args.resolved.snapshot.catalogIdentity,
           redirectUri: args.redirectUri,
           state,
           cimdClientId: args.cimdClientId,

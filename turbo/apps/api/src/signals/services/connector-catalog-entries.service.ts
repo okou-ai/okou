@@ -133,63 +133,6 @@ function capturedEntries(input: SelectionInput): Computed<
   });
 }
 
-/** Plain captured facts shared by request readers and transaction owners. */
-export function materializeImmutableConnectorRuntimeSelection(args: {
-  readonly capturedCatalog: ImmutableConnectorCatalogCapture;
-  readonly entries: readonly ImmutableConnectorCatalogEntry[];
-  readonly requestedConnectorSlugs: readonly ConnectorSlug[];
-  readonly metadataConnectorSlugs: readonly ConnectorSlug[];
-  readonly capability: ReturnType<
-    typeof connectorCatalogExecutableCapabilityState
-  >;
-}): ImmutableConnectorRuntimeSelection {
-  const manifest = new Set(args.capturedCatalog.entrySlugs);
-  const union = new Set([
-    ...args.requestedConnectorSlugs,
-    ...args.metadataConnectorSlugs,
-  ]);
-  const entries = args.entries.filter((entry) => {
-    return manifest.has(entry.slug) && union.has(entry.slug);
-  });
-  const present = new Set(
-    entries.map((entry) => {
-      return entry.slug;
-    }),
-  );
-  for (const slug of union) {
-    if (manifest.has(slug) && !present.has(slug)) {
-      throw new Error("Immutable connector catalog manifest entry is missing");
-    }
-  }
-  const filtered = evaluateConnectorCatalogCompatibility({
-    artifact: { ...args.capturedCatalog.header, connectors: entries },
-    capability: args.capability,
-  });
-  const filteredMethodKeys = new Set(
-    filtered.map((method) => {
-      return `${method.connectorSlug}\0${method.authMethodId}`;
-    }),
-  );
-  return {
-    ...materializeConnectorRuntimeLookup({
-      connectors: entries,
-      filteredMethodKeys,
-      runtimeConnectorSlugs: uniqueSortedConnectorSlugs(
-        args.requestedConnectorSlugs,
-      ),
-      metadataConnectorSlugs: uniqueSortedConnectorSlugs(
-        args.metadataConnectorSlugs,
-      ),
-    }),
-    capturedCatalog: args.capturedCatalog,
-    catalogIdentity: {
-      schemaVersion: args.capturedCatalog.schemaVersion,
-      hash: args.capturedCatalog.hash,
-      capabilityDigest: args.capability.digest,
-    },
-  };
-}
-
 /** No legacy identity, validator, projection, R2 or full-snapshot fallback. */
 export function immutableConnectorRuntimeSelection(
   input: SelectionInput,
@@ -197,13 +140,36 @@ export function immutableConnectorRuntimeSelection(
   const source$ = capturedEntries(input);
   return computed(async (get) => {
     const { capturedCatalog, entries } = await get(source$);
-    // Feature, account and grant filtering stay with their request owners.
-    return materializeImmutableConnectorRuntimeSelection({
-      capturedCatalog,
-      entries,
-      requestedConnectorSlugs: input.requestedConnectorSlugs,
-      metadataConnectorSlugs: input.metadataConnectorSlugs ?? [],
-      capability: connectorCatalogExecutableCapabilityState(),
+    // Only code/configuration capability filtering is derived here. Feature,
+    // account and grant filtering remain with their existing request owners.
+    // No derived cache crosses a capability digest or request boundary.
+    const capability = connectorCatalogExecutableCapabilityState();
+    const filtered = evaluateConnectorCatalogCompatibility({
+      artifact: { ...capturedCatalog.header, connectors: [...entries] },
+      capability,
     });
+    const filteredMethodKeys = new Set(
+      filtered.map((method) => {
+        return `${method.connectorSlug}\0${method.authMethodId}`;
+      }),
+    );
+    return {
+      ...materializeConnectorRuntimeLookup({
+        connectors: entries,
+        filteredMethodKeys,
+        runtimeConnectorSlugs: uniqueSortedConnectorSlugs(
+          input.requestedConnectorSlugs,
+        ),
+        metadataConnectorSlugs: uniqueSortedConnectorSlugs(
+          input.metadataConnectorSlugs ?? [],
+        ),
+      }),
+      capturedCatalog,
+      catalogIdentity: {
+        schemaVersion: capturedCatalog.schemaVersion,
+        hash: capturedCatalog.hash,
+        capabilityDigest: capability.digest,
+      },
+    };
   });
 }

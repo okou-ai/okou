@@ -3,8 +3,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
-import type { ImmutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import { connectorCatalogActiveSnapshot } from "@okouai/db/schema/connector-catalog";
+import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
@@ -140,12 +140,21 @@ export const hasBuiltinDcrLinkedAccounts$ = command(
   },
 );
 
+function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
+  return and(
+    eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
+    eq(connectorCatalogActiveSnapshot.schemaVersion, identity.schemaVersion),
+    eq(connectorCatalogActiveSnapshot.catalogVersion, identity.catalogVersion),
+    eq(connectorCatalogActiveSnapshot.catalogDigest, identity.catalogDigest),
+  );
+}
+
 export const createBuiltinDcrRegistration$ = command(
   async (
     { set },
     args: {
       readonly owner: BuiltinConnectorAutomaticContractOwner;
-      readonly catalogIdentity: ImmutableConnectorRuntimeSelection["catalogIdentity"];
+      readonly catalogIdentity: ExternalCatalogIdentity;
       readonly value: McpAutomaticOAuthDcrRegistrationInput;
     },
     signal: AbortSignal,
@@ -159,17 +168,12 @@ export const createBuiltinDcrRegistration$ = command(
     signal.throwIfAborted();
     // A registration is created only for the current catalog.
     const [catalog] = await db
-      .select({ hash: connectorCatalog.hash })
-      .from(connectorCatalog)
-      .where(
-        eq(connectorCatalog.schemaVersion, args.catalogIdentity.schemaVersion),
-      )
+      .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
+      .from(connectorCatalogActiveSnapshot)
+      .where(builtinDcrCatalogCondition(args.catalogIdentity))
       .limit(1);
     signal.throwIfAborted();
     if (!catalog) {
-      throw new Error("Immutable connector catalog current is missing");
-    }
-    if (catalog.hash !== args.catalogIdentity.hash) {
       throw new McpAutomaticOAuthError(
         { kind: "binding-drift", reason: "binding-drift" },
         "Builtin MCP credential catalog changed during client registration",

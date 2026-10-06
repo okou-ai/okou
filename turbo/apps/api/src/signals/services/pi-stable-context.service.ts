@@ -1,32 +1,11 @@
-import { customConnectorDefinitionHasStableSkill } from "./pi-stable-context-recapture.service";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import type { z } from "zod";
-import {
-  piSourceFactsReceiptSchema,
-  piSourceFactsSql,
-  piCatalogEntriesReceiptSchema,
-  piCatalogEntriesSql,
-  piStorageFactsReceiptSchema,
-  piStorageFactsSql,
-  type PiStorageFact,
-  type PiStorageReadRequest,
-} from "./pi-stable-context-capture.service";
-import {
-  type ImmutableConnectorCatalogCapture,
-  materializeImmutableConnectorRuntimeSelection,
-  type ImmutableConnectorRuntimeSelection,
-} from "./connector-catalog-entries.service";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ImmutableConnectorCatalogEntry } from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
 import { randomUUID } from "node:crypto";
-import { hasImmutablePiCatalogSource } from "./pi-stable-context-source.service";
 import { isDeepStrictEqual } from "node:util";
+
 import {
   piResourceSnapshotSchema,
   type PiMemoryRecallSelection,
   type PiResourceSnapshot,
   type StoredStorageMountEntry,
-  PI_SKILLS_ROOT,
 } from "@okouai/api-contracts/contracts/runners";
 import type {
   PiStableContextBuildInput,
@@ -36,7 +15,6 @@ import type {
   PiStableContextSemanticInput,
   PiStableContextSourceVector,
   PiStableContextStorageMount,
-  PiStableContextPromptInputs,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import type { PiResourceSnapshotV1 } from "@okouai/db/jsonb-contracts/pi-resource-snapshot";
 import { agents } from "@okouai/db/schema/agent";
@@ -52,6 +30,7 @@ import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, lt, lte, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
@@ -74,32 +53,7 @@ import {
   piStableContextVariantDigest,
 } from "./pi-stable-context-digest.service";
 import { PI_STABLE_CONTEXT_AGENT_SUBJECT } from "./pi-stable-context-generation.service";
-import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  getCustomConnectorSkillName,
-  getCustomConnectorSkillStorageName,
-  getCustomSkillStorageName,
-  getOfficialWorkflowDefinitionStorageName,
-  SYSTEM_ORG_ID,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
-import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
-import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
-import {
-  buildAgentToolsPrompt,
-  buildAgentToolsPromptInputs,
-} from "./agent-tools-prompt.service";
-import { uniqueSortedConnectorSlugs } from "./connector-catalog-runtime.service";
-import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
-import { userFeatureSwitchOverridesFromRows } from "./feature-switch-scope";
-import { acceptedCatalogFromRow } from "./official-workflow-catalog-read.service";
-import { normalizeMountOverlay } from "./storage-mount-overlay";
-import { workflowsForRunFromRows } from "./workflow-data.service";
-import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
-import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
-import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
+import { recapturePiStableContextInput } from "./pi-stable-context-recapture.service";
 
 export { piStableContextArtifactDigest, piStableContextVariantDigest };
 const PI_STABLE_CONTEXT_LEASE_MS = 5 * 60 * 1000;
@@ -448,7 +402,6 @@ async function readReadyProjection(args: PreparePiStableContextArgs): Promise<{
   const [row] = await args.db
     .select({
       projection: piStableContextArtifacts.projection,
-      headInput: piStableContextHeads.input,
       artifactDigest: piStableContextArtifacts.digest,
       agentGeneration: agentGeneration.generation,
       userGeneration: userGeneration.generation,
@@ -498,15 +451,6 @@ async function readReadyProjection(args: PreparePiStableContextArgs): Promise<{
   };
   const expectedIdentity = buildInputIdentity(args, generations);
   const projection = row.projection;
-  if (
-    !piReadyBindingSourcesMatch(
-      row.headInput,
-      projection,
-      connectorCatalogExecutableCapabilityState().digest,
-    )
-  ) {
-    return null;
-  }
   if (
     piStableContextVariantDigest(expectedIdentity) !==
       piStableContextVariantDigest(projectionInputIdentity(projection)) ||
@@ -560,124 +504,119 @@ async function registerDemand(
   generations: SourceGenerations,
 ): Promise<StableContextDemand | null> {
   const capturedInput = buildInput(args, generations);
-  const result = await settle(
-    args.db.transaction(
-      async (tx) => {
-        const expected = expectsPiCatalog(capturedInput);
-        const [current] = expected
-          ? await tx
-              .select(piCatalogCaptureColumns())
-              .from(connectorCatalog)
-              .where(
-                eq(
-                  connectorCatalog.schemaVersion,
-                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                ),
-              )
-              .for("share")
-          : [];
-        requireExpectedPiCatalog(expected, current);
-        if (
-          !(await lockStableContextOwnerAuthority(tx, args.owner)) ||
-          !(await lockMatchingReadyGenerations(tx, args.owner, generations))
-        ) {
-          return null;
-        }
-        const facts = requirePiReceipt(
-          parseRawRows(
-            piSourceFactsReceiptSchema,
-            await tx.execute(piSourceFactsSql(args.owner, args.checkedAt)),
-          ),
-        ).facts;
-        const plan = piCapturePlan(capturedInput, current, facts);
-        const entries = requirePiReceipt(
-          parseRawRows(
-            piCatalogEntriesReceiptSchema,
-            await tx.execute(
-              piCatalogEntriesSql(plan.current?.hash ?? null, plan.slugs),
-            ),
-          ),
-        ).entries;
-        const prepared = await piPreparedRecapture(
-          capturedInput,
-          facts,
-          plan,
-          entries,
-        );
-        if (!prepared) {
-          return null;
-        }
-        const requests = piStorageRequests(capturedInput, prepared.desired);
-        const rows = requirePiReceipt(
-          parseRawRows(
-            piStorageFactsReceiptSchema,
-            await tx.execute(piStorageFactsSql(requests)),
-          ),
-        ).facts;
-        const recaptured = piInputFromPrepared(capturedInput, prepared, rows);
-        if (!recaptured) {
-          return null;
-        }
-        const input = {
-          ...recaptured,
-          source: {
-            ...recaptured.source,
-            agentGeneration: generations.agentGeneration,
-            userGeneration: generations.userGeneration,
-          },
-        };
-        const inputDigest = piStableContextInputDigest(input);
-        const initialValues = piDemandValues(
-          input,
-          args.variantDigest,
-          inputDigest,
-          nowDate(),
-        );
-        // Current fencing also serializes a first head and old-shape conversion.
-        const [inserted] = await tx
-          .insert(piStableContextHeads)
-          .values(initialValues)
-          .onConflictDoNothing()
-          .returning({ id: piStableContextHeads.id });
-        if (inserted) {
-          return { headId: inserted.id, generation: 1, input, inputDigest };
-        }
-        const existing = requirePiReceipt(
-          await tx
-            .select(piDemandHeadColumns())
-            .from(piStableContextHeads)
-            .where(piHeadOwnerCondition(args.owner, args.variantDigest))
-            .for("update")
-            .limit(1),
-        );
-        if (piDemandIsUnchanged(existing, inputDigest, generations)) {
-          return {
-            headId: existing.id,
-            generation: existing.generation,
-            input,
-            inputDigest,
-          };
-        }
-        const generation = existing.generation + 1;
-        const head = requirePiReceipt(
-          await tx
-            .update(piStableContextHeads)
-            .set({ ...initialValues, generation })
-            .where(eq(piStableContextHeads.id, existing.id))
-            .returning({ id: piStableContextHeads.id }),
-        );
-        return { headId: head.id, generation, input, inputDigest };
-      },
-      { isolationLevel: "read committed" },
-    ),
-  );
-  if (!result.ok) {
-    if (result.error instanceof PiCatalogDependencyDiscovered) {
+  return await args.db.transaction(async (tx) => {
+    if (!(await lockStableContextOwnerAuthority(tx, args.owner))) {
       return null;
     }
-    throw result.error;
-  }
-  return result.value;
+    if (!(await lockMatchingReadyGenerations(tx, args.owner, generations))) {
+      return null;
+    }
+    const recaptured = await recapturePiStableContextInput(
+      tx,
+      capturedInput,
+      args.checkedAt,
+    );
+    if (!recaptured) {
+      return null;
+    }
+    const input: PiStableContextBuildInput = {
+      ...recaptured,
+      source: {
+        ...recaptured.source,
+        agentGeneration: generations.agentGeneration,
+        userGeneration: generations.userGeneration,
+      },
+    };
+    const inputDigest = piStableContextInputDigest(input);
+    const initialValues = {
+      orgId: args.owner.orgId,
+      userId: args.owner.userId,
+      agentId: args.owner.agentId,
+      variantDigest: args.variantDigest,
+      generation: 1,
+      agentGeneration: generations.agentGeneration,
+      userGeneration: generations.userGeneration,
+      status: "pending" as const,
+      input,
+      inputDigest,
+      artifactDigest: null,
+      validityHorizon: validityHorizon(input.source),
+      leaseId: null,
+      leaseExpiresAt: null,
+      availableAt: nowDate(),
+      attemptCount: 0,
+      lastErrorClass: null,
+      updatedAt: nowDate(),
+    };
+    // Insert-first makes the unique owner/variant row the serialization point.
+    // A concurrent loser waits for the winner, then locks and reuses/advances it.
+    const [inserted] = await tx
+      .insert(piStableContextHeads)
+      .values(initialValues)
+      .onConflictDoNothing()
+      .returning({ id: piStableContextHeads.id });
+    if (inserted) {
+      return {
+        headId: inserted.id,
+        generation: 1,
+        input,
+        inputDigest,
+      };
+    }
+    const [existing] = await tx
+      .select({
+        id: piStableContextHeads.id,
+        generation: piStableContextHeads.generation,
+        inputDigest: piStableContextHeads.inputDigest,
+        status: piStableContextHeads.status,
+        agentGeneration: piStableContextHeads.agentGeneration,
+        userGeneration: piStableContextHeads.userGeneration,
+      })
+      .from(piStableContextHeads)
+      .where(
+        and(
+          eq(piStableContextHeads.orgId, args.owner.orgId),
+          eq(piStableContextHeads.userId, args.owner.userId),
+          eq(piStableContextHeads.agentId, args.owner.agentId),
+          eq(piStableContextHeads.variantDigest, args.variantDigest),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!existing) {
+      throw new Error("Stable-context demand disappeared during registration");
+    }
+    const unchanged =
+      existing.inputDigest === inputDigest &&
+      existing.agentGeneration === generations.agentGeneration &&
+      existing.userGeneration === generations.userGeneration;
+    if (unchanged && existing.status === "pending") {
+      return {
+        headId: existing.id,
+        generation: existing.generation,
+        input,
+        inputDigest,
+      };
+    }
+    const nextGeneration = existing.generation + 1;
+    const [head] = await tx
+      .update(piStableContextHeads)
+      .set({
+        ...initialValues,
+        generation: nextGeneration,
+      })
+      .where(eq(piStableContextHeads.id, existing.id))
+      .returning({ id: piStableContextHeads.id });
+    if (!head) {
+      throw new Error("Stable-context demand publication returned no row");
+    }
+    return {
+      headId: head.id,
+      generation: nextGeneration,
+      input,
+      inputDigest,
+    };
+  });
 }
 
 function projectionResources(projection: PiStableContextProjection) {
@@ -846,8 +785,10 @@ function canonicalSnapshotMatchesDemand(
   generations: SourceGenerations,
   demand: StableContextDemand,
 ): boolean {
-  const { prompt: _prompt, semantic: _semantic, ...identity } = demand.input;
-  return isDeepStrictEqual(buildInputIdentity(args, generations), identity);
+  return isDeepStrictEqual(
+    buildInputIdentity(args, generations).storageMounts,
+    demand.input.storageMounts,
+  );
 }
 
 async function publishCanonicalRepair(
@@ -1038,27 +979,6 @@ async function claimStableContextWork(
       if (!row.input || !row.inputDigest) {
         continue;
       }
-      if (
-        !hasImmutablePiCatalogSource(
-          row.input.source,
-          connectorCatalogExecutableCapabilityState().digest,
-        )
-      ) {
-        await tx
-          .update(piStableContextHeads)
-          .set({
-            status: "missing",
-            input: null,
-            inputDigest: null,
-            artifactDigest: null,
-            leaseId: null,
-            leaseExpiresAt: null,
-            lastErrorClass: null,
-            updatedAt: currentTime,
-          })
-          .where(eq(piStableContextHeads.id, row.headId));
-        continue;
-      }
       const leaseId = randomUUID();
       const [updated] = await tx
         .update(piStableContextHeads)
@@ -1221,717 +1141,4 @@ export async function executePiStableContextWork(
     result[outcome]++;
   }
   return result;
-}
-
-interface StableContextSourceSnapshot {
-  readonly agentIdentity: string;
-  readonly promptInputs: PiStableContextPromptInputs;
-  readonly connectorScope: PiStableContextSemanticInput["connectorScope"];
-  readonly permissionPolicies: ReturnType<
-    typeof permissionGrantsToFirewallPolicies
-  >;
-  readonly permissionValidityHorizon: string | null;
-  readonly catalogSelection:
-    | { readonly kind: "empty" }
-    | {
-        readonly kind: "scoped";
-        readonly selection: ImmutableConnectorRuntimeSelection;
-      };
-}
-
-interface DesiredDynamicMount {
-  readonly kind: "custom_connector" | "injected";
-  readonly orgId: string;
-  readonly storageName: string;
-  readonly versionId: string | undefined;
-  readonly expectedStorageId?: string;
-  readonly mountPath: string;
-}
-
-interface ResolvedDynamicMount {
-  readonly desired: DesiredDynamicMount;
-  readonly storage: PiStableContextStorageMount;
-  readonly persisted: PersistedStorageMount;
-}
-
-function featurePromptInputs(
-  previous: PiStableContextPromptInputs,
-  featureContext: FeatureSwitchContext,
-): PiStableContextPromptInputs {
-  return buildAgentToolsPromptInputs({
-    featureSwitchContext: featureContext,
-    triggerSource: previous.triggerSource,
-    cloudBrowserEnabled: previous.cloudBrowserEnabled,
-  });
-}
-
-function customConnectorMounts(
-  snapshot: StableContextSourceSnapshot,
-  orgId: string,
-): readonly DesiredDynamicMount[] {
-  return snapshot.connectorScope.customConnectorDefinitions.flatMap(
-    (definition) => {
-      if (
-        !customConnectorDefinitionHasStableSkill(
-          definition,
-          snapshot.promptInputs,
-        )
-      ) {
-        return [];
-      }
-      return [
-        {
-          kind: "custom_connector" as const,
-          orgId,
-          storageName: getCustomConnectorSkillStorageName(
-            definition.customConnectorId,
-          ),
-          versionId: definition.skillStorageVersionId,
-          mountPath: `${PI_SKILLS_ROOT}/${getCustomConnectorSkillName(
-            definition.connectorSlug,
-            definition.customConnectorId,
-          )}`,
-        },
-      ];
-    },
-  );
-}
-
-function builtinConnectorMounts(
-  snapshot: StableContextSourceSnapshot,
-): readonly DesiredDynamicMount[] | null {
-  if (snapshot.catalogSelection.kind === "empty") {
-    return [];
-  }
-  const selection = snapshot.catalogSelection.selection;
-  const desired: DesiredDynamicMount[] = [];
-  for (const slug of snapshot.connectorScope.allowedConnectorSlugs) {
-    const connector = selection.connectors.get(slug);
-    if (!connector) {
-      return null;
-    }
-    if (connector.skill.kind !== "none") {
-      desired.push({
-        kind: "injected",
-        orgId: SYSTEM_ORG_ID,
-        storageName: connector.skill.storageName,
-        versionId: connector.skill.versionId,
-        mountPath: `${PI_SKILLS_ROOT}/${slug}`,
-      });
-    }
-  }
-  return desired;
-}
-
-function dynamicStorageIdentities(
-  semantic: PiStableContextSemanticInput,
-  orgId: string,
-): ReadonlySet<string> {
-  const identities = new Set<string>();
-  const add = (storageOrgId: string, name: string) => {
-    identities.add(`${storageOrgId}\0${name}`);
-  };
-  for (const definition of semantic.connectorScope.customConnectorDefinitions) {
-    add(
-      orgId,
-      getCustomConnectorSkillStorageName(definition.customConnectorId),
-    );
-  }
-  for (const workflow of semantic.connectorScope.workflows) {
-    if (workflow.officialDefinitionName === null) {
-      add(orgId, getCustomSkillStorageName(workflow.workflowId));
-    } else {
-      add(
-        SYSTEM_ORG_ID,
-        getOfficialWorkflowDefinitionStorageName(
-          workflow.officialDefinitionName,
-        ),
-      );
-    }
-  }
-  return identities;
-}
-
-function mergeDynamicMounts<
-  T extends {
-    readonly orgId: string;
-    readonly name: string;
-    readonly mountPath: string;
-  },
->(args: {
-  readonly current: readonly T[];
-  readonly resolved: readonly ResolvedDynamicMount[];
-  readonly previousSemantic: PiStableContextSemanticInput;
-  readonly nextSemantic: PiStableContextSemanticInput;
-  readonly ownerOrgId: string;
-  readonly select: (mount: ResolvedDynamicMount) => T;
-}): readonly T[] {
-  const previous = dynamicStorageIdentities(
-    args.previousSemantic,
-    args.ownerOrgId,
-  );
-  const next = dynamicStorageIdentities(args.nextSemantic, args.ownerOrgId);
-  const desired = new Set(
-    args.resolved.map((mount) => {
-      return `${mount.storage.orgId}\0${mount.storage.name}`;
-    }),
-  );
-  const isDynamic = (mount: T) => {
-    const identity = `${mount.orgId}\0${mount.name}`;
-    return (
-      previous.has(identity) ||
-      next.has(identity) ||
-      desired.has(identity) ||
-      (mount.orgId === SYSTEM_ORG_ID &&
-        mount.name.startsWith("connector-skill@"))
-    );
-  };
-  const firstDynamicIndex = args.current.findIndex(isDynamic);
-  const base = args.current.filter((mount) => {
-    return !isDynamic(mount);
-  });
-  const custom = args.resolved
-    .filter((mount) => {
-      return mount.desired.kind === "custom_connector";
-    })
-    .map(args.select);
-  const injected = args.resolved
-    .filter((mount) => {
-      return mount.desired.kind === "injected";
-    })
-    .map(args.select);
-  const firstSkillIndex = base.findIndex((mount) => {
-    return mount.mountPath.startsWith(`${PI_SKILLS_ROOT}/`);
-  });
-  if (firstSkillIndex === -1) {
-    const insertion =
-      firstDynamicIndex === -1 ? base.length : firstDynamicIndex;
-    return [
-      ...base.slice(0, insertion),
-      ...custom,
-      ...injected,
-      ...base.slice(insertion),
-    ];
-  }
-  const withCustom = [
-    ...base.slice(0, firstSkillIndex),
-    ...custom,
-    ...base.slice(firstSkillIndex),
-  ];
-  let lastSkillIndex = -1;
-  for (let index = 0; index < withCustom.length; index += 1) {
-    if (withCustom[index]?.mountPath.startsWith(`${PI_SKILLS_ROOT}/`)) {
-      lastSkillIndex = index;
-    }
-  }
-  return [
-    ...withCustom.slice(0, lastSkillIndex + 1),
-    ...injected,
-    ...withCustom.slice(lastSkillIndex + 1),
-  ];
-}
-
-/**
- * Rebuilds every mutable source component from one post-write DB snapshot.
- * The returned value is immutable worker input; a missing referenced artifact
- * leaves the head missing instead of publishing a mixed generation.
- */
-
-class PiCatalogDependencyDiscovered extends Error {}
-
-function recapturePiStableContextInput(
-  input: PiStableContextBuildInput & {
-    readonly semantic: PiStableContextSemanticInput;
-  },
-  snapshot: StableContextSourceSnapshot,
-  latestInstructions: {
-    readonly storageMounts: readonly PiStableContextStorageMount[];
-    readonly persistedStorageMounts: readonly PersistedStorageMount[];
-  },
-  resolved: readonly ResolvedDynamicMount[],
-): PiStableContextBuildInput {
-  const semantic: PiStableContextSemanticInput = {
-    promptInputs: snapshot.promptInputs,
-    connectorScope: snapshot.connectorScope,
-  };
-  const permissionDigest = piStableContextVariantDigest(
-    snapshot.permissionPolicies ?? null,
-  );
-  return {
-    ...input,
-    prompt: {
-      ...input.prompt,
-      agentIdentity: snapshot.agentIdentity,
-      tools: buildAgentToolsPrompt(snapshot.promptInputs),
-    },
-    semantic,
-    source: {
-      ...input.source,
-      catalog:
-        snapshot.catalogSelection.kind === "scoped"
-          ? snapshot.catalogSelection.selection.catalogIdentity
-          : null,
-      agentIdentityDigest: piStableContextVariantDigest(snapshot.agentIdentity),
-      featurePromptDigest: piStableContextVariantDigest(snapshot.promptInputs),
-      permissionDigest,
-      connectorScopeDigest: piStableContextVariantDigest(
-        snapshot.connectorScope,
-      ),
-      validityHorizon: snapshot.permissionValidityHorizon,
-    },
-    storageMounts: normalizeMountOverlay(
-      mergeDynamicMounts({
-        current: latestInstructions.storageMounts,
-        resolved,
-        previousSemantic: input.semantic,
-        nextSemantic: semantic,
-        ownerOrgId: input.owner.orgId,
-        select(mount) {
-          return mount.storage;
-        },
-      }),
-    ),
-    persistedStorageMounts: normalizeMountOverlay(
-      mergeDynamicMounts({
-        current: latestInstructions.persistedStorageMounts,
-        resolved,
-        previousSemantic: input.semantic,
-        nextSemantic: semantic,
-        ownerOrgId: input.owner.orgId,
-        select(mount) {
-          return mount.persisted;
-        },
-      }),
-    ),
-  };
-}
-
-function workflowMounts(
-  snapshot: StableContextSourceSnapshot,
-  orgId: string,
-  catalog: ReturnType<typeof acceptedCatalogFromRow>,
-): readonly DesiredDynamicMount[] | null {
-  const desired: DesiredDynamicMount[] = [];
-  for (const workflow of snapshot.connectorScope.workflows) {
-    if (workflow.officialDefinitionName === null) {
-      desired.push({
-        kind: "injected",
-        orgId,
-        storageName: getCustomSkillStorageName(workflow.workflowId),
-        versionId: undefined,
-        mountPath: `${PI_SKILLS_ROOT}/${workflow.name}`,
-      });
-      continue;
-    }
-    const definition = catalog?.payload.definitions.find((candidate) => {
-      return candidate.name === workflow.officialDefinitionName;
-    });
-    if (!definition) {
-      return null;
-    }
-    desired.push({
-      kind: "injected",
-      orgId: SYSTEM_ORG_ID,
-      storageName: definition.artifact.storageName,
-      versionId: definition.artifact.storageVersion,
-      expectedStorageId: definition.artifact.storageId,
-      mountPath: `${PI_SKILLS_ROOT}/${workflow.name}`,
-    });
-  }
-  return desired;
-}
-
-function piDemandValues(
-  input: PiStableContextBuildInput,
-  variantDigest: string,
-  inputDigest: string,
-  at: Date,
-) {
-  return {
-    orgId: input.owner.orgId,
-    userId: input.owner.userId,
-    agentId: input.owner.agentId,
-    variantDigest: variantDigest,
-    generation: 1,
-    agentGeneration: input.source.agentGeneration,
-    userGeneration: input.source.userGeneration,
-    status: "pending" as const,
-    input,
-    inputDigest,
-    artifactDigest: null,
-    validityHorizon: validityHorizon(input.source),
-    leaseId: null,
-    leaseExpiresAt: null,
-    availableAt: at,
-    attemptCount: 0,
-    lastErrorClass: null,
-    updatedAt: at,
-  };
-}
-
-type PiSourceFacts = z.infer<typeof piSourceFactsReceiptSchema>["facts"];
-function piCatalogCaptureColumns() {
-  return {
-    schemaVersion: connectorCatalog.schemaVersion,
-    hash: connectorCatalog.hash,
-    header: connectorCatalog.catalogHeader,
-    entrySlugs: connectorCatalog.entrySlugs,
-  };
-}
-function expectsPiCatalog(input: PiStableContextBuildInput): boolean {
-  return (
-    input.source.catalog !== null ||
-    Boolean(
-      input.semantic &&
-      (input.semantic.connectorScope.allowedConnectorSlugs.length ||
-        input.semantic.connectorScope.allowedCustomConnectorIds.length),
-    )
-  );
-}
-function piHeadOwnerCondition(owner: PiStableContextOwner, variant: string) {
-  const condition = and(
-    eq(piStableContextHeads.orgId, owner.orgId),
-    eq(piStableContextHeads.userId, owner.userId),
-    eq(piStableContextHeads.agentId, owner.agentId),
-    eq(piStableContextHeads.variantDigest, variant),
-  );
-  if (!condition) {
-    throw new Error("Stable-context head condition is empty");
-  }
-  return condition;
-}
-function piMetadataSlugs(facts: PiSourceFacts) {
-  return uniqueSortedConnectorSlugs(
-    facts.custom.flatMap((row) => {
-      const slug =
-        row.permissionBundleRef === null
-          ? null
-          : customConnectorPermissionBundleDependencySlug(
-              row.permissionBundleRef,
-            );
-      return slug ? [slug] : [];
-    }),
-  );
-}
-function piCatalogSelection(
-  captured: ImmutableConnectorCatalogCapture | undefined,
-  dependent: boolean,
-  slugs: readonly ConnectorSlug[],
-  metadata: readonly ConnectorSlug[],
-  entries: readonly ImmutableConnectorCatalogEntry[],
-): StableContextSourceSnapshot["catalogSelection"] {
-  if (!dependent) {
-    return { kind: "empty" };
-  }
-  if (!captured) {
-    throw new PiCatalogDependencyDiscovered();
-  }
-  return {
-    kind: "scoped",
-    selection: materializeImmutableConnectorRuntimeSelection({
-      capturedCatalog: captured,
-      entries,
-      requestedConnectorSlugs: slugs,
-      metadataConnectorSlugs: metadata,
-      capability: connectorCatalogExecutableCapabilityState(),
-    }),
-  };
-}
-async function piSnapshotFromFacts(
-  input: PiStableContextBuildInput,
-  facts: PiSourceFacts,
-  scope: ReturnType<typeof agentConnectorScopeFromRows>,
-  catalogSelection: StableContextSourceSnapshot["catalogSelection"],
-): Promise<StableContextSourceSnapshot> {
-  if (!input.semantic) {
-    throw new Error("Stable-context recapture requires semantic input");
-  }
-  const stored = permissionGrantsToFirewallPolicies(facts.grants);
-  const permissionPolicies =
-    catalogSelection.kind === "empty"
-      ? stored
-      : await expandConnectorServerFirewallPolicies({
-          catalog: catalogSelection.selection.serverFirewalls,
-          stored,
-          connectorSlugs: [...scope.allowedConnectorSlugs],
-        });
-  const horizons = facts.grants.flatMap((grant) => {
-    return grant.expiresAt ? [grant.expiresAt.getTime()] : [];
-  });
-  return {
-    agentIdentity: buildAgentIdentityPrompt(facts.agent) ?? "",
-    promptInputs: featurePromptInputs(input.semantic.promptInputs, {
-      orgId: input.owner.orgId,
-      userId: input.owner.userId,
-      email: facts.email ?? undefined,
-      overrides: userFeatureSwitchOverridesFromRows(
-        facts.features,
-        input.owner.userId,
-      ),
-    }),
-    connectorScope: {
-      ...scope,
-      workflows: workflowsForRunFromRows(facts.workflows, input.owner.userId),
-    },
-    permissionPolicies,
-    permissionValidityHorizon: horizons.length
-      ? new Date(Math.min(...horizons)).toISOString()
-      : null,
-    catalogSelection,
-  };
-}
-function piDesiredMounts(
-  snapshot: StableContextSourceSnapshot,
-  orgId: string,
-  official: PiSourceFacts["official"],
-): readonly DesiredDynamicMount[] | null {
-  const workflow = workflowMounts(
-    snapshot,
-    orgId,
-    acceptedCatalogFromRow(official ?? undefined),
-  );
-  const builtin = builtinConnectorMounts(snapshot);
-  return workflow && builtin
-    ? [...customConnectorMounts(snapshot, orgId), ...builtin, ...workflow]
-    : null;
-}
-function piStorageRequests(
-  input: PiStableContextBuildInput,
-  desired: readonly DesiredDynamicMount[],
-): readonly PiStorageReadRequest[] {
-  return [
-    ...desired.map((mount) => {
-      return {
-        orgId: mount.orgId,
-        userId: VOLUME_ORG_USER_ID,
-        name: mount.storageName,
-        ...(mount.expectedStorageId
-          ? { storageId: mount.expectedStorageId }
-          : {}),
-        ...(mount.versionId ? { versionId: mount.versionId } : {}),
-      };
-    }),
-    ...input.storageMounts.flatMap((mount) => {
-      return mount.instructionsTargetFilename === undefined
-        ? []
-        : [
-            {
-              orgId: mount.orgId,
-              userId: mount.userId,
-              name: mount.name,
-              storageId: mount.storageId,
-            },
-          ];
-    }),
-  ];
-}
-function piRecapturedInput(
-  input: PiStableContextBuildInput,
-  snapshot: StableContextSourceSnapshot,
-  desired: readonly DesiredDynamicMount[],
-  rows: readonly PiStorageFact[],
-): PiStableContextBuildInput | null {
-  if (!input.semantic) {
-    throw new Error("Stable-context recapture requires semantic input");
-  }
-  const resolved: ResolvedDynamicMount[] = [];
-  for (const mount of desired) {
-    const row = rows.find((candidate) => {
-      return (
-        candidate.orgId === mount.orgId &&
-        candidate.userId === VOLUME_ORG_USER_ID &&
-        candidate.name === mount.storageName &&
-        (!mount.expectedStorageId ||
-          candidate.storageId === mount.expectedStorageId) &&
-        (mount.versionId
-          ? candidate.versionId === mount.versionId
-          : candidate.isHead)
-      );
-    });
-    if (!row) {
-      return null;
-    }
-    resolved.push({
-      desired: mount,
-      storage: {
-        orgId: row.orgId,
-        userId: row.userId,
-        name: row.name,
-        storageId: row.storageId,
-        versionId: row.versionId,
-        mountPath: mount.mountPath,
-        archiveSize: row.archiveSize,
-        ...(row.fileCount === 0 ? { empty: true as const } : {}),
-      },
-      persisted: {
-        orgId: row.orgId,
-        userId: row.userId,
-        name: row.name,
-        storageId: row.storageId,
-        version: row.versionId,
-        mountPath: mount.mountPath,
-      },
-    });
-  }
-  const latest = new Map<string, PiStorageFact>();
-  for (const mount of input.storageMounts) {
-    if (mount.instructionsTargetFilename === undefined) {
-      continue;
-    }
-    const row = rows.find((candidate) => {
-      return (
-        candidate.isHead &&
-        candidate.storageId === mount.storageId &&
-        candidate.orgId === mount.orgId &&
-        candidate.userId === mount.userId &&
-        candidate.name === mount.name
-      );
-    });
-    if (!row) {
-      return null;
-    }
-    latest.set(mount.storageId, row);
-  }
-  const storageMounts = input.storageMounts.map((mount) => {
-    const row = latest.get(mount.storageId);
-    if (!row || mount.instructionsTargetFilename === undefined) {
-      return mount;
-    }
-    const { empty: _empty, ...previous } = mount;
-    return {
-      ...previous,
-      versionId: row.versionId,
-      archiveSize: row.archiveSize,
-      ...(row.fileCount === 0 ? { empty: true as const } : {}),
-    };
-  });
-  const persistedStorageMounts = input.persistedStorageMounts.map((mount) => {
-    const row = latest.get(mount.storageId);
-    return row ? { ...mount, version: row.versionId } : mount;
-  });
-  return recapturePiStableContextInput(
-    { ...input, semantic: input.semantic },
-    snapshot,
-    { storageMounts, persistedStorageMounts },
-    resolved,
-  );
-}
-
-function piReadyBindingSourcesMatch(
-  input: PiStableContextBuildInput | null,
-  projection: PiStableContextProjection,
-  capabilityDigest: string,
-): boolean {
-  if (
-    !input ||
-    !hasImmutablePiCatalogSource(input.source, capabilityDigest) ||
-    !hasImmutablePiCatalogSource(projection.source, capabilityDigest)
-  ) {
-    return false;
-  }
-  const { prompt: _prompt, semantic: _semantic, ...identity } = input;
-  return (
-    piStableContextVariantDigest(identity) ===
-    piStableContextVariantDigest(projectionInputIdentity(projection))
-  );
-}
-
-function requirePiReceipt<T>(rows: readonly T[]): T {
-  const [row] = rows;
-  if (!row) {
-    throw new Error("Stable-context required receipt is missing");
-  }
-  return row;
-}
-function requireExpectedPiCatalog(
-  expected: boolean,
-  current: ImmutableConnectorCatalogCapture | undefined,
-): void {
-  if (expected && !current) {
-    throw new Error("Immutable connector catalog current is missing");
-  }
-}
-function piCapturePlan(
-  input: PiStableContextBuildInput,
-  current: ImmutableConnectorCatalogCapture | undefined,
-  facts: PiSourceFacts,
-) {
-  const scope = agentConnectorScopeFromRows({
-    connectorRows: facts.builtin,
-    customConnectorRows: facts.custom,
-  });
-  const metadata = piMetadataSlugs(facts);
-  const dependent =
-    scope.allowedConnectorSlugs.length > 0 ||
-    scope.allowedCustomConnectorIds.length > 0;
-  if (
-    (dependent && !current) ||
-    (!input.semantic && (dependent || input.source.catalog !== null))
-  ) {
-    throw new PiCatalogDependencyDiscovered();
-  }
-  return {
-    current: dependent ? current : undefined,
-    scope,
-    metadata,
-    dependent,
-    slugs: [...scope.allowedConnectorSlugs, ...metadata],
-  };
-}
-async function piPreparedRecapture(
-  input: PiStableContextBuildInput,
-  facts: PiSourceFacts,
-  plan: ReturnType<typeof piCapturePlan>,
-  entries: readonly ImmutableConnectorCatalogEntry[],
-) {
-  const selection = piCatalogSelection(
-    plan.current,
-    plan.dependent,
-    plan.scope.allowedConnectorSlugs,
-    plan.metadata,
-    entries,
-  );
-  const snapshot = input.semantic
-    ? await piSnapshotFromFacts(input, facts, plan.scope, selection)
-    : null;
-  const desired = snapshot
-    ? piDesiredMounts(snapshot, input.owner.orgId, facts.official)
-    : [];
-  return desired ? { snapshot, desired } : null;
-}
-function piInputFromPrepared(
-  input: PiStableContextBuildInput,
-  prepared: NonNullable<Awaited<ReturnType<typeof piPreparedRecapture>>>,
-  rows: readonly PiStorageFact[],
-) {
-  return prepared.snapshot
-    ? piRecapturedInput(input, prepared.snapshot, prepared.desired, rows)
-    : input;
-}
-function piDemandHeadColumns() {
-  return {
-    id: piStableContextHeads.id,
-    generation: piStableContextHeads.generation,
-    inputDigest: piStableContextHeads.inputDigest,
-    status: piStableContextHeads.status,
-    agentGeneration: piStableContextHeads.agentGeneration,
-    userGeneration: piStableContextHeads.userGeneration,
-  };
-}
-function piDemandIsUnchanged(
-  existing: {
-    readonly inputDigest: string | null;
-    readonly status: string;
-    readonly agentGeneration: number;
-    readonly userGeneration: number;
-  },
-  digest: string,
-  generations: SourceGenerations,
-): boolean {
-  return (
-    existing.status === "pending" &&
-    existing.inputDigest === digest &&
-    existing.agentGeneration === generations.agentGeneration &&
-    existing.userGeneration === generations.userGeneration
-  );
 }

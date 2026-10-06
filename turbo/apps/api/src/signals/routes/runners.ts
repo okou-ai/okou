@@ -1,4 +1,3 @@
-import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
@@ -48,7 +47,6 @@ import {
 import { command } from "ccstate";
 import {
   and,
-  asc,
   desc,
   eq,
   gt,
@@ -110,10 +108,9 @@ import {
 } from "../services/agent-run-terminal-transition.service";
 import { reportBuiltInModelProviderFailure$ } from "../services/built-in-model-provider-failure.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
-import { uniqueSortedConnectorSlugs } from "../services/connector-catalog-runtime.service";
-import { immutableConnectorRuntimeSelection } from "../services/connector-catalog-entries.service";
+import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
-import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
+import { resolveConnectorRuntimeTargets } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
@@ -139,7 +136,6 @@ import {
   networkPolicyRefreshesRecord,
   resolveActiveNetworkPolicyRefreshes,
   resolveActiveNetworkPolicyRefreshesFromBaseline,
-  activeUserPermissionGrantCondition,
 } from "../services/user-permission-grants.service";
 import { settle, tapError } from "../utils";
 
@@ -1449,6 +1445,134 @@ function connectorPermissionBaselineMatchesStoredContext(
   );
 }
 
+async function refreshClaimNetworkPolicies(args: {
+  readonly db: Db;
+  readonly run: ClaimedRun;
+  readonly storedContext: StoredExecutionContext;
+  readonly connectorPermissionBaseline: ConnectorPermissionBaselineRead;
+  readonly timing: ClaimRouteTimingCollector;
+}): Promise<
+  Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
+> {
+  const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
+  assertClaimConnectorIdentity(args.run, args.storedContext);
+  if (Object.keys(storedNetworkPolicies).length === 0) {
+    return {
+      networkPolicies: args.storedContext.networkPolicies,
+      networkPolicyRefreshes: undefined,
+    };
+  }
+
+  const builtinConnectorSlugs = [
+    ...new Set(
+      args.storedContext.connectorRuntimeTargets.flatMap((target) => {
+        return target.kind === "builtin" ? [target.connectorSlug] : [];
+      }),
+    ),
+  ];
+
+  return await args.timing.measureNetworkPolicyRefresh(async () => {
+    if (builtinConnectorSlugs.length === 0) {
+      return {
+        value: {
+          networkPolicies: args.storedContext.networkPolicies,
+          networkPolicyRefreshes: undefined,
+        },
+        path: "no_builtin_targets",
+      };
+    }
+    if (args.run.agentId === null) {
+      throw new Error(
+        "Connector network policy refresh requires an Agent identity",
+      );
+    }
+
+    const scope = {
+      orgId: args.run.orgId,
+      userId: args.run.userId,
+      agentId: args.run.agentId,
+    };
+    const fullRefresh = async (
+      path: Extract<ClaimNetworkPolicyRefreshPath, `full_${string}`>,
+    ) => {
+      const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(
+        args.db,
+      );
+      const connectorSlugs = networkPolicyRefreshConnectorSlugs(
+        connectorCatalogSnapshot.serverFirewalls,
+        builtinConnectorSlugs,
+      );
+      const refreshes =
+        connectorSlugs.length === 0
+          ? []
+          : await resolveActiveNetworkPolicyRefreshes(
+              args.db,
+              scope,
+              connectorSlugs,
+              connectorCatalogSnapshot,
+            );
+      return { refreshes, path };
+    };
+
+    const selectRefresh = async () => {
+      if (args.connectorPermissionBaseline.kind === "missing") {
+        return await fullRefresh("full_missing_baseline");
+      }
+      if (args.connectorPermissionBaseline.kind === "invalid") {
+        return await fullRefresh("full_invalid_baseline");
+      }
+      const baseline = args.connectorPermissionBaseline.value;
+      if (
+        !connectorPermissionBaselineMatchesStoredContext(
+          args.storedContext,
+          baseline,
+        )
+      ) {
+        return await fullRefresh("full_invalid_baseline");
+      }
+      const resolution = await resolveActiveNetworkPolicyRefreshesFromBaseline(
+        args.db,
+        scope,
+        baseline,
+        async <T>(operation: () => Promise<T>): Promise<T> => {
+          return await args.timing.measure(
+            "claim_route_response_network_policy_refresh_baseline_database",
+            "nested",
+            operation,
+          );
+        },
+      );
+      if (resolution.kind === "incompatible") {
+        return await fullRefresh("full_incompatible_baseline");
+      }
+      if (resolution.kind === "empty") {
+        return {
+          refreshes: resolution.refreshes,
+          path: "baseline_empty" as const,
+        };
+      }
+      return {
+        refreshes: resolution.refreshes,
+        path: "baseline" as const,
+      };
+    };
+    const selected = await selectRefresh();
+
+    return {
+      value: {
+        networkPolicies: mergeNetworkPolicyRefreshes(
+          storedNetworkPolicies,
+          selected.refreshes,
+        ),
+        networkPolicyRefreshes: networkPolicyRefreshesRecord(
+          selected.refreshes,
+        ),
+      },
+      path: selected.path,
+    };
+  });
+}
+
 function assertClaimConnectorIdentity(
   run: ClaimedRun,
   storedContext: StoredExecutionContext,
@@ -1765,13 +1889,11 @@ async function resolveResumeSessionForClaim(args: {
 
 async function buildClaimResponseBody(
   args: {
+    readonly db: Db;
     readonly run: ClaimedRun;
     readonly reuseKey: string | null;
     readonly storedContext: StoredExecutionContext;
-    readonly secretValues: string[] | null;
-    readonly refreshedPolicies: Promise<
-      Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
-    >;
+    readonly connectorPermissionBaseline: ConnectorPermissionBaselineRead;
     readonly timing: ClaimRouteTimingCollector;
     readonly loadIdentityRepresentation: (
       hash: string,
@@ -1787,46 +1909,58 @@ async function buildClaimResponseBody(
   },
   signal: AbortSignal,
 ): Promise<ExecutionContext> {
+  const secretValues = await secretValuesForRunner(
+    args.storedContext,
+    args.timing,
+  );
   signal.throwIfAborted();
   return await args.timing.measure(
     "claim_route_response_assembly",
     "top_level",
     async () => {
-      const [resumeResult, policyResult] = await Promise.allSettled([
-        resolveResumeSessionForClaim({
-          resumeSession: args.storedContext.resumeSession,
-          timing: args.timing,
-          loadIdentityRepresentation(hash: string) {
-            return args.loadIdentityRepresentation(hash);
-          },
-          loadCompressedRepresentation(
-            hash: string,
-            encoding: CompressedSessionHistoryBlobEncoding,
-          ) {
-            return args.loadCompressedRepresentation(hash, encoding);
-          },
-          generateResumeSessionHistoryUrl: args.generateResumeSessionHistoryUrl,
-          generateResumeSessionHistoryObjectUrl:
-            args.generateResumeSessionHistoryObjectUrl,
-        }),
-        args.refreshedPolicies,
-      ]);
-      if (resumeResult.status === "rejected") {
-        const error: unknown = resumeResult.reason;
+      const [resumeSessionResult, refreshedPoliciesResult] =
+        await Promise.allSettled([
+          resolveResumeSessionForClaim({
+            resumeSession: args.storedContext.resumeSession,
+            timing: args.timing,
+            loadIdentityRepresentation(hash: string) {
+              return args.loadIdentityRepresentation(hash);
+            },
+            loadCompressedRepresentation(
+              hash: string,
+              encoding: CompressedSessionHistoryBlobEncoding,
+            ) {
+              return args.loadCompressedRepresentation(hash, encoding);
+            },
+            generateResumeSessionHistoryUrl:
+              args.generateResumeSessionHistoryUrl,
+            generateResumeSessionHistoryObjectUrl:
+              args.generateResumeSessionHistoryObjectUrl,
+          }),
+          refreshClaimNetworkPolicies({
+            db: args.db,
+            run: args.run,
+            storedContext: args.storedContext,
+            connectorPermissionBaseline: args.connectorPermissionBaseline,
+            timing: args.timing,
+          }),
+        ]);
+      if (resumeSessionResult.status === "rejected") {
+        const error: unknown = resumeSessionResult.reason;
         throw error;
       }
-      const resumeSession = resumeResult.value;
+      const resumeSession = resumeSessionResult.value;
       signal.throwIfAborted();
       const sandboxToken = generateSandboxToken(
         args.run.userId,
         args.run.id,
         args.run.orgId,
       );
-      if (policyResult.status === "rejected") {
-        const error: unknown = policyResult.reason;
+      if (refreshedPoliciesResult.status === "rejected") {
+        const error: unknown = refreshedPoliciesResult.reason;
         throw error;
       }
-      const refreshedPolicies = policyResult.value;
+      const refreshedPolicies = refreshedPoliciesResult.value;
       signal.throwIfAborted();
       const {
         connectorPermissionBaseline: _connectorPermissionBaseline,
@@ -1852,7 +1986,7 @@ async function buildClaimResponseBody(
         },
         resumeSession,
         sandboxToken,
-        secretValues: args.secretValues,
+        secretValues,
         connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
         networkPolicies: refreshedPolicies.networkPolicies,
         networkPolicyRefreshes: refreshedPolicies.networkPolicyRefreshes,
@@ -1860,224 +1994,6 @@ async function buildClaimResponseBody(
     },
   );
 }
-
-const refreshFullClaimPolicies$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly scope: Parameters<typeof resolveActiveNetworkPolicyRefreshes>[1];
-      readonly connectorSlugs: readonly string[];
-      readonly path: Extract<ClaimNetworkPolicyRefreshPath, `full_${string}`>;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    signal.throwIfAborted();
-    const connectorCatalogSnapshot = await get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: uniqueSortedConnectorSlugs(
-          args.connectorSlugs,
-        ),
-        metadataConnectorSlugs: uniqueSortedConnectorSlugs(args.connectorSlugs),
-      }),
-    );
-    signal.throwIfAborted();
-    const connectorSlugs = networkPolicyRefreshConnectorSlugs(
-      connectorCatalogSnapshot.serverFirewalls,
-      args.connectorSlugs,
-    );
-    const refreshes =
-      connectorSlugs.length === 0
-        ? []
-        : await resolveActiveNetworkPolicyRefreshes(
-            db,
-            args.scope,
-            connectorSlugs,
-            connectorCatalogSnapshot,
-          );
-    signal.throwIfAborted();
-    return { refreshes, path: args.path };
-  },
-);
-const refreshBaselineClaimPolicies$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly scope: Parameters<typeof resolveActiveNetworkPolicyRefreshes>[1];
-      readonly connectorSlugs: readonly string[];
-      readonly baseline: StoredConnectorPermissionBaseline;
-      readonly timing: ClaimRouteTimingCollector;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    signal.throwIfAborted();
-    return await args.timing.measure(
-      "claim_route_response_network_policy_refresh_baseline_database",
-      "nested",
-      async () => {
-        const snapshot = await get(
-          immutableConnectorRuntimeSelection({
-            requestedConnectorSlugs: uniqueSortedConnectorSlugs(
-              args.connectorSlugs,
-            ),
-            metadataConnectorSlugs: uniqueSortedConnectorSlugs(
-              Object.keys(args.baseline.connectors),
-            ),
-          }),
-        );
-        signal.throwIfAborted();
-        const grants = await db
-          .select({
-            connectorSlug: userPermissionGrants.connectorSlug,
-            permission: userPermissionGrants.permission,
-            action: userPermissionGrants.action,
-            expiresAt: userPermissionGrants.expiresAt,
-          })
-          .from(userPermissionGrants)
-          .where(
-            and(
-              eq(userPermissionGrants.orgId, args.scope.orgId),
-              eq(userPermissionGrants.userId, args.scope.userId),
-              eq(userPermissionGrants.agentId, args.scope.agentId),
-              inArray(
-                userPermissionGrants.connectorSlug,
-                Object.keys(args.baseline.connectors),
-              ),
-              activeUserPermissionGrantCondition(nowDate()),
-            ),
-          )
-          .orderBy(
-            asc(userPermissionGrants.connectorSlug),
-            asc(userPermissionGrants.permission),
-          );
-        signal.throwIfAborted();
-        return resolveActiveNetworkPolicyRefreshesFromBaseline(
-          args.baseline,
-          snapshot.catalogIdentity,
-          grants,
-        );
-      },
-    );
-  },
-);
-const refreshClaimNetworkPolicies$ = command(
-  async (
-    { set },
-    args: {
-      readonly run: ClaimedRun;
-      readonly storedContext: StoredExecutionContext;
-      readonly connectorPermissionBaseline: ConnectorPermissionBaselineRead;
-      readonly timing: ClaimRouteTimingCollector;
-    },
-    signal: AbortSignal,
-  ): Promise<
-    Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
-  > => {
-    const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
-    assertClaimConnectorIdentity(args.run, args.storedContext);
-    if (Object.keys(storedNetworkPolicies).length === 0) {
-      return {
-        networkPolicies: args.storedContext.networkPolicies,
-        networkPolicyRefreshes: undefined,
-      };
-    }
-
-    const builtinConnectorSlugs = [
-      ...new Set(
-        args.storedContext.connectorRuntimeTargets.flatMap((target) => {
-          return target.kind === "builtin" ? [target.connectorSlug] : [];
-        }),
-      ),
-    ];
-
-    return await args.timing.measureNetworkPolicyRefresh(async () => {
-      if (builtinConnectorSlugs.length === 0) {
-        return {
-          value: {
-            networkPolicies: args.storedContext.networkPolicies,
-            networkPolicyRefreshes: undefined,
-          },
-          path: "no_builtin_targets",
-        };
-      }
-      if (args.run.agentId === null) {
-        throw new Error(
-          "Connector network policy refresh requires an Agent identity",
-        );
-      }
-
-      const scope = {
-        orgId: args.run.orgId,
-        userId: args.run.userId,
-        agentId: args.run.agentId,
-      };
-      const fullRefresh = async (
-        path: Extract<ClaimNetworkPolicyRefreshPath, `full_${string}`>,
-      ) => {
-        return await set(
-          refreshFullClaimPolicies$,
-          { scope, connectorSlugs: builtinConnectorSlugs, path },
-          signal,
-        );
-      };
-      const selectRefresh = async () => {
-        if (args.connectorPermissionBaseline.kind === "missing") {
-          return await fullRefresh("full_missing_baseline");
-        }
-        if (args.connectorPermissionBaseline.kind === "invalid") {
-          return await fullRefresh("full_invalid_baseline");
-        }
-        const baseline = args.connectorPermissionBaseline.value;
-        if (
-          !connectorPermissionBaselineMatchesStoredContext(
-            args.storedContext,
-            baseline,
-          )
-        ) {
-          return await fullRefresh("full_invalid_baseline");
-        }
-        const resolution = await set(
-          refreshBaselineClaimPolicies$,
-          {
-            scope,
-            connectorSlugs: builtinConnectorSlugs,
-            baseline,
-            timing: args.timing,
-          },
-          signal,
-        );
-        if (resolution.kind === "incompatible") {
-          return await fullRefresh("full_incompatible_baseline");
-        }
-        if (resolution.kind === "empty") {
-          return {
-            refreshes: resolution.refreshes,
-            path: "baseline_empty" as const,
-          };
-        }
-        return {
-          refreshes: resolution.refreshes,
-          path: "baseline" as const,
-        };
-      };
-      const selected = await selectRefresh();
-
-      return {
-        value: {
-          networkPolicies: mergeNetworkPolicyRefreshes(
-            storedNetworkPolicies,
-            selected.refreshes,
-          ),
-          networkPolicyRefreshes: networkPolicyRefreshesRecord(
-            selected.refreshes,
-          ),
-        },
-        path: selected.path,
-      };
-    });
-  },
-);
 
 const buildClaimResponseBodyForClaim$ = command(
   async (
@@ -2092,74 +2008,39 @@ const buildClaimResponseBodyForClaim$ = command(
     },
     signal: AbortSignal,
   ): Promise<ExecutionContext> => {
-    // Validate before starting finite policy work. Neither secret failure nor
-    // cancellation may leave a refresh running outside this command's join.
-    const secretValues = await secretValuesForRunner(
-      args.storedContext,
-      args.timing,
-    );
-    signal.throwIfAborted();
-    const refreshedPolicies = set(
-      refreshClaimNetworkPolicies$,
+    return await buildClaimResponseBody(
       {
+        db: args.db,
         run: args.run,
+        reuseKey: args.reuseKey,
         storedContext: args.storedContext,
         connectorPermissionBaseline: args.connectorPermissionBaseline,
         timing: args.timing,
+        loadIdentityRepresentation(hash: string) {
+          return set(loadIdentityResumeSessionHistoryRepresentation$, {
+            db: args.db,
+            hash,
+          });
+        },
+        loadCompressedRepresentation(
+          hash: string,
+          encoding: CompressedSessionHistoryBlobEncoding,
+        ) {
+          return set(loadCompressedResumeSessionHistoryRepresentation$, {
+            db: args.db,
+            encoding,
+            hash,
+          });
+        },
+        generateResumeSessionHistoryUrl(hash: string) {
+          return set(generateResumeSessionHistoryUrl$, hash);
+        },
+        generateResumeSessionHistoryObjectUrl(objectKey: string) {
+          return set(generateResumeSessionHistoryObjectUrl$, objectKey);
+        },
       },
       signal,
     );
-    // Always join the refresh independently: response assembly can reject at
-    // its initial abort boundary before installing its inner parallel join.
-    const [response] = await Promise.allSettled([
-      buildClaimResponseBody(
-        {
-          run: args.run,
-          reuseKey: args.reuseKey,
-          storedContext: args.storedContext,
-          secretValues,
-          refreshedPolicies,
-          timing: args.timing,
-          loadIdentityRepresentation(hash: string) {
-            return set(loadIdentityResumeSessionHistoryRepresentation$, {
-              db: args.db,
-              hash,
-            });
-          },
-          loadCompressedRepresentation(
-            hash: string,
-            encoding: CompressedSessionHistoryBlobEncoding,
-          ) {
-            return set(loadCompressedResumeSessionHistoryRepresentation$, {
-              db: args.db,
-              encoding,
-              hash,
-            });
-          },
-          generateResumeSessionHistoryUrl(hash: string) {
-            return set(generateResumeSessionHistoryUrl$, hash);
-          },
-          generateResumeSessionHistoryObjectUrl(objectKey: string) {
-            return set(generateResumeSessionHistoryObjectUrl$, objectKey);
-          },
-        },
-        signal,
-      ),
-      refreshedPolicies,
-    ]);
-    if (signal.aborted) {
-      // Assembly already selected resume-error versus abort versus policy-error
-      // precedence. Drainage must not replace that original rejection.
-      const error: unknown =
-        response.status === "rejected" ? response.reason : signal.reason;
-      throw error;
-    }
-    if (response.status === "rejected") {
-      const error: unknown = response.reason;
-      throw error;
-    }
-    signal.throwIfAborted();
-    return response.value;
   },
 );
 
@@ -2999,18 +2880,15 @@ const connectorRuntimeSyncInner$ = command(
       return authError;
     }
 
-    const results = await set(
-      resolveConnectorRuntimeTargets$,
-      {
-        scope: {
-          orgId: run.orgId,
-          userId: run.userId,
-          agentId: run.agentId,
-        },
-        targets: body.data.targets,
+    const results = await resolveConnectorRuntimeTargets({
+      db,
+      scope: {
+        orgId: run.orgId,
+        userId: run.userId,
+        agentId: run.agentId,
       },
-      signal,
-    );
+      targets: body.data.targets,
+    });
     signal.throwIfAborted();
     return {
       status: 200 as const,

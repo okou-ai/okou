@@ -106,11 +106,6 @@ test("An invitation accepted for another account offers account switching", asyn
       }),
     );
   });
-  // The action starts Sonner's exit timer. Keep this page alive until its
-  // removal callback finishes, rather than ending at the Clerk call alone.
-  await waitFor(() => {
-    expect(acceptedNotice).not.toBeInTheDocument();
-  });
 });
 
 test("An incomplete invitation stays available to the hosted Clerk UI", async () => {

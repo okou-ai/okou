@@ -15,6 +15,10 @@ import {
 } from "@okouai/connectors/firewall-types";
 
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
+import {
+  connectorCatalogActiveSnapshot,
+  connectorCatalogCompatibilityEvaluation,
+} from "@okouai/db/schema/connector-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { and, asc, eq, gt, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type {
@@ -34,12 +38,18 @@ import {
 import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
-  type ConnectorRuntimeLookup,
 } from "./connector-catalog-runtime.service";
 import type {
   ConnectorServerFirewallCatalog,
   ConnectorServerFirewallMetadataCatalog,
 } from "./connector-server-firewall-catalog.service";
+import { connectorCatalogSource } from "./connector-catalog-source";
+import { connectorCatalogExecutableCapabilityDigest } from "./connector-catalog-compatibility.service";
+import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import {
+  connectorCatalogValidationAuthorityIsCurrent,
+  currentConnectorCatalogValidatorIdentity,
+} from "./connector-catalog-validator-authority";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
 
 const userPermissionGrantSelection = Object.freeze({
@@ -85,6 +95,10 @@ type BaselineNetworkPolicyRefreshResolution =
       readonly refreshes: readonly ActiveNetworkPolicyRefresh[];
     }
   | { readonly kind: "incompatible" };
+
+type BaselineNetworkPolicyDatabaseMeasure = <T>(
+  operation: () => Promise<T>,
+) => Promise<T>;
 
 interface UserPermissionGrantBaseScope {
   readonly orgId: string;
@@ -288,7 +302,7 @@ export async function resolveActiveNetworkPolicyRefreshes(
   db: ReadonlyDb,
   scope: UserPermissionGrantScope,
   connectorSlugs: readonly string[],
-  preloadedSnapshot?: ConnectorRuntimeLookup,
+  preloadedSnapshot?: ConnectorRuntimeSelection,
   checkedAt: Date = nowDate(),
 ): Promise<readonly ActiveNetworkPolicyRefresh[]> {
   if (connectorSlugs.length === 0) {
@@ -407,6 +421,52 @@ export const resolveActiveNetworkPolicyRefreshes$ = command(
   },
 );
 
+function connectorCatalogIdentityJoin() {
+  return and(
+    eq(
+      connectorCatalogCompatibilityEvaluation.sourceId,
+      connectorCatalogActiveSnapshot.sourceId,
+    ),
+    eq(
+      connectorCatalogCompatibilityEvaluation.schemaVersion,
+      connectorCatalogActiveSnapshot.schemaVersion,
+    ),
+    eq(
+      connectorCatalogCompatibilityEvaluation.catalogVersion,
+      connectorCatalogActiveSnapshot.catalogVersion,
+    ),
+    eq(
+      connectorCatalogCompatibilityEvaluation.catalogDigest,
+      connectorCatalogActiveSnapshot.catalogDigest,
+    ),
+  );
+}
+
+function baselineStaticIdentityIsCurrent(
+  baseline: StoredConnectorPermissionBaseline,
+  current: {
+    readonly sourceId: string;
+    readonly capabilityDigest: string;
+    readonly validator: ReturnType<
+      typeof currentConnectorCatalogValidatorIdentity
+    >;
+  },
+): boolean {
+  return (
+    baseline.catalogIdentity.sourceId === current.sourceId &&
+    baseline.catalogIdentity.schemaVersion ===
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION &&
+    baseline.catalogIdentity.capabilityDigest === current.capabilityDigest &&
+    connectorCatalogValidationAuthorityIsCurrent({
+      authority: {
+        validatorVersion: baseline.validationAuthority.backendVersion,
+        buildCommitSha: baseline.validationAuthority.buildCommitSha,
+      },
+      validator: current.validator,
+    })
+  );
+}
+
 function defaultFirewallPolicyForBaseline(
   baseline: StoredConnectorPermissionBaseline["connectors"][string],
 ): FirewallPolicy {
@@ -453,22 +513,88 @@ function activeNetworkPolicyRefreshesForPermissionBaselines(
   });
 }
 
-/** Pure policy resolution from an owning reader's immutable identity and grants. */
-export function resolveActiveNetworkPolicyRefreshesFromBaseline(
+export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
+  db: ReadonlyDb,
+  scope: UserPermissionGrantScope,
   baseline: StoredConnectorPermissionBaseline,
-  current: StoredConnectorPermissionBaseline["catalogIdentity"],
-  grants: readonly ResolvedPermissionGrant[],
-): BaselineNetworkPolicyRefreshResolution {
-  if (Object.keys(baseline.connectors).length === 0) {
+  measureDatabase: BaselineNetworkPolicyDatabaseMeasure,
+  checkedAt: Date = nowDate(),
+): Promise<BaselineNetworkPolicyRefreshResolution> {
+  const connectorSlugs = Object.keys(baseline.connectors);
+  if (connectorSlugs.length === 0) {
     return { kind: "empty", refreshes: [] };
   }
+  const current = {
+    sourceId: connectorCatalogSource().sourceId,
+    capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
+    validator: currentConnectorCatalogValidatorIdentity(),
+  };
+  if (!baselineStaticIdentityIsCurrent(baseline, current)) {
+    return { kind: "incompatible" };
+  }
+
+  const rows = await measureDatabase(async () => {
+    return await db
+      .select({
+        identity: {
+          schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+          catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+          catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+        },
+        grant: {
+          connectorSlug: userPermissionGrants.connectorSlug,
+          permission: userPermissionGrants.permission,
+          action: userPermissionGrants.action,
+          expiresAt: userPermissionGrants.expiresAt,
+        },
+      })
+      .from(connectorCatalogActiveSnapshot)
+      .innerJoin(
+        connectorCatalogCompatibilityEvaluation,
+        connectorCatalogIdentityJoin(),
+      )
+      .leftJoin(
+        userPermissionGrants,
+        and(
+          eq(userPermissionGrants.orgId, scope.orgId),
+          eq(userPermissionGrants.userId, scope.userId),
+          eq(userPermissionGrants.agentId, scope.agentId),
+          inArray(userPermissionGrants.connectorSlug, connectorSlugs),
+          activeUserPermissionGrantCondition(checkedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(connectorCatalogActiveSnapshot.sourceId, current.sourceId),
+          eq(
+            connectorCatalogActiveSnapshot.schemaVersion,
+            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+          ),
+          eq(
+            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+            current.capabilityDigest,
+          ),
+        ),
+      )
+      .orderBy(
+        asc(userPermissionGrants.connectorSlug),
+        asc(userPermissionGrants.permission),
+      );
+  });
+
+  const first = rows[0];
   if (
-    baseline.catalogIdentity.schemaVersion !== current.schemaVersion ||
-    baseline.catalogIdentity.hash !== current.hash ||
-    baseline.catalogIdentity.capabilityDigest !== current.capabilityDigest
+    first === undefined ||
+    first.identity.schemaVersion !== baseline.catalogIdentity.schemaVersion ||
+    first.identity.catalogVersion !== baseline.catalogIdentity.catalogVersion ||
+    first.identity.catalogDigest !== baseline.catalogIdentity.catalogDigest
   ) {
     return { kind: "incompatible" };
   }
+
+  const grants = rows.flatMap((row): readonly ResolvedPermissionGrant[] => {
+    return row.grant === null ? [] : [row.grant];
+  });
   return {
     kind: "compatible",
     refreshes: activeNetworkPolicyRefreshesForPermissionBaselines(

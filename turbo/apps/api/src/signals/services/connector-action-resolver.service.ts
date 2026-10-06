@@ -11,10 +11,7 @@ import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connec
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
-import {
-  immutableConnectorRuntimeSelection,
-  type ImmutableConnectorRuntimeSelection,
-} from "./connector-catalog-entries.service";
+import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
@@ -22,7 +19,6 @@ import {
   type ConnectorRuntimeConnector,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSnapshot,
-  type ConnectorRuntimeLookup,
 } from "./connector-catalog-runtime.service";
 
 const log = logger("api:connector-action-resolver");
@@ -52,39 +48,33 @@ export type ConnectorActionResolutionFailure =
     }
   | { readonly ok: false; readonly reason: "hidden_auth_method" };
 
-export type ResolvedConnectorSlug<
-  Catalog extends ConnectorRuntimeLookup = ConnectorRuntimeSnapshot,
-> = {
+export type ResolvedConnectorSlug = {
   readonly ok: true;
   readonly connectorSlug: ConnectorSlug;
   readonly catalogConnector: PublicConnectorCatalogDetail;
   readonly runtimeConnector: ConnectorRuntimeConnector;
-  readonly snapshot: Catalog;
+  readonly snapshot: ConnectorRuntimeSnapshot;
 };
 
-export type ResolvedConnectorActionMethod<
-  Catalog extends ConnectorRuntimeLookup = ConnectorRuntimeSnapshot,
-> = ResolvedConnectorSlug<Catalog> & {
+export type ResolvedConnectorActionMethod = ResolvedConnectorSlug & {
   readonly authMethodId: ConnectorAuthMethodId;
   readonly catalogMethod: PublicConnectorCatalogAuthMethodDetail;
   readonly method: ConnectorAuthMethodRuntimeConfig;
   readonly runtimeMethod: ConnectorRuntimeMethod;
 };
 
-export type ConnectorSlugResolution<
-  Catalog extends ConnectorRuntimeLookup = ConnectorRuntimeSnapshot,
-> = ResolvedConnectorSlug<Catalog> | ConnectorSlugResolutionFailure;
+export type ConnectorSlugResolution =
+  | ResolvedConnectorSlug
+  | ConnectorSlugResolutionFailure;
 
-export type ConnectorActionMethodResolution<
-  Catalog extends ConnectorRuntimeLookup = ConnectorRuntimeSnapshot,
-> = ResolvedConnectorActionMethod<Catalog> | ConnectorActionResolutionFailure;
+export type ConnectorActionMethodResolution =
+  | ResolvedConnectorActionMethod
+  | ConnectorActionResolutionFailure;
 
-export type ConnectorSlugsResolution<
-  Catalog extends ConnectorRuntimeLookup = ConnectorRuntimeSnapshot,
-> =
+export type ConnectorSlugsResolution =
   | {
       readonly ok: true;
-      readonly connectors: readonly ResolvedConnectorSlug<Catalog>[];
+      readonly connectors: readonly ResolvedConnectorSlug[];
     }
   | (ConnectorSlugResolutionFailure & {
       readonly connectorSlug: ConnectorSlug;
@@ -101,27 +91,25 @@ export type ConnectorSlugsResolution<
  * method is absent, has the wrong grant kind, is incompatible, or lacks its
  * local executable capability.
  */
-export interface ConnectorActionResolver<
-  Catalog extends ConnectorRuntimeLookup = ConnectorRuntimeSnapshot,
-> {
+export interface ConnectorActionResolver {
   readonly resolveSlug: (args: {
     readonly connectorSlug: ConnectorSlug;
     readonly requireExecutable: boolean;
-  }) => ConnectorSlugResolution<Catalog>;
+  }) => ConnectorSlugResolution;
   readonly resolveMethod: (args: {
     readonly connectorSlug: ConnectorSlug;
     readonly authMethodId: ConnectorAuthMethodId;
     readonly expectedGrantKind: ConnectorCatalogGrantKind;
-  }) => ConnectorActionMethodResolution<Catalog>;
+  }) => ConnectorActionMethodResolution;
   readonly resolveNewActionMethod: (args: {
     readonly connectorSlug: ConnectorSlug;
     readonly authMethodId: ConnectorAuthMethodId;
     readonly expectedGrantKind: ConnectorCatalogGrantKind;
-  }) => ConnectorActionMethodResolution<Catalog>;
+  }) => ConnectorActionMethodResolution;
   readonly resolveSlugs: (args: {
     readonly connectorSlugs: readonly ConnectorSlug[];
     readonly requireExecutable: boolean;
-  }) => ConnectorSlugsResolution<Catalog>;
+  }) => ConnectorSlugsResolution;
 }
 
 function lacksExecutableCapability(args: {
@@ -142,12 +130,12 @@ function lacksExecutableCapability(args: {
   return true;
 }
 
-function resolvedSlug<Catalog extends ConnectorRuntimeLookup>(args: {
+function resolvedSlug(args: {
   readonly connectorSlug: ConnectorSlug;
   readonly requireExecutable: boolean;
   readonly runtimeConnector: ConnectorRuntimeConnector;
-  readonly snapshot: Catalog;
-}): ResolvedConnectorSlug<Catalog> | ConnectorSlugResolutionFailure {
+  readonly snapshot: ConnectorRuntimeSnapshot;
+}): ResolvedConnectorSlug | ConnectorSlugResolutionFailure {
   if (args.requireExecutable && lacksExecutableCapability(args)) {
     return { ok: false, reason: "missing_executable_capability" };
   }
@@ -160,11 +148,11 @@ function resolvedSlug<Catalog extends ConnectorRuntimeLookup>(args: {
   };
 }
 
-function executableMethod<Catalog extends ConnectorRuntimeLookup>(args: {
-  readonly resolvedSlug: ResolvedConnectorSlug<Catalog>;
+function executableMethod(args: {
+  readonly resolvedSlug: ResolvedConnectorSlug;
   readonly authMethodId: ConnectorAuthMethodId;
   readonly catalogMethod: PublicConnectorCatalogAuthMethodDetail;
-}): ResolvedConnectorActionMethod<Catalog> | ConnectorActionResolutionFailure {
+}): ResolvedConnectorActionMethod | ConnectorActionResolutionFailure {
   const runtimeMethod = getConnectorRuntimeMethod({
     snapshot: args.resolvedSlug.snapshot,
     connectorSlug: args.resolvedSlug.connectorSlug,
@@ -191,12 +179,10 @@ function executableMethod<Catalog extends ConnectorRuntimeLookup>(args: {
   };
 }
 
-function createConnectorActionResolver<Catalog extends ConnectorRuntimeLookup>(
-  snapshot: Catalog,
-): ConnectorActionResolver<Catalog> {
-  const resolveSlug: ConnectorActionResolver<Catalog>["resolveSlug"] = (
-    input,
-  ) => {
+function createConnectorActionResolver(
+  snapshot: ConnectorRuntimeSnapshot,
+): ConnectorActionResolver {
+  const resolveSlug: ConnectorActionResolver["resolveSlug"] = (input) => {
     const runtimeConnector = getConnectorRuntimeConnector(
       snapshot,
       input.connectorSlug,
@@ -212,9 +198,7 @@ function createConnectorActionResolver<Catalog extends ConnectorRuntimeLookup>(
     });
   };
 
-  const resolveMethod: ConnectorActionResolver<Catalog>["resolveMethod"] = (
-    input,
-  ) => {
+  const resolveMethod: ConnectorActionResolver["resolveMethod"] = (input) => {
     const runtimeConnector = getConnectorRuntimeConnector(
       snapshot,
       input.connectorSlug,
@@ -284,7 +268,7 @@ function createConnectorActionResolver<Catalog extends ConnectorRuntimeLookup>(
     },
 
     resolveSlugs(input) {
-      const connectors: ResolvedConnectorSlug<Catalog>[] = [];
+      const connectors: ResolvedConnectorSlug[] = [];
       for (const connectorSlug of input.connectorSlugs) {
         const resolved = resolveSlug({
           connectorSlug,
@@ -298,20 +282,6 @@ function createConnectorActionResolver<Catalog extends ConnectorRuntimeLookup>(
       return { ok: true, connectors };
     },
   };
-}
-
-/** Target actions capture only their immutable catalog entry. */
-export function connectorActionResolverForConnector(
-  connectorSlug: ConnectorSlug,
-): Computed<
-  Promise<ConnectorActionResolver<ImmutableConnectorRuntimeSelection>>
-> {
-  const selection$ = immutableConnectorRuntimeSelection({
-    requestedConnectorSlugs: [connectorSlug],
-  });
-  return computed(async (get) => {
-    return createConnectorActionResolver(await get(selection$));
-  });
 }
 
 export function connectorActionResolver(): Computed<

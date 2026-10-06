@@ -7,7 +7,6 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -1245,12 +1244,8 @@ async function reconcileStaleQueuedMessages(threadId: string): Promise<void> {
   );
 }
 
-async function allThreadEventRows(
-  actor: ApiTestUser,
-  chatThreadId: string,
-  cursor?: ChatEventCursor,
-) {
-  const rows = await chat.listThreadEventRows(actor, chatThreadId, cursor);
+async function allThreadEventRows(actor: ApiTestUser, chatThreadId: string) {
+  const rows = await chat.listThreadEventRows(actor, chatThreadId);
   let page = rows;
   // The endpoint caps each page at 50; a 32-hop chain spans multiple pages.
   while (page.length === 50) {
@@ -1274,21 +1269,9 @@ async function allThreadEventRows(
 async function launchedAutomationRunId(
   actor: ApiTestUser,
   chatThreadId: string,
-  observedCursors?: Map<string, ChatEventCursor>,
 ): Promise<string | undefined> {
   await flushWaitUntilForTest();
-  const events = await allThreadEventRows(
-    actor,
-    chatThreadId,
-    observedCursors?.get(chatThreadId),
-  );
-  const last = events.at(-1);
-  if (last) {
-    observedCursors?.set(chatThreadId, {
-      lastEventId: last.id,
-      lastSeqId: last.seqId,
-    });
-  }
+  const events = await allThreadEventRows(actor, chatThreadId);
   const launched = [...events].reverse().find((event) => {
     return event.eventType === "input.prompt" && event.runId;
   });
@@ -8810,9 +8793,6 @@ describe("Official Workflow Run admission", () => {
     });
     let sourceThreadId = sourceThread.id;
     let sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    // Cursors contain only observed public rows, not synthetic budget state.
-    // Each hop reads the new tail instead of paging the growing thread again.
-    const observedCursors = new Map<string, ChatEventCursor>();
     // Spend 31 of the 32 public delegation hops through real admission.
     // Each completed parent releases its slot before the next child is claimed.
     for (let hop = 0; hop < 31; hop += 1) {
@@ -8831,12 +8811,10 @@ describe("Official Workflow Run admission", () => {
         { authorization: `Bearer ${sourceClaim.sandboxToken}` },
         [200],
       );
-      // The helper drains the parent's released-slot pick and completion work
-      // before reading the committed child input; no second drain is needed.
+      await flushWaitUntilForTest();
       const childRunId = await launchedAutomationRunId(
         actor,
         child.body.chatThreadId,
-        observedCursors,
       );
       if (!childRunId || childRunId === sourceRunId) {
         throw new Error("Expected a distinct public delegation child");
@@ -8866,7 +8844,6 @@ describe("Official Workflow Run admission", () => {
     const launchedRunId = await launchedAutomationRunId(
       actor,
       launched.body.chatThreadId,
-      observedCursors,
     );
     if (!launchedRunId) {
       throw new Error("Expected the idle Official input to dispatch itself");

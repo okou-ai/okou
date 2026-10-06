@@ -308,9 +308,9 @@ import {
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   getConnectorRuntimeConnector,
+  type ConnectorRuntimeSelection,
   type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
-import type { ImmutableConnectorRuntimeSelection as ConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import {
   type CustomConnectorRuntimeContext,
   loadEffectiveCustomConnectorPermissionBundle,
@@ -711,6 +711,7 @@ import {
 } from "@okouai/pi-agent-runtime";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
+import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 
 function isMigratedRegisteredSource(type: string | undefined): boolean {
@@ -16071,9 +16072,15 @@ function buildStableRunPromptContext(args: ProductRunArgsInput): {
       }),
       semantic: { promptInputs, connectorScope },
       source: {
-        catalog:
+        catalogIdentity:
           args.connectorCatalogSelection.kind === "scoped"
-            ? args.connectorCatalogSelection.selection.catalogIdentity
+            ? piStableContextVariantDigest(
+                args.connectorCatalogSelection.selection.catalogIdentity,
+              )
+            : null,
+        catalogSourceId:
+          args.connectorCatalogSelection.kind === "scoped"
+            ? args.connectorCatalogSelection.selection.catalogIdentity.sourceId
             : null,
         agentIdentityDigest: piStableContextVariantDigest(agentIdentity),
         featurePromptDigest: piStableContextVariantDigest(promptInputs),
@@ -17515,9 +17522,14 @@ function buildConnectorPermissionBaseline(
   snapshot: ConnectorRuntimeSelection,
   sources: readonly BuiltinConnectorManifestSource[],
 ): StoredConnectorPermissionBaseline {
+  const validationAuthority = currentConnectorCatalogValidatorIdentity();
   return {
     version: 1,
     catalogIdentity: snapshot.catalogIdentity,
+    validationAuthority: {
+      backendVersion: validationAuthority.validatorVersion,
+      buildCommitSha: validationAuthority.buildCommitSha,
+    },
     connectors: Object.fromEntries(
       sources.map((source) => {
         const defaultPolicy = source.permissionIndex.defaultPolicy;

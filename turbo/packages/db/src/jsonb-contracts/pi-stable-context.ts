@@ -32,11 +32,9 @@ export interface PiStableContextOwner {
 export interface PiStableContextSourceVector {
   readonly agentGeneration: number;
   readonly userGeneration: number;
-  readonly catalog: {
-    readonly schemaVersion: number;
-    readonly hash: string;
-    readonly capabilityDigest: string;
-  } | null;
+  readonly catalogIdentity: string | null;
+  /** Exact connector-catalog authority; test-scoped sources must not cross. */
+  readonly catalogSourceId: string | null;
   readonly agentIdentityDigest: string;
   readonly featurePromptDigest: string;
   readonly permissionDigest: string;
@@ -83,7 +81,6 @@ export interface PiStableContextSemanticInput {
       readonly storageVersion: number;
       readonly skillStorageVersionId: string | null;
       readonly isMcp: boolean;
-      readonly permissionBundleRef: string | null;
     }[];
     readonly workflows: readonly {
       readonly name: string;

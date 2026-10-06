@@ -620,6 +620,43 @@ async function loadAcceptedConnectorCatalogSnapshotAttempt(
   });
 }
 
+/** Runtime preparation keeps the captured catalog generation or fails. */
+export async function loadAcceptedConnectorCatalogSnapshotOnce(
+  db: ReadonlyDb,
+  options: {
+    readonly identity?: ExternalCatalogIdentity;
+    readonly timing?: ConnectorCatalogLoadTiming;
+  },
+): Promise<AcceptedConnectorCatalogSnapshot> {
+  const { identity, timing } = options;
+  const capability = connectorCatalogExecutableCapabilityState();
+  if (
+    identity !== undefined &&
+    (identity.sourceId !== connectorCatalogSource().sourceId ||
+      identity.schemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION ||
+      identity.capabilityDigest !== capability.digest)
+  ) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "runtime_identity_mismatch",
+    );
+  }
+  const catalog =
+    identity === undefined
+      ? await loadAcceptedConnectorCatalogSnapshotAttempt(db, timing)
+      : await loadAcceptedConnectorCatalogSnapshotAtIdentity({
+          db,
+          identity,
+          capability,
+          timing,
+        });
+  if (!catalog) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "captured_identity_unavailable",
+    );
+  }
+  return catalog;
+}
+
 export async function loadAcceptedConnectorCatalogSnapshot(
   db: ReadonlyDb,
   timing?: ConnectorCatalogLoadTiming,
