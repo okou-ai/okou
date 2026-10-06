@@ -88,7 +88,6 @@ import {
   DEFAULT_ANNOTATION_INK,
   type ImageAnnotationSignals,
 } from "../../signals/okou-page/image-annotation.ts";
-import { composerImageAnnotationEnabled$ } from "../../signals/external/feature-switch.ts";
 import {
   ArtifactActionSeparator,
   ArtifactDownloadMenu,
@@ -1929,7 +1928,6 @@ function AttachmentChip({
   const openAnnotationEditor = useSet(annotationSignals.openAnnotationEditor$);
   const confirmAnnotations = useSet(attachment.confirmAnnotations$);
   const annotations = useGet(attachment.annotations$);
-  const annotationEnabled = useGet(composerImageAnnotationEnabled$);
   const isImage = attachment.contentType.startsWith("image/");
   return (
     <div
@@ -1953,7 +1951,7 @@ function AttachmentChip({
               // artifact, so it carries no sharing controls.
               shareAvailable: false,
               splitViewAvailable: false,
-              ...(annotationEnabled && !uploading
+              ...(!uploading
                 ? {
                     annotationTarget: {
                       annotations,

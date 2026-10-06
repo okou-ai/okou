@@ -1,5 +1,4 @@
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -108,30 +107,6 @@ test("A user can paste or drop private attachments", async () => {
   await expect(findNamedButton("Remove brief.pdf")).resolves.toBeVisible();
 });
 
-test("Image annotation is offered only when the feature is available", async () => {
-  const image = draftAttachment("billing-page.png");
-  mockAttachmentChat(context, {
-    draft: draftForAttachment(image, ""),
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: false },
-  });
-
-  click(await findNamedButton("Open image preview for billing-page.png"));
-
-  await expect(
-    screen.findByRole("dialog", { name: "billing-page.png preview" }),
-  ).resolves.toBeVisible();
-  expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-    "alt",
-    "billing-page.png",
-  );
-  expect(queryNamedButton("Annotate")).toBeNull();
-});
-
 test("A deliberate backdrop click closes an image preview", async () => {
   const image = draftAttachment("photo.png");
   mockAttachmentChat(context, {
@@ -189,7 +164,6 @@ test("A confirmed image annotation reaches the agent as structured data", async 
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const editor = await screen.findByRole("textbox", { name: "Message" });
@@ -320,7 +294,6 @@ test("Saved image annotations return with the draft", async () => {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   await expect(

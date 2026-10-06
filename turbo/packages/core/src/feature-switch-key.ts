@@ -54,7 +54,6 @@ export enum FeatureSwitchKey {
   OpenRouterUsRouting = "openRouterUsRouting",
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
-  ComposerImageAnnotation = "composerImageAnnotation",
   AvatarFraming = "avatarFraming",
   AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
