@@ -14,6 +14,7 @@ export async function updateModelRouteCapabilitiesFixture(args: {
   readonly efforts: readonly string[];
   readonly defaultEffort: string | null;
   readonly serviceTiers: readonly ("priority" | "ultrafast")[];
+  readonly enabled?: boolean;
 }): Promise<void> {
   const updated = await db()
     .update(modelRoutes)
@@ -21,6 +22,7 @@ export async function updateModelRouteCapabilitiesFixture(args: {
       efforts: [...args.efforts],
       defaultEffort: args.defaultEffort,
       serviceTiers: [...args.serviceTiers],
+      enabled: args.enabled,
     })
     .where(eq(modelRoutes.model, args.model))
     .returning({ id: modelRoutes.id });

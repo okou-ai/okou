@@ -358,7 +358,7 @@ describe("builtin MCP account surfaces", () => {
     );
     const threadBody = {
       agentId: agent.agentId,
-      model: "claude-sonnet-5" as const,
+      model: "claude-sonnet-5-5" as const,
       connectorSelections: [selection],
     };
     const createdThread = await accept(

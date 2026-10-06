@@ -83,7 +83,6 @@ function unavailablePersonalPin(
   const route = catalog.routes.find((candidate) => {
     return (
       candidate.model === selectedModel &&
-      candidate.enabled &&
       candidate.providerType === candidate.subscriptionType &&
       candidate.concreteProviderType === candidate.subscriptionType &&
       (candidate.subscriptionType === "codex-oauth-token" ||
@@ -272,7 +271,22 @@ export const resolveModelSelectionPin$ = command(
             "Select Auto or a model from your connected personal subscription",
           );
     }
-    const unavailable = unavailablePersonalPin(facts.catalog, selectedModel);
+    const requestedCatalogModel = catalogModelForSelectedId(
+      facts.catalog,
+      params.modelSelection.selectedModel,
+    );
+    const resolution = requestedCatalogModel
+      ? resolveCatalogModel(facts.catalog, requestedCatalogModel)
+      : null;
+    // Canonical personal metadata preserves ownership even when its route is disabled;
+    // classification is not permission to execute that route.
+    const unavailable = unavailablePersonalPin(
+      facts.catalog,
+      selectedModel ??
+        (resolution && resolution.kind !== "unknown"
+          ? resolution.resolvedModel
+          : null),
+    );
     if (unavailable) {
       // Preserve the personal credential source, including replacement-chain aliases,
       // so a missing account never executes against platform billing.
