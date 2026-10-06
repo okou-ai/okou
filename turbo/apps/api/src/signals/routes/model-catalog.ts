@@ -61,7 +61,11 @@ export const modelCatalogRoutes: readonly RouteEntry[] = [
   {
     route: modelCatalogContract.get,
     handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        acceptAnySandboxCapability: true,
+      },
       getModelCatalogInner$,
     ),
   },

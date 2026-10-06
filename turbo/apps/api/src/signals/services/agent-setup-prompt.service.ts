@@ -6,12 +6,11 @@ import {
 import { command } from "ccstate";
 
 import { requestSignal$ } from "../context/hono";
+import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
 import {
-  AUXILIARY_TEXT_MAX_TOKENS,
-  FAST_PATH_MODEL,
-  generateTextWithUsage,
-  openRouterTokenCounts,
-} from "../external/openrouter";
+  VERTEX_AUXILIARY_MAX_TOKENS,
+  generateVertexTextWithUsage,
+} from "../external/vertex-text";
 import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
@@ -50,8 +49,8 @@ async function generateAgentSetupPrompt(
   // The message is sent verbatim as the Agent's first instruction, so a
   // shortened brief is worse than the raw responsibility: truncation stays
   // rejected.
-  const generation = await generateTextWithUsage(
-    FAST_PATH_MODEL,
+  const generation = await generateVertexTextWithUsage(
+    VERTEX_TEXT_MODEL,
     [
       { role: "system", content: AGENT_SETUP_PROMPT_SYSTEM_PROMPT },
       {
@@ -62,8 +61,8 @@ async function generateAgentSetupPrompt(
         }),
       },
     ],
-    AUXILIARY_TEXT_MAX_TOKENS,
-    { reasoning: { effort: "low" } },
+    VERTEX_AUXILIARY_MAX_TOKENS,
+    undefined,
     signal,
   );
   if (generation === null) {
@@ -71,7 +70,7 @@ async function generateAgentSetupPrompt(
   }
   record({
     truncated: generation.truncated === true,
-    tokens: openRouterTokenCounts(generation.usage),
+    tokens: generation.tokens,
   });
   return generation.text;
 }

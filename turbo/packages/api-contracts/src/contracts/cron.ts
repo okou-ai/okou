@@ -598,6 +598,23 @@ export const cronSyncSkillsContract = c.router({
 });
 
 export const cronConnectorCatalogContract = c.router({
+  seedPreview: {
+    method: "GET",
+    path: "/api/cron/seed-preview-onboarding-catalog",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        catalogVersion: z.string(),
+        catalogDigest: z.string(),
+        connectorSlugs: z.array(z.string()),
+      }),
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Seed the official catalog's onboarding projection in preview only",
+  },
   sync: {
     method: "GET",
     path: "/api/cron/sync-connector-catalog",

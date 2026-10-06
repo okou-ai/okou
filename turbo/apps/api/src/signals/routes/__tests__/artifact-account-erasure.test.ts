@@ -4,7 +4,9 @@ import { testContext } from "../../../__tests__/test-context";
 import {
   deleteProjectionOwnedHistoricalFiles,
   retainedHistoricalFileExists,
+  retainedHistoricalFileIds,
   seedProjectionOwnedHistoricalFile,
+  seedProjectionOwnedHistoricalFiles,
 } from "../../../test-fixtures/artifact-file-ownership";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
@@ -19,7 +21,7 @@ const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
 test.each(["user", "organization"] as const)(
-  "erases projection-owned historical files through the verified Clerk %s entrypoint",
+  "erases multiple batches of projection-owned historical files through the verified Clerk %s entrypoint",
   async (kind) => {
     const owner = bdd.user();
     const outsider = bdd.user();
@@ -34,13 +36,26 @@ test.each(["user", "organization"] as const)(
     // No production endpoint exposes physical orphan erasure once its registry
     // is gone, so verify that infrastructure invariant using the scoped receipt.
     // Actual deletion and catalog readback still use production endpoints.
-    const owned = await seedProjectionOwnedHistoricalFile({
-      userId: owner.userId,
-      orgId: owner.orgId,
+    const ownedFiles = await seedProjectionOwnedHistoricalFiles(
+      {
+        userId: owner.userId,
+        orgId: owner.orgId,
+      },
+      501,
+    );
+    const [owned] = ownedFiles;
+    if (!owned) {
+      throw new Error("Expected historical file fixtures");
+    }
+    const ownedIds = ownedFiles.map((file) => {
+      return file.fileId;
     });
     onTestFinished(async () => {
-      await deleteProjectionOwnedHistoricalFiles([owned]);
+      await deleteProjectionOwnedHistoricalFiles(ownedFiles);
     });
+    await expect(retainedHistoricalFileIds(ownedIds)).resolves.toHaveLength(
+      501,
+    );
     const unrelated = await seedProjectionOwnedHistoricalFile({
       userId: outsider.userId,
       orgId: outsider.orgId,
@@ -48,9 +63,7 @@ test.each(["user", "organization"] as const)(
     onTestFinished(async () => {
       await deleteProjectionOwnedHistoricalFiles([unrelated]);
     });
-    expect((await chat.listArtifactCatalog(owner)).artifacts).toContainEqual(
-      expect.objectContaining({ id: owned.artifactId }),
-    );
+    await chat.requestArtifactCatalogEntry(owner, owned.artifactId, [200]);
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
       type: kind === "user" ? "user.deleted" : "organization.deleted",
@@ -59,9 +72,9 @@ test.each(["user", "organization"] as const)(
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
     await chat.requestArtifactCatalogEntry(owner, owned.artifactId, [404]);
-    await expect(
-      retainedHistoricalFileExists(owned.fileId),
-    ).resolves.toBeFalsy();
+    await expect(retainedHistoricalFileIds(ownedIds)).resolves.toStrictEqual(
+      [],
+    );
     expect((await chat.listArtifactCatalog(outsider)).artifacts).toContainEqual(
       expect.objectContaining({ id: unrelated.artifactId }),
     );

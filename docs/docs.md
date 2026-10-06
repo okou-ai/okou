@@ -131,6 +131,8 @@ surface; the index does not replace their detailed rules.
 - [Google Cloud LLM voice and Maps Grounding routing](./google-llm-voice.md):
   shared Vercel workload identities, native provider contracts, billing,
   compliance boundaries, and rollout gates.
+- [Gemini auxiliary generation on Vertex AI](./gemini-auxiliary-vertex.md): text
+  models, native output contracts, retained OpenRouter consumers and rollout boundaries.
 - [Retired App browser attribution](./google-ads-browser-routing.md): the
   Marketing-owned boundary, App cleanup, rollout compatibility, and historical
   field inventory.

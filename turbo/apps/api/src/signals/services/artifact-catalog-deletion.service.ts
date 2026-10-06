@@ -8,7 +8,7 @@ import {
 import { hostedSites } from "@okouai/db/schema/hosted-site";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { sharedThreadArtifactAuthorUserId } from "../../lib/shared-thread-artifact";
@@ -45,13 +45,12 @@ export async function deleteArtifactCatalogForHostedSiteId(
     );
 }
 
-/** Account erasure follows file/catalog ownership, never Run provenance. */
-export async function deleteOwnedArtifactFiles(
-  tx: Tx,
+/** Pure ownership predicates; the Clerk command owns every database operation. */
+export function artifactFileOwnershipConditions(
   scope:
     | { readonly kind: "user"; readonly userId: string }
     | { readonly kind: "organization"; readonly orgId: string },
-): Promise<void> {
+) {
   const catalogScope =
     scope.kind === "organization"
       ? eq(artifacts.orgId, scope.orgId)
@@ -59,78 +58,57 @@ export async function deleteOwnedArtifactFiles(
           scope.userId,
           sharedThreadArtifactAuthorUserId(scope.userId),
         ]);
-  const ownedProjections = tx
-    .select({ id: artifacts.projectionFileId })
-    .from(artifacts)
-    .where(catalogScope);
-  const ownedPendingFiles = tx
-    .select({ id: artifactCatalogPendingFiles.fileId })
-    .from(artifactCatalogPendingFiles)
-    .where(
-      scope.kind === "organization"
-        ? eq(artifactCatalogPendingFiles.orgId, scope.orgId)
-        : eq(artifactCatalogPendingFiles.authorUserId, scope.userId),
-    );
-  const fileScope = or(
+  const pendingScope =
     scope.kind === "organization"
-      ? eq(runUploadedFiles.orgId, scope.orgId)
-      : eq(runUploadedFiles.userId, scope.userId),
-    scope.kind === "user"
-      ? inArray(
-          runUploadedFiles.chatThreadId,
-          tx
-            .select({ id: chatThreads.id })
-            .from(chatThreads)
-            .where(eq(chatThreads.userId, scope.userId)),
-        )
-      : undefined,
-    inArray(runUploadedFiles.id, ownedProjections),
-    inArray(runUploadedFiles.id, ownedPendingFiles),
-  );
+      ? eq(artifactCatalogPendingFiles.orgId, scope.orgId)
+      : eq(artifactCatalogPendingFiles.authorUserId, scope.userId);
+  return {
+    catalogScope,
+    fileScope: or(
+      scope.kind === "organization"
+        ? eq(runUploadedFiles.orgId, scope.orgId)
+        : eq(runUploadedFiles.userId, scope.userId),
+      scope.kind === "user"
+        ? inArray(
+            runUploadedFiles.chatThreadId,
+            sql`(SELECT ${chatThreads.id} FROM ${chatThreads}
+              WHERE ${eq(chatThreads.userId, scope.userId)})`,
+          )
+        : undefined,
+      inArray(
+        runUploadedFiles.id,
+        sql`(SELECT ${artifacts.projectionFileId} FROM ${artifacts}
+          WHERE ${catalogScope})`,
+      ),
+      inArray(
+        runUploadedFiles.id,
+        sql`(SELECT ${artifactCatalogPendingFiles.fileId} FROM ${artifactCatalogPendingFiles}
+          WHERE ${pendingScope})`,
+      ),
+    ),
+  };
+}
 
-  for (;;) {
-    // Match the projector's file-first lock order. Deleting the actual file
-    // also drains its pending queue, media and delivery children by ownership.
-    const files = await tx
-      .select({ id: runUploadedFiles.id })
-      .from(runUploadedFiles)
-      .where(fileScope)
-      .orderBy(asc(runUploadedFiles.id))
-      .limit(500)
-      .for("update");
-    if (files.length === 0) {
-      break;
-    }
-    const fileIds = files.map((file) => {
-      return file.id;
-    });
-    const imageIds = tx
-      .select({ id: imageArtifacts.id })
-      .from(imageArtifacts)
-      .where(inArray(imageArtifacts.fileId, fileIds));
-    const videoIds = tx
-      .select({ id: videoArtifacts.id })
-      .from(videoArtifacts)
-      .where(inArray(videoArtifacts.fileId, fileIds));
-    await tx
-      .delete(artifacts)
-      .where(
-        or(
-          inArray(artifacts.projectionFileId, fileIds),
-          and(eq(artifacts.kind, "file"), inArray(artifacts.entityId, fileIds)),
-          and(
-            eq(artifacts.kind, "image"),
-            inArray(artifacts.entityId, imageIds),
-          ),
-          and(
-            eq(artifacts.kind, "video"),
-            inArray(artifacts.entityId, videoIds),
-          ),
-        ),
-      );
-    await tx
-      .delete(runUploadedFiles)
-      .where(inArray(runUploadedFiles.id, fileIds));
-  }
-  await tx.delete(artifacts).where(catalogScope);
+/** Delete only projections of the already locked file batch, before its files. */
+export function artifactCatalogFileBatchCondition(fileIds: readonly string[]) {
+  return or(
+    inArray(artifacts.projectionFileId, fileIds),
+    and(eq(artifacts.kind, "file"), inArray(artifacts.entityId, fileIds)),
+    and(
+      eq(artifacts.kind, "image"),
+      inArray(
+        artifacts.entityId,
+        sql`(SELECT ${imageArtifacts.id} FROM ${imageArtifacts}
+          WHERE ${inArray(imageArtifacts.fileId, fileIds)})`,
+      ),
+    ),
+    and(
+      eq(artifacts.kind, "video"),
+      inArray(
+        artifacts.entityId,
+        sql`(SELECT ${videoArtifacts.id} FROM ${videoArtifacts}
+          WHERE ${inArray(videoArtifacts.fileId, fileIds)})`,
+      ),
+    ),
+  );
 }

@@ -12,6 +12,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.998.3](https://github.com/okou-ai/okou/compare/app-v0.998.2...app-v0.998.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* **platform:** reject silent voice uploads with a client vad gate ([#37784](https://github.com/okou-ai/okou/issues/37784)) ([4e9adf9](https://github.com/okou-ai/okou/commit/4e9adf9324b6d8f3c0c660bbde8ff8951215c50e))
+* simplify subscription reset card controls ([#37780](https://github.com/okou-ai/okou/issues/37780)) ([65338a1](https://github.com/okou-ai/okou/commit/65338a1201a4eed55bda1ed8a01dc91ac15bea4b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.733.0
+
+## [0.998.2](https://github.com/okou-ai/okou/compare/app-v0.998.1...app-v0.998.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **app:** remove sidebar double-click rename ([#37775](https://github.com/okou-ai/okou/issues/37775)) ([2764bf6](https://github.com/okou-ai/okou/commit/2764bf6f755cb0f2e05cd98ff58cba51f247d53d))
+
 ## [0.998.1](https://github.com/okou-ai/okou/compare/app-v0.998.0...app-v0.998.1) (2026-10-05)
 
 

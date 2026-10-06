@@ -274,15 +274,6 @@ export function userMessageWithTemplate(
   };
 }
 
-export const openRouterBodySchema = z.object({
-  model: z.string(),
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
-  max_tokens: z.number().optional(),
-  reasoning: z
-    .object({ effort: z.enum(["none", "minimal", "low", "medium", "high"]) })
-    .optional(),
-});
-
 export function requireOrgId(actor: ApiTestUser): string {
   if (!actor.orgId) {
     throw new Error("Expected entitled chat actor to have an org");

@@ -24,6 +24,7 @@ import { optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
 import { reconcileConnectorCatalogCompatibility$ } from "../signals/services/connector-catalog-compatibility.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
+import { seedPreviewOnboardingCatalog$ } from "../signals/services/preview-onboarding-catalog.service";
 import { onRejection } from "../signals/utils";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 
@@ -865,9 +866,16 @@ async function devSeed() {
   }
 
   // --- connector catalog (validated R2 snapshot + compatibility state) ---
-  writeLine("Syncing connector catalog");
   const store = createStore();
   const signal = new AbortController().signal;
+  if (process.argv.includes("--preview-onboarding-catalog")) {
+    const projection = await store.set(seedPreviewOnboardingCatalog$, signal);
+    writeLine(
+      `Seeded ${projection.connectorSlugs.length} preview onboarding connectors from ${projection.catalogVersion}`,
+    );
+    return;
+  }
+  writeLine("Syncing connector catalog");
   const connectorCatalog = await store.set(syncConnectorCatalog$, signal);
   await store.set(reconcileConnectorCatalogCompatibility$, signal);
   if (!connectorCatalog.active) {
@@ -889,6 +897,12 @@ function isMainModule(): boolean {
 }
 
 async function runDevSeed(): Promise<void> {
+  if (
+    process.argv.includes("--preview-onboarding-catalog") &&
+    optionalEnv("ENV") !== "preview"
+  ) {
+    throw new Error("Onboarding catalog seed is restricted to preview");
+  }
   await onRejection(devSeed(), closeDbPool);
   await closeDbPool();
 }

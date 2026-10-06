@@ -84,6 +84,27 @@ async function deleteReplacedEvaluations(args: {
     );
 }
 
+export function connectorCatalogCompatibilityValues(args: {
+  readonly sourceId: string;
+  readonly identity: ConnectorCatalogCompatibilityIdentity;
+  readonly capabilityDigest: string;
+  readonly validator: ConnectorCatalogValidatorIdentity;
+  readonly evaluatedAt: Date;
+  readonly payload: ConnectorCatalogCompatibilityEvaluationPayload;
+}) {
+  return {
+    sourceId: args.sourceId,
+    schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+    catalogVersion: args.identity.catalogVersion,
+    catalogDigest: args.identity.catalogDigest,
+    executableCapabilityDigest: args.capabilityDigest,
+    catalogValidationBackendVersion: args.validator.validatorVersion,
+    catalogValidationBuildCommitSha: args.validator.buildCommitSha,
+    evaluatedAt: args.evaluatedAt,
+    filteredAuthMethods: args.payload,
+  };
+}
+
 async function persistConnectorCatalogCompatibilityEvaluation(args: {
   readonly db: Db;
   readonly sourceId: string;
@@ -95,17 +116,16 @@ async function persistConnectorCatalogCompatibilityEvaluation(args: {
 }): Promise<void> {
   await args.db
     .insert(connectorCatalogCompatibilityEvaluation)
-    .values({
-      sourceId: args.sourceId,
-      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-      catalogVersion: args.identity.catalogVersion,
-      catalogDigest: args.identity.catalogDigest,
-      executableCapabilityDigest: args.capabilityDigest,
-      catalogValidationBackendVersion: args.validator.validatorVersion,
-      catalogValidationBuildCommitSha: args.validator.buildCommitSha,
-      evaluatedAt: args.evaluatedAt,
-      filteredAuthMethods: args.payload,
-    })
+    .values(
+      connectorCatalogCompatibilityValues({
+        sourceId: args.sourceId,
+        identity: args.identity,
+        capabilityDigest: args.capabilityDigest,
+        validator: args.validator,
+        evaluatedAt: args.evaluatedAt,
+        payload: args.payload,
+      }),
+    )
     .onConflictDoUpdate({
       target: [
         connectorCatalogCompatibilityEvaluation.sourceId,
