@@ -24,6 +24,16 @@ function preferencesApi() {
 }
 async function connectedActor() {
   const actor = authOrgApi.user();
+  if (!actor.orgId) {
+    throw new Error("Expected organization member");
+  }
+  // Personal capabilities remain available on an active restricted/free plan.
+  await upsertOrgPlanEntitlementFixture({
+    orgId: actor.orgId,
+    status: "active",
+    supportByok: false,
+    restrictedBuiltInModels: true,
+  });
   await configureSubscriptionPiModel(actor);
   return actor;
 }

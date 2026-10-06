@@ -13,6 +13,7 @@ import {
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 /*
 helper gap:
@@ -232,6 +233,7 @@ describe("CHAT-01 chat thread lifecycle", () => {
     });
 
     await api.renameThread(owner, thread.id, "Pinned launch plan");
+    await createChatEventsFixture(context).configureSubscriptionPiModel(owner);
     await createRunsApi(context).updateUserModelPreference(owner, "okou-1.0");
     await api.updateThreadModelSelection(owner, thread.id, "gpt-6-luna");
     await api.pinThread(owner, thread.id);
