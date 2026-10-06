@@ -5,11 +5,9 @@ import {
   type ResetPersonalModelProviderSubscriptionUsageResponse,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   personalModelProviderAccountRevision$,
   resetPersonalCodexAccountSubscriptionUsage$,
@@ -91,9 +89,6 @@ export function createSubscriptionResetSignals(
   const status$ = computed(async (get): Promise<SubscriptionResetStatus> => {
     get(revision$);
     get(personalModelProviderAccountRevision$);
-    if (!get(featureSwitch$)[FeatureSwitchKey.SubscriptionControls]) {
-      return { kind: "unavailable" };
-    }
     const result = await accept(
       get(apiClient$)(personalSubscriptionsContract).get({
         params: { id: descriptor.accountId },

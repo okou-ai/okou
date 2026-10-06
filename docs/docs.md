@@ -42,7 +42,7 @@ surface; the index does not replace their detailed rules.
   data-only pruning of obsolete execution routes.
 - [Personal subscription CLI and Reset Cards](./subscription-controls.md):
   exact-account usage reads, subsequent-run switching, user-confirmed reset
-  links and capability rollout.
+  links and run capabilities.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and credential
   storage/locking.

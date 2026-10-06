@@ -27,7 +27,6 @@ import {
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
 import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
-import { subscriptionControlsEnabled$ } from "../services/subscription-controls.service";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -92,11 +91,6 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const getSubscriptionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const enabled = await get(subscriptionControlsEnabled$);
-    signal.throwIfAborted();
-    if (!enabled) {
-      return notFound("Resource not found");
-    }
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(personalSubscriptionsContract.get));
     const provider = await personalModelProviderAccountResponseById({
@@ -128,13 +122,6 @@ const getSubscriptionInner$ = command(
 
 const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (auth.tokenType === "agent") {
-    const enabled = await get(subscriptionControlsEnabled$);
-    signal.throwIfAborted();
-    if (!enabled) {
-      return notFound("Resource not found");
-    }
-  }
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
