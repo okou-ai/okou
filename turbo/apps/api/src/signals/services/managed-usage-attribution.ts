@@ -69,8 +69,7 @@ function billingSource(triggerSource: string | null): string {
       return "chat";
     }
     case "automation-schedule":
-    case "automation-event":
-    case "goal": {
+    case "automation-event": {
       return "automation";
     }
     case "slack":
