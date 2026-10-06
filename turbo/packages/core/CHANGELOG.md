@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.734.0](https://github.com/okou-ai/okou/compare/core-v8.733.3...core-v8.734.0) (2026-10-06)
+
+
+### Features
+
+* **core:** release eleven staff feature switches to all users ([#37818](https://github.com/okou-ai/okou/issues/37818)) ([8d05119](https://github.com/okou-ai/okou/commit/8d051194184d595b67f78f5d6f7ec728ed6cc31d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.7
+
 ## [8.733.3](https://github.com/okou-ai/okou/compare/core-v8.733.2...core-v8.733.3) (2026-10-06)
 
 
