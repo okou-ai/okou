@@ -21,6 +21,7 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -55,6 +56,7 @@ function setupCustomPage(): Promise<void> {
   return setupPage({
     context,
     path: "/connectors?tab=custom",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
   });
 }
 
@@ -709,6 +711,7 @@ test("Manage a custom HTTP connector through creation and connection", async () 
   await setupPage({
     context,
     path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
   });
   click(
     await waitFor(() => {
@@ -791,6 +794,7 @@ test("Manage a custom HTTP connector through rename and deletion", async () => {
   await setupPage({
     context,
     path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
   });
   click(
     await waitFor(() => {

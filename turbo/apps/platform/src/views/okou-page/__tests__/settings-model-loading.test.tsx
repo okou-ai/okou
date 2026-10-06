@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   billingStatusContract,
   type BillingStatusResponse,
@@ -141,6 +142,7 @@ async function setupLoadedModelsSettings() {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await findButton("GPT 5.6 Sol");
   const menu = await openAccountMenu();

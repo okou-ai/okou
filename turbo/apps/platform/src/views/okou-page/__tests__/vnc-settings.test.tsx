@@ -181,12 +181,15 @@ function mockSettings(
   return data;
 }
 
-async function page(path = "/connectors?scope=remote-control&type=vnc") {
+async function page(
+  path = "/connectors?scope=remote-control&type=vnc",
+  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+) {
   await setupPage({
     context,
     path,
     auth,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
+    featureSwitches: { [FeatureSwitchKey.VncAccess]: true, ...featureSwitches },
   });
 }
 
@@ -300,7 +303,7 @@ test("VNC management omits the redundant refresh action", async () => {
 
 test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () => {
   const data = mockSettings();
-  await page();
+  await page(undefined, { [FeatureSwitchKey.ConnectorDirectory]: false });
   await screen.findByText(host.displayName);
 
   data.connections = [{ ...host, displayName: "Updated workstation" }];
@@ -321,7 +324,7 @@ test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () =
 
 test("Returning to Remote control does not reopen an abandoned VNC dialog", async () => {
   mockSettings({ connections: [], credentials: [] });
-  await page("/connectors");
+  await page("/connectors", { [FeatureSwitchKey.ConnectorDirectory]: false });
   click(getConnectorAction("tab", "Remote control"));
   const section = await screen.findByRole("region", { name: "VNC" });
   click(getAction("button", "Add host", section));

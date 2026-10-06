@@ -2,6 +2,7 @@ import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -44,11 +45,13 @@ beforeEach(() => {
 async function page(
   path = "/connectors?scope=private-network",
   role: "admin" | "member" = "member",
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
 ) {
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
     path,
+    featureSwitches,
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -314,7 +317,9 @@ test("Cloudflare Access is managed in Connectors Private network", async () => {
 });
 
 test("Returning to Private network does not reopen an abandoned Access dialog", async () => {
-  await page("/connectors");
+  await page("/connectors", "member", {
+    [FeatureSwitchKey.ConnectorDirectory]: false,
+  });
   click(getConnectorAction("tab", "Private network"));
   await screen.findByRole("heading", { name: "Cloudflare Access" });
   click(getAction("button", "Add Cloudflare Access"));

@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -157,6 +158,7 @@ test("Conversation configuration arriving before creation is retained", async ()
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await waitFor(() => {
@@ -206,6 +208,7 @@ test("Service tier and Computer Use settings update independently", async () => 
     context,
     path: `/chats/${target.id}`,
     auth,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
     cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
   });
 

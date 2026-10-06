@@ -1,6 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -131,7 +132,11 @@ test("Show the filtered connector count in the add dialog", async () => {
     ],
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
 
   await loadComposer();
   await openConnectors(user);
@@ -237,7 +242,11 @@ describe("connecting a custom connector for the active agent", () => {
       ],
     });
 
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({
+      context,
+      path: `/agents/${SCOUT_AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+    });
 
     await loadComposer();
     await openConnectors(user);
@@ -388,7 +397,11 @@ test("Start connector setup from chat", async () => {
   const authWindow = createAuthWindow();
   const browserOpen = context.mocks.browser.open(authWindow);
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
 
   await loadComposer();
   await openConnectors(user);
@@ -477,7 +490,11 @@ test.each([null, "Close"] as const)(
     );
     const authWindow = createAuthWindow();
     const browserOpen = context.mocks.browser.open(authWindow);
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({
+      context,
+      path: `/agents/${SCOUT_AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+    });
 
     await loadComposer();
     await openConnectors(user);
@@ -726,7 +743,11 @@ test("Exclude unconnected integration-managed connectors from chat setup", async
     ],
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
 
   await loadComposer();
   await openConnectors(user);

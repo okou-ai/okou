@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -471,7 +472,11 @@ test("Continue from empty slash suggestions to all workflows", async () => {
     return [];
   });
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: false },
+  });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();

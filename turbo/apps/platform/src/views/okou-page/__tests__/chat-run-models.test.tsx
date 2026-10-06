@@ -324,7 +324,11 @@ test.each(STRUCTURED_FAILURE_CASES)(
 test("shows Auto once for a configured Okou model", async () => {
   configureModelPolicies(["okou-1.0", "gpt-5.6-luna"]);
   installRunChat({ selectedModel: "gpt-5.6-luna" });
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+  });
   await readyChat();
 
   const user = userEvent.setup({ delay: null });
@@ -494,7 +498,11 @@ test("Preserve which model a message was sent with", async () => {
     },
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+  });
 
   await readyChat();
   await expect(

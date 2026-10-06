@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   findModelMenuOption,
   modelMenuOption,
@@ -239,7 +240,11 @@ test("Connect Codex before sending with a personal route", async () => {
     },
   );
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+  });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await expect(composerModelTrigger("GPT 5.6 Luna")).resolves.toBeVisible();
@@ -316,7 +321,11 @@ test("Complete Claude Code login from a blocked message", async () => {
     });
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+  });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await expect(composerModelTrigger("Claude Opus 5.5")).resolves.toBeVisible();
@@ -382,7 +391,11 @@ test("Reconnect the personal provider used by the selected model", async () => {
     return respond(200, { status: "pending", errorMessage: null });
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+  });
 
   await expect(composerModelTrigger("GPT 5.6 Sol")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
@@ -440,7 +453,11 @@ test("Reconnect Claude Code for an existing chat", async () => {
     });
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
+  });
 
   await readyChat();
   await expect(composerModelTrigger("Claude Opus 5.5")).resolves.toBeVisible();
@@ -493,6 +510,7 @@ test("A billing upgrade unlocks Pro-gated built-in models", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyChat();
