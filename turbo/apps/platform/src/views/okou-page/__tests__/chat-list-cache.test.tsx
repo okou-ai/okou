@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import {
@@ -8,6 +8,7 @@ import {
 import { expect, test } from "vitest";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
   startPage,
@@ -128,15 +129,20 @@ test("Rename dialog uses the latest cached title", async () => {
   if (!(row instanceof HTMLElement)) {
     throw new Error("Expected the cached conversation row");
   }
-  const link = row.querySelector<HTMLAnchorElement>(
-    "[data-sidebar-chat-thread-id]",
-  );
-  if (!link) {
-    throw new Error("Expected the cached conversation link");
-  }
-  await userEvent.dblClick(link);
+  click(within(row).getByLabelText("Open chat menu"));
+  const renameItem = await waitFor(() => {
+    const item = queryAllByRoleFast("menuitem", document).find((candidate) => {
+      return candidate.getAttribute("aria-label") === "Rename chat";
+    });
+    if (!item) {
+      throw new Error("Expected the Rename chat menu item");
+    }
+    return item;
+  });
+  click(renameItem);
 
-  const input = await screen.findByRole("textbox");
+  const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
+  const input = within(dialog).getByPlaceholderText("Chat title");
   expect(input).toHaveValue("Cached renamed title");
   expect(detail.settled()).toBeFalsy();
   expect(remote.settled()).toBeFalsy();

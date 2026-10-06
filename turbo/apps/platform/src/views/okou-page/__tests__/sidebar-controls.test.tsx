@@ -614,7 +614,7 @@ test.each([false, true])(
   },
 );
 
-test("Rename a conversation from the sidebar menu but not on double-click", async () => {
+test("Open a conversation with double-click and rename it from the sidebar menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -623,7 +623,7 @@ test("Rename a conversation from the sidebar menu but not on double-click", asyn
 
   await setupSidebarPage({
     context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
+    path: `/chats/${INCIDENT_THREAD_ID}`,
   });
 
   await waitFor(() => {
@@ -634,13 +634,13 @@ test("Rename a conversation from the sidebar menu but not on double-click", asyn
   await userEvent
     .setup()
     .dblClick(threadLinkByTitle("Release plan", sidebar()));
-  expect(threadLinkByTitle("Release plan", sidebar())).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  expect(
-    screen.queryByRole("dialog", { name: "Rename chat" }),
-  ).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+    expect(threadLinkByTitle("Release plan", sidebar())).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
 
   openThreadMenu("Release plan");
   click(menuItemByText("Rename chat"));
