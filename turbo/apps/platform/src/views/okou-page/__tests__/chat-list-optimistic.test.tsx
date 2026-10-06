@@ -71,9 +71,7 @@ function installNewThreadDefaults(): void {
   installActiveChatBoundaries(context);
 }
 
-async function openUnconfirmedConversation(
-  options: { readonly headerActionsEnabled?: boolean } = {},
-) {
+async function openUnconfirmedConversation() {
   const auth = chatListAuth(9);
   const confirmation = context.mocks.deferred<void>();
   const requests: {
@@ -138,8 +136,6 @@ async function openUnconfirmedConversation(
     cachedChatThreadEvents: cachedChatListEvents(9, []),
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatThreadHeaderActions]:
-        options.headerActionsEnabled ?? false,
     },
   });
   return { confirmation, requests, stream };
@@ -221,7 +217,7 @@ test.each([true, false])(
   async (desktop) => {
     context.mocks.browser.matchMedia(desktop);
     const { confirmation, requests, stream } =
-      await openUnconfirmedConversation({ headerActionsEnabled: true });
+      await openUnconfirmedConversation();
 
     await sendComposerMessage("Create a thread before showing its actions");
     await waitFor(() => {

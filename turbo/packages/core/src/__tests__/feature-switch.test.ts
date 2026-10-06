@@ -319,7 +319,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
@@ -333,7 +332,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 

@@ -743,8 +743,6 @@ export function SettledChatThreadActions({
 
 function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
-  const headerActionsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadHeaderActions];
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
@@ -782,16 +780,12 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
 
   return (
     <header className={CHAT_THREAD_HEADER_CLASS}>
-      {headerActionsEnabled ? (
-        <div className="flex min-w-0 items-center gap-2 pr-3">
-          <ChatThreadHeaderTitle thread={thread} />
-          <SettledChatThreadActions thread={thread}>
-            <ChatThreadPinButton thread={thread} />
-          </SettledChatThreadActions>
-        </div>
-      ) : (
+      <div className="flex min-w-0 items-center gap-2 pr-3">
         <ChatThreadHeaderTitle thread={thread} />
-      )}
+        <SettledChatThreadActions thread={thread}>
+          <ChatThreadPinButton thread={thread} />
+        </SettledChatThreadActions>
+      </div>
       <SettledChatThreadActions thread={thread}>
         <div className="flex shrink-0 items-center gap-0.5">
           <TooltipProvider>
