@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
 import { eq } from "drizzle-orm";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
 import {
   immutableCatalogValues,
@@ -444,17 +445,49 @@ function runtimeArgs(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
 
 async function assertEarlyClaimSecretBoundary(
   actor: Awaited<ReturnType<typeof ownedMcpRun>>,
-  mode: "failure" | "abort",
+  mode:
+    | "failure"
+    | "abort"
+    | "policy-control"
+    | "dual-failure"
+    | "joined-abort",
 ) {
   if (!engine) {
     throw new Error("Missing claim case engine");
+  }
+  const resumeHash = createHash("sha256").update(actor.runId).digest("hex");
+  const ownsResume = mode === "dual-failure" || mode === "joined-abort";
+  // Canonical owned Agent grant, not a policy/cache injection. The queued
+  // target and request resolve the same real org/user/Agent/account identity.
+  await engine.query(
+    "INSERT INTO user_connectors (org_id, user_id, agent_id, connector_slug) VALUES ($1, $2, $3, $4)",
+    [actor.orgId, actor.userId, actor.agentId, actor.connectorSlug],
+  );
+  if (ownsResume) {
+    await engine.query(
+      "INSERT INTO blobs (hash, raw_size, encoded_size, encoding) VALUES ($1, 0, 0, 'identity')",
+      [resumeHash],
+    );
   }
   const stored = storedExecutionContextSchema.parse({
     storageMounts: [],
     environment: { LEGACY_MASKED: "masking-secret" },
     platformEnvironment: {},
     secretValueEnvironmentKeys: ["retired-key"],
-    resumeSession: null,
+    resumeSession: ownsResume
+      ? {
+          sessionId: `owned-resume-${actor.runId}`,
+          historyRef: { kind: "blob", hash: resumeHash },
+        }
+      : null,
+    networkPolicies: {
+      [actor.connectorSlug]: {
+        allow: [],
+        deny: [],
+        ask: [],
+        unknownPolicy: "deny",
+      },
+    },
     encryptedSecrets: encryptSecretForTests(
       JSON.stringify({ LEGACY_MASKED: "masking-secret" }),
     ),
@@ -491,53 +524,160 @@ async function assertEarlyClaimSecretBoundary(
     requestController.signal,
   ]);
   const original = new Error("Controlled claim secret failure");
+  const resumeError = new Error("Controlled owned resume HEAD failure");
+  const abortReason = new Error(
+    "Controlled abort while resume HEAD is pending",
+  );
+  abortReason.name = "AbortError";
+  const resumeOwner = ownsResume
+    ? {
+        started: createDeferredPromise<void>(context.signal),
+        released: createDeferredPromise<void>(context.signal),
+      }
+    : null;
+  const previousStorage = context.mocks.s3.send.getMockImplementation();
+  if (resumeOwner) {
+    context.mocks.s3.send.mockImplementation(async (...args: unknown[]) => {
+      const command = args[0];
+      if (
+        command instanceof HeadObjectCommand &&
+        command.input.Bucket === env("R2_USER_STORAGES_BUCKET_NAME") &&
+        command.input.Key === `blobs/${resumeHash}.blob`
+      ) {
+        if (!resumeOwner.started.settled()) {
+          resumeOwner.started.resolve();
+        }
+        await resumeOwner.released.promise;
+        throw resumeError;
+      }
+      if (!previousStorage) {
+        throw new Error("Unexpected unowned resume storage request");
+      }
+      return await previousStorage(...args);
+    });
+  }
   let decryptions = 0;
   statements = [];
-  const result = await withSecretKmsClientForTest(
-    {
-      generateDataKey() {
-        return Promise.reject(new Error("Claim must not encrypt new secrets"));
+  const ownedOutcome = await settleIncludingAbort(
+    withSecretKmsClientForTest(
+      {
+        generateDataKey() {
+          return Promise.reject(
+            new Error("Claim must not encrypt new secrets"),
+          );
+        },
+        decrypt() {
+          decryptions += 1;
+          if (mode === "failure") {
+            return Promise.reject(original);
+          }
+          if (mode === "abort") {
+            requestController.abort(original);
+          }
+          return Promise.resolve(
+            Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
+          );
+        },
       },
-      decrypt() {
-        decryptions += 1;
-        if (mode === "failure") {
-          return Promise.reject(original);
+      async () => {
+        let claimSettled = false;
+        const outcome = settleIncludingAbort(
+          setupApp({
+            context,
+            routes: runnersRoutes,
+            signal: requestSignal,
+            rethrowErrors: true,
+          })(runnersJobClaimContract).claim({
+            headers: {
+              authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+            },
+            params: { id: actor.runId },
+            body: { capabilities: { piModelConfigGenerations: [1, 2, 3, 4] } },
+          }),
+        ).then((settled) => {
+          claimSettled = true;
+          if (resumeOwner && !resumeOwner.started.settled()) {
+            // Unblock the boundary assertion: an early outcome is a failure,
+            // not a hanging deferred or a swallowed claim error.
+            resumeOwner.started.resolve();
+          }
+          return settled;
+        });
+        if (!resumeOwner) {
+          return await outcome;
         }
-        requestController.abort();
-        return Promise.resolve(
-          Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
-        );
+        // HEAD is a real external boundary. Its controlled rejection is released
+        // even when a boundary assertion fails, then the finite claim is joined.
+        const boundary = await settleIncludingAbort(async () => {
+          await resumeOwner.started.promise;
+          if (mode === "joined-abort") {
+            requestController.abort(abortReason);
+          }
+          if (!engine) {
+            throw new Error("Missing finite claim case engine");
+          }
+          await engine.query("SELECT 1 AS claim_boundary_alive");
+          expect(
+            statements.some((query) => {
+              return query.includes('from "connector_catalog"');
+            }),
+          ).toBeTruthy();
+          expect(claimSettled).toBeFalsy();
+        });
+        if (!resumeOwner.released.settled()) {
+          resumeOwner.released.resolve();
+        }
+        const settled = await outcome;
+        if (!boundary.ok) {
+          throw boundary.error;
+        }
+        return settled;
       },
-    },
-    async () => {
-      return await settleIncludingAbort(
-        setupApp({
-          context,
-          routes: runnersRoutes,
-          signal: requestSignal,
-          rethrowErrors: true,
-        })(runnersJobClaimContract).claim({
-          headers: {
-            authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
-          },
-          params: { id: actor.runId },
-          body: { capabilities: { piModelConfigGenerations: [1, 2, 3, 4] } },
-        }),
-      );
-    },
+    ),
   );
+  if (ownsResume && previousStorage) {
+    context.mocks.s3.send.mockImplementation(previousStorage);
+  }
+  if (!ownedOutcome.ok) {
+    throw ownedOutcome.error;
+  }
+  const result = ownedOutcome.value;
   expect(decryptions).toBe(1);
   if (result.ok) {
-    throw new Error("Secret failure/abort unexpectedly claimed a job");
+    throw new Error(
+      "Negative claim ownership probe unexpectedly claimed a job",
+    );
   }
-  expect(result.error).toBe(
-    mode === "failure" ? original : requestSignal.reason,
-  );
-  expect(
-    statements.filter((query) => {
-      return query.includes('from "connector_catalog"');
-    }),
-  ).toStrictEqual([]);
+  const policyReads = statements.filter((query) => {
+    return query.includes('from "connector_catalog"');
+  });
+  if (mode === "policy-control") {
+    expect(result.error).toBeInstanceOf(Error);
+    expect((result.error as Error).message).toBe(
+      "Immutable connector catalog current is missing",
+    );
+    expect(policyReads).toHaveLength(1);
+  } else if (mode === "dual-failure") {
+    // Both resume HEAD and policy reject; the original resume error wins.
+    expect(result.error).toBe(resumeError);
+    expect(policyReads).toHaveLength(1);
+  } else if (mode === "joined-abort") {
+    // Assembly drains resume/policy; the public claim's final settle(signal)
+    // propagates the exact caller abort rather than a policy/storage error.
+    expect(result.error).toBe(requestSignal.reason);
+    expect(result.error).toBe(abortReason);
+    expect(policyReads).toHaveLength(1);
+  } else {
+    expect(result.error).toBe(
+      mode === "failure" ? original : requestSignal.reason,
+    );
+    expect(policyReads).toStrictEqual([]);
+  }
+  for (const query of policyReads) {
+    expect(query).not.toContain("connector_catalog_active_snapshot");
+    expect(query).not.toContain("connector_catalog_runtime_projection");
+    expect(query).not.toContain("connector_catalog_compatibility_evaluation");
+  }
   expect(
     (
       await engine.query(
@@ -1812,5 +1952,11 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await assertEarlyClaimSecretBoundary(actor, "failure");
     const abortActor = await ownedMcpRun(candidate);
     await assertEarlyClaimSecretBoundary(abortActor, "abort");
+    const controlActor = await ownedMcpRun(candidate);
+    await assertEarlyClaimSecretBoundary(controlActor, "policy-control");
+    const dualFailureActor = await ownedMcpRun(candidate);
+    await assertEarlyClaimSecretBoundary(dualFailureActor, "dual-failure");
+    const joinedAbortActor = await ownedMcpRun(candidate);
+    await assertEarlyClaimSecretBoundary(joinedAbortActor, "joined-abort");
   });
 });

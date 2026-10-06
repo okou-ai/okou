@@ -989,6 +989,19 @@ describe("CHAT-02: thread connector account selection", () => {
       }),
       [204],
     );
+    const postClearSelections = await accept(
+      chatThreadConnectorSelectionsClient().get({
+        headers: sessionHeaders(actor),
+        params: { id: thread.id },
+      }),
+      [200],
+    );
+    expect(postClearSelections.body.selections).toStrictEqual([
+      {
+        connectionId: runtimeConnection.id,
+        target: { kind: "builtin", connectorSlug: "runtime" },
+      },
+    ]);
     await installApiTestConnectorCatalog();
     const restoredSelections = await accept(
       chatThreadConnectorSelectionsClient().get({
@@ -998,7 +1011,7 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
     expect(restoredSelections.body.selections).toStrictEqual(
-      selections.body.selections,
+      postClearSelections.body.selections,
     );
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   });

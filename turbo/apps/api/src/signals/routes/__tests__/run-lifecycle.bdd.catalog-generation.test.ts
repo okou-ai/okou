@@ -6,11 +6,15 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
-import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
+import {
+  runnersConnectorRuntimeSyncContract,
+  type ExecutionContext,
+} from "@okouai/api-contracts/contracts/runners";
+import type { ConnectorCatalogArtifact } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ExecutionFirewallEntry } from "@okouai/connectors/firewall-types";
 import { describe, expect, it } from "vitest";
 
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
@@ -42,6 +46,7 @@ import {
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { createRouteMocks } from "./helpers/route-test";
+import { runnersRoutes } from "../runners";
 
 /**
  * RUN-01..04 and CHAIN-RUN: successful run dispatch and lifecycle.
@@ -166,7 +171,44 @@ function builtinConnectorRuntimeRegistration(
 describe("RUN-02: custom connectors, grants, and network policies", () => {
   it("retains captured immutable credentials then omits a genuinely removed builtin on the next bootstrap", async () => {
     const catalog = createPublicConnectorCatalog(context);
-    const firstGeneration = await catalog.publish(API_TEST_CONNECTOR_CATALOG);
+    // OpenAI is deliberately credential-only in this fixture (firewall:none).
+    // Give the independent retained Runtime a real public executable descriptor.
+    const initialCatalog: ConnectorCatalogArtifact = {
+      ...API_TEST_CONNECTOR_CATALOG,
+      connectors: API_TEST_CONNECTOR_CATALOG.connectors.map((entry) => {
+        return entry.slug !== "runtime"
+          ? entry
+          : {
+              ...entry,
+              firewall: {
+                kind: "generated",
+                billable: false,
+                categories: null,
+                defaultAllowed: ["read"],
+                defaultUnknownPolicy: "deny",
+                config: {
+                  description: "Owned public Runtime read boundary",
+                  placeholders: { RUNTIME_API_KEY: "fixture-runtime-key" },
+                  apis: [
+                    {
+                      base: "https://runtime.fixture.invalid",
+                      auth: {
+                        headers: {
+                          Authorization: [
+                            "Bearer $",
+                            "{{ secrets.RUNTIME_API_KEY }}",
+                          ].join(""),
+                        },
+                      },
+                      permissions: [{ name: "read", rules: ["GET /status"] }],
+                    },
+                  ],
+                },
+              },
+            };
+      }),
+    };
+    const firstGeneration = await catalog.publish(initialCatalog);
     const fixture = createChatEventsFixture(context);
     const { actor, agentId, runnerGroup } =
       await fixture.entitledNativeChatActor();
@@ -185,7 +227,59 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { apiKey: "terminal-runtime-owned" },
       agentId,
     );
+    const ownAcceptedRun = (accepted: {
+      readonly runId: string | null;
+      readonly threadId: string;
+      readonly clientEventId: string;
+    }) => {
+      const owned: {
+        runId: string | null;
+        sandboxHeaders: { readonly authorization: string } | undefined;
+        cleaned: boolean;
+      } = { runId: accepted.runId, sandboxHeaders: undefined, cleaned: false };
+      const discover = async () => {
+        if (!owned.runId) {
+          owned.runId =
+            userMessages(
+              (await fixture.chat.listThreadEvents(actor, accepted.threadId))
+                .events,
+            ).find((message) => {
+              return message.revokesEventId === accepted.clientEventId;
+            })?.runId ?? null;
+        }
+        return owned.runId;
+      };
+      // Register before publication/prepare/claim assertions can reject. An
+      // accepted send with no ID yet is discovered through its exact public event.
+      catalog.onCleanup(async () => {
+        if (owned.cleaned) {
+          return;
+        }
+        await flushWaitUntilForTest();
+        const id = await discover();
+        if (id) {
+          const run = await fixture.api.readRun(actor, id);
+          if (
+            run.status === "pending" ||
+            run.status === "queued" ||
+            run.status === "running"
+          ) {
+            await fixture.cancelChatRun(actor, id, owned.sandboxHeaders);
+          } else if (run.status === "cancelled" && owned.sandboxHeaders) {
+            await fixture.failChatRun(
+              id,
+              owned.sandboxHeaders,
+              "Run cancelled",
+            );
+          }
+        }
+        await flushWaitUntilForTest();
+        owned.cleaned = true;
+      });
+      return { owned, discover };
+    };
     const clientEventId = randomUUID();
+    let firstOwner: ReturnType<typeof ownAcceptedRun> | undefined;
     const sent = await withDatabaseTransactionBarrierFixture(
       {
         select: (queryArgs) => {
@@ -202,15 +296,25 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         },
         pauseAfter: true,
         work: async (barrier) => {
-          const sending = fixture.chat.requestSendEvent(
-            actor,
-            {
-              agentId,
-              prompt: "use captured immutable catalog",
-              clientEventId,
-            },
-            [201],
-          );
+          const sending = fixture.chat
+            .requestSendEvent(
+              actor,
+              {
+                agentId,
+                prompt: "use captured immutable catalog",
+                clientEventId,
+              },
+              [201],
+            )
+            .then((response) => {
+              if (response.status === 201) {
+                firstOwner = ownAcceptedRun({
+                  ...response.body,
+                  clientEventId,
+                });
+              }
+              return response;
+            });
           expect((await barrier.entered).rowCount).toBeGreaterThan(0);
           const response = await sending;
           if (response.status !== 201) {
@@ -219,12 +323,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           // Real activation, not the retired legacy installer. Capture completed
           // before this winning CAS; old immutable entry rows remain addressable.
           const replacement = await catalog.publish({
-            ...API_TEST_CONNECTOR_CATALOG,
-            connectors: API_TEST_CONNECTOR_CATALOG.connectors.filter(
-              (entry) => {
-                return entry.slug !== "openai";
-              },
-            ),
+            ...initialCatalog,
+            connectors: initialCatalog.connectors.filter((entry) => {
+              return entry.slug !== "openai";
+            }),
           });
           expect(replacement.hash).not.toBe(firstGeneration.hash);
           barrier.release();
@@ -234,34 +336,115 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
       context.signal,
     );
-    const runId = userMessages(
-      (await fixture.chat.listThreadEvents(actor, sent.body.threadId)).events,
-    ).find((message) => {
-      return message.revokesEventId === clientEventId;
-    })?.runId;
+    if (!firstOwner) {
+      throw new Error("Missing accepted Run owner");
+    }
+    const runId = await firstOwner.discover();
     if (!runId) {
       throw new Error("Missing captured generation Run");
     }
     const first = await fixture.claimChatRun(runnerGroup, runId);
+    firstOwner.owned.sandboxHeaders = first.sandboxHeaders;
+    expect(first.claim.environment?.OPENAI_TOKEN).toBe("terminal-openai-owned");
+    expect(first.claim.secretValues).toContain("terminal-openai-owned");
     expect(first.claim.secretConnectorMap?.OPENAI_TOKEN).toBe("openai");
     expect(first.claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toStrictEqual({
       sourceType: "connector",
       sourceId: connection.id,
     });
+    // Captured credential facts are not executable authorization. OpenAI's
+    // original descriptor has no firewall; current B additionally removes it.
+    expect(first.claim.firewalls).not.toContainEqual(
+      expect.objectContaining({ kind: "builtin", name: "openai" }),
+    );
     expect(first.claim.firewalls).toContainEqual(
       expect.objectContaining({
         kind: "builtin",
-        name: "openai",
-        sourceId: connection.id,
+        name: "runtime",
+        sourceId: other.id,
       }),
     );
-    await fixture.cancelChatRun(actor, runId, first.sandboxHeaders);
-    const next = await fixture.sendChatRun(actor, {
-      agentId,
-      threadId: sent.body.threadId,
-      prompt: "use actual replacement generation",
+    expect(first.claim.billableFirewalls ?? []).not.toContain("openai");
+    expect(first.claim.networkPolicies ?? {}).not.toHaveProperty("openai");
+    expect(first.claim).not.toHaveProperty("connectorPermissionBaseline");
+    expect(first.claim).not.toHaveProperty("secretValueEnvironmentKeys");
+    expect(first.claim.connectorRuntimeTargets).toStrictEqual([
+      { kind: "builtin", connectorSlug: "runtime", sourceId: other.id },
+    ]);
+    expect(
+      first.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+    ).toStrictEqual({
+      sourceType: "connector",
+      sourceId: other.id,
     });
-    const claimed = await fixture.claimChatRun(runnerGroup, next.runId);
+    expect(
+      first.claim.secretConnectorMetadataMap?.OPENAI_TOKEN?.sourceId,
+    ).not.toBe(other.id);
+    const currentRuntime = await accept(
+      setupApp({ context, routes: runnersRoutes })(
+        runnersConnectorRuntimeSyncContract,
+      ).sync({
+        headers: {
+          authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+        },
+        params: { runId },
+        body: {
+          targets: [
+            {
+              kind: "builtin",
+              connectorSlug: "openai",
+              sourceId: connection.id,
+            },
+            { kind: "builtin", connectorSlug: "runtime", sourceId: other.id },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(currentRuntime.body.results).toStrictEqual([
+      {
+        target: { kind: "builtin", connectorSlug: "openai" },
+        state: "absent",
+        reason: "connector-unavailable",
+      },
+      {
+        target: { kind: "builtin", connectorSlug: "runtime" },
+        state: "available",
+        networkPolicy: {
+          allow: ["read"],
+          deny: [],
+          ask: [],
+          unknownPolicy: "deny",
+        },
+      },
+    ]);
+    await fixture.cancelChatRun(actor, runId, first.sandboxHeaders);
+    firstOwner.owned.cleaned = true;
+    const nextClientEventId = randomUUID();
+    const next = await fixture.chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: sent.body.threadId,
+        prompt: "use actual replacement generation",
+        clientEventId: nextClientEventId,
+      },
+      [201],
+    );
+    if (next.status !== 201) {
+      throw new Error("Expected next-generation send acceptance");
+    }
+    const nextOwner = ownAcceptedRun({
+      ...next.body,
+      clientEventId: nextClientEventId,
+    });
+    await flushWaitUntilForTest();
+    const nextRunId = await nextOwner.discover();
+    if (!nextRunId) {
+      throw new Error("Missing next generation Run");
+    }
+    const claimed = await fixture.claimChatRun(runnerGroup, nextRunId);
+    nextOwner.owned.sandboxHeaders = claimed.sandboxHeaders;
     expect(claimed.claim.environment).not.toHaveProperty("OPENAI_TOKEN");
     expect(claimed.claim.secretConnectorMap ?? {}).not.toHaveProperty(
       "OPENAI_TOKEN",
@@ -278,14 +461,21 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(claimed.claim.networkPolicies ?? {}).not.toHaveProperty("openai");
     expect(claimed.claim).not.toHaveProperty("connectorPermissionBaseline");
     expect(claimed.claim.environment?.RUNTIME_API_KEY).toBe(
-      "terminal-runtime-owned",
+      "fixture-runtime-key",
     );
+    expect(
+      claimed.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+    ).toStrictEqual({
+      sourceType: "connector",
+      sourceId: other.id,
+    });
     expect(claimed.claim.connectorRuntimeTargets).toContainEqual({
       kind: "builtin",
       connectorSlug: "runtime",
       sourceId: other.id,
     });
-    await fixture.cancelChatRun(actor, next.runId, claimed.sandboxHeaders);
+    await fixture.cancelChatRun(actor, nextRunId, claimed.sandboxHeaders);
+    nextOwner.owned.cleaned = true;
     const selectionClient = setupApp({ context, routes: chatThreadRoutes })(
       chatThreadConnectorSelectionContract,
     );
