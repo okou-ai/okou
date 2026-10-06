@@ -1,12 +1,9 @@
 import type { ComponentProps, ReactNode, Ref } from "react";
-// Slash-workflow domain helpers and the suggestion menu, shared by the chat
-// composer. Kept in its own module so the textarea composer and the TipTap
-// workflow composer can both reuse them without an import cycle.
-import { ChevronRight, FileText, Image, Presentation } from "lucide-react";
+// Slash-workflow domain helpers and the suggestion menu's popover shell, shared
+// by the chat composer. Kept in its own module so the TipTap workflow composer
+// and the slash template panel can both reuse them without an import cycle.
+import { Image, Presentation } from "lucide-react";
 import { cn, PopoverContent } from "@okouai/ui";
-import { useTranslation } from "react-i18next";
-import { ROUTES } from "../../signals/route-paths.ts";
-import { Link } from "../router/link.tsx";
 import type {
   ComposerSlashWorkflow,
   ComposerSlashWorkflowMatch,
@@ -73,91 +70,19 @@ export function SlashWorkflowName({
   );
 }
 
-/** The flat menu's workflow rows, split out to keep the menu within its size. */
-function SlashWorkflowRows({
-  workflows,
-  loading,
-  selectedIndex,
-  onSelect,
-}: {
-  readonly workflows: readonly ComposerSlashWorkflowMatch[];
-  readonly loading: boolean;
-  readonly selectedIndex: number;
-  readonly onSelect: (workflow: ComposerSlashWorkflow) => void;
-}) {
-  const { t } = useTranslation();
-  if (loading) {
-    return (
-      <div className="px-2.5 py-2 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.composer.workflows.loading;
-        })}
-      </div>
-    );
-  }
-  if (workflows.length === 0) {
-    return (
-      <div className="px-2.5 pt-1 pb-2.5 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.composer.workflows.empty;
-        })}
-      </div>
-    );
-  }
-  return (
-    <div className="px-1 pb-1">
-      {workflows.map((workflow, index) => {
-        const selected = index === selectedIndex;
-        return (
-          <button
-            id={slashWorkflowOptionId(workflow.id)}
-            key={workflow.id}
-            type="button"
-            className={cn(
-              "flex w-full flex-col items-start gap-0.5 rounded-lg px-2 py-1.5 text-left transition-colors",
-              selected ? "bg-accent" : "hover:bg-state-hover",
-            )}
-            onClick={() => {
-              onSelect(workflow);
-            }}
-          >
-            <SlashWorkflowName workflow={workflow} className="w-full text-sm" />
-            {workflow.description && (
-              <span className="w-full truncate text-xs text-muted-foreground/70">
-                {workflow.description}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
+/**
+ * The popover the slash suggestions open in. The two-pane template panel it
+ * holds owns its own scrolling, workflow rows and footer.
+ */
 export function SlashWorkflowMenu({
   menuRef,
   anchor,
-  workflows,
-  loading,
-  selectedIndex,
-  showWorkflowsPageLink,
-  onSelect,
-  panel,
+  children,
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
-  readonly workflows: readonly ComposerSlashWorkflowMatch[];
-  readonly loading: boolean;
-  readonly selectedIndex: number;
-  readonly showWorkflowsPageLink: boolean;
-  readonly onSelect: (workflow: ComposerSlashWorkflow) => void;
-  /**
-   * The two-pane template panel. When present it replaces the workflow list and
-   * owns its own scrolling, workflow rows and footer.
-   */
-  readonly panel?: ReactNode;
+  readonly children: ReactNode;
 }) {
-  const { t } = useTranslation();
   return (
     <PopoverContent
       ref={menuRef}
@@ -170,60 +95,15 @@ export function SlashWorkflowMenu({
       initialFocus={false}
       // The selected row owns focus once the menu closes.
       finalFocus={false}
-      className={cn(
-        "flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0",
-        panel
-          ? // The index alone, at a width it never leaves. Its detail pane is a
-            // flyout anchored to this box rather than a column inside it, so
-            // opening one cannot resize the box Base UI pins — a content-width
-            // popover re-pinned itself against the viewport edge and slid the
-            // whole index out from under the pointer that opened the row.
-            "h-[min(380px,var(--available-height))] w-[260px]"
-          : "h-[min(16rem,var(--available-height))] w-[300px] md:h-[min(20rem,var(--available-height))]",
-      )}
+      // The index alone, at a width it never leaves. Its detail pane is a
+      // flyout anchored to this box rather than a column inside it, so opening
+      // one cannot resize the box Base UI pins — a content-width popover
+      // re-pinned itself against the viewport edge and slid the whole index out
+      // from under the pointer that opened the row.
+      className="flex h-[min(380px,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0"
       data-testid="slash-workflow-menu"
     >
-      {panel ?? (
-        <>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="px-2.5 pt-2 pb-2 text-xs font-medium text-muted-foreground">
-              {t(($) => {
-                return $.chat.composer.workflows.title;
-              })}
-            </div>
-            <SlashWorkflowRows
-              workflows={workflows}
-              loading={loading}
-              selectedIndex={selectedIndex}
-              onSelect={onSelect}
-            />
-          </div>
-          {showWorkflowsPageLink && (
-            <div className="shrink-0 border-t border-border/60 bg-popover/95 p-1">
-              <Link
-                pathname={ROUTES.workflows}
-                className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-sm font-medium text-popover-foreground transition-colors hover:bg-state-hover"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <FileText
-                    size={16}
-                    className="shrink-0 text-muted-foreground"
-                  />
-                  <span className="truncate">
-                    {t(($) => {
-                      return $.chat.composer.workflows.viewAll;
-                    })}
-                  </span>
-                </span>
-                <ChevronRight
-                  size={16}
-                  className="shrink-0 text-muted-foreground"
-                />
-              </Link>
-            </div>
-          )}
-        </>
-      )}
+      {children}
     </PopoverContent>
   );
 }

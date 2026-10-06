@@ -57,7 +57,6 @@ export enum FeatureSwitchKey {
   ChatLastReadMarker = "chatLastReadMarker",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
-  ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
   PresentationConvert = "presentationConvert",

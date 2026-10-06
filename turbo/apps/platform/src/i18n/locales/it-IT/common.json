@@ -1812,8 +1812,7 @@
       "workflows": {
         "empty": "Nessun flusso di lavoro corrispondente",
         "loading": "Caricamento flussi di lavoro...",
-        "title": "Flussi di lavoro",
-        "viewAll": "Visualizza tutti i flussi di lavoro"
+        "title": "Flussi di lavoro"
       }
     },
     "computerUse": {

@@ -1780,8 +1780,7 @@
       "workflows": {
         "empty": "일치하는 워크플로가 없습니다",
         "loading": "워크플로 로딩 중...",
-        "title": "워크플로",
-        "viewAll": "모든 워크플로 보기"
+        "title": "워크플로"
       }
     },
     "computerUse": {

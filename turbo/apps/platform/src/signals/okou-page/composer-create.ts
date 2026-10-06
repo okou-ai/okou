@@ -1,6 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 import type { ComposerUiSignalGroups } from "./chat-composer.ts";
@@ -56,26 +54,10 @@ export function createComposerCreateSignals(
   const internalMode$ = state<ComposerCreateMode | null>(null);
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
-  /**
-   * Create modes are infrastructure, not a surface: the two places that pick
-   * one are the slash panel and the task chips, and each owns its own switch.
-   * Reading both here keeps either surface from depending on the other's
-   * rollout, so turning the chips off cannot empty the slash panel.
-   */
-  const enabled$ = computed((get) => {
-    const features = get(featureSwitch$);
-    return (
-      features[FeatureSwitchKey.ComposerSlashTemplatePanel] ||
-      features[FeatureSwitchKey.ComposerTaskChips]
-    );
-  });
   const mode$ = computed((get) => {
-    return get(enabled$) ? get(internalMode$) : null;
+    return get(internalMode$);
   });
-  const setMode$ = command(({ get, set }, mode: ComposerCreateMode | null) => {
-    if (!get(enabled$)) {
-      return;
-    }
+  const setMode$ = command(({ set }, mode: ComposerCreateMode | null) => {
     set(internalMode$, mode);
     set(composer.closeSuggestionMenu$);
     set(ui.model.setModelPickerOpen$, false);
@@ -84,15 +66,11 @@ export function createComposerCreateSignals(
     }
     set(composer.focus$);
   });
-  const selectCommand$ = command(({ get, set }, mode: ComposerCreateMode) => {
-    if (!get(enabled$)) {
-      return;
-    }
+  const selectCommand$ = command(({ set }, mode: ComposerCreateMode) => {
     set(composer.clearSlashRange$);
     set(setMode$, mode);
   });
   return {
-    enabled$,
     modes,
     mode$,
     setMode$,
