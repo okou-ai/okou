@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.709.4](https://github.com/okou-ai/okou/compare/api-v1.709.3...api-v1.709.4) (2026-10-06)
+
+
+### Refactoring
+
+* **api:** migrate auxiliary gemini generation to vertex ai ([#37792](https://github.com/okou-ai/okou/issues/37792)) ([7d5660d](https://github.com/okou-ai/okou/commit/7d5660d2fabe4497b352b4a74e77ac0ab67ffa3c))
+
+
+### Performance Improvements
+
+* **ci:** bound api preview connector catalog initialization ([#37790](https://github.com/okou-ai/okou/issues/37790)) ([d6300c1](https://github.com/okou-ai/okou/commit/d6300c15d49be1602c846acfc82b96f60caed4ea))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.4
+    * @okouai/core bumped to 8.733.1
+    * @okouai/db bumped to 1.321.4
+    * @okouai/pi-agent-runtime bumped to 1.46.11
+
 ## [1.709.3](https://github.com/okou-ai/okou/compare/api-v1.709.2...api-v1.709.3) (2026-10-06)
 
 

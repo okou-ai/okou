@@ -77,7 +77,7 @@ retain their ownership and reconnect safeguards.
 ## Validation boundary (2026-10-05)
 
 The unified PR includes the complete former #37758 cleanup, the resolved main
-integration, and generator-produced migrations 1323–1325. The physical cleanup
+integration, and generator-produced migrations 1324–1326. The physical cleanup
 remains deletion-only. A separate, narrow data migration preserves the native
 subscription launch defaults previously supplied by retired mirror routes; it
 never changes explicit defaults, disabled/future routes, or member preferences.

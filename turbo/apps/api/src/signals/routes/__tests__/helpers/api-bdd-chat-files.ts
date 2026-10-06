@@ -1452,6 +1452,20 @@ export function createChatFilesBddApi(context: TestContext) {
       return response.body;
     },
 
+    async requestWebFileUrl(
+      actor: ApiTestUser,
+      fileId: string,
+      statuses: readonly (200 | 401 | 403 | 404)[],
+    ) {
+      return await accept(
+        webFilesClient().fileUrl({
+          headers: authenticate(context, actor),
+          query: { file_id: fileId },
+        }),
+        statuses,
+      );
+    },
+
     async getArtifactCatalogEntry(
       actor: ApiTestUser,
       artifactId: string,

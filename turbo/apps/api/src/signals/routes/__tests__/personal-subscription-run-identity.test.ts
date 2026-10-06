@@ -1,3 +1,5 @@
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
+import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
@@ -379,40 +381,64 @@ describe("personal subscription run identity", () => {
       if (!actor.orgId) {
         throw new Error("Expected an organization-scoped actor");
       }
-      bdd.acceptAgentStorageWrites();
-      // Run creation requires the member memory that onboarding initializes.
-      expect((await bdd.completeOnboarding(actor)).status).toBe(200);
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
-      // Plan state is infrastructure-owned. The free plan runs only okou-1.0 on
-      // Built-in; the member's own subscription is the other way in.
-      await seedOrgMetadata({
-        orgId: actor.orgId,
-        tier: "limited-free-1",
-        credits: 0,
+      const orgId = actor.orgId;
+      let ownedRunId: string | undefined;
+      let ownedClaim: Claim | undefined;
+      let completed = false;
+      const owner = createPublicBillingZeroFixture(context, actor, {
+        beforeOrganizationCleanup: async () => {
+          runs.acceptStorageDownloads();
+          runs.acceptTelemetryIngest();
+          if (ownedRunId && !completed) {
+            const state = await runs.readRun(actor, ownedRunId);
+            if (state.status === "pending" || state.status === "running") {
+              await runs.requestCancelRun(actor, ownedRunId, [200]);
+            }
+            await flushWaitUntilForTest();
+            if (ownedClaim) {
+              await createWebhookCallbackApi(context).requestAgentComplete(
+                { runId: ownedRunId, exitCode: 1, error: "fixture cleanup" },
+                { authorization: `Bearer ${ownedClaim.sandboxToken}` },
+                [200],
+              );
+            }
+          }
+          await support.deletePersonalModelProvider(actor, type, [204, 404]);
+          await deleteFeatureSwitchesForUser(context, {
+            ...actor,
+            orgId,
+          });
+          await flushWaitUntilForTest();
+        },
       });
-      await support.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OkouDebug]: true,
+      await owner.run(async () => {
+        bdd.acceptAgentStorageWrites();
+        // Run creation requires the member memory that onboarding initializes.
+        await owner.initialize();
+        runs.acceptStorageDownloads();
+        runs.acceptTelemetryIngest();
+        const runnerGroup = runs.configureRunnerGroup();
+        const connected = await connect(actor, type, "identity-auto");
+        const agent = await bdd.createAgent(actor, {
+          displayName: "Auto subscription",
+          visibility: "private",
+        });
+        const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
+          agentId: agent.agentId,
+          prompt: "use my subscription model",
+          model,
+        });
+        ownedRunId = sent.runId;
+        const state = await runs.readRun(actor, sent.runId);
+        expect(state.status, JSON.stringify(state)).toBe("pending");
+        await runs.heartbeatRunner(runnerGroup);
+        const claim = await runs.claimRunnerJob(sent.runId);
+        ownedClaim = claim;
+        // The member's own subscription account serves the run, not Built-in.
+        expect(accountId(claim, type)).toBe(connected.id);
+        await finish(actor, sent.runId, claim, "failed");
+        completed = true;
       });
-
-      const connected = await connect(actor, type, "identity-auto");
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Auto subscription",
-        visibility: "private",
-      });
-      const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
-        agentId: agent.agentId,
-        prompt: "use my subscription model",
-        model,
-      });
-      const state = await runs.readRun(actor, sent.runId);
-      expect(state.status, JSON.stringify(state)).toBe("pending");
-      await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(sent.runId);
-      // The member's own subscription account serves the run, not Built-in.
-      expect(accountId(claim, type)).toBe(connected.id);
-      await finish(actor, sent.runId, claim, "failed");
     },
   );
 

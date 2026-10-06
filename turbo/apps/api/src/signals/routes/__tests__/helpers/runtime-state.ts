@@ -84,11 +84,11 @@ interface BuiltInModelKeyFixture {
   release(): Promise<void>;
 }
 
-function builtInModelKeyFixture(
+function registerBuiltInModelKeyCleanup(
   context: TestContext,
   fixtureId: string,
-  selectedModel: string,
-): BuiltInModelKeyFixture {
+  registerCleanup: (cleanup: () => Promise<void>) => void = onTestFinished,
+): () => Promise<void> {
   let released = false;
   const release = async (): Promise<void> => {
     if (released) {
@@ -100,14 +100,31 @@ function builtInModelKeyFixture(
     });
     released = true;
   };
-  onTestFinished(release);
-  return { selectedModel, release };
+  registerCleanup(release);
+  return release;
+}
+
+function builtInModelKeyFixture(
+  context: TestContext,
+  fixtureId: string,
+  selectedModel: string,
+): BuiltInModelKeyFixture {
+  return {
+    selectedModel,
+    release: registerBuiltInModelKeyCleanup(context, fixtureId),
+  };
 }
 
 export async function seedBuiltInDefaultModelKey(
   context: TestContext,
+  registerCleanup?: (cleanup: () => Promise<void>) => void,
 ): Promise<BuiltInModelKeyFixture> {
   const fixtureId = randomUUID();
+  // An operation owner can register before the write and join it before release.
+  // Default callers keep their existing post-setup onTestFinished registration.
+  const release = registerCleanup
+    ? registerBuiltInModelKeyCleanup(context, fixtureId, registerCleanup)
+    : undefined;
   const response = await postAction(context, {
     action: "seed-built-in-default-model-key",
     fixture_id: fixtureId,
@@ -115,7 +132,9 @@ export async function seedBuiltInDefaultModelKey(
   if (!response.selected_model) {
     throw new Error("seedBuiltInDefaultModelKey missing selected_model");
   }
-  return builtInModelKeyFixture(context, fixtureId, response.selected_model);
+  return release
+    ? { selectedModel: response.selected_model, release }
+    : builtInModelKeyFixture(context, fixtureId, response.selected_model);
 }
 
 export async function seedBuiltInModelKey(

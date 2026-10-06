@@ -11,7 +11,6 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { agentRuns } from "./agent-run";
 import { chatThreads } from "./chat-thread";
 import type {
   CanonicalAssetDeliveryDestination,
@@ -73,12 +72,8 @@ export const runUploadedFiles = pgTable(
   "run_uploaded_files",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    runId: uuid("run_id").references(
-      () => {
-        return agentRuns.id;
-      },
-      { onDelete: "cascade" },
-    ),
+    // Provenance and write identity, not a parent lifetime or authorization.
+    runId: uuid("run_id"),
     chatThreadId: uuid("chat_thread_id").references(
       () => {
         return chatThreads.id;

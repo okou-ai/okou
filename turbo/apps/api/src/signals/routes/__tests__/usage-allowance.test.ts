@@ -1,3 +1,7 @@
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
+import { mockEnv } from "../../../lib/env";
 import { randomUUID } from "node:crypto";
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
@@ -9,6 +13,7 @@ import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import {
   seedOrgMetadata,
   seedUsagePricingRows,
+  deleteUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -92,6 +97,88 @@ async function builtInAllowanceActor(args: {
     visibility: "private",
   });
   return { actor, orgId, agentId: agent.agentId };
+}
+
+function publicAllowanceFixture(tier: "pro" | "limited-free-1") {
+  const bdd = createBddApi(context);
+  const api = createRunsApi(context);
+  const actor = bdd.user();
+  const orgId = actor.orgId;
+  if (!orgId) {
+    throw new Error("Expected test actor to have an org");
+  }
+  const runIds: string[] = [];
+  const releases: (() => Promise<void>)[] = [];
+  const owner = createPublicBillingZeroFixture(context, actor, {
+    plan:
+      tier === "pro"
+        ? {
+            tier,
+            priceId: "price_allowance_pro",
+            webhookSecret: "whsec_allowance_pro",
+          }
+        : undefined,
+    beforeOrganizationCleanup: async () => {
+      for (const runId of runIds) {
+        const state = await api.readRun(actor, runId);
+        if (state.status === "pending" || state.status === "running") {
+          await api.requestCancelRun(actor, runId, [200]);
+        }
+      }
+      await flushWaitUntilForTest();
+    },
+    afterOrganizationCleanup: async () => {
+      const results = await Promise.all(
+        releases.map((release) => {
+          return settleIncludingAbort(release());
+        }),
+      );
+      for (const result of results) {
+        if (!result.ok) {
+          throw result.error;
+        }
+      }
+    },
+  });
+  return {
+    ...owner,
+    actor,
+    orgId,
+    registerRun(runId: string) {
+      runIds.push(runId);
+    },
+    registerCleanup(cleanup: () => Promise<void>) {
+      releases.push(cleanup);
+    },
+    async initializeAllowance(allowance: AllowanceEntitlementArgs) {
+      await seedBuiltInDefaultModelKeyState(context, (release) => {
+        releases.push(release);
+      });
+      bdd.acceptAgentStorageWrites();
+      api.configureRunnerGroup();
+      if (tier === "pro") {
+        mockEnv("OKOU_PRICE_PRO", "price_allowance_pro");
+      }
+      await owner.initialize();
+      await postUsageAllowanceInvoicePaid(context.signal, {
+        orgId,
+        userId: actor.userId,
+        customerId: owner.customerId,
+        subscriptionId: usageAllowanceSubscriptionId(orgId),
+        effectiveAt: nowDate(),
+        expiresAt: addDays(nowDate(), 365),
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: allowance.shortWindowUnits,
+        weeklyWindowSeconds: 7 * 24 * 60 * 60,
+        weeklyWindowUnits: allowance.weeklyWindowUnits,
+      });
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Usage allowance agent",
+        visibility: "private",
+      });
+      return { actor, agentId: agent.agentId };
+    },
+  };
 }
 
 async function seedAllowanceEntitlement(
@@ -659,95 +746,118 @@ describe("Usage Allowance", () => {
   });
 
   it("rejects built-in model run admission after allowance is exhausted", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
-      credits: 0,
-      allowance: { shortWindowUnits: 1, weeklyWindowUnits: 1 },
-    });
-    const api = createRunsApi(context);
-    const firstRun = await createBuiltInRun(
-      actor,
-      agentId,
-      "built-in model run consumes the only allowance unit",
-    );
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: firstRun.runId,
-      provider,
-      quantity: 1,
-    });
-    await processOrgUsageEvents(actor);
-
-    await expect(
-      api.readThreadRunRejection(actor, {
+    const fixture = publicAllowanceFixture("pro");
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance({
+        shortWindowUnits: 1,
+        weeklyWindowUnits: 1,
+      });
+      const api = createRunsApi(context);
+      const firstRun = await createBuiltInRun(
+        actor,
         agentId,
-        prompt: "built-in model run rejected after allowance exhaustion",
-      }),
-    ).resolves.toBe("insufficient_credits");
+        "built-in model run consumes the only allowance unit",
+      );
+
+      fixture.registerRun(firstRun.runId);
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: firstRun.runId,
+        provider,
+        quantity: 1,
+      });
+      await processOrgUsageEvents(actor);
+
+      await expect(
+        api.readThreadRunRejection(actor, {
+          agentId,
+          prompt: "built-in model run rejected after allowance exhaustion",
+        }),
+      ).resolves.toBe("insufficient_credits");
+    });
   });
 
   it("keeps billable firewall auth available to an admitted run after exhaustion", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
-      credits: 0,
-      tier: "limited-free-1",
-      allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
-    });
-    const api = createRunsApi(context);
-    const run = await createBuiltInRun(
-      actor,
-      agentId,
-      "billable firewall lease",
-    );
-    const client = setupApp({
-      context,
-      routes: webhooksAgentFirewallAuthRoutes,
-    })(webhookFirewallAuthContract);
-    const headers = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-    };
-    const body = {
-      encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
-      authHeaders: { Authorization: "Bearer static-token" },
-      firewallBillable: true,
-    };
-
-    const before = Math.floor(now() / 1000);
-    const leased = await accept(client.resolve({ headers, body }), [200]);
-    expect(leased.body.expiresAt).not.toBeNull();
-    expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
-    expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
-
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 2,
-    });
-    await processOrgUsageEvents(actor);
-
-    const continued = await accept(client.resolve({ headers, body }), [200]);
-    expect(continued.body.expiresAt).not.toBeNull();
-    expect(continued.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
-    expect(continued.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
-
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 3,
-    });
-    await processOrgUsageEvents(actor);
-
-    await expect(readOrgCredits(actor)).resolves.toBe(-3);
-    await expect(readVisibleUsageCredits(actor)).resolves.toBe(5);
-
-    await expect(
-      api.readThreadRunRejection(actor, {
+    const fixture = publicAllowanceFixture("limited-free-1");
+    await fixture.run(async () => {
+      const { actor, agentId } = await fixture.initializeAllowance({
+        shortWindowUnits: 2,
+        weeklyWindowUnits: 2,
+      });
+      const api = createRunsApi(context);
+      const run = await createBuiltInRun(
+        actor,
         agentId,
-        prompt: "new run after admitted run exhausted credits",
-      }),
-    ).resolves.toBe("insufficient_credits");
+        "billable firewall lease",
+      );
+
+      fixture.registerRun(run.runId);
+      const client = setupApp({
+        context,
+        routes: webhooksAgentFirewallAuthRoutes,
+      })(webhookFirewallAuthContract);
+      const headers = {
+        authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
+      };
+      const body = {
+        encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
+        authHeaders: { Authorization: "Bearer static-token" },
+        firewallBillable: true,
+      };
+
+      const before = Math.floor(now() / 1000);
+      const leased = await accept(client.resolve({ headers, body }), [200]);
+      expect(leased.body.expiresAt).not.toBeNull();
+      expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
+      expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
+
+      const provider = usageProvider();
+      fixture.registerCleanup(async () => {
+        await deleteUsagePricingRows({
+          kind: "connector",
+          provider,
+          categories: ["credits"],
+        });
+      });
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 2,
+      });
+      await processOrgUsageEvents(actor);
+
+      const continued = await accept(client.resolve({ headers, body }), [200]);
+      expect(continued.body.expiresAt).not.toBeNull();
+      expect(continued.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
+      expect(continued.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
+
+      await recordPendingUsage({
+        actor,
+        runId: run.runId,
+        provider,
+        quantity: 3,
+      });
+      await processOrgUsageEvents(actor);
+
+      await expect(readOrgCredits(actor)).resolves.toBe(-3);
+      await expect(readVisibleUsageCredits(actor)).resolves.toBe(5);
+
+      await expect(
+        api.readThreadRunRejection(actor, {
+          agentId,
+          prompt: "new run after admitted run exhausted credits",
+        }),
+      ).resolves.toBe("insufficient_credits");
+    });
   });
 
   it("uses run allowance for billable firewall fallback under shared debt", async () => {

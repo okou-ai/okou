@@ -44,7 +44,10 @@ import {
   type UsagePricingKey,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  updateFeatureSwitchesForUser,
+  deleteFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedCompose$, seedRun$ } from "./helpers/usage-state";
 import {
@@ -516,13 +519,14 @@ async function createScopedImagePricing(
     readonly configured?: readonly UsagePricingRow[];
     readonly missing?: readonly UsagePricingKey[];
   },
-  registerCleanup: (cleanup: () => Promise<void>) => void = onTestFinished,
+  registerCleanup?: (cleanup: () => Promise<void>) => void,
 ): Promise<UsagePricingFixture> {
-  const fixture = await createUsagePricingFixture(options);
-  registerCleanup(async () => {
-    await fixture.cleanup();
-  });
-  return fixture;
+  if (!registerCleanup) {
+    const fixture = await createUsagePricingFixture(options);
+    onTestFinished(fixture.cleanup);
+    return fixture;
+  }
+  return await createUsagePricingFixture({ ...options, registerCleanup });
 }
 
 // Isolation comes from random org/user IDs; no teardown is needed.
@@ -550,8 +554,10 @@ async function seedImageFixture(options: {
 
 async function publicFundedImageFixture({
   credits = 10_000,
+  cleanupFeatures = false,
 }: {
   readonly credits?: number;
+  readonly cleanupFeatures?: boolean;
 }) {
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
@@ -582,6 +588,9 @@ async function publicFundedImageFixture({
           IsTruncated: false,
         });
         context.mocks.ably.publish.mockResolvedValue(undefined);
+        if (cleanupFeatures) {
+          await deleteFeatureSwitchesForUser(context, fixture);
+        }
         const webhooks = createWebhookCallbackApi(context);
         webhooks.configureStripeBillingEnv();
         context.mocks.stripe.subscriptions.list.mockResolvedValue({
@@ -1912,63 +1921,68 @@ describe("POST /api/image-io/generate", () => {
   });
 
   it("keeps a run-less private generation in the artifact catalog", async () => {
-    const fixture = await seedImageFixture({ credits: 1000 });
-    await useImageModel(fixture, "gpt-image-1");
-    const pricingFixture = await createScopedImagePricing({
-      configured: GPT_IMAGE_1_PRICING,
+    const fixture = await publicFundedImageFixture({
+      credits: 1000,
+      cleanupFeatures: true,
     });
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let observedRequestUrl: string | null = null;
-    server.use(
-      http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
-        observedRequestUrl = request.url;
-        return HttpResponse.json(falQueueHandle("catalog-image-request"));
-      }),
-      http.get(FAL_GPT_MEDIA_URL, () => {
-        return new HttpResponse(IMAGE_BYTES, {
-          headers: { "Content-Type": "image/png" },
-        });
-      }),
-    );
+    await fixture.run(async () => {
+      await useImageModel(fixture, "gpt-image-1");
+      const pricingFixture = await fixture.createPricing({
+        configured: GPT_IMAGE_1_PRICING,
+      });
+      await updateFeatureSwitchesForUser(context, fixture, {
+        [FeatureSwitchKey.PrivateArtifacts]: true,
+      });
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      let observedRequestUrl: string | null = null;
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+          observedRequestUrl = request.url;
+          return HttpResponse.json(falQueueHandle("catalog-image-request"));
+        }),
+        http.get(FAL_GPT_MEDIA_URL, () => {
+          return new HttpResponse(IMAGE_BYTES, {
+            headers: { "Content-Type": "image/png" },
+          });
+        }),
+      );
 
-    // No run produces this generation, so its private ownership record is the
-    // only stored file. It is still an artifact the user paid for.
-    const app = createImageIoTestApp(pricingFixture.resolution);
-    const response = await app.request("/api/image-io/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ prompt: "a cat for the catalog" }),
-    });
-    expect(response.status).toBe(202);
-    await postFalWebhook(app, observedRequestUrl, {
-      images: [
-        {
-          url: FAL_GPT_MEDIA_URL,
-          width: 1024,
-          height: 1024,
-          content_type: "image/png",
-        },
-      ],
-      prompt: "A cat for the catalog.",
-    });
-    await flushWaitUntilForTest();
+      // No run produces this generation, so its private ownership record is the
+      // only stored file. It is still an artifact the user paid for.
+      const app = createImageIoTestApp(pricingFixture.resolution);
+      const response = await app.request("/api/image-io/generate", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ prompt: "a cat for the catalog" }),
+      });
+      expect(response.status).toBe(202);
+      await postFalWebhook(app, observedRequestUrl, {
+        images: [
+          {
+            url: FAL_GPT_MEDIA_URL,
+            width: 1024,
+            height: 1024,
+            content_type: "image/png",
+          },
+        ],
+        prompt: "A cat for the catalog.",
+      });
+      await flushWaitUntilForTest();
 
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const catalog = await accept(
-      setupApp({ context, routes: artifactCatalogRoutes })(
-        artifactCatalogContract,
-      ).list({ headers: authHeaders(), query: { limit: 20 } }),
-      [200],
-    );
-    expect(catalog.body.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        title: expect.stringMatching(/^image-[0-9a-f]{8}\.png$/u),
-      }),
-    ]);
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      const catalog = await accept(
+        setupApp({ context, routes: artifactCatalogRoutes })(
+          artifactCatalogContract,
+        ).list({ headers: authHeaders(), query: { limit: 20 } }),
+        [200],
+      );
+      expect(catalog.body.artifacts).toStrictEqual([
+        expect.objectContaining({
+          kind: "file",
+          title: expect.stringMatching(/^image-[0-9a-f]{8}\.png$/u),
+        }),
+      ]);
+    });
   });
 
   it("returns 503 when image pricing is not configured", async () => {

@@ -45,6 +45,7 @@ export interface UsagePricingFixture {
 interface CreateUsagePricingFixtureOptions {
   readonly configured?: readonly UsagePricingRow[];
   readonly missing?: readonly UsagePricingKey[];
+  readonly registerCleanup?: (cleanup: () => Promise<void>) => void;
 }
 
 function fixtureDb(): Db {
@@ -75,9 +76,23 @@ function usagePricingResolution(
 export async function createUsagePricingFixture({
   configured = [],
   missing = [],
+  registerCleanup,
 }: CreateUsagePricingFixtureOptions): Promise<UsagePricingFixture> {
   const db = fixtureDb();
   const resolution = usagePricingResolution([...configured, ...missing]);
+  const cleanup = async () => {
+    for (const entry of resolution) {
+      await db
+        .delete(usagePricing)
+        .where(
+          and(
+            eq(usagePricing.kind, entry.kind),
+            eq(usagePricing.provider, entry.lookupProvider),
+          ),
+        );
+    }
+  };
+  registerCleanup?.(cleanup);
   if (configured.length > 0) {
     await db.insert(usagePricing).values(
       configured.map((row) => {
@@ -93,21 +108,7 @@ export async function createUsagePricingFixture({
     );
   }
 
-  return {
-    resolution,
-    cleanup: async () => {
-      for (const entry of resolution) {
-        await db
-          .delete(usagePricing)
-          .where(
-            and(
-              eq(usagePricing.kind, entry.kind),
-              eq(usagePricing.provider, entry.lookupProvider),
-            ),
-          );
-      }
-    },
-  };
+  return { resolution, cleanup };
 }
 
 export async function upsertUsagePricingRows(

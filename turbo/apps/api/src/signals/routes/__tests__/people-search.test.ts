@@ -17,7 +17,6 @@ import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
   createUsagePricingFixture,
-  seedOrgMetadata,
   type UsagePricingFixture,
   type UsagePricingKey,
   type UsagePricingRow,
@@ -99,21 +98,6 @@ async function bootstrapOnboarding(actor: ApiTestUser): Promise<void> {
   expect(completed.status).toBe(200);
 }
 
-async function setActorCredits(
-  actor: ApiTestUser,
-  credits: number,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("People Search test actor must have an organization");
-  }
-  await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits });
-}
-
-async function fundActor(actor: ApiTestUser): Promise<void> {
-  await bootstrapOnboarding(actor);
-  await setActorCredits(actor, 1000);
-}
-
 interface FundedPeopleSearchActor {
   readonly actor: ApiTestUser;
   readonly orgId: string;
@@ -126,6 +110,7 @@ interface FundedPeopleSearchActor {
 
 async function cleanupFundedPeopleSearchActor(
   owned: FundedPeopleSearchActor,
+  beforeOrganizationCleanup?: () => Promise<void>,
 ): Promise<void> {
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
   mockEnv("SECRETS_KMS_KEY_ID", owned.kmsKeyId);
@@ -136,6 +121,9 @@ async function cleanupFundedPeopleSearchActor(
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await flushWaitUntilForTest();
 
+  const beforeCleanup = await settleIncludingAbort(
+    beforeOrganizationCleanup?.() ?? Promise.resolve(),
+  );
   const webhooks = createWebhookCallbackApi(context);
   webhooks.configureStripeBillingEnv();
   context.mocks.stripe.subscriptions.list.mockResolvedValue({
@@ -168,7 +156,7 @@ async function cleanupFundedPeopleSearchActor(
   await flushWaitUntilForTest();
 
   // Public deletion removes the wallet and active work. Production retains
-  // immutable billing and usage history under this fixture's unique IDs.
+  // immutable billing receipts under this fixture's unique IDs.
   await expect(credits(owned.actor)).resolves.toBe(0);
   expect(
     (
@@ -179,11 +167,20 @@ async function cleanupFundedPeopleSearchActor(
       )
     ).body.data,
   ).toStrictEqual([]);
+  if (!beforeCleanup.ok) {
+    throw beforeCleanup.error;
+  }
 }
 
 async function fundActorWithSubscription(
   actor: ApiTestUser,
-  { deleteCliUser = false }: { readonly deleteCliUser?: boolean } = {},
+  {
+    deleteCliUser = false,
+    beforeOrganizationCleanup,
+  }: {
+    readonly deleteCliUser?: boolean;
+    readonly beforeOrganizationCleanup?: () => Promise<void>;
+  } = {},
 ) {
   if (!actor.orgId) {
     throw new Error("People Search test actor must belong to an organization");
@@ -198,10 +195,11 @@ async function fundActorWithSubscription(
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
+  const cleanups: (() => Promise<void>)[] = [];
   let cliToken: string | undefined;
   const owner = createFixtureOperationOwner(async () => {
     const cleanupResult = await settleIncludingAbort(
-      cleanupFundedPeopleSearchActor(owned),
+      cleanupFundedPeopleSearchActor(owned, beforeOrganizationCleanup),
     );
 
     if (deleteCliUser) {
@@ -245,6 +243,9 @@ async function fundActorWithSubscription(
       // Unapproved anonymous challenges retain their public 900-second expiry.
     }
 
+    for (const cleanup of cleanups) {
+      await cleanup();
+    }
     if (!cleanupResult.ok) {
       throw cleanupResult.error;
     }
@@ -337,6 +338,9 @@ async function fundActorWithSubscription(
   });
   return {
     ...owner,
+    registerCleanup(cleanup: () => Promise<void>) {
+      cleanups.push(cleanup);
+    },
     registerCliToken(token: string) {
       cliToken = token;
     },
@@ -372,12 +376,18 @@ function webSearchPricing(): UsagePricingRow {
 async function createPricingFixture(
   configured: readonly UsagePricingRow[],
   missing: readonly UsagePricingKey[] = [],
+  registerCleanup?: (cleanup: () => Promise<void>) => void,
 ): Promise<UsagePricingFixture> {
-  const fixture = await createUsagePricingFixture({ configured, missing });
-  onTestFinished(async () => {
-    await fixture.cleanup();
+  if (!registerCleanup) {
+    const fixture = await createUsagePricingFixture({ configured, missing });
+    onTestFinished(fixture.cleanup);
+    return fixture;
+  }
+  return await createUsagePricingFixture({
+    configured,
+    missing,
+    registerCleanup,
   });
-  return fixture;
 }
 
 async function credits(actor: ApiTestUser): Promise<number> {
@@ -1042,58 +1052,75 @@ describe("okou people-search route", () => {
     const actor = createBddApi(context).user();
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    await api.grantProEntitlement(actor);
-    await api.ensurePersonalSubscriptionModel(actor);
-    await fundActor(actor);
-    const pricing = await createPricingFixture([
-      peopleSearchPricing(),
-      webSearchPricing(),
-    ]);
-    configureProvider();
-    api.configureRunnerGroup();
-    await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await createBddApi(context).createAgent(actor, {
-      displayName: "Tool usage agent",
-      description: "Calls a paid tool from its run.",
-      visibility: "private",
+    let ownedRunId: string | undefined;
+    const owner = await fundActorWithSubscription(actor, {
+      beforeOrganizationCleanup: async () => {
+        api.acceptStorageDownloads();
+        api.acceptTelemetryIngest();
+        if (ownedRunId) {
+          const state = await api.readRun(actor, ownedRunId);
+          if (state.status === "pending" || state.status === "running") {
+            await api.requestCancelRun(actor, ownedRunId, [200]);
+          }
+        }
+        await flushWaitUntilForTest();
+      },
     });
-    const run = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "Find a public professional profile",
-    });
-    const token = api.okouTokenForRunWithCapabilities(actor, run.runId, [
-      "people-search:read",
-      "web-search:read",
-    ]);
-    server.use(
-      http.post(PERPLEXITY_AGENT_URL, () => {
-        return HttpResponse.json(providerResponse());
-      }),
-      http.post(PERPLEXITY_SEARCH_URL, () => {
-        return HttpResponse.json(webSearchProviderResponse());
-      }),
-    );
+    await owner.run(async () => {
+      bdd.acceptAgentStorageWrites();
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
 
-    await accept(
-      client(pricing.resolution)(peopleSearchContract).search({
-        headers: { authorization: `Bearer ${token}` },
-        body: defaultRequest(),
-      }),
-      [200],
-    );
-    await accept(
-      webSearchClient(pricing.resolution)(webSearchContract).search({
-        headers: { authorization: `Bearer ${token}` },
-        body: { query: "latest AI regulation", limit: 5 },
-      }),
-      [200],
-    );
-    const usage = await accept(
-      setupApp({ context, routes: usageRecordRoutes })(usageRecordContract).get(
-        {
+      await api.ensurePersonalSubscriptionModel(actor);
+
+      const pricing = await createPricingFixture(
+        [peopleSearchPricing(), webSearchPricing()],
+        [],
+        owner.registerCleanup,
+      );
+      configureProvider();
+      api.configureRunnerGroup();
+      const agent = await createBddApi(context).createAgent(actor, {
+        displayName: "Tool usage agent",
+        description: "Calls a paid tool from its run.",
+        visibility: "private",
+      });
+      const run = await api.createThreadRun(actor, {
+        agentId: agent.agentId,
+        prompt: "Find a public professional profile",
+      });
+      ownedRunId = run.runId;
+      const token = api.okouTokenForRunWithCapabilities(actor, run.runId, [
+        "people-search:read",
+        "web-search:read",
+      ]);
+      server.use(
+        http.post(PERPLEXITY_AGENT_URL, () => {
+          return HttpResponse.json(providerResponse());
+        }),
+        http.post(PERPLEXITY_SEARCH_URL, () => {
+          return HttpResponse.json(webSearchProviderResponse());
+        }),
+      );
+
+      await accept(
+        client(pricing.resolution)(peopleSearchContract).search({
+          headers: { authorization: `Bearer ${token}` },
+          body: defaultRequest(),
+        }),
+        [200],
+      );
+      await accept(
+        webSearchClient(pricing.resolution)(webSearchContract).search({
+          headers: { authorization: `Bearer ${token}` },
+          body: { query: "latest AI regulation", limit: 5 },
+        }),
+        [200],
+      );
+      const usage = await accept(
+        setupApp({ context, routes: usageRecordRoutes })(
+          usageRecordContract,
+        ).get({
           headers: authenticate(actor),
           query: {
             page: 1,
@@ -1102,36 +1129,36 @@ describe("okou people-search route", () => {
             range: "today",
             tz: "UTC",
           },
-        },
-      ),
-      [200],
-    );
-    const usageRow = usage.body.rows.find((row) => {
-      return row.threadId === run.threadId;
-    });
+        }),
+        [200],
+      );
+      const usageRow = usage.body.rows.find((row) => {
+        return row.threadId === run.threadId;
+      });
 
-    expect(usageRow).toMatchObject({
-      title: null,
-    });
-    expect(usageRow?.breakdown).toContainEqual({
-      kind: "other",
-      credits: 25,
-      providers: [
-        {
-          provider: "perplexity",
-          credits: 25,
-          usageKinds: [
-            {
-              kind: "people-search",
-              credits: 20,
-            },
-            {
-              kind: "web-search",
-              credits: 5,
-            },
-          ],
-        },
-      ],
+      expect(usageRow).toMatchObject({
+        title: null,
+      });
+      expect(usageRow?.breakdown).toContainEqual({
+        kind: "other",
+        credits: 25,
+        providers: [
+          {
+            provider: "perplexity",
+            credits: 25,
+            usageKinds: [
+              {
+                kind: "people-search",
+                credits: 20,
+              },
+              {
+                kind: "web-search",
+                credits: 5,
+              },
+            ],
+          },
+        ],
+      });
     });
   });
 });

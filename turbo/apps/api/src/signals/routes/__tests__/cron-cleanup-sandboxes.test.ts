@@ -385,7 +385,7 @@ describe("sandbox cleanup", () => {
     await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
   });
 
-  it("cascades run-owned artifacts while preserving independent ownership", async () => {
+  it("preserves independently owned facts when deleting a run", async () => {
     mockNow(THREADLESS_TEST_NOW_MS);
     const fixture = await trackRun(
       insertRunFixture({
@@ -421,8 +421,16 @@ describe("sandbox cleanup", () => {
     expect(response.body.threadlessRuns.discovered).toBe(1);
     expect(response.body.threadlessRuns.deleted).toBe(1);
     const state = await findRunOwnership(ownership);
-    expect(recordField(state, "uploaded_file")).toBeNull();
-    expect(recordField(state, "file_artifact")).toBeNull();
+    await expect(findRun(fixture.runId)).resolves.toBeNull();
+    expect(recordField(state, "uploaded_file")).toStrictEqual({
+      id: ownership.uploadedFileId,
+      runId: fixture.runId,
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+    });
+    expect(recordField(state, "file_artifact")).toStrictEqual({
+      id: ownership.fileArtifactId,
+    });
     expect(recordField(state, "usage_event")).toMatchObject({
       runId: null,
       status: "processed",

@@ -665,7 +665,12 @@ async function getRunOwnershipForAction(
     .from(usageEvent)
     .where(eq(usageEvent.id, usageEventId));
   const [uploadedFile] = await db
-    .select({ id: runUploadedFiles.id })
+    .select({
+      id: runUploadedFiles.id,
+      runId: runUploadedFiles.runId,
+      userId: runUploadedFiles.userId,
+      orgId: runUploadedFiles.orgId,
+    })
     .from(runUploadedFiles)
     .where(eq(runUploadedFiles.id, uploadedFileId));
   const [fileArtifact] = await db
@@ -725,6 +730,12 @@ async function deleteRunOwnershipForAction(
   });
   if (ids.length > 0) {
     await db.delete(artifacts).where(inArray(artifacts.id, ids));
+  }
+  const uploadedFileId = readString(body, "uploaded_file_id");
+  if (uploadedFileId) {
+    await db
+      .delete(runUploadedFiles)
+      .where(eq(runUploadedFiles.id, uploadedFileId));
   }
   const usageEventId = readString(body, "usage_event_id");
   if (usageEventId) {

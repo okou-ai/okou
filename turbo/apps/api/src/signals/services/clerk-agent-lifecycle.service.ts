@@ -4,13 +4,19 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { artifacts } from "@okouai/db/schema/artifact";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import { usageCleanupTargets } from "./usage-event-cleanup.service";
 import { logCommittedConversationDeletion } from "./conversation-history-deletion.service";
+import {
+  artifactFileOwnershipConditions,
+  artifactCatalogFileBatchCondition,
+} from "./artifact-catalog-deletion.service";
 import {
   clerkStableContextCleanupSql,
   conversationFreeRunDeleteSql,
@@ -20,7 +26,6 @@ import {
   releasedConversationSweepSchema,
   requireReleasedConversationReferences,
   revokeAgentDeliveriesSql,
-  runCatalogCleanupSql,
   runFreeAgentDeleteSql,
   runFreeUserSessionDeleteSql,
   throwClerkLifecycleFailure,
@@ -32,9 +37,10 @@ import {
 /**
  * Delete one snapshot of target Runs conversation-first, in a single pass.
  *
- * The conversations and their blob references go in one statement, then the
- * catalog, then only conversation-free Runs. A Run that gained a conversation
- * in between survives that DELETE; the short count rolls the whole deletion
+ * The conversations and their blob references go in one statement, then only
+ * conversation-free Runs are deleted. Files and artifacts have independent
+ * owners. A Run that gained a conversation in between survives that DELETE;
+ * the short count rolls the whole deletion
  * back for the job's existing attempt schedule instead of re-sweeping here.
  */
 async function deleteTargetRunsConversationFirst(
@@ -50,9 +56,6 @@ async function deleteTargetRunsConversationFirst(
       await tx.execute(releaseRunConversationsSql(runIds)),
     ),
   );
-  for (const statement of runCatalogCleanupSql(runIds)) {
-    await tx.execute(statement);
-  }
   const [deleted] = parseRawRows(
     deletedRunCountSchema,
     await tx.execute(conversationFreeRunDeleteSql(runIds)),
@@ -86,6 +89,36 @@ const deleteClerkUserLifecycleData$ = command(
         for (const target of usage) {
           await tx.delete(target.table).where(target.condition);
         }
+        const ownership = artifactFileOwnershipConditions({
+          kind: "user",
+          userId,
+        });
+        // File-first locks fence the projector; catalog ownership must remain
+        // available until its files and their queue/media children are erased.
+        for (;;) {
+          const files = await tx
+            .select({ id: runUploadedFiles.id })
+            .from(runUploadedFiles)
+            .where(ownership.fileScope)
+            .orderBy(asc(runUploadedFiles.id))
+            .limit(500)
+            .for("update");
+          signal.throwIfAborted();
+          if (files.length === 0) {
+            break;
+          }
+          const fileIds = idsOf(files);
+          await tx
+            .delete(artifacts)
+            .where(artifactCatalogFileBatchCondition(fileIds));
+          signal.throwIfAborted();
+          await tx
+            .delete(runUploadedFiles)
+            .where(inArray(runUploadedFiles.id, fileIds));
+          signal.throwIfAborted();
+        }
+        await tx.delete(artifacts).where(ownership.catalogScope);
+        signal.throwIfAborted();
         const userSessions = tx
           .select({ id: agentSessions.id })
           .from(agentSessions)
@@ -154,6 +187,36 @@ const deleteClerkOrganizationLifecycleData$ = command(
         for (const target of usage) {
           await tx.delete(target.table).where(target.condition);
         }
+        const ownership = artifactFileOwnershipConditions({
+          kind: "organization",
+          orgId,
+        });
+        // Keep the same file-first projector fence inside the account-erasure
+        // transaction; never pass tx to a helper or independently commit files.
+        for (;;) {
+          const files = await tx
+            .select({ id: runUploadedFiles.id })
+            .from(runUploadedFiles)
+            .where(ownership.fileScope)
+            .orderBy(asc(runUploadedFiles.id))
+            .limit(500)
+            .for("update");
+          signal.throwIfAborted();
+          if (files.length === 0) {
+            break;
+          }
+          const fileIds = idsOf(files);
+          await tx
+            .delete(artifacts)
+            .where(artifactCatalogFileBatchCondition(fileIds));
+          signal.throwIfAborted();
+          await tx
+            .delete(runUploadedFiles)
+            .where(inArray(runUploadedFiles.id, fileIds));
+          signal.throwIfAborted();
+        }
+        await tx.delete(artifacts).where(ownership.catalogScope);
+        signal.throwIfAborted();
         const agentScope = eq(agents.orgId, orgId);
         // The Agent set is this deletion's snapshot; an Agent created later is
         // not our evidence and survives, as on the locked path before.

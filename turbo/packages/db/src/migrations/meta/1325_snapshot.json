@@ -1,6 +1,6 @@
 {
-  "id": "19b0e5f4-a64a-4e5c-b6cb-6b476d6e2bee",
-  "prevId": "87c2f5e7-fff9-4686-9613-f317954dec3c",
+  "id": "ced3d32e-2132-4a41-a776-d8afd7fc88f4",
+  "prevId": "ebb3da19-e320-4f15-a37c-8fdcb3662e27",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -27521,19 +27521,6 @@
         }
       },
       "foreignKeys": {
-        "run_uploaded_files_run_id_agent_runs_id_fk": {
-          "name": "run_uploaded_files_run_id_agent_runs_id_fk",
-          "tableFrom": "run_uploaded_files",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "tableTo": "agent_runs",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
         "run_uploaded_files_chat_thread_id_chat_threads_id_fk": {
           "name": "run_uploaded_files_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "run_uploaded_files",

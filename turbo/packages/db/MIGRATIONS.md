@@ -112,6 +112,14 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-file-run-provenance.ts` protects migration
+  `1323_detach_file_run_provenance`: unreconciled thread/org associations reject
+  the contraction, existing files keep their identities and owners, Run and
+  thread deletion preserve file-owned children, provenance-based upserts still
+  work without a Run parent, and explicit file deletion owns child cleanup.
+  Retain this through the file-lifetime contraction rollout. Migration 1322's
+  backfill validator remains active independently.
+
 - `scripts/test-file-thread-associations.ts` protects migration
   `1322_backfill_file_thread_associations`: keyset writes across more than two
   batches, preservation of existing thread/org/owner/file identity, unrelated
