@@ -309,6 +309,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
+    await api.ensurePersonalSubscriptionModel(member);
     const actorAgent = await createThreadAgent(actor, "bdd-actor-usage");
     const memberAgent = await bdd.createAgent(member, {
       displayName: "bdd-member-usage",
@@ -471,6 +472,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
+    await api.ensurePersonalSubscriptionModel(member);
     const namedAgent = async (owner: ApiTestUser, displayName: string) => {
       const created = await bdd.createAgent(owner, {
         displayName,
@@ -2996,6 +2998,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
+    await api.ensurePersonalSubscriptionModel(member);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });

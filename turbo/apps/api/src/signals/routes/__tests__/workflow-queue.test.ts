@@ -4,7 +4,7 @@ import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/cont
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { aroundEach, it, describe, beforeEach, onTestFinished } from "vitest";
+import { aroundEach, it, describe, beforeEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -16,7 +16,6 @@ import {
   setQueuedUserMessageCreatedAtFixture,
   setWorkflowQueueEventCreatedAtFixture,
 } from "../../../test-fixtures/chat-events";
-import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
@@ -489,11 +488,9 @@ describe("workflow queue", () => {
   it("rejects a workflow automation when every built-in route is unavailable", async () => {
     const scenario = await setup();
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", scenario.runnerGroup);
-    // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
-    // isolated from concurrent tests that route the real model.
-    const { model, restore } =
-      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
-    onTestFinished(restore);
+    // Fixed Auto is the only foreground platform route; owned key/cooldown
+    // fixtures do not grant executable authority to cloned catalog metadata.
+    const model = "okou-1.0";
     await seedBuiltInModelCandidateKeys(context, model);
     await api.updateUserModelPreference(scenario.actor, model);
     // The automation thread pins the preferred Built-in model.
@@ -505,14 +502,7 @@ describe("workflow queue", () => {
       runnerGroup: scenario.runnerGroup,
       model,
       routes: [
-        {
-          providerType: "anthropic-api-key",
-          upstreamModel: "claude-fable-5-1",
-        },
-        {
-          providerType: "openrouter-api-key",
-          upstreamModel: "anthropic/claude-fable-5.1",
-        },
+        { providerType: "openrouter-codex", upstreamModel: "@preset/okou-1-0" },
       ],
     });
 
@@ -1346,7 +1336,7 @@ describe("workflow queue", () => {
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
@@ -1427,12 +1417,12 @@ describe("workflow queue", () => {
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
 
-    // Without the Anthropic key the launch falls back to the fixed default,
+    // Without a personal subscription the new thread uses fixed Auto,
     // whose Built-in route has no operator key yet, so the launch fast-fails.
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
     await executeDueWorkflowAutomations(created.body.id);
@@ -1489,7 +1479,7 @@ describe("workflow queue", () => {
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );

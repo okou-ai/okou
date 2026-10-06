@@ -238,7 +238,7 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           threadId: run.threadId,
           prompt: "continue the long session",
-          model: "gpt-6-luna",
+          model: "okou-1.0",
         },
         queued.usagePricingResolution,
       );
@@ -330,7 +330,7 @@ describe("CHAT-02: model-first provider policies", () => {
               agentId,
               threadId: run.threadId,
               prompt: originalPrompt,
-              model: "gpt-6-luna",
+              model: "okou-1.0",
             },
             queued.usagePricingResolution,
           );

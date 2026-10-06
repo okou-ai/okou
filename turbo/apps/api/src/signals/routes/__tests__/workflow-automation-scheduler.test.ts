@@ -1176,10 +1176,8 @@ describe("okou workflow automation scheduler", () => {
     "keeps a credit-blocked %s automation enabled and resumes after billing recovers",
     async (scheduleType) => {
       const scenario = await setup();
-      await seedBuiltInModelKey(context, "claude-fable-5-1");
-      await api.ensurePersonalSubscriptionModel(scenario.actor, {
-        model: "claude-fable-5-1",
-      });
+      await seedBuiltInModelKey(context, "okou-1.0");
+      await api.updateUserModelPreference(scenario.actor, "okou-1.0");
       const created = await accept(
         automationsClient().create({
           headers: authHeaders(),

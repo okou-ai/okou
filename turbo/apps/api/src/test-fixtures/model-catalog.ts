@@ -1,21 +1,11 @@
-import { createStore } from "ccstate";
-import { randomUUID } from "node:crypto";
-
 import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
-import {
-  isPiRouteClass,
-  type PiRouteClass,
-} from "@okouai/api-contracts/contracts/model-catalog";
+import type { PiRouteClass } from "@okouai/api-contracts/contracts/model-catalog";
 
 import { db } from "../lib/db";
-import {
-  catalogBuiltInCandidates,
-  modelCatalog$,
-} from "../signals/services/model-catalog.service";
 
 /**
  * Operators switch the system default directly in the database. Clear the old
@@ -228,83 +218,6 @@ export async function insertCatalogModelFixture(args: {
         .where(eq(runModelCatalog.model, args.model));
     });
   };
-}
-
-const MIRRORED_ROUTE_PROVIDER_TYPES: readonly string[] = [
-  "anthropic-api-key",
-  "openrouter-api-key",
-  "deepseek",
-  "openrouter-codex",
-  "openai-api-key",
-] satisfies readonly BuiltInRouteFixture["concreteProviderType"][];
-
-function isMirroredRouteProviderType(
-  value: string,
-): value is BuiltInRouteFixture["concreteProviderType"] {
-  return MIRRORED_ROUTE_PROVIDER_TYPES.includes(value);
-}
-
-/**
- * Operators launch a test-owned model whose Built-in candidates, Pi route class
- * and pricing links mirror an existing model. Route availability state such as
- * candidate cooldowns is keyed by the selected model, so a test can make this
- * model's candidates unavailable without touching shared models used by
- * concurrent tests. The mirrored routes keep the base model's pricing links.
- */
-export async function insertBuiltInModelMirrorFixture(
-  baseModel: string,
-): Promise<{
-  readonly model: string;
-  readonly restore: () => Promise<void>;
-}> {
-  const catalog = await createStore().get(modelCatalog$);
-  const base = catalog.byModel.get(baseModel);
-  if (!base) {
-    throw new Error(`Expected catalog model ${baseModel}`);
-  }
-  const builtInRoutes = catalogBuiltInCandidates(catalog, baseModel).map(
-    (route) => {
-      if (!isMirroredRouteProviderType(route.concreteProviderType)) {
-        throw new Error(
-          `Unsupported mirrored Built-in route ${route.concreteProviderType}`,
-        );
-      }
-      if (route.pricingProvider === null) {
-        throw new Error(`Expected a pricing link on ${baseModel} routes`);
-      }
-      return {
-        concreteProviderType: route.concreteProviderType,
-        upstreamModel: route.upstreamModel,
-        priority: route.priority,
-        efforts: route.efforts,
-        defaultEffort: route.defaultEffort,
-        serviceTiers: route.serviceTiers.filter((tier) => {
-          return tier === "priority" || tier === "ultrafast";
-        }),
-        pricingProvider: route.pricingProvider,
-        ...(route.longContextMinTotalInputTokens === null
-          ? {}
-          : {
-              longContextMinTotalInputTokens:
-                route.longContextMinTotalInputTokens,
-            }),
-      };
-    },
-  );
-  if (builtInRoutes.length === 0) {
-    throw new Error(`Expected Built-in routes for ${baseModel}`);
-  }
-  const model = `${baseModel}-mirror-${randomUUID().slice(0, 8)}`;
-  const restore = await insertCatalogModelFixture({
-    model,
-    displayName: `${base.displayName} mirror`,
-    sortOrder: base.sortOrder,
-    ...(isPiRouteClass(base.piRouteClass)
-      ? { piRouteClass: base.piRouteClass }
-      : {}),
-    builtInRoutes,
-  });
-  return { model, restore };
 }
 
 /** Operators reorder or disable a Built-in candidate directly in the database. */

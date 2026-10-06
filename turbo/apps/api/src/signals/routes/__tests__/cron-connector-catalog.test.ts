@@ -87,6 +87,7 @@ import {
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { withConnectorRuntime } from "./helpers/connector-runtime-consumer";
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
+import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -3494,7 +3495,12 @@ describe("connector catalog valid lifecycle", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
+    await runs.createPersonalModelProvider(actor, {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
+    });
+    await runs.updateUserModelPreference(actor, "gpt-6-luna");
     const agent = await bdd.createAgent(actor, {
       displayName: "External batch connector skill agent",
       visibility: "private",
@@ -3638,7 +3644,12 @@ describe("connector catalog valid lifecycle", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
+    await runs.createPersonalModelProvider(actor, {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
+    });
+    await runs.updateUserModelPreference(actor, "gpt-6-luna");
     const agent = await bdd.createAgent(actor, {
       displayName: "External exact connector skill agent",
       visibility: "private",
