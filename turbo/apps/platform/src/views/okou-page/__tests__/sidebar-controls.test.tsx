@@ -34,6 +34,7 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -613,7 +614,7 @@ test.each([false, true])(
   },
 );
 
-test("Rename a conversation from the sidebar", async () => {
+test("Rename a conversation from the sidebar menu but not on double-click", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -629,6 +630,17 @@ test("Rename a conversation from the sidebar", async () => {
     expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
     expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
   });
+
+  await userEvent
+    .setup()
+    .dblClick(threadLinkByTitle("Release plan", sidebar()));
+  expect(threadLinkByTitle("Release plan", sidebar())).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(
+    screen.queryByRole("dialog", { name: "Rename chat" }),
+  ).not.toBeInTheDocument();
 
   openThreadMenu("Release plan");
   click(menuItemByText("Rename chat"));
