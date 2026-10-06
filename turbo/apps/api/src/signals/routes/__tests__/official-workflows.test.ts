@@ -8770,59 +8770,14 @@ describe("Official Workflow Run admission", () => {
   });
 
   it("launches an idle Official agent-run input with the annotated source budget", async () => {
-    // Temporary, case-local diagnostics only: a pending entry identifies the
-    // await interrupted by timeout/abort/throw. No error or identity is logged.
-    // Logging costs are included; elapsed is not the old failure's timing.
-    const diagnosticStartedAt = performance.now();
-    let checkpointCount = 0;
-    const checkpoint = (
-      hop: number,
-      phase:
-        | "setup-org"
-        | "setup-agent"
-        | "setup-catalog"
-        | "setup-enable"
-        | "setup-install"
-        | "source-thread"
-        | "source-send-drain-read"
-        | "claim"
-        | "admission"
-        | "completion"
-        | "drain-public-read"
-        | "drain"
-        | "final-exhaustion"
-        | "cleanup-list"
-        | "cleanup-cancel"
-        | "cleanup-drain"
-        | "cleanup-agent"
-        | "cleanup-catalog",
-      event: "entry" | "exit",
-    ): void => {
-      if (checkpointCount >= 512) {
-        return;
-      }
-      checkpointCount += 1;
-      process.stdout.write(
-        `[official-31hop-checkpoint] hop=${hop} phase=${phase} event=${checkpointCount === 512 ? "LIMIT" : event} elapsedMs=${(performance.now() - diagnosticStartedAt).toFixed(3)}\n`,
-      );
-    };
     const definitionName = `api-test-idle-official-${randomUUID()}`;
-    checkpoint(0, "setup-org", "entry");
     const { actor } = await workflowBdd.setupWorkflowOrg({
       model: "claude-fable-5-1",
     });
-    checkpoint(0, "setup-org", "exit");
-    checkpoint(0, "setup-agent", "entry");
     const { agentId } = await workflowBdd.createAgent(actor);
-    checkpoint(0, "setup-agent", "exit");
     installCatalogStorageFixture();
-    checkpoint(0, "setup-catalog", "entry");
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    checkpoint(0, "setup-catalog", "exit");
-    checkpoint(0, "setup-enable", "entry");
     await setOfficialWorkflowsEnabled(actor, true);
-    checkpoint(0, "setup-enable", "exit");
-    checkpoint(0, "setup-install", "entry");
     const installation = await accept(
       officialClient().install({
         headers: authHeaders(actor),
@@ -8831,54 +8786,36 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    checkpoint(0, "setup-install", "exit");
     onTestFinished(async () => {
       installCatalogStorageFixture();
-      checkpoint(-1, "cleanup-list", "entry");
       const createdRuns = await runs.listAgentRuns(actor, {
         agent: agentId,
         limit: 100,
       });
-      checkpoint(-1, "cleanup-list", "exit");
       for (const run of createdRuns.runs) {
-        checkpoint(-1, "cleanup-cancel", "entry");
         await runs.requestCancelRun(actor, run.id, [200, 400]);
-        checkpoint(-1, "cleanup-cancel", "exit");
       }
-      checkpoint(-1, "cleanup-drain", "entry");
       await flushWaitUntilForTest();
-      checkpoint(-1, "cleanup-drain", "exit");
-      checkpoint(-1, "cleanup-agent", "entry");
       await bdd.deleteAgent(actor, agentId);
-      checkpoint(-1, "cleanup-agent", "exit");
-      checkpoint(-1, "cleanup-catalog", "entry");
       await cleanupCatalog();
-      checkpoint(-1, "cleanup-catalog", "exit");
     });
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
 
-    checkpoint(0, "source-thread", "entry");
     const sourceThread = await chat.createThread(actor, { agentId });
-    checkpoint(0, "source-thread", "exit");
-    checkpoint(0, "source-send-drain-read", "entry");
     let { runId: sourceRunId } = await chat.sendAndLaunch(actor, {
       agentId,
       threadId: sourceThread.id,
       prompt: "source for idle Official launch",
     });
-    checkpoint(0, "source-send-drain-read", "exit");
     let sourceThreadId = sourceThread.id;
-    checkpoint(0, "claim", "entry");
     let sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    checkpoint(0, "claim", "exit");
     // Cursors contain only observed public rows, not synthetic budget state.
     // Each hop reads the new tail instead of paging the growing thread again.
     const observedCursors = new Map<string, ChatEventCursor>();
     // Spend 31 of the 32 public delegation hops through real admission.
     // Each completed parent releases its slot before the next child is claimed.
     for (let hop = 0; hop < 31; hop += 1) {
-      checkpoint(hop + 1, "admission", "entry");
       const child = await accept(
         workflowClient().run({
           headers: officialQueueHeaders(actor, sourceRunId, {
@@ -8889,44 +8826,32 @@ describe("Official Workflow Run admission", () => {
         }),
         [200],
       );
-      checkpoint(hop + 1, "admission", "exit");
-      checkpoint(hop + 1, "completion", "entry");
       await webhooks.requestAgentComplete(
         { runId: sourceRunId, exitCode: 1 },
         { authorization: `Bearer ${sourceClaim.sandboxToken}` },
         [200],
       );
-      checkpoint(hop + 1, "completion", "exit");
       // The helper drains the parent's released-slot pick and completion work
       // before reading the committed child input; no second drain is needed.
-      checkpoint(hop + 1, "drain-public-read", "entry");
       const childRunId = await launchedAutomationRunId(
         actor,
         child.body.chatThreadId,
         observedCursors,
       );
-      checkpoint(hop + 1, "drain-public-read", "exit");
       if (!childRunId || childRunId === sourceRunId) {
         throw new Error("Expected a distinct public delegation child");
       }
       sourceRunId = childRunId;
       sourceThreadId = child.body.chatThreadId;
-      checkpoint(hop + 1, "claim", "entry");
       sourceClaim = await runs.claimRunnerJob(sourceRunId);
-      checkpoint(hop + 1, "claim", "exit");
     }
-    checkpoint(32, "completion", "entry");
     await webhooks.requestAgentComplete(
       { runId: sourceRunId, exitCode: 1 },
       { authorization: `Bearer ${sourceClaim.sandboxToken}` },
       [200],
     );
-    checkpoint(32, "completion", "exit");
-    checkpoint(32, "drain", "entry");
     await flushWaitUntilForTest();
-    checkpoint(32, "drain", "exit");
 
-    checkpoint(32, "admission", "entry");
     const launched = await accept(
       workflowClient().run({
         headers: officialQueueHeaders(actor, sourceRunId, {
@@ -8937,29 +8862,23 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    checkpoint(32, "admission", "exit");
     expect(launched.body.runId).toBeNull();
-    checkpoint(32, "drain-public-read", "entry");
     const launchedRunId = await launchedAutomationRunId(
       actor,
       launched.body.chatThreadId,
       observedCursors,
     );
-    checkpoint(32, "drain-public-read", "exit");
     if (!launchedRunId) {
       throw new Error("Expected the idle Official input to dispatch itself");
     }
     expect(launched.body.chatThreadId).not.toBe(sourceThread.id);
-    checkpoint(32, "claim", "entry");
     const claim = await runs.claimRunnerJob(launchedRunId);
-    checkpoint(32, "claim", "exit");
     expect(claim.prompt).toBe(`/${installation.body.workflow.name}`);
     expect(claim.appendSystemPrompt).toContain(`SOURCE_RUN_ID: ${sourceRunId}`);
     expect(claim.appendSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${sourceThreadId}`,
     );
 
-    checkpoint(33, "admission", "entry");
     const denied = await accept(
       workflowClient().run({
         headers: officialQueueHeaders(actor, launchedRunId, {
@@ -8970,20 +8889,14 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    checkpoint(33, "admission", "exit");
     expect(denied.body.runId).toBeNull();
     // The exhausted hop is rejected by the pick once the thread is idle.
-    checkpoint(33, "completion", "entry");
     await webhooks.requestAgentComplete(
       { runId: launchedRunId, exitCode: 1 },
       { authorization: `Bearer ${claim.sandboxToken}` },
       [200],
     );
-    checkpoint(33, "completion", "exit");
-    checkpoint(33, "drain", "entry");
     await flushWaitUntilForTest();
-    checkpoint(33, "drain", "exit");
-    checkpoint(33, "final-exhaustion", "entry");
     const rejections = (
       await allThreadEventRows(actor, denied.body.chatThreadId)
     ).filter((event) => {
@@ -8994,7 +8907,6 @@ describe("Official Workflow Run admission", () => {
       runId: null,
       payload: { error: "autonomy_budget_exhausted" },
     });
-    checkpoint(33, "final-exhaustion", "exit");
   });
 
   // Historical persisted-state exception (docs/testing.md rollout coexistence;

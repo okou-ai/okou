@@ -296,7 +296,14 @@ Remaining selections and full-snapshot/chat-captured cohorts, P5/P6/P7, final
 pointer cutover and S1–S3 acceptance remain separate. No rollback window or GC is
 introduced under Ethan v5.
 
-## Temporary31-hop diagnostic checkpoints (not a repair)
+## Historical31-hop diagnostic checkpoints (removed, not a repair)
+
+The following describes the temporary diagnostic commit
+`9d56ffb6b2aa3f4b16fca0f1715b6fd8bae44ffc`, not the current test source. Its
+single natural cohort passed the four named gates and all8 API shards. API4
+reported981 PASS/52 files PASS, target case3920ms. All290 checkpoints completed
+31 hops, final full-history exhaustion and cleanup; no pending entry or LIMIT.
+These are facts of that one instrumented execution, not final-source CI proof.
 
 Starting from main-integrated `6af828c4ed288a2ac55055baddc95d4a81072e77`, only
 the existing Official31-hop case gains local synchronous entry/exit checkpoints.
@@ -321,3 +328,25 @@ failure stops general observation, with only its already-existing API4 diagnosti
 log collectible afterwards. No old recovery allowance is revived. The new delta
 needs non-author review; actual repair and diagnostic removal need a separate
 decision. This diagnostic must not be left in place for merge.
+
+## Diagnostic removal — final-source validation is separate
+
+The authorized cleanup removes only the temporary recorder and every checkpoint
+from that case. The entire `official-workflows.test.ts` blob is byte-identical to
+reviewed `6af828c4ed288a2ac55055baddc95d4a81072e77`; requests,31 serial hops,
+public admission/completion/drain/pagination/claim/exhaustion/cleanup, original
+assertions, signals and5000ms timeout are unchanged. No production fix or new
+helper, hook, retry, sleep, budget/configuration change or reduced work was added.
+
+The original c5/6af timeout root cause remains UNKNOWN, not uniquely confirmed.
+The9d56 diagnostic execution completed once; it did not reproduce the failure
+and is not evidence of flakiness or a timeout fix. No new evidence supports a
+further business repair. Those failed cohorts,2543's separate successful cohort,
+and9d56's instrumented PASS remain separate historical receipts.
+
+One new natural CI cohort validates the necessary diagnostic-removal source,
+not another diagnostic sample or an old-run rerun. Final-source CI, independent
+cleanup-delta review and applicable Preview remain distinct requirements. The
+6af source approval inherits only unchanged code, not this ledger delta or new
+CI/Preview. First substantive failure stops acceptance; no old Crates recovery,
+local replay, automatic further repair or merge authorization.
