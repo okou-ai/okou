@@ -7,7 +7,11 @@ import { createRouteMocks } from "./helpers/route-test";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { usageRecordRoutes } from "../usage-record";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  userMessages,
+} from "./helpers/chat-events-fixture";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -114,5 +118,76 @@ describe("fixed Auto usage display", () => {
       }),
     ]);
     await chatEvents.cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
+
+  it("rejects Auto when its billable long-context usage is unpriced", async () => {
+    // Base token categories are priced but the route's long-context
+    // threshold makes `.long_context` billable too. Nothing may run unbilled.
+    const { actor, agentId } = await chatEvents.entitledChatActor();
+    const model = "okou-1.0";
+    const base = [
+      "tokens.input",
+      "tokens.output",
+      "tokens.cache_read",
+      "tokens.cache_creation",
+    ] as const;
+    const pricing = await createUsagePricingFixture({
+      configured: base.map((category) => {
+        return {
+          kind: "model",
+          provider: model,
+          category,
+          unitPrice: 1,
+          unitSize: 1,
+        };
+      }),
+      missing: base.map((category) => {
+        return {
+          kind: "model",
+          provider: model,
+          category: `${category}.long_context`,
+        };
+      }),
+    });
+    onTestFinished(pricing.cleanup);
+    await chatEvents.configureBuiltInPiModel(actor);
+
+    const clientEventId = randomUUID();
+    const sent = await chatEvents.chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "run without complete pricing", model, clientEventId },
+      [201],
+      { usagePricingResolution: pricing.resolution },
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the chat input to be accepted");
+    }
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const { events } = await chatEvents.waitForThreadMessages(
+      actor,
+      sent.body.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === clientEventId &&
+            message.eventType === "input.rejected"
+          );
+        });
+      },
+    );
+    expect(
+      userMessages(events).find((message) => {
+        return message.revokesEventId === clientEventId;
+      }),
+    ).toMatchObject({
+      eventType: "input.rejected",
+      error: "model_provider_unavailable",
+    });
+    expect(
+      events.filter((event) => {
+        return "runId" in event && event.runId !== undefined;
+      }),
+    ).toStrictEqual([]);
   });
 });

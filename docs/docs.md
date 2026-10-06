@@ -32,9 +32,14 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
-- [Global model catalog](./model-catalog.md): the database model catalog and
-  routes, replacement and default constraints, and the phased migration from
-  code model lists.
+- [Run models and subscription metadata](./model-catalog.md): fixed Auto,
+  personal subscription metadata, selection, billing and schema contraction.
+- [Run models API](./run-models-api.md): the `GET /api/run-models` response
+  for Auto and the caller's connected personal subscriptions.
+- [Custom model configuration retirement](./custom-model-retirement.md): the
+  retired organization model configuration and its product contract.
+- [Retired model route cleanup](./retired-model-route-cleanup.md): the
+  data-only pruning of obsolete execution routes.
 - [Personal subscription CLI and Reset Cards](./subscription-controls.md):
   exact-account usage reads, subsequent-run switching, user-confirmed reset
   links and capability rollout.

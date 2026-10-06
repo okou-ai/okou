@@ -276,7 +276,6 @@
     "src/signals/services/model-bootstrap.service.ts",
     "src/signals/services/model-catalog.service.ts",
     "src/signals/services/run-models.service.ts",
-    "src/signals/services/model-provider-gateway-runtime.ts",
     "src/signals/services/model-route-capabilities.service.ts",
     "src/signals/services/model-selection.service.ts",
     "src/signals/services/model-source-context.service.ts",

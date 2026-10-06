@@ -48,7 +48,6 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const accountApi = createAuthOrgAgentsBddApi(context);
@@ -649,10 +648,11 @@ describe("Discord account preferences through private controls", () => {
     );
 
     expect(rejected.content).toContain("no longer have access to that model");
-    // The thread's removed model resolves to the system default.
+    // The thread keeps its unavailable personal model; no option, including
+    // Auto, is presented as the conversation's current model.
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
-    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+    ).toStrictEqual([]);
     const after = await accept(preference.get({ headers }), [200]);
     expect(after.body.selectedModel).toBeNull();
   });
