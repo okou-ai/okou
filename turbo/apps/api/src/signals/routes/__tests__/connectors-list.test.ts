@@ -12,10 +12,7 @@ import { afterEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  invalidateApiTestConnectorCatalogCompatibility,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   readConnectorCredentialStorageState,
   setConnectorDefaultState,
@@ -242,9 +239,8 @@ describe("GET /api/connectors", () => {
     expect(detail.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("keeps current-entry account reads available when legacy compatibility is unavailable", async () => {
-    // Only this case-owned legacy compatibility generation becomes unavailable.
-    // The accepted immutable current and entries remain intact.
+  it("keeps current-entry account and scope reads available after a capability change", async () => {
+    // The capability change re-evaluates compatibility from the same entries.
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `legacy-list-unavailable-${randomUUID()}`,
@@ -295,7 +291,6 @@ describe("GET /api/connectors", () => {
     ]);
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
     await installApiTestConnectorCatalog();
-    await invalidateApiTestConnectorCatalogCompatibility();
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const response = await accept(

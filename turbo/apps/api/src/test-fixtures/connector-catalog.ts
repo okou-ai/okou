@@ -9,7 +9,6 @@ import {
   connectorCatalogCompatibilityEvaluation,
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
-import type { ConnectorCatalogCompatibilityEvaluationPayload } from "@okouai/db/jsonb-contracts/connector-catalog";
 import { and, asc, eq } from "drizzle-orm";
 
 import { mockOptionalEnv } from "../lib/env";
@@ -30,7 +29,6 @@ import {
 } from "@okouai/connectors/connector-catalog/artifacts/relationships";
 import {
   connectorCatalogExecutableCapabilityState,
-  connectorCatalogCompatibilityEvaluationSchema,
   persistConnectorCatalogCompatibility,
 } from "../signals/services/connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
@@ -597,41 +595,57 @@ export async function corruptApiTestConnectorCatalogActiveSnapshotPayload(): Pro
   requireSingleCatalogMutation(updated, "active snapshot payload corruption");
 }
 
-export async function invalidateApiTestConnectorCatalogCompatibility(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogCompatibilityEvaluation)
-    .set({
-      filteredAuthMethods: {
-        filteredAuthMethods: [
-          {
-            connectorSlug: "external-test",
-            authMethodId: "api-token",
-            reasons: [],
-          },
-        ],
-      },
-    })
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(updated, "compatibility corruption");
-}
+const UNAVAILABLE_PLATFORM_SECRET = "API_TEST_UNAVAILABLE_PLATFORM_SECRET";
 
-export async function replaceApiTestConnectorCatalogFilteredAuthMethods(
-  filteredAuthMethods: ConnectorCatalogCompatibilityEvaluationPayload["filteredAuthMethods"],
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const payload = connectorCatalogCompatibilityEvaluationSchema.parse({
-    filteredAuthMethods,
-  });
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogCompatibilityEvaluation)
-    .set({ filteredAuthMethods: payload })
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(updated, "compatibility filter replacement");
+// Requires an undeclared platform secret, so on-demand compatibility reports a
+// provider contract mismatch for exactly these executable methods.
+export function apiTestConnectorCatalogWithUnavailableAuthMethods(
+  catalog: ConnectorCatalogArtifact,
+  methods: readonly {
+    readonly connectorSlug: string;
+    readonly authMethodId: string;
+  }[],
+): ConnectorCatalogArtifact {
+  const remaining = new Set(
+    methods.map((method) => {
+      return `${method.connectorSlug}\0${method.authMethodId}`;
+    }),
+  );
+  const unavailable = {
+    ...catalog,
+    connectors: catalog.connectors.map((connector) => {
+      return {
+        ...connector,
+        authMethods: connector.authMethods.map((method) => {
+          if (!remaining.delete(`${connector.slug}\0${method.id}`)) {
+            return method;
+          }
+          if (
+            method.access.kind !== "static" &&
+            method.access.kind !== "refresh-token"
+          ) {
+            throw new Error(
+              `${connector.slug}/${method.id} has no platform secret contract`,
+            );
+          }
+          return {
+            ...method,
+            access: {
+              ...method.access,
+              platformSecrets: [
+                ...(method.access.platformSecrets ?? []),
+                UNAVAILABLE_PLATFORM_SECRET,
+              ],
+            },
+          };
+        }),
+      };
+    }),
+  };
+  if (remaining.size > 0) {
+    throw new Error(`Unknown auth methods: ${[...remaining].join(", ")}`);
+  }
+  return connectorCatalogArtifactSchema.parse(unavailable);
 }
 
 export async function deleteApiTestConnectorCatalogCompatibilityEvaluation(
