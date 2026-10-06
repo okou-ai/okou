@@ -56,7 +56,6 @@ export enum FeatureSwitchKey {
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
   AvatarFraming = "avatarFraming",
-  AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
   ChatLastReadMarker = "chatLastReadMarker",

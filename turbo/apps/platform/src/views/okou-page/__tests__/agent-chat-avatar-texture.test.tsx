@@ -2,11 +2,11 @@
  * Boundary exception, per `docs/testing/testing-external-behavior.md`.
  *
  * These cases are driven entirely through the production chat page — the real
- * route, the real agent, real feature-switch overrides — but the thing under
- * test is not page-observable. The texture is a background image and the
- * placement is a transform, and jsdom neither loads images nor performs layout,
- * so nothing a user could see changes in the DOM. The style the component wrote
- * is the only available evidence.
+ * route and the real agent — but the thing under test is not page-observable.
+ * The texture is a background image and the placement is a transform, and
+ * jsdom neither loads images nor performs layout, so nothing a user could see
+ * changes in the DOM. The style the component wrote is the only available
+ * evidence.
  *
  * The case is worth testing because both failures are silent. A texture that
  * collides with the avatar's own sweater still renders every layer; an artwork
@@ -120,7 +120,7 @@ function placement(transform: string): { scale: number; offset: number } {
   return { scale: Number(scale[1]), offset: Number(offset[1]) };
 }
 
-async function setupChatPage(texture: boolean): Promise<void> {
+async function setupChatPage(): Promise<void> {
   mountedAgent();
   context.mocks.browser.matchMedia(false);
   await setupPage({
@@ -129,7 +129,6 @@ async function setupChatPage(texture: boolean): Promise<void> {
     featureSwitches: {
       // Framing on, so the artwork carries a scale the anchor has to survive.
       [FeatureSwitchKey.AvatarFraming]: true,
-      [FeatureSwitchKey.AvatarTexture]: texture,
     },
   });
   await waitFor(() => {
@@ -143,22 +142,8 @@ function artworkBottom(transform: string): number {
   return (100 - 50 + offset) * scale + 50;
 }
 
-test("Leave the greeting avatar on its framed placement while the texture is off", async () => {
-  await setupChatPage(false);
-
-  const frame = avatarFrame();
-  expect(textureImage(frame)).toBeNull();
-
-  // Centering leaves a real gap under the collar — for this avatar about a
-  // tenth of the box, 6px at the 56px the greeting renders at. It costs
-  // nothing today only because the frame is the page's own colour, which is
-  // exactly what a texture behind it takes away.
-  const gap = 100 - artworkBottom(artworkTransform(frame));
-  expect(gap).toBeGreaterThan(10);
-});
-
 test("Sit the greeting avatar on the frame's bottom edge once a texture is behind it", async () => {
-  await setupChatPage(true);
+  await setupChatPage();
 
   const frame = avatarFrame();
 
@@ -177,9 +162,8 @@ test("Sit the greeting avatar on the frame's bottom edge once a texture is behin
 
 test("Leave an agent that cannot take a texture exactly as it was", async () => {
   // An uploaded image has no sweater or hair colour for the pairing rule to
-  // clear, so it gets no texture even with the switch on — and must therefore
-  // keep the centred placement, since nothing is drawn behind it to reveal the
-  // cut edge. The frame's hairline follows the same answer.
+  // clear, so it gets no texture — and must therefore keep the centred
+  // placement, since nothing is drawn behind it to reveal the cut edge. The frame's hairline follows the same answer.
   mountedAgent("https://example.test/uploaded-avatar.png");
   context.mocks.browser.matchMedia(false);
   await setupPage({
@@ -187,7 +171,6 @@ test("Leave an agent that cannot take a texture exactly as it was", async () => 
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.AvatarFraming]: true,
-      [FeatureSwitchKey.AvatarTexture]: true,
     },
   });
   await waitFor(() => {
@@ -204,7 +187,7 @@ test("Leave an agent that cannot take a texture exactly as it was", async () => 
 });
 
 test("Keep every other avatar surface untextured", async () => {
-  await setupChatPage(true);
+  await setupChatPage();
 
   // The sidebar draws the same agent from the same avatar URL. Only the
   // greeting opts in, so every avatar outside that one frame is unchanged.
@@ -236,7 +219,6 @@ test("Give the organization default agent its own texture", async () => {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.AvatarFraming]: true,
-      [FeatureSwitchKey.AvatarTexture]: true,
     },
   });
   await waitFor(() => {

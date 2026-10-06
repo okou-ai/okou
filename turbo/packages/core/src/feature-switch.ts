@@ -318,12 +318,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Center every avatar's visible artwork in its box and move it halfway to a shared fill, so hair volume stops changing how large an avatar looks.",
     enabled: true,
   },
-  [FeatureSwitchKey.AvatarTexture]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Back the chat home greeting avatar with a brand texture chosen to stay clear of the avatar's own colours, sit it on the frame's bottom edge, and drop the frame's hairline.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:
