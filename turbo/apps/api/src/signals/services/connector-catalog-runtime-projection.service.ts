@@ -8,7 +8,7 @@ import {
 } from "@okouai/db/schema/connector-catalog";
 import { and, count, eq, inArray } from "drizzle-orm";
 
-import { type Db, type ReadonlyDb } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
