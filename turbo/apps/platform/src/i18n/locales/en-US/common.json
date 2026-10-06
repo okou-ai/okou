@@ -2936,7 +2936,9 @@
       "storageFailed": "Audio could not be saved. Retry can recover only audio already saved on this device.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
-      "transcriptionFailed": "Voice transcription failed. Try again."
+      "transcriptionFailed": "Voice transcription failed. Try again.",
+      "noSpeechDetected": "No speech detected. Please record again.",
+      "detectionFailed": "Speech detection is unavailable. Your recording is kept. Please retry."
     },
     "workflows": {
       "named": "Workflow {{title}}",

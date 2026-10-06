@@ -1,5 +1,5 @@
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { cleanup } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, vi, describe, beforeEach, it } from "vitest";
 
@@ -15,6 +15,44 @@ import {
 } from "./chat-run-test-fixtures.ts";
 
 const secondContext = testContext();
+
+it("Release a VAD session initialized after the old composer was cancelled", async () => {
+  const loadStarted = context.mocks.deferred<void>();
+  const modelReady = context.mocks.deferred<void>();
+  const released = context.mocks.deferred<void>();
+  installRunChat();
+  context.mocks.browser.voiceInput({
+    rms: 0.12,
+    vadModelReady: () => {
+      loadStarted.resolve();
+      return modelReady.promise;
+    },
+    onVadRelease: released.resolve,
+  });
+  const resetPage$ = resetSignal();
+  const pageSignal = context.store.set(resetPage$, context.signal);
+  await setupPage({
+    context: { ...context, signal: pageSignal },
+    path: RUN_PATH,
+  });
+  click(await findEnabledButton("Voice input"));
+  click(await findEnabledButton("Stop recording"));
+  await loadStarted.promise;
+  context.store.set(resetPage$);
+  releasePageDom();
+  await setupPage({
+    context: secondContext,
+    path: RUN_PATH,
+    auth: { user: { id: "other-user", fullName: "Other User" } },
+  });
+  await findEnabledButton("Voice input");
+  modelReady.resolve();
+  await released.promise;
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+    "",
+  );
+  expect(queryButton("Retry")).toBeNull();
+});
 
 function restoreHistory() {
   vi.mocked(window.history.pushState).mockRestore();

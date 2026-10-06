@@ -1,4 +1,10 @@
 import { command } from "ccstate";
+import { i18n } from "../../i18n/index.ts";
+import {
+  analyzeVoiceActivity,
+  VOICE_ACTIVITY_POLICY_VERSION,
+} from "../../lib/voice-io/voice-activity.ts";
+import { settle } from "../utils.ts";
 import {
   voiceIoTranscribeContract,
   type VoiceIoTranscribeContext,
@@ -12,13 +18,18 @@ import {
   saveVoiceDraftProgress,
   type VoiceDraftSegment,
 } from "../external/voice-draft-store.ts";
-import { voiceDraftSegmentFile } from "./voice-draft-audio.ts";
+import { voiceDraftSegmentSamples } from "./voice-draft-audio.ts";
+import {
+  encodeVoiceDraftPcmWav,
+  VOICE_DRAFT_PCM_SAMPLE_RATE,
+} from "./voice-draft-pcm.ts";
 
 export type VoiceDraftTranscriptionResult =
   | {
       readonly kind: "transcribed";
       readonly transcript: string;
       readonly text?: string;
+      readonly vadPolicyVersion?: string;
     }
   | { readonly kind: "unavailable"; readonly message: string };
 
@@ -31,20 +42,15 @@ interface SegmentOptions {
   readonly overlapDurationSeconds: number;
 }
 
-async function segmentBody(
+function segmentBody(
   options: SegmentOptions,
   context: VoiceIoTranscribeContext,
   previousTranscript: string,
-  signal: AbortSignal,
-): Promise<FormData> {
+  file: File | undefined,
+): FormData {
   const body = new FormData();
-  if (options.segment) {
-    const audio = await readVoiceDraftAudio(options.key, options.recordingId);
-    signal.throwIfAborted();
-    body.append(
-      "file",
-      await voiceDraftSegmentFile(audio, options.segment, signal),
-    );
+  if (file) {
+    body.append("file", file);
   }
   body.append(
     "options",
@@ -52,7 +58,7 @@ async function segmentBody(
       previousTranscript,
       final: options.segment?.final ?? true,
       totalDurationSeconds: options.totalDurationSeconds,
-      overlapDurationSeconds: options.overlapDurationSeconds,
+      overlapDurationSeconds: file ? options.overlapDurationSeconds : 0,
     }),
   );
   if (context.lastAssistantMessage) {
@@ -112,6 +118,69 @@ async function requestSegment(
   };
 }
 
+async function transcribePreparedSegment(
+  createClient: ApiClientFactory,
+  options: SegmentOptions,
+  context: VoiceIoTranscribeContext,
+  previousTranscript: string,
+  signal: AbortSignal,
+): Promise<VoiceDraftTranscriptionResult | undefined> {
+  const { segment } = options;
+  let file: File | undefined;
+  let vadPolicyVersion: string | undefined;
+  if (segment) {
+    const audio = await readVoiceDraftAudio(options.key, options.recordingId);
+    signal.throwIfAborted();
+    const samples = await voiceDraftSegmentSamples(audio, segment, signal);
+    // The overlap is earlier audio, not evidence that this segment adds speech.
+    const newSamples = samples.subarray(
+      Math.round(options.overlapDurationSeconds * VOICE_DRAFT_PCM_SAMPLE_RATE),
+    );
+    const detected = await settle(
+      analyzeVoiceActivity(newSamples, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!detected.ok) {
+      return {
+        kind: "unavailable",
+        message: i18n.t(($) => {
+          return $.chat.voice.detectionFailed;
+        }),
+      };
+    }
+    if (detected.value === "no_speech") {
+      vadPolicyVersion = VOICE_ACTIVITY_POLICY_VERSION;
+      if (!segment.final || !previousTranscript.trim()) {
+        return {
+          kind: "transcribed",
+          transcript: "",
+          ...(segment.final ? { text: "" } : {}),
+          vadPolicyVersion,
+        };
+      }
+      // A silent tail still finalizes all earlier speech using the existing
+      // no-audio polish endpoint contract. Never discard the saved prefix.
+    } else {
+      file = new File(
+        [encodeVoiceDraftPcmWav(samples)],
+        `voice-draft-${String(segment.startSample)}.wav`,
+        { type: "audio/wav" },
+      );
+    }
+  }
+  const body = segmentBody(options, context, previousTranscript, file);
+  const result = await requestSegment(
+    createClient,
+    body,
+    segment?.final ?? true,
+    signal,
+  );
+  return result?.kind === "transcribed"
+    ? { ...result, ...(vadPolicyVersion ? { vadPolicyVersion } : {}) }
+    : result;
+}
+
 /** Run one ordered segment and persist its checkpoint under the session owner. */
 export const transcribeVoiceDraftSegment$ = command(
   async (
@@ -121,7 +190,6 @@ export const transcribeVoiceDraftSegment$ = command(
     signal: AbortSignal,
   ): Promise<VoiceDraftTranscriptionResult | undefined> => {
     const { key, recordingId, segment } = options;
-    const final = segment ? segment.final : true;
     const segmentEnd = segment?.endSample;
     const previous = predecessor
       ? await predecessor
@@ -144,6 +212,22 @@ export const transcribeVoiceDraftSegment$ = command(
       context: options.context,
       segments: [],
     };
+    // A policy change invalidates the final text as well as locally skipped
+    // segments. Recheck them before reusing an interrupted completion.
+    if (
+      progress.segments.some((item) => {
+        return (
+          item.vadPolicyVersion !== undefined &&
+          item.vadPolicyVersion !== VOICE_ACTIVITY_POLICY_VERSION
+        );
+      })
+    ) {
+      progress = {
+        revision: progress.revision,
+        context: progress.context,
+        segments: progress.segments,
+      };
+    }
     if (progress.text !== undefined) {
       return {
         kind: "transcribed",
@@ -154,7 +238,11 @@ export const transcribeVoiceDraftSegment$ = command(
     const saved = progress.segments.find((item) => {
       return item.endSample === segmentEnd;
     });
-    if (saved?.transcript !== undefined) {
+    if (
+      saved?.transcript !== undefined &&
+      (saved.vadPolicyVersion === undefined ||
+        saved.vadPolicyVersion === VOICE_ACTIVITY_POLICY_VERSION)
+    ) {
       return {
         kind: "transcribed",
         transcript: [previous.transcript, saved.transcript]
@@ -175,13 +263,13 @@ export const transcribeVoiceDraftSegment$ = command(
       await saveVoiceDraftProgress(key, recordingId, progress);
       signal.throwIfAborted();
     }
-    const body = await segmentBody(
+    const result = await transcribePreparedSegment(
+      get(apiClient$),
       options,
       progress.context,
       previous.transcript,
       signal,
     );
-    const result = await requestSegment(get(apiClient$), body, final, signal);
     signal.throwIfAborted();
     if (!result || result.kind === "unavailable") {
       return result;
@@ -191,7 +279,9 @@ export const transcribeVoiceDraftSegment$ = command(
       ...progress,
       revision: progress.revision + 1,
       segments: progress.segments.map((item) => {
-        return item.endSample === segmentEnd ? { ...item, transcript } : item;
+        return item.endSample === segmentEnd
+          ? { ...item, transcript, vadPolicyVersion: result.vadPolicyVersion }
+          : item;
       }),
       ...(text === undefined ? {} : { text }),
     });

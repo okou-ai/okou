@@ -199,6 +199,8 @@ function createVoiceDraftTranscription(
     }
     if (text.trim()) {
       await set(deliverText$, text, signal);
+    } else {
+      toast.info(i18n.t(($) => {return $.chat.voice.noSpeechDetected}));
     }
 
     signal.throwIfAborted();

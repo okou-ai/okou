@@ -1,6 +1,8 @@
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import { HttpResponse } from "msw";
 import { posthog } from "posthog-js/dist/module.slim";
+import { Silero } from "@ricky0123/vad-web/dist/models/silero.js";
+import * as ort from "onnxruntime-web/wasm";
 import { vi } from "vitest";
 
 import {
@@ -1138,6 +1140,11 @@ function mockAudioContext(signal: AbortSignal): void {
 }
 
 interface VoiceInputMockOptions {
+  readonly vadModelReady?: () => Promise<void>;
+  readonly vadProbability?:
+    | number
+    | ((frame: Float32Array) => number | Promise<number>);
+  readonly onVadRelease?: () => void;
   readonly onPcmCapture?: (emit: (samples: Float32Array) => void) => void;
   readonly onPcmPortClose?: () => void;
   readonly onPcmDisconnect?: () => void;
@@ -1155,6 +1162,47 @@ function mockVoiceInput(
   signal: AbortSignal,
   options: VoiceInputMockOptions = {},
 ): void {
+  // Mock the third-party inference boundary, not the application's gate or
+  // Silero's framing/state adapter. Default recorded fixtures contain speech.
+  const vadMock = vi.spyOn(Silero, "new").mockImplementation(async () => {
+    await options.vadModelReady?.();
+    const session: ort.InferenceSession = {
+      inputNames: ["input", "state", "sr"],
+      outputNames: ["output", "stateN"],
+      inputMetadata: [],
+      outputMetadata: [],
+      async run(feeds) {
+        const input = feeds.input;
+        if (!input || !(input.data instanceof Float32Array)) {
+          throw new Error("Expected float32 VAD input");
+        }
+        const probability = options.vadProbability ?? 0.9;
+        const value =
+          typeof probability === "function"
+            ? await probability(input.data.subarray(64))
+            : probability;
+        return {
+          output: new ort.Tensor("float32", [value], [1, 1]),
+          stateN: new ort.Tensor("float32", new Float32Array(256), [2, 1, 128]),
+        };
+      },
+      release() {
+        options.onVadRelease?.();
+        return Promise.resolve();
+      },
+      startProfiling() {},
+      endProfiling() {},
+    };
+    return new Silero(
+      session,
+      new ort.Tensor("float32", new Float32Array(256), [2, 1, 128]),
+      new ort.Tensor("int64", [16000n]),
+      ort,
+    );
+  });
+  restoreOnAbort(signal, () => {
+    return vadMock.mockRestore();
+  });
   const stream = {
     getTracks: () => {
       return [
