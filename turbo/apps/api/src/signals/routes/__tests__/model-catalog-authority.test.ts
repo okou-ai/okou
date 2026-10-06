@@ -1,6 +1,9 @@
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import type { UpdateOrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import type {
+  OrgModelPolicy,
+  UpdateOrgModelPolicy,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
@@ -112,6 +115,20 @@ async function listPolicies() {
     .body;
 }
 
+/** Only the system-default case's live route is outside its policy revision. */
+function systemDefaultPolicyProjection(policy: OrgModelPolicy) {
+  const { runtimeProviderType: _runtimeProviderType, ...projection } = policy;
+  if (projection.memberEffective === undefined) {
+    return projection;
+  }
+  const {
+    availability: _availability,
+    runtimeProviderType: _memberRuntimeProviderType,
+    ...memberEffective
+  } = projection.memberEffective;
+  return { ...projection, memberEffective };
+}
+
 describe("model catalog authority", () => {
   it("exposes the database system default and display price tiers", async () => {
     await signInAdmin();
@@ -140,8 +157,9 @@ describe("model catalog authority", () => {
       }),
     ]);
 
-    // The default is projected rather than persisted, so a write that omits
-    // it returns the same projection and revision.
+    // The default is projected rather than persisted. Empty PUT preserves its
+    // complete policy projection and revision, not the live key/route/cooldown
+    // facts behind the three runtime fields exercised by the owned model below.
     const written = await accept(
       policiesApi().update({
         headers: authHeaders(),
@@ -150,7 +168,9 @@ describe("model catalog authority", () => {
       [200],
     );
     expect(written.body.revision).toBe(initial.revision);
-    expect(written.body.policies).toStrictEqual(initial.policies);
+    expect(
+      written.body.policies.map(systemDefaultPolicyProjection),
+    ).toStrictEqual(initial.policies.map(systemDefaultPolicyProjection));
   });
 
   it("admits a new policy for an active catalog model", async () => {
@@ -242,6 +262,13 @@ describe("model catalog authority", () => {
       defaultProviderType: "built-in",
       runtimeProviderType: "openrouter-codex",
     });
+    expect(launched(added.body)?.memberEffective).toStrictEqual({
+      providerType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+      credentialScope: "org",
+      availability: "available",
+      accountSelection: "not_applicable",
+    });
 
     // Disabling the first-priority candidate moves Built-in execution to the
     // next enabled route.
@@ -250,8 +277,35 @@ describe("model catalog authority", () => {
       concreteProviderType: "openrouter-codex",
       enabled: false,
     });
-    expect(launched(await listPolicies())).toMatchObject({
+    const nextCandidate = await listPolicies();
+    expect(nextCandidate.revision).toBe(added.body.revision);
+    expect(launched(nextCandidate)).toMatchObject({
       runtimeProviderType: "openai-api-key",
+    });
+    expect(launched(nextCandidate)?.memberEffective).toStrictEqual({
+      providerType: "built-in",
+      runtimeProviderType: "openai-api-key",
+      credentialScope: "org",
+      availability: "available",
+      accountSelection: "not_applicable",
+    });
+
+    // This UUID-owned model has no other candidates or run/cooldown writers.
+    // Its key leases remain held; only its own final enabled route is removed.
+    await updateBuiltInRouteFixture({
+      model,
+      concreteProviderType: "openai-api-key",
+      enabled: false,
+    });
+    const unavailable = await listPolicies();
+    expect(unavailable.revision).toBe(added.body.revision);
+    expect(launched(unavailable)?.runtimeProviderType).toBeNull();
+    expect(launched(unavailable)?.memberEffective).toStrictEqual({
+      providerType: "built-in",
+      runtimeProviderType: null,
+      credentialScope: "org",
+      availability: "unavailable",
+      accountSelection: "not_applicable",
     });
   });
 

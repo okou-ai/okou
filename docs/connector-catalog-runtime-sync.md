@@ -40,6 +40,92 @@ The complete Gateway authentication file retains shared exact HMAC vectors/appli
 
 The original 9c2 incident remains FAIL with no recorded pair of clock values. This fixes a reproducible source-level precondition, not proof of the incident's unique cause or a runtime execution PASS. Non-author review must assess this actual test/ledger delta separately from the full runtime-owned implementation and normal integration; natural new-HEAD CI remains required.
 
+## Authorized policy-projection test-contract supplement
+
+At exact runtime HEAD `6376d202560a2c6382137823c077edd80c834440`, Turbo
+`37362052438` attempt3 / API4 job
+[112034202742](https://github.com/okou-ai/okou/actions/runs/37362052438/job/112034202742)
+failed at `model-catalog-authority.test.ts:153`, "projects the system default
+policy without storing a per-organization row". The GET and empty PUT differed
+in `memberEffective.availability` (unavailable to available),
+`memberEffective.runtimeProviderType` and top-level `runtimeProviderType` (null
+to openrouter-codex). This remains a substantive historical FAIL, not a flake or
+an exemption for the connector migration. The unique triggering key/candidate/
+cooldown mutation remains UNKNOWN. The prior no-patch investigation is retained
+at https://app.okou.ai/artifacts/cb38immndh.md; this later supplement follows the
+coordinator's explicit decision to repair the unsupported test contract.
+
+The public `OrgModelPolicy` response separates configured policy from
+response-only member routing. `policyRevision` hashes persisted organization
+policy rows; the projected system default is not persisted by empty PUT.
+`listOrgModelPolicies` independently resolves Built-in keys, enabled catalog
+candidates and selected-model cooldowns for each request. Consequently an
+unchanged policy revision does not promise cross-request equality of those live
+route facts. This source contract, not a reconstruction of the old CI timing,
+is the repair basis. Production policy, revision and route behavior are unchanged.
+
+| Retired cross-request assertion field | Why it is not a policy-revision promise                                                                                                                                 | Replacement / retained public coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Top-level `runtimeProviderType`       | Administrative Built-in concrete provider comes from this request's `resolveBuiltInModelRuntimeRouteWithKeys`, not the stored policy row.                               | Existing UUID-owned "launches a new catalog model on a supported protocol from rows alone" retains exact openrouter-codex then openai-api-key provider assertions; a new final phase disables only that owned model's last candidate and requires null. Its revision remains unchanged through both candidate changes. Existing `model-policies.test.ts` "advertises the current built-in provider for route-specific effort controls" retains public provider/null checks after a real Runner billing failure on a model-owned mirror. |
+| `memberEffective.runtimeProviderType` | `memberPolicyProjection` uses the live Built-in route for this Built-in/org case; other member routes can differ from the administrative route.                         | The same existing owned-model case now strictly matches the complete member-effective object for both concrete providers and the unavailable/null phase. It does not assert general administrative/member equivalence.                                                                                                                                                                                                                                                                                                                  |
+| `memberEffective.availability`        | Member availability depends on scoped effective route and plan plus live org-route availability; Built-in key/candidate/cooldown facts are outside the policy revision. | The owned-model case now requires exact available member objects for both enabled providers and exact unavailable after its final candidate is disabled. Existing member/plan/permission/identity negatives below remain unchanged.                                                                                                                                                                                                                                                                                                     |
+
+The repaired default case retains its real GET then empty PUT, original initial
+system-default assertion, unchanged revision and therefore the original public
+non-persistence evidence. A flat test-local projection removes exactly the three
+named live fields, never arbitrary keys. Strict equality compares the entire
+ordered policy array and every remaining field: ID/model/label, configured
+provider/credential scope/provider and optional surface IDs, route status/reason,
+created/updated times, any subscription options, member projection presence and
+all remaining member provider/scope/account-selection fields. It is deliberately
+scoped to this system-default/owned-member case, not a generic claim that every
+policy field is frozen solely by revision.
+
+The existing new-model case already owns a UUID catalog model, its two candidate
+rows/pricing and its test-lifetime key leases. Candidate changes address only
+that model; no global default/catalog reset or cooldown is written. Its selected-
+model cooldown namespace has no other run writer, and the case creates no run.
+Key seeding alone is not represented as freezing every shared fact. Existing
+fixture teardown releases leases and deletes only owned model/routes/pricing.
+No new case, fixture, matcher framework, hook, DB adapter, mock, sleep, retry,
+timeout, serialization or production configuration is introduced.
+
+Unchanged security and failure coverage remains at real public boundaries:
+
+- `model-policies.test.ts`: "allows members to read policy controls" (200 and
+  exact system-default models); "requires admins for policy writes" (403 and
+  exact FORBIDDEN body); unauthenticated and missing-organization read/write401.
+- "projects the seven subscription catalog entries only for the connected Auto
+  member": connected caller's available personal route and exact catalog list;
+  another same-org member sees only the system default, not those identities.
+- `personal-subscription-run-identity.test.ts`, "keeps administrative GET and
+  PUT fields identical for two real members": distinct member-effective routes,
+  public JSON excludes personal account ID/token, member write403, and the
+  other's member projection remains its own. No general member/admin identity
+  relation is added by this repair.
+- Existing provider-ID/route incompatibility400 negatives and the owned-model
+  no-complete-pricing Run rejection remain. Native missing-entry/current,
+  runtime/metadata union/fixed hash, N3 real competitors, N4/N5, five-engine
+  lifecycle and Discord negative ±301 coverage are untouched.
+
+No whole case or valid negative is retired. Only the unsupported cross-request
+live-field equality is replaced, with stronger explicit owned public route
+outcomes. Source coverage is not execution PASS. Scoped static checks and related
+API types are required before commit; no local Vitest/native/PG replay. The new
+full HEAD needs non-author delta review and its own natural CI. Historical FAIL,
+mutation UNKNOWN, inherited source-review attribution and Preview/Pi/S1–S3
+limits remain separate. No old run rerun is authorized.
+
+Authoritative practice snapshot for this supplement is main
+`2b27c989bca8da798f9f3d92aee9e90b2de77691`. Scoped ESLint max-warnings0,
+Oxlint deny-warnings, the repository test type-aware configuration, complete API
+aggregate types/boundary/chat-event-acceptance pipeline, Prettier and diff-check
+passed. The type pipeline's Node boundary regressions are not API business or
+native Vitest execution. Checks reused the exact-f5 locked toolchain after
+verifying lockfile and workspace-package source parity; no dependency, DB or
+environment configuration was repaired. These are author static results, not
+independent source approval, natural-CI completion or runtime acceptance.
+
 ## Verification boundary
 
 Read current main practices at `db21163887a248a206ba7bcfadfca4d8f73aaab5`, matching the prior authoritative review receipt. Use explicit-file ESLint/Oxlint with deny-warnings and repository type-aware configuration, formatting/diff checks, and the repository aggregate API type pipeline including regenerated complete test roots. Exact command results belong in the private owner handoff; none establishes runtime acceptance.
