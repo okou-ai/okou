@@ -13,7 +13,6 @@ import { clearAllDetached, createDeferredPromise } from "../../utils";
 import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
