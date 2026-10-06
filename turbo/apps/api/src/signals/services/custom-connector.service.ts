@@ -68,7 +68,7 @@ import {
 import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   customConnectorDefinitionConnectedAccount,
-  loadConnectedCustomConnectorConnections,
+  customConnectorConnectedConnections,
   loadCurrentCustomConnectorStoredValues,
   customConnectorValueMarkers,
   type CustomConnectorCredentialAccess,
@@ -2547,7 +2547,7 @@ export function getCustomConnectorResponse(args: {
   readonly connectorId: string;
 }): Computed<Promise<CustomConnectorResponse | null>> {
   return computed(async (get): Promise<CustomConnectorResponse | null> => {
-    const db = get(db$);
+    get(db$);
     const connector = await get(
       getCustomConnectorById({
         orgId: args.orgId,
@@ -2564,10 +2564,12 @@ export function getCustomConnectorResponse(args: {
           userId: args.userId,
         }),
       ),
-      loadConnectedCustomConnectorConnections(db, {
-        orgId: args.orgId,
-        userId: args.userId,
-      }),
+      get(
+        customConnectorConnectedConnections({
+          orgId: args.orgId,
+          userId: args.userId,
+        }),
+      ),
     ]);
     const connectedAccount = customConnectorDefinitionConnectedAccount({
       connectedConnections,

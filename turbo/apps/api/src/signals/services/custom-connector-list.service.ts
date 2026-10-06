@@ -11,9 +11,9 @@ import {
 } from "./custom-connector.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import {
+  customConnectorConnectedConnections,
   customConnectorDefinitionConnectedAccount,
   customConnectorValueMarkers,
-  loadConnectedCustomConnectorConnections,
 } from "./custom-connector-credential-access.service";
 
 export function customConnectorList(args: {
@@ -42,7 +42,7 @@ export function customConnectorList(args: {
         .where(eq(orgCustomConnectors.orgId, args.orgId))
         .orderBy(orgCustomConnectors.displayName),
       get(customConnectorValueMarkers(args)),
-      loadConnectedCustomConnectorConnections(db, args),
+      get(customConnectorConnectedConnections(args)),
     ]);
     return connectorRows.map((row) => {
       const connectedAccount = customConnectorDefinitionConnectedAccount({
