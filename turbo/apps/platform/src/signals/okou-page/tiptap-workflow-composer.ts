@@ -59,10 +59,7 @@ import {
   splitAgentMentionSegments,
   type ComposerAgentSuggestion,
 } from "./composer-agent-suggestion-domain.ts";
-import {
-  avatarFramingEnabled$,
-  featureSwitch$,
-} from "../external/feature-switch.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   agentMentionText,
   createAgentMentionAvatarRuntime,
@@ -2000,9 +1997,6 @@ function createSyncAgentMentionAvatarsCommand(
   return command(async ({ get }, signal: AbortSignal): Promise<void> => {
     const agents = await get(agents$);
     signal.throwIfAborted();
-    avatarRuntime.setSwitches({
-      framing: get(avatarFramingEnabled$),
-    });
     avatarRuntime.replaceAgents(agents);
   });
 }

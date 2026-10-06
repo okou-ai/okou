@@ -127,8 +127,6 @@ async function setupChatPage(texture: boolean): Promise<void> {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      // Framing on, so the artwork carries a scale the anchor has to survive.
-      [FeatureSwitchKey.AvatarFraming]: true,
       [FeatureSwitchKey.AvatarTexture]: texture,
     },
   });
@@ -186,7 +184,6 @@ test("Leave an agent that cannot take a texture exactly as it was", async () => 
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.AvatarFraming]: true,
       [FeatureSwitchKey.AvatarTexture]: true,
     },
   });
@@ -235,7 +232,6 @@ test("Give the organization default agent its own texture", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.AvatarFraming]: true,
       [FeatureSwitchKey.AvatarTexture]: true,
     },
   });

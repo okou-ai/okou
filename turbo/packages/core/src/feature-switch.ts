@@ -312,12 +312,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
     enabled: false,
   },
-  [FeatureSwitchKey.AvatarFraming]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Center every avatar's visible artwork in its box and move it halfway to a shared fill, so hair volume stops changing how large an avatar looks.",
-    enabled: true,
-  },
   [FeatureSwitchKey.AvatarTexture]: {
     maintainer: "tongx@okou.ai",
     description:

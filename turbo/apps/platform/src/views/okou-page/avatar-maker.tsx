@@ -190,7 +190,7 @@ function StepOptions({
         aria-label={avatarOptionLabel(selection.value)}
         aria-pressed={isPicked}
       >
-        <AvatarSvgPreview config={preview} size={56} centerContent />
+        <AvatarSvgPreview config={preview} size={56} />
       </button>
     );
   });
