@@ -1,7 +1,7 @@
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { cleanup, screen } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, vi, describe, beforeEach, it } from "vitest";
+import { expect, vi, describe, beforeEach, it, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -16,7 +16,7 @@ import {
 
 const secondContext = testContext();
 
-it("Release a VAD session initialized after the old composer was cancelled", async () => {
+test("Release a VAD session initialized after the old composer was cancelled", async () => {
   const loadStarted = context.mocks.deferred<void>();
   const modelReady = context.mocks.deferred<void>();
   const released = context.mocks.deferred<void>();

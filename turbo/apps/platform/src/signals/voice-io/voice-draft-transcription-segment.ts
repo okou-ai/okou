@@ -17,6 +17,7 @@ import {
   readVoiceDraftAudio,
   saveVoiceDraftProgress,
   type VoiceDraftSegment,
+  type VoiceDraftProgress,
 } from "../external/voice-draft-store.ts";
 import { voiceDraftSegmentSamples } from "./voice-draft-audio.ts";
 import {
@@ -181,6 +182,36 @@ async function transcribePreparedSegment(
     : result;
 }
 
+function hasReusableTranscript(
+  segment: VoiceDraftSegment | undefined,
+): segment is VoiceDraftSegment & { readonly transcript: string } {
+  return (
+    segment?.transcript !== undefined &&
+    (segment.vadPolicyVersion === undefined ||
+      segment.vadPolicyVersion === VOICE_ACTIVITY_POLICY_VERSION)
+  );
+}
+
+function invalidateStaleVadCompletion(
+  progress: VoiceDraftProgress,
+): VoiceDraftProgress {
+  if (
+    progress.segments.some((item) => {
+      return (
+        item.vadPolicyVersion !== undefined &&
+        item.vadPolicyVersion !== VOICE_ACTIVITY_POLICY_VERSION
+      );
+    })
+  ) {
+    return {
+      revision: progress.revision,
+      context: progress.context,
+      segments: progress.segments,
+    };
+  }
+  return progress;
+}
+
 /** Run one ordered segment and persist its checkpoint under the session owner. */
 export const transcribeVoiceDraftSegment$ = command(
   async (
@@ -214,20 +245,7 @@ export const transcribeVoiceDraftSegment$ = command(
     };
     // A policy change invalidates the final text as well as locally skipped
     // segments. Recheck them before reusing an interrupted completion.
-    if (
-      progress.segments.some((item) => {
-        return (
-          item.vadPolicyVersion !== undefined &&
-          item.vadPolicyVersion !== VOICE_ACTIVITY_POLICY_VERSION
-        );
-      })
-    ) {
-      progress = {
-        revision: progress.revision,
-        context: progress.context,
-        segments: progress.segments,
-      };
-    }
+    progress = invalidateStaleVadCompletion(progress);
     if (progress.text !== undefined) {
       return {
         kind: "transcribed",
@@ -238,11 +256,7 @@ export const transcribeVoiceDraftSegment$ = command(
     const saved = progress.segments.find((item) => {
       return item.endSample === segmentEnd;
     });
-    if (
-      saved?.transcript !== undefined &&
-      (saved.vadPolicyVersion === undefined ||
-        saved.vadPolicyVersion === VOICE_ACTIVITY_POLICY_VERSION)
-    ) {
+    if (hasReusableTranscript(saved)) {
       return {
         kind: "transcribed",
         transcript: [previous.transcript, saved.transcript]

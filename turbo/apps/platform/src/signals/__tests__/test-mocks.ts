@@ -1196,7 +1196,7 @@ function mockVoiceInput(
     return new Silero(
       session,
       new ort.Tensor("float32", new Float32Array(256), [2, 1, 128]),
-      new ort.Tensor("int64", [16000n]),
+      new ort.Tensor("int64", [16_000n]),
       ort,
     );
   });

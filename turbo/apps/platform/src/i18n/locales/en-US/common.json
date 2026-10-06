@@ -2916,6 +2916,7 @@
       "checkingLimit": "Checking voice input limit",
       "cleanupFailed": "Text was added, but the saved recording could not be removed.",
       "confirmRecording": "Done",
+      "detectionFailed": "Speech detection is unavailable. Your recording is kept. Please retry.",
       "discarding": "Removing voice draft...",
       "input": "Voice input",
       "inputLimitReached": "Voice input limit reached. Upgrade to Pro or Team for higher limits.",
@@ -2924,6 +2925,7 @@
       "inputLimitReachedProMember": "Voice input limit reached. Ask a workspace admin to upgrade to Team for higher limits.",
       "inputLimitReachedReset": "Voice input limit reached. Please wait for your limit to reset.",
       "microphoneAccessDenied": "Microphone access was denied. Allow microphone access and try again.",
+      "noSpeechDetected": "No speech detected. Please record again.",
       "openingMicrophone": "Opening microphone...",
       "removeDraft": "Remove voice draft",
       "restoreFailed": "Couldn’t load your voice draft. Try again.",
@@ -2936,9 +2938,7 @@
       "storageFailed": "Audio could not be saved. Retry can recover only audio already saved on this device.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
-      "transcriptionFailed": "Voice transcription failed. Try again.",
-      "noSpeechDetected": "No speech detected. Please record again.",
-      "detectionFailed": "Speech detection is unavailable. Your recording is kept. Please retry."
+      "transcriptionFailed": "Voice transcription failed. Try again."
     },
     "workflows": {
       "named": "Workflow {{title}}",
