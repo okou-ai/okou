@@ -25,6 +25,7 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import { buildAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog";
+import { catalogWithAuthMethod } from "./helpers/public-connector-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
 /**
@@ -148,6 +149,91 @@ function builtinConnectorRuntimeRegistration(
 }
 
 describe("RUN-02: custom connectors, grants, and network policies", () => {
+  it("omits genuinely compatibility-filtered auth from immutable scoped claims", async () => {
+    const catalog = createPublicAutomaticCatalog(context);
+    await catalog.run(async () => {
+      await catalog.publish();
+      const api = createRunsApi(context);
+      const fw = createFirewallApi(context);
+      const { actor, agentId, runnerGroup } = await catalog.prepareRuntime();
+      await fw.seedTestConnector(actor, {
+        connectorSlug: "x",
+        authMethod: "oauth",
+        accessToken: "generation-x-access",
+        refreshToken: "generation-x-refresh",
+      });
+      await api.enableAgentConnectors(actor, agentId, ["x"]);
+      const warm = await api.createThreadRun(actor, {
+        agentId,
+        prompt: "warm executable X method",
+      });
+      catalog.registerRun(warm.runId);
+      await api.heartbeatRunner(runnerGroup);
+      const warmClaim = await api.claimRunnerJob(warm.runId);
+      catalog.registerClaim(warm.runId, warmClaim.sandboxToken);
+      expect(warmClaim.environment).toHaveProperty(
+        "X_TOKEN",
+        "generation-x-access",
+      );
+      const sourceId = warmClaim.secretConnectorMap?.X_TOKEN;
+      expect(sourceId).toStrictEqual(expect.any(String));
+      expect(findFirewallEntry(warmClaim.firewalls, "x")).toMatchObject({
+        name: "x",
+        sourceId,
+      });
+      await api.requestCancelRun(actor, warm.runId, [200]);
+
+      // Same real account, method ID, storage version and authorization. Only
+      // the published client contract changes, so the real capability evaluator
+      // rejects it instead of consuming a hand-written legacy filter row.
+      const filtered = catalogWithAuthMethod(
+        { connectorSlug: "x", authMethodId: "oauth" },
+        (method) => {
+          return {
+            ...method,
+            client: {
+              clientRegistration: "static",
+              clientType: "public",
+              clientId: "unregistered-test-client",
+            },
+          };
+        },
+      );
+      const x = filtered.connectors.find((connector) => {
+        return connector.slug === "x";
+      });
+      if (!x) {
+        throw new Error("Missing filtered X generation");
+      }
+      const next = buildAutomaticMcpCatalog({
+        slug: catalog.slug,
+        methodId: catalog.methodId,
+      }).catalog;
+      await catalog.publish({
+        ...next,
+        connectors: next.connectors.map((connector) => {
+          return connector.slug === "x" ? x : connector;
+        }),
+      });
+      const run = await api.createThreadRun(actor, {
+        agentId,
+        prompt: "omit actual filtered X method",
+      });
+      catalog.registerRun(run.runId);
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      catalog.registerClaim(run.runId, claim.sandboxToken);
+      expect(claim.environment ?? {}).not.toHaveProperty("X_TOKEN");
+      expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("X_TOKEN");
+      expect(findFirewallEntry(claim.firewalls, "x")).toBeUndefined();
+      expect(claim.billableFirewalls).not.toContain("x");
+      expect(claim.networkPolicies ?? {}).not.toHaveProperty("x");
+      expect(claim).not.toHaveProperty("connectorPermissionBaseline");
+      expect(JSON.stringify(claim)).not.toContain("generation-x-access");
+      expect(JSON.stringify(claim)).not.toContain("generation-x-refresh");
+      await api.requestCancelRun(actor, run.runId, [200]);
+    });
+  });
   it.each(["none", "oauth"] as const)(
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
     async (resolution) => {

@@ -197,9 +197,9 @@ export function catalogDependentPiGenerationCondition(
   schemaVersion: number,
   legacySourceId: string,
 ): SQL {
-  return sql`${eq(piStableContextGenerations.subject, PI_STABLE_CONTEXT_AGENT_SUBJECT)} AND ${exists(sql`SELECT 1 FROM ${piStableContextHeads}
+  return sql`${eq(piStableContextGenerations.subject, PI_STABLE_CONTEXT_AGENT_SUBJECT)} AND ${exists(sql`(SELECT 1 FROM ${piStableContextHeads}
     WHERE ${eq(piStableContextHeads.orgId, piStableContextGenerations.orgId)} AND ${eq(piStableContextHeads.agentId, piStableContextGenerations.agentId)}
-    AND ${catalogDependentPiHeadCondition(schemaVersion, legacySourceId)}`)}`;
+    AND ${catalogDependentPiHeadCondition(schemaVersion, legacySourceId)})`)}`;
 }
 
 export function invalidateCatalogDependentPiOwnerSql(

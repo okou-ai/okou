@@ -825,19 +825,37 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     // Historical JSONB is deliberately old-shaped, with the actual catalog
     // source ID (not a fabricated per-case authority). CAS must retire it too.
+    const legacyInput = JSON.stringify({
+      source: {
+        catalogSourceId: connectorCatalogSource().sourceId,
+        catalogIdentity: first.hash,
+      },
+    });
+    // Legally persisted old pending input, not a missing/non-null fixture that
+    // already violates the pre-C constraint before CAS reaches it.
     await engine.query(
-      "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest, input) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2, $3::jsonb)",
+      "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest, status, input_digest, input) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2, 'pending', $3, $4::jsonb)",
       [
         agentId,
         "a".repeat(64),
-        JSON.stringify({
-          source: {
-            catalogSourceId: connectorCatalogSource().sourceId,
-            catalogIdentity: first.hash,
-          },
-        }),
+        createHash("sha256").update(legacyInput).digest("hex"),
+        legacyInput,
       ],
     );
+    // The generated migration only permits object-shaped retained dependency
+    // facts on a missing head. It does not permit a scalar or worker digest.
+    await expect(
+      engine.query(
+        "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest, input) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2, $3::jsonb)",
+        [agentId, "b".repeat(64), JSON.stringify("not-dependency-facts")],
+      ),
+    ).rejects.toThrow("pi_stable_context_heads_input_check");
+    await expect(
+      engine.query(
+        "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest, input, input_digest) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2, $3::jsonb, $4)",
+        [agentId, "b".repeat(64), legacyInput, "c".repeat(64)],
+      ),
+    ).rejects.toThrow("pi_stable_context_heads_input_check");
     const caseEngine = engine;
     context.mocks.ably.batchPublish.mockImplementation(async (spec) => {
       const current = (
@@ -1338,6 +1356,18 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         reason: "connector-unavailable",
       },
     ]);
+    // A manifest-listed but malformed immutable payload is also a hard error,
+    // not an absent connector or recovery through legacy compatibility bytes.
+    await engine.query(
+      "INSERT INTO connector_catalog_entries (hash, slug, payload) VALUES ($1, $2, $3::jsonb)",
+      [candidate.hash, slug, JSON.stringify({ slug, authMethods: null })],
+    );
+    expect((await mcpDirectory(actor)).status).toBe(500);
+    await expect(runtimeSync(actor)).rejects.toThrow(TypeError);
+    await engine.query(
+      "DELETE FROM connector_catalog_entries WHERE hash = $1 AND slug = $2",
+      [candidate.hash, slug],
+    );
     await engine.exec("DELETE FROM connector_catalog");
     expect((await mcpDirectory(unknownActor)).status).toBe(500);
     await expect(runtimeDiagnostics(unknownActor)).rejects.toThrow(
@@ -1354,9 +1384,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const catalogReads = statements.filter((query) => {
       return query.includes("connector_catalog");
     });
-    // Preserve the four existing catalog reads plus the three real runtime
-    // command reads above; none may recover from still-present legacy data.
-    expect(catalogReads).toHaveLength(7);
+    // Preserve seven missing-row/current reads plus the two malformed-payload
+    // reads; none may recover from still-present legacy data.
+    expect(catalogReads).toHaveLength(9);
     for (const query of catalogReads) {
       expect(query).not.toContain("connector_catalog_active_snapshot");
       expect(query).not.toContain("connector_catalog_runtime_projection");

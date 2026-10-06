@@ -1519,7 +1519,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, capabilityRotatedRun.runId, [200]);
   });
 
-  it("omits filtered auth from scoped runtime claims after identity rotation", async () => {
+  it("keeps immutable scoped auth when only retired legacy filters change", async () => {
     const capabilityIdentityEnvName = "CAL_COM_OAUTH_CLIENT_ID";
     mockOptionalEnv(capabilityIdentityEnvName, undefined);
     const { api, actor, runnerGroup, createScopedRun } =
@@ -1552,21 +1552,32 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     ]);
 
-    const filteredRun = await createScopedRun(
-      "omit a compatibility-filtered connector method",
+    // This only modifies the retired legacy evaluation, not the accepted
+    // immutable entry or its request-owned capability evaluation. Actual
+    // filtered-method omission is covered by the public generation suite.
+    const unchangedRun = await createScopedRun(
+      "ignore retired legacy compatibility filters",
       ["x"],
     );
     await api.heartbeatRunner(runnerGroup);
-    const filteredClaim = await api.claimRunnerJob(filteredRun.runId);
-    expect(filteredClaim.environment ?? {}).not.toHaveProperty("X_TOKEN");
-    expect(filteredClaim.secretConnectorMap ?? {}).not.toHaveProperty(
+    const unchangedClaim = await api.claimRunnerJob(unchangedRun.runId);
+    expect(unchangedClaim.environment).toHaveProperty(
       "X_TOKEN",
+      "fixture-x-token",
     );
-    expect(findFirewallEntry(filteredClaim.firewalls, "x")).toBeUndefined();
-    expect(filteredClaim.billableFirewalls).not.toContain("x");
-    expect(filteredClaim.networkPolicies ?? {}).not.toHaveProperty("x");
-    expect(filteredClaim).not.toHaveProperty("connectorPermissionBaseline");
-    await api.requestCancelRun(actor, filteredRun.runId, [200]);
+    const sourceId = unchangedClaim.secretConnectorMap?.X_TOKEN;
+    expect(sourceId).toStrictEqual(expect.any(String));
+    expect(findFirewallEntry(unchangedClaim.firewalls, "x")).toMatchObject({
+      kind: "builtin",
+      name: "x",
+      sourceId,
+    });
+    expect(unchangedClaim.billableFirewalls).toContain("x");
+    expect(unchangedClaim.networkPolicies ?? {}).toHaveProperty("x");
+    expect(unchangedClaim).not.toHaveProperty("connectorPermissionBaseline");
+    expect(JSON.stringify(unchangedClaim)).not.toContain("x-filtered-access");
+    expect(JSON.stringify(unchangedClaim)).not.toContain("x-filtered-refresh");
+    await api.requestCancelRun(actor, unchangedRun.runId, [200]);
   });
 
   it("reuses current validator package authority", async () => {
@@ -1605,7 +1616,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("rejects invalid projection compatibility", async () => {
+  it("ignores malformed retired projection compatibility during immutable admission", async () => {
     const api = createRunsApi(context);
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
@@ -1617,29 +1628,26 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
     const { actor, agentId } = await entitledRunActor();
     await api.enableAgentConnectors(actor, agentId, ["x"]);
-    // A rotated catalog that no request has read yet becomes incompatible.
+    // Rotate the actual immutable identity, then corrupt only the legacy
+    // compatibility row. Missing/current-member corruption lives in N5.
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
       runtimeProjection: true,
     });
     await invalidateApiTestConnectorCatalogCompatibility();
-    const rejectedPrompt = "invalid projection compatibility rejection";
-
-    await expect(
-      api.readThreadLaunchFailure(actor, { agentId, prompt: rejectedPrompt }),
-    ).resolves.toStrictEqual({
-      pickError: "Accepted external connector catalog is unavailable",
-      inputError: "internal_error",
-    });
+    const prompt = "ignore malformed retired projection compatibility";
+    const admitted = await api.createThreadRun(actor, { agentId, prompt });
+    expect((await api.readRun(actor, admitted.runId)).status).toBe("pending");
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
     });
     expect(
       runs.runs.filter((run) => {
-        return run.prompt === rejectedPrompt;
+        return run.prompt === prompt;
       }),
-    ).toHaveLength(0);
+    ).toMatchObject([{ id: admitted.runId, prompt }]);
+    await api.requestCancelRun(actor, admitted.runId, [200]);
   });
 
   it("returns a context encryption failure while storage presigning is still pending", async () => {

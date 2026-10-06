@@ -198,7 +198,10 @@ export const piStableContextHeads = pgTable(
       ),
       check(
         "pi_stable_context_heads_input_check",
-        sql`(${table.status} = 'missing' AND ${table.input} IS NULL AND ${table.inputDigest} IS NULL) OR (${table.status} <> 'missing' AND ${table.input} IS NOT NULL AND ${table.inputDigest} IS NOT NULL)`,
+        // Missing heads may retain object-shaped dependency facts for the next
+        // catalog cutover, but never a serving/worker digest. Historical null
+        // missing heads and old pending/ready objects remain legally stored.
+        sql`(${table.status} = 'missing' AND ${table.inputDigest} IS NULL AND (${table.input} IS NULL OR jsonb_typeof(${table.input}) = 'object')) OR (${table.status} <> 'missing' AND ${table.input} IS NOT NULL AND ${table.inputDigest} IS NOT NULL)`,
       ),
       check(
         "pi_stable_context_heads_artifact_check",
