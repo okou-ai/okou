@@ -350,3 +350,37 @@ cleanup-delta review and applicable Preview remain distinct requirements. The
 6af source approval inherits only unchanged code, not this ledger delta or new
 CI/Preview. First substantive failure stops acceptance; no old Crates recovery,
 local replay, automatic further repair or merge authorization.
+
+## Minimal SCA dependency repair after8dc stop
+
+The cleanup source delta has coordinator independent Scoped LGTM; that accepts
+neither8dc CI/Preview nor this new dependency delta. Original c5/6af timeout cause
+remains UNKNOWN;2543 PASS,9d56 diagnostic PASS and8dc critical SCA FAIL are
+separate cohorts. No account/Official business repair follows from these results.
+
+The actual8dc Security job112068753803 found GHSA-jqcg-44mw-7w3h in
+`apps/desktop > @modelcontextprotocol/sdk > express > proxy-addr`. The lock graph
+has one vulnerable2.0.7 package/snapshot; Express5.2.1 requests `^2.0.7`, which
+permits the patched2.0.8. The same shared leaf reaches Desktop, API and
+pi-agent-runtime production graphs, plus the CLI development graph. SDK1.30.0,
+Express5.2.1, all importer declarations and every other package stay unchanged.
+
+Recursive leaf updating also refreshed two unrelated leaves; those exploratory
+lockfiles were discarded. The existing targeted override mechanism now adds only
+`express>proxy-addr: ^2.0.8`, with removal when upstream requires the patched
+floor. This is within Express's compatible range and prevents a vulnerable older
+selection; no global major override or SDK/Express upgrade. Normal pnpm10.33.4
+lockfile-only resolution produces only that leaf's2.0.7→2.0.8 entries, Express
+edge and matching override. Registry integrity matches the generated lock entry;
+forwarded0.2.0/ipaddr.js1.9.1 and Node>=0.10 stay unchanged.2.0.8 was published
+2026-09-15, beyond the unchanged seven-day release-age policy. No handwritten
+integrity/snapshots, new age exception, audit ignore/threshold or workflow change.
+
+Frozen installation without lifecycle scripts and module-load/interface checks
+pass. Desktop/pi-agent-runtime/CLI/API type checks pass; this is not HTTP/trust,
+Desktop packaging or live compatibility acceptance. Production audit exits0,
+critical0, with metadata still reporting one high under existing audit policy;
+not a vulnerability-free claim. No local Vitest/native/PG/devserver or environment
+repair. New dependency delta still requires independent review and its own one
+natural CI cohort; first substantive failure stops acceptance, with no second
+repair/rerun/recovery allowance. Account test source remains the exact6af blob.
