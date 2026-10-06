@@ -9,6 +9,7 @@ import { env, mockEnv } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createBddApi, type ApiTestUserOptions } from "./api-bdd";
 import { createConnectorBddApi } from "./api-bdd-connectors";
+import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createFirewallApi } from "./api-bdd-firewall";
 import { createRunReadsApi } from "./api-bdd-run-reads";
 import { createRunsApi } from "./api-bdd-runs";
@@ -35,6 +36,7 @@ export function createPublicFirewallFixture(
   const runIds = new Set<string>();
   const claims = new Map<string, string>();
   const deletedRuns = new Set<string>();
+  const queuedThreads = new Set<string>();
   const scenarioCleanups: (() => Promise<void>)[] = [];
   const deletedUsers = new Set<string>();
   const builtinAccounts = new Map<ConnectorSlug, Set<string>>();
@@ -87,6 +89,14 @@ export function createPublicFirewallFixture(
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
     restoreStorage?.();
     context.mocks.ably.publish.mockResolvedValue(undefined);
+    // Remove owned waiting inputs before cancellation frees Run capacity.
+    // Otherwise teardown can launch a new, unregistered Run after env reset.
+    for (const threadId of queuedThreads) {
+      await createChatFilesBddApi(context).deleteThread(actor, threadId);
+    }
+    if (queuedThreads.size > 0) {
+      await flushWaitUntilForTest();
+    }
     await cleanupRuns();
 
     for (const cleanup of scenarioCleanups) {
@@ -212,6 +222,9 @@ export function createPublicFirewallFixture(
     },
     registerRunDeletion(runId: string): void {
       deletedRuns.add(runId);
+    },
+    registerQueuedThread(threadId: string): void {
+      queuedThreads.add(threadId);
     },
     async fund(fundingActor = actor, cashCredits?: 100_000) {
       if (fundingActor.orgId !== orgId) {

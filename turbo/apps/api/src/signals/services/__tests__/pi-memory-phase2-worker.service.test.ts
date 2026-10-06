@@ -352,8 +352,13 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       expect(dispatched).toMatchObject({ status: "pending" });
       expect(dispatched).not.toHaveProperty("error");
       await chat.cancelChatRun(fixture.actor, blocker.runId);
+      const waitingThread = await chat.chat.createThread(fixture.actor, {
+        agentId: job.scope.sourceAgentId,
+      });
+      fixture.registerQueuedThread(waitingThread.id);
       await chat.sendWaitingChatInput(fixture.actor, {
         agentId: job.scope.sourceAgentId,
+        threadId: waitingThread.id,
         prompt: "Wait behind the maintenance run.",
       });
     });
