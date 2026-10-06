@@ -15,10 +15,6 @@ import {
   type ModelProviderType,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  type FeatureSwitchContext,
-  isFeatureEnabled,
-} from "@okouai/core/feature-switch";
 import { command } from "ccstate";
 import { notFound } from "../../lib/error";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -37,7 +33,6 @@ import {
   getOpenRouterBaseUrl,
   OPENROUTER_US_ORIGIN,
 } from "@okouai/api-contracts/contracts/openrouter-routing";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import {
@@ -171,10 +166,9 @@ function providerEnvironmentFromSecretRefs(
 function builtInModelProviderEnvironmentFromSnapshot(args: {
   readonly route: BuiltInModelRuntimeRoute;
   readonly selectedModel: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
   readonly apiKey: string;
 }): ResolvedModelProviderEnvironment | null {
-  const { route, selectedModel, featureSwitchContext } = args;
+  const { route, selectedModel } = args;
   const key = { apiKey: args.apiKey };
   const secretName = getSecretNameForType(route.providerType);
   if (!secretName) {
@@ -189,10 +183,6 @@ function builtInModelProviderEnvironmentFromSnapshot(args: {
   const routing = {
     credentialOwner: "builtin" as const,
     model: route.upstreamModel,
-    usRoutingEnabled: isFeatureEnabled(
-      FeatureSwitchKey.OpenRouterUsRouting,
-      featureSwitchContext,
-    ),
   };
   const firewall = getModelProviderFirewall(route.providerType, routing);
   const usesUsEndpoint = firewall?.apis.some((api) => {
@@ -444,7 +434,6 @@ interface ManagedModelEnvironmentRequest {
   readonly framework: SupportedFramework;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }
 
 /** Exact managed-key source → explicit key resolution → managed runtime. */
@@ -488,7 +477,6 @@ export async function prepareManagedModelEnvironment(
   const protocol = builtInModelProviderEnvironmentFromSnapshot({
     route,
     selectedModel: route.selectedModel,
-    featureSwitchContext: args.featureSwitchContext,
     apiKey: credentials[secretName],
   });
   if (!protocol) {

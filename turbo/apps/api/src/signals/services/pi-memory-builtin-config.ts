@@ -1,10 +1,5 @@
 import { getModelProviderFirewall } from "@okouai/api-contracts/contracts/model-providers";
 import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -119,7 +114,6 @@ export async function resolvePiMemoryBuiltinRoute(
 export function preparePiMemoryBuiltinEnvironment(
   source: ModelSourceSnapshot,
   route: BuiltInModelRuntimeRoute | undefined,
-  featureSwitchContext: FeatureSwitchContext,
 ): ResolvedModelProviderEnvironment | null {
   if (
     source.identity.kind !== "built-in" ||
@@ -154,10 +148,6 @@ export function preparePiMemoryBuiltinEnvironment(
   const routing = {
     credentialOwner: "builtin" as const,
     model: route.upstreamModel,
-    usRoutingEnabled: isFeatureEnabled(
-      FeatureSwitchKey.OpenRouterUsRouting,
-      featureSwitchContext,
-    ),
   };
   return {
     id: null,

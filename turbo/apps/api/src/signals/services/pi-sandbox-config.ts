@@ -275,14 +275,11 @@ function resolveResponsesPiModelConfig(
   const endpoint = getModelProviderPiEndpoint(
     concreteType.data,
     "openai-responses",
-    provider.credentialOwner
-      ? {
-          credentialOwner: provider.credentialOwner,
-          model,
-          usRoutingEnabled:
-            provider.environment.OPENAI_BASE_URL ===
-            `${OPENROUTER_US_ORIGIN}/api/v1`,
-        }
+    // Captured global endpoints remain readable; only a captured US endpoint
+    // selects the owner-gated US route.
+    provider.credentialOwner &&
+      provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
+      ? { credentialOwner: provider.credentialOwner, model }
       : undefined,
   );
   if (!endpoint) {

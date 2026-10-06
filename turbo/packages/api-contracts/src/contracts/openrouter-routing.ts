@@ -24,7 +24,6 @@ export type OpenRouterApi = "messages" | "responses" | "chat/completions";
 export interface OpenRouterRoutingContext {
   readonly credentialOwner: "builtin" | "organization" | "member";
   readonly model: string;
-  readonly usRoutingEnabled: boolean;
 }
 
 const OPENROUTER_GLOBAL_ORIGIN = "https://openrouter.ai";
@@ -36,7 +35,6 @@ export function getOpenRouterBaseUrl(
   context: OpenRouterRoutingContext,
 ): string {
   const origin =
-    context.usRoutingEnabled &&
     context.credentialOwner === "builtin" &&
     US_MODELS[api].includes(context.model)
       ? OPENROUTER_US_ORIGIN

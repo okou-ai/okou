@@ -21,7 +21,7 @@ const usRouted: readonly (readonly [OpenRouterApi, string])[] = [
 
 describe("platform OpenRouter regional selection", () => {
   it.each(usRouted)(
-    "gates product-approved US %s %s by switch and credential ownership",
+    "gates product-approved US %s %s by credential ownership",
     (api, model) => {
       const path = api === "messages" ? "/api" : "/api/v1";
       for (const credentialOwner of [
@@ -29,17 +29,9 @@ describe("platform OpenRouter regional selection", () => {
         "organization",
         "member",
       ] as const) {
-        for (const usRoutingEnabled of [false, true]) {
-          expect(
-            getOpenRouterBaseUrl(api, {
-              model,
-              credentialOwner,
-              usRoutingEnabled,
-            }),
-          ).toBe(
-            `https://${credentialOwner === "builtin" && usRoutingEnabled ? "us." : ""}openrouter.ai${path}`,
-          );
-        }
+        expect(getOpenRouterBaseUrl(api, { model, credentialOwner })).toBe(
+          `https://${credentialOwner === "builtin" ? "us." : ""}openrouter.ai${path}`,
+        );
       }
     },
   );
@@ -53,12 +45,11 @@ describe("platform OpenRouter regional selection", () => {
     ["responses", "google/gemini-3.6-flash"],
     ["chat/completions", "google/gemini-3.8-flash"],
     ["responses", "new/unverified-model"],
-  ] as const)("keeps non-US-routed %s %s global when enabled", (api, model) => {
+  ] as const)("keeps non-US-routed %s %s global", (api, model) => {
     expect(
       getOpenRouterBaseUrl(api, {
         model,
         credentialOwner: "builtin",
-        usRoutingEnabled: true,
       }),
     ).toBe(`https://openrouter.ai${api === "messages" ? "/api" : "/api/v1"}`);
   });
@@ -67,7 +58,6 @@ describe("platform OpenRouter regional selection", () => {
     const routing = {
       model: "openai/gpt-6-astra",
       credentialOwner: "builtin",
-      usRoutingEnabled: true,
     } as const;
     const endpoint = getModelProviderPiEndpoint(
       "openrouter-codex",
@@ -113,7 +103,6 @@ describe("platform OpenRouter regional selection", () => {
     const routing = {
       model: "anthropic/claude-sonnet-4.6",
       credentialOwner: "builtin",
-      usRoutingEnabled: true,
     } as const;
     expect(
       getModelProviderFirewall("openrouter-api-key", routing)?.apis,
