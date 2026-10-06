@@ -18,6 +18,7 @@ import {
   connectorCatalogActiveSnapshot,
   connectorCatalogSyncState,
   connectorCatalog,
+  connectorCatalogEntries,
 } from "@okouai/db/schema/connector-catalog";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -80,11 +81,6 @@ import {
   connectorCatalogSource,
   type ConnectorCatalogSource,
 } from "./connector-catalog-source";
-import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
-import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { persistConnectorCatalogRuntimeProjection } from "./connector-catalog-runtime-projection.service";
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
@@ -174,7 +170,7 @@ function customConnectorPermissionBundleFingerprint(
 
 async function publishCatalogPermissionBundleWakeupsInner(args: {
   readonly db: Db;
-  readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
+  readonly previousArtifact: ConnectorCatalogArtifact | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
   const currentCatalog = createAcceptedConnectorServerFirewallCatalog({
@@ -183,6 +179,14 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
       return [];
     },
   });
+  const previousCatalog = args.previousArtifact
+    ? createAcceptedConnectorServerFirewallCatalog({
+        artifact: args.previousArtifact,
+        runtimeMethodsForSlug: () => {
+          return [];
+        },
+      })
+    : undefined;
   const rows = await args.db
     .select({
       id: orgCustomConnectors.id,
@@ -226,9 +230,9 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
   const affectedByOrg = new Map<string, string[]>();
   for (const [ref, connectors] of connectorIdsByRef) {
     const [previousBundle, currentBundle] = await Promise.all([
-      args.previousSnapshot
+      previousCatalog
         ? loadCustomConnectorPermissionBundle({
-            catalog: args.previousSnapshot.serverFirewallMetadata,
+            catalog: previousCatalog,
             ref,
           })
         : null,
@@ -287,15 +291,13 @@ function builtinRuntimeConfig(
 
 async function publishBuiltinCatalogWakeups(args: {
   readonly db: Db;
-  readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
+  readonly previousArtifact: ConnectorCatalogArtifact | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
   const previous = new Map(
-    args.previousSnapshot?.acceptedSnapshot.artifact.connectors.map(
-      (connector) => {
-        return [connector.slug, connector] as const;
-      },
-    ),
+    args.previousArtifact?.connectors.map((connector) => {
+      return [connector.slug, connector] as const;
+    }),
   );
   const current = new Map(
     args.currentArtifact.connectors.map((connector) => {
@@ -354,7 +356,7 @@ async function publishBuiltinCatalogWakeups(args: {
 
 async function publishCatalogRuntimeWakeups(args: {
   readonly db: Db;
-  readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
+  readonly previousArtifact: ConnectorCatalogArtifact | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
   const results = await Promise.all([
@@ -922,16 +924,6 @@ function catalogDependentPiOwnerColumns() {
     agentId: piStableContextHeads.agentId,
   };
 }
-function piCutoverNeedsInvalidation(
-  args: CandidateCommitInput,
-  switched: boolean,
-): boolean {
-  // An absent mirror restored at the already accepted hash is not a cutover.
-  // An existing immutable hash change is, regardless of legacy acceptance.
-  return (
-    switched && (args.baselineHash !== null || servingCatalogChanged(args))
-  );
-}
 function immutableValuesForCandidate(args: CandidateCommitInput) {
   return immutableCatalogValues(
     args.candidate.artifact,
@@ -979,7 +971,10 @@ const commitCandidateSql$ = command(
                   )
                   .returning({ hash: connectorCatalog.hash });
           requireCatalogCasWinner(changed);
-          switched = servingCatalogChanged(args);
+          // The successful immutable CAS is the cutover fact. Legacy may
+          // already accept C while the serving mirror still contains B.
+          // Restoring an absent mirror at accepted C is the sole exemption.
+          switched = args.baselineHash !== null || servingCatalogChanged(args);
         }
         const nextRevision = (args.baseline?.revision ?? 0) + 1;
         const stateValues = acceptedStateValues(args);
@@ -1025,7 +1020,7 @@ const commitCandidateSql$ = command(
           artifact: args.candidate.artifact,
           validator: args.validator,
         });
-        if (piCutoverNeedsInvalidation(args, switched)) {
+        if (switched) {
           // A separate READ COMMITTED statement, AFTER the conditional
           // current write has waited, sees registrations committed before it.
           const dependentHeads = catalogDependentPiHeadCondition(
@@ -1390,6 +1385,49 @@ async function completeUnchangedSync(
   return { kind: "complete", response };
 }
 
+const currentCatalogForWakeups$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    const rows = await set(writeDb$)
+      .select({
+        hash: connectorCatalog.hash,
+        header: connectorCatalog.catalogHeader,
+        slugs: connectorCatalog.entrySlugs,
+        entry: connectorCatalogEntries.payload,
+      })
+      .from(connectorCatalog)
+      .leftJoin(
+        connectorCatalogEntries,
+        eq(connectorCatalogEntries.hash, connectorCatalog.hash),
+      )
+      .where(
+        eq(
+          connectorCatalog.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
+      );
+    signal.throwIfAborted();
+    const current = rows[0];
+    if (!current) {
+      return null;
+    }
+    const entries = new Map(
+      rows.flatMap((row) => {
+        return row.entry ? [[row.entry.slug, row.entry] as const] : [];
+      }),
+    );
+    const connectors = current.slugs.map((slug) => {
+      const entry = entries.get(slug);
+      if (!entry) {
+        throw new Error(
+          "Immutable connector catalog manifest entry is missing",
+        );
+      }
+      return entry;
+    });
+    return { hash: current.hash, artifact: { ...current.header, connectors } };
+  },
+);
+
 const commitValidatedCandidate$ = command(
   async (
     { set },
@@ -1403,26 +1441,10 @@ const commitValidatedCandidate$ = command(
     signal: AbortSignal,
   ): Promise<SyncAttemptResult> => {
     const runtime = { ...input, db: set(writeDb$) };
-    // Compare permission bundles against the accepted v4 serving state. A cold
-    // catalog has no previous runtime snapshot.
-    const previousSnapshotResult = await settle(
-      loadConnectorRuntimeSnapshot(runtime.db),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (
-      !previousSnapshotResult.ok &&
-      !(
-        previousSnapshotResult.error instanceof
-          ExternalConnectorCatalogUnavailableError &&
-        previousSnapshotResult.error.reason === "missing_current_identity"
-      )
-    ) {
-      log.warn("Failed to load previous connector runtime snapshot", {
-        error: previousSnapshotResult.error,
-      });
-    }
-    const baselineHash = await set(immutableCatalogHash$, signal);
+    // One statement captures the actual serving B, including removed methods
+    // and permission bundles. Legacy accepted C is not notification authority.
+    const previous = await set(currentCatalogForWakeups$, signal);
+    const baselineHash = previous?.hash ?? null;
     signal.throwIfAborted();
     const catalogGzip = encodeConnectorCatalogSnapshot(args.candidate.rawBytes);
     const outcome = await set(
@@ -1471,9 +1493,7 @@ const commitValidatedCandidate$ = command(
       await publishCatalogRuntimeWakeups({
         db: runtime.db,
         currentArtifact: args.candidate.artifact,
-        previousSnapshot: previousSnapshotResult.ok
-          ? previousSnapshotResult.value
-          : undefined,
+        previousArtifact: previous?.artifact,
       });
     }
     signal.throwIfAborted();

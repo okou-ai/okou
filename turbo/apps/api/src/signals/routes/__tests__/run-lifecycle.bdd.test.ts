@@ -1565,12 +1565,28 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "X_TOKEN",
       "fixture-x-token",
     );
-    const sourceId = unchangedClaim.secretConnectorMap?.X_TOKEN;
-    expect(sourceId).toStrictEqual(expect.any(String));
+    const ownedAccount = (
+      await createConnectorBddApi(context).listBuiltinConnectorAccounts(
+        actor,
+        "x",
+      )
+    ).find((account) => {
+      return account.isDefault;
+    });
+    if (!ownedAccount) {
+      throw new Error("Missing owned default X account");
+    }
+    // secretConnectorMap is a slug routing key; metadata/firewalls carry the
+    // exact credential owner. These contracts must not be conflated.
+    expect(unchangedClaim.secretConnectorMap?.X_TOKEN).toBe("x");
+    expect(unchangedClaim.secretConnectorMetadataMap?.X_TOKEN).toMatchObject({
+      sourceType: "connector",
+      sourceId: ownedAccount.id,
+    });
     expect(findFirewallEntry(unchangedClaim.firewalls, "x")).toMatchObject({
       kind: "builtin",
       name: "x",
-      sourceId,
+      sourceId: ownedAccount.id,
     });
     expect(unchangedClaim.billableFirewalls).toContain("x");
     expect(unchangedClaim.networkPolicies ?? {}).toHaveProperty("x");

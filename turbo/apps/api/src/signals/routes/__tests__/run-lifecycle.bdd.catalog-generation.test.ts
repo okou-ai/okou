@@ -173,13 +173,27 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       catalog.registerClaim(warm.runId, warmClaim.sandboxToken);
       expect(warmClaim.environment).toHaveProperty(
         "X_TOKEN",
-        "generation-x-access",
+        "fixture-x-token",
       );
-      const sourceId = warmClaim.secretConnectorMap?.X_TOKEN;
-      expect(sourceId).toStrictEqual(expect.any(String));
+      const ownedAccount = (
+        await createConnectorBddApi(context).listBuiltinConnectorAccounts(
+          actor,
+          "x",
+        )
+      ).find((account) => {
+        return account.isDefault;
+      });
+      if (!ownedAccount) {
+        throw new Error("Missing owned generation X account");
+      }
+      expect(warmClaim.secretConnectorMap?.X_TOKEN).toBe("x");
+      expect(warmClaim.secretConnectorMetadataMap?.X_TOKEN).toMatchObject({
+        sourceType: "connector",
+        sourceId: ownedAccount.id,
+      });
       expect(findFirewallEntry(warmClaim.firewalls, "x")).toMatchObject({
         name: "x",
-        sourceId,
+        sourceId: ownedAccount.id,
       });
       await api.requestCancelRun(actor, warm.runId, [200]);
 

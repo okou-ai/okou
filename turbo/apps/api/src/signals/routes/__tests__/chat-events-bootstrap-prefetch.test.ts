@@ -704,7 +704,7 @@ describe("chat agent bootstrap prefetch", () => {
     },
   );
 
-  it("uses one captured catalog generation when its projection set changes during prefetch", async () => {
+  it("uses one captured immutable catalog generation when current changes during prefetch", async () => {
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `bootstrap-catalog-${randomUUID()}`,
@@ -730,9 +730,10 @@ describe("chat agent bootstrap prefetch", () => {
         select: (queryArgs) => {
           const text = barrierQueryText(queryArgs);
           return (
-            text.includes('from "connector_catalog_active_snapshot"') &&
-            text.includes('"connector_catalog_runtime_projection_sets"') &&
-            text.includes('"catalog_gzip"')
+            text.includes('from "connector_catalog"') &&
+            text.includes('"connector_catalog_entries"') &&
+            text.includes('"catalog_header"') &&
+            text.includes('"payload"')
           );
         },
         stopAt: (_queryArgs, selecting) => {
@@ -749,7 +750,10 @@ describe("chat agent bootstrap prefetch", () => {
             },
             [201],
           );
-          await barrier.entered;
+          // The single current+entry SELECT has completed, but its captured
+          // result has not yet reached the bootstrap materializer. Rotation is
+          // owned by this barrier, not a wait for the retired projection query.
+          expect((await barrier.entered).rowCount).toBeGreaterThan(0);
           const response = await sending;
           if (response.status !== 201) {
             throw new Error("Expected the direct send to be accepted");

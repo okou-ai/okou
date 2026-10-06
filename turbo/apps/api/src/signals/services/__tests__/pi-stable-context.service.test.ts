@@ -169,11 +169,12 @@ describe("Pi stable context projection", () => {
   });
 
   it("rejects old, corrupt and capability-incompatible source envelopes without upgrading them", () => {
-    const capabilityDigest = piCatalogIdentityForTest().capabilityDigest;
-    expect(
-      hasImmutablePiCatalogSource(input.source, capabilityDigest),
-    ).toBeTruthy();
-    const { catalog, ...previous } = input.source;
+    // Capture after per-test provider configuration, not at describe-time
+    // before the test environment installs its executable capability vector.
+    const source = { ...input.source, catalog: piCatalogIdentityForTest() };
+    const capabilityDigest = source.catalog.capabilityDigest;
+    expect(hasImmutablePiCatalogSource(source, capabilityDigest)).toBeTruthy();
+    const { catalog, ...previous } = source;
     expect(
       hasImmutablePiCatalogSource(
         {
@@ -187,24 +188,27 @@ describe("Pi stable context projection", () => {
     expect(
       hasImmutablePiCatalogSource(
         {
-          ...input.source,
-          catalog: { ...piCatalogIdentityForTest(), hash: "corrupt" },
+          ...source,
+          catalog: { ...catalog, hash: "corrupt" },
         },
         capabilityDigest,
       ),
     ).toBeFalsy();
     expect(
       hasImmutablePiCatalogSource(
-        { ...input.source, catalog: piCatalogIdentityForTest(2) },
+        { ...source, catalog: { ...catalog, schemaVersion: 2 } },
         capabilityDigest,
       ),
     ).toBeFalsy();
     expect(
-      hasImmutablePiCatalogSource(input.source, "incompatible-capability"),
+      hasImmutablePiCatalogSource(
+        source,
+        `sha256:${capabilityDigest.endsWith("0") ? "1".repeat(64) : "0".repeat(64)}`,
+      ),
     ).toBeFalsy();
     expect(
       hasImmutablePiCatalogSource(
-        { ...input.source, catalog: null },
+        { ...source, catalog: null },
         capabilityDigest,
       ),
     ).toBeTruthy();

@@ -1,5 +1,10 @@
 /* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
 import { eq } from "drizzle-orm";
+import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
+import {
+  immutableCatalogValues,
+  prepareImmutableCatalogEntries$,
+} from "../../services/connector-catalog-immutable.service";
 import { piStableContextHeads } from "@okouai/db/schema/pi-stable-context";
 import { readFile, readdir } from "node:fs/promises";
 import assert from "node:assert/strict";
@@ -25,6 +30,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import {
   afterAll,
   afterEach,
+  onTestFinished,
   beforeEach,
   describe,
   expect,
@@ -35,12 +41,13 @@ import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cr
 import {
   connectorCatalogArtifactSchema,
   CONNECTOR_CATALOG_ACTIVE_KEY,
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
 import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testContext } from "../../../__tests__/test-context";
-import { clearMockedEnv } from "../../../lib/env";
+import { clearMockedEnv, env } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
@@ -50,7 +57,18 @@ import type {
   ClerkPaginated,
 } from "../../external/clerk";
 import { createStore } from "ccstate";
-import { createDeferredPromise, settle } from "../../utils";
+import { runnersRoutes } from "../runners";
+import {
+  runnersJobClaimContract,
+  storedExecutionContextSchema,
+} from "@okouai/api-contracts/contracts/runners";
+import { withSecretKmsClientForTest } from "../../../lib/secret-kms-client";
+import { encryptSecretForTests } from "./helpers/encrypt-secret";
+import {
+  createDeferredPromise,
+  settle,
+  settleIncludingAbort,
+} from "../../utils";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 import { createExecutionStorageObjects } from "../../services/execution-storage.service";
@@ -58,7 +76,10 @@ import { mockApiTestConnectorProviderConfiguration } from "../../../test-fixture
 import {
   preparePiStableContext,
   piStableContextVariantDigest,
+  piStableContextProjectionFromInput,
+  piStableContextArtifactDigest,
 } from "../../services/pi-stable-context.service";
+import { piStableContextInputDigest } from "../../services/pi-stable-context-digest.service";
 import { buildAgentIdentityPrompt } from "../../services/agent-identity-prompt.service";
 import {
   buildAgentToolsPrompt,
@@ -421,6 +442,121 @@ function runtimeArgs(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
   };
 }
 
+async function assertEarlyClaimSecretBoundary(
+  actor: Awaited<ReturnType<typeof ownedMcpRun>>,
+  mode: "failure" | "abort",
+) {
+  if (!engine) {
+    throw new Error("Missing claim case engine");
+  }
+  const stored = storedExecutionContextSchema.parse({
+    storageMounts: [],
+    environment: { LEGACY_MASKED: "masking-secret" },
+    platformEnvironment: {},
+    secretValueEnvironmentKeys: ["retired-key"],
+    resumeSession: null,
+    encryptedSecrets: encryptSecretForTests(
+      JSON.stringify({ LEGACY_MASKED: "masking-secret" }),
+    ),
+    cliAgentType: "claude-code",
+    connectorRuntimeTargets: [
+      {
+        kind: "builtin",
+        connectorSlug: actor.connectorSlug,
+        sourceId: actor.connectionId,
+      },
+    ],
+    firewalls: [
+      {
+        kind: "builtin",
+        name: actor.connectorSlug,
+        sourceId: actor.connectionId,
+      },
+    ],
+  });
+  await engine.query(
+    "UPDATE agent_runs SET status = 'pending' WHERE id = $1 AND org_id = $2 AND user_id = $3",
+    [actor.runId, actor.orgId, actor.userId],
+  );
+  await engine.query(
+    "INSERT INTO runner_job_queue (run_id, runner_group, execution_context, expires_at) VALUES ($1, 'catalog-n4', $2::jsonb, now() + interval '1 hour')",
+    [actor.runId, JSON.stringify(stored)],
+  );
+  const requestController = new AbortController();
+  onTestFinished(() => {
+    requestController.abort();
+  });
+  const requestSignal = AbortSignal.any([
+    context.signal,
+    requestController.signal,
+  ]);
+  const original = new Error("Controlled claim secret failure");
+  let decryptions = 0;
+  statements = [];
+  const result = await withSecretKmsClientForTest(
+    {
+      generateDataKey() {
+        return Promise.reject(new Error("Claim must not encrypt new secrets"));
+      },
+      decrypt() {
+        decryptions += 1;
+        if (mode === "failure") {
+          return Promise.reject(original);
+        }
+        requestController.abort();
+        return Promise.resolve(
+          Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
+        );
+      },
+    },
+    async () => {
+      return await settleIncludingAbort(
+        setupApp({
+          context,
+          routes: runnersRoutes,
+          signal: requestSignal,
+          rethrowErrors: true,
+        })(runnersJobClaimContract).claim({
+          headers: {
+            authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+          },
+          params: { id: actor.runId },
+          body: { capabilities: { piModelConfigGenerations: [1, 2, 3, 4] } },
+        }),
+      );
+    },
+  );
+  expect(decryptions).toBe(1);
+  if (result.ok) {
+    throw new Error("Secret failure/abort unexpectedly claimed a job");
+  }
+  expect(result.error).toBe(
+    mode === "failure" ? original : requestSignal.reason,
+  );
+  expect(
+    statements.filter((query) => {
+      return query.includes('from "connector_catalog"');
+    }),
+  ).toStrictEqual([]);
+  expect(
+    (
+      await engine.query(
+        "SELECT status FROM agent_runs WHERE id = $1 AND org_id = $2 AND user_id = $3",
+        [actor.runId, actor.orgId, actor.userId],
+      )
+    ).rows,
+  ).toStrictEqual([{ status: "pending" }]);
+  expect(
+    (
+      await engine.query(
+        "SELECT run_id FROM runner_job_queue WHERE run_id = $1",
+        [actor.runId],
+      )
+    ).rows,
+  ).toStrictEqual([{ run_id: actor.runId }]);
+  requestController.abort();
+}
+
 async function runtimeSync(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
   return await createStore().set(
     resolveConnectorRuntimeTargets$,
@@ -446,12 +582,11 @@ async function seedNativePiMetadata(
     throw new Error("Missing Pi metadata case engine");
   }
   const customConnectorId = randomUUID();
+  // Establish membership through the real authenticated consumer. N4 may
+  // already have populated it; never duplicate or overwrite the cache row.
+  expect((await mcpDirectory(actor)).status).toBe(200);
   await engine.query(
-    "INSERT INTO org_members_cache (org_id, user_id, role) VALUES ($1, $2, 'member')",
-    [actor.orgId, actor.userId],
-  );
-  await engine.query(
-    "INSERT INTO org_custom_connectors (id, org_id, slug, display_name, created_by, auth_mode, permission_bundle_ref) VALUES ($1, $2, '_pi_metadata', 'Pi metadata-only', $3, 'none', $4)",
+    "INSERT INTO org_custom_connectors (id, org_id, slug, display_name, created_by, auth_mode, permission_bundle_ref, prefix_templates) VALUES ($1, $2, '_pi_metadata', 'Pi metadata-only', $3, 'none', $4, '[\"https://pi-metadata.example.test/\"]'::jsonb)",
     [
       customConnectorId,
       actor.orgId,
@@ -856,6 +991,38 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         [agentId, "b".repeat(64), legacyInput, "c".repeat(64)],
       ),
     ).rejects.toThrow("pi_stable_context_heads_input_check");
+    // Unrelated owner: neither catalog-null nor an unsupported schema belongs
+    // to this cutover. Persisted legacy negatives remain stored, never served.
+    const unrelatedAgent = randomUUID();
+    await engine.query(
+      "INSERT INTO agents (id, org_id, owner, name) VALUES ($1, 'catalog-unrelated-org', 'catalog-unrelated-user', 'unrelated Pi owner')",
+      [unrelatedAgent],
+    );
+    await engine.query(
+      "INSERT INTO pi_stable_context_generations (org_id, agent_id, subject) VALUES ('catalog-unrelated-org', $1, '@agent')",
+      [unrelatedAgent],
+    );
+    const unrelatedInputs = [
+      JSON.stringify({ source: { catalog: null } }),
+      JSON.stringify({ source: { catalog: { schemaVersion: 2 } } }),
+    ];
+    for (const [index, input] of unrelatedInputs.entries()) {
+      await engine.query(
+        "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest, status, input, input_digest) VALUES ('catalog-unrelated-org', 'catalog-unrelated-user', $1, $2, 'pending', $3::jsonb, $4)",
+        [
+          unrelatedAgent,
+          String(index + 1).repeat(64),
+          input,
+          createHash("sha256").update(input).digest("hex"),
+        ],
+      );
+    }
+    const unrelatedBefore = (
+      await engine.query(
+        "SELECT generation, status, input_digest FROM pi_stable_context_heads WHERE org_id = 'catalog-unrelated-org' AND agent_id = $1 ORDER BY variant_digest",
+        [unrelatedAgent],
+      )
+    ).rows;
     const caseEngine = engine;
     context.mocks.ably.batchPublish.mockImplementation(async (spec) => {
       const current = (
@@ -912,7 +1079,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          "SELECT generation FROM pi_stable_context_generations WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND subject = '@agent'",
           [agentId],
         )
       ).rows,
@@ -928,6 +1095,98 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         )
       ).rows,
     ).toStrictEqual([{ catalog_digest: first.hash }]);
+    // C1 mechanism A: legacy/pointer accept C while immutable current is B.
+    // Prepare real B bytes before constructing this divergent fixture. A
+    // successful B->C CAS must revoke leased demand and notify only its winner.
+    const divergent = release(
+      "2099-01-01.divergent",
+      "Divergent serving B",
+      true,
+    );
+    await createStore().set(
+      prepareImmutableCatalogEntries$,
+      {
+        artifact: divergent.artifact,
+        hash: divergent.hash,
+      },
+      context.signal,
+    );
+    await createStore()
+      .set(writeDb$)
+      .update(connectorCatalog)
+      .set(
+        immutableCatalogValues(
+          divergent.artifact,
+          divergent.hash,
+          new Date(now()),
+        ),
+      )
+      .where(
+        eq(
+          connectorCatalog.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
+      );
+    const primaryLease = randomUUID();
+    await engine.query(
+      "UPDATE pi_stable_context_heads SET status = 'running', input_digest = $1, lease_id = $2, lease_expires_at = now() + interval '1 hour' WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $3 AND user_id = 'catalog-lifecycle-user' AND variant_digest = $4",
+      [
+        createHash("sha256").update(legacyInput).digest("hex"),
+        primaryLease,
+        agentId,
+        "a".repeat(64),
+      ],
+    );
+    expect(
+      (
+        await engine.query(
+          "SELECT catalog_digest FROM connector_catalog_active_snapshot",
+        )
+      ).rows,
+    ).toStrictEqual([{ catalog_digest: first.hash }]);
+    const restoredFromB = await Promise.all([sync(), sync()]);
+    expect(
+      restoredFromB
+        .map((response) => {
+          if (response.status !== 200) {
+            throw new Error("Divergent mirror cron failed");
+          }
+          return response.body.outcome;
+        })
+        .sort(),
+    ).toStrictEqual(["accepted", "unchanged"]);
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: first.hash }]);
+    expect(
+      (
+        await engine.query(
+          "SELECT generation FROM pi_stable_context_generations WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND subject = '@agent'",
+          [agentId],
+        )
+      ).rows,
+    ).toStrictEqual([{ generation: 3 }]);
+    expect(
+      (
+        await engine.query(
+          "SELECT generation, status, input_digest, artifact_digest, lease_id, lease_expires_at FROM pi_stable_context_heads WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND user_id = 'catalog-lifecycle-user' AND variant_digest = $2",
+          [agentId, "a".repeat(64)],
+        )
+      ).rows,
+    ).toStrictEqual([
+      {
+        generation: 3,
+        status: "missing",
+        input_digest: null,
+        artifact_digest: null,
+        lease_id: null,
+        lease_expires_at: null,
+      },
+    ]);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
+
+    // C1 mechanism B is distinct: absent mirror restored at already accepted C
+    // preserves its existing demand generation and produces no activation.
     // A legacy-accepted deployment can lack the additive mirror. Rebuilding it
     // still validates/prepares (the existing public outcome is "accepted"),
     // but must not repeat activation effects for existing consumers.
@@ -941,28 +1200,35 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          "SELECT generation FROM pi_stable_context_generations WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND subject = '@agent'",
           [agentId],
         )
       ).rows,
-    ).toStrictEqual([{ generation: 2 }]);
+    ).toStrictEqual([{ generation: 3 }]);
     expect(
       (
         await engine.query(
-          "SELECT generation, status FROM pi_stable_context_heads",
+          "SELECT generation, status FROM pi_stable_context_heads WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND user_id = 'catalog-lifecycle-user'",
+          [agentId],
         )
       ).rows,
-    ).toStrictEqual([{ generation: 2, status: "missing" }]);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
+    ).toStrictEqual([{ generation: 3, status: "missing" }]);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
     const concurrent = release(
       "2099-01-01.same-baseline",
       "Competing runtime update",
       true,
     );
     const piActor = await ownedMcpRun(first);
+    // This second Pi owner has no active Run to notify. Its private heads are
+    // tested independently below, not folded into primary owner counts.
     const piCustomId = await seedNativePiMetadata(piActor);
+    await engine.query(
+      "UPDATE agent_runs SET status = 'cancelled' WHERE id = $1 AND org_id = $2 AND user_id = $3",
+      [piActor.runId, piActor.orgId, piActor.userId],
+    );
     const piCaptured = await createStore().get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: [],
@@ -1015,12 +1281,12 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          "SELECT generation FROM pi_stable_context_generations WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND subject = '@agent'",
           [agentId],
         )
       ).rows,
-    ).toStrictEqual([{ generation: 3 }]);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
+    ).toStrictEqual([{ generation: 4 }]);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: concurrent.hash }]);
@@ -1031,6 +1297,70 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         )
       ).rows,
     ).toStrictEqual([{ catalog_digest: concurrent.hash }]);
+    // Secondary owner has a leased worker and a distinct ready variant. Their
+    // revocation cannot be inferred from the primary owner's missing count.
+    const secondaryDigest = piStableContextInputDigest(piHead.input);
+    const secondaryLease = randomUUID();
+    const projection = piStableContextProjectionFromInput(piHead.input, {
+      schemaVersion: 1,
+      agentsFiles: [],
+      skills: [],
+    });
+    const secondaryArtifact = piStableContextArtifactDigest(projection);
+    await engine.query(
+      "INSERT INTO pi_stable_context_artifacts (digest, org_id, user_id, agent_id, projection) VALUES ($1, $2, $3, $4, $5::jsonb)",
+      [
+        secondaryArtifact,
+        piActor.orgId,
+        piActor.userId,
+        piActor.agentId,
+        JSON.stringify(projection),
+      ],
+    );
+    await engine.query(
+      "UPDATE pi_stable_context_heads SET status = 'running', input_digest = $1, lease_id = $2, lease_expires_at = now() + interval '1 hour' WHERE org_id = $3 AND user_id = $4 AND agent_id = $5",
+      [
+        secondaryDigest,
+        secondaryLease,
+        piActor.orgId,
+        piActor.userId,
+        piActor.agentId,
+      ],
+    );
+    await engine.query(
+      "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest, generation, agent_generation, user_generation, input, input_digest, status, artifact_digest) SELECT org_id, user_id, agent_id, $1, generation, agent_generation, user_generation, input, input_digest, 'ready', $2 FROM pi_stable_context_heads WHERE org_id = $3 AND user_id = $4 AND agent_id = $5",
+      [
+        "d".repeat(64),
+        secondaryArtifact,
+        piActor.orgId,
+        piActor.userId,
+        piActor.agentId,
+      ],
+    );
+    const secondaryBefore = (
+      await engine.query<{
+        variant_digest: string;
+        generation: number;
+        status: string;
+        input_digest: string | null;
+        artifact_digest: string | null;
+        lease_id: string | null;
+      }>(
+        "SELECT variant_digest, generation, status, input_digest, artifact_digest, lease_id FROM pi_stable_context_heads WHERE org_id = $1 AND user_id = $2 AND agent_id = $3 ORDER BY variant_digest",
+        [piActor.orgId, piActor.userId, piActor.agentId],
+      )
+    ).rows;
+    expect(secondaryBefore).toHaveLength(2);
+    const secondaryGeneration = (
+      await engine.query<{ generation: number }>(
+        "SELECT generation FROM pi_stable_context_generations WHERE org_id = $1 AND agent_id = $2 AND subject = '@agent'",
+        [piActor.orgId, piActor.agentId],
+      )
+    ).rows[0]?.generation;
+    if (secondaryGeneration === undefined) {
+      throw new Error("Missing secondary owner generation");
+    }
+    expect(secondaryGeneration).toBeGreaterThan(0);
     const next = release(
       "2099-01-01.changed",
       "Changed concurrent catalog",
@@ -1038,7 +1368,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     serve(next);
     await engine.exec(
-      "ALTER TABLE pi_stable_context_generations ADD CONSTRAINT invalidation_failure CHECK (generation <= 3)",
+      "ALTER TABLE pi_stable_context_generations ADD CONSTRAINT invalidation_failure CHECK (generation <= 4)",
     );
     await expect(sync()).rejects.toThrow(
       "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
@@ -1053,7 +1383,15 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         )
       ).rows,
     ).toStrictEqual([{ catalog_digest: concurrent.hash }]);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
+    expect(
+      (
+        await engine.query(
+          "SELECT variant_digest, generation, status, input_digest, artifact_digest, lease_id FROM pi_stable_context_heads WHERE org_id = $1 AND user_id = $2 AND agent_id = $3 ORDER BY variant_digest",
+          [piActor.orgId, piActor.userId, piActor.agentId],
+        )
+      ).rows,
+    ).toStrictEqual(secondaryBefore);
     await engine.exec(
       "ALTER TABLE pi_stable_context_generations DROP CONSTRAINT invalidation_failure",
     );
@@ -1067,21 +1405,87 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (
         await engine.query(
-          "SELECT generation FROM pi_stable_context_generations WHERE agent_id = $1 AND subject = '@agent'",
+          "SELECT generation FROM pi_stable_context_generations WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND subject = '@agent'",
           [agentId],
         )
       ).rows,
-    ).toStrictEqual([{ generation: 4 }]);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
+    ).toStrictEqual([{ generation: 5 }]);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(4);
     expect(
       (
         await engine.query(
-          "SELECT generation, status FROM pi_stable_context_heads",
+          "SELECT generation, status FROM pi_stable_context_heads WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND user_id = 'catalog-lifecycle-user'",
+          [agentId],
         )
       ).rows,
-    ).toStrictEqual([{ generation: 4, status: "missing" }]);
+    ).toStrictEqual([{ generation: 5, status: "missing" }]);
+    expect(
+      (
+        await engine.query<{ generation: number }>(
+          "SELECT generation FROM pi_stable_context_generations WHERE org_id = $1 AND agent_id = $2 AND subject = '@agent'",
+          [piActor.orgId, piActor.agentId],
+        )
+      ).rows,
+    ).toStrictEqual([{ generation: secondaryGeneration + 1 }]);
+    expect(
+      (
+        await engine.query(
+          "SELECT status, input_digest, artifact_digest, lease_id, lease_expires_at FROM pi_stable_context_heads WHERE org_id = $1 AND user_id = $2 AND agent_id = $3 ORDER BY variant_digest",
+          [piActor.orgId, piActor.userId, piActor.agentId],
+        )
+      ).rows,
+    ).toStrictEqual(
+      Array.from({ length: 2 }, () => {
+        return {
+          status: "missing",
+          input_digest: null,
+          artifact_digest: null,
+          lease_id: null,
+          lease_expires_at: null,
+        };
+      }),
+    );
+    expect(
+      (
+        await engine.query(
+          "SELECT digest FROM pi_stable_context_artifacts WHERE digest = $1 AND org_id = $2 AND user_id = $3 AND agent_id = $4",
+          [secondaryArtifact, piActor.orgId, piActor.userId, piActor.agentId],
+        )
+      ).rows,
+    ).toStrictEqual([{ digest: secondaryArtifact }]);
+    expect(
+      (
+        await engine.query(
+          "SELECT variant_digest, generation FROM pi_stable_context_heads WHERE org_id = $1 AND user_id = $2 AND agent_id = $3 ORDER BY variant_digest",
+          [piActor.orgId, piActor.userId, piActor.agentId],
+        )
+      ).rows,
+    ).toStrictEqual(
+      secondaryBefore.map((head) => {
+        return {
+          variant_digest: head.variant_digest,
+          generation: head.generation + 1,
+        };
+      }),
+    );
+    expect(
+      (
+        await engine.query(
+          "SELECT generation, status, input_digest FROM pi_stable_context_heads WHERE org_id = 'catalog-unrelated-org' AND agent_id = $1 ORDER BY variant_digest",
+          [unrelatedAgent],
+        )
+      ).rows,
+    ).toStrictEqual(unrelatedBefore);
+    expect(
+      (
+        await engine.query(
+          "SELECT generation FROM pi_stable_context_generations WHERE org_id = 'catalog-unrelated-org' AND agent_id = $1 AND subject = '@agent'",
+          [unrelatedAgent],
+        )
+      ).rows,
+    ).toStrictEqual([{ generation: 1 }]);
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(4);
   });
   it("n4: real MCP and runtime consumers follow hash switches while captured entries retain their hash", async () => {
     const first = release("2099-01-02.old", "Old MCP catalog");
@@ -1392,5 +1796,11 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       expect(query).not.toContain("connector_catalog_runtime_projection");
       expect(query).not.toContain("connector_catalog_compatibility_evaluation");
     }
+    // C5: missing current makes a premature refresh reject, while these real
+    // claim requests fail/abort at the external secret boundary. Refresh must
+    // never start; no timer, pause hook, internal command mock or extra engine.
+    await assertEarlyClaimSecretBoundary(actor, "failure");
+    const abortActor = await ownedMcpRun(candidate);
+    await assertEarlyClaimSecretBoundary(abortActor, "abort");
   });
 });

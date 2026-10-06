@@ -1768,8 +1768,10 @@ async function buildClaimResponseBody(
     readonly run: ClaimedRun;
     readonly reuseKey: string | null;
     readonly storedContext: StoredExecutionContext;
-    readonly refreshedPolicies: Promise<
-      Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
+    readonly secretValues: string[] | null;
+    readonly refreshedPolicies: Pick<
+      StoredExecutionContext,
+      "networkPolicies" | "networkPolicyRefreshes"
     >;
     readonly timing: ClaimRouteTimingCollector;
     readonly loadIdentityRepresentation: (
@@ -1786,52 +1788,34 @@ async function buildClaimResponseBody(
   },
   signal: AbortSignal,
 ): Promise<ExecutionContext> {
-  const secretValues = await secretValuesForRunner(
-    args.storedContext,
-    args.timing,
-  );
   signal.throwIfAborted();
   return await args.timing.measure(
     "claim_route_response_assembly",
     "top_level",
     async () => {
-      const [resumeSessionResult, refreshedPoliciesResult] =
-        await Promise.allSettled([
-          resolveResumeSessionForClaim({
-            resumeSession: args.storedContext.resumeSession,
-            timing: args.timing,
-            loadIdentityRepresentation(hash: string) {
-              return args.loadIdentityRepresentation(hash);
-            },
-            loadCompressedRepresentation(
-              hash: string,
-              encoding: CompressedSessionHistoryBlobEncoding,
-            ) {
-              return args.loadCompressedRepresentation(hash, encoding);
-            },
-            generateResumeSessionHistoryUrl:
-              args.generateResumeSessionHistoryUrl,
-            generateResumeSessionHistoryObjectUrl:
-              args.generateResumeSessionHistoryObjectUrl,
-          }),
-          args.refreshedPolicies,
-        ]);
-      if (resumeSessionResult.status === "rejected") {
-        const error: unknown = resumeSessionResult.reason;
-        throw error;
-      }
-      const resumeSession = resumeSessionResult.value;
+      const resumeSession = await resolveResumeSessionForClaim({
+        resumeSession: args.storedContext.resumeSession,
+        timing: args.timing,
+        loadIdentityRepresentation(hash: string) {
+          return args.loadIdentityRepresentation(hash);
+        },
+        loadCompressedRepresentation(
+          hash: string,
+          encoding: CompressedSessionHistoryBlobEncoding,
+        ) {
+          return args.loadCompressedRepresentation(hash, encoding);
+        },
+        generateResumeSessionHistoryUrl: args.generateResumeSessionHistoryUrl,
+        generateResumeSessionHistoryObjectUrl:
+          args.generateResumeSessionHistoryObjectUrl,
+      });
       signal.throwIfAborted();
       const sandboxToken = generateSandboxToken(
         args.run.userId,
         args.run.id,
         args.run.orgId,
       );
-      if (refreshedPoliciesResult.status === "rejected") {
-        const error: unknown = refreshedPoliciesResult.reason;
-        throw error;
-      }
-      const refreshedPolicies = refreshedPoliciesResult.value;
+      const refreshedPolicies = args.refreshedPolicies;
       signal.throwIfAborted();
       const {
         connectorPermissionBaseline: _connectorPermissionBaseline,
@@ -1857,7 +1841,7 @@ async function buildClaimResponseBody(
         },
         resumeSession,
         sandboxToken,
-        secretValues,
+        secretValues: args.secretValues,
         connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
         networkPolicies: refreshedPolicies.networkPolicies,
         networkPolicyRefreshes: refreshedPolicies.networkPolicyRefreshes,
@@ -2097,21 +2081,31 @@ const buildClaimResponseBodyForClaim$ = command(
     },
     signal: AbortSignal,
   ): Promise<ExecutionContext> => {
+    // Validate before starting finite policy work. Neither secret failure nor
+    // cancellation may leave a refresh running outside this command's join.
+    const secretValues = await secretValuesForRunner(
+      args.storedContext,
+      args.timing,
+    );
+    signal.throwIfAborted();
+    const refreshedPolicies = await set(
+      refreshClaimNetworkPolicies$,
+      {
+        run: args.run,
+        storedContext: args.storedContext,
+        connectorPermissionBaseline: args.connectorPermissionBaseline,
+        timing: args.timing,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     return await buildClaimResponseBody(
       {
         run: args.run,
         reuseKey: args.reuseKey,
         storedContext: args.storedContext,
-        refreshedPolicies: set(
-          refreshClaimNetworkPolicies$,
-          {
-            run: args.run,
-            storedContext: args.storedContext,
-            connectorPermissionBaseline: args.connectorPermissionBaseline,
-            timing: args.timing,
-          },
-          signal,
-        ),
+        secretValues,
+        refreshedPolicies,
         timing: args.timing,
         loadIdentityRepresentation(hash: string) {
           return set(loadIdentityResumeSessionHistoryRepresentation$, {
