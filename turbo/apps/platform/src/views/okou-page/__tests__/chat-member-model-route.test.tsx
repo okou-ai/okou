@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
@@ -6,7 +5,10 @@ import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-model
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { findModelMenuOption } from "./chat-model-menu-test-helpers.ts";
+import {
+  findModelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
@@ -48,7 +50,7 @@ test.each([
   { modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
   { modelLabel: "Claude Sonnet 5", source: "Claude Code (OAuth Token)" },
 ])(
-  "Shows $source in the model menu with personal subscription help",
+  "Shows $source in the model panel with personal subscription help",
   async ({ modelLabel, source }) => {
     const user = userEvent.setup({ delay: null });
     installRunChat({ selectedModel: "gpt-5.6-sol" });
@@ -76,15 +78,14 @@ test.each([
     await setupPage({
       context,
       path: NEW_CHAT_PATH,
-      featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
     });
     const trigger = await composerModelTrigger("GPT 5.6 Sol");
     expect(trigger).not.toHaveTextContent("BYOK");
-    click(trigger);
+    const panel = await openModelPanel("GPT 5.6 Sol");
 
-    const option = await findModelMenuOption((name) => {
+    const option = await findModelOption((name) => {
       return name.includes(modelLabel);
-    });
+    }, panel);
     expect(option).not.toHaveAttribute("aria-disabled", "true");
     expect(option).not.toBeDisabled();
     expect(option).not.toHaveTextContent("$");
@@ -115,11 +116,9 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await screen.findByRole("textbox", { name: "Message" });
-  click(await findButton("Effort, Max"));
-  const settings = await screen.findByRole("dialog");
+  const settings = await openModelPanel("GPT 5.6 Sol, Max, Fast");
   expect(
     within(settings).getByRole("slider", { name: "Effort" }),
   ).toHaveAttribute("aria-valuetext", "Max");

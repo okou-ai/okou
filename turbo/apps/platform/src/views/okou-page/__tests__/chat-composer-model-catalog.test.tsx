@@ -1,7 +1,5 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
@@ -10,7 +8,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { findModelMenuOption } from "./chat-model-menu-test-helpers.ts";
+import {
+  findModelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 import {
   context,
   installRunChat,
@@ -64,7 +65,6 @@ async function readyComposer(): Promise<void> {
 }
 
 test("Offer the active catalog models in catalog order with catalog names", async () => {
-  const user = userEvent.setup({ delay: null });
   configureRunModels([
     "gpt-6-luna",
     "claude-fable-5",
@@ -75,14 +75,13 @@ test("Offer the active catalog models in catalog order with catalog names", asyn
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyComposer();
 
-  await user.click(await composerModelTrigger("Auto"));
-  await expect(findModelMenuOption(/^GPT 6 Luna/u)).resolves.toBeVisible();
-  const names = queryAllByRoleFast("menuitemradio").map((option) => {
-    return option.getAttribute("aria-label") ?? option.textContent?.trim();
+  const panel = await openModelPanel("Auto");
+  await expect(findModelOption(/^GPT 6 Luna/u, panel)).resolves.toBeVisible();
+  const names = queryAllByRoleFast("radio", panel).map((option) => {
+    return option.textContent?.trim();
   });
   expect(names).toStrictEqual([
     "Auto",
@@ -98,7 +97,6 @@ test("Show the replacement for a thread pinned to a retired model", async () => 
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyChat();
 
@@ -112,7 +110,6 @@ test("Resolve a member preference of a retired model to its replacement", async 
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyComposer();
 

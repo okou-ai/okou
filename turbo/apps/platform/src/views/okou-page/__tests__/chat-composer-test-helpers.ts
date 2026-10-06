@@ -363,12 +363,18 @@ export function trackTemplatePreviewImagePreloads(): {
   return { srcs };
 }
 
-/** The composer's model control, named for the model it currently carries. */
+/**
+ * The composer's model control. Its name lists the model, then the effort and
+ * Fast it runs with ("GPT 5.6 Sol, Max, Fast"); a label naming only the model
+ * matches whatever effort it carries.
+ */
 export function queryComposerModelTrigger(label: string): HTMLElement | null {
   return (
     queryAllByRoleFast("button").find((button) => {
+      const name = button.getAttribute("aria-label");
       return (
-        button.getAttribute("aria-label") === label ||
+        name === label ||
+        name?.startsWith(`${label}, `) === true ||
         button.textContent?.replace(/\s+/gu, " ").trim() === label
       );
     }) ?? null

@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   claudeCodeDeviceAuthContract,
   type ClaudeCodeDeviceAuthScope,
@@ -187,7 +186,6 @@ test("Connect Codex before sending with a personal route", async () => {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -268,7 +266,6 @@ test("Complete Claude Code login from a blocked message", async () => {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -338,7 +335,6 @@ test("Reconnect the personal provider used by the selected model", async () => {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await expect(composerModelTrigger("GPT 5.6 Sol")).resolves.toBeVisible();
@@ -400,7 +396,6 @@ test("Reconnect Claude Code for an existing chat", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyChat();
