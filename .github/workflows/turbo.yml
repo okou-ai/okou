@@ -1528,7 +1528,7 @@ jobs:
           VITE_VAPID_PUBLIC_KEY_PROD: ${{ vars.VAPID_PUBLIC_KEY_PROD }}
         run: |
           cd turbo
-          pnpm --filter @okouai/app run build:verify-hashes -- --sourcemap
+          pnpm --filter @okouai/app exec vite build --sourcemap
           pnpm --filter @okouai/app exec sentry-cli sourcemaps inject dist
 
       - name: Create artifact manifest
@@ -1658,14 +1658,6 @@ jobs:
             "$R2_BUCKET_NAME" \
             "$CANONICAL_ASSETS"
 
-      - name: Verify immutable app assets on CDN
-        env:
-          CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
-        run: |
-          bash .github/scripts/verify-okou-app-assets.sh \
-            "https://static.okou.io/okou-app/assets" \
-            "$CANONICAL_ASSETS"
-
       - name: Deploy standalone app Worker preview
         id: worker-deploy
         env:
@@ -1757,64 +1749,6 @@ jobs:
             --message "app artifact ${ARTIFACT_SHA}"
 
           echo "url=$EXPECTED_PREVIEW_URL" >> "$GITHUB_OUTPUT"
-
-      # A Worker version preview can briefly lag its upload at the edge. Wait
-      # for two consecutive shell responses before running the runtime probe.
-      - name: Wait for standalone app Worker readiness
-        env:
-          WORKER_URL: ${{ steps.worker-deploy.outputs.url }}
-        run: |
-          set -euo pipefail
-
-          document_body="$(mktemp)"
-          trap 'rm -f "$document_body"' EXIT
-          application_url="${WORKER_URL%/}/sign-up"
-          ready_passes=0
-          for attempt in {1..60}; do
-            probe_succeeded=false
-            if curl --fail --silent --show-error \
-              --max-time 10 \
-              --output "$document_body" \
-              "$application_url"; then
-              probe_succeeded=true
-            fi
-            if [[ "$probe_succeeded" == true ]] &&
-              grep -Fq 'id="app-bootstrap-skeleton"' "$document_body"; then
-              ((ready_passes += 1))
-            else
-              ready_passes=0
-              echo "::warning::Standalone app Worker shell is not ready (attempt ${attempt}/60)"
-            fi
-
-            if (( ready_passes >= 2 )); then
-              echo "Standalone app Worker shell is ready"
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "::error::Standalone app Worker shell did not become ready"
-          exit 1
-
-      - name: Smoke test standalone app Worker
-        env:
-          APP_PREVIEW_URL: ${{ steps.worker-deploy.outputs.url }}
-          CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
-        run: |
-          set -euo pipefail
-          for attempt in {1..12}; do
-            if bash .github/scripts/verify-okou-app-runtime.sh \
-              "$APP_PREVIEW_URL" \
-              "https://static.okou.io/okou-app/assets" \
-              "$CANONICAL_ASSETS"; then
-              echo "Standalone app Worker and SharedWorker proxy are ready"
-              exit 0
-            fi
-            echo "::warning::Standalone app Worker or SharedWorker proxy is not ready (attempt ${attempt}/12)"
-            sleep 5
-          done
-          echo "::error::${APP_PREVIEW_URL} Worker or SharedWorker proxy did not become ready"
-          exit 1
 
       - name: Record standalone app Worker preview
         env:

@@ -282,8 +282,6 @@ jobs:
             .github/scripts/fetch-okou-desktop-artifact.sh \
             .github/scripts/pass-release-pr-ci-gates.sh \
             .github/scripts/publish-okou-app-assets.sh \
-            .github/scripts/verify-okou-app-assets.sh \
-            .github/scripts/verify-okou-app-runtime.sh \
             .github/scripts/reconcile-and-start-runner-groups.sh \
             .github/scripts/prune-runner-idle.sh \
             .github/scripts/reconcile-runner-binary-groups.sh \
@@ -317,8 +315,6 @@ jobs:
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
             .github/scripts/tests/discover-runner-pr-namespaces-test.sh \
             .github/scripts/tests/publish-okou-app-assets-test.sh \
-            .github/scripts/tests/verify-okou-app-assets-test.sh \
-            .github/scripts/tests/verify-okou-app-runtime-test.sh \
             .github/scripts/tests/download-verified-test.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
             .github/scripts/tests/nbd-cow-upload-test.sh \

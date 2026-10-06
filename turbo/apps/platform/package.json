@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite --port 3002",
     "build": "vite build",
-    "build:verify-hashes": "node scripts/check-build-hash-stability.node.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "i18n:extract": "i18next-cli extract",

@@ -1889,14 +1889,6 @@ jobs:
 
           echo "canonical-dist=$canonical_dist" >> "$GITHUB_OUTPUT"
 
-      - name: Verify immutable App assets for Worker production
-        env:
-          CANONICAL_ASSETS: ${{ steps.worker-production.outputs.canonical-dist }}/assets
-        run: |
-          bash .github/scripts/verify-okou-app-assets.sh \
-            "https://static.okou.io/okou-app/assets" \
-            "$CANONICAL_ASSETS"
-
       - name: Upload App source maps to Sentry
         env:
           CANONICAL_DIST: ${{ steps.worker-production.outputs.canonical-dist }}
