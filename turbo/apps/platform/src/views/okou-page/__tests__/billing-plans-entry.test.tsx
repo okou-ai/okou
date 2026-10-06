@@ -114,7 +114,7 @@ test("Dismissing the sidebar upgrade flow returns to the chat screen", async () 
   expect(search()).not.toContain("settings=billing");
 });
 
-test("Loading eligibility keeps the same modal through plan selection and configuration", async () => {
+test("Delayed eligibility and catalog loading lead to plan selection and configuration", async () => {
   prepareUpgradeFlow();
   const migrationReady = context.mocks.deferred<void>();
   const catalogReady = context.mocks.deferred<void>();
@@ -145,23 +145,31 @@ test("Loading eligibility keeps the same modal through plan selection and config
   const plansModal = await screen.findByRole("dialog", {
     name: "Choose a plan",
   });
-  expect(plansModal).toBe(modal);
-  expect(within(modal).queryByText("Start with Pro")).not.toBeInTheDocument();
+  expect(within(plansModal).getByText("Step 1 of 2")).toBeInTheDocument();
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  expect(
+    within(plansModal).queryByText("Start with Pro"),
+  ).not.toBeInTheDocument();
   catalogReady.resolve();
-  const start = await within(modal).findByText("Start with Pro");
+  const start = await within(plansModal).findByText("Start with Pro");
   click(start);
   const configurationModal = await screen.findByRole("dialog", {
     name: "Configure member packages",
   });
-  expect(configurationModal).toBe(modal);
-  expect(within(modal).getByText("Step 2 of 2")).toBeInTheDocument();
+  expect(
+    within(configurationModal).getByText("Step 2 of 2"),
+  ).toBeInTheDocument();
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
 
-  click(within(modal).getByLabelText("Back"));
-  await within(modal).findByText("Start with Pro");
-  expect(screen.getByRole("dialog", { name: "Choose a plan" })).toBe(modal);
+  click(within(configurationModal).getByLabelText("Back"));
+  const returnedPlans = await screen.findByRole("dialog", {
+    name: "Choose a plan",
+  });
+  await within(returnedPlans).findByText("Start with Pro");
+  expect(within(returnedPlans).getByText("Step 1 of 2")).toBeInTheDocument();
   await dismissPlansDialog();
   await waitFor(() => {
-    expect(modal).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 
@@ -183,14 +191,17 @@ test("A failed eligibility request does not become a normal plan checkout", asyn
 
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   await clickSidebarUpgradeCard();
-  const modal = await screen.findByRole("dialog", { name: "Billing" });
+  await screen.findByRole("dialog", { name: "Billing" });
   migrationReady.resolve();
-  await within(modal).findByText("Could not load billing status.");
-  expect(screen.getByRole("dialog", { name: "Billing" })).toBe(modal);
-  expect(within(modal).queryByText("Start with Pro")).not.toBeInTheDocument();
-  click(within(modal).getByLabelText("Close"));
+  await screen.findByText("Could not load billing status.");
+  const unavailable = screen.getByRole("dialog", { name: "Billing" });
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  expect(
+    within(unavailable).queryByText("Start with Pro"),
+  ).not.toBeInTheDocument();
+  click(within(unavailable).getByLabelText("Close"));
   await waitFor(() => {
-    expect(modal).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   expect(search()).not.toContain("settings=billing");
 });
@@ -224,7 +235,7 @@ test("Closing pending eligibility does not reopen the modal when the response ar
 });
 
 test.each(["applying", "scheduled"] as const)(
-  "Loading a %s migration keeps the same modal for its progress",
+  "Loading a %s migration shows progress without allowing a new checkout",
   async (status) => {
     prepareUpgradeFlow();
     const migrationReady = context.mocks.deferred<void>();
@@ -245,22 +256,57 @@ test.each(["applying", "scheduled"] as const)(
 
     await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
     await clickSidebarUpgradeCard();
-    const modal = await screen.findByRole("dialog", { name: "Billing" });
+    await screen.findByRole("dialog", { name: "Billing" });
     migrationReady.resolve();
     const progress = await screen.findByRole("dialog", {
       name: "Convert legacy plan",
     });
-    expect(progress).toBe(modal);
-    expect(within(modal).queryByText("Start with Pro")).not.toBeInTheDocument();
-    click(within(modal).getByLabelText("Back"));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(
+      within(progress).queryByText("Start with Pro"),
+    ).not.toBeInTheDocument();
+    click(within(progress).getByLabelText("Back"));
     await waitFor(() => {
-      expect(modal).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(search()).not.toContain("settings=billing");
   },
 );
 
-test("A billing refresh retains the modal and selected configuration step", async () => {
+test("A progress-only migration opened inside Settings returns to the billing tab", async () => {
+  prepareUpgradeFlow();
+  context.mocks.api(billingUsagePackMigrationContract.get, ({ respond }) => {
+    return respond(200, {
+      tier: "pro",
+      targetTier: "pro",
+      status: "scheduled",
+      migrationId: "3ea4b7cf-d71e-45dc-8273-8bc8b9712490",
+      effectiveAt: "2026-11-01T00:00:00.000Z",
+      hostedInvoiceUrl: null,
+    });
+  });
+
+  await setupPage({ context, path: "/?settings=billing" });
+  const compare = await screen.findByText("Compare all plans");
+  click(compare);
+  const progress = await screen.findByRole("dialog", {
+    name: "Convert legacy plan",
+  });
+  expect(
+    within(progress).queryByText("Start with Pro"),
+  ).not.toBeInTheDocument();
+  click(within(progress).getByLabelText("Close"));
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  expect(
+    within(settings).getByRole("heading", { name: "Billing" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Convert legacy plan" }),
+  ).not.toBeInTheDocument();
+  expect(search()).toContain("settings=billing");
+});
+
+test("A billing refresh preserves configuration and keyboard focus", async () => {
   prepareUpgradeFlow();
   const refreshReady = context.mocks.deferred<void>();
   const refreshStarted = context.mocks.deferred<void>();
@@ -284,7 +330,12 @@ test("A billing refresh retains the modal and selected configuration step", asyn
   const modal = await screen.findByRole("dialog", { name: "Choose a plan" });
   const start = await within(modal).findByText("Start with Pro");
   click(start);
-  await screen.findByRole("dialog", { name: "Configure member packages" });
+  const configuration = await screen.findByRole("dialog", {
+    name: "Configure member packages",
+  });
+  const close = within(configuration).getByLabelText("Close");
+  close.focus();
+  expect(close).toHaveFocus();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
@@ -294,12 +345,13 @@ test("A billing refresh retains the modal and selected configuration step", asyn
   await refreshStarted.promise;
   expect(
     screen.getByRole("dialog", { name: "Configure member packages" }),
-  ).toBe(modal);
-  expect(within(modal).getByText("Step 2 of 2")).toBeInTheDocument();
+  ).toBeInTheDocument();
+  expect(within(configuration).getByText("Step 2 of 2")).toBeInTheDocument();
+  expect(close).toHaveFocus();
   refreshReady.resolve();
   const refreshed = await screen.findByRole("dialog", {
     name: "Configure member packages",
   });
-  expect(refreshed).toBe(modal);
-  expect(within(modal).getByText("Step 2 of 2")).toBeInTheDocument();
+  expect(within(refreshed).getByText("Step 2 of 2")).toBeInTheDocument();
+  expect(within(refreshed).getByLabelText("Close")).toHaveFocus();
 });

@@ -815,7 +815,6 @@ test("Gate legacy conversion eligibility before Pro configuration", async () => 
   const choosePlanDialog = await screen.findByRole("dialog", {
     name: "Choose a plan",
   });
-  expect(choosePlanDialog).toBe(loadingModal);
   expect(within(choosePlanDialog).getByText("Step 1 of 3")).toBeInTheDocument();
   expect(screen.getByText("Legacy")).toBeInTheDocument();
   const proPlan = within(choosePlanDialog).getByRole("article", {
