@@ -31,7 +31,7 @@ export const insertBenchmarkRunBatch$ = command(
           SELECT id, org_id, user_id, created_at,
             CASE
               WHEN trigger_source = 'web' THEN 'chat'
-              WHEN trigger_source IN ('automation-schedule', 'automation-event', 'goal') THEN 'automation'
+              WHEN trigger_source IN ('automation-schedule', 'automation-event') THEN 'automation'
               WHEN trigger_source IN ('slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent') THEN trigger_source
               ELSE 'other'
             END,

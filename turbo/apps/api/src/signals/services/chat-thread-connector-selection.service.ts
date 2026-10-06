@@ -14,7 +14,7 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
@@ -200,46 +200,48 @@ async function loadConnectorTargetOwnerships(
   );
 }
 
-export async function listChatThreadConnectorSelections(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-  },
-): Promise<ChatThreadConnectorSelectionList | null> {
-  const thread = await loadOwnedChatThread(db, args);
-  if (!thread) {
-    return null;
-  }
-  const rows = await loadSelectionRows(db, args.chatThreadId);
-  const storedSelections = rows.map(selectionFromRow);
-  const projectedConnections = await listConnectorAccountsByIds(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectionIds: storedSelections.map((selection) => {
-      return selection.connectionId;
-    }),
-  });
-  const connectionById = new Map(
-    projectedConnections.map((connection) => {
-      return [connection.id, connection];
-    }),
-  );
-  const selections: ConnectorAccountSelection[] = [];
-  const selectedConnections: ConnectorAccountConnection[] = [];
-  for (const selection of storedSelections) {
-    const connection = connectionById.get(selection.connectionId);
-    if (
-      connection &&
-      connectorAccountTargetKey(connection.target) ===
-        connectorAccountTargetKey(selection.target)
-    ) {
-      selections.push(selection);
-      selectedConnections.push(connection);
+export function listChatThreadConnectorSelections(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly chatThreadId: string;
+}): Computed<Promise<ChatThreadConnectorSelectionList | null>> {
+  return computed(async (get) => {
+    const db = get(db$);
+    const thread = await loadOwnedChatThread(db, args);
+    if (!thread) {
+      return null;
     }
-  }
-  return { selections, selectedConnections };
+    const rows = await loadSelectionRows(db, args.chatThreadId);
+    const storedSelections = rows.map(selectionFromRow);
+    const projectedConnections = await get(
+      listConnectorAccountsByIds({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectionIds: storedSelections.map((selection) => {
+          return selection.connectionId;
+        }),
+      }),
+    );
+    const connectionById = new Map(
+      projectedConnections.map((connection) => {
+        return [connection.id, connection];
+      }),
+    );
+    const selections: ConnectorAccountSelection[] = [];
+    const selectedConnections: ConnectorAccountConnection[] = [];
+    for (const selection of storedSelections) {
+      const connection = connectionById.get(selection.connectionId);
+      if (
+        connection &&
+        connectorAccountTargetKey(connection.target) ===
+          connectorAccountTargetKey(selection.target)
+      ) {
+        selections.push(selection);
+        selectedConnections.push(connection);
+      }
+    }
+    return { selections, selectedConnections };
+  });
 }
 
 export const prepareChatThreadConnectorSelections$ = command(
@@ -302,11 +304,13 @@ export const prepareChatThreadConnectorSelections$ = command(
       connectorIds: connectionIds,
     });
     signal.throwIfAborted();
-    const projectedConnections = await listConnectorAccountsByIds(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectionIds,
-    });
+    const projectedConnections = await get(
+      listConnectorAccountsByIds({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectionIds,
+      }),
+    );
     signal.throwIfAborted();
     const projectedById = new Map(
       projectedConnections.map((connection) => {

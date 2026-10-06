@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 
 import {
   connectorAccountTargetKey,
@@ -44,7 +44,6 @@ import {
   pgBooleanDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
@@ -52,7 +51,6 @@ import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
-import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import {
   builtinConnectorCredentialStorageIsCompatible,
   resolveStoredBuiltinConnectorRuntimeMethod,
@@ -67,12 +65,8 @@ import {
   connectorCredentialStatusForAccess,
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
-import {
-  loadConnectorRuntimeSelection,
-  type ConnectorRuntimeSelection,
-} from "./connector-catalog-runtime.service";
-
-const log = logger("connector-account-lifecycle");
+import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
+import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
@@ -402,7 +396,7 @@ async function customTargetIsVisible(
 
 function builtinConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: ConnectorRuntimeLookup,
   now: Date,
   includeScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -557,7 +551,7 @@ function customConnection(
 
 function projectConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeSelection | null,
+  snapshot: ConnectorRuntimeLookup | null,
   now: Date,
   includeBuiltinScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -575,7 +569,7 @@ type ConnectorAccountSummaryGroup = Awaited<
 
 function projectSummaryGroup(
   row: ConnectorAccountSummaryGroup,
-  snapshot: ConnectorRuntimeSelection | null,
+  snapshot: ConnectorRuntimeLookup | null,
   now: Date,
 ): {
   readonly target: ConnectorAccountTarget;
@@ -661,80 +655,71 @@ function projectSummaryGroup(
   };
 }
 
-export async function listConnectorAccountSummaries(
-  db: ReadonlyDb,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<readonly ConnectorAccountSummary[]> {
-  const now = nowDate();
-  const [groups, defaultRows] = await Promise.all([
-    loadConnectorAccountSummaryGroups(db, args),
-    loadConnectorAccountRows(db, { ...args, defaultOnly: true }),
-  ]);
-  // Every default account belongs to a group, so the groups name every
-  // builtin connector this projection reads.
-  const snapshot = await loadConnectorAccountRuntimeSelection(db, groups);
-  const defaultConnections = new Map<string, ConnectorAccountConnection>();
-  for (const row of defaultRows) {
-    const connection = projectConnection(row, snapshot, now);
-    if (connection) {
-      defaultConnections.set(
-        connectorAccountTargetKey(connection.target),
-        connection,
-      );
+export function listConnectorAccountSummaries(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Computed<Promise<readonly ConnectorAccountSummary[]>> {
+  return computed(async (get) => {
+    const db = get(db$);
+    const now = nowDate();
+    const [groups, defaultRows] = await Promise.all([
+      loadConnectorAccountSummaryGroups(db, args),
+      loadConnectorAccountRows(db, { ...args, defaultOnly: true }),
+    ]);
+    // Capture the union once; concurrent account creation can make the two
+    // account reads observe different sets, but projections share one hash.
+    const snapshot = await get(
+      connectorAccountRuntimeSelection([...groups, ...defaultRows]),
+    );
+    const defaultConnections = new Map<string, ConnectorAccountConnection>();
+    for (const row of defaultRows) {
+      const connection = projectConnection(row, snapshot, now);
+      if (connection) {
+        defaultConnections.set(
+          connectorAccountTargetKey(connection.target),
+          connection,
+        );
+      }
     }
-  }
-  const summaries = new Map<string, ConnectorAccountSummary>();
-  for (const group of groups) {
-    const projected = projectSummaryGroup(group, snapshot, now);
-    if (!projected) {
-      continue;
+    const summaries = new Map<string, ConnectorAccountSummary>();
+    for (const group of groups) {
+      const projected = projectSummaryGroup(group, snapshot, now);
+      if (!projected) {
+        continue;
+      }
+      const targetKey = connectorAccountTargetKey(projected.target);
+      const current = summaries.get(targetKey) ?? {
+        target: projected.target,
+        accountCount: 0,
+        attentionCount: 0,
+        defaultConnection: defaultConnections.get(targetKey) ?? null,
+      };
+      summaries.set(targetKey, {
+        ...current,
+        accountCount: current.accountCount + group.accountCount,
+        attentionCount:
+          current.attentionCount +
+          (projected.needsAttention ? group.accountCount : 0),
+      });
     }
-    const targetKey = connectorAccountTargetKey(projected.target);
-    const current = summaries.get(targetKey) ?? {
-      target: projected.target,
-      accountCount: 0,
-      attentionCount: 0,
-      defaultConnection: defaultConnections.get(targetKey) ?? null,
-    };
-    summaries.set(targetKey, {
-      ...current,
-      accountCount: current.accountCount + group.accountCount,
-      attentionCount:
-        current.attentionCount +
-        (projected.needsAttention ? group.accountCount : 0),
+    return [...summaries.values()].sort((left, right) => {
+      const leftKey = JSON.stringify(left.target);
+      const rightKey = JSON.stringify(right.target);
+      return leftKey.localeCompare(rightKey);
     });
-  }
-  return [...summaries.values()].sort((left, right) => {
-    const leftKey = JSON.stringify(left.target);
-    const rightKey = JSON.stringify(right.target);
-    return leftKey.localeCompare(rightKey);
   });
 }
 
 /** Custom accounts project without the connector catalog. */
-async function loadConnectorTargetRuntimeSelection(
-  db: ReadonlyDb,
+function connectorTargetRuntimeSelection(
   target: ConnectorAccountTarget,
-): Promise<ConnectorRuntimeSelection | null> {
-  return target.kind === "builtin"
-    ? await loadConnectorAccountRuntimeSelection(db, [
-        { connectorSlug: target.connectorSlug },
-      ])
-    : null;
+): Computed<Promise<ConnectorRuntimeLookup | null>> {
+  return connectorAccountRuntimeSelection(
+    target.kind === "builtin" ? [{ connectorSlug: target.connectorSlug }] : [],
+  );
 }
 
-export async function listConnectorAccountsForTarget(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly cursor?: string;
-    readonly limit: number;
-    readonly search?: string;
-    readonly includeScopeMismatch?: true;
-  },
-): Promise<
+type ConnectorAccountsForTargetResult =
   | {
       readonly kind: "ok";
       readonly connections: readonly ConnectorAccountConnection[];
@@ -742,146 +727,149 @@ export async function listConnectorAccountsForTarget(
       readonly defaultConnection?: ConnectorAccountConnection | null;
     }
   | { readonly kind: "invalid-cursor" }
-  | { readonly kind: "missing" }
-> {
-  const cursor = args.cursor ? decodeCursor(args.cursor) : undefined;
-  if (args.cursor && !cursor) {
-    return { kind: "invalid-cursor" };
-  }
-  const snapshot = await loadConnectorTargetRuntimeSelection(db, args.target);
-  if (
-    args.target.kind === "builtin" &&
-    (!snapshot || !snapshot.connectors.has(args.target.connectorSlug))
-  ) {
-    return { kind: "missing" };
-  }
-  if (
-    args.target.kind === "custom" &&
-    !(await customTargetIsVisible(db, {
-      orgId: args.orgId,
-      customConnectorId: args.target.customConnectorId,
-    }))
-  ) {
-    return { kind: "missing" };
-  }
-  const rows = await loadConnectorAccountRows(db, {
-    ...args,
-    cursor: cursor ?? undefined,
-    limit: args.limit + 1,
+  | { readonly kind: "missing" };
+
+export function listConnectorAccountsForTarget(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly cursor?: string;
+  readonly limit: number;
+  readonly search?: string;
+  readonly includeScopeMismatch?: true;
+}): Computed<Promise<ConnectorAccountsForTargetResult>> {
+  return computed(async (get): Promise<ConnectorAccountsForTargetResult> => {
+    const db = get(db$);
+    const cursor = args.cursor ? decodeCursor(args.cursor) : undefined;
+    if (args.cursor && !cursor) {
+      return { kind: "invalid-cursor" };
+    }
+    const snapshot = await get(connectorTargetRuntimeSelection(args.target));
+    if (
+      args.target.kind === "builtin" &&
+      (!snapshot || !snapshot.connectors.has(args.target.connectorSlug))
+    ) {
+      return { kind: "missing" };
+    }
+    if (
+      args.target.kind === "custom" &&
+      !(await customTargetIsVisible(db, {
+        orgId: args.orgId,
+        customConnectorId: args.target.customConnectorId,
+      }))
+    ) {
+      return { kind: "missing" };
+    }
+    const rows = await loadConnectorAccountRows(db, {
+      ...args,
+      cursor: cursor ?? undefined,
+      limit: args.limit + 1,
+    });
+    const now = nowDate();
+    const projected = rows.flatMap((row) => {
+      const connection = projectConnection(
+        row,
+        snapshot,
+        now,
+        args.includeScopeMismatch === true,
+      );
+      return connection ? [connection] : [];
+    });
+    const includeDefaultConnection =
+      args.includeScopeMismatch === true &&
+      args.cursor === undefined &&
+      args.search === undefined;
+    const defaultRow = includeDefaultConnection
+      ? (rows.find((row) => {
+          return row.isDefault;
+        }) ??
+        (
+          await loadConnectorAccountRows(db, {
+            ...args,
+            cursor: undefined,
+            limit: 1,
+            search: undefined,
+            defaultOnly: true,
+          })
+        )[0])
+      : undefined;
+    const defaultConnection = defaultRow
+      ? projectConnection(defaultRow, snapshot, now, true)
+      : null;
+    if (
+      args.target.kind === "custom" &&
+      rows.length > 0 &&
+      projected.length === 0
+    ) {
+      return { kind: "missing" };
+    }
+    const hasMore = rows.length > args.limit;
+    return {
+      kind: "ok",
+      connections: projected.slice(0, args.limit),
+      nextCursor: hasMore ? encodeCursor(rows[args.limit - 1]!) : null,
+      ...(includeDefaultConnection ? { defaultConnection } : {}),
+    };
   });
-  const now = nowDate();
-  const projected = rows.flatMap((row) => {
-    const connection = projectConnection(
-      row,
-      snapshot,
-      now,
-      args.includeScopeMismatch === true,
-    );
-    return connection ? [connection] : [];
-  });
-  const includeDefaultConnection =
-    args.includeScopeMismatch === true &&
-    args.cursor === undefined &&
-    args.search === undefined;
-  const defaultRow = includeDefaultConnection
-    ? (rows.find((row) => {
-        return row.isDefault;
-      }) ??
-      (
-        await loadConnectorAccountRows(db, {
-          ...args,
-          cursor: undefined,
-          limit: 1,
-          search: undefined,
-          defaultOnly: true,
-        })
-      )[0])
-    : undefined;
-  const defaultConnection = defaultRow
-    ? projectConnection(defaultRow, snapshot, now, true)
-    : null;
-  if (
-    args.target.kind === "custom" &&
-    rows.length > 0 &&
-    projected.length === 0
-  ) {
-    return { kind: "missing" };
-  }
-  const hasMore = rows.length > args.limit;
-  return {
-    kind: "ok",
-    connections: projected.slice(0, args.limit),
-    nextCursor: hasMore ? encodeCursor(rows[args.limit - 1]!) : null,
-    ...(includeDefaultConnection ? { defaultConnection } : {}),
-  };
 }
 
-export async function getConnectorAccount(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
-  },
-): Promise<ConnectorAccountConnection | null> {
-  const [row] = await loadConnectorAccountRows(db, args);
-  if (!row) {
-    return null;
-  }
-  const snapshot = await loadConnectorAccountRuntimeSelection(db, [row]);
-  return projectConnection(row, snapshot, nowDate());
+export function getConnectorAccount(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly connectionId: string;
+}): Computed<Promise<ConnectorAccountConnection | null>> {
+  return computed(async (get) => {
+    const db = get(db$);
+    const [row] = await loadConnectorAccountRows(db, args);
+    if (!row) {
+      return null;
+    }
+    const snapshot = await get(connectorAccountRuntimeSelection([row]));
+    return projectConnection(row, snapshot, nowDate());
+  });
 }
 
-async function loadConnectorAccountRuntimeSelection(
-  db: ReadonlyDb,
+function connectorAccountRuntimeSelection(
   rows: readonly { readonly connectorSlug: string | null }[],
-): Promise<ConnectorRuntimeSelection | null> {
-  const connectorSlugs = rows.flatMap((row) => {
-    const slug = connectorSlugSchema.safeParse(row.connectorSlug);
-    return slug.success ? [slug.data] : [];
+): Computed<Promise<ConnectorRuntimeLookup | null>> {
+  return computed(async (get) => {
+    const connectorSlugs = rows.flatMap((row) => {
+      const slug = connectorSlugSchema.safeParse(row.connectorSlug);
+      return slug.success ? [slug.data] : [];
+    });
+    if (connectorSlugs.length === 0) {
+      return null;
+    }
+    return await get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: connectorSlugs,
+      }),
+    );
   });
-  if (connectorSlugs.length === 0) {
-    return null;
-  }
-  const result = await settle(
-    loadConnectorRuntimeSelection(db, {
-      requestedConnectorSlugs: connectorSlugs,
-    }),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (!isConnectorCatalogUnavailableError(result.error)) {
-    throw result.error;
-  }
-  log.warn("Connector catalog unavailable while resolving account lifecycle", {
-    error: result.error,
-  });
-  return null;
 }
 
-export async function listConnectorAccountsByIds(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectionIds: readonly string[];
-  },
-): Promise<readonly ConnectorAccountConnection[]> {
-  const connectionIds = [...new Set(args.connectionIds)];
-  if (connectionIds.length === 0) {
-    return [];
-  }
-  const rows = await loadConnectorAccountRows(db, {
-    ...args,
-    connectionIds,
-  });
-  const snapshot = await loadConnectorAccountRuntimeSelection(db, rows);
-  const now = nowDate();
-  return rows.flatMap((row) => {
-    const connection = projectConnection(row, snapshot, now);
-    return connection ? [connection] : [];
+export function listConnectorAccountsByIds(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectionIds: readonly string[];
+}): Computed<Promise<readonly ConnectorAccountConnection[]>> {
+  return computed(async (get) => {
+    const db = get(db$);
+    const connectionIds = [...new Set(args.connectionIds)];
+    if (connectionIds.length === 0) {
+      return [];
+    }
+    const rows = await loadConnectorAccountRows(db, {
+      ...args,
+      connectionIds,
+    });
+    const snapshot = await get(connectorAccountRuntimeSelection(rows));
+    const now = nowDate();
+    return rows.flatMap((row) => {
+      const connection = projectConnection(row, snapshot, now);
+      return connection ? [connection] : [];
+    });
   });
 }
 
