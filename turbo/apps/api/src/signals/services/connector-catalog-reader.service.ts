@@ -93,8 +93,6 @@ export async function listConnectedConnectorBriefs(
       await args.db
         .select({
           current: {
-            schemaVersion: connectorCatalog.schemaVersion,
-            hash: connectorCatalog.hash,
             header: connectorCatalog.catalogHeader,
             entrySlugs: connectorCatalog.entrySlugs,
           },
@@ -138,8 +136,6 @@ export async function listConnectorCatalogConnectItems(
             await args.db
               .select({
                 current: {
-                  schemaVersion: connectorCatalog.schemaVersion,
-                  hash: connectorCatalog.hash,
                   header: connectorCatalog.catalogHeader,
                   entrySlugs: connectorCatalog.entrySlugs,
                 },
@@ -190,8 +186,6 @@ export async function getPublicConnectorCatalogStatus(
       await args.db
         .select({
           current: {
-            schemaVersion: connectorCatalog.schemaVersion,
-            hash: connectorCatalog.hash,
             header: connectorCatalog.catalogHeader,
             entrySlugs: connectorCatalog.entrySlugs,
           },
@@ -220,8 +214,6 @@ export async function getPublicConnectorCatalogPermissionDetail(
       await args.db
         .select({
           current: {
-            schemaVersion: connectorCatalog.schemaVersion,
-            hash: connectorCatalog.hash,
             header: connectorCatalog.catalogHeader,
             entrySlugs: connectorCatalog.entrySlugs,
           },

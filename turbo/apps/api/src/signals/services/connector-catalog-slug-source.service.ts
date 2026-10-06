@@ -41,8 +41,6 @@ export function connectorCatalogSlugJoin(slugs: readonly ConnectorSlug[]) {
 
 interface CatalogSlugRow {
   readonly current: {
-    readonly schemaVersion: number;
-    readonly hash: string;
     readonly header: ImmutableConnectorCatalogHeader;
     readonly entrySlugs: readonly string[];
   };
@@ -52,7 +50,16 @@ interface CatalogSlugRow {
   } | null;
 }
 
-function currentFromRows(rows: readonly CatalogSlugRow[]) {
+interface CatalogSlugIdentityRow extends CatalogSlugRow {
+  readonly current: CatalogSlugRow["current"] & {
+    readonly schemaVersion: number;
+    readonly hash: string;
+  };
+}
+
+function currentFromRows<Row extends CatalogSlugRow>(
+  rows: readonly Row[],
+): Row["current"] {
   const current = rows[0]?.current;
   if (current === undefined) {
     throw new ExternalConnectorCatalogUnavailableError(
@@ -118,7 +125,7 @@ export function connectorCatalogSlugRuntimeFromRows(
 
 /** Only the existing Pi recapture comparison consumes this matching identity. */
 export function connectorCatalogSlugIdentityFromRows(
-  rows: readonly CatalogSlugRow[],
+  rows: readonly CatalogSlugIdentityRow[],
 ): ExternalCatalogIdentity {
   const current = currentFromRows(rows);
   return {
