@@ -2,19 +2,17 @@ import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/mode
 import {
   Badge,
   Button,
-  IconButton,
   Skeleton,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Loader2, RotateCcw } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { formatLocalizedNumber } from "../../i18n/format.ts";
 import type {
   SubscriptionResetActionState,
   SubscriptionResetSignals,
@@ -396,7 +394,6 @@ function SubscriptionResetControls({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const [, confirm] = useLoadableSet(signals.confirm$);
-  const refresh = useSet(signals.refresh$);
   const creditLabel = useResetCreditLabel(account);
   const pending = actionState === "loading";
   const credits = account?.subscriptionResetCredits;
@@ -409,9 +406,16 @@ function SubscriptionResetControls({
     ? t(($) => {
         return $.chat.subscriptionReset.resetting;
       })
-    : t(($) => {
-        return $.chat.subscriptionReset.confirm;
-      });
+    : credits === null || credits === undefined
+      ? t(($) => {
+          return $.chat.subscriptionReset.confirmUnknown;
+        })
+      : t(
+          ($) => {
+            return $.chat.subscriptionReset.confirm;
+          },
+          { count: credits },
+        );
   return (
     <div className="flex h-9 w-full shrink-0 items-center justify-between gap-3 @[640px]:w-auto @[640px]:justify-end">
       <div className="flex min-w-16 shrink-0 items-center">
@@ -433,20 +437,6 @@ function SubscriptionResetControls({
         )}
       </div>
       <div className="flex h-9 shrink-0 items-center gap-2">
-        <IconButton
-          aria-label={t(($) => {
-            return $.chat.subscriptionReset.retry;
-          })}
-          onClick={refresh}
-          disabled={pending || refreshing}
-          className="size-9 shrink-0 hover:bg-gray-50"
-        >
-          {refreshing ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <RotateCcw size={15} />
-          )}
-        </IconButton>
         {resetSupported(account) ? (
           <span className="sr-only">
             <span>{creditLabel}</span>
@@ -475,17 +465,8 @@ function SubscriptionResetControls({
                 detach(confirm(pageSignal), Reason.DomCallback);
               }}
             >
-              {pending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <RotateCcw size={14} />
-              )}
+              {pending ? <Loader2 size={14} className="animate-spin" /> : null}
               <span>{label}</span>
-              <span aria-hidden>
-                {credits === null || credits === undefined
-                  ? "—"
-                  : `· ${formatLocalizedNumber(credits)}`}
-              </span>
             </Button>
           ) : null}
         </div>
