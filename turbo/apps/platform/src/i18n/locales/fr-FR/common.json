@@ -5266,10 +5266,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Appuyez sur ⌘/Ctrl+Entrée pour envoyer, Entrée pour une nouvelle ligne",
-        "description": "Choisissez comment envoyer les messages dans le chat.",
         "enter": "Enter",
         "enterDescription": "Appuyez sur Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne",
-        "sectionTitle": "Enter",
         "title": "Envoyer un message avec"
       },
       "timezone": {

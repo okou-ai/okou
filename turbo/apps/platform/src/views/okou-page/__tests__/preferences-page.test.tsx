@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   userPreferencesContract,
   type UpdateUserPreferencesRequest,
@@ -223,31 +222,6 @@ test("A workspace without a saved color theme starts on the default palette", as
   ).toStrictEqual([{ colorTheme: "golden-hour" }]);
 });
 
-test("Chat settings fall back to Preference while the capability is disabled", async () => {
-  mockPreferences({ cloudBrowserEnabledByDefault: false });
-
-  await setupPage({
-    context,
-    path: "/?settings=chat",
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ChatPreference]: false },
-  });
-
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  expect(
-    within(dialog).getByRole("heading", { name: "Preference" }),
-  ).toBeVisible();
-  expect(within(dialog).queryByText("Chat")).not.toBeInTheDocument();
-  expect(within(dialog).getByText("Send message with")).toBeVisible();
-  expect(
-    within(dialog).queryByRole("switch", { name: "Cloud browser" }),
-  ).toBeNull();
-  expect(within(dialog).queryByText("Default model")).toBeNull();
-  expect(new URLSearchParams(window.location.search).get("settings")).toBe(
-    "preference",
-  );
-});
-
 test("Chat settings keep the agreed row order and save personal subscription chat defaults", async () => {
   context.mocks.data.personalModelProviders([
     {
@@ -298,9 +272,6 @@ test("Chat settings keep the agreed row order and save personal subscription cha
     context,
     path: "/?settings=chat",
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
   });
 
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
@@ -367,14 +338,13 @@ test("Chat settings keep the agreed row order and save personal subscription cha
   });
 });
 
-test("A user can save message-send and time-zone preferences", async () => {
+test("A user can save a message-send preference in Chat settings", async () => {
   const updates = mockPreferences();
 
   await setupPage({
     context,
-    path: "/settings",
+    path: "/?settings=chat",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ChatPreference]: false },
   });
 
   await expect(screen.findByText("Send message with")).resolves.toBeVisible();
@@ -392,8 +362,18 @@ test("A user can save message-send and time-zone preferences", async () => {
     "aria-pressed",
     "false",
   );
+});
 
-  const timezone = screen.getByRole("combobox", { name: "Time zone" });
+test("A user can save a time-zone preference", async () => {
+  const updates = mockPreferences();
+
+  await setupPage({
+    context,
+    path: "/settings",
+    host: "app.okou.ai",
+  });
+
+  const timezone = await screen.findByRole("combobox", { name: "Time zone" });
   expect(timezone).toHaveTextContent("UTC");
   timezone.focus();
   expect(timezone).toHaveFocus();
@@ -436,8 +416,7 @@ test("A failed preference save shows its error and can be retried", async () => 
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.ChatPreference]: false },
+    path: "/agents?settings=chat",
   });
 
   const dialog = await screen.findByRole("dialog", { name: "Settings" });

@@ -70,7 +70,6 @@ async function openChat(
     sharedWorkerTestTransport: transport,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   await expect(findButton("GPT 5.6 Sol")).resolves.toBeInTheDocument();

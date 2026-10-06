@@ -5266,10 +5266,8 @@
       "send": {
         "cmdEnter": "⌘ Invio",
         "cmdEnterDescription": "Premi ⌘/Ctrl+Invio per inviare, Invio per una nuova riga",
-        "description": "Scegli come inviare messaggi in chat.",
         "enter": "Invio",
         "enterDescription": "Premi Invio per inviare, Maiusc+Invio per una nuova riga",
-        "sectionTitle": "Invio",
         "title": "Invia messaggio con"
       },
       "timezone": {

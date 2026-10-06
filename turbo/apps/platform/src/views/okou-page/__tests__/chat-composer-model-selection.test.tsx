@@ -188,40 +188,6 @@ function buttonNamed(
   return button;
 }
 
-test("Make a new-chat model choice the default immediately", async () => {
-  const user = userEvent.setup({ delay: null });
-  let update: UpdateUserModelPreferenceRequest | undefined;
-  installNewChat(["claude-fable-5-1", "claude-sonnet-5"], "claude-fable-5-1");
-  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
-    update = body;
-    const nextPreference = preference("claude-sonnet-5");
-    context.mocks.data.userModelPreference(nextPreference);
-    return respond(200, nextPreference);
-  });
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: false,
-    },
-  });
-
-  await readyComposer();
-  await chooseModel(user, "Claude Fable 5.1", /^Claude Sonnet 5/iu);
-  await waitFor(() => {
-    expect(update).toStrictEqual({
-      selectedModel: "claude-sonnet-5",
-      serviceTier: null,
-    });
-  });
-  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("group", { name: "Model for this chat" }),
-  ).not.toBeInTheDocument();
-});
-
 test("Temporarily choose a model for a new chat", async () => {
   const user = userEvent.setup({ delay: null });
   const updateGate = createDeferredPromise<void>(context.signal);
@@ -245,7 +211,6 @@ test("Temporarily choose a model for a new chat", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
 
@@ -307,7 +272,6 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   await readyComposer();
@@ -354,7 +318,6 @@ test("Adjust effort from the composer without opening the model picker", async (
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   await readyComposer();
@@ -396,7 +359,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   const composer = await readyComposer();
@@ -490,7 +452,6 @@ test("Keep independent effort selections when changing models", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   await readyComposer();
@@ -634,7 +595,6 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   const composer = await readyComposer();

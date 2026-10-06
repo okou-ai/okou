@@ -152,7 +152,6 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
-  const showChat = features[FeatureSwitchKey.ChatPreference] ?? false;
 
   const sectionMeta = {
     preference: {
@@ -250,15 +249,11 @@ function SettingsDialog({
       label: sectionMeta.preference.title,
       icon: SlidersHorizontal,
     },
-    ...(showChat
-      ? [
-          {
-            id: "chat" as const,
-            label: sectionMeta.chat.title,
-            icon: MessageCircle,
-          },
-        ]
-      : []),
+    {
+      id: "chat",
+      label: sectionMeta.chat.title,
+      icon: MessageCircle,
+    },
     {
       id: "tools",
       label: sectionMeta.tools.title,
@@ -340,7 +335,6 @@ function SettingsDialog({
   // If the user lost admin while the dialog is open, fall back to a safe section
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
-    chatPreferenceEnabled: showChat,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"

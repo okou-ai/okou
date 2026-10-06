@@ -1,6 +1,4 @@
 import { command, computed, state } from "ccstate";
-import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import {
@@ -8,8 +6,6 @@ import {
   sendNewThreadWithoutNavigation$,
 } from "../chat-page/optimistic-chat-thread-page.ts";
 import type { ChatForwardContext } from "../chat-page/chat-forward.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { updateUserModelPreference$ } from "../external/user-model-preference.ts";
 import {
   createAgentDraftSignals,
   type EnsuredAgentDraft,
@@ -48,60 +44,15 @@ const chatEvents$ = computed((): ChatEvent[] => {
   return [];
 });
 
-function changedModelSettingsPatch(
-  selection: ModelProviderSelection | null,
-  previous: ModelProviderSelection | null,
-): ModelSettingsPatch | undefined {
-  const selectedModel = selection?.selectedModel;
-  if (!selection || !selectedModel) {
-    return undefined;
-  }
-  const selectedEffort = selection.modelSettings?.[selectedModel]?.effort;
-  if (
-    selectedEffort === undefined ||
-    previous?.modelSettings?.[selectedModel]?.effort === selectedEffort
-  ) {
-    return undefined;
-  }
-  return { model: selectedModel, effort: selectedEffort };
-}
-
 const setModelSelection$ = command(
-  async (
-    { get, set },
+  (
+    { set },
     selection: ModelProviderSelection | null,
     signal: AbortSignal,
   ): Promise<void> => {
-    const previous = await get(chatPageModelSelection$);
     signal.throwIfAborted();
     set(setChatPageModelSelection$, selection);
-    const selectedModel = selection?.selectedModel;
-    const modelSettingsPatch = changedModelSettingsPatch(selection, previous);
-    if (
-      previous?.selectedModel === selection?.selectedModel &&
-      previous?.codexServiceTier === selection?.codexServiceTier &&
-      modelSettingsPatch === undefined
-    ) {
-      return;
-    }
-    const explicitDefaultActionEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
-    if (!explicitDefaultActionEnabled && selectedModel) {
-      await set(
-        updateUserModelPreference$,
-        {
-          selectedModel,
-          serviceTier:
-            selection?.codexServiceTier === "fast"
-              ? "priority"
-              : selection?.codexServiceTier === "ultrafast"
-                ? "ultrafast"
-                : null,
-          ...(modelSettingsPatch === undefined ? {} : { modelSettingsPatch }),
-        },
-        signal,
-      );
-    }
+    return Promise.resolve();
   },
 );
 
