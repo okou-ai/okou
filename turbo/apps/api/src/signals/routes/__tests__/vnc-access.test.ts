@@ -677,9 +677,9 @@ describe("live chat VNC Run inventory", () => {
     const consumerActor = bdd.user(consumer);
     // Memory initialization and model selection are personal to each Run owner.
     await bdd.completeOnboarding(consumerActor);
-    await createRunsApi(context).updateUserModelPreference(
+    await createRunsApi(context).ensurePersonalSubscriptionModel(
       consumerActor,
-      "claude-fable-5-1",
+      { model: "claude-sonnet-5-5" },
     );
     const runtime = {
       ...consumer,

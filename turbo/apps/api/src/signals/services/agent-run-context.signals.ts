@@ -1,98 +1,95 @@
+import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { agents } from "@okouai/db/schema/agent";
+import { connectors } from "@okouai/db/schema/connector";
+import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
+import { secrets } from "@okouai/db/schema/secret";
 import { command, computed, type Computed } from "ccstate";
 import { performance } from "node:perf_hooks";
+import { z } from "zod";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,
   type PgPoolAcquisitionCapture,
 } from "../../lib/db-instrumentation";
 import {
-  createOrgModelSources,
-  createGatewayModelSources,
-  createManagedModelKeys,
-  createModelPricing,
-} from "./model-source-context.service";
-import { waitUntil } from "../context/wait-until";
-import {
-  agentStorageReadPlan,
-  captureAgentStorageContext,
-  agentStorageCacheSnapshot,
-  type AgentStorageContext,
-} from "./agent-storage-context.service";
-import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
-import { readStorageBaseIndex } from "./storage-index.service";
-import {
-  createOfficialWorkflowFacts,
-  createOfficialWorkflowCatalog,
-  type OfficialWorkflowContextFacts,
-} from "./official-workflow-context.signals";
-import {
-  modelFactsFromSnapshot,
-  type OrgModelBootstrap,
-  type MemberModelBootstrap,
-  type RunOrgMetadata,
-} from "./model-bootstrap.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { agents } from "@okouai/db/schema/agent";
-import { z } from "zod";
-import {
-  pgInt8ToBigIntDecoder,
   nullableDriverValueDecoder,
+  pgInt8ToBigIntDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { mapConcurrent } from "../../lib/map-concurrent";
+import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
+import type { BootstrapAgent } from "./agent-data.service";
+import {
+  agentStorageCacheSnapshot,
+  agentStorageReadPlan,
+  captureAgentStorageContext,
+  type AgentStorageContext,
+} from "./agent-storage-context.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
-import { connectors } from "@okouai/db/schema/connector";
-import { secrets } from "@okouai/db/schema/secret";
-import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import {
   connectorSourceSnapshotsFromRows,
-  type ConnectorSourceRow,
   type ConnectorSourceIdentity,
   type ConnectorSourceResult,
+  type ConnectorSourceRow,
 } from "./execution-connector-sources.service";
-import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { BootstrapAgent } from "./agent-data.service";
-
-import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
-import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
-import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
-import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
-import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
-import { createExecutionMemberContext } from "./execution-member-context.service";
+import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
 import {
-  createExecutionOrgRows,
-  executionOrgMetadata,
-  executionOrgPlan,
-  executionOrgSlots,
-  executionExpiredCredits,
-  executionOrgPolicies,
-} from "./execution-org-context.service";
-import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
-import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
-import { createProviderContext } from "./execution-provider-context.service";
-import { createGlobalModelContext } from "./execution-global-model-context.service";
-import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
-import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
+  modelFactsFromSnapshot,
+  type MemberModelBootstrap,
+  type OrgModelBootstrap,
+  type RunOrgMetadata,
+} from "./model-bootstrap.service";
+import {
+  createManagedModelKeys,
+  createModelPricing,
+} from "./model-source-context.service";
+import {
+  createOfficialWorkflowCatalog,
+  createOfficialWorkflowFacts,
+  type OfficialWorkflowContextFacts,
+} from "./official-workflow-context.signals";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { readStorageBaseIndex } from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
+
+import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
+import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
+import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
+import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
+import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
+import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
+import { createGlobalModelContext } from "./execution-global-model-context.service";
+import { createExecutionMemberContext } from "./execution-member-context.service";
+import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
+import {
+  createExecutionOrgRows,
+  executionExpiredCredits,
+  executionOrgMetadata,
+  executionOrgPlan,
+  executionOrgSlots,
+} from "./execution-org-context.service";
+import { createProviderContext } from "./execution-provider-context.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import {
   createUsageAllowanceContext,
   type UsageAllowanceContext,
 } from "./usage-allowance-context.service";
 
+import { now } from "../../lib/time";
 import {
   executionCreditBalance,
   type ExecutionCreditBalance,
 } from "./execution-credit-balance.service";
-import { now } from "../../lib/time";
 import {
-  totalConcurrencyLimit,
   cappedBaseConcurrencyLimit,
+  totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 
 export interface BootstrapFeatureSwitchContext {
@@ -126,8 +123,6 @@ export interface AgentRunContextSignals {
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
-  readonly orgModelSources$: ReturnType<typeof createOrgModelSources>;
-  readonly gatewayModelSources$: ReturnType<typeof createGatewayModelSources>;
   readonly managedModelKeys$: ReturnType<typeof createManagedModelKeys>;
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
@@ -313,8 +308,7 @@ function createModelSourceGroups(
 ) {
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  const providers =
-    sharedMember ?? createProviderContext(orgId, userId, !sharedOrg);
+  const providers = sharedMember ?? createProviderContext(orgId, userId);
   const globalReferences = supplied
     ? hasGlobalModelOwner(supplied)
       ? {
@@ -328,10 +322,7 @@ function createModelSourceGroups(
     throw new Error("Agent run context has no global reference owner");
   }
   return {
-    orgModelSources$: sharedOrg?.orgModelSources$ ?? providers.orgModelSources$,
     memberModels$: providers.memberModels$,
-    gatewayModelSources$:
-      sharedOrg?.gatewayModelSources$ ?? createGatewayModelSources(orgId),
     managedModelKeys$: globalReferences.managedModelKeys$,
     modelPricing$: globalReferences.modelPricing$,
     globalReferences,
@@ -398,20 +389,12 @@ function createOrgContext(
   const modelFacts$ =
     sharedOrg?.modelFacts$ ??
     computed(async (get) => {
-      const [capabilities, org, catalog, rows] = await Promise.all([
+      const [capabilities, org, catalog] = await Promise.all([
         get(plan$),
         get(orgMetadata$),
         get(modelCatalog$),
-        get(orgRows$),
       ]);
-      const policies = executionOrgPolicies(rows);
-      return modelFactsFromSnapshot(
-        orgId,
-        capabilities,
-        org,
-        catalog,
-        policies,
-      );
+      return modelFactsFromSnapshot(orgId, capabilities, org, catalog);
     });
   return {
     orgRows$,
@@ -566,8 +549,6 @@ export const preloadAgentRunContext$ = command(
       signals.credits$,
       signals.modelFacts$,
       signals.memberModels$,
-      signals.orgModelSources$,
-      signals.gatewayModelSources$,
       signals.memberMetadata$,
       signals.connectorSelection$,
       signals.permissionGrants$,

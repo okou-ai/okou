@@ -56,7 +56,9 @@ beforeEach(() => {
 
 async function createRun(
   actor = bdd.user(),
-  modelProvider: "anthropic-api-key" | "built-in" = "anthropic-api-key",
+  modelProvider:
+    | "claude-code-oauth-token"
+    | "built-in" = "claude-code-oauth-token",
 ): Promise<RunFixture> {
   if (!actor.orgId) {
     throw new Error("X resource test requires an organization");
@@ -65,10 +67,10 @@ async function createRun(
   if (modelProvider === "built-in") {
     await createChatEventsFixture(context).configureBuiltInPiModel(
       actor,
-      "deepseek-v4.1-flash",
+      "okou-1.0",
     );
   } else {
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
   }
   const agent = await bdd.createAgent(actor, {
     displayName: "X resource accounting",
@@ -624,7 +626,7 @@ describe("X daily resource usage webhook", () => {
     const survivor = await createRun();
     // The threaded run must stay active until cancelled, so it uses Fable,
     // which model policy keeps on the native Runner instead of Pi.
-    await runs.ensureOrgModelProvider(owner.actor, {
+    await runs.ensurePersonalSubscriptionModel(owner.actor, {
       model: "claude-fable-5-1",
     });
     const chat = createChatFilesBddApi(context);

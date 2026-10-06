@@ -342,7 +342,9 @@ describe("OPS-01: user data export", () => {
       throw new Error("Expected an organization for the export actor");
     }
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await runs.heartbeatRunner(runnerGroup);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Export Agent",
@@ -388,10 +390,14 @@ describe("OPS-01: user data export", () => {
       "https://r2.example.com/storages/presigned?sig=bdd",
     );
     const startMemoryRun = async (owner: ApiTestUser, agentId: string) => {
+      // Each exporting owner has an independent subscription and memory.
+      await runs.ensurePersonalSubscriptionModel(owner, {
+        model: "claude-sonnet-5-5",
+      });
       // Separate carrier Threads keep both original empty Threads untouched.
       const run = await runs.createThreadRun(owner, {
         agentId,
-        model: "claude-fable-5-1",
+        model: "claude-sonnet-5-5",
         prompt: "publish the memory included in the data export",
       });
       onTestFinished(async () => {

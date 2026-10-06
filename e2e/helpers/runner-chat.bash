@@ -446,11 +446,11 @@ _runner_chat_post_parts() {
             '{
                 agentId: $agentId,
                 prompt: $prompt,
-                model: $model,
                 clientEventId: $clientEventId,
                 userMessage: {version: 1, parts: $parts},
                 hasTextContent: true
-            } + if $captureNetworkBodies then {captureNetworkBodies: true} else {} end')"
+            } + (if $model == "" then {} else {model: $model} end)
+              + if $captureNetworkBodies then {captureNetworkBodies: true} else {} end')"
     fi
 
     runner_api_curl "/api/chat/events" -X POST -d "$payload"

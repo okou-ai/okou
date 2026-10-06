@@ -6,6 +6,10 @@ import { closeDbPool } from "../lib/db";
 import { clearMockedEnv } from "../lib/env";
 import { clearMockListStripeInvoices } from "../signals/external/stripe-client";
 import { clearAllDetached } from "../signals/utils";
+import {
+  beginTestCaseCleanup,
+  testCaseAbortController,
+} from "../test-fixtures/case-owner";
 import type { DbFixture } from "../test-fixtures/db-fixture";
 import { getApiTestMocks, type ApiTestMocks } from "./mocks";
 
@@ -71,7 +75,7 @@ export function testContext({
 
   const context: TestContext = {
     get signal(): AbortSignal {
-      return controller.signal;
+      return testCaseAbortController()?.signal ?? controller.signal;
     },
     mocks: getApiTestMocks(),
     sessionHistoryBlobs: new Map<string, Uint8Array>(),
@@ -86,6 +90,9 @@ export function testContext({
   afterEach(async () => {
     const error = new Error("Aborted due to finished test");
     error.name = "AbortError";
+    // Share the outer DB fixture's owner. Its teardown also handles setup
+    // failures before this hook can run, without closing before native drainage.
+    beginTestCaseCleanup(error);
     controller.abort(error);
     controller = new AbortController();
 

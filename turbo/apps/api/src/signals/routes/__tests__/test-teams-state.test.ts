@@ -288,7 +288,9 @@ describe("Teams webhook dispatch", () => {
     await runs.grantProEntitlement(actor, {
       subscriptionId: owned.subscriptionId,
     });
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await installTeamsForTest(context.signal, fixture);
     createRouteMocks(context).clerk.session(
       fixture.userId,

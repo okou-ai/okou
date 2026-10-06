@@ -224,6 +224,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const pin = await set(
     resolveModelSelectionPin$,
     {
+      purpose: "configure",
       orgId: auth.orgId,
       userId: auth.userId,
       modelSelection: modelFirstSelection(selectedModel),

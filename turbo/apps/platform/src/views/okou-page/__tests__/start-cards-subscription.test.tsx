@@ -61,12 +61,12 @@ function installPersonalAccounts(initial: readonly ModelProviderResponse[]): {
 async function setupStartCards(
   accounts: readonly ModelProviderResponse[] = [],
   search = "",
-  supportByok = true,
+  tier = "pro",
 ): Promise<{
   readonly replaceAccounts: (next: readonly ModelProviderResponse[]) => void;
 }> {
   mockTemplateChat();
-  installPlan(supportByok);
+  installPlan(tier);
   const personalAccounts = installPersonalAccounts(accounts);
   await setupPage({
     context,
@@ -79,14 +79,13 @@ async function setupStartCards(
   return { replaceAccounts: personalAccounts.replace };
 }
 
-/** Serves a plan whose only difference from Pro is whether BYOK is allowed. */
-function installPlan(supportByok: boolean): void {
+/** Serves the requested real plan capabilities. */
+function installPlan(tier: string): void {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     const status: BillingStatusResponse = {
       showUsagePack: false,
-      tier: "pro",
-      ...billingPlanCapabilities("pro"),
-      supportByok,
+      tier,
+      ...billingPlanCapabilities(tier),
       credits: 20_000,
       onboardingPaymentPending: false,
       subscriptionStatus: null,
@@ -281,16 +280,24 @@ test("Connecting Codex from the card retires it for a regular start card", async
   expect(screen.getByTestId("start-cards").children).toHaveLength(3);
 });
 
-test("A plan without BYOK sends the card's provider buttons to plan comparison", async () => {
-  await setupStartCards([], "", false);
+test("Limited Free members can connect their personal subscription", async () => {
+  context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
+    return respond(200, {
+      sessionToken: "limited-free-personal-subscription",
+      type: "codex",
+      status: "pending",
+      scope: "personal",
+      browserUrl: "https://auth.openai.com/codex/device",
+      verificationCode: "FREE-PLUS",
+      expiresIn: 60,
+      interval: 1,
+    });
+  });
+  await setupStartCards([], "", "limited-free-1");
   await screen.findByTestId("start-card-subscription");
-
   click(subscriptionButton("Codex"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Choose a plan" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog", { name: "Connect Codex" })).toBeNull();
+  const dialog = await screen.findByRole("dialog", { name: "Connect Codex" });
+  expect(dialog).toHaveTextContent("FREE-PLUS");
 });
 
 test("The card body opens Settings on Models", async () => {

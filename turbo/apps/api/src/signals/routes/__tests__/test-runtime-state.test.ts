@@ -14,7 +14,7 @@ import {
 } from "./helpers/feature-switches";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { withMockNowForTest } from "../../../lib/time";
-import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -97,23 +97,9 @@ async function createClaimedBuiltInRun(
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   // A BYOK default route and an explicitly selectable built-in fixture route.
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-sonnet-5",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-    {
-      model: selectedModel,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
+  await runs.updateUserModelPreference(actor, selectedModel);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD built-in model failure report agent",
   });
@@ -146,11 +132,7 @@ async function createObservedBuiltInRun(
 ) {
   let selectedModel = existingModel;
   if (selectedModel === undefined) {
-    const mirror = await insertBuiltInModelMirrorFixture(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
-    onTestFinished(mirror.restore);
-    selectedModel = mirror.model;
+    selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
   }
   await seedBuiltInModelCandidateKeys(context, selectedModel);
   const { fixture, claimed } = await withMockNowForTest(
@@ -158,7 +140,6 @@ async function createObservedBuiltInRun(
     async () => {
       const fixture = await createPublicModelFailureFixture(context, [
         selectedModel,
-        "deepseek-v4-flash",
       ]);
       const claimed = await fixture.claim(selectedModel);
       return { fixture, claimed };
@@ -176,29 +157,48 @@ async function createObservedBuiltInRun(
       return await fixture.readAdmissionRejection(claimed.selectedModel);
     },
     readUnrelatedAdmission: async () => {
-      return await fixture.readAdmission("deepseek-v4-flash");
+      const run = await runs.createThreadRun(fixture.actor, {
+        agentId: fixture.agentId,
+        prompt: "Observe unrelated personal subscription admission",
+        model: "claude-fable-5-1",
+      });
+      const response = await reads.requestReadLogById(
+        fixture.actor,
+        run.runId,
+        [200],
+      );
+      await runs.requestCancelRun(fixture.actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      if (response.status !== 200) {
+        throw new Error("Expected personal run Log");
+      }
+      return response.body;
     },
   };
 }
 
 describe("POST /api/test/runtime-state/action", () => {
   it("keeps overlapping built-in model-key fixtures independently releasable", async () => {
-    const first = await seedBuiltInModelKey(context, "gpt-6-luna");
-    const second = await seedBuiltInModelKey(context, "gpt-6-luna");
+    const first = await seedBuiltInModelKey(
+      context,
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
+    const second = await seedBuiltInModelKey(
+      context,
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
 
-    expect(first.selectedModel).toBe("gpt-6-luna");
-    expect(second.selectedModel).toBe("gpt-6-luna");
+    expect(first.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
+    expect(second.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
 
     await expect(first.release()).resolves.toBeUndefined();
     await expect(second.release()).resolves.toBeUndefined();
   });
 
-  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
+  it.each(["okou-1.0"] as const)(
     "serves built-in %s on OpenRouter and recovers after its cooldown",
-    async (sourceModel) => {
-      const mirror = await insertBuiltInModelMirrorFixture(sourceModel);
-      onTestFinished(mirror.restore);
-      const selectedModel = mirror.model;
+    async () => {
+      const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
       await seedBuiltInModelCandidateKeys(context, selectedModel);
       const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
       const cooldownUntil = new Date(startedAt + 5 * 60 * 1000);
@@ -210,7 +210,7 @@ describe("POST /api/test/runtime-state/action", () => {
       });
       const route = claimed.log;
       expect(route.modelRuntimeProvider).toBe("openrouter-codex");
-      const expectedUpstreamModel = `deepseek/${sourceModel}`;
+      const expectedUpstreamModel = "@preset/okou-1-0";
       expect(route.modelRuntimeModel).toBe(expectedUpstreamModel);
       const { actor, agentId, runId } = claimed;
       const detail = await reads.requestReadLogById(actor, runId, [200]);
@@ -251,201 +251,8 @@ describe("POST /api/test/runtime-state/action", () => {
     },
   );
 
-  it("isolates expiry-based cooldowns to exact built-in model routes", async () => {
-    const startedAt = Date.UTC(2026, 7, 20, 0, 0, 0);
-    const routeCooldownUntil = new Date(startedAt + 60 * 1000);
-    const gptMirror = await insertBuiltInModelMirrorFixture("gpt-5.6-sol");
-    onTestFinished(gptMirror.restore);
-    const lunaMirror = await insertBuiltInModelMirrorFixture("gpt-6-luna");
-    onTestFinished(lunaMirror.restore);
-    const claudeMirror =
-      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
-    onTestFinished(claudeMirror.restore);
-    const selectedModels = [
-      gptMirror.model,
-      lunaMirror.model,
-      claudeMirror.model,
-    ];
-    for (const model of selectedModels) {
-      await seedBuiltInModelCandidateKeys(context, model);
-    }
-    // Keep reporting Runs in a different owner/org from the empty population
-    // checked below. Each producer finishes before admitting the next one.
-    const fixture = await withMockNowForTest(startedAt - 60_000, async () => {
-      return await createPublicModelFailureFixture(context, selectedModels);
-    });
-    const reportCooldown = async (runId: string) => {
-      await expect(
-        createRunsApi(context).reportRunnerModelProviderFailure(runId, {
-          failureKind: "rate_limit",
-          retryAfterSeconds: 60,
-        }),
-      ).resolves.toStrictEqual({ outcome: "recorded" });
-      await fixture.finish(runId);
-    };
-
-    await withMockNowForTest(startedAt, async () => {
-      const gptPrimary = await fixture.claim(gptMirror.model);
-      expect(gptPrimary.log).toMatchObject({
-        modelRuntimeProvider: "openai-api-key",
-        modelRuntimeModel: "gpt-5.6-sol",
-      });
-      await reportCooldown(gptPrimary.runId);
-      const gptFallback = await fixture.claim(gptMirror.model);
-      expect(gptFallback.log).toMatchObject({
-        modelRuntimeProvider: "openrouter-codex",
-        modelRuntimeModel: "openai/gpt-5.6-sol",
-      });
-      await reportCooldown(gptFallback.runId);
-      await expect(
-        fixture.readAdmissionRejection(gptMirror.model),
-      ).resolves.toMatchObject({
-        eventType: "input.rejected",
-        error: "model_provider_unavailable",
-      });
-
-      const gptLunaPrimary = await fixture.claim(lunaMirror.model);
-      expect(gptLunaPrimary.log).toMatchObject({
-        modelRuntimeProvider: "openai-api-key",
-        modelRuntimeModel: "gpt-6-luna",
-      });
-      await reportCooldown(gptLunaPrimary.runId);
-      await expect(
-        fixture.readAdmission(lunaMirror.model),
-      ).resolves.toMatchObject({
-        modelRuntimeProvider: "openrouter-codex",
-        modelRuntimeModel: "openai/gpt-6-luna",
-      });
-
-      const claudePrimary = await fixture.claim(claudeMirror.model);
-      expect(claudePrimary.log).toMatchObject({
-        modelRuntimeProvider: "anthropic-api-key",
-        modelRuntimeModel: "claude-fable-5-1",
-      });
-      await reportCooldown(claudePrimary.runId);
-      const claudeFallback = await fixture.claim(claudeMirror.model);
-      expect(claudeFallback.log).toMatchObject({
-        modelRuntimeProvider: "openrouter-api-key",
-        modelRuntimeModel: "anthropic/claude-fable-5.1",
-      });
-      await reportCooldown(claudeFallback.runId);
-    });
-
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    await runs.grantProEntitlement(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD built-in fallback unavailable agent",
-    });
-    const clientEventId = randomUUID();
-    let rejectedThreadId: string | undefined;
-    onTestFinished(async () => {
-      await withMockNowForTest(startedAt, async () => {
-        const currentRuns = createRunsApi(context);
-        currentRuns.acceptTelemetryIngest();
-        context.mocks.ably.publish.mockResolvedValue(undefined);
-        if (rejectedThreadId) {
-          const { events } = await createChatFilesBddApi(
-            context,
-          ).listThreadEvents(actor, rejectedThreadId);
-          const launched = events.find((event) => {
-            return (
-              event.eventType === "input.prompt" &&
-              event.revokesEventId === clientEventId
-            );
-          });
-          if (launched?.runId) {
-            const run = await currentRuns.readRun(actor, launched.runId);
-            if (run.status === "pending" || run.status === "running") {
-              await currentRuns.requestCancelRun(actor, launched.runId, [200]);
-            }
-            await flushWaitUntilForTest();
-          }
-        }
-        await createBddApi(context).deleteAgent(actor, agent.agentId);
-        await flushWaitUntilForTest();
-      });
-    });
-    await runs.updateOrgModelPolicies(actor, [
-      {
-        model: gptMirror.model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    if (!actor.orgId) {
-      throw new Error("Expected built-in fallback actor to have an org");
-    }
-    const unavailable = await withMockNowForTest(startedAt, async () => {
-      const currentChat = createChatFilesBddApi(context);
-      const thread = await currentChat.createThread(actor, {
-        agentId: agent.agentId,
-        model: gptMirror.model,
-      });
-      rejectedThreadId = thread.id;
-      await currentChat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          threadId: thread.id,
-          clientEventId,
-          prompt: "reject before constructing a built-in-model run",
-          model: gptMirror.model,
-        },
-        [201],
-      );
-      await flushWaitUntilForTest();
-      const { events } = await currentChat.listThreadEvents(actor, thread.id);
-      return {
-        rejected: events.find((event) => {
-          return (
-            event.eventType === "input.rejected" &&
-            event.revokesEventId === clientEventId
-          );
-        }),
-        guidance: events.find((event) => {
-          return event.eventType === "output.error";
-        }),
-      };
-    });
-    expect(unavailable.rejected).toMatchObject({
-      error: "model_provider_unavailable",
-    });
-    expect(unavailable.guidance).toMatchObject({
-      error: "model_provider_unavailable",
-    });
-    const logs = await createRunReadsApi(context).requestListLogs(
-      actor,
-      {
-        // Omit status so Logs includes the same seven-status population.
-        limit: 20,
-      },
-      [200],
-    );
-    expect(logs.body.data).toStrictEqual([]);
-
-    await withMockNowForTest(routeCooldownUntil.getTime(), async () => {
-      await expect(
-        fixture.readAdmission(gptMirror.model),
-      ).resolves.toMatchObject({
-        modelRuntimeProvider: "openai-api-key",
-        modelRuntimeModel: "gpt-5.6-sol",
-      });
-      await expect(
-        fixture.readAdmission(claudeMirror.model),
-      ).resolves.toMatchObject({
-        modelRuntimeProvider: "anthropic-api-key",
-        modelRuntimeModel: "claude-fable-5-1",
-      });
-    });
-  });
-
   it("reads and deletes a built-in candidate cooldown", async () => {
-    const mirror = await insertBuiltInModelMirrorFixture("gpt-6-luna");
-    onTestFinished(mirror.restore);
-    const selectedModel = mirror.model;
+    const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
     const startedAt = Date.UTC(2026, 7, 20, 2, 0, 0);
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const fixture = await withMockNowForTest(startedAt - 60_000, async () => {
@@ -462,11 +269,12 @@ describe("POST /api/test/runtime-state/action", () => {
       return claimed.log;
     });
     await withMockNowForTest(startedAt, async () => {
-      await expect(fixture.readAdmission(selectedModel)).resolves.toMatchObject(
-        {
-          modelRuntimeProvider: "openrouter-codex",
-        },
-      );
+      await expect(
+        fixture.readAdmissionRejection(selectedModel),
+      ).resolves.toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
+      });
     });
     const staffOrgId = createUniqueStaffOrgIdFixture();
     const staff = bdd.user({ orgId: staffOrgId });
@@ -501,7 +309,7 @@ describe("POST /api/test/runtime-state/action", () => {
     );
     await withMockNowForTest(startedAt, async () => {
       await expect(fixture.readAdmission(selectedModel)).resolves.toMatchObject(
-        { modelRuntimeProvider: "openai-api-key" },
+        { modelRuntimeProvider: "openrouter-codex" },
       );
     });
   });
@@ -556,9 +364,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
           error: "model_provider_unavailable",
         });
 
-        await seedBuiltInModelCandidateKeys(context, "deepseek-v4-flash");
         await expect(claimed.readUnrelatedAdmission()).resolves.toMatchObject({
-          modelRuntimeProvider: "openrouter-codex",
+          modelProvider: "claude-code-oauth-token",
+          selectedModel: "claude-fable-5-1",
         });
 
         await withMockNowForTest(
@@ -587,14 +395,16 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
 
   it("keeps the intervention deadline against a competing bounded report on an owned model", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 10, 0);
-    const mirror = await insertBuiltInModelMirrorFixture(
+
+    const claimed = await createObservedBuiltInRun(
+      startedAt,
       SEEDED_SYSTEM_DEFAULT_MODEL,
     );
-    onTestFinished(mirror.restore);
-    const claimed = await createObservedBuiltInRun(startedAt, mirror.model);
     await expect(
       runs.readRun(claimed.actor, claimed.runId),
-    ).resolves.toMatchObject({ source: { model: mirror.model } });
+    ).resolves.toMatchObject({
+      source: { model: SEEDED_SYSTEM_DEFAULT_MODEL },
+    });
     const primary = claimed.log;
     await withMockNowForTest(startedAt, async () => {
       const outcomes = await Promise.all([
@@ -1107,55 +917,55 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         expectApiError(invalid.body);
       }
 
-      const byokRun = await runs.createThreadRun(claimed.actor, {
+      const personalRun = await runs.createThreadRun(claimed.actor, {
         agentId: claimed.agentId,
-        prompt: "ignore a BYOK model provider failure",
-        model: "claude-sonnet-5",
+        prompt: "ignore a personal subscription provider failure",
+        model: "claude-fable-5-1",
       });
-      const ownedByok: { sandboxToken?: string } = {};
+      const ownedPersonal: { sandboxToken?: string } = {};
       onTestFinished(async () => {
         await withMockNowForTest(startedAt, async () => {
           const cleanupRuns = createRunsApi(context);
           const current = await cleanupRuns.readRun(
             claimed.actor,
-            byokRun.runId,
+            personalRun.runId,
           );
           if (current.status === "pending" || current.status === "running") {
             await cleanupRuns.requestCancelRun(
               claimed.actor,
-              byokRun.runId,
+              personalRun.runId,
               [200],
             );
           }
           if (
-            ownedByok.sandboxToken &&
+            ownedPersonal.sandboxToken &&
             (current.status === "pending" ||
               current.status === "running" ||
               current.status === "cancelled")
           ) {
             await createWebhookCallbackApi(context).requestAgentComplete(
               {
-                runId: byokRun.runId,
+                runId: personalRun.runId,
                 exitCode: 1,
                 error: "Cancelled ineligible report Run",
               },
-              { authorization: `Bearer ${ownedByok.sandboxToken}` },
+              { authorization: `Bearer ${ownedPersonal.sandboxToken}` },
               [200],
             );
           }
           await flushWaitUntilForTest();
         });
       });
-      const byokRunnerIdentity = {
+      const personalRunnerIdentity = {
         runnerId: randomUUID(),
         heartbeatGeneration: 8,
       };
-      const byokClaim = await runs.claimRunnerJob(byokRun.runId, {
-        runnerIdentity: byokRunnerIdentity,
+      const personalClaim = await runs.claimRunnerJob(personalRun.runId, {
+        runnerIdentity: personalRunnerIdentity,
       });
-      ownedByok.sandboxToken = byokClaim.sandboxToken;
+      ownedPersonal.sandboxToken = personalClaim.sandboxToken;
       await expect(
-        runs.reportRunnerModelProviderFailure(byokRun.runId, {
+        runs.reportRunnerModelProviderFailure(personalRun.runId, {
           failureKind: "billing",
         }),
       ).resolves.toStrictEqual({ outcome: "ignored" });

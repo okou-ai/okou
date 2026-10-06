@@ -1,29 +1,29 @@
-import { command, computed } from "ccstate";
 import {
-  getMemberModelPolicyRoute,
-  isMemberModelPolicyConfigurable,
-} from "@okouai/api-contracts/contracts/member-model-policy";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+  getMemberRunModelRoute,
+  isMemberRunModelConfigurable,
+} from "@okouai/api-contracts/contracts/member-run-model";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import {
   type UpdateUserModelPreferenceRequest,
   userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
+import { command, computed } from "ccstate";
 
 import { badRequestMessage } from "../../lib/error";
-import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
-import { listOrgModelPolicies$ } from "../services/model-policy.service";
 import {
-  memberModelPolicyCatalog,
+  memberRunModelCatalog,
   type ModelCatalog,
-  resolveCatalogRunModel,
   modelCatalog$,
+  resolveCatalogRunModel,
 } from "../services/model-catalog.service";
+import { listAvailableRunModels$ } from "../services/run-models.service";
 
 import {
   isCatalogFastServiceTierSupported,
@@ -39,11 +39,11 @@ const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 
 function configuredPolicyProviderType(
   catalog: ModelCatalog,
-  policy: OrgModelPolicy | undefined,
+  policy: AvailableRunModel | undefined,
 ): string | null {
   return policy &&
-    isMemberModelPolicyConfigurable(policy, memberModelPolicyCatalog(catalog))
-    ? getMemberModelPolicyRoute(policy).providerType
+    isMemberRunModelConfigurable(policy, memberRunModelCatalog(catalog))
+    ? getMemberRunModelRoute(policy).providerType
     : null;
 }
 
@@ -51,7 +51,7 @@ function validateModelSettingsPatch(args: {
   readonly catalog: ModelCatalog;
   readonly patch: ModelSettingsPatch | undefined;
   readonly selectedModel: string | null;
-  readonly configuredPolicy: OrgModelPolicy | undefined;
+  readonly configuredPolicy: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (args.patch === undefined) {
     return undefined;
@@ -77,7 +77,7 @@ function validateModelSettingsPatch(args: {
 function validateUltrafastServiceTier(args: {
   readonly catalog: ModelCatalog;
   readonly requested: boolean;
-  readonly configuredPolicy: OrgModelPolicy | undefined;
+  readonly configuredPolicy: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (!args.requested) {
     return undefined;
@@ -98,16 +98,16 @@ function validateUltrafastServiceTier(args: {
 function validatePriorityServiceTier(args: {
   readonly catalog: ModelCatalog;
   readonly requested: boolean;
-  readonly configuredPolicy: OrgModelPolicy | undefined;
+  readonly configuredPolicy: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (!args.requested) {
     return undefined;
   }
   if (
     !args.configuredPolicy ||
-    !isMemberModelPolicyConfigurable(
+    !isMemberRunModelConfigurable(
       args.configuredPolicy,
-      memberModelPolicyCatalog(args.catalog),
+      memberRunModelCatalog(args.catalog),
     )
   ) {
     return badRequestMessage("Invalid request");
@@ -226,12 +226,12 @@ const updateUserModelPreferenceInner$ = command(
     const policies =
       data.selectedModel !== null
         ? await set(
-            listOrgModelPolicies$,
+            listAvailableRunModels$,
             { orgId: auth.orgId, userId: auth.userId },
             signal,
           )
         : undefined;
-    const configuredPolicy = policies?.policies.find((policy) => {
+    const configuredPolicy = policies?.models.find((policy) => {
       return policy.model === data.selectedModel;
     });
     if (data.selectedModel !== null && !configuredPolicy) {

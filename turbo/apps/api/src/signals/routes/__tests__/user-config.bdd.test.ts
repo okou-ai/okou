@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -348,20 +349,9 @@ describe("AUTH-03 user model preference", () => {
     await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
     // Astra is restricted on the limited-free plan this admin starts on.
     await createRunsApi(context).grantProEntitlement(admin);
-    await createRunsApi(context).updateOrgModelPolicies(admin, [
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-6-luna",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      admin,
+    );
 
     const astra = await cfg.updateModelPreference(admin, {
       selectedModel: "gpt-6-astra",
@@ -399,8 +389,12 @@ describe("AUTH-03 user model preference", () => {
     );
     expectApiError(unsupported.body);
     expect(unsupported.body.error.message).toBe(
-      "Reasoning effort is not supported by the selected model",
+      "Reasoning effort is not available for this subscription",
     );
+    await expect(cfg.readModelPreference(admin)).resolves.toMatchObject({
+      selectedModel: "gpt-6-luna",
+      modelSettings: luna.modelSettings,
+    });
   });
 
   it("rejects contract-invalid model preference bodies and unauthenticated access", async () => {

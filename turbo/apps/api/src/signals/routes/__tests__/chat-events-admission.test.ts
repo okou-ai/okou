@@ -51,15 +51,9 @@ const {
 // finish API-first before the Runner claim, cancel, and callback steps run.
 async function entitledChatActor() {
   const result = await createEntitledChatActor();
-  await api.updateOrgModelPolicies(result.actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: result.providerId,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(result.actor, {
+    model: "claude-fable-5-1",
+  });
   return result;
 }
 
@@ -67,6 +61,9 @@ describe("CHAT-02: on-demand member memory initialization", () => {
   it("initializes an existing member's memory from preferences before the member's first run", async () => {
     const { actor: owner } = await entitledChatActor();
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    await api.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
+    });
     const preferences = setupApp({ context, routes: userPreferencesRoutes })(
       userPreferencesContract,
     );
@@ -110,8 +107,8 @@ describe("CHAT-02: on-demand member memory initialization", () => {
       displayName: "Member memory agent",
       visibility: "private",
     });
-    // The owner's preferred model is the owner's own; the member selects the
-    // organization's configured model explicitly.
+    // The member runs with their own connected subscription, never the owner's
+    // account. Memory initialization remains independent of provider ownership.
     const launched = await sendChatRun(member, {
       agentId: agent.agentId,
       model: "claude-fable-5-1",
@@ -702,21 +699,12 @@ describe("CHAT-02: admission without spendable credits", () => {
       fixture.registerAgent(agent.agentId);
       await fixture.activateWithoutCredits();
       await fixture.suspend(0);
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-sonnet-5",
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
 
       const clientEventId = randomUUID();
       const sendBody: ChatRunSendBody = {
         agentId: agent.agentId,
         prompt: "blocked by suspended plan",
-        model: "claude-sonnet-5",
+        model: "okou-1.0",
         clientEventId,
       };
       const sent = await chat.requestSendEvent(actor, sendBody, [201]);

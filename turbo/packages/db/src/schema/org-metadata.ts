@@ -27,8 +27,6 @@ function orgMetadataColumnsBeforeFirstPartySource() {
       .notNull()
       .default(false),
     onboardingComplete: boolean("onboarding_complete").notNull().default(false),
-    modelMode: varchar("model_mode", { length: 6 }).notNull().default("auto"),
-    // Optional OpenRouter preset for the org's Built-in okou-1.0 route.
     openrouterPreset: text("openrouter_preset"),
     // The field answered in the source-first onboarding flow. Null for every
     // org that finished onboarding without being asked, so readers must treat
@@ -116,10 +114,6 @@ export const orgMetadata = pgTable(
   },
   (table) => {
     return [
-      check(
-        "chk_org_metadata_model_mode",
-        sql`${table.modelMode} IN ('auto', 'custom')`,
-      ),
       check("chk_org_metadata_tier_not_free", sql`${table.tier} <> 'free'`),
       check(
         "chk_org_metadata_pending_target_not_free",

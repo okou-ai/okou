@@ -1,18 +1,25 @@
-import { asc, sql } from "drizzle-orm";
+import type { MemberRunModelCatalog } from "@okouai/api-contracts/contracts/member-run-model";
 import {
   getBuiltInRouteProviderVendor,
+  getFrameworkForType,
   isBuiltInModelProviderType,
+  MODEL_PROVIDER_TYPES,
   modelProviderTypeSchema,
   type ModelProviderType,
-  getFrameworkForType,
-  MODEL_PROVIDER_TYPES,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { MemberModelPolicyCatalog } from "@okouai/api-contracts/contracts/member-model-policy";
+import {
+  AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
+  AUTO_RUN_MODEL,
+  AUTO_RUN_PRICING_PROVIDER,
+  AUTO_RUN_PROVIDER,
+  AUTO_RUN_UPSTREAM_MODEL,
+} from "@okouai/core/auto-run-model";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { command, computed, type Computed } from "ccstate";
+import { asc, sql } from "drizzle-orm";
 import { db$ } from "../external/db";
-import type { SupportedFramework } from "@okouai/core/frameworks";
 
 /** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
 const MODEL_USAGE_PRICING_KIND = "model";
@@ -56,12 +63,47 @@ export type CatalogRoute = Readonly<{
   longContextMinTotalInputTokens: number | null;
 }>;
 
+function autoCatalogRoute(): CatalogRoute {
+  return {
+    model: AUTO_RUN_MODEL,
+    providerType: "built-in",
+    concreteProviderType: AUTO_RUN_PROVIDER,
+    subscriptionType: null,
+    upstreamModel: AUTO_RUN_UPSTREAM_MODEL,
+    enabled: true,
+    priority: 0,
+    serviceTiers: [],
+    defaultServiceTier: null,
+    efforts: [],
+    defaultEffort: null,
+    priceTier: null,
+    pricingKind: MODEL_USAGE_PRICING_KIND,
+    pricingProvider: AUTO_RUN_PRICING_PROVIDER,
+    longContextMinTotalInputTokens:
+      AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
+  };
+}
+
+function autoCatalogModel(): CatalogModel {
+  return {
+    model: AUTO_RUN_MODEL,
+    displayName: "Auto",
+    sortOrder: 0,
+    isSystemDefault: true,
+    replacedBy: null,
+    builtInOnRestrictedPlans: true,
+    piRouteClass: "gpt-codex",
+  };
+}
+
 export type ModelCatalog = Readonly<{
   models: readonly CatalogModel[];
   routes: readonly CatalogRoute[];
   systemDefault: CatalogModel;
   /** The system default's model ID; it always has a runnable Built-in route. */
   systemDefaultModel: string;
+  /** Operator-owned Auto preset; catalog metadata never selects vendors. */
+  autoUpstreamModel: string;
   byModel: ReadonlyMap<string, CatalogModel>;
 }>;
 
@@ -72,6 +114,7 @@ export function modelCatalogForOrg(
 ): ModelCatalog {
   return {
     ...catalog,
+    autoUpstreamModel: openrouterPreset ?? catalog.autoUpstreamModel,
     routes: catalog.routes.map((route) => {
       return route.model === "okou-1.0" &&
         route.providerType === "built-in" &&
@@ -150,40 +193,27 @@ export function validateModelCatalog(
   for (const row of models) {
     followReplacementChain(byModel, row);
   }
-  const defaults = models.filter((row) => {
-    return row.isSystemDefault;
-  });
-  const [systemDefault] = defaults;
-  if (!systemDefault || defaults.length !== 1) {
-    throw new ModelCatalogInvariantError(
-      `expected exactly one system default, found ${defaults.length}`,
-    );
-  }
-  if (systemDefault.replacedBy !== null) {
-    throw new ModelCatalogInvariantError(
-      `system default ${systemDefault.model} is retired`,
-    );
-  }
+  const systemDefault = autoCatalogModel();
+  byModel.set(AUTO_RUN_MODEL, systemDefault);
   for (const route of routes) {
     validateRoutePricingLink(route);
   }
-  const hasBuiltInRoute = routes.some((route) => {
-    return (
-      route.model === systemDefault.model &&
-      route.providerType === "built-in" &&
-      isCatalogRouteExecutable(route)
-    );
-  });
-  if (!hasBuiltInRoute) {
-    throw new ModelCatalogInvariantError(
-      `system default ${systemDefault.model} has no enabled Built-in route with a runtime adapter`,
-    );
-  }
   return {
-    models,
-    routes,
+    models: [
+      systemDefault,
+      ...models.filter((model) => {
+        return model.model !== AUTO_RUN_MODEL;
+      }),
+    ],
+    routes: [
+      autoCatalogRoute(),
+      ...routes.filter((route) => {
+        return route.model !== AUTO_RUN_MODEL;
+      }),
+    ],
     systemDefault,
     systemDefaultModel: systemDefault.model,
+    autoUpstreamModel: AUTO_RUN_UPSTREAM_MODEL,
     byModel,
   };
 }
@@ -238,6 +268,11 @@ export function catalogBuiltInRoute(
   model: string,
   concreteProviderType: string,
 ): CatalogRoute | null {
+  if (model === AUTO_RUN_MODEL) {
+    return concreteProviderType === AUTO_RUN_PROVIDER
+      ? { ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }
+      : null;
+  }
   return (
     catalogRoutesFor(catalog, model, "built-in").find((candidate) => {
       return candidate.concreteProviderType === concreteProviderType;
@@ -327,14 +362,14 @@ export function isCatalogModelRunnable(
   return resolveCatalogRunModel(catalog, model) === model;
 }
 
-/** Enabled Built-in candidates of a model in ascending fallback priority. */
+/** Platform admission is fixed Auto, never a catalog fallback directory. */
 export function catalogBuiltInCandidates(
   catalog: ModelCatalog,
   model: string,
 ): readonly CatalogRoute[] {
-  return [...catalogRoutesFor(catalog, model, "built-in")].sort((a, b) => {
-    return a.priority - b.priority;
-  });
+  return model === AUTO_RUN_MODEL
+    ? [{ ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }]
+    : [];
 }
 
 /**
@@ -345,19 +380,18 @@ export function catalogProviderUpstreamModel(
   catalog: ModelCatalog,
   model: string,
   providerType: string,
+  subscriptionType: string,
 ): string | null {
-  const [route] = catalogRoutesFor(catalog, model, providerType);
+  const [route] = catalogRoutesFor(
+    catalog,
+    model,
+    providerType,
+    subscriptionType,
+  );
   return route?.upstreamModel ?? null;
 }
 
 /** Only active models (`replaced_by IS NULL`) may be newly configured. */
-export function isCatalogModelAddable(
-  catalog: ModelCatalog,
-  model: string,
-): boolean {
-  const row = catalog.byModel.get(model);
-  return row !== undefined && row.replacedBy === null;
-}
 
 /** Enabled routes of one model for a selected provider type. */
 export function catalogRoutesFor(
@@ -392,9 +426,9 @@ export function catalogHasProviderRoute(
 }
 
 /** The catalog lookups member policy configurability reads. */
-export function memberModelPolicyCatalog(
+export function memberRunModelCatalog(
   catalog: ModelCatalog,
-): MemberModelPolicyCatalog {
+): MemberRunModelCatalog {
   return {
     resolve(model) {
       const resolution = resolveCatalogModel(catalog, model);
@@ -415,13 +449,6 @@ export function memberModelPolicyCatalog(
 }
 
 /** Display price tier of the model's primary Built-in route. */
-export function catalogBuiltInPriceTier(
-  catalog: ModelCatalog,
-  model: string,
-): string | null {
-  const [primary] = catalogRoutesFor(catalog, model, "built-in");
-  return primary?.priceTier ?? null;
-}
 
 /** The catalog display name; unknown IDs are shown verbatim. */
 export function catalogDisplayName(
@@ -432,20 +459,8 @@ export function catalogDisplayName(
 }
 
 /** Active models in picker order. */
-export function catalogActiveModels(catalog: ModelCatalog): readonly string[] {
-  return catalog.models
-    .filter((row) => {
-      return row.replacedBy === null;
-    })
-    .map((row) => {
-      return row.model;
-    });
-}
 
 /** Picker rank; models outside the catalog sort last. */
-export function catalogModelRank(catalog: ModelCatalog, model: string): number {
-  return catalog.byModel.get(model)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
-}
 
 /**
  * Loaded per owning graph: operators change the catalog directly in the database, and
@@ -551,9 +566,6 @@ export const loadModelCatalog$ = command(
 );
 
 /** The DB-owned system default, derived from the same request catalog. */
-export const systemDefaultRunModel$ = computed(async (get): Promise<string> => {
-  return (await get(modelCatalog$)).systemDefaultModel;
-});
 
 export function frameworkForProviderSelection(
   catalog: ModelCatalog,

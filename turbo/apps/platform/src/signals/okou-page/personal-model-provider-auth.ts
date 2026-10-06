@@ -1,6 +1,6 @@
-import { isMemberModelPolicyAvailable } from "@okouai/api-contracts/contracts/member-model-policy";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
+import { isMemberRunModelAvailable } from "@okouai/api-contracts/contracts/member-run-model";
 import { command, computed, type Computed } from "ccstate";
+import { availableRunModels$ } from "../external/run-models.ts";
 import {
   personalModelProvider$,
   reloadPersonalModelProvider$,
@@ -20,12 +20,12 @@ export function createPersonalModelProviderAuthSignals(
     if (selectedModel === null) {
       return true;
     }
-    const { policies } = await get(orgModelPolicies$);
-    const policy = policies.find((candidate) => {
+    const { models } = await get(availableRunModels$);
+    const runModel = models.find((candidate) => {
       return candidate.model === selectedModel;
     });
-    if (policy?.memberEffective) {
-      return isMemberModelPolicyAvailable(policy);
+    if (runModel?.memberEffective) {
+      return isMemberRunModelAvailable(runModel);
     }
     const status = (await get(personalModelProvider$))[selectedModel];
     return status === undefined || status.status === "connected";
@@ -38,7 +38,7 @@ export function createPersonalModelProviderAuthSignals(
       if (selectedModel === null) {
         return;
       }
-      // Remote notices refresh only the cheap policy projection. An explicit
+      // Remote notices refresh only the cheap runModel projection. An explicit
       // configuration action needs the latest account before choosing a target.
       set(reloadPersonalModelProvider$);
       const status = (await get(personalModelProvider$))[selectedModel];

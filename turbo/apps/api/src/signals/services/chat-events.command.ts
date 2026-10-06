@@ -1,19 +1,10 @@
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import {
   chatThreadRequestSelection,
   type ChatThreadRequestFacts,
 } from "./chat-thread-request-facts";
-import { parseRawRows } from "../../lib/db-raw-rows";
 
-import {
-  resolveRunSelectionModel,
-  type ModelSelectionBootstrap,
-} from "./model-selection.service";
-import {
-  createAgentRunContextSignals,
-  preloadAgentRunContext$,
-  type AgentRunContextSignals,
-} from "./agent-run-context.signals";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   chatEventsContract,
@@ -36,6 +27,7 @@ import {
 } from "@okouai/db/schema/chat-event";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -43,8 +35,6 @@ import type { z } from "zod";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { now, nowDate } from "../../lib/time";
-import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
 import type { AuthContext } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { waitUntil } from "../context/wait-until";
@@ -54,11 +44,25 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
+import {
+  createAgentRunContextSignals,
+  preloadAgentRunContext$,
+  type AgentRunContextSignals,
+} from "./agent-run-context.signals";
 import type {
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
 } from "./agent-run-contracts";
+import {
+  resolveRunSelectionModel,
+  type ModelSelectionBootstrap,
+} from "./model-selection.service";
+import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
 
+import {
+  cancelRun$,
+  type CancelRunResult,
+} from "./agent-run-terminal-transition.service";
 import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import {
   canonicalChatEventContent,
@@ -70,27 +74,22 @@ import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
-  type NewChatEvent,
   chatEventContextInsertSql,
-  chatEventReplacementInsertSql,
-  requireChatEventReplacementTarget,
-  chatEventReplacementTargetSql,
-  chatEventReplacementTargetSchema,
   chatEventInsertSql,
+  chatEventReplacementInsertSql,
+  chatEventReplacementTargetSchema,
+  chatEventReplacementTargetSql,
+  requireChatEventReplacementTarget,
+  type NewChatEvent,
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
-import type { ModelCatalog } from "./model-catalog.service";
-import {
-  catalogModelOffersUltrafast,
-  isCatalogFastServiceTierSupported,
-} from "./model-route-capabilities.service";
 import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   chatThreadCreatedEventSql,
-  prepareChatThreadInsert,
   createdChatThreadFromRow,
+  prepareChatThreadInsert,
 } from "./chat-thread-create.service";
 import {
   chatThreadEventInsertSql,
@@ -99,8 +98,8 @@ import {
 import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
-  pickEnqueuedChatThread$,
   notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
 } from "./chat-thread-queue-drain.service";
 import {
   agentRunSourceTitleSnapshot,
@@ -111,12 +110,13 @@ import {
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
+import type { ModelCatalog } from "./model-catalog.service";
+import {
+  catalogModelOffersUltrafast,
+  isCatalogFastServiceTierSupported,
+} from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
-import {
-  cancelRun$,
-  type CancelRunResult,
-} from "./agent-run-terminal-transition.service";
 import {
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,
@@ -1662,14 +1662,11 @@ const validateSendThreadRevocation$ = command(
 
 const prepareNormalSendModels$ = command(
   async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
-    const [orgModels, memberModels, memberMetadata, providers, surfaces] =
-      await Promise.all([
-        get(context.modelFacts$),
-        get(context.memberModels$),
-        get(context.memberMetadata$),
-        get(context.orgModelSources$),
-        get(context.gatewayModelSources$),
-      ]);
+    const [orgModels, memberModels, memberMetadata] = await Promise.all([
+      get(context.modelFacts$),
+      get(context.memberModels$),
+      get(context.memberMetadata$),
+    ]);
     signal.throwIfAborted();
     return {
       orgModels,
@@ -1677,8 +1674,6 @@ const prepareNormalSendModels$ = command(
         org: orgModels,
         member: memberModels,
         memberMetadata,
-        providers,
-        surfaces,
       },
     };
   },

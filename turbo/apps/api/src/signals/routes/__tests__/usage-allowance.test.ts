@@ -986,7 +986,7 @@ describe("Usage Allowance", () => {
       allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
     });
     const api = createRunsApi(context);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "BYOK run uses allowance for billable firewall",
@@ -1023,7 +1023,7 @@ describe("Usage Allowance", () => {
       allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
     });
     const api = createRunsApi(context);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "concurrent billable allowance admission",
@@ -1121,7 +1121,7 @@ describe("Usage Allowance", () => {
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     await seedOrgMetadata({ orgId, tier: "pro", credits: 100 });
     await seedAllowanceEntitlement(actor, orgId, {
       shortWindowUnits: 100,
@@ -1166,7 +1166,7 @@ describe("Usage Allowance", () => {
       const api = createRunsApi(context);
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
-      await api.ensureOrgModelProvider(actor);
+      await api.ensurePersonalSubscriptionModel(actor);
       const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "non-built-in run inside active allowance window",
@@ -1448,7 +1448,7 @@ describe("Usage Allowance", () => {
     const api = createRunsApi(context);
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     // A BYOK run starts during entitlement but does not issue built-in
     // allowance windows at admission. First settlement must not backdate one.
     const run = await api.createThreadRun(actor, {
@@ -1568,7 +1568,7 @@ describe("Usage Allowance", () => {
       credits: 100,
     });
     const api = createRunsApi(context);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     // BYOK runs do not receive built-in credit admission, and this run
     // predates the entitlement, so it has no allowance windows.
     const run = await api.createThreadRun(actor, {

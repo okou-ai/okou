@@ -90,7 +90,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     await runs.grantProEntitlement(bootstrapActor, {
       tier: source === "automation-event" ? "team" : "pro",
     });
-    await runs.ensureOrgModelProvider(bootstrapActor, {
+    await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
     await bdd.readOnboardingStatus(actor);

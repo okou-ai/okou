@@ -1,10 +1,10 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
-import { seededProviderTypes } from "@okouai/core/__tests__/seeded-model-catalog";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Header } from "tar";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
 import { createStoragesBddApi } from "./api-bdd-storages";
 import { storageTextFile } from "./api-bdd-storage-files";
@@ -19,11 +19,8 @@ import {
   type GenerationTemplateRequest,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   getModelProviderFirewall,
-  type UpsertModelProviderRequest,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -45,7 +42,6 @@ import {
   readPiConversationIdentityFixture,
   readPiMemoryStage1CandidateFixture,
 } from "../../../../test-fixtures/pi-memory-stage1-candidates";
-import { insertBuiltInModelMirrorFixture } from "../../../../test-fixtures/model-catalog";
 import { seededSystemSkillArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
 import {
   createUsagePricingFixture,
@@ -55,8 +51,6 @@ import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
 import { mailRoutes } from "../../mail";
-import { modelProviderGatewayRoutes } from "../../model-provider-gateways";
-import { modelProvidersRoutes } from "../../model-providers";
 import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
 import {
@@ -80,18 +74,13 @@ import { chatEventDisplayText } from "./chat-event";
 import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 import {
-  coolDownBuiltInCandidatesFixture,
   readRunLaunchSnapshotFixture,
-  resolveBuiltInModelRouteFixture,
-  seedBuiltInModelCandidateKeys,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
 } from "./runtime-state";
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,
   ...chatThreadRoutes,
   ...mailRoutes,
-  ...modelProviderGatewayRoutes,
-  ...modelProvidersRoutes,
 ]);
 
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
@@ -108,58 +97,16 @@ const PI_BASE_USAGE_CATEGORIES = [
 
 export const GPT_PI_BDD_MODELS = [
   "gpt-6-luna",
-  "gpt-5.6-sol",
-  "gpt-5.6-luna",
+  "gpt-6-sol",
+  "gpt-6.1-sol",
 ] as const;
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
 
-const GPT_PI_USAGE_MODELS = [...GPT_PI_BDD_MODELS, "gpt-6-sol"] as const;
+const GPT_PI_USAGE_MODELS = GPT_PI_BDD_MODELS;
 
-export const GPT_API_KEY_BDD_ROUTES = GPT_PI_BDD_MODELS.flatMap(
+export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
   (selectedModel) => {
-    return (
-      [
-        {
-          name: `OpenAI ${selectedModel}`,
-          selectedModel,
-          type: "openai-api-key",
-          endpoint: "https://api.openai.com/v1/responses",
-          baseUrl: "https://api.openai.com/v1",
-          secretName: "OPENAI_API_KEY",
-          piProvider: "openai",
-          runtimeModel: selectedModel,
-        },
-        {
-          name: `OpenRouter ${selectedModel}`,
-          selectedModel,
-          type: "openrouter-codex",
-          endpoint: "https://openrouter.ai/api/v1/responses",
-          baseUrl: "https://openrouter.ai/api/v1",
-          secretName: "OPENROUTER_API_KEY",
-          piProvider: "openrouter",
-          runtimeModel: `openai/${selectedModel}`,
-        },
-        {
-          name: `Vercel AI Gateway ${selectedModel}`,
-          selectedModel,
-          type: "vercel-ai-gateway-codex",
-          endpoint: "https://ai-gateway.vercel.sh/v1/responses",
-          baseUrl: "https://ai-gateway.vercel.sh/v1",
-          secretName: "VERCEL_AI_GATEWAY_API_KEY",
-          piProvider: "openai",
-          catalogModel: selectedModel,
-          runtimeModel: `openai/${selectedModel}`,
-        },
-      ] as const
-    ).filter((route) => {
-      return seededProviderTypes(selectedModel).includes(route.type);
-    });
-  },
-);
-
-export const USER_OWNED_GPT_FAST_BDD_ROUTES = [
-  ...GPT_PI_BDD_MODELS.map((selectedModel) => {
     return {
       name: `subscription ${selectedModel}`,
       selectedModel,
@@ -168,11 +115,8 @@ export const USER_OWNED_GPT_FAST_BDD_ROUTES = [
       runtimeModel: selectedModel,
       wireTier: "priority",
     } as const;
-  }),
-  ...GPT_API_KEY_BDD_ROUTES.map((route) => {
-    return { ...route, wireTier: "priority" as const };
-  }),
-] as const;
+  },
+);
 
 const GPT_USAGE_PRICING = [
   "tokens.input",
@@ -301,8 +245,17 @@ export async function createPiUsagePricingResolution(
   ) {
     return await createGptUsagePricingResolution();
   }
+  const categories =
+    provider === "okou-1.0"
+      ? [
+          ...PI_BASE_USAGE_CATEGORIES,
+          ...PI_BASE_USAGE_CATEGORIES.map((category) => {
+            return `${category}.long_context`;
+          }),
+        ]
+      : PI_BASE_USAGE_CATEGORIES;
   const pricing = await createUsagePricingFixture({
-    configured: PI_BASE_USAGE_CATEGORIES.map((category) => {
+    configured: categories.map((category) => {
       return {
         kind: "model",
         provider,
@@ -419,7 +372,10 @@ export async function expectExactPrivatePiMemoryAdmission(args: {
     userId: args.userId,
   });
   expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
-  await readmitPiMemoryStage1CandidateFixture(args.runId);
+  const admitted = await readmitPiMemoryStage1CandidateFixture(args.runId);
+  if (admitted.outcome === "skipped") {
+    throw new Error(`Private Pi memory admission skipped: ${admitted.reason}`);
+  }
   const candidate = await readPiMemoryStage1CandidateFixture({
     orgId: args.orgId,
     userId: args.userId,
@@ -599,7 +555,7 @@ export function createChatEventsFixture(context: TestContext) {
         : {}),
       tier,
     });
-    const { providerId } = await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD chat messages agent",
       description: "Exercises the web chat send route.",
@@ -615,18 +571,21 @@ export function createChatEventsFixture(context: TestContext) {
   }
 
   /**
-   * An entitled actor whose default model is Fable, which model policy keeps
-   * off Pi, for sends that must stay claimable by the native Runner.
+   * An entitled actor with a personal Fable subscription route for sends
+   * that must stay claimable by the native Runner.
    */
   async function entitledNativeChatActor(
     options: ApiTestUserOptions = {},
     tier: "pro" | "team" = "pro",
   ): Promise<EntitledChatActor> {
     const entitled = await entitledChatActor(options, tier);
-    await api.ensureOrgModelProvider(entitled.actor, {
-      model: "claude-fable-5-1",
-    });
-    return entitled;
+    const { providerId } = await api.ensurePersonalSubscriptionModel(
+      entitled.actor,
+      {
+        model: "claude-fable-5-1",
+      },
+    );
+    return { ...entitled, providerId };
   }
 
   async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
@@ -634,83 +593,29 @@ export function createChatEventsFixture(context: TestContext) {
     return fixture.selectedModel;
   }
 
+  /** Platform execution is fixed to Auto; personal subscriptions are separate. */
   async function configureBuiltInPiModel(
     actor: ApiTestUser,
-    selectedModel: PiUsageProvider,
+    selectedModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
   ): Promise<void> {
-    if (selectedModel === "deepseek-v4.1-flash") {
-      configureNativeCliArtifact();
-    }
     await seedBuiltInModelKey(selectedModel);
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-  }
-
-  async function configureApiKeyGptPiModel(
-    actor: ApiTestUser,
-    route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
-    secret: string,
-  ): Promise<string> {
-    const { providerId } = await upsertOrgModelProvider(actor, {
-      type: route.type,
-      secret,
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: route.selectedModel,
-        preferred: true,
-        defaultProviderType: route.type,
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-    return providerId;
+    await api.updateUserModelPreference(actor, selectedModel);
   }
 
   async function configureUserOwnedGptPiModel(
     actor: ApiTestUser,
     route: (typeof USER_OWNED_GPT_FAST_BDD_ROUTES)[number],
-  ): Promise<{ readonly secret: string; readonly accountId: string | null }> {
-    if (route.type === "codex-oauth-token") {
-      const accountId = "subscription-continuity-account";
-      const { oauth } = await configureSubscriptionPiModel(
-        actor,
-        { accountId },
-        route.selectedModel,
-      );
-      return {
-        secret: z.string().parse(oauth.oauthTokenResponses[0]?.access_token),
-        accountId,
-      };
-    }
-    const secret = `${route.type}-pi-fixture-key`;
-    await configureApiKeyGptPiModel(actor, route, secret);
-    return { secret, accountId: null };
-  }
-
-  async function configureOrganizationGptModel(
-    actor: ApiTestUser,
-  ): Promise<void> {
-    const { providerId } = await upsertOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "unused-organization-openai-key",
-    });
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-luna",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+  ) {
+    const accountId = "subscription-continuity-account";
+    const { oauth } = await configureSubscriptionPiModel(
+      actor,
+      { accountId },
+      route.selectedModel,
+    );
+    return {
+      secret: z.string().parse(oauth.oauthTokenResponses[0]?.access_token),
+      accountId,
+    };
   }
 
   async function configureSubscriptionPiModel(
@@ -741,64 +646,16 @@ export function createChatEventsFixture(context: TestContext) {
     if (!("status" in completed.body) || completed.body.status !== "complete") {
       throw new Error("Expected subscription auth to complete");
     }
-    await chatCallbacks.updateOrgModelPolicies(actor, [
-      {
-        model: selectedModel,
-        preferred: true,
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, selectedModel);
     return { oauth, accountSourceId: completed.body.provider.id };
   }
 
-  /**
-   * Makes the managed OpenRouter route the one a new Built-in run of
-   * `selectedModel` launches on, and returns the model ID to send. Built-in
-   * DeepSeek models use it by default; other models
-   * run as a test-owned catalog mirror whose primary candidate is cooling down,
-   * so concurrent tests keep the shared model's routes. Claude native models
-   * cannot use a mirror: Pi resolves them by the selected model ID.
-   */
   async function configureBuiltInPiModelOnOpenRouter(
     actor: ApiTestUser,
-    selectedModel: PiUsageProvider,
+    selectedModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
   ): Promise<string> {
-    const openRouterType = piNativeCatalogModelSchema.safeParse(selectedModel)
-      .success
-      ? "openrouter-api-key"
-      : "openrouter-codex";
-    await seedBuiltInModelCandidateKeys(context, selectedModel);
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      selectedModel,
-    );
-    if (!primary) {
-      throw new Error(`Expected a primary managed route for ${selectedModel}`);
-    }
-    let model: string = selectedModel;
-    if (primary.provider_type !== openRouterType) {
-      const mirror = await insertBuiltInModelMirrorFixture(selectedModel);
-      onTestFinished(mirror.restore);
-      model = mirror.model;
-      await seedBuiltInModelCandidateKeys(context, model);
-      await coolDownBuiltInCandidatesFixture(context, model, [primary]);
-      const fallback = await resolveBuiltInModelRouteFixture(context, model);
-      if (!fallback || fallback.provider_type !== openRouterType) {
-        throw new Error(`Expected an OpenRouter fallback for ${selectedModel}`);
-      }
-    }
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    return model;
+    await configureBuiltInPiModel(actor, selectedModel);
+    return selectedModel;
   }
 
   async function sendChatRun(
@@ -1106,18 +963,6 @@ export function createChatEventsFixture(context: TestContext) {
     }
   }
 
-  function modelProvidersClient() {
-    return setupApp({ context, routes: modelProvidersRoutes })(
-      modelProvidersMainContract,
-    );
-  }
-
-  function modelProviderConnectionsClient() {
-    return setupApp({ context, routes: modelProviderGatewayRoutes })(
-      modelProviderConnectionsMainContract,
-    );
-  }
-
   function chatEventsClient(
     usagePricingResolution?: UsagePricingFixture["resolution"],
   ) {
@@ -1137,24 +982,6 @@ export function createChatEventsFixture(context: TestContext) {
   } {
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     return { authorization: "Bearer clerk-session" };
-  }
-
-  /** Org-admin model provider upsert through the public route. */
-  async function upsertOrgModelProvider(
-    actor: ApiTestUser,
-    body: UpsertModelProviderRequest,
-  ): Promise<{ readonly providerId: string; readonly created: boolean }> {
-    const response = await accept(
-      modelProvidersClient().upsert({
-        headers: sessionHeaders(actor),
-        body,
-      }),
-      [200, 201],
-    );
-    return {
-      providerId: response.body.provider.id,
-      created: response.body.created,
-    };
   }
 
   async function readThreadProjection(actor: ApiTestUser, threadId: string) {
@@ -1673,8 +1500,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly runnerGroup: string;
     readonly prompt: string;
     readonly codexServiceTier?: "fast";
-    readonly gptRoute?: "openai" | "openrouter";
-    readonly selectedModel?: PiUsageProvider;
+    readonly selectedModel?: "okou-1.0";
   }): Promise<{
     readonly anchor: { readonly runId: string; readonly threadId: string };
     readonly anchorClaim: Awaited<ReturnType<typeof claimChatRun>>;
@@ -1689,16 +1515,9 @@ export function createChatEventsFixture(context: TestContext) {
     }
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     await api.heartbeatRunner(args.runnerGroup);
-    const { providerId } = await api.ensureOrgModelProvider(args.actor);
-    await api.updateOrgModelPolicies(args.actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(args.actor, {
+      model: "claude-fable-5-1",
+    });
     const anchor = await sendChatRun(args.actor, {
       agentId: args.agentId,
       prompt: "hold capacity for a capability-proven Pi launch",
@@ -1714,16 +1533,11 @@ export function createChatEventsFixture(context: TestContext) {
       );
     }
     const anchorClaim = await claimChatRun(args.runnerGroup, anchor.runId);
-    const selectedModel = args.selectedModel ?? "gpt-6-luna";
-    let model: string = selectedModel;
-    if (args.gptRoute === "openrouter") {
-      model = await configureBuiltInPiModelOnOpenRouter(
-        args.actor,
-        selectedModel,
-      );
-    } else {
-      await configureBuiltInPiModel(args.actor, selectedModel);
-    }
+    const selectedModel = args.selectedModel ?? "okou-1.0";
+    const model = await configureBuiltInPiModelOnOpenRouter(
+      args.actor,
+      selectedModel,
+    );
 
     const usagePricingResolution =
       await createPiUsagePricingResolution(selectedModel);
@@ -1771,9 +1585,7 @@ export function createChatEventsFixture(context: TestContext) {
     entitledNativeChatActor,
     seedBuiltInModelKey,
     configureBuiltInPiModel,
-    configureApiKeyGptPiModel,
     configureUserOwnedGptPiModel,
-    configureOrganizationGptModel,
     configureSubscriptionPiModel,
     configureBuiltInPiModelOnOpenRouter,
     sendChatRun,
@@ -1788,11 +1600,9 @@ export function createChatEventsFixture(context: TestContext) {
     completeChatRunOk,
     failChatRun,
     cancelChatRun,
-    modelProviderConnectionsClient,
     chatEventsClient,
     chatThreadsClient,
     sessionHeaders,
-    upsertOrgModelProvider,
     readThreadProjection,
     requestSendEventRaw,
     requestSendEventWithBearer,

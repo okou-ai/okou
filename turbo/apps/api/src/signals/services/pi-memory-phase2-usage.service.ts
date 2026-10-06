@@ -10,17 +10,20 @@ import type { Db } from "../external/db";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
 
 export const PI_MEMORY_PHASE2_BUILT_IN_MODEL = "deepseek-v4.1-flash";
-export const PI_MEMORY_PHASE2_BYOK_MODEL = "gpt-5.6-luna";
+export const PI_MEMORY_PHASE2_PERSONAL_MODEL = "gpt-6-luna";
 
 /**
  * Every model a private maintenance run may legitimately carry.
  *
  * Consolidation chooses a current owner route for each whole selection. Both
- * models are permanent so cleanup can reconcile either dispatched run type.
+ * current and historical models remain recognizable to cleanup and settlement.
  */
 export const PI_MEMORY_PHASE2_MODELS = [
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-  PI_MEMORY_PHASE2_BYOK_MODEL,
+  PI_MEMORY_PHASE2_PERSONAL_MODEL,
+  // Immutable pre-retirement maintenance runs still drain and settle by their
+  // captured model. This identifier is never selected for a new dispatch.
+  "gpt-5.6-luna",
 ] as const;
 
 /** The selected current route chooses the model; attempts never fall back. */
@@ -29,7 +32,7 @@ export function piMemoryPhase2Model(
 ): (typeof PI_MEMORY_PHASE2_MODELS)[number] {
   return modelProvider === "built-in"
     ? PI_MEMORY_PHASE2_BUILT_IN_MODEL
-    : PI_MEMORY_PHASE2_BYOK_MODEL;
+    : PI_MEMORY_PHASE2_PERSONAL_MODEL;
 }
 
 // A terminal callback can precede the runner's final proxy flush. Keep the

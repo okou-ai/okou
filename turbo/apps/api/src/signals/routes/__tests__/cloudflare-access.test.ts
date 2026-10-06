@@ -517,7 +517,7 @@ function useClaimedFixture() {
     runs.acceptTelemetryIngest();
     const group = runs.configureRunnerGroup();
     await runs.grantProEntitlement(bootstrapActor);
-    await runs.ensureOrgModelProvider(bootstrapActor, {
+    await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
     const { defaultAgentId: agentId } =

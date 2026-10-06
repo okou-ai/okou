@@ -1,51 +1,51 @@
-import { command, computed, state } from "ccstate";
 import {
-  billingStatusContract,
+  billingAutoRechargeContract,
   billingCheckoutContract,
-  billingUsagePackCatalogContract,
-  billingUsagePackCheckoutContract,
-  billingUsagePackManagementContract,
-  billingUsagePackCreditsContract,
-  billingUsagePackMigrationContract,
   billingConcurrencyCheckoutContract,
   billingConcurrencySubscriptionContract,
   billingCreditCheckoutContract,
-  billingPortalContract,
-  billingAutoRechargeContract,
-  billingInvoicesContract,
   billingDowngradeContract,
+  billingInvoicesContract,
+  billingPortalContract,
   billingRestoreContract,
+  billingStatusContract,
+  billingUsagePackCatalogContract,
+  billingUsagePackCheckoutContract,
+  billingUsagePackCreditsContract,
+  billingUsagePackManagementContract,
+  billingUsagePackMigrationContract,
   type BillingStatusResponse,
   type CheckoutRequest,
   type ConcurrencySubscriptionChangePreviewResponse,
   type CreditPurchasePreviewResponse,
   type MemberUsagePack,
   type PlanPurchasePreviewResponse,
-  type UsagePackCreditsResponse,
   type UsagePackCheckoutRequest,
-  type UsagePackPurchasePreviewResponse,
+  type UsagePackCreditsResponse,
   type UsagePackMigrationStateResponse,
+  type UsagePackPurchasePreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { apiClient$ } from "../api-client.ts";
-import { replaceSearchParams$, searchParams$ } from "../route.ts";
-import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
-import { setAblyLoop$ } from "../realtime.ts";
-import { isOrgAdmin$ } from "../org.ts";
-import { settle, tapError, withCleanup } from "../utils.ts";
+import { command, computed, state } from "ccstate";
+import { currentLocale, i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
-import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
-import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
-import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
+import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
+import { isOrgAdmin$ } from "../org.ts";
+import { setAblyLoop$ } from "../realtime.ts";
+import { replaceSearchParams$, searchParams$ } from "../route.ts";
+import { settle, tapError, withCleanup } from "../utils.ts";
+import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
 import {
-  setUsagePackMigrationRevisionPreview$,
   setUsagePackMigrationPreview$,
+  setUsagePackMigrationRevisionPreview$,
   setUsagePackSubscriptionChangePreview$,
   usagePackMigrationRevisionPreview$,
   usagePackSubscriptionChangePreview$,
@@ -479,7 +479,7 @@ export const usagePackMigrationAsync$ = computed(
 
 /** Force a refetch of billing status (e.g. after onboarding creates the org row). */
 export const reloadBillingStatus$ = command(({ set }) => {
-  set(invalidateOrgModelPolicies$);
+  set(invalidateAvailableRunModels$);
   set(billingReload$, (x) => {
     return x + 1;
   });

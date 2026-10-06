@@ -57,8 +57,9 @@ async function createAgentForNoCreditAdmission(actor: ApiTestUser): Promise<{
     visibility: "private",
   });
 
-  // Missing metadata means Auto. Do not grant a paid Custom route to a
-  // fixture whose contract is rejection for insufficient credits.
+  const api = createRunsApi(context);
+  await api.ensurePersonalSubscriptionModel(actor);
+
   return { agentId: agent.agentId };
 }
 

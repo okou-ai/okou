@@ -150,7 +150,9 @@ async function entitledWorkflowActor(): Promise<{
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Workflow skill storage cache agent",
     visibility: "private",

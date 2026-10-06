@@ -372,7 +372,7 @@ describe("Pi memory Stage 1 runtime", () => {
       });
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         reasoning: { effort: "low" },
         text: {
           format: {

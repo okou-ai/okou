@@ -324,7 +324,7 @@ describe("connector catalog v4 preparation", () => {
       runs.acceptTelemetryIngest();
       const runnerGroup = runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "Builtin catalog changes",
         visibility: "private",

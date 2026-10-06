@@ -8,34 +8,30 @@ import type { PiAgentThinkingLevel } from "./types";
  * `stage_two::REASONING_EFFORT`). Phase 2 keeps its models where the API
  * dispatches the maintenance run (`PI_MEMORY_PHASE2_MODELS`).
  *
- * Both stages pin to the source run's own provider binding and have no
- * fallback, so the model is chosen per binding. The built-in binding runs the
- * cheaper DeepSeek Flash pair; every BYOK binding keeps the GPT pair, because
- * no BYOK provider serves those DeepSeek models.
+ * Both stages pin to the source run's own credential owner and have no
+ * fallback. The independent built-in binding runs the cheaper DeepSeek Flash
+ * pair on OpenRouter; personal Codex credentials use the supported GPT pair.
+ * The historical BYOK billing name does not authorize organization credentials.
  *
  * These values are deliberately independent from the foreground chat reasoning
  * defaults in `@okouai/api-contracts` (`model-reasoning-effort`): tuning the
  * foreground effort of a model must never change background extraction or
  * consolidation cost.
  *
- * Built-in extraction names V4.1 Flash, the model DeepSeek actually serves and
- * the one built-in consolidation already runs. That identifier is load-bearing
- * for the pinned `low` effort below: V4 Flash's OpenRouter listing publishes no
- * `low` step, so whenever the native candidate was missing or cooling the
- * secondary built-in candidate could not carry the pinned effort and extraction
- * failed terminally instead of falling through. Both V4.1 Flash candidates
- * publish `low`, so either one can serve extraction.
+ * Built-in extraction names V4.1 Flash, also used by consolidation. Its fixed
+ * OpenRouter maintenance binding publishes the pinned `low` effort; it is not
+ * a selectable foreground chat route and has no alternate vendor.
  */
 export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "deepseek-v4.1-flash";
-export const PI_MEMORY_STAGE1_BYOK_MODEL = "gpt-5.6-luna";
+export const PI_MEMORY_STAGE1_BYOK_MODEL = "gpt-6-luna";
 
 export type PiMemoryStage1Model =
   | typeof PI_MEMORY_STAGE1_BUILT_IN_MODEL
   | typeof PI_MEMORY_STAGE1_BYOK_MODEL;
 
 /**
- * Every extraction route publishes `low`, so one stateless request keeps it:
- * both built-in candidates of the model above, and the BYOK GPT model.
+ * Both the fixed built-in maintenance binding and personal Codex extraction
+ * publish `low`, so one stateless request keeps it.
  */
 export const PI_MEMORY_STAGE1_REASONING = "low" satisfies PiAgentThinkingLevel;
 

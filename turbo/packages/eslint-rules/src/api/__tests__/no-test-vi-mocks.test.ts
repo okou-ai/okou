@@ -15,8 +15,27 @@ ruleTester.run("no-test-vi-mocks", noTestViMocks, {
     { code: "context.mocks.clerk.authenticateRequest.mockResolvedValue({});" },
     { code: "mocks.sentry.captureException.mockReset();" },
     { code: "const value = vi;" },
+    {
+      filename: "/api/src/__tests__/pglite-setup.ts",
+      code: 'vi.mock("../lib/db", async () => ({}));',
+    },
   ],
   invalid: [
+    {
+      filename: "/api/src/__tests__/pglite-setup.ts",
+      code: 'vi.mock("../signals/services/model-selection.service", () => ({}));',
+      errors: [{ messageId: "noTestViMock" }],
+    },
+    {
+      filename: "/api/src/signals/routes/__tests__/other.test.ts",
+      code: 'vi.mock("../../../lib/db", () => ({}));',
+      errors: [{ messageId: "noTestViMock" }],
+    },
+    {
+      filename: "/api/src/__tests__/pglite-setup.ts",
+      code: 'vi.spyOn(console, "error");',
+      errors: [{ messageId: "noTestViMock" }],
+    },
     {
       code: 'vi.mock("@clerk/backend", () => ({}));',
       errors: [{ messageId: "noTestViMock" }],

@@ -324,7 +324,7 @@ describe("builtin MCP account surfaces", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Scoped MCP selections",
     });
@@ -358,7 +358,7 @@ describe("builtin MCP account surfaces", () => {
     );
     const threadBody = {
       agentId: agent.agentId,
-      model: "claude-sonnet-5" as const,
+      model: "claude-sonnet-5-5" as const,
       connectorSelections: [selection],
     };
     const createdThread = await accept(

@@ -138,14 +138,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "model",
-    description: "List available models and model-switching guidance",
+    description: "List and select Auto or personal subscription models",
     load: async () => {
       return (await import("./commands/model")).modelCommand;
     },
   },
   {
     name: "model-provider",
-    description: "Inspect model provider routing",
+    description: "Inspect Auto and personal subscription routes",
     load: async () => {
       return (await import("./commands/model-provider")).modelProviderCommand;
     },
@@ -635,7 +635,7 @@ export function buildHelpText(
     "  Upload phone file?    okou phone upload-file --help",
     "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
-    "  Model routing?        okou model-provider ls",
+    "  Personal models?      okou model ls",
     "  Subscriptions?        okou subscription list",
     "  Update yourself?       okou agent --help",
     "  Manage workflows?     okou workflow --help",

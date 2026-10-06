@@ -145,7 +145,7 @@ async function createEventWebhookRun(prompt: string) {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: `BDD Event Consumer ${randomUUID()}`,
     visibility: "private",
@@ -200,7 +200,7 @@ async function sandboxStorageWriteFixture(label: string) {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: `BDD sandbox storage ${label}`,
     visibility: "private",
@@ -844,12 +844,11 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     });
     expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
     // A new organization starts in Auto with only the fixed default.
-    const policies =
-      await createMiscRoutesApi(context).listModelPolicies(admin);
-    expect(policies.modelMode).toBe("auto");
+    const available = await createMiscRoutesApi(context).listRunModels(admin);
+    expect(available.defaultModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(
-      policies.policies.map((policy) => {
-        return policy.model;
+      available.models.map((model) => {
+        return model.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
@@ -1364,7 +1363,7 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Axiom Event Consumer Agent",
       visibility: "private",
@@ -2556,7 +2555,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     const runnerGroup = runs.configureRunnerGroup();
     await runs.heartbeatRunner(runnerGroup);
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD sandbox storage agent",
       visibility: "private",
@@ -4446,7 +4445,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Team Upgrade Agent",
       visibility: "private",
@@ -5174,7 +5175,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Concurrency Add-on Agent",
       visibility: "private",
@@ -6720,7 +6723,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       weeklyWindowSeconds: 7 * 86_400,
       weeklyWindowUnits: 100,
     });
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await connectors.connectManualGrant(actor, "openai", "api-token", {
       apiKey: "org-teardown-connector-token",
     });
@@ -7224,7 +7227,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
       const doomed = bdd.user();
       await runs.grantProEntitlement(doomed);
-      await runs.ensureOrgModelProvider(doomed);
+      await runs.ensurePersonalSubscriptionModel(doomed);
       const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
       const sharedAgent = await bdd.createAgent(peer, {
         displayName: "BDD Shared Grant Agent",
@@ -7458,12 +7461,15 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         agentId: doomedPublicAgent.agentId,
         title: "BDD peer thread on the deleted user's Agent",
       });
-      // The peer's first run needs the member's initialized memory.
+      // The peer owns its initialized memory and personal subscription.
       await bdd.completeOnboarding(peer);
+      await runs.ensurePersonalSubscriptionModel(peer, {
+        model: "claude-sonnet-5-5",
+      });
       const peerRun = await runs.createThreadRun(peer, {
         agentId: doomedPublicAgent.agentId,
         prompt: "peer run on the deleted user's Agent",
-        model: "claude-sonnet-5",
+        model: "claude-sonnet-5-5",
       });
       const doomedThread = await chat.createThread(doomed, {
         agentId: doomedAgent.agentId,
@@ -7538,7 +7544,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
     const banned = bdd.user();
     const granted = await runs.grantProEntitlement(banned);
-    await runs.ensureOrgModelProvider(banned);
+    await runs.ensurePersonalSubscriptionModel(banned);
     const agent = await bdd.createAgent(banned, {
       displayName: "BDD Banned User Agent",
       visibility: "private",

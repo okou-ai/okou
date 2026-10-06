@@ -242,6 +242,25 @@ the complete migration consistency command remain active.
 
 ## Model catalog
 
+After Custom retirement (#37746), migration
+`1322_prune_retired_model_routes` removes obsolete execution routes. The only
+remaining route families are fixed Auto, personal Claude/Codex subscriptions,
+and the independent OpenRouter DeepSeek memory binding. Historical catalog
+metadata and pricing remain unchanged; active metadata without a route does
+not grant execution. This cleanup must follow the retirement API rollback
+floor. See [cleanup boundaries](../../../docs/retired-model-route-cleanup.md).
+
+`scripts/test-retired-model-route-cleanup.ts` replays the preceding migrations
+and protects exact retained rows, future/disabled subscriptions, NULL-marker
+retirement, schema/binding rejection with no journal advance, non-empty
+historical usage/credits/keys, and repeatable execution. Keep this transition
+validator until the migration is shipped and its surviving invariants are
+promoted; `test-model-catalog-seed.ts` permanently checks the retained route
+families and historical replacement chains.
+
+The following records describe the pre-retirement catalog and its historical
+migrations, not authority to restore retired platform or BYOK routes.
+
 The API projects the system default from `run_model_catalog.is_system_default`.
 Model availability and replacement use `replaced_by`; subscription routes are
 stored in `model_routes`. The owner waived pre-catalog rollback. Apply schema

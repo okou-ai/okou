@@ -74,7 +74,7 @@ async function prepareChatTitle() {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, { displayName: "Outcome title" });
   let threadId: string | undefined;
   const events = async () => {
@@ -91,7 +91,7 @@ async function prepareChatTitle() {
       const sent = await accept(
         chat.requestSendEvent(
           actor,
-          { agentId: agent.agentId, prompt, model: "claude-sonnet-5" },
+          { agentId: agent.agentId, prompt, model: "claude-sonnet-5-5" },
           [201],
         ),
         [201],

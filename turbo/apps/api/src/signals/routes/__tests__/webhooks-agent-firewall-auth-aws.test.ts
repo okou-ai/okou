@@ -34,7 +34,7 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
   runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "AWS refresh agent",
     description: "Exercises AWS refresh and reconnect.",

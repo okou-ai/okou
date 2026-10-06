@@ -1,20 +1,21 @@
-import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
-import { screen, waitFor } from "@testing-library/react";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   chatEventsContract,
   chatThreadArtifactsContract,
   chatThreadDraftContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
@@ -24,12 +25,11 @@ import {
   fastButton,
   installActiveChatBoundaries,
   installChatListAgent,
-  installChatListModelPolicies,
+  installChatListRunModels,
   installChatListStream,
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 
@@ -60,7 +60,7 @@ function composerFileInput(): HTMLInputElement {
 
 function installNewThreadDefaults(): void {
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-5.6-luna",
     serviceTier: null,
@@ -281,7 +281,7 @@ test("Sending in an older conversation moves it to the top", async () => {
   const send = context.mocks.deferred<void>();
   let sentPrompt: string | undefined;
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 12,
     snapshot: [older, newer],

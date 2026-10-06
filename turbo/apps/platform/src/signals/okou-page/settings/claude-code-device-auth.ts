@@ -1,16 +1,15 @@
-import { command, computed, state, type Command, type State } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   claudeCodeDeviceAuthContract,
   type ClaudeCodeDeviceAuthMode,
   type ClaudeCodeDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/claude-code-device-auth";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { command, computed, state, type Command, type State } from "ccstate";
 
-import { accept } from "../../../lib/accept.ts";
 import { i18n } from "../../../i18n/index.ts";
+import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { reloadOrgModelProviders$ } from "../../external/org-model-providers.ts";
 import { bestEffort, resetSignal, tapError } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
@@ -158,7 +157,7 @@ const cancelClaudeCodeDeviceAuth$ = command(
 );
 
 interface ClaudeCodeDeviceAuthSignalContext {
-  scope: ClaudeCodeDeviceAuthScope;
+  scope: "personal";
   reloadProviders$: Command<void, []>;
   internalDialogState$: State<ClaudeCodeDeviceAuthDialogState>;
   internalFlowState$: State<ClaudeCodeDeviceAuthFlowState>;
@@ -176,16 +175,13 @@ function createClaudeCodeRunFlow$(ctx: ClaudeCodeDeviceAuthSignalContext) {
         readonly scope: ClaudeCodeDeviceAuthScope;
         readonly mode?: ClaudeCodeDeviceAuthMode;
         readonly modelProviderId?: string;
-      } =
-        ctx.scope === "personal"
-          ? {
-              scope: ctx.scope,
-              mode: dialog.mode === "reconnect" ? "reconnect" : "add",
-              ...(dialog.modelProviderId
-                ? { modelProviderId: dialog.modelProviderId }
-                : {}),
-            }
-          : { scope: ctx.scope };
+      } = {
+        scope: "personal",
+        mode: dialog.mode === "reconnect" ? "reconnect" : "add",
+        ...(dialog.modelProviderId
+          ? { modelProviderId: dialog.modelProviderId }
+          : {}),
+      };
 
       const started = await tapError(
         set(startClaudeCodeDeviceAuth$, startArgs, signal),
@@ -358,7 +354,7 @@ function createClaudeCodeClose$(ctx: ClaudeCodeDeviceAuthSignalContext) {
 }
 
 function createClaudeCodeDeviceAuthSignals(
-  scope: ClaudeCodeDeviceAuthScope,
+  scope: "personal",
   reloadProviders$: Command<void, []>,
 ) {
   const ctx: ClaudeCodeDeviceAuthSignalContext = {
@@ -387,16 +383,6 @@ function createClaudeCodeDeviceAuthSignals(
     run$,
   };
 }
-
-export const {
-  dialogState$: claudeCodeDeviceAuthDialogState$,
-  flowState$: claudeCodeDeviceAuthFlowState$,
-  open$: openClaudeCodeDeviceAuthDialog$,
-  setAuthorizationCode$: setClaudeCodeDeviceAuthAuthorizationCode$,
-  submit$: submitClaudeCodeDeviceAuth$,
-  close$: closeClaudeCodeDeviceAuthDialog$,
-  run$: runClaudeCodeDeviceAuth$,
-} = createClaudeCodeDeviceAuthSignals("org", reloadOrgModelProviders$);
 
 const personalClaudeCodeDeviceAuthSignals = createClaudeCodeDeviceAuthSignals(
   "personal",

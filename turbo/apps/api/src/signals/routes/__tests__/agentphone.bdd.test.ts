@@ -82,16 +82,8 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   const sends = ap.captureAgentPhoneSends();
 
   await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await runs.ensurePersonalSubscriptionModel(actor);
+  await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const phone = uniquePhoneHandle();
   await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
   return { actor, ap, phone, runnerGroup, sends, storage };
@@ -115,31 +107,12 @@ async function modelSessionScenario({
   withConversation,
 }: (typeof modelSessionScenarios)[number]) {
   const ap = createAgentPhoneBddApi(context);
-  const runs = createRunsApi(context);
+
   const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-  const provider = await runs.createOrgModelProvider(actor, {
-    type: "anthropic-api-key",
-    secret: "phone-dm-model-routing-key",
-  });
-  const openAiProvider = await runs.createOrgModelProvider(actor, {
-    type: "openai-api-key",
-    secret: "phone-dm-native-codex-key",
-  });
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: provider.providerId,
-    },
-    {
-      model: "gpt-6-astra",
-      defaultProviderType: "openai-api-key",
-      credentialScope: "org",
-      modelProviderId: openAiProvider.providerId,
-    },
-  ]);
+
+  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+    actor,
+  );
   const conversationId = withConversation ? uniqueConversationId() : undefined;
   async function send(body: string) {
     return await ap.postAgentPhoneInboundMessage({
@@ -1254,7 +1227,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
-  it("uses the system default for input when the stored DM model becomes unavailable", async () => {
+  it("rejects unavailable personal DM input without silently billing Auto", async () => {
     const integrations = createBddIntegrationApi(context);
     const runs = createRunsApi(context);
     const { actor, complete, send, runnerGroup } = await modelSessionScenario({
@@ -1264,31 +1237,27 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
     const preferred = await complete("use my web default", "gpt-6-astra");
 
-    await createMiscRoutesApi(context).deleteOrgModelProvider(
+    await createMiscRoutesApi(context).deletePersonalModelProvider(
       actor,
-      "openai-api-key",
+      "codex-oauth-token",
       [204],
     );
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "gpt-6-astra",
+      selectedModel: "okou-1.0",
     });
     await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     await send("use the system default");
     await runs.heartbeatRunner(runnerGroup);
-    let runId: string | undefined;
-    await expect
-      .poll(async () => {
-        runId = (await runs.pollRunner(runnerGroup)).body.job?.runId;
-        return runId ?? null;
-      })
-      .not.toBeNull();
-    if (!runId) {
-      throw new Error("Expected an AgentPhone run to be dispatched");
-    }
-    expect((await runs.readRun(actor, runId)).source.model).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
+    await flushWaitUntilForTest();
+    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    const events = await createChatFilesBddApi(context).listThreadEventRows(
+      actor,
+      preferred.threadId,
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ eventType: "input.rejected", runId: null }),
     );
     const metadata = await createChatFilesBddApi(context).readThreadMetadata(
       actor,
@@ -1924,7 +1893,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     integrations.configureAgentPhoneWebhook();
     const sends = ap.captureAgentPhoneSends();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const phone = uniquePhoneHandle();
     await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
     const welcome = sends.messages.slice(-4);
@@ -2013,7 +1982,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const stableGroupId = bddGroupId(conversationId);
 
     const senderOnlyConversationId = uniqueConversationId();
-    const senderOnlyMessageId = "ap-group-history-sender-only";
+    const senderOnlyMessageId = `ap-group-history-sender-only-${randomUUID()}`;
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: firstPhone,
@@ -2071,7 +2040,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       participants: [{ identifier: laterPhone }],
     });
 
-    const firstMessageId = "ap-group-history-first";
+    const firstMessageId = `ap-group-history-first-${randomUUID()}`;
     const groupMediaUrl = "https://files.agentphone.test/group-photo.png";
     const participants = [
       { identifier: firstPhone },
@@ -2107,7 +2076,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
       participants,
     });
-    const secondMessageId = "ap-group-history-second";
+    const secondMessageId = `ap-group-history-second-${randomUUID()}`;
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: firstPhone,

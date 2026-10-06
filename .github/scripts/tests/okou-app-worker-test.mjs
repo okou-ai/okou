@@ -1153,9 +1153,9 @@ await apiRequestsStarted.promise;
 assert.deepEqual(observedApiRequests.map(({ url }) => url.pathname).sort(), [
   "/api/agents",
   "/api/feature-switches",
-  "/api/model-policies",
   "/api/onboarding/status",
   "/api/org",
+  "/api/run-models",
   "/api/user-model-preference",
   "/api/user-preferences",
 ]);

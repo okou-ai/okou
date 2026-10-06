@@ -1182,7 +1182,7 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(admin);
-    await runs.ensureOrgModelProvider(admin);
+    await runs.ensurePersonalSubscriptionModel(admin);
     const agent = await api.createAgent(admin, {
       displayName: "BDD Org Token Agent",
       visibility: "private",

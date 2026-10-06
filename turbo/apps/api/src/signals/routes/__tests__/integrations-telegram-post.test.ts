@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
@@ -39,10 +40,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import {
-  seedBuiltInDefaultModelKey,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
+import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { testTelegramStateRoutes } from "../test-telegram-state";
@@ -350,26 +348,15 @@ async function createTelegramPostFixture(
   };
 }
 
-/**
- * Routes the org to built-in Fable through the public policy API. Fable stays
- * on the Claude Code harness, so Telegram runs remain claimable native Runner
- * jobs; built-in Fable needs a paid plan and an operator model key.
- */
-async function useNativeFablePolicies(
+/** Native Telegram callback coverage uses the poster's personal Claude subscription. */
+async function useNativeFableSubscription(
   fixture: TelegramPostFixture,
 ): Promise<void> {
   const actor = actorForFixture(fixture);
   await runsApi.grantProEntitlement(actor);
-  await seedBuiltInModelKey(context, "claude-fable-5-1");
-  await runsApi.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
 }
 
 /** The poster's newest run whose launch prompt contains `text`. */
@@ -748,38 +735,10 @@ function mentionEntity(username: string) {
   return { type: "mention", offset: 0, length: username.length + 1 };
 }
 
-async function seedModelPolicies(args: {
-  readonly fixture: TelegramPostFixture;
-  readonly selectedModel?: string | null;
-}): Promise<void> {
-  await postTelegramStateAction({
-    action: "seed-model-policies",
-    org_id: args.fixture.orgId,
-    user_id: args.fixture.userId,
-    compose_id: args.fixture.composeId,
-    selected_model: args.selectedModel,
-  });
-}
-
-/**
- * Replaces the seeded org policies with built-in Fable. Fable stays on the
- * Claude Code harness, so Telegram runs remain claimable native Runner jobs.
- * Built-in Fable needs a paid plan, so the fixture org is upgraded to Pro.
- */
-async function seedNativeFablePolicies(
+async function connectNativeFableSubscription(
   fixture: TelegramPostFixture,
 ): Promise<void> {
-  await runsApi.grantProEntitlement(actorForFixture(fixture));
-  await seedModelPolicies({ fixture, selectedModel: "claude-fable-5-1" });
-  await runsApi.updateOrgModelPolicies(actorForFixture(fixture), [
-    {
-      model: "claude-fable-5-1",
-      preferred: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
+  await useNativeFableSubscription(fixture);
 }
 
 function userModelPreferenceClient() {
@@ -839,7 +798,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFablePolicies(fixture);
+    await useNativeFableSubscription(fixture);
     telegramApiMocks();
     const prompt = "reuse this Telegram thread";
     expect(
@@ -923,7 +882,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       seedTelegramPostFixture({ seedOfficialLink: true }),
     );
 
-    await seedNativeFablePolicies(fixture);
+    await connectNativeFableSubscription(fixture);
     const telegramMocks = telegramApiMocks();
     const chatId = 77_002;
     const firstPrompt = "hold the Telegram queue";
@@ -1045,29 +1004,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "Telegram DM agent",
     });
-    const provider = await runsApi.createOrgModelProvider(actor, {
-      type: "anthropic-api-key",
-      secret: "telegram-dm-model-routing-key",
-    });
-    const openAiProvider = await runsApi.createOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "telegram-dm-native-codex-key",
-    });
-    await runsApi.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: provider.providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openAiProvider.providerId,
-      },
-    ]);
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      actor,
+    );
     const telegram = telegramApiMocks(OFFICIAL_BOT_TOKEN);
     const botId = "official";
     const secret = OFFICIAL_WEBHOOK_SECRET;
@@ -1335,7 +1274,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   ) {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFablePolicies(fixture);
+    await useNativeFableSubscription(fixture);
     const telegramMocks = telegramApiMocks();
     const botUsername = OFFICIAL_BOT_USERNAME;
     const chatId = -77_201;
@@ -1595,7 +1534,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async () => {
       const runnerGroup = configureCanonicalTelegramRunner();
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
-      await useNativeFablePolicies(fixture);
+      await useNativeFableSubscription(fixture);
       const actor = actorForFixture(fixture);
       const telegramMocks = telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -1722,7 +1661,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFablePolicies(fixture);
+    await useNativeFableSubscription(fixture);
     const telegramMocks = telegramApiMocks();
 
     const response = await postWebhook({
@@ -1765,7 +1704,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
   it("preserves a mention-only Telegram request with the preceding group task", async () => {
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFablePolicies(fixture);
+    await useNativeFableSubscription(fixture);
     const botUsername = OFFICIAL_BOT_USERNAME;
     telegramApiMocks();
 
@@ -1842,7 +1781,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     // dataset; mock that external query like the Runner-backed cases do.
     runsApi.acceptTelemetryIngest();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFablePolicies(fixture);
+    await useNativeFableSubscription(fixture);
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
     const response = await postWebhook({
@@ -1956,28 +1895,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const actor = actorForFixture(fixture);
     await runsApi.grantProEntitlement(actor);
-    await runsApi.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4-flash",
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "claude-sonnet-5",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    await accept(
-      userModelPreferenceClient().update({
-        headers: authOrgApi.authenticate(actor),
-        body: { selectedModel: "deepseek-v4-flash", serviceTier: null },
-      }),
-      [200],
-    );
+    await runsApi.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-sonnet-5-5",
+    });
     const telegramMocks = telegramApiMocks();
 
     const list = await postWebhook({
@@ -2016,7 +1936,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             username: "alice",
             first_name: "Alice",
           },
-          text: "/model Claude Sonnet 5",
+          text: "/model Claude Sonnet 5.5",
         },
       },
     });
@@ -2026,7 +1946,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       "existing Okou conversation",
     );
     await expect(memberDefaultModel(fixture)).resolves.toBe(
-      "deepseek-v4-flash",
+      "claude-sonnet-5-5",
     );
 
     const defaultModel = await postWebhook({
@@ -2052,7 +1972,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       "existing Okou conversation",
     );
     await expect(memberDefaultModel(fixture)).resolves.toBe(
-      "deepseek-v4-flash",
+      "claude-sonnet-5-5",
     );
   });
 
@@ -2061,7 +1981,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (type) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await useNativeFablePolicies(fixture);
+      await useNativeFableSubscription(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -2219,7 +2139,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       );
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await useNativeFablePolicies(fixture);
+      await useNativeFableSubscription(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -2328,7 +2248,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (failure) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await useNativeFablePolicies(fixture);
+      await useNativeFableSubscription(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);

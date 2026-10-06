@@ -4,7 +4,7 @@ import type { TestContext } from "../../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createFirewallApi } from "./api-bdd-firewall";
-import { createRunsApi, type OrgPolicyModel } from "./api-bdd-runs";
+import { createRunsApi, type RunModel } from "./api-bdd-runs";
 
 type RunClaim = Awaited<
   ReturnType<ReturnType<typeof createRunsApi>["claimRunnerJob"]>
@@ -49,7 +49,7 @@ export async function withConnectorRuntime(
       body: ConnectorRuntimeAuthBody,
     ) => ReturnType<typeof resolveClaimedAuth>;
   }) => Promise<void> | void,
-  options: { readonly model?: OrgPolicyModel } = {},
+  options: { readonly model?: RunModel } = {},
 ): Promise<void> {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
@@ -59,7 +59,7 @@ export async function withConnectorRuntime(
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor, options);
+  await runs.ensurePersonalSubscriptionModel(actor, options);
   const agent = await bdd.createAgent(actor, {
     displayName: "Connector credential consumer",
     visibility: "private",

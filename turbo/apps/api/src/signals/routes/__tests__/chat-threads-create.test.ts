@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -52,9 +53,9 @@ const api = createRunsApi(context);
 const connectorApi = createConnectorBddApi(context);
 const vnc = createVncRuntimeApi(context);
 
-const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5";
-const OTHER_WORKSPACE_MODEL = "claude-opus-5";
-const PRIORITY_MODEL = "gpt-5.6-sol";
+const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5-5";
+const OTHER_WORKSPACE_MODEL = "claude-opus-5-5";
+const PRIORITY_MODEL = "gpt-6-sol";
 
 interface AgentFixture {
   readonly actor: ApiTestUser;
@@ -63,32 +64,17 @@ interface AgentFixture {
   readonly agentId: string;
 }
 
-/** Creates an agent whose workspace allows both policy models. */
+/** Creates an agent with caller-owned subscriptions and a saved member model. */
 async function seedAgent(): Promise<AgentFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const { providerId } = await api.ensureOrgModelProvider(actor);
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: WORKSPACE_DEFAULT_MODEL,
-      preferred: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-    {
-      model: OTHER_WORKSPACE_MODEL,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-    {
-      model: PRIORITY_MODEL,
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
-      modelProviderId: null,
-    },
-  ]);
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: WORKSPACE_DEFAULT_MODEL,
+  });
+  await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+    actor,
+  );
+  await api.updateUserModelPreference(actor, WORKSPACE_DEFAULT_MODEL);
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat thread create agent",
     visibility: "private",
@@ -314,7 +300,7 @@ describe("POST /api/chat-threads", () => {
     const body = {
       agentId: fixture.agentId,
       clientThreadId: threadId,
-      model: "claude-sonnet-5" as const,
+      model: WORKSPACE_DEFAULT_MODEL,
       initialRemoteAccessOverrides: [
         { protocol: "ssh" as const, connectionId: hostId, enabled: false },
         { protocol: "vnc" as const, connectionId: vncHostId, enabled: true },
@@ -1268,7 +1254,7 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it("uses the workspace default for a new thread instead of the caller run model", async () => {
+  it("uses the member default for a new thread instead of the caller run model", async () => {
     const fixture = await seedAgent();
     const runnerGroup = api.configureRunnerGroup();
     api.acceptStorageDownloads();
@@ -1292,7 +1278,7 @@ describe("POST /api/chat-threads", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(runId);
-    expect(claim.piModelConfig).toMatchObject({ model: OTHER_WORKSPACE_MODEL });
+    expect(claim.modelUsageProvider).toBe(OTHER_WORKSPACE_MODEL);
     const token = claim.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the caller Run claim to provide OKOU_TOKEN");
@@ -1324,26 +1310,11 @@ describe("POST /api/chat-threads", () => {
     const runnerGroup = api.configureRunnerGroup();
     api.acceptStorageDownloads();
     await api.grantProEntitlement(fixture.actor);
-    const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
-    const priorityProvider = await api.createOrgModelProvider(fixture.actor, {
-      type: "openai-api-key",
-      secret: "test-priority-openai-key",
-    });
-    await api.updateOrgModelPolicies(fixture.actor, [
-      {
-        model: WORKSPACE_DEFAULT_MODEL,
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: PRIORITY_MODEL,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: priorityProvider.providerId,
-      },
-    ]);
+    await api.ensurePersonalSubscriptionModel(fixture.actor);
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      fixture.actor,
+    );
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
     await accept(
       preferenceClient().update({
@@ -1380,7 +1351,7 @@ describe("POST /api/chat-threads", () => {
     const claim = await api.claimRunnerJob(runId);
     expect(claim.piModelConfig).toMatchObject({
       model: PRIORITY_MODEL,
-      serviceTier: "priority",
+      serviceTier: "fast",
     });
     const inheritedToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!inheritedToken) {

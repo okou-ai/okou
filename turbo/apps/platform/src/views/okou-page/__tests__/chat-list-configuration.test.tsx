@@ -9,6 +9,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
@@ -19,13 +20,12 @@ import {
   fastButton,
   installActiveChatBoundaries,
   installChatListAgent,
-  installChatListModelPolicies,
+  installChatListRunModels,
   installChatListStream,
   onlineComputerUseHost,
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 const HOST_ID = "a7000000-0000-4000-a000-000000000001";
@@ -75,7 +75,7 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
   });
   const remote = context.mocks.deferred<void>();
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 2,
     snapshot: [thread],
@@ -127,7 +127,7 @@ test("Conversation configuration arriving before creation is retained", async ()
   const threadId = chatListThreadId(37);
   const host = onlineComputerUseHost(HOST_ID);
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 4,
     snapshot: [],
@@ -184,7 +184,7 @@ test("Service tier and Computer Use settings update independently", async () => 
   const newer = chatListThread(44, "Newer conversation");
   const remote = context.mocks.deferred<void>();
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 14,
     snapshot: [target, newer],

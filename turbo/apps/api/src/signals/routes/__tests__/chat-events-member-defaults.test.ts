@@ -10,6 +10,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 const context = testContext();
 const {
   bdd,
+  api,
   chat,
   misc,
   webhooks,
@@ -30,6 +31,11 @@ describe("new chat event member defaults", () => {
   it("uses empty model settings and enables cloud browser without a saved member preference", async () => {
     const owner = await entitledNativeChatActor();
     const actor = bdd.user({ orgId: owner.actor.orgId, orgRole: "org:member" });
+    // Connect this member without writing model/preferences so absent defaults remain real.
+    await api.createPersonalModelProvider(actor, {
+      type: "claude-code-oauth-token",
+      secret: "bdd-member-defaults-claude-token",
+    });
     const { agentId } = await bdd.createAgent(actor, {
       displayName: "Member without saved preferences",
       description: "Uses absent preference defaults",

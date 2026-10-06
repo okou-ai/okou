@@ -276,9 +276,9 @@ describe("canonical Discord terminal replies", () => {
           );
         }),
       ).toHaveLength(1);
-      await misc.deleteOrgModelProvider(
+      await misc.deletePersonalModelProvider(
         started.actor.actor,
-        "anthropic-api-key",
+        "claude-code-oauth-token",
         [204],
       );
       await completeRun({

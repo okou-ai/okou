@@ -53,6 +53,6 @@ test("Match model-provider recovery guidance to the failure", async () => {
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   expect(settings).toBeVisible();
   await expect(
-    screen.findByRole("heading", { name: "Models" }),
+    screen.findByRole("heading", { name: "Use more models" }),
   ).resolves.toBeVisible();
 });

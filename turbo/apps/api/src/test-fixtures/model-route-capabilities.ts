@@ -5,7 +5,6 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelRoutes } from "@okouai/db/schema/model-route";
-import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { db } from "../lib/db";
 
 /** Operators change a model's route capabilities directly in the database. */
@@ -27,35 +26,6 @@ export async function updateModelRouteCapabilitiesFixture(args: {
   if (updated.length === 0) {
     throw new Error("Expected the model to have catalog routes");
   }
-}
-
-/**
- * Operators change a model's free-plan Built-in policy directly in the
- * database. Returns the restore of the previous value.
- */
-export async function updateRestrictedPlanAccessFixture(args: {
-  readonly model: string;
-  readonly builtInOnRestrictedPlans: boolean;
-}): Promise<() => Promise<void>> {
-  const [previous] = await db()
-    .select({
-      builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
-    })
-    .from(runModelCatalog)
-    .where(eq(runModelCatalog.model, args.model));
-  if (!previous) {
-    throw new Error("Expected one catalog model to be updated");
-  }
-  await db()
-    .update(runModelCatalog)
-    .set({ builtInOnRestrictedPlans: args.builtInOnRestrictedPlans })
-    .where(eq(runModelCatalog.model, args.model));
-  return async () => {
-    await db()
-      .update(runModelCatalog)
-      .set({ builtInOnRestrictedPlans: previous.builtInOnRestrictedPlans })
-      .where(eq(runModelCatalog.model, args.model));
-  };
 }
 
 /** The model's first-priority eligible Built-in route in the catalog. */

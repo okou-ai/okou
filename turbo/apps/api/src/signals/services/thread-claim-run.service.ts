@@ -1,193 +1,36 @@
-import type {
-  RunCallback,
-  AgentRunRequestAgent,
-  AgentRunModelPin,
-  AgentRunPreCreateSource,
-  ResolvedModelProviderEnvironment,
-  PermissionManifest,
-} from "./agent-run-contracts";
 import {
-  builtInRoutePricingFromSnapshot,
-  runRoutePricingFromSnapshot,
-  prepareModelUsageContext,
-} from "./built-in-route-pricing";
-import {
-  usagePricingResolution$,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
-import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
-import {
-  gatewaySourceFromSnapshot,
-  managedSourceFromSnapshot,
-  memberAccountSourceFromSnapshot,
-  registeredSourceFromSnapshot,
-} from "./model-source-context.service";
-import {
-  matchAgentRunContextSignals,
-  createEagerConnectorCredentialContext,
-  type AgentRunContextSignals,
-  type BootstrapConnectorObservation,
-} from "./agent-run-context.signals";
-import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
-import {
-  prepareGatewayModelEnvironment,
-  prepareManagedModelEnvironment,
-  prepareRegisteredModelEnvironment,
-} from "./model-provider.service";
-import {
-  frameworkForProviderSelection,
-  catalogBuiltInCandidates,
-  catalogHasProviderRoute,
-  type ModelCatalog,
-} from "./model-catalog.service";
-import {
-  materializePreparedPiProvider,
-  resolvePreparedPiModelConfig,
-  nativeCredentialEnvironment,
-  shouldUsePiExecution,
-  type PiModelPreparationInput,
-} from "./pi-sandbox-config";
-import {
-  createResolvedExecutionStorageObjects,
-  updateExecutionStoragePresignedUrlCache$,
-  type ExecutionStorageRequest,
-  PreparedExecutionStorageMount,
-} from "./execution-storage.service";
-import {
-  type PiMemoryRecallSelection,
-  piMemoryRecallSelectionSchema,
-  PI_AGENT_DIR,
-  CANONICAL_CODEX_HOME_DIR,
-  CANONICAL_CLAUDE_CONFIG_DIR,
-  type PiModelConfig,
-  PI_MEMORY_ROOT,
-  PI_SKILLS_ROOT,
-  type StoredExecutionContext,
-  type SecretConnectorMetadata,
+  AGENT_EXECUTION_TIMEOUT_SECONDS,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
+  CANONICAL_CLAUDE_CONFIG_DIR,
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  CANONICAL_CODEX_HOME_DIR,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   type ConnectorRuntimeTargetRegistration,
   DEFAULT_PROFILE,
-  AGENT_EXECUTION_TIMEOUT_SECONDS,
-  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  type StorageMountEntry,
-  type StoredConnectorPermissionBaseline,
+  PI_AGENT_DIR,
+  PI_MEMORY_ROOT,
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  PI_SKILLS_ROOT,
   type PiInstalledCliRequirement,
   type PiLaunchConfig,
+  type PiMemoryRecallSelection,
+  piMemoryRecallSelectionSchema,
+  type PiModelConfig,
+  type SecretConnectorMetadata,
+  type StorageMountEntry,
+  type StoredConnectorPermissionBaseline,
+  type StoredExecutionContext,
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
-import { encryptExecutionSecrets$ } from "./execution-secrets.service";
-import {
-  prepareCallbacks$ as prepareExecutionCallbacks$,
-  type ExecutionCallback,
-} from "./execution-callbacks.service";
-import {
-  agentConnectorScopeFromRows,
-  type AgentConnectorScopeSnapshot,
-  type CustomConnectorDefinitionVersion,
-} from "./agent-connector-scope.service";
-import {
-  parseRawRows,
-  pgTimestampWithoutTimezoneToDateSchema,
-  executeRawRows,
-} from "../../lib/db-raw-rows";
-import {
-  pendingOfficialAdmissionStart,
-  advancePendingOfficialAdmission,
-  pendingLaunchAdmissionRowSchema as admissionRow,
-} from "./pending-launch-official-plan";
-import {
-  pendingLaunchTailStart,
-  advancePendingLaunchTail,
-  pendingLaunchTailRowSchema as tailRow,
-  type PendingLaunchTailInput,
-} from "./pending-launch-tail-plan";
-import {
-  pendingLaunchClaimFenceSql,
-  requirePendingLaunchClaimFence,
-  pendingLaunchClaimProducerStatements,
-  type PendingLaunchClaim,
-} from "./pending-launch-claim-plan";
-import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
-import {
-  pendingLaunchInsertSql,
-  pendingLaunchUpdateSql,
-} from "./pending-launch-sql";
-import { entitlementQuery } from "./usage-allowance-settlement-plan";
-import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
-import {
-  pendingRunAllowancePlan,
-  pendingRunAllowanceWindowsPlan,
-  allowanceSnapshotSchema as snapshotRow,
-} from "./pending-launch-allowance-plan";
-import { waitUntil } from "../context/wait-until";
+import { AUTO_RUN_MODEL, AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import {
-  isFreePlanForCreditAdmission,
-  checkCatalogRunRoute,
-  checkOrgPlanRunAdmission,
-  type RunAdmissionInput,
-} from "./run-admission.service";
-import {
-  AdmissionAttemptTiming,
-  type AdmissionAttemptOutcome,
-} from "./api-dispatch-admission-timing.service";
-import {
-  acceptedRunCandidates,
-  assembleRunObservation,
-  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-  OfficialWorkflowRunAdmissionError,
-  type OfficialWorkflowRunObservation,
-} from "./official-workflow-run.service";
-import {
-  isWebChatContextType,
-  type QueuedUserMessage,
-  type QueuedUserMessageContextType,
-  queuedUserMessageTriggerSource,
-  type QueueFirstRunAssociation,
-  type QueueFirstRunClaimResult,
-} from "./chat-queued-event.service";
-import {
-  refreshUsageAllowanceAvailability$,
-  type PreparedUsageAllowanceRefresh,
-} from "./usage-allowance.service";
-import {
-  morningBriefScheduleClaimBound$,
-  morningBriefScheduleClaimSupersededCondition,
-} from "./morning-brief-schedule-claim.service";
-import { chatThreadEventInsertSql } from "./chat-thread-event.service";
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
-import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
-import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
-import {
-  recordQueuedPromptRunLaunch$,
-  buildChatPriorRunsContext,
-  buildQueuedRunCommand,
-  ChatCallbackPreCreateTimingCollector,
-  type CreateQueuedChatRunInput,
-  type QueuedChatPromptData,
-  deliverQueuedPromptRejection$,
-  deliverUnexpectedQueuedPromptRejection$,
-  buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
-  type PriorRunEvent,
-  queuedChatRunCallbackInputs,
-  queuedIntegrationLaunchFields,
-  type QueuedLaunchMaterial,
-  queuedMessageAdmissionFailure,
-  type QueuedMessageAdmissionFailure,
-  type QueuedMessageModelRouteResolution,
-  queuedMessageRejection,
-  type QueuedPromptLaunchContext,
-  type QueuedRunAdmissionFailureInput,
-  queuedUserMessageProjection,
-  rejectedQueuedRunAdmissionFailure,
-  routeQueuedMessagePiExecution,
-} from "./internal-chat-run-callback.service";
-import type { PendingRunActivation } from "./agent-run-activation.types";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import {
+  executeRawRows,
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -213,15 +56,20 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
 import {
-  systemSkillStorageResolution$,
   type SystemSkillStorageResolution,
+  systemSkillStorageResolution$,
 } from "../context/system-skill-storage-resolution";
 import {
+  type UsagePricingResolution,
+  usagePricingResolution$,
+} from "../context/usage-pricing-resolution";
+import { waitUntil } from "../context/wait-until";
+import {
+  type Db,
   db$,
   rawSqlReadDb$,
   type ReadonlyDb,
   writeDb$,
-  type Db,
 } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -235,10 +83,157 @@ import type { SlackUserInfo } from "../external/slack-message-client";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { safeSync, settle, tapError } from "../utils";
 import {
-  buildAgentExecutionConfig,
-  type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
+  agentConnectorScopeFromRows,
+  type AgentConnectorScopeSnapshot,
+  type CustomConnectorDefinitionVersion,
+} from "./agent-connector-scope.service";
+import {
   type AgentExecutionDefinition,
+  type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
+  buildAgentExecutionConfig,
 } from "./agent-execution-config";
+import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
+import type { PendingRunActivation } from "./agent-run-activation.types";
+import {
+  type AgentRunContextSignals,
+  type BootstrapConnectorObservation,
+  createEagerConnectorCredentialContext,
+  matchAgentRunContextSignals,
+} from "./agent-run-context.signals";
+import type {
+  AgentRunModelPin,
+  AgentRunPreCreateSource,
+  AgentRunRequestAgent,
+  PermissionManifest,
+  ResolvedModelProviderEnvironment,
+  RunCallback,
+} from "./agent-run-contracts";
+import {
+  type AdmissionAttemptOutcome,
+  AdmissionAttemptTiming,
+} from "./api-dispatch-admission-timing.service";
+import {
+  builtInRoutePricingFromSnapshot,
+  prepareModelUsageContext,
+  runRoutePricingFromSnapshot,
+} from "./built-in-route-pricing";
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
+import {
+  isWebChatContextType,
+  type QueuedUserMessage,
+  type QueuedUserMessageContextType,
+  queuedUserMessageTriggerSource,
+  type QueueFirstRunAssociation,
+  type QueueFirstRunClaimResult,
+} from "./chat-queued-event.service";
+import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
+import {
+  type ExecutionCallback,
+  prepareCallbacks$ as prepareExecutionCallbacks$,
+} from "./execution-callbacks.service";
+import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
+import { encryptExecutionSecrets$ } from "./execution-secrets.service";
+import {
+  createResolvedExecutionStorageObjects,
+  type ExecutionStorageRequest,
+  PreparedExecutionStorageMount,
+  updateExecutionStoragePresignedUrlCache$,
+} from "./execution-storage.service";
+import {
+  buildChatPriorRunsContext,
+  buildQueuedRunCommand,
+  ChatCallbackPreCreateTimingCollector,
+  type CreateQueuedChatRunInput,
+  deliverQueuedPromptRejection$,
+  deliverUnexpectedQueuedPromptRejection$,
+  buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
+  type PriorRunEvent,
+  type QueuedChatPromptData,
+  queuedChatRunCallbackInputs,
+  queuedIntegrationLaunchFields,
+  type QueuedLaunchMaterial,
+  queuedMessageAdmissionFailure,
+  type QueuedMessageAdmissionFailure,
+  type QueuedMessageModelRouteResolution,
+  queuedMessageRejection,
+  type QueuedPromptLaunchContext,
+  type QueuedRunAdmissionFailureInput,
+  queuedUserMessageProjection,
+  recordQueuedPromptRunLaunch$,
+  rejectedQueuedRunAdmissionFailure,
+  routeQueuedMessagePiExecution,
+} from "./internal-chat-run-callback.service";
+import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
+import {
+  frameworkForProviderSelection,
+  type ModelCatalog,
+} from "./model-catalog.service";
+import {
+  prepareManagedModelEnvironment,
+  prepareRegisteredModelEnvironment,
+} from "./model-provider.service";
+import {
+  managedSourceFromSnapshot,
+  memberAccountSourceFromSnapshot,
+} from "./model-source-context.service";
+import {
+  morningBriefScheduleClaimBound$,
+  morningBriefScheduleClaimSupersededCondition,
+} from "./morning-brief-schedule-claim.service";
+import {
+  acceptedRunCandidates,
+  assembleRunObservation,
+  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
+  OfficialWorkflowRunAdmissionError,
+  type OfficialWorkflowRunObservation,
+} from "./official-workflow-run.service";
+import {
+  pendingRunAllowancePlan,
+  pendingRunAllowanceWindowsPlan,
+  allowanceSnapshotSchema as snapshotRow,
+} from "./pending-launch-allowance-plan";
+import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
+import {
+  type PendingLaunchClaim,
+  pendingLaunchClaimFenceSql,
+  pendingLaunchClaimProducerStatements,
+  requirePendingLaunchClaimFence,
+} from "./pending-launch-claim-plan";
+import {
+  pendingLaunchAdmissionRowSchema as admissionRow,
+  advancePendingOfficialAdmission,
+  pendingOfficialAdmissionStart,
+} from "./pending-launch-official-plan";
+import {
+  pendingLaunchInsertSql,
+  pendingLaunchUpdateSql,
+} from "./pending-launch-sql";
+import {
+  advancePendingLaunchTail,
+  type PendingLaunchTailInput,
+  pendingLaunchTailStart,
+  pendingLaunchTailRowSchema as tailRow,
+} from "./pending-launch-tail-plan";
+import {
+  materializePreparedPiProvider,
+  type PiModelPreparationInput,
+  resolvePreparedPiModelConfig,
+  shouldUsePiExecution,
+} from "./pi-sandbox-config";
+import {
+  checkCatalogRunRoute,
+  checkOrgPlanRunAdmission,
+  isFreePlanForCreditAdmission,
+  type RunAdmissionInput,
+} from "./run-admission.service";
+import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
+import { entitlementQuery } from "./usage-allowance-settlement-plan";
+import {
+  type PreparedUsageAllowanceRefresh,
+  refreshUsageAllowanceAvailability$,
+} from "./usage-allowance.service";
 
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import {
@@ -248,11 +243,11 @@ import {
 import { buildAgentPhonePrompt } from "./agentphone-prompt";
 import {
   ApiDispatchPhaseCollector,
-  ApiDispatchTimingCollector,
-  measureApiDispatchTiming,
   type ApiDispatchTimingActionType,
-  type ApiDispatchTimingDimensionsInput,
+  ApiDispatchTimingCollector,
   type ApiDispatchTimingDimensions,
+  type ApiDispatchTimingDimensionsInput,
+  measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
@@ -285,20 +280,19 @@ import {
 } from "./chat-event.service";
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import type {
-  ChatQueueHeadRejection,
   ChatQueueHeadContext,
+  ChatQueueHeadRejection,
 } from "./chat-queue-run-assembly";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
-import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 import {
-  chatThreadConversationRun,
-  type ChatThreadSessionResolution,
-  chatThreadSessionSelection,
-  resolveChatThreadSessionSnapshot,
   capturedChatThreadSessionSnapshot,
+  chatThreadConversationRun,
+  type ChatThreadExecutionSnapshot,
+  type ChatThreadSessionResolution,
   type ChatThreadSessionResolutionAction,
   type ChatThreadSessionRoute,
-  type ChatThreadExecutionSnapshot,
+  chatThreadSessionSelection,
+  resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
 import {
   agentRunSourceAnnotation,
@@ -307,30 +301,30 @@ import {
 } from "./chat-user-message.service";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
-  getConnectorRuntimeConnector,
-  type ConnectorRuntimeSelection,
   type ConnectorRuntimeMethod,
+  type ConnectorRuntimeSelection,
+  getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
 import {
-  type CustomConnectorRuntimeContext,
-  loadEffectiveCustomConnectorPermissionBundle,
-  resolveCustomConnectorBaseUrlVars,
-  compactRecord,
-  type CustomConnectorRuntimeDataRows,
-  type BuildCustomConnectorRuntimeContextArgs,
-  orderedCustomConnectorRuntimeRows,
-  buildCustomConnectorRuntimeContext,
-  customConnectorRuntimeSkill,
   allAllowPolicyForPermissions,
-  resolveConnectorNetworkPolicy,
+  buildCustomConnectorRuntimeContext,
+  type BuildCustomConnectorRuntimeContextArgs,
   collectPermissionNames,
+  compactRecord,
+  type CustomConnectorRuntimeContext,
+  type CustomConnectorRuntimeDataRows,
   customConnectorRuntimeFirewall,
+  customConnectorRuntimeSkill,
+  loadEffectiveCustomConnectorPermissionBundle,
+  orderedCustomConnectorRuntimeRows,
+  resolveConnectorNetworkPolicy,
+  resolveCustomConnectorBaseUrlVars,
   runtimeFirewall,
 } from "./connector-runtime-preparation.service";
 import {
-  expandConnectorServerFirewallPolicies,
   type ConnectorServerFirewallExecutionMetadata,
   type ConnectorServerFirewallPermissionIndex,
+  expandConnectorServerFirewallPolicies,
 } from "./connector-server-firewall-catalog.service";
 import {
   customConnectorAccountAuthMethodIsCompatible,
@@ -338,16 +332,16 @@ import {
   customConnectorRuntimeStorageSnapshot,
 } from "./custom-connector-credential-access.service";
 import {
+  type CustomConnectorPermissionBundle,
+  customConnectorPermissionBundleDependencySlug,
+} from "./custom-connector-permission-bundle.service";
+import {
   CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
   CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-  customConnectorValueMarkerKey,
   customConnectorManualAuthReferencesMemberField,
   customConnectorMissingRequiredFieldKeys,
+  customConnectorValueMarkerKey,
 } from "./custom-connector.service";
-import {
-  customConnectorPermissionBundleDependencySlug,
-  type CustomConnectorPermissionBundle,
-} from "./custom-connector-permission-bundle.service";
 import {
   discordConversationAccess,
   type DiscordConversationAccess,
@@ -360,7 +354,6 @@ import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-con
 import {
   isMemberSubscriptionRoute,
   memberModelRouteContextFromAccounts,
-  providerTypeForSurfaceProtocol,
 } from "./effective-model-route.service";
 import {
   ORG_SENTINEL_USER_ID,
@@ -377,10 +370,242 @@ import {
   memorySummaryProjectionReadResult,
   type MemorySummaryProjectionReadResult,
 } from "./memory-summary-projection.service";
+import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
+
+import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
-  type EnsuredOrgModelPolicyFacts,
-  orgModelPolicyFactsFromSnapshot,
-} from "./model-policy.service";
+  CHAT_EVENT_CONTENT_TEXT_TYPES,
+  CHAT_EVENT_TYPES,
+  CHAT_EVENT_USER_MESSAGE_TEXT_TYPES,
+  chatEventCompatibilityRole,
+  type ChatEventType,
+} from "@okouai/api-contracts/contracts/chat-events";
+import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  type ConnectorAuthMethodId,
+  type ConnectorSlug,
+  connectorSlugSchema,
+} from "@okouai/api-contracts/contracts/connector-identity";
+import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
+import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
+import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
+import {
+  getFrameworkForType,
+  getModelImageInputSupport,
+  getModelProviderFirewall,
+  isBuiltInModelProviderType,
+  MODEL_PROVIDER_TYPES,
+  type ModelProviderCredentialScope,
+  type ModelProviderType,
+  modelProviderTypeSchema,
+} from "@okouai/api-contracts/contracts/model-providers";
+import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
+import {
+  type RunContextResponse,
+  runCreateBodySchema,
+} from "@okouai/api-contracts/contracts/run-routes";
+import {
+  type CreateRunResponse,
+  type RunStatus,
+  unifiedRunRequestSchema,
+} from "@okouai/api-contracts/contracts/runs";
+import {
+  connectorAuthMethodRuntimeMetadata,
+  type ConnectorRuntimeBindingEntry,
+} from "@okouai/connectors/connector-auth-method";
+import {
+  type FirewallPermissionGrant,
+  permissionGrantsToFirewallPolicies,
+} from "@okouai/connectors/firewall-metadata/policy";
+import {
+  canonicalizeFirewallBaseUrlVarsForExecution,
+  type ExecutionFirewallEntry,
+  type ExecutionFirewalls,
+  type ExpandedFirewallConfig,
+  extractSecretNamesFromApis,
+  type Firewall,
+  FirewallBaseUrlResolutionError,
+  type FirewallPolicies,
+  type FirewallPolicy,
+  type NetworkPolicies,
+} from "@okouai/connectors/firewall-types";
+import {
+  type FeatureSwitchContext,
+  getAllFeatureStates,
+  isFeatureEnabled,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
+import {
+  getInstructionsFilename,
+  isSupportedFramework,
+  type SupportedFramework,
+} from "@okouai/core/frameworks";
+import { generationTemplateIdentity } from "@okouai/core/generation-template-identity";
+import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODEL_CONFIGS,
+  type ImageModel,
+} from "@okouai/core/image-model-catalog";
+import { piCatalogModel } from "@okouai/core/pi-execution";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { isStaffOrg } from "@okouai/core/staff-org";
+import {
+  getCustomConnectorSkillName,
+  getCustomConnectorSkillStorageName,
+  getCustomSkillStorageName,
+  getInstructionsStorageName,
+  getSkillStorageName,
+  MEMORY_ARTIFACT_NAME,
+  SYSTEM_ORG_ID,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
+import {
+  expandVariables,
+  expandVariablesInString,
+  extractAndGroupVariables,
+} from "@okouai/core/variable-expander";
+import {
+  isValidVersionPrefix,
+  MIN_VERSION_PREFIX_LENGTH,
+  VERSION_ID_LENGTH,
+} from "@okouai/core/version-id";
+import type {
+  AgentRunFullLaunchSnapshot,
+  AgentRunLaunchSnapshot,
+  AgentRunOfficialWorkflowProvenance,
+} from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
+import type {
+  PiStableContextOwner,
+  PiStableContextPromptProjection,
+  PiStableContextSemanticInput,
+  PiStableContextSourceVector,
+} from "@okouai/db/jsonb-contracts/pi-stable-context";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { blobs } from "@okouai/db/schema/blob";
+import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
+import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
+import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
+import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
+import {
+  chatEventRunlessInputPredicate,
+  chatEvents,
+  type ChatEventUserMessage,
+} from "@okouai/db/schema/chat-event";
+import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
+import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
+import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
+import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
+import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
+import { conversations } from "@okouai/db/schema/conversation";
+import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
+import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
+import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
+import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { presentationTemplates } from "@okouai/db/schema/presentation-template";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
+import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
+import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
+import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
+import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
+import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { userTemplates } from "@okouai/db/schema/user-template";
+import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import type { PersistedStorageMount } from "@okouai/db/types";
+import {
+  PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
+} from "@okouai/pi-agent-runtime";
+import { command, type Command, computed, type Computed, state } from "ccstate";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  max,
+  min,
+  ne,
+  notExists,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+  type WithSubquery,
+} from "drizzle-orm";
+import { alias, QueryBuilder, unionAll } from "drizzle-orm/pg-core";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import {
+  isPiLangfuseDebugRunEnvironment,
+  piLangfuseDebugPlatformEnvironment,
+  resolvePiLangfuseDebugConfig,
+} from "../../lib/pi-langfuse-debug";
+import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
+import { generateOkouToken } from "../auth/tokens";
+import { getDatasetName, ingestToAxiom } from "../external/axiom";
+import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
+import {
+  normalizeRunMetadata,
+  type RunMetadataValues,
+} from "./agent-run-metadata-write.service";
+import {
+  buildAgentToolsPrompt,
+  buildAgentToolsPromptInputs,
+} from "./agent-tools-prompt.service";
+import {
+  type ChatThreadRequestFacts,
+  chatThreadRequestSelection,
+} from "./chat-thread-request-facts";
+import { isWebChatTriggerSource } from "./chat-trigger-source.service";
+import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
+import {
+  builtinConnectorRuntimeCredentialStatusWithMethod,
+  type ConnectorCredentialStatus,
+} from "./connector-credential-status.service";
+import {
+  cacheRowsFromProjection,
+  storageVersionCacheKeySql,
+} from "./execution-storage-cache-read.service";
+import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
+import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
+import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
   type CapturedPersonalSubscriptionAccount,
   isPersonalSubscriptionProviderType,
@@ -391,19 +616,56 @@ import {
   modelProviderWriteTypeForLaunch,
   type ProviderModelSupport,
   resolveQueuedModelSelectionPinFromSnapshot,
-  resolveRunSelectionModel,
 } from "./model-selection.service";
+import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import {
   dispatchConfiguredOfficialWorkflowReconciliation$,
   type OfficialWorkflowReconciliationResult,
 } from "./official-workflow-reconciliation-dispatch.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { piCatalogModel } from "@okouai/core/pi-execution";
+import { PiModelConfigurationError } from "./pi-model-configuration-error";
+import { piStableContextVariantDigest } from "./pi-stable-context.service";
 import {
   additionalVolumesForRun,
   selectedUserPresentationTemplateIds,
   userPresentationTemplateVolumes,
 } from "./presentation-template-data.service";
+import {
+  environmentRecordToEntries,
+  executionFirewallsToAxiomEntries,
+  featureFlagsRecordToEntries,
+  networkPoliciesRecordToEntries,
+  type RunContextAxiomSnapshot,
+} from "./run-context-snapshot.service";
+import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
+import {
+  canReuseSession,
+  type SessionExecutionIdentity,
+} from "./session-compatibility";
+import {
+  type CompressedSessionHistoryBlobEncoding,
+  isCompressedSessionHistoryBlobEncoding,
+  normalizeSessionHistoryBlobEncoding,
+} from "./session-history-blobs";
+import {
+  exactStorageVersionsFromIndex,
+  mergeStorageIndexes,
+  readStorageBaseIndex,
+  type StorageIndex,
+  type StorageIndexEntry,
+  type StorageLookup,
+  type StorageRequest,
+  storageRequestKey,
+  type StorageVersionIndexEntry,
+} from "./storage-index.service";
+import { projectLegacyWritebackArtifacts } from "./storage-legacy-projection.service";
+import { normalizeMountOverlay } from "./storage-mount-overlay";
+import type {
+  StorageManifestCacheBranch,
+  StorageManifestCacheEntryKind,
+  SystemStoragePresignedUrlCacheStatus,
+  WorkflowSkillStoragePresignedUrlCacheStatus,
+} from "./system-storage-presigned-url-cache.service";
 import {
   type TeamsDeliveryTarget,
   teamsDeliveryTargetSchema,
@@ -434,311 +696,11 @@ import {
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import {
-  visibleWorkflowCondition,
   type RunWorkflowRef,
+  visibleWorkflowCondition,
 } from "./workflow-data.service";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
-import {
-  CHAT_EVENT_TYPES,
-  CHAT_EVENT_CONTENT_TEXT_TYPES,
-  CHAT_EVENT_USER_MESSAGE_TEXT_TYPES,
-  chatEventCompatibilityRole,
-  type ChatEventType,
-} from "@okouai/api-contracts/contracts/chat-events";
-import type {
-  ConnectorAccountSelection,
-  ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import {
-  MODEL_PROVIDER_TYPES,
-  getFrameworkForType,
-  isBuiltInModelProviderType,
-  modelProviderTypeSchema,
-  type ModelProviderCredentialScope,
-  type ModelProviderType,
-  getModelImageInputSupport,
-  getModelProviderFirewall,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  permissionGrantsToFirewallPolicies,
-  type FirewallPermissionGrant,
-} from "@okouai/connectors/firewall-metadata/policy";
-import {
-  type FeatureSwitchContext,
-  isFeatureEnabled,
-  getAllFeatureStates,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  FEISHU_PLATFORMS,
-  type FeishuPlatform,
-} from "@okouai/core/feishu-platform";
-import { generationTemplateIdentity } from "@okouai/core/generation-template-identity";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-  IMAGE_MODEL_CONFIGS,
-} from "@okouai/core/image-model-catalog";
-import {
-  MEMORY_ARTIFACT_NAME,
-  SYSTEM_ORG_ID,
-  VOLUME_ORG_USER_ID,
-  getInstructionsStorageName,
-  getSkillStorageName,
-  getCustomSkillStorageName,
-  getCustomConnectorSkillStorageName,
-  getCustomConnectorSkillName,
-} from "@okouai/core/storage-names";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { blobs } from "@okouai/db/schema/blob";
-import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
-import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
-import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
-import {
-  chatEventRunlessInputPredicate,
-  chatEvents,
-  type ChatEventUserMessage,
-} from "@okouai/db/schema/chat-event";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
-import {
-  chatThreadRequestSelection,
-  type ChatThreadRequestFacts,
-} from "./chat-thread-request-facts";
-import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
-import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
-import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
-import { conversations } from "@okouai/db/schema/conversation";
-import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
-import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { presentationTemplates } from "@okouai/db/schema/presentation-template";
-import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
-import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
-import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
-import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
-import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { userTemplates } from "@okouai/db/schema/user-template";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { command, computed, state, type Command, type Computed } from "ccstate";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  exists,
-  notExists,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  max,
-  min,
-  ne,
-  or,
-  sql,
-  like,
-  type WithSubquery,
-  type SQL,
-  type SQLWrapper,
-} from "drizzle-orm";
-import { alias, unionAll, QueryBuilder } from "drizzle-orm/pg-core";
-import { randomUUID } from "node:crypto";
-import { z } from "zod";
-import {
-  type SupportedFramework,
-  getInstructionsFilename,
-  isSupportedFramework,
-} from "@okouai/core/frameworks";
-import type { PersistedStorageMount } from "@okouai/db/types";
-import type {
-  StorageManifestCacheBranch,
-  SystemStoragePresignedUrlCacheStatus,
-  WorkflowSkillStoragePresignedUrlCacheStatus,
-  StorageManifestCacheEntryKind,
-} from "./system-storage-presigned-url-cache.service";
-import {
-  expandVariablesInString,
-  extractAndGroupVariables,
-  expandVariables,
-} from "@okouai/core/variable-expander";
-import {
-  VERSION_ID_LENGTH,
-  isValidVersionPrefix,
-  MIN_VERSION_PREFIX_LENGTH,
-} from "@okouai/core/version-id";
-import { projectLegacyWritebackArtifacts } from "./storage-legacy-projection.service";
-import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { billingRunAttributionWrite } from "./managed-usage-attribution";
-import type {
-  AgentRunFullLaunchSnapshot,
-  AgentRunLaunchSnapshot,
-  AgentRunOfficialWorkflowProvenance,
-} from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import {
-  type SessionExecutionIdentity,
-  canReuseSession,
-} from "./session-compatibility";
-import {
-  type RunStatus,
-  unifiedRunRequestSchema,
-  type CreateRunResponse,
-} from "@okouai/api-contracts/contracts/runs";
-import {
-  type ConnectorSlug,
-  connectorSlugSchema,
-  type ConnectorAuthMethodId,
-} from "@okouai/api-contracts/contracts/connector-identity";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  type RunContextAxiomSnapshot,
-  environmentRecordToEntries,
-  executionFirewallsToAxiomEntries,
-  networkPoliciesRecordToEntries,
-  featureFlagsRecordToEntries,
-} from "./run-context-snapshot.service";
-import {
-  isPiLangfuseDebugRunEnvironment,
-  resolvePiLangfuseDebugConfig,
-  piLangfuseDebugPlatformEnvironment,
-} from "../../lib/pi-langfuse-debug";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import {
-  type RunMetadataValues,
-  normalizeRunMetadata,
-} from "./agent-run-metadata-write.service";
-import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { ingestToAxiom, getDatasetName } from "../external/axiom";
-import {
-  type ConnectorRuntimeBindingEntry,
-  connectorAuthMethodRuntimeMetadata,
-} from "@okouai/connectors/connector-auth-method";
-import {
-  type ConnectorCredentialStatus,
-  builtinConnectorRuntimeCredentialStatusWithMethod,
-} from "./connector-credential-status.service";
-import {
-  runCreateBodySchema,
-  type RunContextResponse,
-} from "@okouai/api-contracts/contracts/run-routes";
-import { PiNativeConfigurationError } from "./pi-native-model-config";
-import {
-  FirewallBaseUrlResolutionError,
-  type FirewallPolicies,
-  type ExpandedFirewallConfig,
-  type ExecutionFirewalls,
-  type NetworkPolicies,
-  type ExecutionFirewallEntry,
-  type Firewall,
-  canonicalizeFirewallBaseUrlVarsForExecution,
-  type FirewallPolicy,
-  extractSecretNamesFromApis,
-} from "@okouai/connectors/firewall-types";
-import { generateOkouToken } from "../auth/tokens";
-import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import type {
-  PiStableContextOwner,
-  PiStableContextPromptProjection,
-  PiStableContextSemanticInput,
-  PiStableContextSourceVector,
-} from "@okouai/db/jsonb-contracts/pi-stable-context";
-import {
-  type CompressedSessionHistoryBlobEncoding,
-  normalizeSessionHistoryBlobEncoding,
-  isCompressedSessionHistoryBlobEncoding,
-} from "./session-history-blobs";
-import { isStaffOrg } from "@okouai/core/staff-org";
-import {
-  buildAgentToolsPromptInputs,
-  buildAgentToolsPrompt,
-} from "./agent-tools-prompt.service";
-import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
-import { piStableContextVariantDigest } from "./pi-stable-context.service";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
-import {
-  mergeStorageIndexes,
-  storageRequestKey,
-  exactStorageVersionsFromIndex,
-  readStorageBaseIndex,
-  type StorageLookup,
-  type StorageRequest,
-  type StorageVersionIndexEntry,
-  type StorageIndexEntry,
-  type StorageIndex,
-} from "./storage-index.service";
-import {
-  storageVersionCacheKeySql,
-  cacheRowsFromProjection,
-} from "./execution-storage-cache-read.service";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
-import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
-import { isWebChatTriggerSource } from "./chat-trigger-source.service";
-import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
-import {
-  type PiExecutionRoute,
-  normalizePiExecutionRoute,
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-} from "@okouai/pi-agent-runtime";
-import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
-import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
-import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
-import { normalizeMountOverlay } from "./storage-mount-overlay";
-
-function isMigratedRegisteredSource(type: string | undefined): boolean {
-  return (
-    type !== undefined &&
-    [
-      "anthropic-api-key",
-      "openai-api-key",
-      "openrouter-api-key",
-      "openrouter-codex",
-      "vercel-ai-gateway",
-      "vercel-ai-gateway-codex",
-      "aws-bedrock",
-      "azure-foundry",
-      "deepseek",
-    ].includes(type)
-  );
-}
-
-function isMigratedAccountSource(
-  args: ResolveModelProviderEnvironmentArgs,
-): boolean {
-  return (
-    args.modelProviderType === "codex-oauth-token" ||
-    args.modelProviderType === "claude-code-oauth-token"
-  );
-}
 
 export interface ThreadClaim {
   readonly orgId: string;
@@ -2571,65 +2533,6 @@ function customConnectorSourceStorageRows(
       });
 }
 
-interface QueuedProviderAdmissionSurface {
-  readonly id: string;
-  readonly protocol: string;
-  readonly modelMappings: Readonly<Record<string, unknown>>;
-}
-
-/**
- * The pinned provider's framing: its CLI agent framework (Built-in runs use
- * the protocol framework of the model's primary catalog candidate) and
- * whether a validated catalog model lacks a route on the pinned provider, so
- * only a matching custom surface mapping can serve it.
- */
-function queuedProviderRouteFraming(
-  catalog: ModelCatalog,
-  pin: ModelFirstPin,
-  providerModelSupport: ProviderModelSupport | undefined,
-) {
-  const parsed = modelProviderTypeSchema.safeParse(pin.modelProviderType);
-  const knownProvider = parsed.success ? parsed.data : null;
-  const pinModel = pin.selectedModel;
-  const [primaryBuiltIn] =
-    pinModel === null ? [] : catalogBuiltInCandidates(catalog, pinModel);
-  const primaryConcrete = modelProviderTypeSchema.safeParse(
-    primaryBuiltIn?.concreteProviderType,
-  );
-  const cliAgentType = knownProvider
-    ? getFrameworkForType(
-        isBuiltInModelProviderType(knownProvider) && primaryConcrete.success
-          ? primaryConcrete.data
-          : knownProvider,
-      )
-    : null;
-  const requiresCustomSurface =
-    (providerModelSupport ?? "validate") === "validate" &&
-    pinModel !== null &&
-    catalog.byModel.has(pinModel) &&
-    (!knownProvider ||
-      !catalogHasProviderRoute(
-        catalog,
-        pinModel,
-        isBuiltInModelProviderType(knownProvider) ? "built-in" : knownProvider,
-      ));
-  return { cliAgentType, requiresCustomSurface };
-}
-
-function customSurfaceServesPin(
-  surface: QueuedProviderAdmissionSurface | null,
-  pin: ModelFirstPin,
-): boolean {
-  return (
-    surface !== null &&
-    pin.selectedModel !== null &&
-    surface.id === pin.modelProviderId &&
-    providerTypeForSurfaceProtocol(surface.protocol) ===
-      pin.modelProviderType &&
-    typeof surface.modelMappings[pin.selectedModel] === "string"
-  );
-}
-
 /**
  * Provider admission shared by the chat and workflow-automation picks: model
  * support on the pinned provider, org plan admission (the member's own
@@ -2639,7 +2542,6 @@ async function resolveQueuedProviderAdmission(params: {
   readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;
   readonly providerModelSupport: ProviderModelSupport | undefined;
-  readonly customSurface: () => Promise<QueuedProviderAdmissionSurface | null>;
   readonly personalSubscription: () => Promise<boolean>;
   readonly capabilities: () => Parameters<
     typeof checkOrgPlanRunAdmission
@@ -2651,24 +2553,14 @@ async function resolveQueuedProviderAdmission(params: {
 }) {
   const { catalog, pin } = params;
   const effectiveModelProvider = pin.modelProviderType;
-  const { cliAgentType, requiresCustomSurface } = queuedProviderRouteFraming(
-    catalog,
-    pin,
-    params.providerModelSupport,
-  );
-  if (
-    requiresCustomSurface &&
-    !customSurfaceServesPin(await params.customSurface(), pin)
-  ) {
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: badRequestMessage(
-        "The selected model is not supported by the current model provider",
-      ),
-      needsAllowance: false,
-    };
-  }
+  const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
+  const cliAgentType = parsed.success
+    ? getFrameworkForType(
+        isBuiltInModelProviderType(parsed.data)
+          ? AUTO_RUN_PROVIDER
+          : parsed.data,
+      )
+    : null;
   const personalSubscription = await params.personalSubscription();
   const error = checkOrgPlanRunAdmission({
     catalog,
@@ -3035,48 +2927,13 @@ export function createThreadClaimRunObjects(
     }
     return head.canonicalModelSelection;
   });
-  const orgMetadata$ = computed(async (get) => {
-    return (await get(orgModels$)).org;
-  });
-  const queuedModelInputsCapabilities$ = computed(
-    async (get): Promise<OrgPlanCapabilities | null> => {
-      return await get(context.plan$);
-    },
-  );
-  const queuedModelInputsInitialPolicies$ = computed(async (get) => {
-    return (await get(orgModels$)).policies;
-  });
-  // Policies are projected from the claim's catalog snapshot.
-  const policyFacts$ = computed(
-    async (get): Promise<EnsuredOrgModelPolicyFacts> => {
-      return await get(initialFacts$);
-    },
-  );
-  const policy$ = computed(async (get) => {
-    const [selection, facts] = await Promise.all([
-      get(queuedModelInputsSelection$),
-      get(policyFacts$),
-    ]);
-    return (
-      facts.policies.find((policy) => {
-        return (
-          selection !== null &&
-          selection !== undefined &&
-          policy.model ===
-            (resolveRunSelectionModel(facts.catalog, selection.selectedModel) ??
-              selection.selectedModel)
-        );
-      }) ?? null
-    );
+  const queuedModelInputsCapabilities$ = computed((get) => {
+    return get(context.plan$);
   });
   const queuedModelSources = {
     input$: queuedModelInputsInput$,
     selection$: queuedModelInputsSelection$,
-    orgMetadata$: orgMetadata$,
     capabilities$: queuedModelInputsCapabilities$,
-    initialPolicies$: queuedModelInputsInitialPolicies$,
-    policyFacts$: policyFacts$,
-    policy$: policy$,
   };
   const { input$: queuedMemberModelRoutesInput$ } = queuedModelSources;
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
@@ -3101,13 +2958,9 @@ export function createThreadClaimRunObjects(
     memberRoutes$: memberRoutes$,
     memberAccountSnapshot$: queuedMemberModelRoutesMemberAccountSnapshot$,
   };
-  const {
-    input$: queuedModelRoutingInput$,
-    policy$: queuedModelRoutingPolicy$,
-    selection$: queuedModelRoutingSelection$,
-    policyFacts$: queuedModelRoutingPolicyFacts$,
-  } = queuedModelSources;
-  const { memberRoutes$: queuedModelRoutingMemberRoutes$ } = member;
+  const queuedModelRoutingInput$ = queuedModelSources.input$;
+  const queuedModelRoutingSelection$ = queuedModelSources.selection$;
+  const queuedModelRoutingMemberRoutes$ = member.memberRoutes$;
   const queuedIdentityContext$ = computed(async (get) => {
     const input = await get(queuedModelRoutingInput$);
     return matchAgentRunContextSignals(
@@ -3117,82 +2970,24 @@ export function createThreadClaimRunObjects(
       context.agentId,
     );
   });
-  const orgProviderType$ = computed(async (get) => {
-    const policy = await get(queuedModelRoutingPolicy$);
-    if (
-      !policy?.modelProviderId ||
-      policy.credentialScope !== "org" ||
-      policy.modelProviderSurfaceId ||
-      isBuiltInModelProviderType(policy.defaultProviderType)
-    ) {
-      return null;
-    }
-    const provider = (
-      await get((await get(queuedIdentityContext$)).orgModelSources$)
-    ).find((row) => {
-      return row.id === policy.modelProviderId;
-    });
-    return provider?.type ?? null;
-  });
-  const customSurface$ = computed(async (get) => {
-    const policy = await get(queuedModelRoutingPolicy$);
-    if (!policy?.modelProviderSurfaceId) {
-      return null;
-    }
-    const surface = (
-      await get((await get(queuedIdentityContext$)).gatewayModelSources$)
-    ).find((row) => {
-      return row.id === policy.modelProviderSurfaceId;
-    });
-    return surface ?? null;
-  });
   const subscriptionModels$ = computed(async (get) => {
-    const [org, member] = await Promise.all([
-      get(orgMetadata$),
-      get(queuedModelRoutingMemberRoutes$),
-    ]);
-    return org?.modelMode === "auto"
-      ? memberSubscriptionModelRoutesFromCatalog(
-          await get(claimCatalog$),
-          member,
-        )
-      : [];
+    return memberSubscriptionModelRoutesFromCatalog(
+      await get(claimCatalog$),
+      await get(queuedModelRoutingMemberRoutes$),
+    );
   });
   const queuedModelRoutingModelPin$ = computed(async (get) => {
-    const [
-      selection,
-      facts,
-      member,
-      orgProviderType,
-      customSurface,
-      org,
-      subscriptionModels,
-    ] = await Promise.all([
-      get(queuedModelRoutingSelection$),
-      get(queuedModelRoutingPolicyFacts$),
-      get(queuedModelRoutingMemberRoutes$),
-      get(orgProviderType$),
-      get(customSurface$),
-      get(orgMetadata$),
-      get(subscriptionModels$),
-    ]);
+    const selection = await get(queuedModelRoutingSelection$);
     return selection
       ? resolveQueuedModelSelectionPinFromSnapshot({
           catalog: await get(claimCatalog$),
           selectedModel: selection.selectedModel,
-          facts,
-          member,
-          orgProviderType,
-          customSurface,
-          modelMode: org?.modelMode === "custom" ? "custom" : "auto",
-          subscriptionModels,
+          member: await get(queuedModelRoutingMemberRoutes$),
+          subscriptionModels: await get(subscriptionModels$),
         })
       : badRequestMessage("Queued input is missing its model selection");
   });
-  const routing = {
-    modelPin$: queuedModelRoutingModelPin$,
-    customSurface$: customSurface$,
-  };
+  const routing = { modelPin$: queuedModelRoutingModelPin$ };
   const {
     input$: queuedModelRuntimeInput$,
     selection$: queuedModelRuntimeSelection$,
@@ -3216,8 +3011,8 @@ export function createThreadClaimRunObjects(
     );
   });
   const cooldowns$ = computed(async (get) => {
-    const selection = await get(queuedModelRuntimeSelection$);
-    if (!selection) {
+    const pin = await get(queuedModelRuntimeModelPin$);
+    if ("status" in pin || !pin.selectedModel) {
       return [];
     }
     return await get(db$)
@@ -3229,10 +3024,7 @@ export function createThreadClaimRunObjects(
       .from(builtInModelCandidateCooldown)
       .where(
         and(
-          eq(
-            builtInModelCandidateCooldown.selectedModel,
-            selection.selectedModel,
-          ),
+          eq(builtInModelCandidateCooldown.selectedModel, pin.selectedModel),
           gt(builtInModelCandidateCooldown.unavailableUntil, nowDate()),
         ),
       );
@@ -3251,8 +3043,10 @@ export function createThreadClaimRunObjects(
     // requested service tier lack usage_pricing, like any unavailable one.
     const routePricing = builtInRoutePricingFromSnapshot(
       {
-        serviceTier: (await get(queuedModelRuntimeSelection$))
-          ?.codexServiceTier,
+        serviceTier:
+          pin.selectedModel === AUTO_RUN_MODEL
+            ? undefined
+            : (await get(queuedModelRuntimeSelection$))?.codexServiceTier,
         resolution: get(usagePricingResolution$),
       },
       await get(context.modelPricing$),
@@ -3281,14 +3075,8 @@ export function createThreadClaimRunObjects(
   const allowanceSnapshot$ = computed(async (get) => {
     return (await get(context.allowance$)).availability;
   });
-  const {
-    input$: queuedProviderAdmissionInput$,
-    policyFacts$: queuedProviderAdmissionPolicyFacts$,
-  } = queuedModelSources;
-  const {
-    modelPin$: queuedProviderAdmissionModelPin$,
-    customSurface$: queuedProviderAdmissionCustomSurface$,
-  } = routing;
+  const { input$: queuedProviderAdmissionInput$ } = queuedModelSources;
+  const { modelPin$: queuedProviderAdmissionModelPin$ } = routing;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
   /** Auto or Custom: the member's own valid subscription route is plan-exempt. */
   const personalSubscription$ = computed(async (get) => {
@@ -3314,20 +3102,17 @@ export function createThreadClaimRunObjects(
       throw new Error("Provider admission requires a valid queued model pin");
     }
     // Policy facts are prepared for every routed pin before admission.
-    const policyFacts = await get(queuedProviderAdmissionPolicyFacts$);
+    const capabilities = await get(context.plan$);
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
       providerModelSupport: (await get(queuedProviderAdmissionInput$))
         .providerModelSupport,
-      customSurface: () => {
-        return get(queuedProviderAdmissionCustomSurface$);
-      },
       personalSubscription: () => {
         return get(personalSubscription$);
       },
       capabilities: () => {
-        return policyFacts.orgPlanCapabilities;
+        return capabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$);
@@ -3337,27 +3122,7 @@ export function createThreadClaimRunObjects(
   const admission = {
     providerAdmission$: queuedProviderAdmissionProviderAdmission$,
   };
-  const {
-    input$: queuedModelCommandsInput$,
-    capabilities$: queuedModelCommandsCapabilities$,
-    initialPolicies$: queuedModelCommandsInitialPolicies$,
-  } = queuedModelSources;
-  const initialFacts$ = computed(async (get) => {
-    const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
-      get(queuedModelCommandsCapabilities$),
-      get(queuedModelCommandsInitialPolicies$),
-      get(claimCatalog$),
-      get(queuedModelCommandsInput$),
-    ]);
-    // Policies are projected from the claim's catalog snapshot; the fixed
-    // system default needs no lazy per-organization seeding.
-    return orgModelPolicyFactsFromSnapshot({
-      catalog,
-      orgId: input.orgId,
-      orgPlanCapabilities,
-      stored,
-    });
-  });
+  const queuedModelCommandsInput$ = queuedModelSources.input$;
   const allowanceInput$ = computed(async (get) => {
     return { orgId: (await get(queuedModelCommandsInput$)).orgId };
   });
@@ -3396,7 +3161,7 @@ export function createThreadClaimRunObjects(
   const commands = {
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
   };
-  const { selection$, capabilities$, initialPolicies$ } = queuedModelSources;
+  const { selection$, capabilities$ } = queuedModelSources;
   const { modelPin$ } = routing;
   const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
   const {
@@ -3414,13 +3179,7 @@ export function createThreadClaimRunObjects(
     async ({ get, set }, signal: AbortSignal) => {
       const selection = await get(selection$);
       signal.throwIfAborted();
-      if (
-        !selection ||
-        !resolveRunSelectionModel(
-          await get(claimCatalog$),
-          selection.selectedModel,
-        )
-      ) {
+      if (!selection) {
         return;
       }
       const pin = await get(modelPin$);
@@ -3441,23 +3200,10 @@ export function createThreadClaimRunObjects(
     const [selection] = await Promise.all([
       get(selection$),
       get(capabilities$),
-      get(initialPolicies$),
       get(queuedModelFeatureSwitchContext$),
     ]);
     if (!selection) {
       return badRequestMessage("Queued input is missing its model selection");
-    }
-    // Re-resolve the captured model against the claim's catalog snapshot
-    // (current at the pick, not at enqueue) with the same resolution as
-    // enqueue and run creation; a replaced model routes to its final
-    // replacement. Already-started runs are never re-resolved.
-    if (
-      !resolveRunSelectionModel(
-        await get(claimCatalog$),
-        selection.selectedModel,
-      )
-    ) {
-      return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
     }
     const pin = await get(modelPin$);
     if ("status" in pin) {
@@ -3485,7 +3231,10 @@ export function createThreadClaimRunObjects(
               {
                 catalog: await get(claimCatalog$),
                 model: pin.selectedModel,
-                serviceTier: selection.codexServiceTier,
+                serviceTier:
+                  pin.selectedModel === AUTO_RUN_MODEL
+                    ? undefined
+                    : selection.codexServiceTier,
                 resolution: get(usagePricingResolution$),
               },
               context,
@@ -3506,8 +3255,14 @@ export function createThreadClaimRunObjects(
             : undefined),
       },
       featureSwitchContext,
-      runCodexServiceTier: selection.codexServiceTier ?? undefined,
-      reasoningEffort: selection.reasoningEffort ?? undefined,
+      runCodexServiceTier:
+        pin.selectedModel === AUTO_RUN_MODEL
+          ? undefined
+          : (selection.codexServiceTier ?? undefined),
+      reasoningEffort:
+        pin.selectedModel === AUTO_RUN_MODEL
+          ? undefined
+          : (selection.reasoningEffort ?? undefined),
       builtInModelRuntimeRoute,
       memberAccountSnapshot,
     };
@@ -6655,11 +6410,8 @@ export function createThreadClaimRunObjects(
       return composeFramework;
     }
     const identity = await get(executionContext$);
-    const [orgProviders, member] = await Promise.all([
-      get(identity.orgModelSources$),
-      get(identity.memberModels$),
-    ]);
-    const provider = [...orgProviders, ...member.providers].find((row) => {
+    const member = await get(identity.memberModels$);
+    const provider = member.providers.find((row) => {
       return row.id === args.modelProviderId;
     });
     if (!provider) {
@@ -6771,39 +6523,18 @@ export function createThreadClaimRunObjects(
         }),
       );
     }
-    if (args.modelProviderId && isMigratedAccountSource(args)) {
-      return args.modelProviderCredentialScope === "org"
-        ? ((await get(identity.orgModelSources$)).find((provider) => {
-            return provider.id === args.modelProviderId;
-          })?.source ?? null)
-        : memberAccountSourceFromSnapshot(
-            await get(identity.memberModels$),
-            args.modelProviderId,
-          );
-    }
     if (
-      !args.modelProviderId ||
-      !args.selectedModelOverride ||
-      (args.modelProviderType &&
-        isPersonalSubscriptionProviderType(args.modelProviderType))
+      args.modelProviderId &&
+      args.modelProviderCredentialScope === "member" &&
+      args.modelProviderType &&
+      isPersonalSubscriptionProviderType(args.modelProviderType)
     ) {
-      return null;
-    }
-    const type = args.modelProviderType;
-    if (isMigratedRegisteredSource(type)) {
-      return registeredSourceFromSnapshot(
-        args.modelProviderId,
-        args.modelProviderCredentialScope,
-        await get(identity.orgModelSources$),
+      return memberAccountSourceFromSnapshot(
         await get(identity.memberModels$),
+        args.modelProviderId,
       );
     }
-    return gatewaySourceFromSnapshot(
-      args.orgId,
-      (await get(identity.gatewayModelSources$)).find((surface) => {
-        return surface.id === args.modelProviderId;
-      }),
-    );
+    return null;
   });
   // The selected source's model runtime. KMS decryption and captured
   // managed-key values have no side effects, so the runtime is derived here
@@ -6850,14 +6581,7 @@ export function createThreadClaimRunObjects(
           piExecution: context.environmentArgs.piExecution,
         });
       }
-      if (source.identity.kind !== "gateway") {
-        throw new Error("Selected gateway has an invalid source kind");
-      }
-      return await prepareGatewayModelEnvironment(source, {
-        selectedModel: context.environmentArgs.selectedModelOverride,
-        framework: context.environmentArgs.framework,
-        modelProviderType: context.environmentArgs.modelProviderType,
-      });
+      return null;
     },
   );
   const pinnedGatewayProviderEnvironment$ = computed(async (get) => {
@@ -6937,14 +6661,14 @@ export function createThreadClaimRunObjects(
     ) {
       return badRequestMessage("Ultrafast is unavailable for this model route");
     }
-    const materialized = await settle(
-      materializePreparedPiProvider(
+    const materialized = safeSync(() => {
+      return materializePreparedPiProvider(
         piModelPreparationInput(context.input.args),
         provider,
-      ),
-    );
-    return materialized.ok
-      ? materialized.value
+      );
+    });
+    return "ok" in materialized
+      ? materialized.ok
       : piConfigurationRouteError(materialized.error);
   });
   const modelRoute$ = runModelProviderModelRoute$;
@@ -14107,7 +13831,7 @@ function hasExplicitFrameworkApiKey(
 function piConfigurationRouteError(
   error: unknown,
 ): ReturnType<typeof badRequestMessage> {
-  if (error instanceof PiNativeConfigurationError) {
+  if (error instanceof PiModelConfigurationError) {
     return badRequestMessage(error.message);
   }
   throw error;
@@ -14595,7 +14319,7 @@ function assertNativeCredentialOverrides(
       return bodySecrets?.[binding.secretName] !== undefined;
     })
   ) {
-    throw new PiNativeConfigurationError(
+    throw new PiModelConfigurationError(
       "Native Pi credentials cannot be overridden after route capture",
     );
   }
@@ -14739,13 +14463,9 @@ function buildStoredExecutionContextDraft(
       connectorVars: args.connectorContext.vars,
     }),
   );
-  const nativeEnvironment = nativeCredentialEnvironment(
-    capturedPiExecutionRoute(args.modelProvider),
-  );
   const platformEnvironment = buildStoredPlatformEnvironment({
     platformEnvironment: {
       ...args.platformEnvironment,
-      ...nativeEnvironment,
       ...langfuseEnvironment.platformEnvironment,
     },
     canonicalOkouRuntime: args.includeOkouTokenSecret === true,
@@ -14754,10 +14474,7 @@ function buildStoredExecutionContextDraft(
     expandedEnvironment,
     canonicalOkouRuntime: args.includeOkouTokenSecret === true,
   });
-  const environment =
-    Object.keys(nativeEnvironment).length > 0
-      ? { ...untrustedEnvironment, ...nativeEnvironment }
-      : untrustedEnvironment;
+  const environment = untrustedEnvironment;
   const effectiveEnvironment = {
     ...environment,
     ...platformEnvironment,
@@ -17816,14 +17533,6 @@ async function buildPermissionManifest(
   );
 }
 
-function capturedPiExecutionRoute(
-  provider: ResolvedModelProviderEnvironment | null,
-): PiExecutionRoute | undefined {
-  return provider?.piModelConfig
-    ? normalizePiExecutionRoute(provider.piModelConfig)
-    : undefined;
-}
-
 function assertNativeEnvironment(
   provider: ResolvedModelProviderEnvironment | null,
   effectiveEnvironment: Record<string, string>,
@@ -17853,7 +17562,7 @@ function assertNativeEnvironment(
       "OKOU_MODEL_PROVIDER_API_KEY",
     ]) {
       if (effectiveEnvironment[key]) {
-        throw new PiNativeConfigurationError(
+        throw new PiModelConfigurationError(
           "Native Pi context cannot carry ambient provider authentication",
         );
       }

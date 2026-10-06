@@ -18,7 +18,7 @@ const context = testContext();
 
 async function expectUnifiedSection(
   section: "preference" | "model" | "debug",
-  heading: "Preference" | "Models" | "Debug",
+  heading: "Preference" | "Use more models" | "Debug",
 ): Promise<void> {
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   expect(within(dialog).getByRole("heading", { name: heading })).toBeVisible();
@@ -44,7 +44,14 @@ describe("unified preference settings", () => {
     async (path) => {
       await setupPage({ context, path });
 
-      await expectUnifiedSection("model", "Models");
+      await expectUnifiedSection("model", "Use more models");
+      const dialog = screen.getByRole("dialog", { name: "Settings" });
+      expect(
+        within(dialog).getByRole("heading", { name: "Claude" }),
+      ).toBeVisible();
+      expect(
+        within(dialog).getByRole("heading", { name: "ChatGPT (Codex)" }),
+      ).toBeVisible();
       expect(pathname()).toBe("/agents");
     },
   );

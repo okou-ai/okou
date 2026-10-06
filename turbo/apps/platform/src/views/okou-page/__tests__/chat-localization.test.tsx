@@ -1,5 +1,5 @@
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
   chatThreadDraftContract,
   chatThreadEventsContract,
@@ -15,15 +15,15 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { pathname, search } from "../../../signals/location.ts";
+import type { SupportedLocale } from "../../../i18n/resources.ts";
 import {
   mockChatThreadSnapshotResponse,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-import type { SupportedLocale } from "../../../i18n/resources.ts";
+import { pathname, search } from "../../../signals/location.ts";
 import {
-  buildModelPolicy,
   buildProvider,
+  buildRunModel,
   OPENROUTER_PROVIDER_ID,
 } from "./chat-composer-test-helpers.ts";
 
@@ -104,20 +104,19 @@ function chatThread(title: string): ChatThreadSnapshotProjection {
 }
 
 function configureModelRoute(): void {
-  context.mocks.data.orgModelProviders([
+  context.mocks.data.personalModelProviders([
     buildProvider({
       id: OPENROUTER_PROVIDER_ID,
-      type: "openrouter-api-key",
-      secretName: "OPENROUTER_API_KEY",
+      type: "claude-code-oauth-token",
+      secretName: "CLAUDE_CODE_OAUTH_TOKEN",
     }),
   ]);
-  context.mocks.data.orgModelPolicies([
-    buildModelPolicy({
-      id: "00000000-0000-4000-a000-000000000081",
+  context.mocks.data.availableRunModels([
+    buildRunModel({
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      defaultProviderType: "openrouter-api-key",
-      credentialScope: "org",
+      defaultProviderType: "claude-code-oauth-token",
+      credentialScope: "member",
       modelProviderId: OPENROUTER_PROVIDER_ID,
     }),
   ]);

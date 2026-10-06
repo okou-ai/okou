@@ -1119,7 +1119,7 @@ describe("MCP Web parity", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(f.actor);
-    await runs.ensureOrgModelProvider(f.actor);
+    await runs.ensurePersonalSubscriptionModel(f.actor);
     const run = await runs.createThreadRun(f.actor, {
       agentId: f.agentId,
       prompt: "Ordinary Run state",

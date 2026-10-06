@@ -1,8 +1,4 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
-import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -10,14 +6,13 @@ import { expect, test, vi } from "vitest";
 
 import {
   click,
-  setupPage,
   fill,
   queryAllByRoleFast,
+  setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import type { SupportedLocale } from "../../../i18n/resources.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -138,39 +133,8 @@ function connectedPersonalClaudeCodeProvider(): ModelProviderResponse {
   };
 }
 
-function mockBillingCapabilities(modelCapabilities: {
-  readonly supportByok: boolean;
-  readonly restrictedBuiltInModels: boolean;
-}): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    const status: BillingStatusResponse = {
-      showUsagePack: false,
-      tier: "pro",
-      ...billingPlanCapabilities("pro"),
-      ...modelCapabilities,
-      credits: 20_000,
-      onboardingPaymentPending: false,
-      subscriptionStatus: null,
-      currentPeriodEnd: null,
-      cancelAtPeriodEnd: false,
-      scheduledChange: null,
-      hasSubscription: false,
-      autoRecharge: { enabled: false, threshold: null, amount: null },
-      creditExpiry: {
-        expiringNextCycle: 0,
-        nextExpiryDate: null,
-      },
-      creditBreakdown: [],
-      creditGrants: [],
-      concurrencyLimit: 0,
-      concurrencySubscriptions: [],
-    };
-    return respond(200, status);
-  });
-}
-
 async function openModelSettings(
-  heading = "Models",
+  heading = "Use more models",
   locale?: SupportedLocale,
 ): Promise<void> {
   await setupPage({
@@ -285,7 +249,7 @@ async function setupPersonalSubscriptionIdentityReview() {
     subscriptionResetCredits: null,
   };
   context.mocks.data.personalModelProviders([accountA, accountB, accountC]);
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
   return {
     accountA,
     rowA: await screen.findByTestId(`oauth-account-${accountA.id}`),
@@ -349,7 +313,7 @@ test("Show no 5h availability when the weekly allowance is exhausted", async () 
       },
     },
   ]);
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const row = await screen.findByTestId(`oauth-account-${account.id}`);
   const [fiveHour, week] = within(row).getAllByRole("progressbar");
@@ -410,7 +374,7 @@ test("Reset personal Codex account usage from the reset count", async () => {
   });
   context.mocks.data.personalModelProviders([account]);
 
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const row = await screen.findByTestId(`oauth-account-${account.id}`);
   click(within(row).getByLabelText("2 resets left"));
@@ -451,7 +415,7 @@ test("Disconnect an active personal subscription account", async () => {
   });
   context.mocks.data.personalModelProviders([account]);
 
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const row = await screen.findByTestId(`oauth-account-${account.id}`);
   click(within(row).getByLabelText("More options"));
@@ -500,33 +464,6 @@ test("Review personal subscriptions through account switching", async () => {
       ),
     ).toHaveAttribute("aria-pressed", "false");
   });
-});
-
-test("Offer Pro from personal account groups when BYOK is unavailable", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "admin",
-  });
-  context.mocks.data.personalModelProviders([]);
-  mockBillingCapabilities({
-    supportByok: false,
-    restrictedBuiltInModels: false,
-  });
-
-  await openModelSettings("Models");
-
-  const upgradeButton = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Upgrade Pro to use";
-  });
-  if (!upgradeButton) {
-    throw new Error("Upgrade Pro button not found");
-  }
-  click(upgradeButton);
-
-  await expect(
-    screen.findByRole("heading", { name: "Choose a plan" }),
-  ).resolves.toBeInTheDocument();
 });
 
 test("View personal account groups by default in an external workspace", async () => {
@@ -584,7 +521,7 @@ test("Start and close personal Claude login directly from its account group", as
     });
   });
 
-  await openModelSettings("Models");
+  await openModelSettings("Use more models");
 
   const claudeSection = screen
     .getByRole("heading", { name: "Claude" })

@@ -258,7 +258,9 @@ async function createAuthorizationScenario(actor: ApiTestUser) {
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Computer Use authorization boundary",
     visibility: "private",
@@ -620,7 +622,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
     runs.acceptStorageDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const agent = await bdd.createAgent(actor, {
       displayName: "Online host authorization",
       visibility: "private",
@@ -713,7 +717,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -814,7 +820,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     await installTeamsForTest(context.signal, fixture);
     createRouteMocks(context).clerk.session(
       actor.userId,

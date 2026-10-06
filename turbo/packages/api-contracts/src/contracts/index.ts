@@ -151,9 +151,9 @@ export {
   type ModelCatalogResponse,
 } from "./model-catalog";
 export {
-  modelPoliciesMainContract,
-  type ModelPoliciesMainContract,
-} from "./model-policies";
+  runModelsMainContract,
+  type RunModelsMainContract,
+} from "./run-models";
 export {
   SSH_DISPLAY_NAME_MAX_LENGTH,
   SSH_HOST_MAX_LENGTH,
@@ -181,22 +181,6 @@ export {
   type RemoteHostDefault,
   type ThreadRemoteHostAccess,
 } from "./chat-remote-access";
-export {
-  createModelProviderConnectionRequestSchema,
-  getModelProviderTypeForSurfaceProtocol,
-  modelProviderConnectionResponseSchema,
-  modelProviderConnectionsByIdContract,
-  modelProviderConnectionsMainContract,
-  modelProviderConnectionsResponseSchema,
-  modelProviderSurfaceInputSchema,
-  modelProviderSurfaceProtocolSchema,
-  modelProviderSurfaceResponseSchema,
-  updateModelProviderConnectionRequestSchema,
-  type CreateModelProviderConnectionRequest,
-  type ModelProviderConnectionResponse,
-  type ModelProviderSurfaceProtocol,
-  type UpdateModelProviderConnectionRequest,
-} from "./model-provider-gateways";
 export {
   userModelPreferenceResponseSchema,
   updateUserModelPreferenceRequestSchema,
@@ -465,11 +449,9 @@ export {
   modelProviderListResponseSchema,
   upsertModelProviderRequestSchema,
   upsertModelProviderResponseSchema,
-  orgModelPolicyRouteStatusSchema,
-  orgModelPolicySchema,
-  updateOrgModelPolicySchema,
-  orgModelPoliciesResponseSchema,
-  updateOrgModelPoliciesRequestSchema,
+  runModelRouteStatusSchema,
+  availableRunModelSchema,
+  availableRunModelsResponseSchema,
   runModelIdSchema,
   modelProviderCredentialScopeSchema,
   MODEL_PROVIDER_TYPES,
@@ -502,11 +484,9 @@ export {
   type ModelProviderListResponse,
   type UpsertModelProviderRequest,
   type UpsertModelProviderResponse,
-  type OrgModelPolicyRouteStatus,
-  type OrgModelPolicy,
-  type UpdateOrgModelPolicy,
-  type OrgModelPoliciesResponse,
-  type UpdateOrgModelPoliciesRequest,
+  type RunModelRouteStatus,
+  type AvailableRunModel,
+  type AvailableRunModelsResponse,
   type ModelProviderCredentialScope,
   type BuiltInModelRouteProviderType,
   // Multi-auth provider types
@@ -1171,12 +1151,8 @@ export {
 export {
   builtInModelCooldownDiagnosticsSchema,
   modelProviderCooldownDiagnosticsContract,
-  modelProvidersMainContract,
-  modelProvidersByTypeContract,
   type BuiltInModelCooldownDiagnostics,
   type ModelProviderCooldownDiagnosticsContract,
-  type ModelProvidersMainContract,
-  type ModelProvidersByTypeContract,
 } from "./model-provider-routes";
 export {
   personalModelProvidersMainContract,

@@ -1,24 +1,24 @@
-import { command } from "ccstate";
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { command } from "ccstate";
 import { accept } from "../../lib/accept.ts";
-import { apiClient$ } from "../api-client.ts";
 import { reloadAgents$ } from "../agent.ts";
 import { discardApiBootstrapResponse } from "../api-client-base.ts";
-import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
+import { apiClient$ } from "../api-client.ts";
+import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
 import { reloadUserModelPreference$ } from "../external/user-model-preference.ts";
-import { refreshOrg$ } from "../org.ts";
-import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { ROUTES } from "../route-paths.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
-import { onboardingDraft$, resetOnboardingDraft$ } from "./onboarding-state.ts";
+import { refreshOrg$ } from "../org.ts";
+import { ROUTES } from "../route-paths.ts";
+import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import {
   clearSourcesFirstDraft$,
   sourcesFirstDraft$,
 } from "./onboarding-sources-first-state.ts";
+import { onboardingDraft$, resetOnboardingDraft$ } from "./onboarding-state.ts";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
   "choice",
@@ -80,17 +80,17 @@ export const completeOnboarding$ = command(
       [200],
     );
     signal.throwIfAborted();
-    // Completion provisions org defaults such as model policies. Snapshots
+    // Completion provisions org defaults such as model models. Snapshots
     // prefetched into the onboarding page's HTML predate them.
     for (const route of [
       orgContract.get,
-      modelPoliciesMainContract.list,
+      runModelsMainContract.list,
       userModelPreferenceContract.get,
     ]) {
       discardApiBootstrapResponse(route.method, route.path);
     }
     set(refreshOrg$);
-    set(invalidateOrgModelPolicies$);
+    set(invalidateAvailableRunModels$);
     set(reloadUserModelPreference$);
     set(clearSourcesFirstDraft$);
     // Both a prior route and the Worker's HTML prefetch can retain an empty

@@ -185,7 +185,9 @@ describe("chat event annotations", () => {
     runs.acceptTelemetryIngest();
     const group = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
     if (!defaultAgentId) {
       throw new Error("Expected the paid owner's Agent");

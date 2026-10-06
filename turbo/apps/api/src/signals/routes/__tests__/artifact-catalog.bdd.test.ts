@@ -73,7 +73,9 @@ async function catalogActor(
     await api.grantProEntitlement(actor);
     // Catalog fixtures complete claimed native Runner runs, so the org
     // default is Fable, which model policy keeps off Pi.
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
   }
   if (!actor.orgId) {
     throw new Error("Expected artifact catalog test actor to have an org");

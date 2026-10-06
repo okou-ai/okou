@@ -55,13 +55,6 @@ export function isCatalogModelActive(
   return entry !== undefined && entry.replacedBy === null;
 }
 
-export function getCatalogModelPriceTier(
-  catalog: ModelCatalogResponse,
-  model: string,
-): string | null {
-  return findCatalogModel(catalog, model)?.priceTier ?? null;
-}
-
 /** Order model-keyed items by catalog sort order; unknown models go last. */
 export function sortByCatalogOrder<T extends { readonly model: string }>(
   catalog: ModelCatalogResponse,

@@ -119,7 +119,7 @@ async function entitledRecordActor(): Promise<UsageRecordActor> {
   await api.heartbeatRunner(runnerGroup);
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Usage record agent",
     visibility: "private",

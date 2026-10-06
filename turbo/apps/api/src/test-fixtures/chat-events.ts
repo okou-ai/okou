@@ -24,10 +24,7 @@ import { closeDbPool, db } from "../lib/db";
 import { parseRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
 import { nowDate } from "../lib/time";
-import {
-  acquireBuiltInModelKeyFixture,
-  releaseBuiltInModelKeyFixture,
-} from "../signals/services/built-in-model-key-fixture";
+
 import { canonicalChatEventUserMessage } from "../signals/services/canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "../signals/services/chat-event-shared.service";
 import {
@@ -49,10 +46,7 @@ import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
  * BDD-scoped built-in model key prefixes. Fixture acquisition below only
  * accepts keys carrying one of these prefixes.
  */
-const BDD_BUILT_IN_MODEL_KEY_PREFIXES = [
-  "built-in-key-bdd-fake-",
-  "built-in-key-bdd-dev-seed-",
-] as const;
+
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
 const blockedByPidRowSchema = z.object({ blocked: z.boolean() });
@@ -679,37 +673,8 @@ async function pidIsDirectlyBlockedBy(
  * arbitrates the vendor-unique row and prevents one test owner from deleting
  * another owner's key.
  */
-export async function acquireBddBuiltInModelKey(args: {
-  readonly fixtureId: string;
-  readonly vendor: string;
-  readonly apiKey: string;
-}): Promise<string> {
-  const scoped = BDD_BUILT_IN_MODEL_KEY_PREFIXES.some((prefix) => {
-    return args.apiKey.length > prefix.length && args.apiKey.startsWith(prefix);
-  });
-  if (!scoped) {
-    throw new Error(
-      `acquireBddBuiltInModelKey: api key must start with one of ${BDD_BUILT_IN_MODEL_KEY_PREFIXES.join(", ")}`,
-    );
-  }
-  const [acquired] = await acquireBuiltInModelKeyFixture(db(), args.fixtureId, [
-    {
-      vendor: args.vendor,
-      apiKey: args.apiKey,
-    },
-  ]);
-  if (!acquired) {
-    throw new Error(`Expected built-in model key for vendor: ${args.vendor}`);
-  }
-  return acquired.apiKey;
-}
 
 /** Releases only this bdd fixture's ownership of its vendor key. */
-export async function releaseBddBuiltInModelKey(args: {
-  readonly fixtureId: string;
-}): Promise<void> {
-  await releaseBuiltInModelKeyFixture(db(), args.fixtureId);
-}
 
 /**
  * Inserts one event through the production sequence writer, then holds its

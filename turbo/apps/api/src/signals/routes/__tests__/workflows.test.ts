@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -313,7 +314,9 @@ async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
 async function enableWorkflowRuns(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
   // Fable keeps workflow runs on the claimable native Runner route.
-  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   api.configureRunnerGroup();
 }
 
@@ -478,24 +481,11 @@ describe("workflows", () => {
   it("runs a workflow slash command with workflow timing attribution", async () => {
     const actor = user({ orgRole: "org:admin" });
     await api.grantProEntitlement(actor);
-    await miscApi.configureCustomModelMode(actor);
-    const provider = await miscApi.upsertOrgModelProvider(
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
       actor,
-      { type: "openai-api-key", secret: "workflow-openai-key" },
-      [201],
     );
-    if (provider.status !== 201) {
-      throw new Error("Expected the workflow OpenAI provider to be created");
-    }
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        preferred: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: provider.body.provider.id,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "gpt-6-astra");
     const agent = await createAgent(actor, {
       displayName: "Workflow Runner Agent",
       visibility: "private",
@@ -604,7 +594,9 @@ describe("workflows", () => {
       throw new Error("Expected a workflow owner organization");
     }
     // A member's workflow thread starts from their own model preference.
-    await chat.updateUserModelPreference(member, "claude-fable-5-1");
+    await api.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
+    });
 
     const publicAgent = await createAgent(owner, {
       displayName: "Public Workflow Agent",
@@ -1424,7 +1416,9 @@ describe("workflows", () => {
     }
     await api.grantProEntitlement(actor, { tier: "team" });
     // Event Automation creation pins its shared thread model immediately.
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const sourceAgent = await createAgent(actor, {
       displayName: "Copy Source Agent",
       visibility: "private",
@@ -2522,7 +2516,9 @@ describe("workflows", () => {
   it("reuses registered workflow volumes without uploading or reconciling archive size", async () => {
     const actor = user();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const runnerGroup = api.configureRunnerGroup();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();

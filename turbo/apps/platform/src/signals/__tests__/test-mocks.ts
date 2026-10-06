@@ -18,21 +18,8 @@ import {
   type MockedClerkLoadOptions,
 } from "../../__tests__/mock-auth.ts";
 import {
-  clerkLocalizationFixtureForRequest,
-  type ClerkLocalizationLocale,
-} from "../../mocks/handlers/clerk-localizations.ts";
-import {
-  resetMockClerkAuthComponentMounted,
-  setMockClerkAuthComponentMounted,
-} from "../../test/mocks/clerk-react.ts";
-import { mockClerkResource } from "../../test/mocks/clerk-resource.ts";
-import {
-  mockSentry,
-  type SentryMock,
-} from "../../test/mocks/sentry-behavior.ts";
-import {
-  deferNextAblySubscribe,
   deferAblySubscribeOnChannel,
+  deferNextAblySubscribe,
   getAuthTokenHistory,
   hasChannelSubscription,
   hasChannelSubscriptionOnChannel,
@@ -41,9 +28,9 @@ import {
   hasSubscriptionOnChannel,
   rejectAblySubscribe,
   rejectNextAblySubscribe,
-  triggerAblyConnectionState,
   triggerAblyChannelEvent,
   triggerAblyConnectionClosed,
+  triggerAblyConnectionState,
   triggerAblyEvent,
   triggerAblyFailure,
   triggerAblyReauth,
@@ -62,21 +49,21 @@ import {
   setMockGithubIntegration,
 } from "../../mocks/handlers/api-integrations-github.ts";
 import { setMockTelegramIntegration } from "../../mocks/handlers/api-integrations-telegram.ts";
-import { setMockOnboardingStatus } from "../../mocks/handlers/api-onboarding.ts";
-import { setMockOrg } from "../../mocks/handlers/api-org.ts";
-import { setMockOrgMembers } from "../../mocks/handlers/api-org-members.ts";
 import {
   setMockModelCatalogRestrictedPlanAccess,
   setMockModelCatalogSystemDefault,
 } from "../../mocks/handlers/api-model-catalog.ts";
-import {
-  setMockOrgModelMode,
-  setMockOrgModelPolicies,
-} from "../../mocks/handlers/api-org-model-policies.ts";
-import { setMockOrgModelProviders } from "../../mocks/handlers/api-org-model-providers.ts";
+import { setMockOnboardingStatus } from "../../mocks/handlers/api-onboarding.ts";
+import { setMockOrgMembers } from "../../mocks/handlers/api-org-members.ts";
+import { setMockOrg } from "../../mocks/handlers/api-org.ts";
 import { setMockPersonalModelProviders } from "../../mocks/handlers/api-personal-model-providers.ts";
+import { setMockAvailableRunModels } from "../../mocks/handlers/api-run-models.ts";
 import { setMockUserModelPreference } from "../../mocks/handlers/api-user-model-preference.ts";
 import { setMockUserPreferences } from "../../mocks/handlers/api-user-preferences.ts";
+import {
+  clerkLocalizationFixtureForRequest,
+  type ClerkLocalizationLocale,
+} from "../../mocks/handlers/clerk-localizations.ts";
 import {
   createMockApi,
   createMockHttp,
@@ -89,6 +76,15 @@ import {
   mockUploadPending,
   mockUploadSuccess,
 } from "../../mocks/upload-helpers.ts";
+import {
+  resetMockClerkAuthComponentMounted,
+  setMockClerkAuthComponentMounted,
+} from "../../test/mocks/clerk-react.ts";
+import { mockClerkResource } from "../../test/mocks/clerk-resource.ts";
+import {
+  mockSentry,
+  type SentryMock,
+} from "../../test/mocks/sentry-behavior.ts";
 import { createDeferredPromise } from "../utils.ts";
 
 interface WindowOpenCall {
@@ -387,15 +383,10 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       ) => {
         setMockTelegramIntegration(...args);
       },
-      orgModelProviders: (
-        ...args: Parameters<typeof setMockOrgModelProviders>
+      availableRunModels: (
+        ...args: Parameters<typeof setMockAvailableRunModels>
       ) => {
-        setMockOrgModelProviders(...args);
-      },
-      orgModelPolicies: (
-        ...args: Parameters<typeof setMockOrgModelPolicies>
-      ) => {
-        setMockOrgModelPolicies(...args);
+        setMockAvailableRunModels(...args);
       },
       modelCatalogSystemDefault: (
         ...args: Parameters<typeof setMockModelCatalogSystemDefault>
@@ -406,9 +397,6 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         ...args: Parameters<typeof setMockModelCatalogRestrictedPlanAccess>
       ) => {
         setMockModelCatalogRestrictedPlanAccess(...args);
-      },
-      orgModelMode: (...args: Parameters<typeof setMockOrgModelMode>) => {
-        setMockOrgModelMode(...args);
       },
       personalModelProviders: (
         ...args: Parameters<typeof setMockPersonalModelProviders>

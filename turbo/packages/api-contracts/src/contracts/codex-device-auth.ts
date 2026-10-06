@@ -6,7 +6,7 @@ import { modelProviderResponseSchema } from "./model-providers";
 
 const c = initContract();
 
-export const codexDeviceAuthScopeSchema = z.enum(["org", "personal"]);
+export const codexDeviceAuthScopeSchema = z.literal("personal");
 export const codexDeviceAuthModeSchema = z.enum(["add", "reconnect"]);
 
 const codexDeviceAuthStartResponseSchema = z.object({

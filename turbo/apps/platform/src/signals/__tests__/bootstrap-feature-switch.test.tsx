@@ -15,7 +15,7 @@ import {
   context,
   expectComposerModel,
   mockAgent,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
 } from "../../views/okou-page/__tests__/chat-composer-test-helpers.ts";
 
 const CUSTOMER_ORG_ID = "org_customer_workspace";
@@ -26,7 +26,7 @@ async function openTemplates() {
 }
 
 test("A signed-in workspace receives its enabled features", async () => {
-  mockOrgModelRoutes();
+  mockPersonalModelRoutes();
   mockAgent();
 
   await setupPage({
@@ -51,7 +51,7 @@ async function setupEmailRolloutPage(args: {
   readonly fullName: string;
   readonly userId: string;
 }) {
-  mockOrgModelRoutes();
+  mockPersonalModelRoutes();
   mockAgent();
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, {
@@ -113,7 +113,7 @@ test("another member does not receive the custom template rollout", async () => 
 
 test("Image recognition remains available by default", async () => {
   const user = userEvent.setup({ delay: null });
-  mockOrgModelRoutes();
+  mockPersonalModelRoutes();
   mockAgent();
   context.mocks.upload.success({
     id: "default-image-recognition-upload",

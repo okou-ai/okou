@@ -1,5 +1,4 @@
-import { createPhase2Provider } from "../../../../test-fixtures/pi-memory-phase2-credential";
-import { seedBuiltInModelKey } from "./runtime-state";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import {
   makeCodexAuthJson,
@@ -41,10 +40,7 @@ export function createPublicPiMemorySource(
   context: TestContext,
   options: {
     readonly cashCredits?: 100_000;
-    readonly sourceProvider?:
-      | "built-in"
-      | "openai-api-key"
-      | "custom-openai-responses";
+    readonly sourceProvider?: "built-in";
     readonly beforeMemoryPublication?: (agentId: string) => Promise<void>;
     readonly sources?: readonly string[];
     readonly memoryFiles?: (
@@ -71,53 +67,14 @@ export function createPublicPiMemorySource(
     if (!fixture.actor.orgId) {
       throw new Error("Expected source organization");
     }
-    let sourceModel: "gpt-6-luna" | "gpt-5.6-luna" | "deepseek-v4.1-flash" =
-      "gpt-6-luna";
-    let sourceProvider:
-      | Awaited<ReturnType<typeof createPhase2Provider>>
-      | undefined;
-    if (options.sourceProvider) {
-      // The common consent owner remains real, but must not influence the
-      // original built-in/API-key source route in these worker scenarios.
+    if (options.sourceProvider === "built-in") {
+      // The subscription still records real Memory consent, but execution of
+      // these sources must use the platform's fixed Auto route.
       await disconnect(subscriptionId);
-      sourceModel =
-        options.sourceProvider === "built-in"
-          ? "deepseek-v4.1-flash"
-          : "gpt-5.6-luna";
-      if (options.sourceProvider === "built-in") {
-        await seedBuiltInModelKey(
-          context,
-          sourceModel,
-          fixture.registerCleanup,
-        );
-      } else {
-        sourceProvider = await createPhase2Provider(
-          context,
-          { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-          options.sourceProvider,
-          "org",
-          { registerCleanup: fixture.registerCleanup, miscApi: misc },
-        );
-      }
-      await chat.api.updateOrgModelPolicies(fixture.actor, [
-        {
-          model: sourceModel,
-          preferred: true,
-          defaultProviderType: options.sourceProvider,
-          credentialScope: "org",
-          modelProviderId:
-            options.sourceProvider === "custom-openai-responses"
-              ? null
-              : (sourceProvider?.binding.modelProviderId ?? null),
-          ...(options.sourceProvider === "custom-openai-responses"
-            ? {
-                modelProviderSurfaceId: sourceProvider?.binding.modelProviderId,
-              }
-            : {}),
-        },
-      ]);
+      await chat.configureBuiltInPiModel(fixture.actor);
+      return AUTO_RUN_MODEL;
     }
-    return { sourceModel, sourceProvider };
+    return "gpt-6-luna" as const;
   }
   function sourceIdentity(model: string) {
     return {
@@ -160,9 +117,7 @@ export function createPublicPiMemorySource(
           Math.floor(Math.max(now(), at.getTime()) / 1000) + 72 * 3600,
       });
     });
-    const { sourceModel, sourceProvider } = await configureSource(
-      subscription.accountSourceId,
-    );
+    const sourceModel = await configureSource(subscription.accountSourceId);
     const agent = await chat.bdd.createAgent(fixture.actor, {
       displayName: "Public Memory source",
       visibility: "private",
@@ -335,7 +290,6 @@ export function createPublicPiMemorySource(
       sources,
       triggerRunId: trigger.runId,
       subscription,
-      sourceProvider,
       publishedMemory,
       orgId: fixture.actor.orgId,
       userId: fixture.actor.userId,
@@ -376,11 +330,7 @@ export function createPublicPiMemorySource(
       http.post(
         options.sourceProvider === "built-in"
           ? "https://openrouter.ai/api/v1/responses"
-          : options.sourceProvider === "openai-api-key"
-            ? "https://api.openai.com/v1/responses"
-            : options.sourceProvider === "custom-openai-responses"
-              ? "https://phase2-gateway.example/v1/responses"
-              : /https:\/\/chatgpt\.com\/.*\/responses/u,
+          : /https:\/\/chatgpt\.com\/.*\/responses/u,
         async ({ request }) => {
           const bytes = Buffer.from(await request.arrayBuffer());
           const requestBody = (
@@ -445,20 +395,6 @@ export function createPublicPiMemorySource(
           );
         },
       ),
-    );
-  }
-  async function configureOrgApiKey(secret: string) {
-    fixture.registerCleanup(async () => {
-      await misc.deleteOrgModelProvider(
-        fixture.actor,
-        "openai-api-key",
-        [204, 404],
-      );
-    });
-    await misc.upsertOrgModelProvider(
-      fixture.actor,
-      { type: "openai-api-key", secret },
-      [200, 201],
     );
   }
   async function disconnect(accountId: string) {
@@ -544,7 +480,6 @@ export function createPublicPiMemorySource(
     installExtractionProvider,
     account,
     disconnect,
-    configureOrgApiKey,
     expireCredential,
     activateAccount,
   };

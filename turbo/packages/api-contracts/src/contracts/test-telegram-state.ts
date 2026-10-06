@@ -17,7 +17,6 @@ export const testTelegramStateActionBodySchema = z
       "seed-post-fixture",
       "delete-post-fixture",
       "get-post-run-state",
-      "seed-model-policies",
       "delete-fixture",
     ]),
   })

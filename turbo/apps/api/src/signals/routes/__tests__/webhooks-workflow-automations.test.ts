@@ -1,5 +1,5 @@
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -7,7 +7,6 @@ import { createApp } from "../../../app-factory";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { stageLegacyChatThreadSelectedModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -15,8 +14,19 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
+
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
 
 const TEST_APP_ROUTES = Object.freeze([
   ...webhooksWorkflowAutomationsRoutes,
@@ -40,8 +50,8 @@ function automationsClient() {
 }
 
 function modelProvidersByTypeClient() {
-  return setupApp({ context, routes: modelProvidersRoutes })(
-    modelProvidersByTypeContract,
+  return setupApp({ context, routes: personalModelProviderTestRoutes })(
+    personalModelProvidersByTypeContract,
   );
 }
 
@@ -305,7 +315,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
@@ -332,63 +342,6 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     });
     await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
       rejectedEvents,
-    );
-  });
-
-  it("does not consume a delivery key when enqueue model selection fails", async () => {
-    const { actor, workflowId } = await setupFixture();
-    const runsApi = createRunsApi(context);
-    runsApi.configureRunnerGroup();
-    const webhook = await createWebhookAutomation(workflowId);
-    const rawBody = JSON.stringify({ event: "restore-model-route" });
-    const timestamp = Math.floor(now() / 1000);
-    const delivery = {
-      token: webhook.token,
-      rawBody,
-      secret: webhook.secret,
-      timestamp,
-    };
-    // A legacy thread selection of a retired model resolves to its
-    // replacement at enqueue. The workspace has no route for the replacement
-    // (Opus 5.5 is not one of its policies), so capturing the input's model
-    // fails explicitly instead of falling back to the system default.
-    await stageLegacyChatThreadSelectedModelFixture({
-      threadId: webhook.threadId,
-      model: "claude-opus-4-8",
-    });
-    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
-      status: 500,
-      body: { error: "Internal server error" },
-    });
-    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
-      [],
-    );
-    await expect(wf.readAutomation(webhook.id)).resolves.toMatchObject({
-      lastReceivedAt: null,
-    });
-
-    // Adding a compatible route for the replacement lets the same delivery
-    // be admitted: the failed attempt did not consume its key.
-    await runsApi.ensureOrgModelProvider(actor, {
-      model: "claude-opus-5-5",
-    });
-    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
-      status: 200,
-      body: { success: true, duplicate: false },
-    });
-    const acceptedEvents = await wf.readThreadEvents(webhook.threadId);
-    expect(acceptedEvents).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.prompt",
-        runId: expect.any(String),
-      }),
-    );
-    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
-      status: 200,
-      body: { success: true, duplicate: true },
-    });
-    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
-      acceptedEvents,
     );
   });
 

@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
 
@@ -22,18 +22,29 @@ import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { userModelPreferenceRoutes } from "../user-model-preference";
-import { modelProvidersRoutes } from "../model-providers";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-reset-subscription";
+
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
+const personalModelProviderTestRoutes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+  ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersResetSubscriptionRoutes,
+]);
+
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
-const MODEL = "claude-sonnet-5";
+const MODEL = "claude-fable-5-1";
 const WELCOME_STEP_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
 const WELCOME_SCENE_BASE =
@@ -210,7 +221,7 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("creates a complete ordinary runless welcome with default model/media and connector state", async () => {
     const { actor, agentId } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Notification unavailable"),
     );
@@ -315,13 +326,13 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("falls back to the fixed default model and does not require generation credits", async () => {
     const { actor } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await accept(
-      setupApp({ context, routes: modelProvidersRoutes })(
-        modelProvidersByTypeContract,
+      setupApp({ context, routes: personalModelProviderTestRoutes })(
+        personalModelProvidersByTypeContract,
       ).delete({
         headers: headers(actor),
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
       }),
       [204],
     );
@@ -400,7 +411,7 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("inherits the member's chat model at creation", async () => {
     const { actor } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     await accept(
       setupApp({ context, routes: userModelPreferenceRoutes })(
         userModelPreferenceContract,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isPiExecutionRoute,
-  isPiPolicyAdmittedRoute,
+  isPiAdmittedRoute,
   isPiRouteRuntimeCapable,
   piCatalogModel,
   piRouteCatalogIdentities,
@@ -99,15 +99,6 @@ function label(route: AdmittedRoute, identity: PiRuntimeIdentity): string {
   ].join(" | ");
 }
 
-/**
- * Policy-admitted routes the capability gate is expected to refuse: the catalog
- * lets a custom Responses gateway serve okou-1.0, but the pinned runtime has no
- * `openai` identity for it. The gate comparison below still covers them.
- */
-const CAPABILITY_REFUSED_ROUTES: ReadonlySet<string> = new Set([
-  "okou-1.0 | custom-openai-responses | custom-openai-responses | openai:okou-1.0",
-]);
-
 function seededBuiltInProviderTypes(selectedModel: string): readonly string[] {
   const model = piCatalogModel(SEEDED_MODEL_CATALOG, selectedModel);
   if (!model) {
@@ -123,13 +114,13 @@ function seededBuiltInProviderTypes(selectedModel: string): readonly string[] {
  * capability gate. Enumerating after it would let a dropped capability entry
  * remove its own route from the comparison instead of failing this test.
  */
-function policyAdmittedRoutes(): readonly AdmittedRoute[] {
+function admittedRoutes(): readonly AdmittedRoute[] {
   const routes: AdmittedRoute[] = [];
   for (const selectedModel of SEEDED_ROUTED_MODELS) {
     const providers = new Set<string>([
-      ...seededProviderTypes(selectedModel),
-      "custom-anthropic-messages",
-      "custom-openai-responses",
+      "built-in",
+      "codex-oauth-token",
+      "claude-code-oauth-token",
     ]);
     for (const modelProviderType of providers) {
       const runtimes =
@@ -144,7 +135,7 @@ function policyAdmittedRoutes(): readonly AdmittedRoute[] {
             runtimeProviderType,
             codexServiceTier,
           };
-          if (isPiPolicyAdmittedRoute(routeArgs(route))) {
+          if (isPiAdmittedRoute(routeArgs(route))) {
             routes.push(route);
           }
         }
@@ -167,16 +158,13 @@ describe("pinned Pi runtime capability", () => {
   });
 
   it("agrees with the resolver on every admitted model and route", () => {
-    const routes = policyAdmittedRoutes();
+    const routes = admittedRoutes();
     expect(routes.length).toBeGreaterThan(0);
     const disagreements: string[] = [];
     for (const route of routes) {
       const identities = piRouteCatalogIdentities(routeArgs(route));
       for (const identity of identities) {
-        if (
-          !resolvesInRuntime(identity) &&
-          !CAPABILITY_REFUSED_ROUTES.has(label(route, identity))
-        ) {
+        if (!resolvesInRuntime(identity)) {
           disagreements.push(`unresolvable ${label(route, identity)}`);
         }
       }
@@ -203,7 +191,7 @@ describe("pinned Pi runtime capability", () => {
           runtimeProviderType: modelProviderType,
           codexServiceTier: undefined,
         }),
-      ).toBe(modelProviderType !== "claude-code-oauth-token");
+      ).toBe(false);
     }
   });
 
@@ -226,7 +214,7 @@ describe("pinned Pi runtime capability", () => {
             runtimeProviderType: modelProviderType,
             codexServiceTier: undefined,
           }),
-        ).toBe(true);
+        ).toBe(modelProviderType === "codex-oauth-token");
       }
     },
   );

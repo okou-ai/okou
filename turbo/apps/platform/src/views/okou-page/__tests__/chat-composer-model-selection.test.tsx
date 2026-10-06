@@ -1,4 +1,22 @@
 import {
+  chatThreadsContract,
+  type ChatThreadEvent,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  isBuiltInModelProviderType,
+  type AvailableRunModel,
+  type ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
+import {
+  userModelPreferenceContract,
+  type UpdateUserModelPreferenceRequest,
+  type UserModelPreferenceResponse,
+} from "@okouai/api-contracts/contracts/user-model-preference";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import {
   mockCatalogBuiltInProvider,
   mockCatalogDisplayName,
 } from "../../../mocks/handlers/api-model-catalog.ts";
@@ -6,36 +24,15 @@ import {
   findModelMenuOption,
   modelMenuOption,
 } from "./chat-model-menu-test-helpers.ts";
-import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
-import {
-  chatThreadsContract,
-  type ChatThreadEvent,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  type ModelProviderType,
-  type OrgModelPolicy,
-  isBuiltInModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  type UpdateUserModelPreferenceRequest,
-  type UserModelPreferenceResponse,
-  userModelPreferenceContract,
-} from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
-import { triggerAblyEvent } from "../../../mocks/ably.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { triggerAblyEvent } from "../../../mocks/ably.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   context,
   findButton,
@@ -46,10 +43,9 @@ import {
   RUN_THREAD_ID,
 } from "./chat-run-test-fixtures.ts";
 
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const POLICY_DATE = "2026-08-12T09:00:00.000Z";
 
@@ -58,15 +54,21 @@ interface PolicyOptions {
   readonly credentialScope?: "member" | "org";
 }
 
-function modelPolicy(
+function runModelFixture(
   model: string,
   index: number,
   options: PolicyOptions = {},
-): OrgModelPolicy {
-  const providerType = options.providerType ?? "built-in";
-  const credentialScope = options.credentialScope ?? "org";
+): AvailableRunModel {
+  const providerType =
+    options.providerType ??
+    (model === "okou-1.0"
+      ? "built-in"
+      : model.startsWith("claude-")
+        ? "claude-code-oauth-token"
+        : "codex-oauth-token");
+  const credentialScope =
+    options.credentialScope ?? (model === "okou-1.0" ? "org" : "member");
   return {
-    id: `e1000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
     modelLabel: mockCatalogDisplayName(model),
     defaultProviderType: providerType,
@@ -78,18 +80,16 @@ function modelPolicy(
       credentialScope === "member"
         ? `e2000000-0000-4000-a000-${String(index).padStart(12, "0")}`
         : null,
-    modelProviderSurfaceId: null,
     routeStatus: "valid",
     routeStatusReason: null,
-    createdAt: POLICY_DATE,
-    updatedAt: POLICY_DATE,
   };
 }
 
-function configurePolicies(models: readonly string[]): void {
-  context.mocks.data.orgModelPolicies(
+function configureRunModels(models: readonly string[]): void {
+  installConnectedPersonalSubscriptions(context);
+  context.mocks.data.availableRunModels(
     models.map((model, index) => {
-      return modelPolicy(model, index + 1);
+      return runModelFixture(model, index + 1);
     }),
   );
 }
@@ -112,7 +112,7 @@ function installNewChat(
   selectedModel: string,
 ): void {
   installRunChat({ selectedModel });
-  configurePolicies(models);
+  configureRunModels(models);
   context.mocks.data.userModelPreference(preference(selectedModel));
 }
 
@@ -186,29 +186,6 @@ function buttonNamed(
     throw new Error(`Button ${name} was not visible`);
   }
   return button;
-}
-
-function limitedFreeBillingStatus(): BillingStatusResponse {
-  return {
-    showUsagePack: false,
-    tier: "limited-free-1",
-    ...billingPlanCapabilities("limited-free-1"),
-    supportByok: true,
-    restrictedBuiltInModels: true,
-    credits: 0,
-    onboardingPaymentPending: false,
-    subscriptionStatus: null,
-    currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: false,
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 2,
-    concurrencySubscriptions: [],
-  };
 }
 
 test("Make a new-chat model choice the default immediately", async () => {
@@ -322,66 +299,6 @@ test("Follow model preference changes made in another session", async () => {
   await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
 });
 
-test("Explain model availability by plan and provider", async () => {
-  const user = userEvent.setup({ delay: null });
-  installRunChat({ selectedModel: "deepseek-v4-flash" });
-  context.mocks.data.userModelPreference(preference("deepseek-v4-flash"));
-  context.mocks.data.orgModelPolicies([
-    modelPolicy("deepseek-v4-flash", 1),
-    modelPolicy("gpt-5.6-luna", 2),
-    modelPolicy("gpt-5.6-sol", 3),
-    modelPolicy("claude-fable-5-1", 4),
-    modelPolicy("gpt-6-astra", 5),
-    modelPolicy("claude-sonnet-5", 6, {
-      providerType: "anthropic-api-key",
-      credentialScope: "member",
-    }),
-  ]);
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, limitedFreeBillingStatus());
-  });
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
-  });
-
-  await readyComposer();
-  await user.click(await modelPicker("DeepSeek V4 Flash"));
-  await expect(
-    findModelMenuOption(/^DeepSeek V4 Flash/iu),
-  ).resolves.toBeVisible();
-  // A row carries its cost glyphs and plan badge beside the model name, so it
-  // is addressed by that name as a prefix.
-  expect(modelMenuOption(/^GPT 5\.6 Luna/iu)).toBeVisible();
-  expect(modelMenuOption(/^GPT 6 Astra.*Pro/iu)).toBeVisible();
-  // The free plan runs only the catalog's free Built-in model; every listed
-  // Built-in model and the member's own API-key route ask for a paid plan.
-  expect(screen.getAllByText("Pro")).toHaveLength(6);
-  expect(screen.getByText("BYOK")).toBeVisible();
-  const byokOption = modelMenuOption(/^Claude Sonnet 5/iu);
-  expect(within(byokOption).getByText("Pro")).toBeVisible();
-
-  await user.click(byokOption);
-  const planDialog = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  expect(planDialog).toBeVisible();
-  // The composer opened the upgrade flow, so dismissing it returns to the
-  // composer instead of leaving the Settings billing tab open underneath.
-  click(buttonNamed("Close", planDialog));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Choose a plan" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(
-    screen.queryByRole("dialog", { name: "Settings" }),
-  ).not.toBeInTheDocument();
-  await expect(modelPicker("DeepSeek V4 Flash")).resolves.toBeVisible();
-});
-
 test("Switch chat models immediately and adjust Fast from settings", async () => {
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
@@ -412,7 +329,9 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     ).not.toBeInTheDocument();
   });
   const settings = await openEffortPanel();
-  expect(within(settings).getByText("2× credit cost")).toBeInTheDocument();
+  expect(
+    within(settings).getByText("2.5× subscription usage"),
+  ).toBeInTheDocument();
   click(screen.getByRole("switch", { name: "Fast mode" }));
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast mode" })).toBeChecked();
@@ -426,50 +345,10 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
   expect(screen.getByRole("switch", { name: "Fast mode" })).toBeChecked();
 });
 
-test("Keep unavailable routes disabled and open plan comparison from the menu", async () => {
-  installNewChat(
-    ["deepseek-v4-flash", "claude-fable-5-1", "gpt-5.6-sol"],
-    "deepseek-v4-flash",
-  );
-  context.mocks.data.orgModelPolicies([
-    modelPolicy("deepseek-v4-flash", 1),
-    modelPolicy("claude-fable-5-1", 2),
-    {
-      ...modelPolicy("gpt-5.6-sol", 3),
-      routeStatus: "missing_provider",
-      routeStatusReason: "No provider available",
-    },
-  ]);
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, limitedFreeBillingStatus());
-  });
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
-  });
-  await readyComposer();
-  const list = await openModelMenu("DeepSeek V4 Flash");
-  expect(modelMenuOption(/^GPT 5\.6 Sol/u, list)).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  expect(modelMenuOption(/^Claude Fable 5\.1/u, list)).toHaveTextContent("Pro");
-  click(modelMenuOption(/^Claude Fable 5\.1/u, list));
-  const dialog = await screen.findByRole("dialog", { name: "Choose a plan" });
-  click(buttonNamed("Close", dialog));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Choose a plan" }),
-    ).not.toBeInTheDocument();
-  });
-  await expect(findButton("DeepSeek V4 Flash")).resolves.toBeVisible();
-});
-
 test("Adjust effort from the composer without opening the model picker", async () => {
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
-  configurePolicies(["gpt-5.6-sol"]);
+  configureRunModels(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -511,7 +390,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
       creates.push(body);
     },
   });
-  configurePolicies(["gpt-5.6-sol"]);
+  configureRunModels(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -567,7 +446,7 @@ test("Select the default effort on an existing thread without changing Fast", as
       updates.push(body);
     },
   });
-  configurePolicies(["gpt-5.6-sol"]);
+  configureRunModels(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: RUN_PATH,
@@ -680,7 +559,7 @@ test.each(["gpt-5.6-luna", "gpt-6-luna"])(
         updates.push(body);
       },
     });
-    configurePolicies([model]);
+    configureRunModels([model]);
     await setupPage({
       context,
       path: RUN_PATH,
@@ -719,7 +598,7 @@ test("Show the Pi fallback without overwriting a saved native preference", async
       updates.push(body);
     },
   });
-  configurePolicies(["gpt-5.6-sol"]);
+  configureRunModels(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: RUN_PATH,
@@ -784,7 +663,7 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
 test("Follow model-scoped effort changes made in another session", async () => {
   const events: ChatThreadEvent[] = [];
   installRunChat({ selectedModel: "claude-sonnet-5", reasoningEffort: "high" });
-  configurePolicies(["claude-sonnet-5"]);
+  configureRunModels(["claude-sonnet-5"]);
   context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
     return respond(200, {
       events: events.filter((event) => {
@@ -838,29 +717,18 @@ test("Follow model-scoped effort changes made in another session", async () => {
 test.each([
   {
     model: "gpt-6-astra",
-    providerType: "openai-api-key",
+    providerType: "codex-oauth-token",
     first: "Low",
     last: "Ultra",
-  },
-  {
-    model: "deepseek-v4-flash",
-    providerType: "deepseek",
-    first: "Low",
-    last: "Max",
-  },
-  {
-    model: "deepseek-v4-flash",
-    providerType: "openrouter-codex",
-    first: "High",
-    last: "xHigh",
   },
 ] as const)(
   "Offer $model efforts for $providerType with Pi enabled",
   async ({ model, providerType, first, last }) => {
     const user = userEvent.setup({ delay: null });
     installRunChat({ selectedModel: model });
-    context.mocks.data.orgModelPolicies([
-      modelPolicy(model, 1, { providerType }),
+    installConnectedPersonalSubscriptions(context);
+    context.mocks.data.availableRunModels([
+      runModelFixture(model, 1, { providerType }),
     ]);
     await setupPage({
       context,

@@ -47,13 +47,13 @@ export function createClaimedSshRuntimeApi(
     if (!paidOrganizations.has(owner.orgId)) {
       const bootstrapActor = bdd.user({ ...owner, orgRole: "org:admin" });
       await runs.grantProEntitlement(bootstrapActor);
-      await runs.ensureOrgModelProvider(bootstrapActor, {
-        model: "claude-fable-5-1",
-      });
       await bdd.readOnboardingStatus(bootstrapActor);
       paidOrganizations.add(owner.orgId);
     }
     const actor = bdd.user({ ...owner, orgRole: "org:member" });
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-sonnet-5-5",
+    });
     // The paid organization is shared, but each Run owner needs their own memory.
     await bdd.completeOnboarding(actor);
     // Each omitted Agent is a distinct public Agent, matching the ordinary fixture.
@@ -70,7 +70,7 @@ export function createClaimedSshRuntimeApi(
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId,
       prompt: "Use my configured SSH hosts",
-      model: "claude-fable-5-1",
+      model: "claude-sonnet-5-5",
     });
     active.set(runId, owner);
     const runnerIdentity = runtimeOptions.runnerIdentity ?? {

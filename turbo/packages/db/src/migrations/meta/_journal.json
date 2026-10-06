@@ -1730,6 +1730,27 @@
       "when": 1791276180234,
       "tag": "1324_org_openrouter_preset",
       "breakpoints": true
+    },
+    {
+      "idx": 1325,
+      "version": "7",
+      "when": 1791281381743,
+      "tag": "1325_retire_custom_model_configuration",
+      "breakpoints": true
+    },
+    {
+      "idx": 1326,
+      "version": "7",
+      "when": 1791281391076,
+      "tag": "1326_prune_retired_model_routes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1327,
+      "version": "7",
+      "when": 1791281400404,
+      "tag": "1327_preserve_subscription_route_effort_defaults",
+      "breakpoints": true
     }
   ]
 }

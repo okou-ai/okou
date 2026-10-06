@@ -229,7 +229,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
           customerId: fixture.customerId,
           subscriptionId: fixture.subscriptionId,
         });
-        await runs.ensureOrgModelProvider(fixture.actor, {
+        await runs.ensurePersonalSubscriptionModel(fixture.actor, {
           model: "claude-fable-5-1",
         });
       }

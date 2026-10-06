@@ -216,7 +216,7 @@ export function createPublicAutomaticCatalog(
       await runs.grantProEntitlement(actor, { customerId, subscriptionId });
       // Custom-mode setup writes this user override even when it ends false.
       featureSwitchCleanupNeeded = true;
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "BDD lifecycle agent",
         description: "Exercises the full run lifecycle.",

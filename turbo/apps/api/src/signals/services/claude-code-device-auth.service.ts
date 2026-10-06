@@ -1,13 +1,13 @@
-import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 import { createHash, randomBytes } from "node:crypto";
+import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
-import { command } from "ccstate";
 import type {
   ClaudeCodeDeviceAuthMode,
   ClaudeCodeDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
+import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
@@ -21,23 +21,19 @@ import {
   settle,
   tapError,
 } from "../utils";
+import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
 import {
   decryptPersistentSecretValue,
   decryptSecretValue,
   encryptPersistentSecretValue,
   encryptSecretValue,
 } from "./crypto.utils";
-import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   upsertPersonalModelProviderAccount$,
   type PersonalProviderAccountErrorResponse,
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
-import { userFeatureSwitchContext } from "./feature-switches.service";
-import {
-  upsertOrgModelProvider$,
-  type ModelProviderInfo,
-} from "./model-provider.service";
 
 const CLAUDE_CODE_DEVICE_AUTH_AUTHORIZE_URL =
   "https://claude.com/cai/oauth/authorize";
@@ -61,7 +57,7 @@ const claudeCodeDeviceAuthSessionTokenSchema = z.object({
 const claudeCodeDeviceAuthProviderStateSchema = z.object({
   version: z.literal(1),
   type: z.literal("claude-code"),
-  scope: z.enum(["org", "personal"]),
+  scope: z.literal("personal"),
   mode: z.enum(["add", "reconnect"]).optional(),
   modelProviderId: z.string().uuid().optional(),
   state: z.string().min(1),
@@ -744,30 +740,6 @@ function personalAccountMutation(args: {
   return { kind: "replace-active" };
 }
 
-function toModelProviderResponse(
-  provider: ModelProviderInfo,
-): ModelProviderResponse {
-  return {
-    id: provider.id,
-    type: provider.type,
-    framework: provider.framework,
-    secretName: provider.secretName,
-    authMethod: provider.authMethod,
-    secretNames: provider.secretNames,
-    isDefault: provider.isDefault,
-    selectedModel: provider.selectedModel,
-    workspaceName: provider.workspaceName,
-    planType: provider.planType,
-    subscriptionResetPeriod: provider.subscriptionResetPeriod,
-    subscriptionNextResetAt:
-      provider.subscriptionNextResetAt?.toISOString() ?? null,
-    needsReconnect: provider.needsReconnect,
-    lastRefreshErrorCode: provider.lastRefreshErrorCode,
-    createdAt: provider.createdAt.toISOString(),
-    updatedAt: provider.updatedAt.toISOString(),
-  };
-}
-
 const importClaudeCodeOAuthToken$ = command(
   async (
     { get, set },
@@ -797,29 +769,6 @@ const importClaudeCodeOAuthToken$ = command(
       ),
     );
     signal.throwIfAborted();
-
-    if (args.scope === "org") {
-      const result = await set(
-        upsertOrgModelProvider$,
-        {
-          orgId: args.orgId,
-          authSession: args.authSession,
-          type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
-          secret: args.accessToken,
-          metadata,
-        },
-        signal,
-      );
-      if ("status" in result) {
-        throw new Error(
-          "Claude Code OAuth token import returned an unexpected response",
-        );
-      }
-      return {
-        provider: toModelProviderResponse(result.provider),
-        created: result.created,
-      };
-    }
 
     const featureSwitchContext = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
@@ -883,12 +832,6 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
         status: "error",
         code: "CLAUDE_CODE_DEVICE_AUTH_FAILED",
         message: "Claude Code device auth session state is invalid",
-      };
-    }
-    if (providerState.scope === "org" && args.orgRole !== "admin") {
-      return {
-        status: "forbidden",
-        message: "Only admins can manage org model providers",
       };
     }
 

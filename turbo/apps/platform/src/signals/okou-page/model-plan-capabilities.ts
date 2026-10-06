@@ -1,13 +1,13 @@
-import { computed } from "ccstate";
 import {
   getCatalogRunModelRouteAccess,
   isBuiltInModelProviderType,
+  type AvailableRunModel,
   type ModelProviderType,
-  type OrgModelPolicy,
   type RestrictedPlanModelAccess,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { computed } from "ccstate";
 
-import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
+import { getMemberRunModelRoute } from "@okouai/api-contracts/contracts/member-run-model";
 
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import { orgPlanCapabilities$ } from "./org-plan-capabilities.ts";
@@ -15,14 +15,14 @@ import { orgPlanCapabilities$ } from "./org-plan-capabilities.ts";
 export interface ModelPlanCapabilities {
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  /** The catalog's plan policy of a model; undefined outside the catalog. */
+  /** The catalog's plan eligibility of a model; undefined outside the catalog. */
   readonly restrictedPlanAccess: (
     model: string,
   ) => RestrictedPlanModelAccess | undefined;
   /**
    * Whether the catalog has an enabled personal subscription route
    * (`subscriptionType`) of the provider type for the model. A member-scope
-   * policy on it runs only with each member's own valid subscription, which
+   * model on it runs only with each member's own valid subscription, which
    * every plan allows; the API verifies the account per run.
    */
   readonly subscriptionRouteServes: (
@@ -124,28 +124,17 @@ export function modelRouteAllowedForPlan(
   );
 }
 
-export function modelPolicyAllowedForPlan(
-  policy: Pick<OrgModelPolicy, "model" | "defaultProviderType">,
+/** Member controls use the caller-specific server projection. */
+export function memberRunModelAllowedForPlan(
+  runModel: AvailableRunModel,
   capabilities: ModelPlanCapabilities,
 ): boolean {
-  return modelRouteAllowedForPlan(
-    policy.model,
-    policy.defaultProviderType,
-    capabilities,
-  );
-}
-
-/** Member controls use the server projection; organization settings keep the helper above. */
-export function memberModelPolicyAllowedForPlan(
-  policy: OrgModelPolicy,
-  capabilities: ModelPlanCapabilities,
-): boolean {
-  const route = getMemberModelPolicyRoute(policy);
-  if (policy.subscriptionOptions) {
+  const route = getMemberRunModelRoute(runModel);
+  if (runModel.subscriptionOptions) {
     return route.availability !== "plan_restricted";
   }
   return (
     route.availability !== "plan_restricted" &&
-    modelRouteAllowedForPlan(policy.model, route.providerType, capabilities)
+    modelRouteAllowedForPlan(runModel.model, route.providerType, capabilities)
   );
 }

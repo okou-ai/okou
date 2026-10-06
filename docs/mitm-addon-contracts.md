@@ -470,7 +470,7 @@ the threshold. The API captures this value from the assigned catalog route:
 
 See [deployment requirements](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
 The `.fast` and `.ultrafast` suffixes follow the observed service tier.
-See [model catalog](model-catalog.md#long-context-classification).
+See [model catalog](model-catalog.md#billing-and-history).
 
 ## Model-provider failure reporting shutdown
 

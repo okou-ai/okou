@@ -4833,7 +4833,6 @@
         },
         "model": {
           "autoDescription": "Okou elige el modelo para cada tarea.",
-          "description": "Elige qué modelos de IA utilizarán tu espacio de trabajo y tus ejecuciones.",
           "title": "Modelos"
         },
         "people": {
@@ -4923,21 +4922,7 @@
     },
     "models": {
       "actions": {
-        "addModel": "Añadir modelo",
-        "deleteModel": "Eliminar modelo",
-        "editModel": "Editar modelo",
-        "resetUsage": "Restablecer uso",
-        "upgradePro": "Actualizar a Pro para usarlo",
-        "upgradeToPro": "Actualizar a Pro"
-      },
-      "autoMode": {
-        "cancel": "Cancelar",
-        "confirm": "Cambiar a Auto Model",
-        "confirmDescription": "Esto elimina permanentemente las políticas de modelos de la organización, sus conexiones de proveedores y las credenciales que ya no se utilicen. Solo quedará Auto como política de la organización. Las suscripciones personales de los miembros seguirán conectadas y podrán añadir modelos. Volver a Custom no restaurará la configuración eliminada.",
-        "confirmTitle": "¿Cambiar este espacio de trabajo a Auto Model?",
-        "description": "Usa Auto como política de la organización; las suscripciones personales añaden modelos para los miembros.",
-        "failed": "No se pudo cambiar el modo de modelos. Actualiza la configuración e inténtalo de nuevo.",
-        "title": "Auto Model"
+        "resetUsage": "Restablecer uso"
       },
       "deviceAuth": {
         "claude": {
@@ -4973,44 +4958,8 @@
           "signIn": "Iniciar sesión con ChatGPT"
         }
       },
-      "gateways": {
-        "actions": "Acciones del gateway",
-        "add": "Añadir proveedor",
-        "addTitle": "Añadir proveedor de modelos",
-        "apiBaseUrl": "URL base de la API",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "Clave API",
-        "deleteConfirm": "¿Eliminar esta conexión con el proveedor de modelos? Las rutas de modelos que la usen dejarán de estar disponibles.",
-        "description": "Conecta un gateway gestionado por un administrador mediante Anthropic Messages, OpenAI Responses o ambos.",
-        "dialogDescription": "Configura cada protocolo con la URL base de la API que usa Claude Code o Codex.",
-        "editTitle": "Editar proveedor de modelos",
-        "errors": {
-          "invalidMappings": "Las asignaciones de modelos deben ser un objeto JSON cuyos valores sean nombres de modelos ascendentes.",
-          "missingProtocol": "Habilita al menos un protocolo.",
-          "missingSecret": "Introduce una clave API."
-        },
-        "headerName": "Cabecera de autenticación",
-        "headerValue": "Plantilla del valor de la cabecera",
-        "keepKey": "Déjalo en blanco para conservar la clave actual",
-        "modelMappings": "Asignaciones de modelos (JSON)",
-        "name": "Nombre",
-        "presets": {
-          "custom": "Personalizado",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "Solicitudes",
-        "title": "Conexiones de proveedores"
-      },
       "personal": {
         "accountFallback": "Cuenta {{number}}",
-        "accountsDescription": "Elige la cuenta que usa cada proveedor para las nuevas ejecuciones.",
-        "accountsSectionTitle": "Cuentas personales",
         "activeAccount": "Activa",
         "autoDescription": "Conecta tu cuenta de Claude o ChatGPT para usar más modelos.",
         "autoTitle": "Usa más modelos",
@@ -5037,8 +4986,6 @@
         "useAccount": "Usar"
       },
       "picker": {
-        "builtInModel": "Modelo integrado",
-        "byokHelp": "Usa el proveedor que has configurado",
         "chatModels": "Modelos de chat",
         "effort": "Esfuerzo",
         "effortScale": {
@@ -5051,8 +4998,8 @@
         },
         "fast": "Rápido",
         "fastImpact": {
-          "creditCost": "{{multiplier}}× el coste en créditos",
-          "providerUsage": "El consumo depende del proveedor"
+          "providerUsage": "El consumo depende del proveedor",
+          "subscriptionUsage": "{{multiplier}}× uso de la suscripción"
         },
         "fastMode": "Modo rápido",
         "generationPriceTiers": {
@@ -5066,56 +5013,11 @@
         "loading": "Cargando modelos...",
         "models": "Modelos",
         "noConfiguredModels": "Sin modelos configurados",
-        "priceTiers": {
-          "balanced": "Coste y rendimiento equilibrados",
-          "economy": "Nivel económico para tareas cotidianas y sencillas",
-          "frontier": "Modelo insignia de última generación",
-          "premium": "Modelo prémium de última generación para las tareas más difíciles"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Portal de Azure AI Foundry",
-          "claudeCodeOauth": "Claude Code (token OAuth)",
-          "deepseek": "Deepseek"
-        },
         "standard": "Estándar",
         "ultrafast": "Ultrarrápido",
         "ultrafastImpact": "Hasta 8× más velocidad de tokens · 6× el precio de tokens de la API de OpenAI",
         "ultrafastMode": "Modo ultrarrápido"
-      },
-      "policies": {
-        "actionsFor": "Acciones para {{model}}",
-        "apiKey": "Clave API",
-        "apiKeyDescription": "Una clave compartida por el espacio de trabajo, ideal cuando el equipo factura mediante una sola cuenta.",
-        "apiKeyPlaceholder": "Introduce tu clave API",
-        "apiKeyRequired": "Se requiere clave API",
-        "availableModels": "Modelos disponibles",
-        "builtIn": "Integrado",
-        "builtInDescription": "Los créditos de espacio de trabajo cubren el uso.",
-        "claudeSubscription": "Suscripción de Claude",
-        "claudeSubscriptionDescription": "Cada miembro conecta su propio plan Pro, Max o Equipo.",
-        "codexSubscription": "Suscripción de Codex",
-        "codexSubscriptionDescription": "Cada miembro conecta su propio plan Pro o Equipo.",
-        "dialogDescription": "Decide cómo acceden los miembros a este modelo.",
-        "gateway": "Gateway personalizado",
-        "gatewayDescription": "Enrutar mediante una conexión de proveedor definida por un administrador.",
-        "gatewayProvider": "Conexión de proveedor",
-        "getKey": "Obtener una clave",
-        "invalidRoute": "Ruta inválida",
-        "missingProvider": "Falta el proveedor",
-        "model": "Modelo",
-        "noMappedGateway": "Ninguna conexión de proveedor asigna este modelo.",
-        "orgDefaultModelLocked": "Auto no se puede eliminar",
-        "pricing": "Precios",
-        "providedBy": "Proporcionado por",
-        "provider": "Proveedor",
-        "providerApiKey": "Clave API de {{provider}}",
-        "runsThrough": "Se ejecuta mediante",
-        "secretStored": "Almacenado en secretos del espacio de trabajo.",
-        "selectGateway": "Seleccionar una conexión de proveedor",
-        "selectModel": "Seleccionar un modelo",
-        "selectProvider": "Seleccionar un proveedor",
-        "workspaceDescription": "Disponible para todos en este espacio de trabajo."
       },
       "reset": {
         "confirmDescription": "Usa un restablecimiento de Codex para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
@@ -5130,20 +5032,9 @@
         "remainingWithExpiry_other": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
         "title": "¿Restablecer el uso de Codex?"
       },
-      "stale": {
-        "claudeExpired": "Tu sesión de Claude Code ha caducado. Vuelve a conectarla para continuar.",
-        "claudeFailed": "No se pudo actualizar Claude Code. Vuelve a conectarlo para reintentarlo.",
-        "claudeTitle": "La sesión de Claude Code debe volver a conectarse",
-        "codexExpired": "Tu sesión de ChatGPT ha expirado. Reconecta para continuar.",
-        "codexFailed": "No se pudo actualizar la sesión de ChatGPT. Vuelve a conectarla para intentarlo de nuevo.",
-        "codexInvalidated": "Tu sesión de ChatGPT ha sido revocada. Reconecta.",
-        "codexReused": "Tu sesión de ChatGPT se usó en otro sitio. Reconéctate.",
-        "codexTitle": "La sesión de ChatGPT necesita reconexión"
-      },
       "toasts": {
         "accountDisconnected": "Cuenta desconectada",
         "accountSwitched": "Cuenta activa cambiada",
-        "policiesUpdated": "Configuración del proveedor de modelos actualizada",
         "reset": "Uso de Codex restablecido",
         "resetUnavailable": "No hay reinicios de uso de Codex disponibles",
         "resetUnneeded": "No es necesario restablecer el uso de Codex ahora"
@@ -5418,10 +5309,8 @@
       "connecting": "Conectando...",
       "delete": "Eliminar",
       "discard": "Descartar",
-      "edit": "Editar",
       "loading": "Cargando",
       "moreOptions": "Más opciones",
-      "reconnect": "Volver a conectar",
       "remove": "Eliminar",
       "save": "Guardar",
       "saveChanges": "Guardar cambios",

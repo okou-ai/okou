@@ -1,25 +1,28 @@
-import { mockCatalogDisplayName } from "../../../mocks/handlers/api-model-catalog.ts";
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import type {
-  ModelProviderResponse,
-  OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import type {
+  AvailableRunModel,
+  ModelProviderResponse,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { mockCatalogDisplayName } from "../../../mocks/handlers/api-model-catalog.ts";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
-import { setupPage } from "./chat-lifecycle-test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
@@ -34,8 +37,6 @@ import {
   RUN_PATH,
   sendText,
 } from "./chat-run-test-fixtures.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const RUN_A = "a0000000-0000-4000-a000-000000000301";
 const RUN_B = "a0000000-0000-4000-a000-000000000302";
@@ -44,7 +45,7 @@ const RUN_D = "a0000000-0000-4000-a000-000000000304";
 const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
 
 function configureCodexSubscriptionPolicies(models: readonly string[]): void {
-  configureModelPolicies(models, {
+  configureRunModels(models, {
     credentialScope: "member",
     defaultProviderType: "codex-oauth-token",
     modelProviderId: PROVIDER_ID,
@@ -76,7 +77,7 @@ function recoveryCard(): Promise<HTMLElement> {
   return screen.findByTestId("assistant-error-recovery");
 }
 
-function configureModelPolicies(
+function configureRunModels(
   models: readonly string[],
   options: {
     readonly credentialScope?: "member" | "org";
@@ -84,23 +85,30 @@ function configureModelPolicies(
     readonly modelProviderId?: string | null;
   } = {},
 ): void {
-  const createdAt = "2026-08-01T09:00:00.000Z";
-  const policies: OrgModelPolicy[] = models.map((model, index) => {
+  const routes: AvailableRunModel[] = models.map((model) => {
     return {
-      id: `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
       model,
       modelLabel: mockCatalogDisplayName(model),
-      defaultProviderType: options.defaultProviderType ?? "built-in",
-      credentialScope: options.credentialScope ?? "org",
+      defaultProviderType:
+        options.defaultProviderType ??
+        (model === "okou-1.0"
+          ? "built-in"
+          : model.startsWith("claude-")
+            ? "claude-code-oauth-token"
+            : "codex-oauth-token"),
+      credentialScope:
+        options.credentialScope ?? (model === "okou-1.0" ? "org" : "member"),
       modelProviderId: options.modelProviderId ?? null,
-      modelProviderSurfaceId: null,
       routeStatus: "valid",
       routeStatusReason: null,
-      createdAt,
-      updatedAt: createdAt,
     };
   });
-  context.mocks.data.orgModelPolicies(policies);
+  context.mocks.data.availableRunModels(routes);
+}
+
+function configureConnectedRunModels(models: readonly string[]): void {
+  installConnectedPersonalSubscriptions(context);
+  configureRunModels(models);
 }
 
 function limitedFreeBillingStatus(): BillingStatusResponse {
@@ -247,7 +255,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     picker: true,
   },
   usage_limit: {
-    title: "Model provider limit reached",
+    title: "Codex limit reached",
     action: "Try again",
     picker: true,
   },
@@ -261,7 +269,7 @@ const STRUCTURED_FAILURE_CASES = Object.entries(
 test.each(STRUCTURED_FAILURE_CASES)(
   "Render structured failure %s without a recovery details dialog",
   async (failureReason, expected) => {
-    configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
     if (failureReason === "insufficient_credits") {
       context.mocks.data.org({
         id: "org_structured_failure",
@@ -322,7 +330,7 @@ test.each(STRUCTURED_FAILURE_CASES)(
 );
 
 test("shows Auto once for a configured Okou model", async () => {
-  configureModelPolicies(["okou-1.0", "gpt-5.6-luna"]);
+  configureConnectedRunModels(["okou-1.0", "gpt-5.6-luna"]);
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   await setupPage({
     context,
@@ -361,7 +369,7 @@ test("shows Auto once for a configured Okou model", async () => {
 test("Keep a next-run model choice through active-run steering", async () => {
   const steeringQueued = context.mocks.deferred<void>();
   const runModels: (string | undefined)[] = [];
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
   const lifecycle = installRunChat({
     selectedModel: "gpt-5.6-luna",
     activeRunIds: [RUN_A],
@@ -438,7 +446,7 @@ test("Keep a next-run model choice through active-run steering", async () => {
 test("Preserve the current execution mode for an active-run follow-up", async () => {
   let followupFastMode: string | undefined;
   let followupModelChoice: string | null | undefined;
-  configureModelPolicies(["gpt-5.6-sol"]);
+  configureConnectedRunModels(["gpt-5.6-sol"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     codexServiceTier: "fast",
@@ -490,7 +498,7 @@ test("Preserve the current execution mode for an active-run follow-up", async ()
 
 test("Preserve which model a message was sent with", async () => {
   let sentDocument: MockChatEventInput["userMessage"];
-  configureModelPolicies(["claude-sonnet-5"]);
+  configureConnectedRunModels(["claude-sonnet-5"]);
   installRunChat({
     selectedModel: "claude-sonnet-5",
     onRunCreate: (body) => {
@@ -520,7 +528,7 @@ test("Preserve which model a message was sent with", async () => {
 });
 
 test("Mark model and speed transitions between runs", async () => {
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-luna",
     chatEvents: [
@@ -600,7 +608,7 @@ test("Mark model and speed transitions between runs", async () => {
 
 test("A structured capacity failure offers recovery despite generic provider text", async () => {
   const providerError = "The provider could not complete this run.";
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     chatEvents: failedRunEvents(
@@ -633,7 +641,7 @@ test.each([
 ] as const)(
   "A structured provider failure (%s) shows concise inline recovery",
   async (_owner, failureReason, message, title, action) => {
-    configureModelPolicies(["gpt-5.6-sol"]);
+    configureConnectedRunModels(["gpt-5.6-sol"]);
     installRunChat({
       selectedModel: "gpt-5.6-sol",
       chatEvents: failedRunEvents(message, "gpt-5.6-sol", failureReason),
@@ -762,7 +770,11 @@ test("Show the reset time for a limit reached while the thread is open", async (
 
 test("Recover when a model is at capacity", async () => {
   const user = userEvent.setup({ delay: null });
-  configureModelPolicies(["gpt-5.6-luna", "deepseek-v4-flash", "gpt-5.6-sol"]);
+  configureConnectedRunModels([
+    "gpt-5.6-luna",
+    "claude-sonnet-5",
+    "gpt-5.6-sol",
+  ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, limitedFreeBillingStatus());
   });
@@ -789,10 +801,10 @@ test("Recover when a model is at capacity", async () => {
     screen.findByRole("option", { name: "GPT 5.6 Luna" }),
   ).resolves.toBeVisible();
   expect(
-    screen.getByRole("option", { name: /^DeepSeek V4 Flash/iu }),
+    screen.getByRole("option", { name: /^Claude Sonnet 5/iu }),
   ).toBeVisible();
-  const paidOnlyOption = screen.getByRole("option", { name: "GPT 5.6 Sol" });
-  expect(within(paidOnlyOption).getByText("Pro")).toBeVisible();
+  const personalOption = screen.getByRole("option", { name: "GPT 5.6 Sol" });
+  expect(personalOption).not.toBeDisabled();
   await user.keyboard("{Escape}");
 
   click(await findButton("Try again"));
@@ -877,14 +889,14 @@ test("Show a disconnected subscription on the current route", async () => {
 
 test("Leave a usage limit neutral once the thread leaves the subscription", async () => {
   installRunChat({
-    selectedModel: "gpt-5.6-sol",
+    selectedModel: "okou-1.0",
     chatEvents: failedRunEvents(
       "You've hit your usage limit.",
       "gpt-5.6-sol",
       "usage_limit",
     ),
   });
-  configureModelPolicies(["gpt-5.6-sol"]);
+  configureConnectedRunModels(["gpt-5.6-sol"]);
   context.mocks.data.personalModelProviders([codexSubscriptionAccount()]);
   await setupPage({
     context,
@@ -939,7 +951,7 @@ test("A failed subscription reset keeps the thread idle", async () => {
 test("Continue a run that reached its execution time limit", async () => {
   const retriedPrompts: (string | undefined)[] = [];
   const retriedMessages: unknown[] = [];
-  configureModelPolicies(["gpt-5.6-sol"]);
+  configureConnectedRunModels(["gpt-5.6-sol"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     chatEvents: failedRunEvents(
@@ -990,7 +1002,7 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED"])(
   "Confirm continuation after an automatic run limit (%s)",
   async (error) => {
     const sentMessages: unknown[] = [];
-    configureModelPolicies(["gpt-5.6-sol"]);
+    configureConnectedRunModels(["gpt-5.6-sol"]);
     installRunChat({
       selectedModel: "gpt-5.6-sol",
       chatEvents: [
@@ -1042,7 +1054,7 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED"])(
 test("Preserve provider errors that have no guided recovery", async () => {
   const providerError =
     "Selected model capacity warning from a custom gateway; contact its operator.";
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     chatEvents: failedRunEvents(providerError, "gpt-5.6-sol"),
@@ -1082,7 +1094,7 @@ test("Continue on a replacement model after the connected account rejects one", 
   const user = userEvent.setup({ delay: null });
   const sentModels: (string | undefined)[] = [];
   const selectionWritten = context.mocks.deferred<void>();
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     chatEvents: failedRunEvents(UNSUPPORTED_MODEL_ERROR, "gpt-5.6-sol"),
