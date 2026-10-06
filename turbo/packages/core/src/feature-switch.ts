@@ -433,12 +433,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Replace the composer's flat slash menu with a two-pane panel that previews each template type's covers.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ComposerTemplateChipCover]: {
     maintainer: "tongx@okou.ai",
     description:

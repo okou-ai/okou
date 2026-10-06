@@ -1,7 +1,6 @@
 // The two-pane slash panel. The left column indexes what you can make and the
 // workflows you have; the right pane previews a type independently of selection.
-// Kept beside the flat menu in slash-workflow.tsx so both can render from the
-// same suggestion state while the feature switch decides which one is shown.
+// It renders inside the slash menu's popover shell from slash-workflow.tsx.
 import type { Ref } from "react";
 import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
 import { cn, Popover, PopoverContent } from "@okouai/ui";

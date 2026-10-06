@@ -1812,8 +1812,7 @@
       "workflows": {
         "empty": "Aucun workflow correspondant",
         "loading": "Chargement des workflows...",
-        "title": "Workflows",
-        "viewAll": "Afficher tous les workflows"
+        "title": "Workflows"
       }
     },
     "computerUse": {

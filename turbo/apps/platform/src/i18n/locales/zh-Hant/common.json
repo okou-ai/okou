@@ -1780,8 +1780,7 @@
       "workflows": {
         "empty": "沒有匹配的工作流",
         "loading": "正在載入工作流…",
-        "title": "工作流",
-        "viewAll": "檢視全部工作流"
+        "title": "工作流"
       }
     },
     "computerUse": {

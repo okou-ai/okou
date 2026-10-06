@@ -1780,8 +1780,7 @@
       "workflows": {
         "empty": "Tidak ada alur kerja yang cocok",
         "loading": "Memuat alur kerja...",
-        "title": "Alur kerja",
-        "viewAll": "Lihat semua alur kerja"
+        "title": "Alur kerja"
       }
     },
     "computerUse": {

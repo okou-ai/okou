@@ -60,15 +60,13 @@ function button(label: string, container: ParentNode = document): HTMLElement {
 }
 
 async function setupComposer(
-  enabled = true,
   featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
 ): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
-      [FeatureSwitchKey.ComposerTaskChips]: enabled,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
       ...featureSwitches,
     },
   });
@@ -127,14 +125,6 @@ async function chooseCommand(
     await screen.findByTestId("slash-workflow-menu"),
   );
 }
-
-test("Create commands stay hidden until enabled", async () => {
-  setupModels();
-  const editor = await setupComposer(false);
-  await fill(editor, "/");
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  expect(screen.queryByLabelText("Remove Presentation")).toBeNull();
-});
 
 test("Persisted additional info stays out of the message and copied text", async () => {
   setupModels();
@@ -204,7 +194,6 @@ async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
     context,
     path: `/chats/${THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });
@@ -301,7 +290,7 @@ test.each(createTemplateScenarios)(
     setupModels();
     mockChatLifecycle(context);
     // The legacy model menu keeps the model's name as its whole label.
-    const editor = await setupComposer(true, {
+    const editor = await setupComposer({
       [FeatureSwitchKey.ComposerModelPanel]: false,
     });
     const [first] = templates;
@@ -580,7 +569,6 @@ async function setupComposerWithChipCover(
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
       [FeatureSwitchKey.ComposerTemplateChipCover]: chipCover,
     },

@@ -825,16 +825,13 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
-      // Keep the new persisted part within the existing Create rollout.
-      const composerAdditionalInfo = get(create.enabled$)
-        ? buildComposerAdditionalInfo(
-            mode,
-            get(create.presentationSlideCount$),
-            get(taskChips.task$) === "visualization"
-              ? get(taskChips.visualization.preferences$)
-              : undefined,
-          )
-        : undefined;
+      const composerAdditionalInfo = buildComposerAdditionalInfo(
+        mode,
+        get(create.presentationSlideCount$),
+        get(taskChips.task$) === "visualization"
+          ? get(taskChips.visualization.preferences$)
+          : undefined,
+      );
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
         composerAdditionalInfo,

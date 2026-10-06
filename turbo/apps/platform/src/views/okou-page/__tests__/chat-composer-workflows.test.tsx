@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -145,16 +144,6 @@ function namedButton(name: string): HTMLElement {
     throw new Error(`Expected button ${name}`);
   }
   return button;
-}
-
-function namedLink(name: string): HTMLElement {
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!link) {
-    throw new Error(`Expected link ${name}`);
-  }
-  return link;
 }
 
 test("Multiple inline templates preserve every reference when you send", async () => {
@@ -463,34 +452,6 @@ test("Workflow category filters narrow templates and preserve the search", async
   expect(
     within(dialog).queryByLabelText(inboxTemplateLabel),
   ).not.toBeInTheDocument();
-});
-
-test("Continue from empty slash suggestions to all workflows", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [];
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: false },
-  });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/");
-  await expect(
-    screen.findByText("No matching workflows"),
-  ).resolves.toBeVisible();
-
-  await user.click(namedLink("View all workflows"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Workflows" }),
-  ).resolves.toBeVisible();
 });
 
 test("Wait for a template attachment before sending", async () => {
