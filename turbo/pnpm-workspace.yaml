@@ -55,6 +55,9 @@ overrides:
   # Remove these floors when upstream requires the patched versions.
   "ajv>fast-uri": ^3.1.7
   "express-rate-limit>ip-address": ^10.5.1
+  # Express still pins proxy-addr 2.0.7, vulnerable to IPv4-mapped IPv6 trust
+  # subnet spoofing (GHSA-jqcg-44mw-7w3h). Remove when upstream requires 2.0.8.
+  "express>proxy-addr": 2.0.8
   tar: ">=7.5.21"
   tmp: ">=0.2.6"
   ws: ">=8.21.0"
