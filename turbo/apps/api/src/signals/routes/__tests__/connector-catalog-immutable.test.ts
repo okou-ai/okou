@@ -509,13 +509,14 @@ async function assertEarlyClaimSecretBoundary(
       },
     ],
   });
+  const runnerGroup = `vm0/catalog-claim-${actor.runId}`;
   await engine.query(
-    "UPDATE agent_runs SET status = 'pending' WHERE id = $1 AND org_id = $2 AND user_id = $3",
-    [actor.runId, actor.orgId, actor.userId],
+    "UPDATE agent_runs SET status = 'pending', runner_group = $4 WHERE id = $1 AND org_id = $2 AND user_id = $3",
+    [actor.runId, actor.orgId, actor.userId, runnerGroup],
   );
   await engine.query(
-    "INSERT INTO runner_job_queue (run_id, runner_group, execution_context, expires_at) VALUES ($1, 'catalog-n4', $2::jsonb, now() + interval '1 hour')",
-    [actor.runId, JSON.stringify(stored)],
+    "INSERT INTO runner_job_queue (run_id, runner_group, execution_context, expires_at) VALUES ($1, $2, $3::jsonb, now() + interval '1 hour')",
+    [actor.runId, runnerGroup, JSON.stringify(stored)],
   );
   const requestController = new AbortController();
   onTestFinished(() => {
@@ -594,7 +595,13 @@ async function assertEarlyClaimSecretBoundary(
               authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
             },
             params: { id: actor.runId },
-            body: { capabilities: { piModelConfigGenerations: [1, 2, 3, 4] } },
+            body: {
+              runnerIdentity: {
+                runnerId: randomUUID(),
+                heartbeatGeneration: 1,
+              },
+              capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+            },
           }),
         ).then((settled) => {
           claimSettled = true;
@@ -1489,7 +1496,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     });
     const secondaryArtifact = piStableContextArtifactDigest(projection);
     await engine.query(
-      "INSERT INTO pi_stable_context_artifacts (digest, org_id, user_id, agent_id, projection) VALUES ($1, $2, $3, $4, $5::jsonb)",
+      "INSERT INTO pi_stable_context_artifacts (digest, org_id, user_id, agent_id, projection) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT (digest) DO NOTHING",
       [
         secondaryArtifact,
         piActor.orgId,
@@ -1498,6 +1505,23 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         JSON.stringify(projection),
       ],
     );
+    // Native admission may already have published this exact canonical artifact.
+    // Reuse immutable bytes only after checking their full identity and content.
+    expect(
+      (
+        await engine.query(
+          "SELECT org_id, user_id, agent_id, projection FROM pi_stable_context_artifacts WHERE digest = $1",
+          [secondaryArtifact],
+        )
+      ).rows,
+    ).toStrictEqual([
+      {
+        org_id: piActor.orgId,
+        user_id: piActor.userId,
+        agent_id: piActor.agentId,
+        projection,
+      },
+    ]);
     await engine.query(
       "UPDATE pi_stable_context_heads SET status = 'running', input_digest = $1, lease_id = $2, lease_expires_at = now() + interval '1 hour' WHERE org_id = $3 AND user_id = $4 AND agent_id = $5",
       [

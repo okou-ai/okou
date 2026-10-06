@@ -25,7 +25,6 @@ import {
   type ConnectorCatalogRuntimeProjectionIdentity,
   type ConnectorCatalogRuntimeProjectionReadyIdentity,
   type ConnectorCatalogRuntimeProjectionRow,
-  type ConnectorCatalogRuntimeProjectionRowsRead,
   type ConnectorCatalogRuntimeProjectionRowSetIdentity,
   type ConnectorCatalogRuntimeProjectionValidationTiming,
 } from "@okouai/connectors/connector-catalog/runtime-projection";
@@ -47,7 +46,6 @@ export type {
   ConnectorCatalogRuntimeProjectionFallbackReason,
   ConnectorCatalogRuntimeProjectionIdentity,
   ConnectorCatalogRuntimeProjectionReadyIdentity,
-  ConnectorCatalogRuntimeProjectionRowsRead,
   ConnectorCatalogRuntimeProjectionValidationTiming,
 };
 
