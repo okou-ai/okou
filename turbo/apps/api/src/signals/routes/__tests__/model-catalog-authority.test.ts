@@ -129,6 +129,7 @@ describe("model catalog authority", () => {
   });
 
   it("projects the system default policy without storing a per-organization row", async () => {
+    await seedBuiltInModelCandidateKeys(context, "okou-1.0");
     await signInAdmin();
     const initial = await listPolicies();
 
