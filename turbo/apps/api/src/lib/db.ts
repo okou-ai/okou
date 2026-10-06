@@ -11,6 +11,7 @@ import type { ApiDb } from "./db-types";
 import { env } from "./env";
 import { logger } from "./log";
 import { singleton } from "./singleton";
+import { PreviewPgClient } from "./pg-preview-diagnostics";
 
 const log = logger("api:db");
 
@@ -28,6 +29,7 @@ const pool = singleton((): Pool => {
   // lightweight.
   const pgPool = instrumentPgPool(
     new Pool({
+      Client: env("ENV") === "preview" ? PreviewPgClient : undefined,
       allowExitOnIdle: true,
       connectionString: env("DATABASE_URL"),
       min: 1,

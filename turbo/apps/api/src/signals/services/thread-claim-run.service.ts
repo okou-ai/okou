@@ -51,6 +51,8 @@ import {
 } from "../../lib/error";
 import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
 import { logger } from "../../lib/log";
+import { previewLaunchDiagnostics } from "../../lib/preview-launch-diagnostics";
+import type { Tx } from "../../lib/db-types";
 import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
 import {
   buildSlackSystemPrompt,
@@ -18756,6 +18758,27 @@ function pendingLaunchRowsPlan(
   };
 }
 
+// Preview-only timing splits CTE execution from result validation; the
+// diagnostic span is a no-op outside Preview.
+async function persistPendingAtomicLaunch(
+  tx: Tx,
+  { rows, context }: ReturnType<typeof pendingLaunchRowsPlan>,
+) {
+  const diagnostic = previewLaunchDiagnostics();
+  const persist = async () => {
+    const plan = pendingAtomicLaunchPlan(rows, context);
+    diagnostic?.mark("plan");
+    const [row] = parseRawRows(pendingLaunchRowSchema, await tx.execute(plan));
+    diagnostic?.mark("execute");
+    const persisted = pendingAtomicLaunchResult(rows, context, row).persisted;
+    diagnostic?.mark("validate");
+    return persisted;
+  };
+  return await persist().finally(() => {
+    diagnostic?.end();
+  });
+}
+
 export const commitPreparedPendingLaunch$ = command(
   async (
     { set },
@@ -18811,13 +18834,7 @@ export const commitPreparedPendingLaunch$ = command(
               "api_dispatch_persist_atomic_launch",
               "nested",
               async () => {
-                const { rows, context } = prepared;
-                const plan = pendingAtomicLaunchPlan(rows, context);
-                const [row] = parseRawRows(
-                  pendingLaunchRowSchema,
-                  await tx.execute(plan),
-                );
-                return pendingAtomicLaunchResult(rows, context, row).persisted;
+                return await persistPendingAtomicLaunch(tx, prepared);
               },
             );
             if (claim) {

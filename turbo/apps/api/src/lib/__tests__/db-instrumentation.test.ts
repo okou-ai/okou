@@ -29,6 +29,7 @@ import {
   type PgPoolAcquisition,
 } from "../db-instrumentation";
 import { env } from "../env";
+import { PreviewPgClient } from "../pg-preview-diagnostics";
 
 const ACQUIRE_DURATION_ATTRIBUTE = "vm0.db.pool.acquire.duration_ms";
 const ACQUIRE_PATH_ATTRIBUTE = "vm0.db.pool.acquire.path";
@@ -206,6 +207,7 @@ describe("instrumentPgPool", () => {
         connectionString: env("DATABASE_URL"),
         idleTimeoutMillis: 0,
         max: 1,
+        Client: PreviewPgClient,
         ...config,
         stream: createInstrumentedPgStream,
       }),
@@ -305,6 +307,74 @@ describe("instrumentPgPool", () => {
     expectConnectionAcquisition(newSpan);
     expectNoConnectionAcquisition(idleSpan);
     expectNoConnectionAcquisition(queuedSpan);
+    expect(
+      newSpan.attributes["diag.pg.connection.first_checkout"],
+    ).toBeTruthy();
+    expect(
+      idleSpan.attributes["diag.pg.connection.first_checkout"],
+    ).toBeFalsy();
+    for (const span of [newSpan, idleSpan, queuedSpan]) {
+      expect(span.attributes["diag.pg.query.coverage"]).toBe("complete");
+      expect(span.attributes["diag.pg.query.data_row_messages"]).toBe(1);
+      expect(
+        span.attributes["diag.pg.query.first_protocol_submit_ms"],
+      ).toStrictEqual(expect.any(Number));
+      expect(
+        span.attributes["diag.pg.query.ready_to_delivery_ms"],
+      ).toStrictEqual(expect.any(Number));
+    }
+  });
+
+  it("preserves parameter decoding and omits values from Preview observations", async () => {
+    // Infrastructure/redaction boundary: an API caller cannot select the pg
+    // tracer or protocol mode. Exercise real parameter encoding and row parsing.
+    const pool = createPool();
+    const statement = "SELECT $1::jsonb AS payload";
+    const payload = { sensitive: "preview-diagnostic-redaction-canary" };
+    const result = await pool.query(statement, [JSON.stringify(payload)]);
+
+    expect(result.rows).toStrictEqual([{ payload }]);
+    const span = findSpan(statement);
+    expect(span.attributes["diag.pg.query.coverage"]).toBe("complete");
+    expect(span.attributes["diag.pg.query.bind_sync_ms"]).toStrictEqual(
+      expect.any(Number),
+    );
+    expect(span.attributes["diag.pg.query.dataRow_ms"]).toStrictEqual(
+      expect.any(Number),
+    );
+    expect(JSON.stringify(span.attributes)).not.toContain(payload.sensitive);
+  });
+
+  it("preserves overlapping client queries without claiming phase attribution", async () => {
+    // Only the driver boundary permits constructing a shared-client overlap;
+    // ordinary API transactions await their statements. Never infer wire owners.
+    const pool = createPool();
+    const client = await pool.connect();
+    const first = client.query("SELECT 501 AS first_overlap");
+    const second = client.query("SELECT 502 AS second_overlap");
+    const results = await Promise.all([first, second]);
+    expect(results.map((r) => {return r.rows})).toStrictEqual([
+      [{ first_overlap: 501 }],
+      [{ second_overlap: 502 }],
+    ]);
+    for (const statement of [
+      "SELECT 501 AS first_overlap",
+      "SELECT 502 AS second_overlap",
+    ]) {
+      const span = findSpan(statement);
+      expect(span.attributes["diag.pg.query.coverage"]).toBe(
+        "overlap_or_recovery",
+      );
+      expect(span.attributes["diag.pg.query.ready_ms"]).toBeUndefined();
+    }
+    const next = await client.query("SELECT 503 AS after_overlap");
+    client.release();
+    expect(next.rows).toStrictEqual([{ after_overlap: 503 }]);
+    expect(
+      findSpan("SELECT 503 AS after_overlap").attributes[
+        "diag.pg.query.coverage"
+      ],
+    ).toBe("complete");
   });
 
   it("captures pool acquisition paths per concurrent manifest lookup", async () => {

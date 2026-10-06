@@ -15,6 +15,7 @@ import type { Pool, PoolClient } from "pg";
 import { singleton } from "./singleton";
 import { deriveSqlSpanName } from "./sql-span-name";
 import { now } from "./time";
+import { PreviewPgClient } from "./pg-preview-diagnostics";
 import { safeSync } from "../signals/utils";
 
 const POOL_QUERY_SPAN_KEY = createContextKey("vm0.pg.pool-query-span");
@@ -220,6 +221,31 @@ function instrumentQuery(
     // pool query already produced a span, so pass callback-style client
     // queries straight through.
     if (typeof args[args.length - 1] === "function") {
+      if (target instanceof PreviewPgClient) {
+        const callback = args[args.length - 1];
+        if (typeof callback === "function") {
+          const marked = context.active().getValue(POOL_QUERY_SPAN_KEY);
+          const finish = target.beginQuery(
+            marked instanceof PoolQuerySpan ? marked.span : undefined,
+            args,
+          );
+          const wrapped = function (this: unknown, ...result: AnyArgs) {
+            finish(result[0] ? "error" : "success");
+            return Reflect.apply(callback, this, result);
+          };
+          const submitted = safeSync(() => {
+            return Reflect.apply(original, target, [
+              ...args.slice(0, -1),
+              wrapped,
+            ]) as unknown;
+          });
+          if ("error" in submitted) {
+            finish("error");
+            throw submitted.error;
+          }
+          return submitted.ok;
+        }
+      }
       return Reflect.apply(original, target, args);
     }
 
@@ -235,13 +261,25 @@ function instrumentQuery(
         },
       },
       (span) => {
+        const finish =
+          target instanceof PreviewPgClient
+            ? target.beginQuery(span, args)
+            : undefined;
         // Pool-level queries mark their exact outer span while pg-pool
         // synchronously calls connect(callback). The callback may run much
         // later, so acquisition instrumentation captures this marked span at
         // connect entry instead of looking up whichever request context is
         // active when a queued client finally becomes available.
         const execute = (): Promise<unknown> => {
-          return Reflect.apply(original, target, args) as Promise<unknown>;
+          const submitted = safeSync(() => {
+            return Reflect.apply(original, target, args) as Promise<unknown>;
+          });
+          if ("error" in submitted) {
+            finish?.("error");
+            span.end();
+            throw submitted.error;
+          }
+          return submitted.ok;
         };
         const query =
           markPoolQuery && span.isRecording()
@@ -260,10 +298,12 @@ function instrumentQuery(
         return query
           .then(
             (result) => {
+              finish?.("success");
               span.setStatus({ code: SpanStatusCode.OK });
               return result;
             },
             (error: unknown) => {
+              finish?.("error");
               span.setStatus({
                 code: SpanStatusCode.ERROR,
                 message: error instanceof Error ? error.message : String(error),
@@ -292,13 +332,30 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
   ) as Pool["query"];
 
   const instrumentedClients = new WeakSet<PoolClient>();
+  const instrumentClient = (client: PoolClient): void => {
+    if (instrumentedClients.has(client)) {
+      return;
+    }
+    const clientQuery = client.query.bind(client) as PgQuery;
+    client.query = instrumentQuery(
+      client,
+      clientQuery,
+      tracer,
+      false,
+    ) as PoolClient["query"];
+    instrumentedClients.add(client);
+  };
   const originalConnect = pool.connect.bind(pool);
   pool.connect = function patchedConnect(...args: AnyArgs) {
     const callback = args[args.length - 1];
     if (isPoolConnectCallback(callback)) {
       const markedSpan = context.active().getValue(POOL_QUERY_SPAN_KEY);
       const capture = scopedPgPoolAcquisitionCapture.peek()?.getStore();
-      if (!(markedSpan instanceof PoolQuerySpan) && !capture) {
+      if (
+        !(markedSpan instanceof PoolQuerySpan) &&
+        !capture &&
+        pool.options.Client !== PreviewPgClient
+      ) {
         return Reflect.apply(originalConnect, pool, args);
       }
 
@@ -319,29 +376,54 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
             capture.acquisitions.push({ durationMs, path, finishedAt: now() });
           });
         }
+        if (client instanceof PreviewPgClient) {
+          instrumentClient(client);
+          safeSync(() => {
+            client.recordCheckout(
+              markedSpan instanceof PoolQuerySpan ? markedSpan.span : undefined,
+            );
+          });
+          if (markedSpan instanceof PoolQuerySpan) {
+            // A queued delivery may originate in another request's async
+            // context. Preserve the captured pool-query owner for its callback.
+            return context.with(
+              context.active().setValue(POOL_QUERY_SPAN_KEY, markedSpan),
+              () => {return callback(error, client, release)},
+            );
+          }
+        }
         callback(error, client, release);
       };
       const wrappedArgs = [...args.slice(0, -1), wrappedCallback] as const;
       return Reflect.apply(originalConnect, pool, wrappedArgs);
     }
 
+    const checkoutStartedAt = performance.now();
+    const checkoutContext = context.active();
+    const path = acquisitionPath(pool);
     const promise = Reflect.apply(
       originalConnect,
       pool,
       args,
     ) as Promise<PoolClient>;
     return promise.then((client) => {
-      if (instrumentedClients.has(client)) {
-        return client;
+      if (client instanceof PreviewPgClient) {
+        safeSync(() => {
+          const span = tracer.startSpan(
+            "diag.pg.checkout",
+            {},
+            checkoutContext,
+          );
+          span.setAttributes({
+            [POOL_ACQUIRE_DURATION_ATTRIBUTE]:
+              performance.now() - checkoutStartedAt,
+            [POOL_ACQUIRE_PATH_ATTRIBUTE]: path,
+          });
+          client.recordCheckout(span);
+          span.end();
+        });
       }
-      const clientQuery = client.query.bind(client) as PgQuery;
-      client.query = instrumentQuery(
-        client,
-        clientQuery,
-        tracer,
-        false,
-      ) as PoolClient["query"];
-      instrumentedClients.add(client);
+      instrumentClient(client);
       return client;
     });
   } as Pool["connect"];
