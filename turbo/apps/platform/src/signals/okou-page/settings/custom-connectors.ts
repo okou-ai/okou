@@ -30,7 +30,6 @@ import {
   connectorAgentAccess$,
   reloadConnectorAgentAccess$,
 } from "./connector-agent-access.ts";
-import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { setAblyLoop$ } from "../../realtime.ts";
 import { waitForOperation, waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
@@ -38,7 +37,6 @@ import {
   readConnectorAccountCount,
   readConnectorOAuthCompletion,
 } from "./connector-accounts.ts";
-import { resetConnectorAccountDialogs$ } from "./connector-account-dialogs.ts";
 import type { ConnectorConnectSuccess } from "./connectors.ts";
 
 const internalReload$ = state(0);
@@ -52,40 +50,6 @@ export type CustomConnectorAuthMethodType =
 
 export const customConnectorAuthorizationReloadVersion$ = computed((get) => {
   return get(internalAuthorizedAgentsReload$);
-});
-
-// ---------------------------------------------------------------------------
-// Active tab on the Connectors settings page
-// ---------------------------------------------------------------------------
-
-type ConnectorsPageTab = "builtin" | "custom";
-
-function normalizeConnectorsPageTab(value: string | null): ConnectorsPageTab {
-  return value === "custom" ? "custom" : "builtin";
-}
-
-export const connectorsPageTab$ = computed((get) => {
-  return normalizeConnectorsPageTab(get(searchParams$).get("tab"));
-});
-export const setConnectorsPageTab$ = command(({ get, set }, value: string) => {
-  const tab = normalizeConnectorsPageTab(value);
-  if (tab !== normalizeConnectorsPageTab(get(searchParams$).get("tab"))) {
-    set(resetConnectorAccountDialogs$);
-  }
-  const next = new URLSearchParams(get(searchParams$));
-  if (next.has("scope")) {
-    next.delete("scope");
-    next.delete("type");
-    next.delete("keywords");
-    next.delete("category");
-    next.delete("connection");
-  }
-  if (tab === "builtin") {
-    next.delete("tab");
-  } else {
-    next.set("tab", tab);
-  }
-  set(updateSearchParams$, next);
 });
 
 /**

@@ -33,7 +33,6 @@ import {
 } from "../../signals/okou-page/settings/connector-category-rail.ts";
 import { measureRail } from "../../signals/okou-page/rail-travel.ts";
 import { RailPager } from "./rail-pager.tsx";
-import { REMOTE_ACCESS_CATEGORY } from "../../signals/okou-page/settings/ssh-connector.ts";
 import type {
   ComposerConnectorUiState,
   ConnectorDirectoryTab,
@@ -59,6 +58,9 @@ import {
   buildConnectorDirectoryModel,
   type ConnectorDirectoryModel,
 } from "./connector-directory-model.ts";
+
+/** SSH and VNC sit in the directory under a category of their own. */
+const REMOTE_ACCESS_CATEGORY = "remote-access";
 
 /**
  * The scroll region runs to the sheet edge and fades into it at both ends.

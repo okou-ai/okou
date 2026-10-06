@@ -1818,8 +1818,6 @@
       "add": "{{connectorName}} を追加",
       "addConnectors": "コネクタの追加",
       "authorized": "{{connectorName}} が接続され、{{agentName}} に対して承認されました",
-      "available_one": "接続可能なコネクタ ({{count}})",
-      "available_other": "接続可能なコネクタ ({{count}})",
       "back": "戻る",
       "configurePermissions": "{{connectorName}} 権限を構成する",
       "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
@@ -2947,7 +2945,6 @@
     "delete": "Cloudflare Access を削除",
     "deleteHelp": "この Cloudflare Access を削除しますか？保存された Service Token は復元できません。自分のホストは先に再バインドしてください。",
     "deleteUncertain": "削除結果を確認できませんでした。再試行する前に最新の影響を確認してください。",
-    "description": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
     "edit": "Cloudflare Access を編集",
     "failed": "Cloudflare Accessの変更を保存できませんでした。再試行してください。",
     "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
@@ -2962,7 +2959,6 @@
     "latest": "最後に保存された設定",
     "loadFailed": "Cloudflare Access を読み込めませんでした。もう一度お試しください。",
     "loading": "Cloudflare Access を読み込み中…",
-    "manage": "Cloudflare Access を管理",
     "memberIdentifier": "（ID {{identifier}}）",
     "missing": "この Cloudflare Access は利用できなくなりました。別のものを選択するか作成してください。",
     "name": "名前",
@@ -3170,7 +3166,6 @@
           "menu": "販売と事業"
         }
       },
-      "categoriesAria": "コネクタのカテゴリ",
       "description": "エージェントが使用できるようにサードパーティのサービスを接続します。",
       "descriptionWithCount": "エージェントが使用できる{{value}}個のサービスを接続します。",
       "directory": {
@@ -3189,8 +3184,6 @@
       "empty": {
         "agent": "このエージェントにはコネクタがありません",
         "connected": "コネクタが接続されていません",
-        "matching": "{{message}} が「{{search}}」に一致",
-        "notConnected": "接続するコネクタが残っていない",
         "search": "「{{search}}」に一致するコネクタはありません",
         "unshared": "すべてのコネクタがいずれかのエージェントと共有されています"
       },
@@ -3200,14 +3193,10 @@
         "all": "すべて",
         "allAgents": "すべてのエージェント",
         "aria": "フィルターコネクター",
-        "connected": "接続済み",
-        "notConnected": "接続されていません",
-        "status": "ステータス",
         "unshared": "どのエージェントとも共有されていません"
       },
       "filterWith": "フィルタ: {{category}}",
       "iconUnavailable": "コネクタアイコンが使用不可",
-      "newConnector": "新しいコネクタ",
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",
@@ -3234,10 +3223,6 @@
         "seeMore_one": "{{names}} ほか {{count}} 件を見る",
         "seeMore_other": "{{names}} ほか {{count}} 件を見る",
         "top": "人気のコネクタ"
-      },
-      "tabs": {
-        "builtin": "内蔵",
-        "custom": "カスタム"
       },
       "title": "コネクター",
       "unnamedAgent": "無名"
@@ -3378,7 +3363,6 @@
       "edit": {
         "title": "カスタムコネクタの編集"
       },
-      "emptyAdmin": "カスタム コネクタはまだありません。すべてのメンバーが使用する API を登録するために作成します。",
       "emptyMember": "組織はまだカスタム コネクタを登録していません。",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",

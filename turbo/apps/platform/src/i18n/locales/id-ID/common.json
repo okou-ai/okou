@@ -1818,8 +1818,6 @@
       "add": "Tambahkan {{connectorName}}",
       "addConnectors": "Tambahkan konektor",
       "authorized": "{{connectorName}} terhubung dan diotorisasi untuk {{agentName}}",
-      "available_one": "Konektor yang tersedia untuk dihubungkan ({{count}})",
-      "available_other": "Konektor yang tersedia untuk dihubungkan ({{count}})",
       "back": "Kembali",
       "configurePermissions": "Konfigurasikan izin {{connectorName}}",
       "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
@@ -2947,7 +2945,6 @@
     "delete": "Hapus Cloudflare Access",
     "deleteHelp": "Hapus Cloudflare Access ini? Service Token yang tersimpan tidak dapat dipulihkan. Hubungkan kembali host milik Anda terlebih dahulu.",
     "deleteUncertain": "Penghapusan tidak dapat dipastikan. Tinjau dampak terbaru sebelum mencoba lagi.",
-    "description": "Akses aplikasi terlindungi dengan Token Layanan Cloudflare Access.",
     "edit": "Edit Cloudflare Access",
     "failed": "Tidak dapat menyimpan perubahan Cloudflare Access. Coba lagi.",
     "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
@@ -2962,7 +2959,6 @@
     "latest": "Pengaturan terakhir yang disimpan",
     "loadFailed": "Tidak dapat memuat Cloudflare Access. Coba lagi.",
     "loading": "Memuat Cloudflare Access…",
-    "manage": "Kelola Cloudflare Access",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "Cloudflare Access ini tidak tersedia lagi. Pilih yang lain atau buat yang baru.",
     "name": "Nama",
@@ -3170,7 +3166,6 @@
           "menu": "Penjualan dan Bisnis"
         }
       },
-      "categoriesAria": "Kategori konektor",
       "description": "Hubungkan layanan pihak ketiga agar agen Anda dapat menggunakannya.",
       "descriptionWithCount": "Hubungkan {{value}} layanan agar agen Anda dapat menggunakannya.",
       "directory": {
@@ -3189,8 +3184,6 @@
       "empty": {
         "agent": "Tidak ada konektor untuk agen ini",
         "connected": "Tidak ada konektor yang terhubung",
-        "matching": "{{message}} yang cocok dengan \"{{search}}\"",
-        "notConnected": "Tidak ada konektor lagi untuk dihubungkan",
         "search": "Tidak ada konektor yang cocok dengan \"{{search}}\"",
         "unshared": "Setiap konektor sudah dibagikan ke sebuah agen"
       },
@@ -3200,14 +3193,10 @@
         "all": "Semua",
         "allAgents": "Semua agen",
         "aria": "Filter konektor",
-        "connected": "Terhubung",
-        "notConnected": "Tidak terhubung",
-        "status": "Status",
         "unshared": "Tidak dibagikan ke agen mana pun"
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Ikon konektor tidak tersedia",
-      "newConnector": "Konektor baru",
       "noConnectorsAlt": "Tidak ada konektor",
       "otherCategory": "Lainnya",
       "remoteAccess": "Akses jarak jauh",
@@ -3234,10 +3223,6 @@
         "seeMore_one": "Lihat {{names}} dan {{count}} lainnya",
         "seeMore_other": "Lihat {{names}} dan {{count}} lainnya",
         "top": "Konektor teratas"
-      },
-      "tabs": {
-        "builtin": "Bawaan",
-        "custom": "Kustom"
       },
       "title": "Konektor",
       "unnamedAgent": "Tanpa nama"
@@ -3378,7 +3363,6 @@
       "edit": {
         "title": "Edit konektor kustom"
       },
-      "emptyAdmin": "Belum ada konektor kustom. Buat satu untuk mendaftarkan API agar bisa digunakan semua anggota.",
       "emptyMember": "Org Anda belum mendaftarkan konektor kustom apa pun.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",

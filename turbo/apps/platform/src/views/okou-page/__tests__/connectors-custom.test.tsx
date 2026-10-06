@@ -21,7 +21,6 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -53,11 +52,7 @@ const SUPPORT_ID = "c0000000-0000-4000-a000-000000000052";
 
 function setupCustomPage(): Promise<void> {
   context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
-  return setupPage({
-    context,
-    path: "/connectors?tab=custom",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
+  return setupPage({ context, path: "/connectors?scope=custom" });
 }
 
 function createAuthWindow(): Window {
@@ -182,7 +177,7 @@ test("Create a custom connector without authentication", async () => {
 
   click(
     await waitFor(() => {
-      return getConnectorAction("button", "New connector");
+      return getConnectorAction("button", "New custom connector");
     }),
   );
   const dialog = await screen.findByRole("dialog", {
@@ -708,22 +703,14 @@ test("Manage a custom HTTP connector through creation and connection", async () 
     listAgent(RESEARCH_ID, "Research"),
     listAgent(SUPPORT_ID, "Support"),
   ]);
-  await setupPage({
-    context,
-    path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("tab", "Custom");
-    }),
-  );
+  await setupPage({ context, path: "/connectors" });
+  click(await screen.findByTestId("connectors-scope-custom"));
   await expect(
     screen.findByText(
-      "No custom connectors yet. Create one to register an API for every member to use.",
+      "Add an HTTP API or MCP server for your organization to use.",
     ),
   ).resolves.toBeInTheDocument();
-  click(getConnectorAction("button", "New connector"));
+  click(getConnectorAction("button", "New custom connector"));
   const create = await screen.findByRole("dialog", {
     name: "New custom connector",
   });
@@ -791,16 +778,8 @@ test("Manage a custom HTTP connector through rename and deletion", async () => {
     listAgent(RESEARCH_ID, "Research"),
     listAgent(SUPPORT_ID, "Support"),
   ]);
-  await setupPage({
-    context,
-    path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("tab", "Custom");
-    }),
-  );
+  await setupPage({ context, path: "/connectors" });
+  click(await screen.findByTestId("connectors-scope-custom"));
   click(
     await waitFor(() => {
       return getConnectorAction("button", "More options");
@@ -840,7 +819,7 @@ test("Manage a custom HTTP connector through rename and deletion", async () => {
   click(getConnectorAction("button", "Delete", deletion));
   await expect(
     screen.findByText(
-      "No custom connectors yet. Create one to register an API for every member to use.",
+      "Add an HTTP API or MCP server for your organization to use.",
     ),
   ).resolves.toBeInTheDocument();
 });
@@ -926,7 +905,7 @@ test("Manage custom HTTP OAuth through creation", async () => {
   await setupCustomPage();
   click(
     await waitFor(() => {
-      return getConnectorAction("button", "New connector");
+      return getConnectorAction("button", "New custom connector");
     }),
   );
   const create = await screen.findByRole("dialog", {
@@ -1249,7 +1228,7 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
   await setupCustomPage();
   click(
     await waitFor(() => {
-      return getConnectorAction("button", "New connector");
+      return getConnectorAction("button", "New custom connector");
     }),
   );
   const create = await screen.findByRole("dialog", {
@@ -1414,7 +1393,7 @@ test("Create and connect an MCP server with automatic authentication", async () 
   await setupCustomPage();
   click(
     await waitFor(() => {
-      return getConnectorAction("button", "New connector");
+      return getConnectorAction("button", "New custom connector");
     }),
   );
   const create = await screen.findByRole("dialog", {
@@ -1692,7 +1671,7 @@ test("Create, edit, and connect an OAuth MCP connector", async () => {
   await setupCustomPage();
   click(
     await waitFor(() => {
-      return getConnectorAction("button", "New connector");
+      return getConnectorAction("button", "New custom connector");
     }),
   );
   const create = await screen.findByRole("dialog", {
@@ -2043,7 +2022,7 @@ test("Hide integration-managed connectors from custom settings", async () => {
 
   await expect(
     screen.findByText(
-      "No custom connectors yet. Create one to register an API for every member to use.",
+      "Add an HTTP API or MCP server for your organization to use.",
     ),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Feishu")).toBeNull();
@@ -2299,14 +2278,14 @@ test("Show a custom connector created elsewhere", async () => {
   await setupCustomPage();
   await expect(
     screen.findByText(
-      "No custom connectors yet. Create one to register an API for every member to use.",
+      "Add an HTTP API or MCP server for your organization to use.",
     ),
   ).resolves.toBeInTheDocument();
 
-  click(getConnectorAction("tab", "Built-in"));
+  click(screen.getByTestId("connectors-scope-discover"));
   connectors = [customConnector({ slug: "_acme-search" })];
   context.mocks.ably.trigger("customConnectorListChanged");
-  click(getConnectorAction("tab", "Custom"));
+  click(screen.getByTestId("connectors-scope-custom"));
 
   await expect(screen.findByText("Acme Search")).resolves.toBeInTheDocument();
 });

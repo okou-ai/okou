@@ -26,7 +26,6 @@ import { expect, test } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -181,15 +180,12 @@ function mockSettings(
   return data;
 }
 
-async function page(
-  path = "/connectors?scope=remote-control&type=vnc",
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-) {
+async function page(path = "/connectors?scope=remote-control&type=vnc") {
   await setupPage({
     context,
     path,
     auth,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true, ...featureSwitches },
+    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
 }
 
@@ -303,7 +299,7 @@ test("VNC management omits the redundant refresh action", async () => {
 
 test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () => {
   const data = mockSettings();
-  await page(undefined, { [FeatureSwitchKey.ConnectorDirectory]: false });
+  await page();
   await screen.findByText(host.displayName);
 
   data.connections = [{ ...host, displayName: "Updated workstation" }];
@@ -317,15 +313,15 @@ test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () =
   await waitFor(() => {
     expect(window.location.search).toBe("");
   });
-  click(getConnectorAction("tab", "Remote control"));
+  click(screen.getByTestId("connectors-scope-remote-control"));
   await screen.findByText("Updated workstation");
   expect(screen.queryByText(host.displayName)).toBeNull();
 });
 
 test("Returning to Remote control does not reopen an abandoned VNC dialog", async () => {
   mockSettings({ connections: [], credentials: [] });
-  await page("/connectors", { [FeatureSwitchKey.ConnectorDirectory]: false });
-  click(getConnectorAction("tab", "Remote control"));
+  await page("/connectors");
+  click(screen.getByTestId("connectors-scope-remote-control"));
   const section = await screen.findByRole("region", { name: "VNC" });
   click(getAction("button", "Add host", section));
   await screen.findByRole("dialog", { name: "Add host" });
@@ -334,8 +330,7 @@ test("Returning to Remote control does not reopen an abandoned VNC dialog", asyn
   await waitFor(() => {
     expect(window.location.search).toBe("");
   });
-  await screen.findByRole("heading", { name: "Remote access" });
-  click(getConnectorAction("tab", "Remote control"));
+  click(screen.getByTestId("connectors-scope-remote-control"));
   await waitFor(() => {
     expect(window.location.search).toBe("?scope=remote-control");
     expect(screen.queryByRole("dialog")).toBeNull();

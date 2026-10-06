@@ -681,12 +681,9 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   expect(overrides.get(SCOUT_THREAD_ID)).toBeTruthy();
 });
 
-test.each([
-  { directory: false, configuredCount: 0 },
-  { directory: true, configuredCount: 1 },
-])(
-  "Chat SSH setup respects directory=$directory and hosts=$configuredCount",
-  async ({ directory, configuredCount }) => {
+test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
+  "Chat SSH setup respects hosts=$configuredCount",
+  async ({ configuredCount }) => {
     installComposerConnectorFixture();
     context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
       return respond(200, { configuredCount });
@@ -694,13 +691,7 @@ test.each([
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, { connections: [] });
     });
-    await setupPage({
-      context,
-      path: `/agents/${SCOUT_AGENT_ID}/chat`,
-      featureSwitches: {
-        [FeatureSwitchKey.ConnectorDirectory]: directory,
-      },
-    });
+    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
     click(await findFastControl("button", "Connectors"));
     click(await findFastControl("button", "Add connectors"));
     const search = await screen.findByPlaceholderText("Find connectors...");
@@ -752,13 +743,7 @@ test("Directory SSH setup follows shelves and categories", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: true,
-    },
-  });
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));
   const dialog = await screen.findByRole("dialog", { name: "Connectors" });

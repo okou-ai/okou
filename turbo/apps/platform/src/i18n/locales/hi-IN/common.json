@@ -1821,8 +1821,6 @@
       "add": "{{connectorName}} जोड़ें",
       "addConnectors": "कनेक्टर्स जोड़ें",
       "authorized": "{{connectorName}} जुड़ा हुआ है और {{agentName}} के लिए अधिकृत है",
-      "available_one": "कनेक्ट करने के लिए उपलब्ध कनेक्टर ({{count}})",
-      "available_other": "कनेक्ट करने के लिए उपलब्ध कनेक्टर ({{count}})",
       "back": "पीछे",
       "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
       "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
@@ -2959,7 +2957,6 @@
     "delete": "Cloudflare Access हटाएँ",
     "deleteHelp": "यह Cloudflare Access हटाएँ? सहेजा गया Service Token वापस नहीं मिल सकेगा। पहले अपने होस्ट को दोबारा बाइंड करें।",
     "deleteUncertain": "हटाए जाने की पुष्टि नहीं हो सकी। फिर प्रयास करने से पहले नवीनतम प्रभाव देखें।",
-    "description": "Cloudflare Access सर्विस टोकन से सुरक्षित ऐप्लिकेशन एक्सेस करें।",
     "edit": "Cloudflare Access संपादित करें",
     "failed": "Cloudflare Access बदलाव सहेजा नहीं जा सका। फिर से कोशिश करें।",
     "forbidden": "साझा Cloudflare Access केवल संगठन के एडमिन बदल सकते हैं।",
@@ -2975,7 +2972,6 @@
     "latest": "नवीनतम सहेजी गई सेटिंग्स",
     "loadFailed": "Cloudflare Access लोड नहीं हो सका। दोबारा प्रयास करें।",
     "loading": "Cloudflare Access लोड हो रहा है…",
-    "manage": "Cloudflare Access प्रबंधित करें",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "यह Cloudflare Access अब उपलब्ध नहीं है। दूसरा चुनें या नया बनाएँ।",
     "name": "नाम",
@@ -3189,7 +3185,6 @@
           "menu": "बिक्री और व्यवसाय"
         }
       },
-      "categoriesAria": "कनेक्टर श्रेणियां",
       "description": "अपने एजेंटों के उपयोग के लिए तृतीय-पक्ष सेवाओं को कनेक्ट करें।",
       "descriptionWithCount": "अपने एजेंटों के उपयोग के लिए {{value}} सेवाओं को कनेक्ट करें।",
       "directory": {
@@ -3208,8 +3203,6 @@
       "empty": {
         "agent": "इस एजेंट के लिए कोई कनेक्टर नहीं",
         "connected": "कोई कनेक्टेड कनेक्टर नहीं",
-        "matching": "{{message}} मिलान \"{{search}}\"",
-        "notConnected": "कनेक्ट करने के लिए कोई कनेक्टर नहीं बचा",
         "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं",
         "unshared": "हर कनेक्टर किसी एजेंट के साथ साझा है"
       },
@@ -3219,14 +3212,10 @@
         "all": "सभी",
         "allAgents": "सभी एजेंट",
         "aria": "फ़िल्टर कनेक्टर्स",
-        "connected": "जुड़े हुए",
-        "notConnected": "जुड़े नहीं हैं",
-        "status": "स्थिति",
         "unshared": "किसी एजेंट के साथ साझा नहीं"
       },
       "filterWith": "फ़िल्टर: {{category}}",
       "iconUnavailable": "कनेक्टर आइकन अनुपलब्ध",
-      "newConnector": "नया कनेक्टर",
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
@@ -3253,10 +3242,6 @@
         "seeMore_one": "{{names}} और {{count}} अन्य देखें",
         "seeMore_other": "{{names}} और {{count}} अन्य देखें",
         "top": "शीर्ष कनेक्टर"
-      },
-      "tabs": {
-        "builtin": "बिल्ट-इन",
-        "custom": "कस्टम"
       },
       "title": "कनेक्टर्स",
       "unnamedAgent": "अज्ञात"
@@ -3397,7 +3382,6 @@
       "edit": {
         "title": "कस्टम कनेक्टर संपादित करें"
       },
-      "emptyAdmin": "अभी तक कोई कस्टम कनेक्टर नहीं. प्रत्येक सदस्य के उपयोग के लिए एक API पंजीकृत करने के लिए एक बनाएं।",
       "emptyMember": "आपके संगठन ने अभी तक कोई कस्टम कनेक्टर पंजीकृत नहीं किया है.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",

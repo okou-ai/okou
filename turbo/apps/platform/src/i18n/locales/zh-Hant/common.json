@@ -1818,8 +1818,6 @@
       "add": "新增 {{connectorName}}",
       "addConnectors": "新增連接器",
       "authorized": "{{connectorName}} 已連線，並已授權給 {{agentName}}",
-      "available_one": "可連線的連接器（{{count}}）",
-      "available_other": "可連線的連接器（{{count}}）",
       "back": "返回",
       "configurePermissions": "配置 {{connectorName}} 權限",
       "customAuthorizeDescription": "檢視並連線這個自定義連接器，然後授權給智能體。",
@@ -2947,7 +2945,6 @@
     "delete": "刪除Cloudflare Access",
     "deleteHelp": "確定刪除這個 Cloudflare Access？儲存的 Service Token 無法復原。你自己的主機必須先重新綁定。",
     "deleteUncertain": "無法確認是否已刪除。請查看最新影響範圍後再嘗試。",
-    "description": "使用 Cloudflare Access 服務權杖存取受保護的應用程式。",
     "edit": "編輯Cloudflare Access",
     "failed": "無法儲存 Cloudflare Access 更改，請重試。",
     "forbidden": "只有組織管理員可以修改共用的 Cloudflare Access。",
@@ -2962,7 +2959,6 @@
     "latest": "最新儲存的設定",
     "loadFailed": "無法載入Cloudflare Access，請重試。",
     "loading": "正在載入Cloudflare Access…",
-    "manage": "管理 Cloudflare Access",
     "memberIdentifier": "（ID {{identifier}}）",
     "missing": "該Cloudflare Access已不可用。請選擇其他項或新建一個。",
     "name": "名稱",
@@ -3170,7 +3166,6 @@
           "menu": "銷售與業務"
         }
       },
-      "categoriesAria": "連接器分類",
       "description": "連線第三方服務，供你的智能體使用。",
       "descriptionWithCount": "連線{{value}}個服務，供你的智能體使用。",
       "directory": {
@@ -3189,8 +3184,6 @@
       "empty": {
         "agent": "此智能體暫無連接器",
         "connected": "暫無已連線的連接器",
-        "matching": "{{message}}，匹配「{{search}}」",
-        "notConnected": "沒有可連線的連接器了",
         "search": "沒有與「{{search}}」匹配的連接器",
         "unshared": "每個連接器都已共享給智能體"
       },
@@ -3200,14 +3193,10 @@
         "all": "全部",
         "allAgents": "全部智能體",
         "aria": "篩選連接器",
-        "connected": "已連線",
-        "notConnected": "未連線",
-        "status": "狀態",
         "unshared": "未共享給任何智能體"
       },
       "filterWith": "篩選：{{category}}",
       "iconUnavailable": "連接器圖示不可用",
-      "newConnector": "新建連接器",
       "noConnectorsAlt": "暫無連接器",
       "otherCategory": "其他",
       "remoteAccess": "遠端訪問",
@@ -3234,10 +3223,6 @@
         "seeMore_one": "檢視{{names}}及其他{{count}}個",
         "seeMore_other": "檢視{{names}}及其他{{count}}個",
         "top": "熱門連接器"
-      },
-      "tabs": {
-        "builtin": "內建",
-        "custom": "自定義"
       },
       "title": "連接器",
       "unnamedAgent": "未命名"
@@ -3378,7 +3363,6 @@
       "edit": {
         "title": "編輯自定義連接器"
       },
-      "emptyAdmin": "還沒有自定義連接器。建立一個，把API註冊給所有成員使用。",
       "emptyMember": "你的組織還沒有註冊任何自定義連接器。",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",

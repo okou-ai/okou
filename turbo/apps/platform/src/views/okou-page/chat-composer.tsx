@@ -71,7 +71,6 @@ import {
   ElapsedTime,
   getShortcutLabel,
   processShortcut,
-  surfaceVariants,
   type KeyboardEventLike,
 } from "@okouai/ui";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
@@ -173,11 +172,6 @@ import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../../signals/agent.ts";
 import { computerUseProductName$ } from "../../signals/branding.ts";
-import {
-  cancelConnectorConnection$,
-  connectorConnectionAttempt$,
-  registerConnectorConnectionDialog$,
-} from "../../signals/connector-connection-progress.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -240,7 +234,6 @@ import {
   matchesConnectorSearch,
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
 import type { TemplatePreviewRuntime } from "../../signals/okou-page/template-preview-runtime.ts";
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
@@ -250,7 +243,6 @@ import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permi
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { sendMode$ } from "../../signals/send-mode.ts";
 import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
-import { sshSummary$ } from "../../signals/ssh.ts";
 import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
 import {
   Reason,
@@ -259,7 +251,6 @@ import {
   onDomEventFn,
   tapError,
 } from "../../signals/utils.ts";
-import { vncSummary$ } from "../../signals/vnc.ts";
 import {
   audioInputAvailable$,
   audioInputQuota$,
@@ -270,16 +261,12 @@ import { AttachmentChips } from "./attachment-chips.tsx";
 import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
 import type { ModelProviderSelection } from "./components/model-provider-picker.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
-import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
-import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
 import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx";
-import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
-import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
 import {
@@ -308,7 +295,6 @@ import {
   safePreviewGround,
 } from "./presentation-html-preview.ts";
 import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
-import { SshLoadError } from "./ssh-load-error.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import {
@@ -324,7 +310,6 @@ import {
   TEMPLATE_TILE_WRAPPER,
 } from "./template-tile.ts";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
-import { VncLoadError } from "./vnc-load-error.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
 import {
@@ -5884,278 +5869,6 @@ function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
   );
 }
 
-function matchesCustomConnectorSearch(
-  search: string,
-  connector: CustomConnectorResponse,
-): boolean {
-  const normalizedSearch = search.trim().toLowerCase();
-  if (!normalizedSearch) {
-    return true;
-  }
-  return [
-    connector.displayName,
-    connector.slug,
-    customConnectorTarget(connector),
-  ].some((value) => {
-    return value.toLowerCase().includes(normalizedSearch);
-  });
-}
-
-function CustomConnectorCatalogCard({
-  connector,
-  onConnect,
-}: {
-  connector: CustomConnectorResponse;
-  onConnect: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <button
-      data-slot="connector-card"
-      type="button"
-      aria-label={t(
-        ($) => {
-          return $.connectors.card.connectAria;
-        },
-        { connector: connector.displayName },
-      )}
-      className={surfaceVariants({
-        interactive: true,
-        className: "overflow-hidden text-left",
-      })}
-      onClick={onConnect}
-    >
-      <span className="flex items-center gap-2.5 px-5 pb-1 pt-4">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-          <CustomConnectorIcon
-            id={connector.id}
-            displayName={connector.displayName}
-            size={20}
-          />
-        </span>
-        <span
-          data-testid="connector-card-label"
-          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-        >
-          {connector.displayName}
-        </span>
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground"
-          aria-hidden="true"
-        >
-          <Plus size={14} />
-        </span>
-      </span>
-      <span className="block px-5 pb-4 pt-1">
-        <span
-          data-testid="connector-help-text"
-          className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
-        >
-          <span className="shrink-0">
-            {connector.kind === "mcp"
-              ? t(($) => {
-                  return $.connectors.custom.mcpType;
-                })
-              : t(($) => {
-                  return $.connectors.custom.create.httpType;
-                })}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="min-w-0 truncate font-mono text-muted-foreground/60">
-            {customConnectorTarget(connector)}
-          </span>
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function AddConnectorSshLoadStatus({
-  matches,
-  state,
-}: {
-  readonly matches: boolean;
-  readonly state: Loadable<unknown>["state"];
-}) {
-  const { t } = useTranslation();
-  if (!matches) {
-    return null;
-  }
-  if (state === "hasError") {
-    return <SshLoadError />;
-  }
-  if (state !== "loading") {
-    return null;
-  }
-  return (
-    <p role="status" className="text-sm text-muted-foreground">
-      {t(($) => {
-        return $.ssh.loading;
-      })}
-    </p>
-  );
-}
-
-function AddConnectorsDialog({
-  signals,
-  unconnected,
-  unconnectedCustom,
-  connecting,
-  connectHandlers,
-  onConnectCustom,
-  onClose,
-}: {
-  signals: ComposerSignals;
-  unconnected: PlatformConnectorCatalogStatusItem[];
-  unconnectedCustom: CustomConnectorResponse[];
-  connecting: boolean;
-  connectHandlers: (
-    connector: PlatformConnectorCatalogStatusItem,
-  ) => ConnectorConnectHandlers;
-  onConnectCustom: (connector: CustomConnectorResponse) => void;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const connectorUi = useGet(signals.connector.connectorUiState$);
-  const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const resetCustomConnectorConnectInput = useSet(
-    resetCustomConnectorConnectInput$,
-  );
-  const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const cancelConnection = useSet(cancelConnectorConnection$);
-  const connectionAttempt = useGet(connectorConnectionAttempt$);
-  const search = connectorUi.addDialogSearch;
-  const filtered = unconnected.filter((item) => {
-    return matchesConnectorSearch(search, item);
-  });
-  const filteredCustom = unconnectedCustom.filter((item) => {
-    return matchesCustomConnectorSearch(search, item);
-  });
-  const sshSummary = useLoadable(sshSummary$);
-  const vncSummary = useLoadable(vncSummary$);
-  const matchesVnc = `vnc ${t(($) => {
-    return $.vnc.description;
-  })}`
-    .toLowerCase()
-    .includes(search.trim().toLowerCase());
-  const showVnc =
-    vncSummary.state === "hasData" &&
-    vncSummary.data?.configuredCount === 0 &&
-    matchesVnc;
-  const matchesSsh = "ssh".includes(search.trim().toLowerCase());
-  const showSsh =
-    sshSummary.state === "hasData" &&
-    sshSummary.data?.configuredCount === 0 &&
-    matchesSsh;
-  const visibleConnectorCount =
-    filtered.length + filteredCustom.length + Number(showSsh) + Number(showVnc);
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(open, details) => {
-        if (!open && connecting && details.reason === "outside-press") {
-          details.cancel();
-          return;
-        }
-        if (!open) {
-          if (connecting) {
-            cancelConnection(connectionAttempt);
-          }
-          onClose();
-        }
-      }}
-    >
-      <DialogContent
-        ref={registerConnectionDialog}
-        maxWidth="2xl"
-        contentClassName="flex flex-col"
-        aria-describedby={undefined}
-      >
-        <DialogHeader className="shrink-0">
-          <DialogTitle>
-            {t(
-              ($) => {
-                return $.chat.connectors.available;
-              },
-              { count: visibleConnectorCount },
-            )}
-          </DialogTitle>
-          {connecting && (
-            <p
-              role="status"
-              className="flex items-center gap-2 text-sm text-muted-foreground"
-            >
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-              {t(($) => {
-                return $.connectors.actions.connecting;
-              })}
-            </p>
-          )}
-        </DialogHeader>
-        <div className="shrink-0">
-          <Input
-            type="text"
-            placeholder={t(($) => {
-              return $.chat.connectors.find;
-            })}
-            value={search}
-            onChange={(e) => {
-              return updateConnectorUi({ addDialogSearch: e.target.value });
-            }}
-            autoFocus
-          />
-        </div>
-        <div className="overflow-y-auto -mx-6 px-6">
-          <AddConnectorSshLoadStatus
-            matches={matchesSsh}
-            state={sshSummary.state}
-          />
-          {matchesVnc && vncSummary.state === "hasError" && <VncLoadError />}
-          {matchesVnc && vncSummary.state === "loading" && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.vnc.loading;
-              })}
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            {showVnc && <VncConnectorCard configuredCount={0} />}
-            {showSsh && sshSummary.state === "hasData" && sshSummary.data && (
-              <SshConnectorCard
-                configuredCount={sshSummary.data.configuredCount}
-              />
-            )}
-            {filtered.map((item) => {
-              return (
-                <ConnectorCard
-                  key={item.slug}
-                  variant="catalog"
-                  connector={item}
-                  busy={connecting}
-                  connect={connectHandlers(item)}
-                />
-              );
-            })}
-            {filteredCustom.map((item) => {
-              return (
-                <CustomConnectorCatalogCard
-                  key={item.id}
-                  connector={item}
-                  onConnect={() => {
-                    resetCustomConnectorConnectInput();
-                    onConnectCustom(item);
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function ComputerUseConnectorMenuSection({
   computerUse,
   onOpenDownloadDialog,
@@ -9115,8 +8828,6 @@ function ComposerConnectorDialogsSlot({
   actions: ComposerConnectorActions;
 }) {
   const { t } = useTranslation();
-  const connectorDirectoryEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const lastConnectorData = useLastResolved(signals.connector.data$);
   const connectorData =
     lastConnectorData?.authorization.agentId === signals.agentId
@@ -9310,62 +9021,40 @@ function ComposerConnectorDialogsSlot({
           invalidateAgentConnectors(agentRecordId);
         }}
       />
-      {connectorUi.showAddDialog &&
-        (connectorDirectoryEnabled ? (
-          <ConnectorDirectoryDialog
-            state={connectorUi}
-            onUpdateState={updateConnectorUi}
-            categoryCounts={directoryBrowse.categoryCounts}
-            categoryMetadata={directoryBrowse.categoryMetadata}
-            loading={
-              addDialogCatalog === undefined || addDialogCatalog === null
-            }
-            chipCatalog={directoryBrowse.chipCatalog}
-            connected={directoryConnected}
-            unconnected={unconnectedConnectors}
-            connectedCustom={directoryConnectedCustom}
-            unconnectedCustom={unconnectedCustomConnectors}
-            connecting={actions.connecting}
-            isConnectorConnecting={actions.isConnectorConnecting}
-            connectHandlers={connectorConnectHandlers}
-            onConnectCustom={(connector) => {
-              updateConnectorUi({
-                showAddDialog: false,
-                selectedCustomConnectorId: connector.id,
-              });
-            }}
-            onConfigurePermissions={(connectorSlug) => {
-              updateConnectorUi({
-                showAddDialog: false,
-                permissionConnectorSlug: connectorSlug,
-              });
-            }}
-            onClose={() => {
-              return updateConnectorUi({
-                showAddDialog: false,
-              });
-            }}
-          />
-        ) : (
-          <AddConnectorsDialog
-            signals={signals}
-            unconnected={unconnectedConnectors}
-            unconnectedCustom={unconnectedCustomConnectors}
-            connecting={actions.connecting}
-            connectHandlers={connectorConnectHandlers}
-            onConnectCustom={(connector) => {
-              updateConnectorUi({
-                showAddDialog: false,
-                selectedCustomConnectorId: connector.id,
-              });
-            }}
-            onClose={() => {
-              return updateConnectorUi({
-                showAddDialog: false,
-              });
-            }}
-          />
-        ))}
+      {connectorUi.showAddDialog && (
+        <ConnectorDirectoryDialog
+          state={connectorUi}
+          onUpdateState={updateConnectorUi}
+          categoryCounts={directoryBrowse.categoryCounts}
+          categoryMetadata={directoryBrowse.categoryMetadata}
+          loading={addDialogCatalog === undefined || addDialogCatalog === null}
+          chipCatalog={directoryBrowse.chipCatalog}
+          connected={directoryConnected}
+          unconnected={unconnectedConnectors}
+          connectedCustom={directoryConnectedCustom}
+          unconnectedCustom={unconnectedCustomConnectors}
+          connecting={actions.connecting}
+          isConnectorConnecting={actions.isConnectorConnecting}
+          connectHandlers={connectorConnectHandlers}
+          onConnectCustom={(connector) => {
+            updateConnectorUi({
+              showAddDialog: false,
+              selectedCustomConnectorId: connector.id,
+            });
+          }}
+          onConfigurePermissions={(connectorSlug) => {
+            updateConnectorUi({
+              showAddDialog: false,
+              permissionConnectorSlug: connectorSlug,
+            });
+          }}
+          onClose={() => {
+            return updateConnectorUi({
+              showAddDialog: false,
+            });
+          }}
+        />
+      )}
     </>
   );
 }
