@@ -21,6 +21,7 @@ import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
@@ -335,20 +336,13 @@ test("shows Auto once for a configured Okou model", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
   await readyChat();
 
-  const user = userEvent.setup({ delay: null });
-  await user.click(await composerModelTrigger("GPT 5.6 Luna"));
-  const chatModels = await screen.findByRole("menu", {
-    name: "Chat models",
+  const chatModels = await openModelPanel("GPT 5.6 Luna");
+  const optionNames = queryAllByRoleFast("radio", chatModels).map((option) => {
+    return option.textContent ?? "";
   });
-  const optionNames = queryAllByRoleFast("menuitemradio", chatModels).map(
-    (option) => {
-      return option.textContent ?? "";
-    },
-  );
   expect(
     optionNames.filter((name) => {
       return name.includes("Auto");
@@ -509,7 +503,6 @@ test("Preserve which model a message was sent with", async () => {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyChat();

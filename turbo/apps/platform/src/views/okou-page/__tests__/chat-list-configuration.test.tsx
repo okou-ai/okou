@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -158,7 +157,6 @@ test("Conversation configuration arriving before creation is retained", async ()
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await waitFor(() => {
@@ -167,7 +165,7 @@ test("Conversation configuration arriving before creation is retained", async ()
   expect(sidebarThreadLinks()).toHaveLength(1);
   click(await findThreadLink(threadId));
 
-  await expectSelectedModel("GPT 5.6 Sol Fast");
+  await expectSelectedModel("GPT 5.6 Sol, Max, Fast");
   await openComputerMenu();
   const configuredHost = await screen.findByRole("switch", {
     name: "Studio Mac",
@@ -208,7 +206,6 @@ test("Service tier and Computer Use settings update independently", async () => 
     context,
     path: `/chats/${target.id}`,
     auth,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
     cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
   });
 
@@ -226,7 +223,7 @@ test("Service tier and Computer Use settings update independently", async () => 
   remote.resolve();
   await page.ready;
 
-  await expectSelectedModel("GPT 5.6 Sol Fast");
+  await expectSelectedModel("GPT 5.6 Sol, Max, Fast");
   await openComputerMenu();
   const connectedHost = await screen.findByRole("switch", {
     name: "Studio Mac",

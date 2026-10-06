@@ -23,6 +23,7 @@ import {
   mockAgent,
   mockBillingCapabilities,
   mockPersonalModelRoutes,
+  queryComposerModelTrigger,
   selectTemplate,
 } from "./chat-composer-test-helpers.ts";
 import {
@@ -59,15 +60,12 @@ function button(label: string, container: ParentNode = document): HTMLElement {
   return result;
 }
 
-async function setupComposer(
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-): Promise<HTMLElement> {
+async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerTaskChips]: true,
-      ...featureSwitches,
     },
   });
   return await findComposerEditor();
@@ -289,16 +287,13 @@ test.each(createTemplateScenarios)(
   async ({ mode, pickerLabel, selectLabel, templates }) => {
     setupModels();
     mockChatLifecycle(context);
-    // The legacy model menu keeps the model's name as its whole label.
-    const editor = await setupComposer({
-      [FeatureSwitchKey.ComposerModelPanel]: false,
-    });
+    const editor = await setupComposer();
     const [first] = templates;
     if (!first) {
       throw new Error(`Expected a ${mode} template`);
     }
     await chooseCommand(editor, "Our launch /", mode);
-    expect(button("Claude Fable 5.1")).toBeInTheDocument();
+    expect(queryComposerModelTrigger("Claude Fable 5.1")).toBeInTheDocument();
     click(button(pickerLabel));
     await screen.findByRole("dialog");
     click(await screen.findByLabelText(`${selectLabel} ${first.title}`));

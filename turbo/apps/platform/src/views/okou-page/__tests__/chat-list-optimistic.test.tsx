@@ -11,7 +11,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
+import {
+  closeModelPanel,
+  modelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -34,11 +38,10 @@ import {
 const context = testContext();
 
 async function selectClaudeSonnet(): Promise<void> {
-  click(await composerModelTrigger("GPT 5.6 Luna"));
-  const chatModels = await screen.findByRole("menu", {
-    name: "Chat models",
-  });
-  click(modelMenuOption(/Claude Sonnet 5/u, chatModels));
+  const chatModels = await openModelPanel("GPT 5.6 Luna");
+  click(modelOption(/Claude Sonnet 5/u, chatModels));
+  await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
+  await closeModelPanel();
 }
 
 async function sendComposerMessage(message: string): Promise<void> {
@@ -134,9 +137,6 @@ async function openUnconfirmedConversation() {
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerModelPanel]: false,
-    },
   });
   return { confirmation, requests, stream };
 }
@@ -359,7 +359,6 @@ test("Server confirmation settles a new conversation without duplication", async
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(13, []),
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await selectClaudeSonnet();

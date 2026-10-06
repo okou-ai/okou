@@ -342,12 +342,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerModelPanel]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Replace the composer's model menu and effort chip with one panel that picks the chat model and sets its effort and Fast mode.",
-    enabled: true,
-  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",

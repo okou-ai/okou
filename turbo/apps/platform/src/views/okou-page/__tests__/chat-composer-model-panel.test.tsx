@@ -82,9 +82,6 @@ async function setupPanel(
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerModelPanel]: true,
-    },
   });
   return await screen.findByRole("textbox", { name: "Message" });
 }
@@ -129,9 +126,6 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerModelPanel]: true,
-    },
   });
   await screen.findByRole("textbox", { name: "Message" });
 }
@@ -187,12 +181,6 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   });
   expect(modelRadio(models, "GPT 5.6 Sol")).toBeChecked();
   expect(modelRadio(models, "Claude Sonnet 5")).not.toBeChecked();
-  // Effort lives inside the panel, not as a separate control beside it.
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.getAttribute("aria-label")?.startsWith("Effort, ");
-    }),
-  ).toBeFalsy();
   expect(
     within(panel).getByRole("slider", { name: "Effort" }),
   ).toBeInTheDocument();

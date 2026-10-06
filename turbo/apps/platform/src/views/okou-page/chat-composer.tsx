@@ -267,12 +267,8 @@ import {
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
-import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
 import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
-import {
-  ModelProviderPicker,
-  type ModelProviderSelection,
-} from "./components/model-provider-picker.tsx";
+import type { ModelProviderSelection } from "./components/model-provider-picker.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
@@ -8602,23 +8598,10 @@ interface ComposerModelPickerControlsProps {
 
 /**
  * The composer chooses only the chat model and how it runs. Images follow the
- * member's settings, so neither control offers a media model.
+ * member's settings, so the panel offers no media model. The panel carries
+ * effort and Fast itself, so no effort chip sits beside it.
  */
-function ComposerModelPickerControls(props: ComposerModelPickerControlsProps) {
-  const modelPanel =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerModelPanel] === true;
-  return modelPanel ? (
-    <ComposerModelPanelControls {...props} />
-  ) : (
-    <ComposerModelMenuControls {...props} />
-  );
-}
-
-/**
- * The model panel only switches the chat model; it carries effort and Fast
- * itself, so the effort chip has no place beside it.
- */
-function ComposerModelPanelControls({
+function ComposerModelPickerControls({
   signals,
   value,
   onChange,
@@ -8638,58 +8621,6 @@ function ComposerModelPanelControls({
         open={open}
         onOpenChange={setOpen}
       />
-      <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
-    </>
-  );
-}
-
-function ComposerModelMenuControls({
-  signals,
-  value,
-  onChange,
-}: ComposerModelPickerControlsProps) {
-  const { t } = useTranslation();
-  const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
-  return (
-    <>
-      {/* Effort and the model are one choice about the next message, so they sit
-          as a pair: no gap between them and 8px of padding each, which leaves
-          16px between the two labels. The row's own gap then separates the pair
-          from the controls that do something else.
-
-          Effort sits level with the model rather than behind it. It is the only
-          way to reach effort and Fast from the menu layout, so it shows at every
-          width; the level's name is one short word, which the row can afford
-          even on a phone. */}
-      <div className="flex items-center">
-        <ChatEffortTrigger
-          value={value}
-          onChange={onChange}
-          triggerClassName={cn(
-            "px-2 text-sm text-muted-foreground",
-            COMPOSER_CONTROL_FOCUS_CLASS,
-          )}
-        />
-        <ModelProviderPicker
-          value={value}
-          onChange={onChange}
-          placeholder={t(($) => {
-            return $.chat.composer.selectModel;
-          })}
-          triggerClassName={composerModelPickerTriggerClassName()}
-          nativeMenu
-          // The effort control beside it carries the bolt when Fast is on, so
-          // the model keeps its own name.
-          fastShownByCaller
-          compactTrigger
-          mobileIconTrigger
-          open={modelPickerOpen}
-          onOpenChange={(open) => {
-            setModelPickerOpen(open);
-          }}
-        />
-      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
     </>
   );

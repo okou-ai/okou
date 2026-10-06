@@ -217,7 +217,6 @@ function ComposerModelPanelOptions({
   return (
     <div className="mt-1 shrink-0 border-t border-divider pt-0.5">
       <ChatEffortSettings
-        showValue={false}
         selection={value}
         disabled={disabled}
         onChange={onChange}

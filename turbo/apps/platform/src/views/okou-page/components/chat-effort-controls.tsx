@@ -5,7 +5,7 @@ import {
   type ReasoningEffort,
   withModelReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { Switch, cn } from "@okouai/ui";
+import { Switch } from "@okouai/ui";
 import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
@@ -66,21 +66,10 @@ export function formatChatEffort(effort: ReasoningEffort) {
  * Keep each end's benefit and usage visible together. Built-in routes spend
  * credits; external routes use their provider's allowance or token billing.
  */
-function EffortScaleLabels({
-  spaced,
-  builtIn,
-}: {
-  spaced: boolean;
-  builtIn: boolean;
-}) {
+function EffortScaleLabels({ builtIn }: { builtIn: boolean }) {
   const { t } = useTranslation();
   return (
-    <div
-      className={cn(
-        "pointer-events-none mb-2 flex select-none items-start justify-between gap-3 text-xs text-muted-foreground",
-        spaced && "mt-5",
-      )}
-    >
+    <div className="pointer-events-none mb-2 flex select-none items-start justify-between gap-3 text-xs text-muted-foreground">
       <div className="flex flex-col gap-0.5">
         <span>
           {t(($) => {
@@ -118,24 +107,18 @@ function EffortScaleLabels({
 }
 
 /**
- * The effort row: the label, the selected step in the user's words, and the
- * bar. Renders nothing for a model that has no effort levels.
+ * The effort bar. The composer's model panel trigger already names the level
+ * and the bar carries it for assistive technology, so no label/value row sits
+ * above it. Renders nothing for a model that has no effort levels.
  */
 export function ChatEffortSettings({
   selection,
   disabled,
   onChange,
-  showValue = true,
 }: {
   selection: ModelProviderSelection;
   disabled: boolean;
   onChange: (selection: ModelProviderSelection) => void;
-  /**
-   * The label/value row above the bar. The composer's model panel leaves it
-   * out: its trigger already names the level and the bar carries it for
-   * assistive technology, so the row only repeated both.
-   */
-  showValue?: boolean;
 }) {
   const { t } = useTranslation();
   const { efforts, effort: value, builtIn } = useChatEffort(selection);
@@ -154,17 +137,9 @@ export function ChatEffortSettings({
     // carries its own spacing rather than the column setting one for all of
     // them.
     <div className="flex flex-col px-2 py-3">
-      {/* The same label/value pair the composer's video options use: the name
-          of the setting recedes, the chosen value carries the row. */}
-      {showValue && (
-        <div className="flex items-baseline justify-between gap-3 text-[13px]">
-          <span className="text-muted-foreground">{label}</span>
-          <span className="font-medium text-foreground">{displayValue}</span>
-        </div>
-      )}
       {index !== -1 ? (
         <>
-          <EffortScaleLabels spaced={showValue} builtIn={builtIn} />
+          <EffortScaleLabels builtIn={builtIn} />
           <ChatEffortSlider
             steps={efforts.length}
             value={index}
