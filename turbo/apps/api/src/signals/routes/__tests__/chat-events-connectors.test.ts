@@ -840,7 +840,7 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
   });
 
-  it("starts the run when the runtime catalog no longer contains the selected built-in", async () => {
+  it("retains authorized immutable selections when only retired legacy catalog bytes omit a built-in", async () => {
     // Catalog rows are global by source, so isolate mutations from parallel test files.
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
@@ -913,9 +913,29 @@ describe("CHAT-02: thread connector account selection", () => {
       prompt: "Continue after the selected connector leaves the catalog",
     });
     const claimed = await claimChatRun(runnerGroup, run.runId);
+    expect(claimed.claim.secretConnectorMap?.OPENAI_TOKEN).toBe("openai");
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toBeUndefined();
+    ).toStrictEqual({
+      sourceType: "connector",
+      sourceId: connection.id,
+    });
+    expect(claimed.claim.connectorRuntimeTargets).toContainEqual({
+      kind: "builtin",
+      connectorSlug: "openai",
+      sourceId: connection.id,
+    });
+    expect(claimed.claim.firewalls).toContainEqual(
+      expect.objectContaining({
+        kind: "builtin",
+        name: "openai",
+        sourceId: connection.id,
+      }),
+    );
+    expect(claimed.claim).not.toHaveProperty("connectorPermissionBaseline");
+    expect(
+      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN?.sourceId,
+    ).not.toBe(runtimeConnection.id);
 
     const selections = await accept(
       chatThreadConnectorSelectionsClient().get({
@@ -925,6 +945,10 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
     expect(selections.body.selections).toStrictEqual([
+      {
+        connectionId: connection.id,
+        target: { kind: "builtin", connectorSlug: "openai" },
+      },
       {
         connectionId: runtimeConnection.id,
         target: { kind: "builtin", connectorSlug: "runtime" },
@@ -939,7 +963,7 @@ describe("CHAT-02: thread connector account selection", () => {
           target: { kind: "builtin", connectorSlug: "openai" },
         },
       }),
-      [400],
+      [200],
     );
     await accept(
       chatThreadsClient().create({
@@ -955,7 +979,7 @@ describe("CHAT-02: thread connector account selection", () => {
           ],
         },
       }),
-      [400],
+      [201],
     );
     await accept(
       chatThreadConnectorSelectionsClient().clear({

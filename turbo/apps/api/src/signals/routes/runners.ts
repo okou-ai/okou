@@ -1769,9 +1769,8 @@ async function buildClaimResponseBody(
     readonly reuseKey: string | null;
     readonly storedContext: StoredExecutionContext;
     readonly secretValues: string[] | null;
-    readonly refreshedPolicies: Pick<
-      StoredExecutionContext,
-      "networkPolicies" | "networkPolicyRefreshes"
+    readonly refreshedPolicies: Promise<
+      Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
     >;
     readonly timing: ClaimRouteTimingCollector;
     readonly loadIdentityRepresentation: (
@@ -1793,29 +1792,41 @@ async function buildClaimResponseBody(
     "claim_route_response_assembly",
     "top_level",
     async () => {
-      const resumeSession = await resolveResumeSessionForClaim({
-        resumeSession: args.storedContext.resumeSession,
-        timing: args.timing,
-        loadIdentityRepresentation(hash: string) {
-          return args.loadIdentityRepresentation(hash);
-        },
-        loadCompressedRepresentation(
-          hash: string,
-          encoding: CompressedSessionHistoryBlobEncoding,
-        ) {
-          return args.loadCompressedRepresentation(hash, encoding);
-        },
-        generateResumeSessionHistoryUrl: args.generateResumeSessionHistoryUrl,
-        generateResumeSessionHistoryObjectUrl:
-          args.generateResumeSessionHistoryObjectUrl,
-      });
+      const [resumeResult, policyResult] = await Promise.allSettled([
+        resolveResumeSessionForClaim({
+          resumeSession: args.storedContext.resumeSession,
+          timing: args.timing,
+          loadIdentityRepresentation(hash: string) {
+            return args.loadIdentityRepresentation(hash);
+          },
+          loadCompressedRepresentation(
+            hash: string,
+            encoding: CompressedSessionHistoryBlobEncoding,
+          ) {
+            return args.loadCompressedRepresentation(hash, encoding);
+          },
+          generateResumeSessionHistoryUrl: args.generateResumeSessionHistoryUrl,
+          generateResumeSessionHistoryObjectUrl:
+            args.generateResumeSessionHistoryObjectUrl,
+        }),
+        args.refreshedPolicies,
+      ]);
+      if (resumeResult.status === "rejected") {
+        const error: unknown = resumeResult.reason;
+        throw error;
+      }
+      const resumeSession = resumeResult.value;
       signal.throwIfAborted();
       const sandboxToken = generateSandboxToken(
         args.run.userId,
         args.run.id,
         args.run.orgId,
       );
-      const refreshedPolicies = args.refreshedPolicies;
+      if (policyResult.status === "rejected") {
+        const error: unknown = policyResult.reason;
+        throw error;
+      }
+      const refreshedPolicies = policyResult.value;
       signal.throwIfAborted();
       const {
         connectorPermissionBaseline: _connectorPermissionBaseline,
@@ -2088,7 +2099,7 @@ const buildClaimResponseBodyForClaim$ = command(
       args.timing,
     );
     signal.throwIfAborted();
-    const refreshedPolicies = await set(
+    const refreshedPolicies = set(
       refreshClaimNetworkPolicies$,
       {
         run: args.run,
@@ -2098,40 +2109,57 @@ const buildClaimResponseBodyForClaim$ = command(
       },
       signal,
     );
+    // Always join the refresh independently: response assembly can reject at
+    // its initial abort boundary before installing its inner parallel join.
+    const [response] = await Promise.allSettled([
+      buildClaimResponseBody(
+        {
+          run: args.run,
+          reuseKey: args.reuseKey,
+          storedContext: args.storedContext,
+          secretValues,
+          refreshedPolicies,
+          timing: args.timing,
+          loadIdentityRepresentation(hash: string) {
+            return set(loadIdentityResumeSessionHistoryRepresentation$, {
+              db: args.db,
+              hash,
+            });
+          },
+          loadCompressedRepresentation(
+            hash: string,
+            encoding: CompressedSessionHistoryBlobEncoding,
+          ) {
+            return set(loadCompressedResumeSessionHistoryRepresentation$, {
+              db: args.db,
+              encoding,
+              hash,
+            });
+          },
+          generateResumeSessionHistoryUrl(hash: string) {
+            return set(generateResumeSessionHistoryUrl$, hash);
+          },
+          generateResumeSessionHistoryObjectUrl(objectKey: string) {
+            return set(generateResumeSessionHistoryObjectUrl$, objectKey);
+          },
+        },
+        signal,
+      ),
+      refreshedPolicies,
+    ]);
+    if (signal.aborted) {
+      // Assembly already selected resume-error versus abort versus policy-error
+      // precedence. Drainage must not replace that original rejection.
+      const error: unknown =
+        response.status === "rejected" ? response.reason : signal.reason;
+      throw error;
+    }
+    if (response.status === "rejected") {
+      const error: unknown = response.reason;
+      throw error;
+    }
     signal.throwIfAborted();
-    return await buildClaimResponseBody(
-      {
-        run: args.run,
-        reuseKey: args.reuseKey,
-        storedContext: args.storedContext,
-        secretValues,
-        refreshedPolicies,
-        timing: args.timing,
-        loadIdentityRepresentation(hash: string) {
-          return set(loadIdentityResumeSessionHistoryRepresentation$, {
-            db: args.db,
-            hash,
-          });
-        },
-        loadCompressedRepresentation(
-          hash: string,
-          encoding: CompressedSessionHistoryBlobEncoding,
-        ) {
-          return set(loadCompressedResumeSessionHistoryRepresentation$, {
-            db: args.db,
-            encoding,
-            hash,
-          });
-        },
-        generateResumeSessionHistoryUrl(hash: string) {
-          return set(generateResumeSessionHistoryUrl$, hash);
-        },
-        generateResumeSessionHistoryObjectUrl(objectKey: string) {
-          return set(generateResumeSessionHistoryObjectUrl$, objectKey);
-        },
-      },
-      signal,
-    );
+    return response.value;
   },
 );
 

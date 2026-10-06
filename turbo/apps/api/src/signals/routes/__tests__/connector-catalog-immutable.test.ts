@@ -1286,6 +1286,16 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         )
       ).rows,
     ).toStrictEqual([{ generation: 4 }]);
+    // Preserve the exact gen4/missing primary checkpoint independently of the
+    // later rollback cutover (gen5) added after the separate divergent-C1 step.
+    expect(
+      (
+        await engine.query(
+          "SELECT generation, status FROM pi_stable_context_heads WHERE org_id = 'catalog-lifecycle-org' AND agent_id = $1 AND user_id = 'catalog-lifecycle-user'",
+          [agentId],
+        )
+      ).rows,
+    ).toStrictEqual([{ generation: 4, status: "missing" }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,

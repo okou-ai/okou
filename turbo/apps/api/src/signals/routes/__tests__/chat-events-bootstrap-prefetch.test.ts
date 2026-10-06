@@ -11,11 +11,6 @@ import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
-import { mockEnv } from "../../../lib/env";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
 import { withAgentBootstrapFailureFixture } from "../../../test-fixtures/agent-bootstrap-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -703,105 +698,6 @@ describe("chat agent bootstrap prefetch", () => {
       await cancelChatRun(actor, associated.runId, claimed.sandboxHeaders);
     },
   );
-
-  it("uses one captured immutable catalog generation when current changes during prefetch", async () => {
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `bootstrap-catalog-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `bootstrap-old-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const connection = await connectors.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      {
-        apiKey: `bootstrap-owned-${randomUUID()}`,
-      },
-      agentId,
-    );
-    const clientEventId = randomUUID();
-    const sent = await withDatabaseTransactionBarrierFixture(
-      {
-        select: (queryArgs) => {
-          const text = barrierQueryText(queryArgs);
-          return (
-            text.includes('from "connector_catalog"') &&
-            text.includes('"connector_catalog_entries"') &&
-            text.includes('"catalog_header"') &&
-            text.includes('"payload"')
-          );
-        },
-        stopAt: (_queryArgs, selecting) => {
-          return selecting;
-        },
-        pauseAfter: true,
-        work: async (barrier) => {
-          const sending = chat.requestSendEvent(
-            actor,
-            {
-              agentId,
-              prompt: "use the captured connector catalog",
-              clientEventId,
-            },
-            [201],
-          );
-          // The single current+entry SELECT has completed, but its captured
-          // result has not yet reached the bootstrap materializer. Rotation is
-          // owned by this barrier, not a wait for the retired projection query.
-          expect((await barrier.entered).rowCount).toBeGreaterThan(0);
-          const response = await sending;
-          if (response.status !== 201) {
-            throw new Error("Expected the direct send to be accepted");
-          }
-          const catalogVersion = `bootstrap-new-${randomUUID()}`;
-          await installApiTestConnectorCatalog({
-            runtimeProjection: true,
-            catalog: {
-              ...API_TEST_CONNECTOR_CATALOG,
-              catalogVersion,
-              connectors: API_TEST_CONNECTOR_CATALOG.connectors.filter(
-                (connector) => {
-                  return connector.slug !== "openai";
-                },
-              ),
-            },
-          });
-          barrier.release();
-          await flushWaitUntilForTest();
-          return response;
-        },
-      },
-      context.signal,
-    );
-    const runId = userMessages(
-      (await chat.listThreadEvents(actor, sent.body.threadId)).events,
-    ).find((message) => {
-      return message.revokesEventId === clientEventId;
-    })?.runId;
-    if (!runId) {
-      throw new Error("Expected a run prepared from the captured catalog");
-    }
-    const claimed = await claimChatRun(runnerGroup, runId);
-    expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toMatchObject({ sourceId: connection.id });
-    await cancelChatRun(actor, runId, claimed.sandboxHeaders);
-    const next = await sendChatRun(actor, {
-      agentId,
-      prompt: "use the replacement catalog",
-      threadId: sent.body.threadId,
-    });
-    const nextClaim = await claimChatRun(runnerGroup, next.runId);
-    expect(
-      nextClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toBeUndefined();
-    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
-  });
 
   it("keeps the captured default account for one pick and observes the next default on the next pick", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();

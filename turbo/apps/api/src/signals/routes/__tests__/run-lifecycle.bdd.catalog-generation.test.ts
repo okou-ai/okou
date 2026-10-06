@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
@@ -25,7 +27,20 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import { buildAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog";
-import { catalogWithAuthMethod } from "./helpers/public-connector-catalog";
+import {
+  catalogWithAuthMethod,
+  createPublicConnectorCatalog,
+} from "./helpers/public-connector-catalog";
+import {
+  createChatEventsFixture,
+  userMessages,
+} from "./helpers/chat-events-fixture";
+import {
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/database-transaction-barrier";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatThreadRoutes } from "../chat-threads";
 import { createRouteMocks } from "./helpers/route-test";
 
 /**
@@ -149,6 +164,174 @@ function builtinConnectorRuntimeRegistration(
 }
 
 describe("RUN-02: custom connectors, grants, and network policies", () => {
+  it("retains captured immutable credentials then omits a genuinely removed builtin on the next bootstrap", async () => {
+    const catalog = createPublicConnectorCatalog(context);
+    const firstGeneration = await catalog.publish(API_TEST_CONNECTOR_CATALOG);
+    const fixture = createChatEventsFixture(context);
+    const { actor, agentId, runnerGroup } =
+      await fixture.entitledNativeChatActor();
+    fixture.chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const connection = await fixture.connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "terminal-openai-owned" },
+      agentId,
+    );
+    const other = await fixture.connectors.connectManualGrant(
+      actor,
+      "runtime",
+      "api-token",
+      { apiKey: "terminal-runtime-owned" },
+      agentId,
+    );
+    const clientEventId = randomUUID();
+    const sent = await withDatabaseTransactionBarrierFixture(
+      {
+        select: (queryArgs) => {
+          const text = barrierQueryText(queryArgs);
+          return (
+            text.includes('from "connector_catalog"') &&
+            text.includes('"connector_catalog_entries"') &&
+            text.includes('"catalog_header"') &&
+            text.includes('"payload"')
+          );
+        },
+        stopAt: (_queryArgs, selecting) => {
+          return selecting;
+        },
+        pauseAfter: true,
+        work: async (barrier) => {
+          const sending = fixture.chat.requestSendEvent(
+            actor,
+            {
+              agentId,
+              prompt: "use captured immutable catalog",
+              clientEventId,
+            },
+            [201],
+          );
+          expect((await barrier.entered).rowCount).toBeGreaterThan(0);
+          const response = await sending;
+          if (response.status !== 201) {
+            throw new Error("Expected direct send acceptance");
+          }
+          // Real activation, not the retired legacy installer. Capture completed
+          // before this winning CAS; old immutable entry rows remain addressable.
+          const replacement = await catalog.publish({
+            ...API_TEST_CONNECTOR_CATALOG,
+            connectors: API_TEST_CONNECTOR_CATALOG.connectors.filter(
+              (entry) => {
+                return entry.slug !== "openai";
+              },
+            ),
+          });
+          expect(replacement.hash).not.toBe(firstGeneration.hash);
+          barrier.release();
+          await flushWaitUntilForTest();
+          return response;
+        },
+      },
+      context.signal,
+    );
+    const runId = userMessages(
+      (await fixture.chat.listThreadEvents(actor, sent.body.threadId)).events,
+    ).find((message) => {
+      return message.revokesEventId === clientEventId;
+    })?.runId;
+    if (!runId) {
+      throw new Error("Missing captured generation Run");
+    }
+    const first = await fixture.claimChatRun(runnerGroup, runId);
+    expect(first.claim.secretConnectorMap?.OPENAI_TOKEN).toBe("openai");
+    expect(first.claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toStrictEqual({
+      sourceType: "connector",
+      sourceId: connection.id,
+    });
+    expect(first.claim.firewalls).toContainEqual(
+      expect.objectContaining({
+        kind: "builtin",
+        name: "openai",
+        sourceId: connection.id,
+      }),
+    );
+    await fixture.cancelChatRun(actor, runId, first.sandboxHeaders);
+    const next = await fixture.sendChatRun(actor, {
+      agentId,
+      threadId: sent.body.threadId,
+      prompt: "use actual replacement generation",
+    });
+    const claimed = await fixture.claimChatRun(runnerGroup, next.runId);
+    expect(claimed.claim.environment).not.toHaveProperty("OPENAI_TOKEN");
+    expect(claimed.claim.secretConnectorMap ?? {}).not.toHaveProperty(
+      "OPENAI_TOKEN",
+    );
+    expect(claimed.claim.secretConnectorMetadataMap ?? {}).not.toHaveProperty(
+      "OPENAI_TOKEN",
+    );
+    expect(
+      claimed.claim.firewalls?.some((entry) => {
+        return entry.kind === "builtin" && entry.name === "openai";
+      }),
+    ).toBeFalsy();
+    expect(claimed.claim.billableFirewalls ?? []).not.toContain("openai");
+    expect(claimed.claim.networkPolicies ?? {}).not.toHaveProperty("openai");
+    expect(claimed.claim).not.toHaveProperty("connectorPermissionBaseline");
+    expect(claimed.claim.environment?.RUNTIME_API_KEY).toBe(
+      "terminal-runtime-owned",
+    );
+    expect(claimed.claim.connectorRuntimeTargets).toContainEqual({
+      kind: "builtin",
+      connectorSlug: "runtime",
+      sourceId: other.id,
+    });
+    await fixture.cancelChatRun(actor, next.runId, claimed.sandboxHeaders);
+    const selectionClient = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadConnectorSelectionContract,
+    );
+    const selections = await accept(
+      selectionClient.get({
+        headers: fixture.sessionHeaders(actor),
+        params: { id: sent.body.threadId },
+      }),
+      [200],
+    );
+    expect(
+      selections.body.selections.some((entry) => {
+        return (
+          entry.target.kind === "builtin" &&
+          entry.target.connectorSlug === "openai"
+        );
+      }),
+    ).toBeFalsy();
+    await accept(
+      selectionClient.update({
+        headers: fixture.sessionHeaders(actor),
+        params: { id: sent.body.threadId },
+        body: {
+          connectionId: connection.id,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
+      }),
+      [400],
+    );
+    await accept(
+      fixture.chatThreadsClient().create({
+        headers: fixture.sessionHeaders(actor),
+        body: {
+          agentId,
+          model: "claude-fable-5-1",
+          connectorSelections: [
+            {
+              connectionId: connection.id,
+              target: { kind: "builtin", connectorSlug: "openai" },
+            },
+          ],
+        },
+      }),
+      [400],
+    );
+  });
   it("omits genuinely compatibility-filtered auth from immutable scoped claims", async () => {
     const catalog = createPublicAutomaticCatalog(context);
     await catalog.run(async () => {
