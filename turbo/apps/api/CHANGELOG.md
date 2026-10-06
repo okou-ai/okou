@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.710.1](https://github.com/okou-ai/okou/compare/api-v1.710.0...api-v1.710.1) (2026-10-06)
+
+
+### Performance Improvements
+
+* **api:** avoid eager full catalog reads during run bootstrap ([#37769](https://github.com/okou-ai/okou/issues/37769)) ([c1c2d77](https://github.com/okou-ai/okou/commit/c1c2d77ab51b38acf91008b2c60937ac2c29cda3))
+
 ## [1.710.0](https://github.com/okou-ai/okou/compare/api-v1.709.4...api-v1.710.0) (2026-10-06)
 
 
