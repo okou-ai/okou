@@ -1,3 +1,8 @@
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
@@ -313,15 +318,23 @@ function dropLastTeamsIndicatorRequest(
 function mockOpenRouterSummary(summary: string): unknown[] {
   const requests: unknown[] = [];
   server.use(
-    http.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      async ({ request }) => {
-        requests.push(await request.json());
-        return HttpResponse.json({
-          choices: [{ finish_reason: "stop", message: { content: summary } }],
-        });
-      },
-    ),
+    http.post(VERTEX_TEXT_URL, async ({ request }) => {
+      requests.push(vertexTextRequest(await request.json(), request.url));
+      return HttpResponse.json({
+        candidates: [
+          {
+            finishReason: "STOP",
+            content: {
+              parts: [
+                {
+                  text: summary,
+                },
+              ],
+            },
+          },
+        ],
+      });
+    }),
   );
   return requests;
 }
@@ -613,7 +626,7 @@ async function claimFollowUpInThread(args: {
 beforeEach(() => {
   setupTeamsConnectTestEnv(APP_URL);
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", BOT_APP_PASSWORD);
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   mockEnv("OKOU_WEB_URL", "https://www.okou.test");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.test");
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
@@ -947,7 +960,7 @@ describe("Teams chat callbacks", () => {
         okouDebug: true,
       });
       const teamsApi = teamsApiMocks({ fixture: teams.fixture });
-      mockOptionalEnv("OPENROUTER_API_KEY", "teams-summary-key");
+      mockGoogleText();
       const summaryRequests = mockOpenRouterSummary("Teams completed summary");
       const activityId = teamsFixtureExternalId(
         teams.fixture,
@@ -1088,7 +1101,7 @@ describe("Teams chat callbacks", () => {
       setupTeamsConnectTestEnv("https://app.okou.ai");
       const teams = await setupConnectedTeamsActor({ okouDebug: true });
       const teamsApi = teamsApiMocks({ fixture: teams.fixture });
-      mockOptionalEnv("OPENROUTER_API_KEY", "teams-summary-key");
+      mockGoogleText();
       const summaryRequests = mockOpenRouterSummary("Teams completed summary");
       const threadId = teamsFixtureExternalId(teams.fixture, "root-completed");
       const runId = await dispatchTeamsRun({

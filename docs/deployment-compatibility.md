@@ -20,6 +20,40 @@ remain. Actual pricing/credits, historical usage, image generation and unrelated
 connectors retain their existing storage. See [the retirement boundary](custom-model-retirement.md)
 and [current model APIs](model-catalog.md). This source PR does not deploy or merge.
 
+## Bounded official connector catalog initialization in CI preview
+
+`deploy-api` opts into `db:dev-seed --preview-onboarding-catalog` for the
+Neon test project's `preview/*` branch. It downloads and validates the same
+official R2 publication, but materializes only the union of the onboarding
+source/workflow contracts and the six existing Runner E2E connectors. The
+current union is 31 connectors. Immutable entry rows are inserted in one batch,
+with no per-entry SQL readback. The current manifest lists only those rows;
+the publication version, digest and full attested compressed snapshot remain
+unchanged. Compatibility and runtime projections, and bundled skills, are
+prepared only for the selected entries. This is a preview projection, not a
+new publication or a promise that every official connector is available there.
+
+Before aliasing the deployed preview or starting downstream E2E, CI calls
+`/api/cron/seed-preview-onboarding-catalog` with the existing cron secret. The
+endpoint repeats that bounded initialization using the deployed API's actual
+capability configuration; it does not call the full synchronizer. It returns
+404 outside `ENV=preview`. The seed command also rejects non-preview use, and
+the CLI flag is checked before any development seed writes. An unavailable,
+invalid or incomplete publication fails initialization; there is no full-sync
+fallback, fabricated active identity, or relaxed byte/relationship validation.
+
+New workflow and new API are shipped from the same checked-out commit. An old
+API does not have the new endpoint, so the new workflow fails before exposing
+its alias rather than silently using another preview or the full synchronizer.
+Old workflow with new API retains the old full-sync invocation. Rollback must
+reset/discard the bounded preview generation before relying on full initialization:
+the unchanged full synchronizer's same-digest shortcut does not detect a partial
+preview manifest. Merely removing the CLI flag is not a full-materialization
+repair. Never promote this test database into production. No schema migration,
+production configuration, App/Runner protocol or release action is part of this
+change. Production's existing minute cron and its full validation, CAS activation
+and invalidation behavior remain unchanged.
+
 ## Personal subscription CLI and Reset Cards
 
 `SubscriptionControls` adds a staff-gated single-account usage GET at

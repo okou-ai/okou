@@ -1,3 +1,8 @@
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { expectThreadModelTokens } from "./helpers/public-thread-usage";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
@@ -19,7 +24,6 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
 import {
   createChatEventsFixture,
-  openRouterBodySchema,
   requireOrgId,
   createPiUsagePricingResolution,
   claimEnvironment,
@@ -49,28 +53,31 @@ async function expectPiActivitySummary(
 ): Promise<void> {
   // Guest tool events are captured as activity while the run is still active.
   await flushWaitUntilForTest();
-  mockOptionalEnv("OPENROUTER_API_KEY", "activity-summary-key");
+  mockGoogleText();
   let activityInput = "";
   server.use(
-    http.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      async ({ request }) => {
-        const body = openRouterBodySchema.parse(await request.json());
-        activityInput = body.messages
-          .map((message) => {
-            return message.content;
-          })
-          .join("\n");
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: "Checking the CLI and preparing the note" },
+    http.post(VERTEX_TEXT_URL, async ({ request }) => {
+      const body = vertexTextRequest(await request.json(), request.url);
+      activityInput = body.messages
+        .map((message) => {
+          return message.content;
+        })
+        .join("\n");
+      return HttpResponse.json({
+        candidates: [
+          {
+            finishReason: "STOP",
+            content: {
+              parts: [
+                {
+                  text: "Checking the CLI and preparing the note",
+                },
+              ],
             },
-          ],
-        });
-      },
-    ),
+          },
+        ],
+      });
+    }),
   );
   const activity = await accept(
     setupApp({ context, routes: chatThreadActivitySummaryRoutes })(
@@ -93,7 +100,7 @@ async function expectPiActivitySummary(
   });
   expect(activityInput).toContain("okou --help");
   expect(activityInput).toContain("add_ad_hoc_note");
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 }
 
 function boundedPiCheckpointHistory(jsonl: string): {

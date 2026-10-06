@@ -1,3 +1,4 @@
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import AdmZip from "adm-zip";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -165,7 +166,7 @@ async function entitledChatActorWithoutRunner(
   chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   chatCallbacks.disableVapid();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
@@ -3954,28 +3955,29 @@ describe("CHAT-01 chat search index", () => {
     );
     const visibleNeedle = `visiblemessage${randomUUID().replaceAll("-", "")}`;
     const followupOnlyNeedle = `futurefollowup${randomUUID().replaceAll("-", "")}`;
-    mockOptionalEnv("OPENROUTER_API_KEY", "follow-up-search-key");
+    mockGoogleText();
     server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        async ({ request }) => {
-          const body = await request.text();
-          return HttpResponse.json({
-            choices: [
-              {
-                finish_reason: "stop",
-                message: {
-                  content: body.includes("recommended follow-up messages")
-                    ? JSON.stringify([
-                        { prompt: followupOnlyNeedle, kind: "talk" },
-                      ])
-                    : "Follow-up search exclusion",
-                },
+      http.post(VERTEX_TEXT_URL, async ({ request }) => {
+        const body = await request.text();
+        return HttpResponse.json({
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: body.includes("recommended follow-up messages")
+                      ? JSON.stringify([
+                          { prompt: followupOnlyNeedle, kind: "talk" },
+                        ])
+                      : "Follow-up search exclusion",
+                  },
+                ],
               },
-            ],
-          });
-        },
-      ),
+            },
+          ],
+        });
+      }),
     );
 
     const run = await sendChatRun(actor, {

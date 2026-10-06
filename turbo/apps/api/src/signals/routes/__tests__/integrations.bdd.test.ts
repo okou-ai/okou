@@ -3554,7 +3554,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     const titlePrompts: string[] = [];
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
         titlePrompts.push(body.messages[1]?.content ?? "");
@@ -4662,7 +4662,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     chatCallbacks.enableVapid();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     let notificationSummaryRequests = 0;
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockVertexCompletions((body) => {
       if (
         body.messages[0]?.content.includes("one short notification sentence")
       ) {

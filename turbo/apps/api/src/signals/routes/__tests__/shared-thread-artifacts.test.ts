@@ -1,3 +1,4 @@
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -52,7 +53,7 @@ const runs = createRunsApi(context);
 const mocks = createRouteMocks(context);
 
 beforeEach(() => {
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("R2_HOSTED_SITES_ACCESS_KEY_ID", "snapshot-hosted-key");
@@ -1230,15 +1231,24 @@ test.each(["publish", "delete", "cancel"] as const)(
       }
       return result;
     });
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    mockGoogleText();
     server.use(
-      http.post("https://openrouter.ai/api/v1/chat/completions", async () => {
+      http.post(VERTEX_TEXT_URL, async () => {
         titleEntered.resolve(undefined);
         await releaseTitle.promise;
         providerReturned.resolve(undefined);
         return HttpResponse.json({
-          choices: [
-            { finish_reason: "stop", message: { content: "Shared report" } },
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: "Shared report",
+                  },
+                ],
+              },
+            },
           ],
         });
       }),

@@ -1225,7 +1225,7 @@ jobs:
 
           cd turbo
           DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
-          ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed
+          ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
 
           echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 
@@ -1317,10 +1317,10 @@ jobs:
           API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # Vercel does not run cron schedules for preview deployments. Reconcile
-      # through the unique deployment URL before exposing it through an alias or
-      # allowing downstream runner and E2E consumers to start.
-      - name: Reconcile preview connector catalog
+      # Preview cron does not run automatically. Seed the same bounded official
+      # catalog projection against the deployed API's capability configuration;
+      # do not call the production full-catalog synchronizer here.
+      - name: Seed preview onboarding connector catalog
         env:
           API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -1337,32 +1337,21 @@ jobs:
               --max-time 120 \
               -H "Authorization: Bearer ${CRON_SECRET}" \
               -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-              "${API_DEPLOYMENT_URL}/api/cron/sync-connector-catalog"); then
-              echo "::warning::Connector catalog reconcile request failed (attempt ${attempt}/3)"
-            elif summary=$(jq -c '{
-              outcome,
-              state,
-              active,
-              lastAttempt,
-              filtering: {
-                capabilityDigest: .filtering.capabilityDigest,
-                evaluatedAt: .filtering.evaluatedAt,
-                stale: .filtering.stale,
-                filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)
-              }
-            }' <<< "$response"); then
-              echo "Connector catalog reconcile: ${summary}"
+              "${API_DEPLOYMENT_URL}/api/cron/seed-preview-onboarding-catalog"); then
+              echo "::warning::Preview catalog seed request failed (attempt ${attempt}/3)"
+            elif summary=$(jq -c '{catalogVersion, catalogDigest, connectorSlugs}' <<< "$response"); then
+              echo "Preview onboarding catalog: ${summary}"
 
               if jq -e '
-                .state == "current"
-                and .active != null
-                and .filtering.stale == false
+                (.catalogVersion | type == "string" and length > 0)
+                and (.catalogDigest | test("^sha256:[a-f0-9]{64}$"))
+                and (.connectorSlugs | type == "array" and length > 0)
               ' <<< "$response" >/dev/null; then
                 exit 0
               fi
-              echo "::warning::Connector catalog is not ready (attempt ${attempt}/3)"
+              echo "::warning::Preview onboarding catalog is not ready (attempt ${attempt}/3)"
             else
-              echo "::warning::Connector catalog reconcile returned invalid JSON (attempt ${attempt}/3)"
+              echo "::warning::Preview catalog seed returned invalid JSON (attempt ${attempt}/3)"
             fi
 
             if [ "$attempt" -lt 3 ]; then
@@ -1370,7 +1359,7 @@ jobs:
             fi
           done
 
-          echo "::error::Connector catalog reconcile did not produce a current accepted snapshot"
+          echo "::error::Preview catalog seed did not produce an onboarding projection"
           exit 1
 
       - name: Create API Vercel Alias
