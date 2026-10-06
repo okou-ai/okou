@@ -1,6 +1,9 @@
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import type { UpdateOrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import type {
+  OrgModelPolicy,
+  UpdateOrgModelPolicy,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
@@ -112,6 +115,22 @@ async function listPolicies() {
     .body;
 }
 
+function policyDefinition({
+  runtimeProviderType: _runtimeProviderType,
+  memberEffective,
+  ...definition
+}: OrgModelPolicy) {
+  if (memberEffective === undefined) {
+    return { ...definition, memberEffective };
+  }
+  const {
+    runtimeProviderType: _memberRuntimeProviderType,
+    availability: _availability,
+    ...memberScope
+  } = memberEffective;
+  return { ...definition, memberEffective: memberScope };
+}
+
 describe("model catalog authority", () => {
   it("exposes the database system default and display price tiers", async () => {
     await signInAdmin();
@@ -140,8 +159,9 @@ describe("model catalog authority", () => {
       }),
     ]);
 
-    // The default is projected rather than persisted, so a write that omits
-    // it returns the same projection and revision.
+    // The default is projected rather than persisted: its definition, member
+    // scope and revision stay unchanged. Runtime route/availability are live
+    // observations, not stored policy fields, and may change between requests.
     const written = await accept(
       policiesApi().update({
         headers: authHeaders(),
@@ -150,7 +170,9 @@ describe("model catalog authority", () => {
       [200],
     );
     expect(written.body.revision).toBe(initial.revision);
-    expect(written.body.policies).toStrictEqual(initial.policies);
+    expect(written.body.policies.map(policyDefinition)).toStrictEqual(
+      initial.policies.map(policyDefinition),
+    );
   });
 
   it("admits a new policy for an active catalog model", async () => {
