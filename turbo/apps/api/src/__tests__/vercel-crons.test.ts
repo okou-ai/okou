@@ -141,7 +141,7 @@ const expectedVercelCrons = [
   },
   {
     path: cronConnectorCatalogContract.sync.path,
-    schedule: "* * * * *",
+    schedule: "0 * * * *",
   },
   {
     path: cronOfficialWorkflowCatalogContract.sync.path,
