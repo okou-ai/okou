@@ -88,8 +88,8 @@ export type AcceptedConnectorCatalogSnapshot = ConnectorCatalogRuntimeView;
 
 /**
  * A subset of accepted connectors, together with the compatibility filter that
- * applies to their auth methods. Per-slug reads build it from the runtime
- * projection; catalog-wide reads build it from the accepted snapshot.
+ * applies to their auth methods. Per-slug reads build it from current and
+ * immutable entries; catalog-wide reads build it from the accepted snapshot.
  */
 export interface ConnectorCatalogSlugSource {
   readonly connectors: readonly ConnectorCatalogArtifactConnector[];
@@ -164,8 +164,7 @@ interface ConnectorCatalogDiscoveryRead {
 
 type ExternalConnectorCatalogUnavailableReason =
   | "missing_current_identity"
-  | "captured_identity_unavailable"
-  | "runtime_identity_mismatch"
+  | "missing_manifest_entry"
   | "missing_active_snapshot_after_retry"
   | "invalid_compatibility_evaluation"
   | `invalid_artifact:${ConnectorCatalogSyncFailureCode}`;
@@ -618,43 +617,6 @@ async function loadAcceptedConnectorCatalogSnapshotAttempt(
     capability,
     timing,
   });
-}
-
-/** Runtime preparation keeps the captured catalog generation or fails. */
-export async function loadAcceptedConnectorCatalogSnapshotOnce(
-  db: ReadonlyDb,
-  options: {
-    readonly identity?: ExternalCatalogIdentity;
-    readonly timing?: ConnectorCatalogLoadTiming;
-  },
-): Promise<AcceptedConnectorCatalogSnapshot> {
-  const { identity, timing } = options;
-  const capability = connectorCatalogExecutableCapabilityState();
-  if (
-    identity !== undefined &&
-    (identity.sourceId !== connectorCatalogSource().sourceId ||
-      identity.schemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION ||
-      identity.capabilityDigest !== capability.digest)
-  ) {
-    throw new ExternalConnectorCatalogUnavailableError(
-      "runtime_identity_mismatch",
-    );
-  }
-  const catalog =
-    identity === undefined
-      ? await loadAcceptedConnectorCatalogSnapshotAttempt(db, timing)
-      : await loadAcceptedConnectorCatalogSnapshotAtIdentity({
-          db,
-          identity,
-          capability,
-          timing,
-        });
-  if (!catalog) {
-    throw new ExternalConnectorCatalogUnavailableError(
-      "captured_identity_unavailable",
-    );
-  }
-  return catalog;
 }
 
 export async function loadAcceptedConnectorCatalogSnapshot(

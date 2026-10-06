@@ -18,7 +18,7 @@ import {
   connectorCatalogExecutableCapabilityState,
   evaluateConnectorCatalogCompatibility,
 } from "../connector-catalog/compatibility";
-import { connectorCatalogRuntimeProjectionPayload } from "../connector-catalog/runtime-projection";
+import { connectorCatalogEntryPayload } from "../connector-catalog/entry-payload";
 
 function publishedCatalog() {
   const value: unknown = JSON.parse(
@@ -84,9 +84,7 @@ describe("v4 connector catalog reader", () => {
     });
     expect(plaud.skill).toEqual({ kind: "none" });
     expect(
-      JSON.parse(
-        connectorCatalogRuntimeProjectionPayload(plaud).toString("utf8"),
-      ),
+      JSON.parse(connectorCatalogEntryPayload(plaud).toString("utf8")),
     ).toEqual(plaud);
     expect(
       filteredMethods(decoded).find((method) => {

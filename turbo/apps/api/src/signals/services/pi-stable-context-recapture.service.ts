@@ -38,7 +38,17 @@ import {
   buildAgentToolsPromptInputs,
 } from "./agent-tools-prompt.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
-import { loadConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/schema/connector-catalog";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+  connectorCatalogSlugRuntimeFromRows,
+  connectorCatalogSlugIdentityFromRows,
+} from "./connector-catalog-slug-source.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import {
   ORG_SENTINEL_USER_ID,
@@ -64,9 +74,7 @@ interface StableContextSourceSnapshot {
     | { readonly kind: "empty" }
     | {
         readonly kind: "scoped";
-        readonly selection: Awaited<
-          ReturnType<typeof loadConnectorRuntimeSelection>
-        >;
+        readonly selection: ConnectorRuntimeSelection;
       };
 }
 
@@ -256,16 +264,45 @@ async function loadStableContextSourceSnapshot(
     ...connectorScopeBase,
     workflows: runWorkflows,
   };
-  const catalogSelection: StableContextSourceSnapshot["catalogSelection"] =
-    connectorScope.allowedConnectorSlugs.length === 0 &&
-    connectorScope.allowedCustomConnectorIds.length === 0
-      ? { kind: "empty" }
-      : {
-          kind: "scoped",
-          selection: await loadConnectorRuntimeSelection(db, {
-            requestedConnectorSlugs: connectorScope.allowedConnectorSlugs,
-          }),
-        };
+  let catalogSelection: StableContextSourceSnapshot["catalogSelection"] = {
+    kind: "empty",
+  };
+  if (
+    connectorScope.allowedConnectorSlugs.length > 0 ||
+    connectorScope.allowedCustomConnectorIds.length > 0
+  ) {
+    // The matching identity is only for the pre-existing persisted comparison.
+    // Use this same transaction read; no historical hash or second capture.
+    const catalogRows = await db
+      .select({
+        current: {
+          schemaVersion: connectorCatalog.schemaVersion,
+          hash: connectorCatalog.hash,
+          header: connectorCatalog.catalogHeader,
+          entrySlugs: connectorCatalog.entrySlugs,
+        },
+        entry: {
+          slug: connectorCatalogEntries.slug,
+          payload: connectorCatalogEntries.payload,
+        },
+      })
+      .from(connectorCatalog)
+      .leftJoin(
+        connectorCatalogEntries,
+        connectorCatalogSlugJoin(connectorScope.allowedConnectorSlugs),
+      )
+      .where(connectorCatalogCurrentWhere());
+    catalogSelection = {
+      kind: "scoped",
+      selection: {
+        ...connectorCatalogSlugRuntimeFromRows(
+          catalogRows,
+          connectorScope.allowedConnectorSlugs,
+        ),
+        catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogRows),
+      },
+    };
+  }
   const permissionPolicies =
     catalogSelection.kind === "empty"
       ? permission.policies

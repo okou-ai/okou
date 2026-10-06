@@ -70,7 +70,7 @@ import {
   customConnectorDefinitionConnectedAccount,
   loadConnectedCustomConnectorConnections,
   loadCurrentCustomConnectorStoredValues,
-  loadCurrentCustomConnectorValueMarkers,
+  customConnectorValueMarkers,
   type CustomConnectorCredentialAccess,
   type CustomConnectorCredentialValueMarker,
   type CustomConnectorStoredValue,
@@ -2558,10 +2558,12 @@ export function getCustomConnectorResponse(args: {
       return null;
     }
     const [markers, connectedConnections] = await Promise.all([
-      loadCurrentCustomConnectorValueMarkers(db, {
-        orgId: args.orgId,
-        userId: args.userId,
-      }),
+      get(
+        customConnectorValueMarkers({
+          orgId: args.orgId,
+          userId: args.userId,
+        }),
+      ),
       loadConnectedCustomConnectorConnections(db, {
         orgId: args.orgId,
         userId: args.userId,
@@ -3024,11 +3026,12 @@ export const setCustomConnectorValues$ = command(
       postCommitAbort,
     );
 
-    const db = get(db$);
-    const markers = await loadCurrentCustomConnectorValueMarkers(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-    });
+    const markers = await get(
+      customConnectorValueMarkers({
+        orgId: args.orgId,
+        userId: args.userId,
+      }),
+    );
     signal.throwIfAborted();
     return {
       ...serialiseCustomConnector({

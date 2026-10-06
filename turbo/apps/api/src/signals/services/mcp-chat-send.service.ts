@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   McpSendChatMessageInput,
   McpSendChatMessageOutput,
@@ -30,6 +31,7 @@ export const sendMcpChatMessage$ = command(
   ): Promise<McpChatMutationResult<McpSendChatMessageOutput>> => {
     const clientName = await mcpClientDisplayName(principal.clientId, signal);
     signal.throwIfAborted();
+    const eventId = randomUUID();
     const sent = await set(
       sendNormalEvent$,
       {
@@ -44,6 +46,7 @@ export const sendMcpChatMessage$ = command(
         orgId: principal.orgId,
         body: {
           ...input,
+          clientEventId: eventId,
           userMessage: {
             version: 1,
             parts: [{ type: "text", text: input.prompt }],
@@ -61,6 +64,13 @@ export const sendMcpChatMessage$ = command(
         retryable: false,
       };
     }
-    return { kind: "ok", data: sent.body };
+    return {
+      kind: "ok",
+      data: {
+        threadId: sent.body.threadId,
+        eventId,
+        createdAt: sent.body.createdAt,
+      },
+    };
   },
 );

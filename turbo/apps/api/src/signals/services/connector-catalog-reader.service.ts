@@ -25,7 +25,15 @@ import {
   publicConnectorCatalogStatusFromSource,
   searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
-import { loadConnectorCatalogSlugSource } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/schema/connector-catalog";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+  connectorCatalogSlugSourceFromRows,
+} from "./connector-catalog-slug-source.service";
 
 export function isConnectorCatalogUnavailableError(error: unknown): boolean {
   return error instanceof ExternalConnectorCatalogUnavailableError;
@@ -70,22 +78,44 @@ export async function listPublicConnectorCatalogStatus(
 
 /**
  * Label and icon for connectors a response already names, read from the
- * per-connector projection instead of the whole catalog.
+ * current immutable entries instead of the whole catalog.
  */
 export async function listConnectedConnectorBriefs(
   args: ConnectorCatalogReadArgs & {
     readonly connectorSlugs: readonly ConnectorSlug[];
   },
 ): Promise<readonly BuiltinConnectorBrief[]> {
+  if (args.connectorSlugs.length === 0) {
+    return [];
+  }
   return connectorBriefsFromSource({
-    catalog: await loadConnectorCatalogSlugSource(args.db, args.connectorSlugs),
+    catalog: connectorCatalogSlugSourceFromRows(
+      await args.db
+        .select({
+          current: {
+            header: connectorCatalog.catalogHeader,
+            entrySlugs: connectorCatalog.entrySlugs,
+          },
+          entry: {
+            slug: connectorCatalogEntries.slug,
+            payload: connectorCatalogEntries.payload,
+          },
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin(args.connectorSlugs),
+        )
+        .where(connectorCatalogCurrentWhere()),
+      args.connectorSlugs,
+    ),
     featureStates: args.featureStates,
   });
 }
 
 /**
  * Connect items for a connect surface. A named set reads only those connectors
- * from the per-connector projection; the one-click list scans the catalog.
+ * from current immutable entries; the one-click list scans the catalog.
  */
 export async function listConnectorCatalogConnectItems(
   args: ConnectorCatalogReadArgs & {
@@ -99,12 +129,30 @@ export async function listConnectorCatalogConnectItems(
   },
 ): Promise<PublicConnectorCatalogConnectListResponse> {
   const catalog =
-    args.filter.kind === "slugs"
-      ? await loadConnectorCatalogSlugSource(
-          args.db,
-          args.filter.connectorSlugs,
-        )
-      : await loadCompleteConnectorCatalogSource(args.db);
+    args.filter.kind === "slugs" && args.filter.connectorSlugs.length === 0
+      ? { connectors: [], filteredMethodKeys: new Set<string>() }
+      : args.filter.kind === "slugs"
+        ? connectorCatalogSlugSourceFromRows(
+            await args.db
+              .select({
+                current: {
+                  header: connectorCatalog.catalogHeader,
+                  entrySlugs: connectorCatalog.entrySlugs,
+                },
+                entry: {
+                  slug: connectorCatalogEntries.slug,
+                  payload: connectorCatalogEntries.payload,
+                },
+              })
+              .from(connectorCatalog)
+              .leftJoin(
+                connectorCatalogEntries,
+                connectorCatalogSlugJoin(args.filter.connectorSlugs),
+              )
+              .where(connectorCatalogCurrentWhere()),
+            args.filter.connectorSlugs,
+          )
+        : await loadCompleteConnectorCatalogSource(args.db);
   return connectorCatalogConnectItemsFromSource({
     catalog,
     featureStates: args.featureStates,
@@ -134,9 +182,26 @@ export async function getPublicConnectorCatalogStatus(
 ): Promise<PublicConnectorCatalogStatusItem | null> {
   return publicConnectorCatalogStatusFromSource({
     ...args,
-    catalog: await loadConnectorCatalogSlugSource(args.db, [
-      args.connectorSlug,
-    ]),
+    catalog: connectorCatalogSlugSourceFromRows(
+      await args.db
+        .select({
+          current: {
+            header: connectorCatalog.catalogHeader,
+            entrySlugs: connectorCatalog.entrySlugs,
+          },
+          entry: {
+            slug: connectorCatalogEntries.slug,
+            payload: connectorCatalogEntries.payload,
+          },
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin([args.connectorSlug]),
+        )
+        .where(connectorCatalogCurrentWhere()),
+      [args.connectorSlug],
+    ),
   });
 }
 
@@ -145,8 +210,25 @@ export async function getPublicConnectorCatalogPermissionDetail(
 ): Promise<PublicConnectorCatalogPermissionDetail | null> {
   return publicConnectorCatalogPermissionDetailFromSource({
     ...args,
-    catalog: await loadConnectorCatalogSlugSource(args.db, [
-      args.connectorSlug,
-    ]),
+    catalog: connectorCatalogSlugSourceFromRows(
+      await args.db
+        .select({
+          current: {
+            header: connectorCatalog.catalogHeader,
+            entrySlugs: connectorCatalog.entrySlugs,
+          },
+          entry: {
+            slug: connectorCatalogEntries.slug,
+            payload: connectorCatalogEntries.payload,
+          },
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin([args.connectorSlug]),
+        )
+        .where(connectorCatalogCurrentWhere()),
+      [args.connectorSlug],
+    ),
   });
 }

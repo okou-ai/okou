@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   ONBOARDING_WORKFLOW_CONNECTOR_SLUGS,
@@ -9,8 +8,6 @@ import {
   connectorCatalogActiveSnapshot,
   connectorCatalogSyncState,
   connectorCatalogCompatibilityEvaluation,
-  connectorCatalogRuntimeProjectionSets,
-  connectorCatalogRuntimeProjections,
 } from "@okouai/db/schema/connector-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
@@ -45,10 +42,6 @@ import {
   evaluateConnectorCatalogCompatibility,
   type ExecutableCapabilityState,
 } from "./connector-catalog-compatibility.service";
-import {
-  connectorCatalogRuntimeProjectionSetValues,
-  connectorCatalogRuntimeProjectionEntryValues,
-} from "./connector-catalog-runtime-projection.service";
 import {
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidatorIdentity,
@@ -144,7 +137,6 @@ function previewCatalogWriteValues(args: {
   readonly timestamp: Date;
   readonly validator: ConnectorCatalogValidatorIdentity;
   readonly capability: ExecutableCapabilityState;
-  readonly projectionSetId: string;
 }) {
   const { candidate, projection, sourceId, timestamp, validator, capability } =
     args;
@@ -161,15 +153,6 @@ function previewCatalogWriteValues(args: {
       }),
     }),
   });
-  const projectionSet = {
-    id: args.projectionSetId,
-    ...connectorCatalogRuntimeProjectionSetValues({
-      sourceId,
-      identity: candidate.identity,
-      artifact: projection,
-      validator,
-    }),
-  };
   return {
     compatibilityDeleteWhere: and(
       eq(connectorCatalogCompatibilityEvaluation.sourceId, sourceId),
@@ -182,19 +165,7 @@ function previewCatalogWriteValues(args: {
         candidate.identity.catalogDigest,
       ),
     ),
-    projectionDeleteWhere: and(
-      eq(connectorCatalogRuntimeProjectionSets.sourceId, sourceId),
-      eq(
-        connectorCatalogRuntimeProjectionSets.schemaVersion,
-        SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-      ),
-    ),
     compatibility,
-    projectionSet,
-    projectionEntries: connectorCatalogRuntimeProjectionEntryValues(
-      projectionSet.id,
-      projection,
-    ),
     current: immutableCatalogValues(
       projection,
       candidate.identity.catalogDigest,
@@ -250,10 +221,7 @@ export const seedPreviewOnboardingCatalog$ = command(
     await set(registerPreparedConnectorCatalogSkills$, registrations, signal);
     const {
       compatibilityDeleteWhere,
-      projectionDeleteWhere,
       compatibility,
-      projectionSet,
-      projectionEntries,
       current,
       state,
       snapshot,
@@ -264,7 +232,6 @@ export const seedPreviewOnboardingCatalog$ = command(
       timestamp: nowDate(),
       validator: currentConnectorCatalogValidatorIdentity(),
       capability: connectorCatalogExecutableCapabilityState(),
-      projectionSetId: randomUUID(),
     });
     signal.throwIfAborted();
     await set(writeDb$).transaction(async (tx) => {
@@ -339,18 +306,6 @@ export const seedPreviewOnboardingCatalog$ = command(
             filteredAuthMethods: compatibility.filteredAuthMethods,
           },
         });
-      signal.throwIfAborted();
-      await tx
-        .delete(connectorCatalogRuntimeProjectionSets)
-        .where(projectionDeleteWhere);
-      signal.throwIfAborted();
-      await tx
-        .insert(connectorCatalogRuntimeProjectionSets)
-        .values(projectionSet);
-      signal.throwIfAborted();
-      await tx
-        .insert(connectorCatalogRuntimeProjections)
-        .values(projectionEntries);
       signal.throwIfAborted();
     });
     signal.throwIfAborted();

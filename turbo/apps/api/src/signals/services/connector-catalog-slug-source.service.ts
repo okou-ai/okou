@@ -1,224 +1,138 @@
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorCatalogArtifactConnector } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-
-import { singleton } from "../../lib/singleton";
-import type { ReadonlyDb } from "../external/db";
+import { and, eq, inArray } from "drizzle-orm";
 import {
-  loadAcceptedConnectorCatalogSnapshot,
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/schema/connector-catalog";
+import type {
+  ImmutableConnectorCatalogHeader,
+  ImmutableConnectorCatalogEntry,
+} from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
+import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import {
+  ExternalConnectorCatalogUnavailableError,
   type ConnectorCatalogSlugSource,
 } from "./connector-catalog-external-reader.service";
 import {
-  countConnectorCatalogRuntimeProjectionRows,
-  queryConnectorCatalogRuntimeProjectionRows,
-  readConnectorCatalogRuntimeProjectionIdentity,
-  validateConnectorCatalogRuntimeProjectionRows,
-  type ConnectorCatalogRuntimeProjectionIdentity,
-  type ConnectorCatalogRuntimeProjectionReadyIdentity,
-  type ConnectorCatalogRuntimeProjectionValidationTiming,
-} from "./connector-catalog-runtime-projection.service";
+  connectorCatalogExecutableCapabilityState,
+  evaluateConnectorCatalogCompatibility,
+} from "./connector-catalog-compatibility.service";
+import {
+  materializeConnectorRuntimeLookup,
+  uniqueSortedConnectorSlugs,
+} from "./connector-catalog-runtime.service";
+import { connectorCatalogSource } from "./connector-catalog-source";
+import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 
-// Validated projection rows are immutable for one projection generation, so
-// they are cached per connector. The bound keeps a process from holding the
-// whole catalog when many different slugs are read.
-const SLUG_SOURCE_CACHE_CAPACITY = 256;
-
-interface SlugSourceCache {
-  identityKey: string | undefined;
-  // `null` records a slug the complete projection confirmed does not exist.
-  readonly connectors: Map<
-    ConnectorSlug,
-    ConnectorCatalogArtifactConnector | null
-  >;
+/** Pure predicates: the reader executes its SQL on its own connection/transaction. */
+export function connectorCatalogCurrentWhere() {
+  return eq(
+    connectorCatalog.schemaVersion,
+    SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+  );
 }
 
-const slugSourceCache = singleton((): SlugSourceCache => {
-  return { identityKey: undefined, connectors: new Map() };
-});
+export function connectorCatalogSlugJoin(slugs: readonly ConnectorSlug[]) {
+  return and(
+    eq(connectorCatalogEntries.hash, connectorCatalog.hash),
+    inArray(connectorCatalogEntries.slug, [...new Set(slugs)]),
+  );
+}
 
-function untimedValidation(): ConnectorCatalogRuntimeProjectionValidationTiming {
-  return {
-    measureParse: (operation) => {
-      return operation();
-    },
-    measureDigest: (operation) => {
-      return operation();
-    },
+interface CatalogSlugRow {
+  readonly current: {
+    readonly header: ImmutableConnectorCatalogHeader;
+    readonly entrySlugs: readonly string[];
+  };
+  readonly entry: {
+    readonly slug: string;
+    readonly payload: ImmutableConnectorCatalogEntry;
+  } | null;
+}
+
+interface CatalogSlugIdentityRow extends CatalogSlugRow {
+  readonly current: CatalogSlugRow["current"] & {
+    readonly schemaVersion: number;
+    readonly hash: string;
   };
 }
 
-function projectionIdentityKey(
-  identity: ConnectorCatalogRuntimeProjectionIdentity,
-): string {
-  return [
-    identity.projectionSetId,
-    identity.sourceId,
-    identity.schemaVersion,
-    identity.catalogVersion,
-    identity.catalogDigest,
-    identity.capabilityDigest,
-    identity.projectionVersion,
-    identity.connectorCount,
-  ].join("\0");
-}
-
-function cacheFor(
-  projection: ConnectorCatalogRuntimeProjectionReadyIdentity,
-): SlugSourceCache {
-  const cache = slugSourceCache();
-  const key = projectionIdentityKey(projection.identity);
-  if (cache.identityKey !== key) {
-    cache.identityKey = key;
-    cache.connectors.clear();
+function currentFromRows<Row extends CatalogSlugRow>(
+  rows: readonly Row[],
+): Row["current"] {
+  const current = rows[0]?.current;
+  if (current === undefined) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "missing_current_identity",
+    );
   }
-  return cache;
+  return current;
 }
 
-function remember(
-  cache: SlugSourceCache,
-  connectorSlug: ConnectorSlug,
-  connector: ConnectorCatalogArtifactConnector | null,
-): void {
-  cache.connectors.delete(connectorSlug);
-  cache.connectors.set(connectorSlug, connector);
-  if (cache.connectors.size > SLUG_SOURCE_CACHE_CAPACITY) {
-    const [oldest] = cache.connectors.keys();
-    if (oldest !== undefined) {
-      cache.connectors.delete(oldest);
-    }
-  }
-}
-
-async function loadFromCompleteCatalog(
-  db: ReadonlyDb,
-  connectorSlugs: readonly ConnectorSlug[],
-): Promise<ConnectorCatalogSlugSource> {
-  const snapshot = await loadAcceptedConnectorCatalogSnapshot(db);
-  return {
-    connectors: connectorSlugs.flatMap((connectorSlug) => {
-      const connector = snapshot.connectorBySlug.get(connectorSlug);
-      return connector === undefined ? [] : [connector];
-    }),
-    filteredMethodKeys: snapshot.filteredMethodKeys,
-  };
-}
-
-type ProjectedRead =
-  | {
-      readonly kind: "ready";
-      readonly connectors: ReadonlyMap<
-        ConnectorSlug,
-        ConnectorCatalogArtifactConnector | null
-      >;
-    }
-  | { readonly kind: "fallback" };
-
-async function readProjectedConnectors(args: {
-  readonly db: ReadonlyDb;
-  readonly projection: ConnectorCatalogRuntimeProjectionReadyIdentity;
-  readonly connectorSlugs: readonly ConnectorSlug[];
-}): Promise<ProjectedRead> {
-  const rows = await queryConnectorCatalogRuntimeProjectionRows(args);
-  const read = validateConnectorCatalogRuntimeProjectionRows({
-    rows,
-    connectorSlugs: args.connectorSlugs,
-    timing: untimedValidation(),
-  });
-  if (read.kind === "fallback") {
-    return { kind: "fallback" };
-  }
-  const connectors = new Map<
-    ConnectorSlug,
-    ConnectorCatalogArtifactConnector | null
-  >(
-    read.connectors.map((connector) => {
-      return [connector.slug, connector] as const;
+/** Unknown slugs are absent; a listed entry missing in storage is unavailable. */
+export function connectorCatalogSlugSourceFromRows(
+  rows: readonly CatalogSlugRow[],
+  requestedSlugs: readonly ConnectorSlug[],
+): ConnectorCatalogSlugSource {
+  const current = currentFromRows(rows);
+  const manifest = new Set(current.entrySlugs);
+  const entries = new Map(
+    rows.flatMap(({ entry }) => {
+      return entry === null ? [] : [[entry.slug, entry.payload] as const];
     }),
   );
-  if (read.missingConnectorSlugs.length === 0) {
-    return { kind: "ready", connectors };
-  }
-  // A slug without a row is only unknown when the generation is complete and
-  // still current; otherwise the set may be mid-replacement.
-  const actualCount = await countConnectorCatalogRuntimeProjectionRows({
-    db: args.db,
-    identity: args.projection.identity,
-  });
-  if (actualCount !== args.projection.identity.connectorCount) {
-    return { kind: "fallback" };
-  }
-  const latest = await readConnectorCatalogRuntimeProjectionIdentity(args.db);
-  if (
-    latest.kind === "fallback" ||
-    projectionIdentityKey(latest.projection.identity) !==
-      projectionIdentityKey(args.projection.identity)
-  ) {
-    return { kind: "fallback" };
-  }
-  for (const connectorSlug of read.missingConnectorSlugs) {
-    connectors.set(connectorSlug, null);
-  }
-  return { kind: "ready", connectors };
-}
-
-/**
- * Loads only the requested connectors from the per-connector runtime
- * projection. When the projection is not ready, incomplete, unstable, or
- * invalid, it falls back to the complete accepted catalog, matching the
- * runtime selection's fallback.
- */
-export async function loadConnectorCatalogSlugSource(
-  db: ReadonlyDb,
-  requestedConnectorSlugs: readonly ConnectorSlug[],
-): Promise<ConnectorCatalogSlugSource> {
-  const connectorSlugs = [...new Set(requestedConnectorSlugs)];
-  if (connectorSlugs.length === 0) {
-    return { connectors: [], filteredMethodKeys: new Set() };
-  }
-  const identity = await readConnectorCatalogRuntimeProjectionIdentity(db);
-  if (identity.kind === "fallback") {
-    return await loadFromCompleteCatalog(db, connectorSlugs);
-  }
-  const key = projectionIdentityKey(identity.projection.identity);
-  const cache = cacheFor(identity.projection);
-  const cached = new Map<
-    ConnectorSlug,
-    ConnectorCatalogArtifactConnector | null
-  >();
-  for (const connectorSlug of connectorSlugs) {
-    const connector = cache.connectors.get(connectorSlug);
-    if (connector !== undefined) {
-      cached.set(connectorSlug, connector);
+  const connectors = [...new Set(requestedSlugs)].flatMap((slug) => {
+    if (!manifest.has(slug)) {
+      return [];
     }
-  }
-  const uncachedSlugs = connectorSlugs.filter((connectorSlug) => {
-    return !cached.has(connectorSlug);
-  });
-  const fetched =
-    uncachedSlugs.length === 0
-      ? { kind: "ready" as const, connectors: new Map() }
-      : await readProjectedConnectors({
-          db,
-          projection: identity.projection,
-          connectorSlugs: uncachedSlugs,
-        });
-  if (fetched.kind === "fallback") {
-    return await loadFromCompleteCatalog(db, connectorSlugs);
-  }
-  // Another request may have moved the cache to a newer generation while rows
-  // were read; only remember rows under the identity they were read with.
-  const cacheable = slugSourceCache().identityKey === key;
-  const connectors = connectorSlugs.flatMap((connectorSlug) => {
-    const connector =
-      cached.get(connectorSlug) ??
-      fetched.connectors.get(connectorSlug) ??
-      null;
-    if (cacheable) {
-      remember(cache, connectorSlug, connector);
+    const entry = entries.get(slug);
+    if (entry === undefined) {
+      throw new ExternalConnectorCatalogUnavailableError(
+        "missing_manifest_entry",
+      );
     }
-    return connector === null ? [] : [connector];
+    return [entry];
+  });
+  const filtered = evaluateConnectorCatalogCompatibility({
+    artifact: { ...current.header, connectors },
+    capability: connectorCatalogExecutableCapabilityState(),
   });
   return {
     connectors,
-    filteredMethodKeys: identity.projection.filteredMethodKeys,
+    filteredMethodKeys: new Set(
+      filtered.map((method) => {
+        return `${method.connectorSlug}\0${method.authMethodId}`;
+      }),
+    ),
+  };
+}
+
+export function connectorCatalogSlugRuntimeFromRows(
+  rows: readonly CatalogSlugRow[],
+  runtimeConnectorSlugs: readonly ConnectorSlug[],
+  metadataConnectorSlugs: readonly ConnectorSlug[] = [],
+) {
+  const source = connectorCatalogSlugSourceFromRows(rows, [
+    ...runtimeConnectorSlugs,
+    ...metadataConnectorSlugs,
+  ]);
+  return materializeConnectorRuntimeLookup({
+    ...source,
+    runtimeConnectorSlugs: uniqueSortedConnectorSlugs(runtimeConnectorSlugs),
+    metadataConnectorSlugs: uniqueSortedConnectorSlugs(metadataConnectorSlugs),
+  });
+}
+
+/** Only the existing Pi recapture comparison consumes this matching identity. */
+export function connectorCatalogSlugIdentityFromRows(
+  rows: readonly CatalogSlugIdentityRow[],
+): ExternalCatalogIdentity {
+  const current = currentFromRows(rows);
+  return {
+    sourceId: connectorCatalogSource().sourceId,
+    schemaVersion: current.schemaVersion,
+    catalogVersion: current.header.catalogVersion,
+    catalogDigest: current.hash,
+    capabilityDigest: connectorCatalogExecutableCapabilityState().digest,
   };
 }

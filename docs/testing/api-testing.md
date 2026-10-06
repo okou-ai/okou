@@ -185,7 +185,16 @@ an explicitly separate legacy source, never the shared fixture. The legacy
 source module is not removed by the additive schema PR.
 
 `connector-catalog-immutable.test.ts` retains its dedicated PGlite catalog
-lifecycle project and existing mechanism-specific lint exceptions. New isolated
+lifecycle project and existing mechanism-specific lint exceptions. Its project
+never loads shared real-PG setup; each case owns its engine through abort and
+work drainage. Current-entry publication, missing-entry faults and account
+generation stay in that lifecycle engine. Its external KMS mock is async-local
+and shared with ordinary setup; HTTP uses MSW. N1 remains TODO and is not
+acceptance evidence. Ordinary API suites keep native PostgreSQL and the
+startup-installed fixed current catalog, except the explicitly owned SQL
+contracts described below.
+
+New isolated
 SQL contract suites use the shared `api-isolated-database` project instead of
 copying those exceptions. `src/__tests__/pglite-setup.ts` binds only the DB
 transport to `src/test-fixtures/pglite-database.ts`; routes, services, fixture
@@ -210,7 +219,7 @@ concurrent event writes and queue/claim contracts. The sole
 central DB `vi.mock` is permitted; service mocks and case-local DB mocks remain
 forbidden. These lexical guards do not prove runtime isolation.
 
-Both cooldown suites use this per-case harness without serial scheduling.
+All migrated cooldown suites use this per-case harness without serial scheduling.
 The retired Custom bootstrap left an unused catalog argument/read in the
 publication transaction; removing that obsolete dependency makes the lifecycle
 suite portable without changing transaction boundaries or redirecting reads.

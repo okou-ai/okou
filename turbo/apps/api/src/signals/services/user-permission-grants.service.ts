@@ -37,6 +37,7 @@ import {
 } from "./firewall-network-policy.service";
 import {
   loadConnectorRuntimeSnapshot,
+  type ConnectorRuntimeLookup,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import type {
@@ -302,7 +303,7 @@ export async function resolveActiveNetworkPolicyRefreshes(
   db: ReadonlyDb,
   scope: UserPermissionGrantScope,
   connectorSlugs: readonly string[],
-  preloadedSnapshot?: ConnectorRuntimeSelection,
+  preloadedSnapshot?: ConnectorRuntimeLookup,
   checkedAt: Date = nowDate(),
 ): Promise<readonly ActiveNetworkPolicyRefresh[]> {
   if (connectorSlugs.length === 0) {

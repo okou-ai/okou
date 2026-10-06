@@ -1,18 +1,18 @@
 import type {
-  McpGetChatStatusInput,
-  McpChatStatusResult,
-} from "@okouai/api-contracts/contracts/mcp-chat-status";
+  McpGetRunStatusInput,
+  McpRunStatusResult,
+} from "@okouai/api-contracts/contracts/mcp-run-status";
 import { command } from "ccstate";
 import { agentRunById } from "./agent-runs.service";
 
 /** The ordinary Web Run reader owns visibility and status; MCP adds no lifecycle. */
-export const getMcpChatStatus$ = command(
+export const getMcpRunStatus$ = command(
   async (
     { get },
     principal: { readonly userId: string; readonly orgId: string },
-    input: McpGetChatStatusInput,
+    input: McpGetRunStatusInput,
     signal: AbortSignal,
-  ): Promise<McpChatStatusResult> => {
+  ): Promise<McpRunStatusResult> => {
     const run = await get(agentRunById({ ...principal, runId: input.runId }));
     signal.throwIfAborted();
     return run

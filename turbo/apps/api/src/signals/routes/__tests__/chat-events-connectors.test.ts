@@ -6,11 +6,7 @@ import { describe, expect, it, beforeEach, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
-import {
-  deleteApiTestConnectorCatalogRuntimeProjectionRow,
-  deleteApiTestConnectorCatalogRuntimeProjectionSet,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -71,7 +67,6 @@ async function selectedThreadConnectorFixture(
     );
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-thread-runtime-overlap-${randomUUID()}`,
-      runtimeProjection: true,
     });
   }
   const entitled = await entitledChatActor();
@@ -305,42 +300,6 @@ describe("chat eager connector credentials", () => {
 });
 
 describe("CHAT-02: thread connector account selection", () => {
-  it.each(["missing", "incomplete"] as const)(
-    "reads the selected account when the catalog projection is %s",
-    async (projectionState) => {
-      const fixture = await selectedThreadConnectorFixture(
-        "Thread catalog projection fallback",
-        true,
-      );
-      // Advance authority so setup's cached selection cannot hide a missing row.
-      await installApiTestConnectorCatalog({
-        catalogVersion: `api-test-thread-fallback-${randomUUID()}`,
-        runtimeProjection: true,
-      });
-      // Model an older/incomplete persisted projection through the external
-      // database fixture; public APIs cannot create these rollout states.
-      if (projectionState === "missing") {
-        await deleteApiTestConnectorCatalogRuntimeProjectionSet();
-      } else {
-        await deleteApiTestConnectorCatalogRuntimeProjectionRow("openai");
-      }
-      const selections = await accept(
-        chatThreadConnectorSelectionsClient().get({
-          headers: sessionHeaders(fixture.actor),
-          params: { id: fixture.threadId },
-        }),
-        [200],
-      );
-      expect(selections.body.selectedConnections).toMatchObject([
-        {
-          id: fixture.connectionId,
-          target: { kind: "builtin", connectorSlug: "openai" },
-          connectionStatus: "connected",
-        },
-      ]);
-    },
-  );
-
   it("inspects and runs with the thread's selected builtin account", async () => {
     const fixture = await selectedThreadConnectorFixture(
       "Scoped thread catalog selection",
