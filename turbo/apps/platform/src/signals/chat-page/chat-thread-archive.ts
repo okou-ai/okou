@@ -3,20 +3,26 @@ import { detachedNavigateTo$ } from "../route.ts";
 import { setChatThreadArchived$ } from "./chat-event.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 
-export const archiveChatThreadAndReturn$ = command(
+export const setChatThreadArchivedFromHeader$ = command(
   async (
     { get, set },
-    { threadId, agentId }: { threadId: string; agentId: string },
+    {
+      threadId,
+      agentId,
+      archived,
+    }: { threadId: string; agentId: string; archived: boolean },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    if (get(chatThreadMetaMap$).get(threadId)?.archived) {
+    if (get(chatThreadMetaMap$).get(threadId)?.archived === archived) {
       return;
     }
-    await set(setChatThreadArchived$, { threadId, archived: true }, signal);
+    await set(setChatThreadArchived$, { threadId, archived }, signal);
     signal.throwIfAborted();
-    set(detachedNavigateTo$, "/agents/:agentId/chat", {
-      pathParams: { agentId },
-    });
+    if (archived) {
+      set(detachedNavigateTo$, "/agents/:agentId/chat", {
+        pathParams: { agentId },
+      });
+    }
   },
 );

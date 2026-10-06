@@ -266,7 +266,7 @@ test("Archive from the mobile header and return to the thread's agent only after
   click(menuItemNamed("Archive chat"));
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
-  expect(menuItemNamed("Archive chat")).toHaveAttribute(
+  expect(menuItemNamed("Unarchive chat")).toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -310,18 +310,70 @@ test("Hide header archiving when the archive switch is off", async () => {
   ]);
 });
 
-test("Hide header archiving for an already archived thread", async () => {
+test("Unarchive from the mobile header and stay in the current thread", async () => {
   context.mocks.browser.matchMedia(false);
-  await setupHeaderPage(true, [
+  const unarchiveResponse = context.mocks.deferred<void>();
+  const events: ChatThreadEvent[] = [
     chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
-  ]);
+  ];
+  context.mocks.api(
+    chatThreadArchiveContract.unarchive,
+    async ({ params, query, respond }) => {
+      await unarchiveResponse.promise;
+      events.push(
+        chatListEvent(951, 2, "unarchived", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  await setupHeaderPage(true, events);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Unarchive chat",
     "Artifacts",
   ]);
+  click(menuItemNamed("Unarchive chat"));
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNamed("Archive chat")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+
+  unarchiveResponse.resolve();
+  await waitFor(() => {
+    expect(menuItemNamed("Archive chat")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
+});
+
+test("Stay in the archived thread and show the unarchive API error", async () => {
+  context.mocks.browser.matchMedia(false);
+  context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
+    return respond(500, { error: { message: "Unarchive request failed" } });
+  });
+  await setupHeaderPage(true, [
+    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
+  ]);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Unarchive chat"));
+  await expect(
+    screen.findByText("Unarchive request failed"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
 });
 
 test("Open artifacts from the mobile menu", async () => {
