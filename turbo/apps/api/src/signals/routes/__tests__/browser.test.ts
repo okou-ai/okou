@@ -10,7 +10,6 @@ import {
 } from "@aws-sdk/client-s3";
 import { runInNewContext } from "node:vm";
 
-import { testBrowserReconcileContract } from "@okouai/api-contracts/contracts/test-browser-reconcile";
 import {
   browserAuthorizationRequestsContract,
   browserContract,
@@ -37,6 +36,7 @@ import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
 import { stageRetiredDirectBrowserUserActionFixture } from "../../../test-fixtures/browser-user-action";
+import { reconcileBrowsersForTest } from "../../../test-fixtures/browser-reconcile";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -49,7 +49,6 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { setBrowserTabSnapshotAsPreviousApi } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
-import { testBrowserReconcileRoutes } from "../test-browser-reconcile";
 import { browserRoutes } from "../browser";
 import { browserAuthorizationRoutes } from "../browser-authorization";
 import { browserUserActionRoutes } from "../browser-user-actions";
@@ -5210,7 +5209,7 @@ describe("Browser user-action route", () => {
     );
 
     const reconciled = await reconcileBrowsers(current.threadId);
-    expect(reconciled.body).toMatchObject({ errors: 0 });
+    expect(reconciled).toMatchObject({ errors: 0 });
     await expect(
       userActionClient().get({
         headers: { authorization: "Bearer clerk-session" },
@@ -5342,7 +5341,7 @@ describe("Browser user-action route", () => {
     });
     await applyingEntered.promise;
 
-    // The provider reports the Browser stopped; the public reconciler records
+    // The provider reports the Browser stopped; the scoped reconciler records
     // the closure at the app clock while apply and cancel race it.
     const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
     mockNow(finishedAt.getTime());
@@ -5360,7 +5359,7 @@ describe("Browser user-action route", () => {
         body: {},
       }),
     ]);
-    expect(closure.body).toMatchObject({ errors: 0 });
+    expect(closure).toMatchObject({ errors: 0 });
     expect([200, 409, 410, 502]).toContain(applyRace.status);
     expect([200, 409, 410]).toContain(cancelRace.status);
     expect(
@@ -5403,7 +5402,7 @@ describe("Browser user-action route", () => {
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     const converted = await reconcileBrowsers(current.threadId);
-    expect(converted.body).toMatchObject({ errors: 0 });
+    expect(converted).toMatchObject({ errors: 0 });
     expect(providerCallsAfterClosure).toBe(0);
     expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
     expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
@@ -5443,7 +5442,7 @@ describe("Browser user-action route", () => {
     );
 
     const repeated = await reconcileBrowsers(current.threadId);
-    expect(repeated.body).toMatchObject({ errors: 0 });
+    expect(repeated).toMatchObject({ errors: 0 });
     const repeatedActions = await Promise.all(tokens.map(readAction));
     expect(
       repeatedActions.map((response) => {
@@ -5700,12 +5699,6 @@ function chatThreadComputerUseHostClient() {
   );
 }
 
-function browserReconcileClient() {
-  return setupApp({ context, routes: testBrowserReconcileRoutes })(
-    testBrowserReconcileContract,
-  );
-}
-
 async function requestBrowserUse(
   headers: Readonly<Record<string, string>>,
 ): Promise<Response> {
@@ -5890,13 +5883,9 @@ async function reconcileBrowsers(
   chatThreadId: string,
   ...additionalChatThreadIds: string[]
 ) {
-  return await accept(
-    browserReconcileClient().reconcile({
-      body: {
-        chat_thread_ids: [chatThreadId, ...additionalChatThreadIds],
-      },
-    }),
-    [200],
+  return await reconcileBrowsersForTest(
+    [chatThreadId, ...additionalChatThreadIds],
+    context.signal,
   );
 }
 
@@ -6738,7 +6727,7 @@ describe("okou browser route", () => {
     const stoppedProviderIds: string[] = [];
     let profileCreates = 0;
     let providerCreates = 0;
-    // The reconcile route is global, so count only this test's own instances.
+    // Count only the provider instances owned by this test's scoped threads.
     const providerStops = () => {
       return stoppedProviderIds.filter((stopped) => {
         return (providerIds as readonly string[]).includes(stopped);
@@ -7403,7 +7392,7 @@ describe("okou browser route", () => {
       other.threadId,
       candidate.threadId,
     );
-    expect(healthy.body).toMatchObject({
+    expect(healthy).toMatchObject({
       checked: 2,
       stopped: 0,
       errors: 0,
@@ -7491,7 +7480,7 @@ describe("okou browser route", () => {
 
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
     const reconciled = await reconcileBrowsers(target.threadId);
-    expect(reconciled.body).toStrictEqual({
+    expect(reconciled).toStrictEqual({
       checked: 1,
       stopped: 1,
       errors: 0,
@@ -7735,7 +7724,7 @@ describe("okou browser route", () => {
     // Before the lease expires the reconciler leaves the browser alone.
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
     const healthy = await reconcileBrowsers(threadId);
-    expect(healthy.body).toMatchObject({
+    expect(healthy).toMatchObject({
       checked: 1,
       stopped: 0,
       errors: 0,
@@ -7746,7 +7735,7 @@ describe("okou browser route", () => {
     mockNow(STARTED_AT_MS + 16 * MINUTE_MS);
     context.mocks.ably.publish.mockClear();
     const reclaimed = await reconcileBrowsers(threadId);
-    expect(reclaimed.body).toMatchObject({
+    expect(reclaimed).toMatchObject({
       stopped: 1,
       errors: 0,
     });
@@ -7758,7 +7747,7 @@ describe("okou browser route", () => {
     expect(firstStopFailures).toBe(1);
     expect(providerStops).toBe(0);
     const afterFailedStop = await reconcileBrowsers(threadId);
-    expect(afterFailedStop.body).toMatchObject({
+    expect(afterFailedStop).toMatchObject({
       checked: 0,
       stopped: 0,
       errors: 0,
@@ -7897,7 +7886,7 @@ describe("okou browser route", () => {
 
     mockNow(STARTED_AT_MS + 31 * MINUTE_MS);
     const reclaimedAgain = await reconcileBrowsers(threadId);
-    expect(reclaimedAgain.body).toMatchObject({ stopped: 1, errors: 0 });
+    expect(reclaimedAgain).toMatchObject({ stopped: 1, errors: 0 });
     await flushWaitUntilForTest();
     expect(providerStops).toBe(1);
 
@@ -7934,7 +7923,7 @@ describe("okou browser route", () => {
     expect(providerStops).toBe(2);
 
     const reconciled = await reconcileBrowsers(threadId);
-    expect(reconciled.body).toMatchObject({
+    expect(reconciled).toMatchObject({
       checked: 0,
       stopped: 0,
       errors: 0,
@@ -8086,13 +8075,13 @@ describe("okou browser route", () => {
 
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
     const stopped = await reconcileBrowsers(current.threadId);
-    expect(stopped.body).toMatchObject({ stopped: 1, errors: 0 });
+    expect(stopped).toMatchObject({ stopped: 1, errors: 0 });
     await flushWaitUntilForTest();
     expect(providerStops).toBe(1);
 
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS + 7 * DAY_MS - 1);
     const retained = await reconcileBrowsers(current.threadId);
-    expect(retained.body.errors).toBe(0);
+    expect(retained.errors).toBe(0);
     const beforeCutoff = await accept(
       client().get({
         headers: { authorization: "Bearer clerk-session" },
@@ -8108,7 +8097,7 @@ describe("okou browser route", () => {
 
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS + 7 * DAY_MS);
     const failedCleanup = await reconcileBrowsers(current.threadId);
-    expect(failedCleanup.body.errors).toBe(1);
+    expect(failedCleanup.errors).toBe(1);
     expect(deletedProfiles).toStrictEqual([profileIds[0]]);
     expect(providerStops).toBe(1);
     const afterFailedProfileDelete = await accept(
@@ -8131,7 +8120,7 @@ describe("okou browser route", () => {
     ).toBeFalsy();
 
     const cleaned = await reconcileBrowsers(current.threadId);
-    expect(cleaned.body).toMatchObject({ errors: 0 });
+    expect(cleaned).toMatchObject({ errors: 0 });
     expect(deletedProfiles).toStrictEqual([profileIds[0], profileIds[0]]);
     expect(providerStops).toBe(1);
     await accept(
@@ -8285,7 +8274,7 @@ describe("okou browser route", () => {
     const threadId = opened.body.browser.threadId;
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
     const reclaimed = await reconcileBrowsers(threadId);
-    expect(reclaimed.body).toMatchObject({ stopped: 1, errors: 0 });
+    expect(reclaimed).toMatchObject({ stopped: 1, errors: 0 });
     await flushWaitUntilForTest();
 
     // This historical snapshot shape cannot be produced through the current
@@ -8422,7 +8411,7 @@ describe("okou browser route", () => {
       }
 
       const reconciled = await reconcileBrowsers(current.threadId);
-      expect(reconciled.body).toMatchObject({ healthy: 1, errors: 0 });
+      expect(reconciled).toMatchObject({ healthy: 1, errors: 0 });
       await flushWaitUntilForTest();
 
       routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -8617,7 +8606,7 @@ describe("okou browser route", () => {
       expect(afterViewerLease.body.browser.screenshotUrl).toBeNull();
 
       const firstReconcile = await reconcileBrowsers(current.threadId);
-      expect(firstReconcile.body).toMatchObject({
+      expect(firstReconcile).toMatchObject({
         errors: 0,
       });
       await flushWaitUntilForTest();
@@ -8672,7 +8661,7 @@ describe("okou browser route", () => {
       expect(captureCount).toBe(1);
 
       const secondReconcile = await reconcileBrowsers(current.threadId);
-      expect(secondReconcile.body).toMatchObject({
+      expect(secondReconcile).toMatchObject({
         errors: 0,
       });
       releaseSecondScreenshotUpload.resolve(undefined);
@@ -8752,7 +8741,7 @@ describe("okou browser route", () => {
         }),
       ).toHaveLength(0);
       const thirdReconcile = await reconcileBrowsers(current.threadId);
-      expect(thirdReconcile.body).toMatchObject({
+      expect(thirdReconcile).toMatchObject({
         errors: 0,
       });
       expect(
@@ -8789,7 +8778,7 @@ describe("okou browser route", () => {
       });
       failNextCapture = true;
       const failedCapture = await reconcileBrowsers(current.threadId);
-      expect(failedCapture.body).toMatchObject({ healthy: 1, errors: 0 });
+      expect(failedCapture).toMatchObject({ healthy: 1, errors: 0 });
       await flushWaitUntilForTest();
       const retainedPreview = await accept(
         client().get({
@@ -8823,7 +8812,7 @@ describe("okou browser route", () => {
       ).toHaveLength(0);
 
       const reconciled = await reconcileBrowsers(current.threadId);
-      expect(reconciled.body).toMatchObject({
+      expect(reconciled).toMatchObject({
         errors: 0,
       });
       expect(
@@ -8881,7 +8870,7 @@ describe("okou browser route", () => {
 
     await deleteChatThreadRootFixture(first.threadId);
     const reclaimed = await reconcileBrowsers(first.threadId);
-    expect(reclaimed.body).toStrictEqual({
+    expect(reclaimed).toStrictEqual({
       checked: 2,
       stopped: 2,
       errors: 0,
@@ -8891,7 +8880,7 @@ describe("okou browser route", () => {
     expect(providerStops).toBe(2);
 
     const retired = await reconcileBrowsers(first.threadId);
-    expect(retired.body).toStrictEqual({
+    expect(retired).toStrictEqual({
       checked: 0,
       stopped: 0,
       errors: 0,
@@ -8979,7 +8968,7 @@ describe("okou browser route", () => {
 
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
     const reclaimed = await reconcileBrowsers(first.threadId);
-    expect(reclaimed.body).toMatchObject({
+    expect(reclaimed).toMatchObject({
       errors: 0,
     });
     await flushWaitUntilForTest();

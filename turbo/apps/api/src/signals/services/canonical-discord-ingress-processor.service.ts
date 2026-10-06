@@ -1371,7 +1371,7 @@ export const drainStaleCanonicalDiscordIngress$ = command(
   },
 );
 
-/** The test HTTP harness scopes the same recovery path to its owned connections. */
+/** The scoped test driver runs the same recovery path for its owned connections. */
 export const drainCanonicalDiscordIngressForConnections$ = command(
   (
     { set },

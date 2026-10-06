@@ -2,7 +2,6 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { testDiscordIngressContract } from "@okouai/api-contracts/contracts/test-discord-ingress";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -20,10 +19,10 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
+import { recoverDiscordIngressForTest } from "../../../test-fixtures/discord-ingress-recovery";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
-import { testDiscordIngressRoutes } from "../test-discord-ingress";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webDownloadRoutes } from "../web-download";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -106,13 +105,9 @@ interface PublicThreadPermissionCase {
 
 /** Run the recovery sweep; recovered input is picked in the background. */
 async function recover(actor: ConnectedDiscordActor) {
-  const recovered = await accept(
-    setupApp({ context, routes: testDiscordIngressRoutes })(
-      testDiscordIngressContract,
-    ).recover({
-      body: { connectionIds: [actor.connectionId] },
-    }),
-    [200],
+  const recovered = await recoverDiscordIngressForTest(
+    [actor.connectionId],
+    context.signal,
   );
   await flushWaitUntilForTest();
   return recovered;
@@ -1762,9 +1757,7 @@ describe("canonical Discord ingress", () => {
     mockEnv("DISCORD_BOT_TOKEN", undefined);
     for (let sweep = 0; sweep < 6; sweep++) {
       mockNow(now() + 3 * 60 * 60 * 1000);
-      await expect(recover(actor)).resolves.toMatchObject({
-        body: { processed: 0 },
-      });
+      await expect(recover(actor)).resolves.toBe(0);
     }
     await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
     expect(provider.sentMessages).toHaveLength(0);

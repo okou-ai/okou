@@ -1,15 +1,13 @@
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
-import { testDiscordIngressContract } from "@okouai/api-contracts/contracts/test-discord-ingress";
 import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
 import { installDiscordContextFailureFixture } from "../../../test-fixtures/discord-context-failure";
+import { recoverDiscordIngressForTest } from "../../../test-fixtures/discord-ingress-recovery";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
-import { testDiscordIngressRoutes } from "../test-discord-ingress";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
@@ -102,12 +100,7 @@ async function exerciseContextRetry() {
           .body.outcome,
       ).toBe("duplicate");
       mockNow(now() + 61_000);
-      await accept(
-        setupApp({ context, routes: testDiscordIngressRoutes })(
-          testDiscordIngressContract,
-        ).recover({ body: { connectionIds: [actor.connectionId] } }),
-        [200],
-      );
+      await recoverDiscordIngressForTest([actor.connectionId], context.signal);
       await flushWaitUntilForTest();
 
       const recoveredThreads = await discordChatThreads(context, actor);
