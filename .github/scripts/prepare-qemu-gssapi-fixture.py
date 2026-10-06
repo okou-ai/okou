@@ -230,6 +230,34 @@ def required_build_inputs(root, native):
     return records
 
 
+def usrmerge_layout(root, arch):
+    if arch not in ("amd64", "arm64"):
+        raise ValueError("private usrmerge architecture refused")
+    # x86's declared ELF interpreter needs lib64; ARM does not acquire a
+    # synthetic dangling alias when its signed inputs supply no such directory.
+    names = ["bin", "sbin", "lib"]
+    if arch == "amd64" or os.path.lexists(root / "usr/lib64") or os.path.lexists(root / "lib64"):
+        names.append("lib64")
+    for name in names:
+        target = root / "usr" / name
+        try:
+            canonical = target.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise ValueError("required private usrmerge target missing") from error
+        if not canonical.is_relative_to(root) or not canonical.is_dir():
+            raise ValueError("required private usrmerge target escaped or refused")
+        path = root / name
+        if os.path.lexists(path) and (not path.is_symlink() or path.resolve(strict=True) != canonical):
+            raise ValueError("private usrmerge alias refused")
+    aliases = {}
+    for name in names:
+        path = root / name
+        if not os.path.lexists(path):
+            path.symlink_to("usr/" + name)
+        aliases[name] = os.readlink(path)
+    return aliases
+
+
 def provision(base, arch, multiarch, origin):
     keyring = pathlib.Path("/usr/share/keyrings/ubuntu-archive-keyring.gpg")
     if not keyring.is_file() or keyring.is_symlink():
@@ -296,10 +324,7 @@ def provision(base, arch, multiarch, origin):
         raise ValueError("source-pinned fixture dependency closure incomplete")
     # Debian maintainer scripts never run. The reproducible usrmerge and compiler
     # aliases below are explicit producer transformations, recorded as aliases.
-    for name, target in (("bin", "usr/bin"), ("sbin", "usr/sbin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")):
-        path = root / name
-        if not os.path.lexists(path):
-            path.symlink_to(target)
+    layout = usrmerge_layout(root, arch)
     for path in root.rglob("*"):
         if path.is_symlink() and os.readlink(path).startswith("/"):
             target = root / os.readlink(path).lstrip("/")
@@ -331,7 +356,7 @@ def provision(base, arch, multiarch, origin):
                                 (keyring, pathlib.Path("/usr/bin/apt-get"), pathlib.Path("/usr/bin/apt-cache"),
                                  pathlib.Path("/usr/bin/gpgv"), pathlib.Path("/usr/bin/dpkg-deb"),
                                  pathlib.Path("/usr/lib/apt/apt-helper"))},
-            "transformations": ["contained absolute package aliases", "usrmerge", "archive-provided Dash sh alias", "compiler aliases",
+            "transformations": ["contained absolute package aliases", {"usrmergeLayout": layout}, "archive-provided Dash sh alias", "compiler aliases",
                                 "rmt alias", "UTC alias", "signed public CA concatenation"],
             "signedIndexFiles": {str(p.relative_to(base)): sha(p) for p in sorted((base / "state/lists").glob("*"))
                                  if p.is_file() and not p.is_symlink() and (p.name.endswith("InRelease") or "_Packages" in p.name)}}
@@ -400,9 +425,27 @@ done
         raise RuntimeError("source-pinned QEMU build refused; retain build.log")
     first, second = [output / attempt / "qemu-system-x86_64" for attempt in ("first", "second")]
     for binary in (first, second):
-        verify_elf_header(binary.read_bytes()[:64], arch)
+        if (binary.is_symlink() or not binary.is_file() or not binary.resolve(strict=True).is_relative_to(output)
+                or not 64 <= binary.stat().st_size <= 128 * 1024 * 1024):
+            raise ValueError("source-pinned QEMU native output refused")
+        with binary.open("rb") as stream:
+            verify_elf_header(stream.read(64), arch)
     if sha(first) != sha(second):
         raise ValueError("source-pinned QEMU independent builds differ")
+    # Retain both original streams as data, even when later inventory fails.
+    # Hash equality is necessary but not independent pin/runtime acceptance.
+    evidence = base / "public-evidence"
+    evidence.mkdir(mode=0o700, exist_ok=True)
+    outputs = {}
+    for attempt, binary in (("first", first), ("second", second)):
+        retained = evidence / (attempt + "-qemu-system-x86_64.elf")
+        with retained.open("xb") as destination_stream, binary.open("rb") as source_stream:
+            shutil.copyfileobj(source_stream, destination_stream)
+        retained.chmod(0o600)
+        if sha(retained) != sha(binary) or retained.stat().st_size != binary.stat().st_size:
+            raise ValueError("public native output retention mismatch")
+        outputs[attempt] = {"path": str(retained.relative_to(base)), "sha256": sha(retained),
+                            "sizeBytes": retained.stat().st_size}
     destination = root / "usr/bin/qemu-system-x86_64"
     shutil.copyfile(first, destination)
     destination.chmod(0o755)
@@ -417,6 +460,7 @@ done
                                 "excludedNonbuildAlias": list(EXCLUDED_SOURCE_ALIAS)},
 
             "nativeArchitecture": arch, "binarySha256": sha(first), "secondBuildSha256": sha(second),
+            "retainedNativeOutputs": outputs,
             "recipeSha256": sha(pathlib.Path(__file__)), "target": "x86_64-softmmu"}
 
 
@@ -451,21 +495,23 @@ def main():
         manifest["fullQemuProvider"] = "source-pinned-private-noble-v1"
         stage = "build"
         manifest["qemuBuild"] = build(base, source, epoch, native)
+        stage = "inventory"
+        manifest["producer"] = {"head": call(["git", "rev-parse", "HEAD"], cwd=REPO).strip(),
+                                "worktreeDirty": bool(call(["git", "status", "--porcelain"], cwd=REPO).strip()),
+                                "ownerUid": os.geteuid(), "nativeArchitecture": native,
+                                "buildLogSha256": sha(base / "build.log")}
+        manifest["files"], manifest["aliases"] = inventory(base / "runtime")
+        manifest["runtimeInventorySha256"] = hashlib.sha256(json.dumps(
+            {name: manifest[name] for name in ("files", "aliases")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        manifest["inputClosureSha256"] = hashlib.sha256(json.dumps(
+            {name: manifest[name] for name in ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs")},
+            sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        manifest["packageLockSha256"] = hashlib.sha256(json.dumps(manifest["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        stage = "provider"
+        (base / "runtime/provider.json").write_text(json.dumps(manifest, indent=2) + "\n")
     except Exception:
         retain_public_inputs(base, stage + "-failed", manifest)
         raise
-    manifest["files"], manifest["aliases"] = inventory(base / "runtime")
-    manifest["runtimeInventorySha256"] = hashlib.sha256(json.dumps(
-        {name: manifest[name] for name in ("files", "aliases")}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    manifest["inputClosureSha256"] = hashlib.sha256(json.dumps(
-        {name: manifest[name] for name in ("signedIndexFiles", "bootstrapInputs", "transformations", "signingRootSha256", "requiredBuildInputs")},
-        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    manifest["packageLockSha256"] = hashlib.sha256(json.dumps(manifest["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    manifest["producer"] = {"head": call(["git", "rev-parse", "HEAD"], cwd=REPO).strip(),
-                            "worktreeDirty": bool(call(["git", "status", "--porcelain"], cwd=REPO).strip()),
-                            "ownerUid": os.geteuid(), "nativeArchitecture": native,
-                            "buildLogSha256": sha(base / "build.log")}
-    (base / "runtime/provider.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(base / "runtime")
 
 

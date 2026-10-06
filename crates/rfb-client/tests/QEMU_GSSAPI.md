@@ -65,7 +65,9 @@ extraction. No package installation or maintainer script runs. Declared usrmerge
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace
 only their normal maintainer-generated inputs. Dangling package documentation
 and non-C locale aliases remain recorded, not executable/library/configuration
-inputs or host fallbacks.
+inputs or host fallbacks. The exact usrmerge alias map is input-bound: x86 requires
+its contained `usr/lib64` target; ARM creates no `lib64` alias when the signed
+inputs supply no target. Existing wrong/escaping aliases are refused, not ignored.
 
 QEMU9.2 source and VNC hashes are unchanged. Exact source admission requires
 81,379 members, 647,679,574 declared bytes and epoch 1733874468, still below the
@@ -86,9 +88,12 @@ not a host firmware directory.
 InRelease and APT-retained Packages indexes (declared local compression), compiler
 log, package/file/alias closure and producer identities. Exact archive hashes,
 repository paths, sizes and Depends/Pre-Depends/Provides fields are retained.
-Public failure-stage evidence is written after provisioning and before source
-extraction/compiler execution, and also on failure; success-only receipt copying
-is not the sole evidence channel.
+Both original first/second native output streams are retained separately and
+rehash-checked as public data after the unchanged native/equality checks. Public
+failure-stage evidence covers provisioning, source/build, post-build inventory and
+provider completion. A late refusal retains build identities/output bytes without
+presenting an incomplete inventory as an accepted provider; success-only receipt
+copying is not the sole evidence channel.
 Its receipt deliberately has `runtimeVerified: false` and
 `attributionVerified: false`: successful builds do not complete full-ten/PNG or
 loader acceptance. Independently reviewed actual binary/recipe/package-lock,

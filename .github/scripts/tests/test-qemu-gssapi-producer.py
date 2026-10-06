@@ -177,6 +177,55 @@ class ProducerInputs(unittest.TestCase):
             self.assertTrue((source / "python/wheels/meson-1.5.0-py3-none-any.whl").is_file())
             self.assertFalse((source / "roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack").is_symlink())
 
+    def test_arm_layout_does_not_synthesize_absent_lib64_target(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            root = pathlib.Path(directory)
+            for name in ('bin', 'sbin', 'lib'):
+                (root / 'usr' / name).mkdir(parents=True)
+            layout = self.producer.usrmerge_layout(root, 'arm64')
+            self.assertFalse((root / 'lib64').is_symlink())
+            self.assertNotIn('lib64', layout)
+            self.producer.inventory(root)
+
+    def test_x86_layout_requires_real_private_lib64_target(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            root = pathlib.Path(directory)
+            for name in ('bin', 'sbin', 'lib'):
+                (root / 'usr' / name).mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, 'required private usrmerge target'):
+                self.producer.usrmerge_layout(root, 'amd64')
+            (root / 'usr/lib64').mkdir()
+            layout = self.producer.usrmerge_layout(root, 'amd64')
+            self.assertEqual(layout['lib64'], 'usr/lib64')
+            self.assertEqual((root / 'lib64').resolve(strict=True), root / 'usr/lib64')
+            self.producer.inventory(root)
+
+    def test_layout_refuses_escaping_or_preexisting_wrong_alias(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            root = pathlib.Path(directory)
+            for name in ('bin', 'sbin', 'lib', 'lib64'):
+                (root / 'usr' / name).mkdir(parents=True)
+            (root / 'bin').symlink_to('usr/lib')
+            with self.assertRaisesRegex(ValueError, 'private usrmerge alias'):
+                self.producer.usrmerge_layout(root, 'amd64')
+            (root / 'bin').unlink()
+            (root / 'usr/lib64').rmdir()
+            (root / 'usr/lib64').symlink_to(self.parent)
+            with self.assertRaisesRegex(ValueError, 'private usrmerge target'):
+                self.producer.usrmerge_layout(root, 'amd64')
+
+    def test_post_build_inventory_failure_is_inside_public_evidence_guard(self):
+        module = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        main = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == 'main')
+        guarded = next(node for node in main.body if isinstance(node, ast.Try))
+        calls = {node.func.id for item in guarded.body for node in ast.walk(item)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        self.assertIn('inventory', calls)
+        constants = {node.value for item in guarded.body for node in ast.walk(item)
+                     if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+        self.assertIn('inventory', constants)
+        self.assertIn('provider', constants)
+
     def test_source_and_bios_inputs_are_fixed_not_host_fallbacks(self):
         self.assertEqual(self.producer.QEMU_SHA256, "f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894")
         self.assertEqual(self.producer.VNC_SHA256, "3dfd2c4be76597983641fde3d99b64ac5b0d6a56b59e4d6a08edacc95075bc2d")
