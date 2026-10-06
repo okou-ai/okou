@@ -58,10 +58,6 @@ export function connectorCatalogExecutableCapabilityState(): ExecutableCapabilit
   });
 }
 
-export function connectorCatalogExecutableCapabilityDigest(): string {
-  return connectorCatalogExecutableCapabilityState().digest;
-}
-
 async function deleteReplacedEvaluations(args: {
   readonly db: Db;
   readonly sourceId: string;

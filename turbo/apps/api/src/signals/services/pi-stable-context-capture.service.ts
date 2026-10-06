@@ -164,7 +164,9 @@ export type PiStorageFact = z.infer<
 
 /** Pure SQL only; transaction ownership stays at the caller's execute statement. */
 function requiredPiReadCondition(condition: SQL | undefined): SQL {
-  if (!condition) {throw new Error("Pi storage read condition is empty");}
+  if (!condition) {
+    throw new Error("Pi storage read condition is empty");
+  }
   return condition;
 }
 

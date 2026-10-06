@@ -84,9 +84,7 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import {
-  agentConnectorScopeFromRows,
-} from "./agent-connector-scope.service";
+import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
 import {
   buildAgentToolsPrompt,

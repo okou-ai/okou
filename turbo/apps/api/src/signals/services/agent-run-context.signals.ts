@@ -1013,10 +1013,12 @@ function createConnectorContextGroups(
     async (get): Promise<ConnectorRuntimeSelection | null> => {
       const requested = bootstrapCatalogRequest(await get(connectorSelection$));
       return requested
-        ? await get(immutableConnectorRuntimeSelection({
-            requestedConnectorSlugs: requested.runtimeConnectorSlugs,
-            metadataConnectorSlugs: requested.metadataConnectorSlugs,
-          }))
+        ? await get(
+            immutableConnectorRuntimeSelection({
+              requestedConnectorSlugs: requested.runtimeConnectorSlugs,
+              metadataConnectorSlugs: requested.metadataConnectorSlugs,
+            }),
+          )
         : null;
     },
   );

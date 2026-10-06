@@ -30,7 +30,7 @@ Important activation boundary: at this parent and patch, repository search finds
 
 | Retired in C | Replacement / retained boundary |
 | --- | --- |
-| Bootstrap legacy identity, accepted-payload/projection graph and requiredProjectionCount | Request-owned immutable capture plus runtime/metadata union; no projection fallback |
+| Bootstrap legacy identity, accepted-payload/projection graph and requiredProjectionCount | Request-owned immutable capture plus runtime/metadata union; no projection fallback. Retired the now-unreferenced createAgentCatalogIdentity/createAgentCatalogProjectionRows, CapturedAgentCatalog/CapturedConnectorCatalogIdentity and captured-row fallback factory; their isolated cache-peek wrapper, serial borrowed-Db scope wrapper, capability-digest wrapper and test-scoped activation wrapper are removed, not ignored in Knip. |
 | Pi source catalogIdentity digest and catalogSourceId producers | Mandatory new catalog object or authoritatively empty null; generations, prompt/scope/permission digests and validity horizon retained |
 | Borrowed-Db recapture SQL helper | Actual admission transaction executes source/entry/storage SQL; pure value assembly and shared stable-skill predicate remain |
 | Source-ID-only Pi activation/invalidation | Current-row fence and scoped post-wait owner/head discovery; legacy source ID only identifies historical dependency rows for retirement |

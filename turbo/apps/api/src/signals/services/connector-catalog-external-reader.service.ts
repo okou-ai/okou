@@ -187,13 +187,6 @@ const preparedCatalogCache = singleton((): PreparedExternalCatalogCache => {
   };
 });
 
-/** Existing accepted bytes can be captured without transferring them again. */
-export function cachedAcceptedConnectorCatalogSnapshot():
-  | AcceptedConnectorCatalogSnapshot
-  | undefined {
-  return preparedCatalogCache().completed?.catalog;
-}
-
 function authMethodKey(connectorSlug: string, authMethodId: string): string {
   return `${connectorSlug}\0${authMethodId}`;
 }

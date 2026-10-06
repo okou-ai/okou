@@ -459,14 +459,16 @@ export function resolveActiveNetworkPolicyRefreshesFromBaseline(
   current: StoredConnectorPermissionBaseline["catalogIdentity"],
   grants: readonly ResolvedPermissionGrant[],
 ): BaselineNetworkPolicyRefreshResolution {
-  if (Object.keys(baseline.connectors).length === 0)
-    {return { kind: "empty", refreshes: [] };}
+  if (Object.keys(baseline.connectors).length === 0) {
+    return { kind: "empty", refreshes: [] };
+  }
   if (
     baseline.catalogIdentity.schemaVersion !== current.schemaVersion ||
     baseline.catalogIdentity.hash !== current.hash ||
     baseline.catalogIdentity.capabilityDigest !== current.capabilityDigest
-  )
-    {return { kind: "incompatible" };}
+  ) {
+    return { kind: "incompatible" };
+  }
   return {
     kind: "compatible",
     refreshes: activeNetworkPolicyRefreshesForPermissionBaselines(
