@@ -3288,7 +3288,7 @@ describe("Stage 1 source quota at the model HTTP boundary", () => {
     async (fault) => {
       const fixture = createPublicPiMemorySource(context);
       await fixture.run(async () => {
-        await fixture.prepare(new Date(now()));
+        await fixture.prepare(new Date(now() + 24 * 3_600_000));
         server.use(
           http.get(
             "https://chatgpt.com/backend-api/wham/usage",

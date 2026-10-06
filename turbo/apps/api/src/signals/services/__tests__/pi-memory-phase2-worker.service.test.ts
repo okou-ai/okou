@@ -1953,7 +1953,10 @@ test.each([
 test("refreshes quota for a new hourly attempt and never re-admits committed recovery", async () => {
   const fixture = createPublicPiMemorySource(publicScopeContext);
   await fixture.run(async () => {
-    const job = await createPublicPhase2WorkerFixture(fixture, nowDate());
+    const job = await createPublicPhase2WorkerFixture(
+      fixture,
+      new Date(now() + 24 * 3_600_000),
+    );
     const native = fixture;
     let used = 90;
     let reads = 0;
@@ -2101,7 +2104,7 @@ test.each(["malformed-json", "network", "timeout"])(
     await fixture.run(async () => {
       const job = await createPublicPhase2WorkerFixture(
         fixture,
-        new Date("2026-09-05T02:00:00Z"),
+        new Date(now() + 24 * 3_600_000),
       );
       server.use(
         http.get(
@@ -2263,7 +2266,10 @@ test("reports a run committed before an abort on the next pass, never as stale",
 test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
   const fixture = createPublicPiMemorySource(publicScopeContext);
   await fixture.run(async () => {
-    const job = await createPublicPhase2WorkerFixture(fixture, nowDate());
+    const job = await createPublicPhase2WorkerFixture(
+      fixture,
+      new Date(now() + 24 * 3_600_000),
+    );
     const native = fixture;
     let reads = 0;
     server.use(

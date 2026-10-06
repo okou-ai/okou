@@ -111,7 +111,13 @@ export function createPublicRunnerMemory(
     return agent.agentId;
   }
   async function claim(agentId: string, prompt: string) {
-    const run = await api.createThreadRun(fixture.actor, { agentId, prompt });
+    const run = await api.createThreadRun(fixture.actor, {
+      agentId,
+      prompt,
+      // The admin's preferred model is personal; members select the same
+      // configured native carrier explicitly through the public request.
+      model: "claude-fable-5-1",
+    });
     fixture.registerRun(run.runId);
     const execution = await api.claimRunnerJob(run.runId);
     fixture.registerClaim(run.runId, execution.sandboxToken);

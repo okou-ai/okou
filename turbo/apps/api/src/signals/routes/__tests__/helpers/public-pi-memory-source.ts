@@ -27,6 +27,9 @@ export function createPublicPiMemorySource(context: TestContext) {
   const account = `public-memory-${randomUUID()}`;
   let memoryStorageId: string | undefined;
   async function prepare(at: Date) {
+    // Callers schedule the first work one day ahead. A new Thread's activity
+    // uses the database clock, so creating it under a past app clock cannot
+    // make it satisfy the worker's six-hour idle boundary.
     const sourceTime = at.getTime() - 24 * 3_600_000;
     mockNow(sourceTime);
     chat.chatCallbacks.acceptChatObjectStorage();
