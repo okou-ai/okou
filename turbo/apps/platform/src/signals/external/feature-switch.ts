@@ -88,10 +88,6 @@ export const featureSwitch$ = computed((get) => {
   return get(featureSwitchState$);
 });
 
-export const composerImageAnnotationEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.ComposerImageAnnotation] ?? false;
-});
-
 export const avatarFramingEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.AvatarFraming] ?? false;
 });

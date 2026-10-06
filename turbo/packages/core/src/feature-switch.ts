@@ -339,12 +339,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerImageAnnotation]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Let an attached image be marked up in the composer lightbox — boxes, arrows, freehand, text, highlight and redaction, each able to carry a note — and send a rendered copy carrying the editable marks.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SubscriptionControls]: {
     maintainer: "ethan@okou.ai",
     description:
