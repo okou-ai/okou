@@ -43,6 +43,11 @@ import {
 } from "./browser-user-action-block.ts";
 import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
 import { isOfficialTemplatePreviewUrl } from "./official-template-preview.ts";
+import {
+  parseSubscriptionResetUrl,
+  subscriptionResetResourceKey,
+  type SubscriptionResetDescriptor,
+} from "./subscription-reset-block.ts";
 
 import {
   resolveHostedSiteDomains,
@@ -63,6 +68,11 @@ export interface ParsedMarkdownBlock {
 
 export type ParsedBodyBlock =
   | ParsedMarkdownBlock
+  | {
+      type: "subscription-reset";
+      resourceKey: string;
+      descriptor: SubscriptionResetDescriptor;
+    }
   | {
       type: "connector-action";
       resourceKey: string;
@@ -154,7 +164,7 @@ const PLATFORM_FILE_CDN_HOSTS = [
   "cdn.vm7.io",
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
+const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers)\/|\/browser\/actions\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
 const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;
@@ -697,22 +707,22 @@ function createBrowserUserActionBlock(
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
-): Extract<
-  ParsedBodyBlock,
-  {
-    type:
-      | "connector-action"
-      | "connector-account-action"
-      | "permission-action"
-      | "banking-action"
-      | "unavailable-action"
-      | "computer-use-authorization"
-      | "plan-upgrade"
-      | "mail-draft"
-      | "browser-session"
-      | "browser-user-action";
+): CardDescriptorBlock | null {
+  const subscriptionReset = parseSubscriptionResetUrl(url);
+  if (subscriptionReset.status === "valid") {
+    return {
+      type: "subscription-reset",
+      resourceKey: subscriptionResetResourceKey(subscriptionReset.descriptor),
+      descriptor: subscriptionReset.descriptor,
+    };
   }
-> | null {
+  if (subscriptionReset.status === "invalid") {
+    return {
+      type: "unavailable-action",
+      resourceKey: subscriptionReset.originalUrl,
+      descriptor: { originalUrl: subscriptionReset.originalUrl },
+    };
+  }
   const connectorAction = parseConnectorAuthorizeUrl(url, chatActionContext);
   if (connectorAction.status === "valid") {
     return {
@@ -1380,6 +1390,9 @@ export type CardDescriptorBlock = Exclude<ParsedBodyBlock, ParsedMarkdownBlock>;
 /** The URL a card's slot stands on, and the key its signals are looked up by. */
 export function cardSlotUrl(block: CardDescriptorBlock): string {
   switch (block.type) {
+    case "subscription-reset": {
+      return block.descriptor.originalUrl;
+    }
     case "connector-action": {
       return block.descriptor.originalUrl;
     }

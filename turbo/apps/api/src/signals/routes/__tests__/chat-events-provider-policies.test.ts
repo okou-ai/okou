@@ -29,7 +29,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { coolDownBuiltInRoutesThroughReports } from "./helpers/public-built-in-model-cooldown";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,

@@ -2228,6 +2228,29 @@
       },
       "templates": "Vorlagen"
     },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "Diese Zurücksetzungsanfrage wurde bereits eingelöst.",
+      "confirm": "Zurücksetzen",
+      "confirmation": "Das Zurücksetzen verbraucht ein Reset-Guthaben. Erst ein Klick auf Zurücksetzen sendet die Anfrage.",
+      "credits_one": "Verbleibende Zurücksetzungen: {{count}}",
+      "credits_other": "Verbleibende Zurücksetzungen: {{count}}",
+      "creditsUnknown": "Verbleibende Zurücksetzungen: unbekannt",
+      "error": "Zurücksetzen fehlgeschlagen. Aktualisieren oder dieselbe Anfrage erneut versuchen.",
+      "expiresAt": "Guthaben läuft ab: {{time}}",
+      "loadFailed": "Die Nutzung des Abonnements konnte nicht gelesen werden.",
+      "loading": "Abonnement wird geladen…",
+      "noCredit": "Kein Reset-Guthaben verfügbar.",
+      "nothingToReset": "Es gibt kein ausgeschöpftes Nutzungsfenster zum Zurücksetzen.",
+      "reconnect": "Dieses Abonnement unter Persönliche Modelle erneut verbinden.",
+      "reset": "Nutzung erfolgreich zurückgesetzt.",
+      "resetting": "Wird zurückgesetzt…",
+      "retry": "Aktualisieren",
+      "title": "Reset card",
+      "unavailable": "Dieses Abonnement ist im aktuellen Arbeitsbereich nicht verfügbar.",
+      "unknown": "Unbekannt",
+      "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
+    },
     "taskChips": {
       "chooseTask": "Aufgabe wählen",
       "ideas": {

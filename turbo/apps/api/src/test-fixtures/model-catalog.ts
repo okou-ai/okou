@@ -50,54 +50,6 @@ export async function setModelCatalogSystemDefaultFixture(
   };
 }
 
-async function lineageRankOf(model: string): Promise<number> {
-  const [row] = await db()
-    .select({ lineageRank: runModelCatalog.lineageRank })
-    .from(runModelCatalog)
-    .where(eq(runModelCatalog.model, model));
-  if (!row) {
-    throw new Error(`Expected catalog model ${model}`);
-  }
-  return row.lineageRank;
-}
-
-/**
- * Operators retire a model directly in the database: raise the replacement's
- * lineage rank above the retired model's first when needed, then set both
- * replacement columns in one statement. The returned restore clears the
- * replacement before lowering the rank back.
- */
-export async function stageModelReplacementFixture(
-  model: string,
-  replacement: string,
-): Promise<() => Promise<void>> {
-  const retiredRank = await lineageRankOf(model);
-  const originalReplacementRank = await lineageRankOf(replacement);
-  const replacementRank = Math.max(originalReplacementRank, retiredRank + 1);
-  if (replacementRank !== originalReplacementRank) {
-    await db()
-      .update(runModelCatalog)
-      .set({ lineageRank: replacementRank })
-      .where(eq(runModelCatalog.model, replacement));
-  }
-  await db()
-    .update(runModelCatalog)
-    .set({ replacedBy: replacement, replacedByLineageRank: replacementRank })
-    .where(eq(runModelCatalog.model, model));
-  return async () => {
-    await db()
-      .update(runModelCatalog)
-      .set({ replacedBy: null, replacedByLineageRank: null })
-      .where(eq(runModelCatalog.model, model));
-    if (replacementRank !== originalReplacementRank) {
-      await db()
-        .update(runModelCatalog)
-        .set({ lineageRank: originalReplacementRank })
-        .where(eq(runModelCatalog.model, replacement));
-    }
-  };
-}
-
 /** One retired row of a temporary replacement chain. */
 export interface RetiredCatalogRowFixture {
   readonly model: string;

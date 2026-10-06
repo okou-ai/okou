@@ -15,7 +15,7 @@ import { server } from "../../mocks/server";
 import { createChatEventsFixture } from "../../signals/routes/__tests__/helpers/chat-events-fixture";
 import { useSecretKmsProbe } from "../../signals/routes/__tests__/helpers/secret-kms-probe";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const FAILURE_MESSAGE =
   "Fal built-in generation webhook reported failed generation";
 

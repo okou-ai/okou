@@ -770,7 +770,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       throw new Error("Expected the queued send to be accepted");
     }
     expect(queued.body.runId).toBeNull();
-    await api.updateUserModelPreference(actor, "claude-opus-5");
+    await api.updateUserModelPreference(actor, "claude-opus-5-5");
     const queuedRetry = await chat.requestSendEvent(
       actor,
       {
@@ -789,7 +789,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await expectNoThreadModelUpdateEvent(
       actor,
       first.threadId,
-      "claude-opus-5",
+      "claude-opus-5-5",
     );
 
     // Another user's send cannot claim the queued message's client id: the

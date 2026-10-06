@@ -40,7 +40,7 @@ import {
  * from the terminal chat callback (real sandbox complete webhooks).
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const publicResults = createPublicAutomationResultEmailApi(context);
 const api = createRunsApi(context);

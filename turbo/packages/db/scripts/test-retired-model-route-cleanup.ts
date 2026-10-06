@@ -277,19 +277,25 @@ try {
     { model: "gpt-6-sol", default_effort: "max" },
     { model: "gpt-6.1-sol", default_effort: "medium" },
   ]);
-  const futureRoute = after.find((route) => route.model === fixtureModel);
+  const futureRoute = after.find((route) => {
+    return route.model === fixtureModel;
+  });
   assert.ok(futureRoute);
   assert.deepEqual(
-    (await routes()).find((route) => route.id === futureRoute.id),
+    (await routes()).find((route) => {
+      return route.id === futureRoute.id;
+    }),
     futureRoute,
   );
-  const defaultEntry = journal.entries.find((item) =>
-    item.tag.endsWith("_preserve_subscription_route_effort_defaults"),
-  );
+  const defaultEntry = journal.entries.find((item) => {
+    return item.tag.endsWith("_preserve_subscription_route_effort_defaults");
+  });
   assert.ok(defaultEntry);
   const defaultMigration = readMigrationFiles({
     migrationsFolder: DRIZZLE_MIGRATE_OUT,
-  }).find((item) => item.folderMillis === defaultEntry.when);
+  }).find((item) => {
+    return item.folderMillis === defaultEntry.when;
+  });
   assert.ok(defaultMigration);
   const defaultsAfter = await routes();
   for (const statement of defaultMigration.sql) await sql.unsafe(statement);

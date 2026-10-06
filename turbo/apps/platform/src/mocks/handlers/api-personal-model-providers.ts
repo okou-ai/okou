@@ -3,6 +3,7 @@ import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersByTypeContract,
   personalModelProvidersMainContract,
+  personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { nowDate } from "../../lib/time.ts";
 import { mockApi } from "../msw-contract.ts";
@@ -28,6 +29,16 @@ export function resetMockPersonalModelProviders(): void {
 }
 
 export const apiPersonalModelProvidersHandlers = [
+  mockApi(personalSubscriptionsContract.get, ({ params, respond }) => {
+    const provider = mockPersonalModelProviders.find((candidate) => {
+      return candidate.id === params.id;
+    });
+    return provider
+      ? respond(200, provider)
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Subscription not found" },
+        });
+  }),
   mockApi(
     personalModelProviderAccountsByIdContract.getById,
     ({ params, respond }) => {

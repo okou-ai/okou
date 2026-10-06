@@ -18,7 +18,7 @@ import {
   expectGlobalSweepWrongAuth,
 } from "./helpers/global-sweep-contract";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const CRON_SECRET = "test-cron-secret";
 
 describe("production-global sweep route contracts", () => {

@@ -3,7 +3,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { setModelCatalogSystemDefaultFixture } from "../../../test-fixtures/model-catalog";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   entitledNativeChatActor,

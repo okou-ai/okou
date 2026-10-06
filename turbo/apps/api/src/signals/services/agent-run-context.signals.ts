@@ -74,7 +74,7 @@ import {
   materializeProjectedRuntimeSelection,
   rememberProjectedConnectors,
   requestedProjectionConnectorSlugs,
-  runtimeSelectionFromAcceptedSnapshot,
+  runtimeSelectionFromCatalogView,
   takeCachedProjectedConnectors,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
@@ -776,8 +776,8 @@ async function bootstrapCatalogSelection(
   if (!accepted.ok) {
     throw accepted.error;
   }
-  return runtimeSelectionFromAcceptedSnapshot({
-    acceptedSnapshot: accepted.value,
+  return runtimeSelectionFromCatalogView({
+    catalog: accepted.value,
     ...input.requested,
   });
 }

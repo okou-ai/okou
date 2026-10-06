@@ -11,13 +11,13 @@ import { builtinConnectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import {
-  buildAutomaticMcpCatalog,
+  automaticMcpCatalogFixture,
   installAutomaticMcpCatalog,
 } from "./helpers/connector-automatic-catalog";
-import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog";
+
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 const routes = [
@@ -34,7 +34,7 @@ function accounts() {
   return setupApp({ context, routes })(connectorAccountsContract);
 }
 
-async function fixture() {
+async function fixture(legacyCatalog = false) {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -42,10 +42,14 @@ async function fixture() {
   mocks.clerk.session(actor.userId, actor.orgId);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
-  const catalog = await installAutomaticMcpCatalog();
+  const catalog = legacyCatalog
+    ? await installAutomaticMcpCatalog()
+    : automaticMcpCatalogFixture();
   onTestFinished(async () => {
+    if (legacyCatalog) {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
+    }
     mocks.clerk.session(actor.userId, actor.orgId);
-    mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
     const result = await accept(
       accounts().connections({ headers, query: catalog.target }),
       [200],
@@ -246,36 +250,6 @@ describe("builtin Automatic account and consent ownership", () => {
     expect(account.body).toMatchObject({
       authMethod: f.methodId,
       connectionStatus: "connected",
-    });
-  });
-
-  it("rejects consent frozen for an endpoint that changes without a storage version change", async () => {
-    const f = createPublicAutomaticCatalog(context);
-    await f.run(async () => {
-      await f.publish();
-      const provider = mockAutomaticMcpOAuthProvider(context, {
-        registration: "cimd",
-      });
-      const started = await oauthStart(f);
-      await f.publish(
-        buildAutomaticMcpCatalog({
-          slug: f.slug,
-          methodId: f.methodId,
-          endpoint: "https://replacement.example.test/mcp",
-        }).catalog,
-      );
-      expect((await callback(started.state, provider.issuer)).body.status).toBe(
-        "error",
-      );
-      await accept(receipt(f, started.attemptId), [404]);
-      expect(
-        (
-          await accept(
-            accounts().connections({ headers, query: f.target }),
-            [200],
-          )
-        ).body.connections,
-      ).toStrictEqual([]);
     });
   });
 });

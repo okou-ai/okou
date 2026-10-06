@@ -57,7 +57,7 @@ import {
 const UTF8_ENCODING = ["utf", "8"].join("-");
 const HOUR_MS = 60 * 60 * 1000;
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);

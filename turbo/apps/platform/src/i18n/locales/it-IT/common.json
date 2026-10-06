@@ -2275,6 +2275,30 @@
       },
       "templates": "Modelli"
     },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "Questa richiesta di ripristino è già stata utilizzata.",
+      "confirm": "Ripristina",
+      "confirmation": "Il ripristino usa un credito. La richiesta viene inviata solo facendo clic su Ripristina.",
+      "credits_one": "Ripristini rimanenti: {{count}}",
+      "credits_many": "Ripristini rimanenti: {{count}}",
+      "credits_other": "Ripristini rimanenti: {{count}}",
+      "creditsUnknown": "Ripristini rimanenti: sconosciuti",
+      "error": "Ripristino non riuscito. Aggiorna o riprova la stessa richiesta.",
+      "expiresAt": "Scadenza crediti: {{time}}",
+      "loadFailed": "Impossibile leggere l’utilizzo dell’abbonamento.",
+      "loading": "Caricamento dell’abbonamento…",
+      "noCredit": "Nessun credito di ripristino disponibile.",
+      "nothingToReset": "Nessuna finestra di utilizzo esaurita da ripristinare.",
+      "reconnect": "Ricollega questo abbonamento in Modelli personali.",
+      "reset": "Utilizzo ripristinato correttamente.",
+      "resetting": "Ripristino…",
+      "retry": "Aggiorna",
+      "title": "Reset card",
+      "unavailable": "Questo abbonamento non è disponibile nell’area di lavoro attuale.",
+      "unknown": "Sconosciuto",
+      "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
+    },
     "taskChips": {
       "chooseTask": "Scegli un’attività",
       "ideas": {

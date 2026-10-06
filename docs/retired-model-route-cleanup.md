@@ -8,7 +8,7 @@ still serving. The retirement API is the rollback floor.
 
 ## Retained rows
 
-`1322_prune_retired_model_routes` keeps:
+`1324_prune_retired_model_routes` keeps:
 
 - Auto: `okou-1.0` / `built-in` / `openrouter-codex` /
   `@preset/okou-1-0`, with no subscription marker.
@@ -61,12 +61,12 @@ SQL-level retries. It also validates the surviving seeded catalog.
 The check is included in `test:migration-consistency`. Full migration/schema
 consistency and required PR CI must pass before merge. The former #37758 is
 closed; its complete cleanup ships only through the unified #37746. Migration
-metadata was generated after integrating main's 1320 migration; numbers are not
+metadata was generated after integrating main's 1322 migration; numbers are not
 reserved across concurrent PRs.
 
 ## Personal subscription launch defaults
 
-`1323_preserve_subscription_route_effort_defaults` is separate from the
+`1325_preserve_subscription_route_effort_defaults` is separate from the
 unchanged deletion-only cleanup. The canonical subscription rows previously had
 NULL default efforts, while their retired non-subscription mirrors supplied the
 native launch defaults. It preserves those defaults from migration 1298 on the

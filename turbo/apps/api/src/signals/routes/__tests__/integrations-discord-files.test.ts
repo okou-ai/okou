@@ -54,7 +54,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const storage = createChatCallbacksApi(context);
 const chatFiles = createChatFilesBddApi(context);

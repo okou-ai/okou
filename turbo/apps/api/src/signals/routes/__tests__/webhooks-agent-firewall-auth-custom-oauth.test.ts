@@ -26,7 +26,7 @@ import {
 } from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 async function setupCustomOAuthFirewall(

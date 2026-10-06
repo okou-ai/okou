@@ -58,7 +58,7 @@ interface DriveFolderFixture {
   readonly parentFolderId: string | null;
 }
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const api = createRunsApi(context);
 const store = createStore();
 const mocks = createRouteMocks(context);

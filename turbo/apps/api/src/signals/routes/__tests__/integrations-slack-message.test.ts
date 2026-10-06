@@ -15,7 +15,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { integrationsSlackMessageRoutes } from "../integrations-slack-message";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const bdd = createBddApi(context);

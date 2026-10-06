@@ -112,7 +112,7 @@ const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsUpdateRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);

@@ -14,7 +14,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   connectors,

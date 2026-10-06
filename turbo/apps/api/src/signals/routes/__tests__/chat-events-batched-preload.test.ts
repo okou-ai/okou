@@ -14,9 +14,10 @@ import {
   claimEnvironment,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   bdd,
+  api,
   chat,
   webhooks,
   entitledNativeChatActor,
@@ -75,6 +76,9 @@ describe("batched identity preload through chat entry", () => {
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
+    await api.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
+    });
     for (const entry of [
       { actor: owner.actor, agentId: owner.agentId, disabled: ["social"] },
       { actor: member, agentId, disabled: [] },

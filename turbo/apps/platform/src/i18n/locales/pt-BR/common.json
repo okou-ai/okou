@@ -2275,6 +2275,30 @@
       },
       "templates": "Modelos"
     },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "Esta solicitação de redefinição já foi resgatada.",
+      "confirm": "Redefinir",
+      "confirmation": "A redefinição usa um crédito. A solicitação só é enviada ao clicar em Redefinir.",
+      "credits_one": "Redefinições restantes: {{count}}",
+      "credits_many": "Redefinições restantes: {{count}}",
+      "credits_other": "Redefinições restantes: {{count}}",
+      "creditsUnknown": "Redefinições restantes: desconhecidas",
+      "error": "Falha na redefinição. Atualize ou tente a mesma solicitação novamente.",
+      "expiresAt": "Os créditos expiram: {{time}}",
+      "loadFailed": "Não foi possível ler o uso da assinatura.",
+      "loading": "Carregando assinatura…",
+      "noCredit": "Não há créditos de redefinição disponíveis.",
+      "nothingToReset": "Não há janela de uso esgotada para redefinir.",
+      "reconnect": "Reconecte esta assinatura em Modelos pessoais.",
+      "reset": "Uso redefinido com sucesso.",
+      "resetting": "Redefinindo…",
+      "retry": "Atualizar",
+      "title": "Reset card",
+      "unavailable": "Esta assinatura não está disponível no espaço de trabalho atual.",
+      "unknown": "Desconhecido",
+      "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
+    },
     "taskChips": {
       "chooseTask": "Escolha uma tarefa",
       "ideas": {

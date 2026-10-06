@@ -22,7 +22,7 @@ import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
+  type ConnectorRuntimeLookup,
 } from "./connector-catalog-runtime.service";
 
 const log = logger("api:connector-credential-access");
@@ -88,7 +88,7 @@ export function builtinConnectorCredentialStorageIsCompatible(args: {
 }
 
 export function resolveStoredBuiltinConnectorRuntimeMethod(args: {
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeLookup;
   readonly stored: {
     readonly authMethodId: string;
     readonly connectorId: string;
@@ -126,7 +126,7 @@ export function resolveStoredBuiltinConnectorRuntimeMethod(args: {
 }
 
 export function resolveBuiltinConnectorCredentialAccess(args: {
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeLookup;
   readonly stored: BuiltinConnectorCredentialStoredIdentity;
 }): BuiltinConnectorCredentialAccessResult {
   const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({

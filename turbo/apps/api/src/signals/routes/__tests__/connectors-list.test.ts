@@ -11,7 +11,7 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   invalidateApiTestConnectorCatalogCompatibility,
   installApiTestConnectorCatalog,
@@ -20,18 +20,12 @@ import {
   readConnectorCredentialStorageState,
   setConnectorDefaultState,
 } from "./helpers/connector-credential-storage-state";
-import { createBddApi } from "./helpers/api-bdd";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  catalogWithAuthMethod,
-  createPublicConnectorCatalog,
-} from "./helpers/public-connector-catalog";
+
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 interface AuthenticatedFixture {
@@ -193,13 +187,13 @@ describe("GET /api/connectors", () => {
     expect(listed.body.connectorProvidedBindings).toStrictEqual([
       expect.objectContaining({
         connectorSlug: "gitlab",
-        namespace: "secrets",
-        name: "GITLAB_TOKEN",
+        namespace: "vars",
+        name: "GITLAB_HOST",
       }),
       expect.objectContaining({
         connectorSlug: "gitlab",
-        namespace: "vars",
-        name: "GITLAB_HOST",
+        namespace: "secrets",
+        name: "GITLAB_TOKEN",
       }),
     ]);
   });
@@ -248,49 +242,14 @@ describe("GET /api/connectors", () => {
     expect(detail.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("skips stored connectors whose runtime method is unavailable", async () => {
-    const fixture = seedAuthenticatedFixture();
-    const actor = createBddApi(context).user(fixture);
-    const connectors = createConnectorBddApi(context);
-    const catalog = createPublicConnectorCatalog(context);
-    const available = catalogWithAuthMethod(
-      { connectorSlug: "openai", authMethodId: "api-token" },
-      (method) => {
-        return { ...method, id: "unavailable-method" };
-      },
+  it("keeps immutable stored lists available while legacy account lifecycle rejects unavailable compatibility", async () => {
+    // Only this case-owned legacy compatibility generation becomes unavailable.
+    // The accepted immutable current and entries remain intact.
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `legacy-list-unavailable-${randomUUID()}`,
     );
-    await catalog.publish(available);
-    await connectGitlab(fixture);
-    catalog.onCleanup(async () => {
-      await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gitlab");
-    });
-    await connectors.connectManualGrant(actor, "openai", "unavailable-method", {
-      apiKey: "unavailable-method-secret",
-    });
-    catalog.onCleanup(async () => {
-      await catalog.publish(available);
-      await connectors.deleteDefaultBuiltinConnectorAccount(actor, "openai");
-    });
-    await catalog.publish(API_TEST_CONNECTOR_CATALOG);
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
-    const response = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body.connectors).toHaveLength(1);
-    expect(response.body.connectors[0]).toMatchObject({ slug: "gitlab" });
-    expect(response.body.connectorProvidedBindings).not.toContainEqual(
-      expect.objectContaining({ connectorSlug: "openai" }),
-    );
-    await catalog.cleanup();
-  });
-
-  it("keeps stored connector reads empty or unavailable when the external catalog is unavailable", async () => {
+    await installApiTestConnectorCatalog();
     const fixture = seedAuthenticatedFixture();
     seededFixtures.push(fixture);
     await connectGitlab(fixture);
@@ -307,23 +266,45 @@ describe("GET /api/connectors", () => {
     if (!account) {
       throw new Error("Expected the connected GitLab account");
     }
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsMainContract,
+    );
+    const available = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(available.body.connectors).toStrictEqual([
+      expect.objectContaining({
+        id: account.id,
+        slug: "gitlab",
+        authMethod: "api-token",
+        connectionStatus: "connected",
+      }),
+    ]);
+    expect(available.body.connectorProvidedBindings).toStrictEqual([
+      expect.objectContaining({
+        connectorSlug: "gitlab",
+        namespace: "vars",
+        name: "GITLAB_HOST",
+      }),
+      expect.objectContaining({
+        connectorSlug: "gitlab",
+        namespace: "secrets",
+        name: "GITLAB_TOKEN",
+      }),
+    ]);
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
     await installApiTestConnectorCatalog();
     await invalidateApiTestConnectorCatalogCompatibility();
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsMainContract,
-    );
     const response = await accept(
       client.list({ headers: authHeaders() }),
       [200],
     );
+    expect(response.body).toStrictEqual(available.body);
 
-    expect(response.body).toStrictEqual({
-      connectors: [],
-      connectorProvidedBindings: [],
-    });
+    // Unmigrated lifecycle endpoints still reject this legacy generation.
     const unavailableReads = await Promise.all([
       accept(
         accountClient.oauthCompletion({

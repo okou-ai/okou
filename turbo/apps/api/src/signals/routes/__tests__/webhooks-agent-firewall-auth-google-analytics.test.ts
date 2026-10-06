@@ -16,7 +16,7 @@ import {
   type PublicFirewallFixture,
 } from "./helpers/public-firewall-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 async function setupAnalyticsFirewall(publicFixture?: PublicFirewallFixture) {

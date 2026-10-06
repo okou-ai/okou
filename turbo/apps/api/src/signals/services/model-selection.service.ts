@@ -76,6 +76,29 @@ function subscriptionPin(entry: MemberSubscriptionModelRoute): ModelFirstPin {
     selectedModel: entry.model,
   };
 }
+function unavailablePersonalPin(
+  catalog: ModelCatalog,
+  selectedModel: string | null,
+): ModelFirstPin | null {
+  const route = catalog.routes.find((candidate) => {
+    return (
+      candidate.model === selectedModel &&
+      candidate.enabled &&
+      candidate.providerType === candidate.subscriptionType &&
+      candidate.concreteProviderType === candidate.subscriptionType &&
+      (candidate.subscriptionType === "codex-oauth-token" ||
+        candidate.subscriptionType === "claude-code-oauth-token")
+    );
+  });
+  return route
+    ? {
+        modelProviderId: null,
+        modelProviderType: route.providerType,
+        modelProviderCredentialScope: "member",
+        selectedModel,
+      }
+    : null;
+}
 interface SelectionParams {
   readonly orgId: string;
   readonly userId: string;
@@ -241,6 +264,15 @@ export const resolveModelSelectionPin$ = command(
       }
       return subscriptionPin(personal);
     }
+    const unavailable =
+      selectedModel === params.modelSelection.selectedModel
+        ? unavailablePersonalPin(facts.catalog, selectedModel)
+        : null;
+    if (unavailable) {
+      // Preserve the requested credential source so account capture rejects it;
+      // a missing personal account must never execute against platform billing.
+      return unavailable;
+    }
     // Stored Custom choices no longer represent a runtime source. Normalize them
     // explicitly to Auto; a valid personal subscription never crosses billing owners.
     return autoModelPin();
@@ -285,5 +317,10 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   const personal = params.subscriptionModels.find((entry) => {
     return entry.model === selectedModel;
   });
-  return personal ? subscriptionPin(personal) : autoModelPin();
+  if (personal) {
+    return subscriptionPin(personal);
+  }
+  return selectedModel === params.selectedModel
+    ? (unavailablePersonalPin(params.catalog, selectedModel) ?? autoModelPin())
+    : autoModelPin();
 }

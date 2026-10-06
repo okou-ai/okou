@@ -11,10 +11,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { clearMockNow } from "../../../lib/time";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
@@ -24,7 +21,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 const BASE_URL = "https://app.okou.test";
@@ -2520,7 +2517,6 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
 
   it("returns 403 when the auth method lacks executable platform configuration", async () => {
     mockOptionalEnv("GH_OAUTH_CLIENT_ID", undefined);
-    await installApiTestConnectorCatalog();
     mockAuthenticatedSession();
 
     const response = await requestOauthStart("github", {

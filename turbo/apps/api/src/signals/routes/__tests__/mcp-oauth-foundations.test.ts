@@ -28,7 +28,7 @@ import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 
 function metadataClient(baseUrl = "http://api.test") {
   return setupApp({

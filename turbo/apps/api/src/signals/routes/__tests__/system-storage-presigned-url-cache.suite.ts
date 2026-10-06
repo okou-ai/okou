@@ -33,7 +33,7 @@ import {
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const BUCKET = "test-user-storages";
 const CACHE_TTL_SECONDS = 2 * 24 * 60 * 60;
 

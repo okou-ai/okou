@@ -10,7 +10,7 @@ await client.connect();
 const testSchema = `custom_model_retirement_${randomUUID().replaceAll("-", "")}`;
 const sql = await readFile(
   new URL(
-    "../src/migrations/1321_retire_custom_model_configuration.sql",
+    "../src/migrations/1323_retire_custom_model_configuration.sql",
     import.meta.url,
   ),
   "utf8",

@@ -72,7 +72,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
  *   real time.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createComputerUseBddApi(context);
 const COMPUTER_USE_STATE_ROUTE = "/api/test/computer-use-state";

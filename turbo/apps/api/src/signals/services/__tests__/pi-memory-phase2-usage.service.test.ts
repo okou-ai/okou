@@ -26,10 +26,7 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
-import {
-  seedBuiltInModelCandidateKeys,
-  seedBuiltInModelKey,
-} from "../../routes/__tests__/helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
@@ -39,7 +36,7 @@ import {
 } from "../pi-memory-phase2-maintenance.service";
 import {
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-  PI_MEMORY_PHASE2_BYOK_MODEL,
+  PI_MEMORY_PHASE2_PERSONAL_MODEL,
 } from "../pi-memory-phase2-usage.service";
 import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import {
@@ -63,7 +60,7 @@ import {
 // Private maintenance has no public launch/control/ledger API. Seed only its
 // infrastructure-owned cron input and terminal faults; the real dispatcher
 // persists the binding, and the real proxy HTTP ingress owns all usage writes.
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 
 async function dispatchMaintenance(
   type?: "codex-oauth-token",
@@ -87,9 +84,7 @@ async function dispatchMaintenance(
     });
   });
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
-  if (type) {
-    await seedBuiltInModelKey(context, PI_MEMORY_PHASE2_BYOK_MODEL);
-  } else {
+  if (!type) {
     await seedBuiltInModelCandidateKeys(
       context,
       PI_MEMORY_PHASE2_BUILT_IN_MODEL,
@@ -208,7 +203,7 @@ async function launchMaintenance(
       idempotencyKey: randomUUID(),
       kind: "model" as const,
       provider: type
-        ? PI_MEMORY_PHASE2_BYOK_MODEL
+        ? PI_MEMORY_PHASE2_PERSONAL_MODEL
         : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
     };
   });
@@ -311,7 +306,9 @@ describe("Pi memory Phase 2 proxy billing", () => {
       // cleanup below only reports `deleted: 0` while the retained binding is
       // still resolvable, so this asserts the full set is honoured.
       expect(run.run.selectedModel).toBe(
-        type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+        type
+          ? PI_MEMORY_PHASE2_PERSONAL_MODEL
+          : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
       );
       const completedAt = nowDate();
       // Terminal states, persisted launch snapshots and delayed proxy flushes
@@ -442,7 +439,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
       type: "codex-oauth-token",
       scope: "member",
       url: "https://chatgpt.com/backend-api/codex/responses",
-      model: "gpt-5.6-luna",
+      model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
     },
   ] as const)(
     "executes exact $type/$scope HTTP and drops replayed model usage",
@@ -452,7 +449,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
         modelProvider: type,
         modelProviderId: run.provider?.binding.modelProviderId,
         modelProviderCredentialScope: scope,
-        selectedModel: "gpt-5.6-luna",
+        selectedModel: PI_MEMORY_PHASE2_PERSONAL_MODEL,
         chatThreadId: null,
         creditAdmitted: false,
       });

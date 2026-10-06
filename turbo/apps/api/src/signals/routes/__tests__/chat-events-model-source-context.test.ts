@@ -7,7 +7,7 @@ import { withAgentBootstrapFailureFixture } from "../../../test-fixtures/agent-b
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   bdd,
   chat,

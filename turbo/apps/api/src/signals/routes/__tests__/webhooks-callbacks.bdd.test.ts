@@ -65,9 +65,7 @@ import {
 } from "./helpers/connector-credential-storage-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
-const context = testContext({
-  connectorCatalog: true,
-});
+const context = testContext({});
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",

@@ -192,7 +192,7 @@ importers:
         version: 9.1.0
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
+        version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@electric-sql/pglite@0.5.8)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
       google-auth-library:
         specifier: ^10.9.0
         version: 10.9.0
@@ -248,6 +248,9 @@ importers:
         specifier: ^4.3.6
         version: 4.5.4
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.8
+        version: 0.5.8
       '@hono/node-server-v1':
         specifier: npm:@hono/node-server@1.19.14
         version: '@hono/node-server@1.19.14(hono@4.13.12)'
@@ -1060,12 +1063,15 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
+      '@okouai/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@okouai/core':
         specifier: workspace:*
         version: link:../core
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
+        version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@electric-sql/pglite@0.5.8)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -1917,6 +1923,9 @@ packages:
   '@earendil-works/pi-tui@0.87.1':
     resolution: {integrity: sha512-YEH2vRyOeiO7hhN6j6AE6YwKSq2Kz2f3XR8bj1TbR+aGE/JsnY1hLPMI2pvaZfRM1n9Y00tejxFQ4zbzvF7nkQ==}
     engines: {node: '>=22.19.0'}
+
+  '@electric-sql/pglite@0.5.8':
+    resolution: {integrity: sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q==}
 
   '@electron-forge/cli@7.11.2':
     resolution: {integrity: sha512-c+C4ndLfHbxwZuCn9G8iT9wD/woLdaVkoSVjAIbj+0nJhi8UmiVsz/+Gxlj4cvhMRTzBMBxudstLU7RocMikfg==}
@@ -11825,6 +11834,8 @@ snapshots:
       get-east-asian-width: 1.6.0
       marked: 18.0.11
 
+  '@electric-sql/pglite@0.5.8': {}
+
   '@electron-forge/cli@7.11.2(@swc/core@1.15.46(@swc/helpers@0.5.21))(encoding@0.1.13)(esbuild@0.28.2)(postcss@8.5.25)':
     dependencies:
       '@electron-forge/core': 7.11.2(@swc/core@1.15.46(@swc/helpers@0.5.21))(encoding@0.1.13)(esbuild@0.28.2)(postcss@8.5.25)
@@ -16737,9 +16748,10 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.21.0
 
-  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260924.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9):
+  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260924.1)(@electric-sql/pglite@0.5.8)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260924.1
+      '@electric-sql/pglite': 0.5.8
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.21.0
       pg: 8.23.0

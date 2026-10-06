@@ -41,7 +41,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...workflowAutomationsRoutes,
 ]);
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const runsApi = createRunsApi(context);

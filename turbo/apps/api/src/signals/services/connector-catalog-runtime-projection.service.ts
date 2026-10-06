@@ -31,10 +31,10 @@ import {
 } from "@okouai/connectors/connector-catalog/runtime-projection";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
+import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 import {
   cachedAcceptedConnectorCatalogSnapshot,
   type AcceptedConnectorCatalogSnapshot,
-  type ExternalCatalogIdentity,
   type decodeAcceptedConnectorCatalogPayload,
 } from "./connector-catalog-external-reader.service";
 import {

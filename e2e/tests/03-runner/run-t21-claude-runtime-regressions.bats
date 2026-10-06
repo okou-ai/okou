@@ -25,7 +25,7 @@ teardown() {
     run jq -e '
         .defaultModel == "okou-1.0" and
         any(.models[]?;
-            .model == "claude-sonnet-5" and
+            .model == "claude-sonnet-5-5" and
             .defaultProviderType == "claude-code-oauth-token" and
             .credentialScope == "member"
         )
@@ -53,7 +53,7 @@ teardown() {
 EOF
 )
 
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "claude-sonnet-5"
+    run runner_chat_send "$AGENT_ID" "$prompt" "" "claude-sonnet-5-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -110,7 +110,7 @@ EOF
     assert_success
     AGENT_ID="$output"
 
-    run runner_chat_send "$AGENT_ID" "@orphan-pipe" "" "claude-sonnet-5"
+    run runner_chat_send "$AGENT_ID" "@orphan-pipe" "" "claude-sonnet-5-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

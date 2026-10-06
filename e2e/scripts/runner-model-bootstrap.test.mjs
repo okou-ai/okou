@@ -20,7 +20,7 @@ let response;
 if (path === "/api/run-models" && method === "GET") {
   const models = [{model: "okou-1.0", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}];
   if (process.env.PERSONAL === "true") {
-    models.push({model: "claude-sonnet-5", defaultProviderType: "claude-code-oauth-token", credentialScope: "member"},
+    models.push({model: "claude-sonnet-5-5", defaultProviderType: "claude-code-oauth-token", credentialScope: "member"},
       {model: "gpt-6-astra", defaultProviderType: "codex-oauth-token", credentialScope: "member"});
   }
   response = {defaultModel: process.env.INVALID_AUTO === "true" ? "retired-model" : "okou-1.0", models};

@@ -31,7 +31,7 @@ import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automati
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const api = createRunsApi(context);
 const store = createStore();
 const mocks = createRouteMocks(context);

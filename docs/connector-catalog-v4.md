@@ -30,6 +30,149 @@ serving-generation selector or separate warm-up endpoint is needed. Existing
 scheduled syncs keep v4 current. MCP methods do not need to be executable for v4
 acceptance: filtered methods are expected.
 
+## Additive hash-addressed preparation (P3)
+
+The existing pointer and accepted-snapshot readers remain the only serving
+path; reader migration is separate. Sync now prepares connector skill storages
+and exact immutable versions outside the activation transaction, without
+changing connector skill HEADs. Other storage HEAD behavior is unchanged.
+It then inserts the original connector payloads into
+`connector_catalog_entries` under the captured complete `sha256:<64 lowercase hex>`
+digest (also used by current, baseline and unchanged comparisons). Bare hex is
+only an object-path component, not a second database identity. It ignores identical
+insert conflicts, rejects conflicting canonical bytes, and verifies the exact
+manifest slug set. Failed preparation leaves the serving snapshot unchanged;
+completed immutable work remains reusable on retry.
+
+Sync subcommands receive source/capability/validator values and captured facts,
+not reader callbacks, DB handles, accessors or signals in runtime objects.
+Pointer conditional downloads and bounded artifact downloads run inside their
+owning commands through existing S3 gateways. A shared pure byte validator keeps
+the original size, digest, schema and relationship checks; existing reader clients
+retain their loader API. Retry attempts re-observe the baseline and pointer.
+
+Stable commands obtain the existing DB gateways internally. The owning sync
+command keeps legacy acceptance, new `connector_catalog` hash CAS and Pi
+stable-context invalidation in one transaction callback. New helpers build
+pure values or SQL conditions; they do not accept a DB/transaction handle.
+Cold start inserts the current row explicitly. A lost hash CAS rolls back the
+transaction; the same hash does not repeat activation effects. Initializing a
+missing additive mirror of the already-serving digest also does not invalidate
+Pi or replay wakeups. Only a committed serving-digest switch attempts the
+existing best-effort wakeups after commit. Wakeup failure does not undo the
+committed catalog, and a same-hash retry is not a delivery replay.
+
+## Scoped immutable readers (P4a first batch)
+
+The selection branches for executable-slug checks, stored builtin connector
+lists and Run MCP discovery now read the immutable tables. One statement
+captures the supported current schema/hash, raw header, exact slug manifest
+and the union of runtime and metadata dependencies. A later read may supply
+that plain capture and queries entries at its fixed hash, never current again.
+Unknown manifest slugs retain the existing unknown/absent behavior; a missing
+current or a missing manifest member fails fast. There is no R2, gzip snapshot,
+compatibility-table or runtime-projection fallback on these branches.
+
+Raw JSONB column contracts describe the publisher/sync-owned schema shape;
+the reader does not recompile relationships or recompute hashes. It uses the
+raw entries returned by the statement directly, without a process-level raw
+cache or computed-owned cache writes/eviction. Entry identity remains the
+captured `(hash, slug)` pair. Each selection derives code capability filtering
+afresh; no derived cache crosses capability or request boundaries. Features,
+exact accounts, credential versions and grants remain with their existing
+request owners. Metadata-only dependencies do not enter the executable
+connector map or runtime firewall selection. Actual manifest-member presence
+is checked on every read.
+
+This is not the full reader cutover. Account lifecycle's legacy helper graph,
+the transaction-bound runtime-sync reads, Pi stable-context recapture's legacy
+source identity, independent chat capture, full-directory/firewall consumers
+and permission baselines remain on their existing paths. Subsequent batches
+must migrate those contracts without fabricating a legacy identity/validator.
+The P2 schema and P3 prepare/activate writer are stacked prerequisites. The
+first batch neither drops legacy tables nor introduces an old-API rollback
+window or garbage collection. N4/N5 exercise real cron and authenticated MCP
+consumer behavior in the sole per-case PGlite suite, including fixed-hash reads,
+back-to-old-hash reuse and missing-vs-unknown fail-fast behavior. N1 remains
+unimplemented for its later publisher-pointer stage.
+
+### P4a removed-mechanism assertion ledger
+
+| Retired mechanism/expectation                                                                                    | Replacement and retained boundary coverage                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Process-level raw-entry cache writes inside computed readers                                                     | Cache removed, not moved behind another helper. Same current/entry statement and captured-hash reads remain; N4 retains old→new→old hash, metadata isolation and capability-change coverage. No new cache framework or SQL-count improvement is claimed.                                                                                                                                                                                                   |
+| `connectors-list.test.ts`: migrated stored list becomes empty solely because legacy compatibility is unavailable | The public list must retain the exact pre-invalidation response when immutable current/entries remain intact, including the exact stored account ID, auth method/status and binding metadata. The same case retains all six legacy lifecycle/scope-diff 404/code checks and the unavailable inspect result. N5's missing immutable current/member versus unknown-slug checks remain unchanged. No test case is deleted and no legacy fallback is restored. |
+
+This ledger records source coverage, not a claim that pending or cancelled
+native cases have executed successfully.
+
+## Transitional ordinary-test publication containment
+
+The immutable serving pointer is schema-global, unlike the legacy source-owned
+rows. Source cleanup does not restore this pointer, and a later shared fixture
+setup is not a reset. Whole-file serialization is therefore insufficient when
+fixed-catalog readers and generation writers share a file/project.
+
+Fixed readers stay in their original files/projects. Dedicated
+`*.catalog-generation.test.ts` files contain only the existing generation
+contracts, run serially in group 3 after ordinary readers, the fixed catalog
+project (group 1), and bootstrap readers (group 2). The two restricted-manifest
+cron suites run in group 4. Each generation contract first publishes its own
+prerequisite generation; it does not assume the preceding file's current hash.
+Existing cleanup may republish that case's own contract generation for safe
+account deletion, but no global snapshot/restore or default-catalog reset is
+introduced. Case-internal request concurrency is unchanged. This is transitional
+containment while legacy mechanisms remain, not the v5/P6/P7 terminal design.
+
+### Case movement / removed-publication ledger
+
+Each row moves the original registration body without changing its tokens,
+assertions, authentication, account/method/version identity or owned cleanup.
+The target is the same filename stem plus `.catalog-generation.test.ts`.
+
+| Original file                              | Moved contract(s)                                                                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connector-accounts.test.ts`               | Exact-account requested scopes across default changes; removed builtin target absent                                                            |
+| `connector-check.test.ts`                  | Stale stored connector absent from accepted catalog                                                                                             |
+| `connectors-automatic-security.test.ts`    | Frozen consent rejects changed endpoint with unchanged storage version                                                                          |
+| `connectors-automatic.test.ts`             | In-flight callback rejects changed storage contract                                                                                             |
+| `connectors-by-slug-get.test.ts`           | Stored runtime method unavailable returns 404/code                                                                                              |
+| `connectors-list.test.ts`                  | Unavailable stored runtime method excluded, healthy public catalog facts retained                                                               |
+| `connectors-scope-diff.test.ts`            | Unavailable runtime method returns 404/code                                                                                                     |
+| `mail.test.ts`                             | Known Gmail storage-version mismatch never refreshes provider                                                                                   |
+| `run-lifecycle.bdd.test.ts`                | Exact Automatic none/oauth admission and outside-sandbox injection; none/oauth reconnect retains catalog auth (two parameterized registrations) |
+| `webhooks-agent-firewall-auth.bdd.test.ts` | Known storage-version mismatch never calls provider                                                                                             |
+
+Twelve registration blocks (fourteen expanded cases) move; none is deleted or
+skipped. Original fixed Automatic siblings, API6 connect/list/status/grant/auth
+assertions, API2's strengthened stored-list contract and bootstrap cases remain
+before these writers. Native N3's `Promise.all` competition and ordinary cron's
+overlap sync/concurrent reads are unchanged.
+
+The pure `connector-accounts.test.ts` 101-account pagination fixture no longer
+publishes a catalog per case. It uses the existing shared fixed descriptor while
+retaining all 101 API-created accounts, bounded parallel creation/deletion,
+pagination cursors, summaries and case-owned account cleanup. No replacement
+self-installing fixture, ordinary PGlite/DB adapter or production fallback is
+introduced. Native bootstrap, actor membership and five-engine lifecycle guards
+are unchanged. Historical execution failures and the absent failure-time hashes
+remain historical limitations; source containment and green CI do not prove the
+old run's complete causal chain or deployed acceptance.
+
+### Split-file dependency cleanup
+
+The 5536 cohort passed all eight API jobs but failed required API lint with
+232 unused-dependency warnings; its business results are not a lint pass.
+The follow-up removes unused imports and uninvoked helper/constant/type copies
+from nine generation files. Their useful originals remain in the fixed-reader
+files, including the 101-account pagination and bounded MCP awareness checks.
+No registration, live assertion, actor/context initialization or cleanup hook
+is removed. All twelve moved registration bodies remain token-identical;
+that receipt is not a substitute for dependency review or new-head execution.
+Native, production readers, scheduler barriers and the three main resolutions
+are unchanged. Prior scoped lint did not fully cover the new files; its
+warning-clean claim is corrected rather than carried forward.
+
 ## Identity and failure behavior
 
 The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`.

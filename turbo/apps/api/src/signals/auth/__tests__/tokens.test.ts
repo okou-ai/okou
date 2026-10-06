@@ -237,6 +237,8 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.PrivateArtifacts, "artifact:read"],
     [FeatureSwitchKey.PrivateArtifacts, "artifact:write"],
     [FeatureSwitchKey.Banking, "banking:read"],
+    [FeatureSwitchKey.SubscriptionControls, "subscription:read"],
+    [FeatureSwitchKey.SubscriptionControls, "subscription:switch"],
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
     [FeatureSwitchKey.DiscordIntegration, "discord:read"],
     [FeatureSwitchKey.DiscordIntegration, "discord:write"],

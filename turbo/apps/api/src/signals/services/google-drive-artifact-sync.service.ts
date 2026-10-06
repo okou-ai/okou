@@ -12,7 +12,6 @@ import {
   GOOGLE_SLIDES_MIME_TYPE,
   convertsToGoogleSlides,
 } from "@okouai/core/google-slides-conversion";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   hostedDeployments,
@@ -780,10 +779,9 @@ const loadArtifactFile$ = command(
         metadata: runUploadedFiles.metadata,
       })
       .from(runUploadedFiles)
-      .innerJoin(agentRuns, eq(agentRuns.id, runUploadedFiles.runId))
       .where(
         and(
-          isNotNull(agentRuns.triggerSource),
+          isNotNull(runUploadedFiles.runId),
           eq(runUploadedFiles.userId, args.userId),
           eq(runUploadedFiles.runId, args.runId),
           or(
@@ -796,7 +794,7 @@ const loadArtifactFile$ = command(
             ),
           ),
           or(
-            eq(agentRuns.chatThreadId, args.threadId),
+            eq(runUploadedFiles.chatThreadId, args.threadId),
             exists(
               db
                 .select({ one: chatEvents.id })

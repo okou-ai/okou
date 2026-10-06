@@ -46,7 +46,7 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);

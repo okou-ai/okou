@@ -2219,6 +2219,28 @@
       },
       "templates": "テンプレート"
     },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "このリセット要求はすでに使用されています。",
+      "confirm": "リセット",
+      "confirmation": "リセットにはクレジットを1回分使用します。「リセット」をクリックした場合にのみ要求を送信します。",
+      "credits_other": "残りのリセット回数：{{count}}",
+      "creditsUnknown": "残りのリセット回数：不明",
+      "error": "リセットに失敗しました。更新するか、同じ要求を再試行してください。",
+      "expiresAt": "クレジットの有効期限：{{time}}",
+      "loadFailed": "サブスクリプションの使用量を読み取れませんでした。",
+      "loading": "サブスクリプションを読み込み中…",
+      "noCredit": "利用可能なリセットクレジットがありません。",
+      "nothingToReset": "リセットが必要な使い切った使用枠はありません。",
+      "reconnect": "個人モデルでこのサブスクリプションを再接続してください。",
+      "reset": "使用量をリセットしました。",
+      "resetting": "リセット中…",
+      "retry": "更新",
+      "title": "Reset card",
+      "unavailable": "現在のワークスペースではこのサブスクリプションを利用できません。",
+      "unknown": "不明",
+      "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
+    },
     "taskChips": {
       "chooseTask": "タスクを選ぶ",
       "ideas": {

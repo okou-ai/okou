@@ -48,7 +48,6 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
 import {
   appendOfficialWorkflowQueueInputFixture,
@@ -110,7 +109,7 @@ import {
 } from "./helpers/runtime-state";
 import { readExportText } from "./helpers/user-export-storage";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
@@ -2059,13 +2058,6 @@ async function installStaleAdmissionScenario() {
 
 beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
-  // testContext seeds the default source; this hook also seeds the source
-  // derived from the unique bucket used by this test.
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `official-workflow-installation-test-${randomUUID()}`,
-  );
-  await installApiTestConnectorCatalog();
   await cleanupCatalog();
 });
 
@@ -6637,9 +6629,19 @@ describe("Official Workflow installations", () => {
         throw new Error("Expected historical Official Automation Run");
       }
       await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
+      // Cancellation acknowledges the transition before its callback settles.
+      await flushWaitUntilForTest();
 
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      await runOfficialWorkflowReconciliationWorker();
+      await expect(
+        runOfficialWorkflowReconciliationWorker(),
+      ).resolves.toStrictEqual({
+        claimed: 1,
+        completed: 1,
+        advanced: 0,
+        retried: 0,
+        installations: 1,
+      });
       const removed = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],

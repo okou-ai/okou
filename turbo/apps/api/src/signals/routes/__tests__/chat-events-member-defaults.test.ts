@@ -7,7 +7,7 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   bdd,
   chat,

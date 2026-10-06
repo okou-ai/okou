@@ -44,7 +44,7 @@ import {
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const runs = createRunsApi(context);
 const reads = createRunReadsApi(context);
 const support = createAuthDeviceSupportApi(context);

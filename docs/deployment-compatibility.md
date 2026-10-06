@@ -2,7 +2,7 @@
 
 ## Custom model configuration retirement
 
-Migration 1321 deletes `org_model_policies`, `model_provider_surfaces`,
+Migration 1323 deletes `org_model_policies`, `model_provider_surfaces`,
 `model_provider_connections` and `org_metadata.model_mode` with its constraint.
 It contains no data conversion or backfill. Operators must finish the production
 Custom-to-Auto and workspace-credential cleanup before merging/deploying.
@@ -19,6 +19,80 @@ subscription selection, account ownership, capabilities and reconnect behavior
 remain. Actual pricing/credits, historical usage, image generation and unrelated
 connectors retain their existing storage. See [the retirement boundary](custom-model-retirement.md)
 and [current model APIs](model-catalog.md). This source PR does not deploy or merge.
+
+## Personal subscription CLI and Reset Cards
+
+`SubscriptionControls` adds a staff-gated single-account usage GET at
+`/api/me/subscriptions/:id`, additive optional `subscriptionResetSupported`
+metadata, and `subscription:read` / `subscription:switch` run capabilities.
+Existing human list, activation, and Codex reset behavior remain unchanged.
+No database migration, stored Run update, Runner protocol change, or account
+selection change is required. Reset stays user-confirmed; no agent reset
+capability is issued.
+
+New API with old App/CLI preserves the existing routes and response fields;
+older readers ignore the new optional metadata. Older token readers already
+filter unknown capability names rather than rejecting newer tokens. New CLI
+with old API cannot use the new single-account endpoint or subscription agent
+capabilities: it reports the API denial or missing endpoint rather than
+falling back to a different account. New App with old API renders the Reset
+Card unavailable and cannot submit a reset through it. Old App with new API
+continues to use the existing Codex controls.
+
+Existing URLs remain exact-account descriptors with one stable idempotency
+key, not bearer authorizations. The standalone page and card require an owned
+account in the signed-in current organization. Roll out the new API and App
+before relying on links in external integrations. Rollback restores the old
+interface without modifying active accounts or running Runs; retained new
+links may be unavailable until the supporting versions return. This PR does
+not enable production overrides, deploy, or update the Web floor.
+
+## Chat-derived readers without historical Run joins
+
+Migration 1322 backfills existing run-backed files' nullable thread and org
+associations in UUID-keyset batches, preserving existing associations, owners,
+URLs and run IDs. Apply it before the new API. The migration is atomic and
+retains the normal lock timeout, with a bounded 120-second statement timeout
+for the complete batched backfill. A timeout rolls back the entire backfill;
+production execution and acceptance are separate from this source PR.
+
+New upload writers capture the thread and org in the existing file/queue
+transaction. The common writer covers hosted, web, Slack, Telegram, GitHub,
+Feishu, Teams and AgentPhone outputs; canonical published assets already save
+these associations. Run IDs, foreign keys, upsert identities, public response
+shapes and Runner/App/CLI protocols remain unchanged.
+
+New readers use direct file associations or owning chat events, never a live
+Run fallback. The event path preserves cross-thread associations and files
+written by a draining old API; control.interrupt targets are not ownership.
+A direct backfilled association remains readable after its events leave the
+hot window. Catalog authorship still resolves the owning thread's user, and
+Drive export retains thread/file owner authorization and run-scoped identity.
+Artifact-change invalidation likewise resolves the live thread owner from file
+associations first, retaining the owning-event fallback and the existing topic.
+This includes uploads and preview completion after execution ends; a deleted
+thread is not notified and its files remain independently owned.
+
+Titles, notifications, follow-ups and Home evidence derive unfinished runs
+from active rows without a terminal chat event; terminal active rows retained
+while the Runner stops are not classified as unfinished. Home uses that same
+predicate for fresh evidence and cached existing-thread destinations, retaining
+the separate pending-input exclusion. Completed Home examples require
+run.completed events inside the already authorized thread
+set, not a historical Run status. Final terminal publication is the boundary:
+a Run status change before its event is committed does not expose a completed
+example prematurely.
+
+Old API/new database continues using its historical Run reads and may omit
+file associations; the new reader's event path supports those writes. New
+API/old database retains the same schema, but historical files whose owning
+events were archived need the backfill before switching readers. Rollback
+restores the old reader behavior without discarding captured file associations.
+Drain old writers and reconcile remaining associations before a later contract
+PR removes the Run foreign key or the event compatibility path. No Run record,
+column, foreign key or artifact is deleted here; no deployment, release or
+production backfill is executed by this PR.
+
 ## Claude Code manual usage reset retirement
 
 Retire `claudeCodeUsageReset` and the Claude Code-only grant query and redeem

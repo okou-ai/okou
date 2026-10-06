@@ -10,7 +10,7 @@ import {
   userMessages,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const api = createRunsApi(context);
 const {
   chat,
@@ -196,7 +196,6 @@ describe("ChatGPT auth.json credentials at launch", () => {
     expect(rejected.body).toMatchObject({
       error: { code: "CODEX_AUTH_JSON_SHAPE_INVALID" },
     });
-    await api.updateUserModelPreference(actor, "gpt-6-astra");
     const kms = useSecretKmsProbe();
     const response = await chat.requestSendEvent(
       actor,

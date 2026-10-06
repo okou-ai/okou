@@ -11,10 +11,10 @@ import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connec
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
+import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
-  loadConnectorRuntimeSelection,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeConnector,
   type ConnectorRuntimeMethod,
@@ -296,7 +296,7 @@ export function connectorActionResolver(): Computed<
 /**
  * Filters the given slugs to connectors that exist in the catalog and have an
  * executable auth method, matching `resolveSlug` with `requireExecutable`.
- * Loads only these connectors from the runtime projection, so callers that
+ * Loads only these connectors from immutable entries, so callers that
  * check a handful of slugs avoid materializing the full catalog snapshot.
  */
 export function executableConnectorSlugs(
@@ -306,9 +306,11 @@ export function executableConnectorSlugs(
     if (connectorSlugs.length === 0) {
       return [];
     }
-    const selection = await loadConnectorRuntimeSelection(get(db$), {
-      requestedConnectorSlugs: connectorSlugs,
-    });
+    const selection = await get(
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs: connectorSlugs,
+      }),
+    );
     return connectorSlugs.filter((connectorSlug) => {
       const runtimeConnector = getConnectorRuntimeConnector(
         selection,
