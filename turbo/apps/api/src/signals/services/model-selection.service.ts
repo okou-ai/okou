@@ -237,6 +237,7 @@ export const resolveModelSelectionPin$ = command(
   async (
     { set },
     params: SelectionParams & {
+      readonly purpose: "configure" | "capture";
       readonly modelSelection: {
         readonly modelProviderId: string;
         readonly selectedModel: string;
@@ -263,6 +264,13 @@ export const resolveModelSelectionPin$ = command(
         );
       }
       return subscriptionPin(personal);
+    }
+    if (params.purpose === "configure") {
+      return selectedModel === AUTO_RUN_MODEL
+        ? autoModelPin()
+        : badRequestMessage(
+            "Select Auto or a model from your connected personal subscription",
+          );
     }
     const unavailable =
       selectedModel === params.modelSelection.selectedModel

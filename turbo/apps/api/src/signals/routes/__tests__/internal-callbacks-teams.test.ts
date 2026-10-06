@@ -1141,9 +1141,11 @@ describe("Teams chat callbacks", () => {
       });
       await authOrgApi.completeOnboarding(secondActor);
       // The participant's new input starts from their own model preference.
-      await createBddIntegrationApi(context).updateUserModelPreference(
+      await createRunsApi(context).ensurePersonalSubscriptionModel(
         secondActor,
-        "claude-fable-5-1",
+        {
+          model: "claude-fable-5-1",
+        },
       );
 
       const tokenRequestCountBeforeConnect = teamsApi.tokenRequests.length;

@@ -137,7 +137,9 @@ describe("POST /api/integrations/slack/message", () => {
       displayName: "My Assistant",
       visibility: "private",
     });
-    await api.ensurePersonalSubscriptionModel(actor);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-sonnet-5-5",
+    });
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();
@@ -408,7 +410,7 @@ describe("POST /api/integrations/slack/message", () => {
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
     expect(footerCtx.elements![0]!.text).toBe(
-      "Sent via My Assistant · Claude Sonnet 5",
+      "Sent via My Assistant · Claude Sonnet 5.5",
     );
   });
 
@@ -452,7 +454,7 @@ describe("POST /api/integrations/slack/message", () => {
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
     expect(footerCtx.elements![0]!.text).toBe(
-      `Sent via My Assistant · Triggered by <@${slackUserId}> · Claude Sonnet 5`,
+      `Sent via My Assistant · Triggered by <@${slackUserId}> · Claude Sonnet 5.5`,
     );
   });
 });

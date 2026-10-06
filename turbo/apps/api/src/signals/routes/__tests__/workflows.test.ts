@@ -594,7 +594,9 @@ describe("workflows", () => {
       throw new Error("Expected a workflow owner organization");
     }
     // A member's workflow thread starts from their own model preference.
-    await chat.updateUserModelPreference(member, "claude-fable-5-1");
+    await api.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
+    });
 
     const publicAgent = await createAgent(owner, {
       displayName: "Public Workflow Agent",

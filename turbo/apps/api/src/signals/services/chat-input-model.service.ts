@@ -58,6 +58,7 @@ export const resolveChatInputModelSelection$ = command(
       ? await set(
           resolveModelSelectionPin$,
           {
+            purpose: "capture",
             orgId: args.orgId,
             userId: args.userId,
             modelSelection: {

@@ -172,8 +172,8 @@ async function fixture(type: SubscriptionType) {
   await runs.grantProEntitlement(actor);
   mockClaudeCodeTokenEndpoint();
   const connected = await connect(actor, type, "identity-a");
-  const model: "gpt-6-astra" | "claude-sonnet-5" =
-    type === "codex-oauth-token" ? "gpt-6-astra" : "claude-sonnet-5";
+  const model: "gpt-6-astra" | "claude-sonnet-5-5" =
+    type === "codex-oauth-token" ? "gpt-6-astra" : "claude-sonnet-5-5";
   await runs.updateUserModelPreference(actor, model);
   const agent = await bdd.createAgent(actor, {
     displayName: "Subscription identity",
@@ -988,8 +988,8 @@ describe("personal subscription run identity", () => {
 
 describe("exact subscription selection", () => {
   it.each([
-    ["claude-code-oauth-token", "claude-opus-5", "ANTHROPIC_MODEL"],
-    ["codex-oauth-token", "gpt-5.6-sol", "OPENAI_MODEL"],
+    ["claude-code-oauth-token", "claude-opus-5-5", "ANTHROPIC_MODEL"],
+    ["codex-oauth-token", "gpt-6-sol", "OPENAI_MODEL"],
   ] as const)(
     "preserves the requested model and lazy exact %s authentication",
     async (type, model, modelEnv) => {
@@ -1160,92 +1160,116 @@ describe("member-effective model policy contract", () => {
       });
       expect(rejected).toMatchObject({ error: "conflict" });
       expect(guidance?.content).toContain("subscription");
-      const policies = await createMiscRoutesApi(context).listRunModels(
-        f.actor,
-      );
-      expect(availableModel(policies, f.model)).toMatchObject({
-        defaultProviderType: f.type,
-        credentialScope: "member",
-      });
+      const models = await createMiscRoutesApi(context).listRunModels(f.actor);
+      expect(availableModel(models, f.model)).toBeUndefined();
+      expect(
+        models.models.map((entry) => {
+          return entry.model;
+        }),
+      ).toStrictEqual(["okou-1.0"]);
     },
   );
 });
 
 describe("personal effective provider entitlement", () => {
-  it.each(["suspended", "byok-disabled"] as const)(
-    "rejects %s with org credits and a supported subscription",
-    async (state) => {
-      const f = await fixture("claude-code-oauth-token");
+  it("keeps personal subscriptions independent of retired organization BYOK entitlement", async () => {
+    const f = await fixture("claude-code-oauth-token");
+    if (!f.actor.orgId) {
+      throw new Error("Expected an owned organization");
+    }
+    // Infrastructure-only entitlement state cannot be constructed via a production endpoint.
+    await upsertOrgPlanEntitlementFixture({
+      orgId: f.actor.orgId,
+      status: "active",
+      supportByok: false,
+      restrictedBuiltInModels: true,
+    });
+    const models = await createMiscRoutesApi(context).listRunModels(f.actor);
+    expect(availableModel(models, f.model)?.memberEffective).toMatchObject({
+      providerType: f.type,
+      credentialScope: "member",
+      availability: "available",
+    });
+    const runId = await f.start();
+    onTestFinished(async () => {
+      await runs.requestCancelRun(f.actor, runId, [200]);
+    });
+    const claim = await f.claim(runId);
+    expect(claim.billableFirewalls).toStrictEqual([]);
+    expect(accountId(claim, f.type)).toBe(f.connected.id);
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${f.connected.token}`,
+    });
+  });
+  it("rejects a suspended entitlement even with org credits and a supported subscription", async () => {
+    const f = await fixture("claude-code-oauth-token");
 
-      if (!f.actor.orgId) {
-        throw new Error("Expected an owned organization");
-      }
-      // Infrastructure-only divergent entitlement snapshot, as in chat-events.
-      await upsertOrgPlanEntitlementFixture({
-        orgId: f.actor.orgId,
-        status: state === "suspended" ? "suspended" : "active",
-        supportByok: state !== "byok-disabled",
-        restrictedBuiltInModels: false,
-      });
-      const restricted = await sendRejectedAtPick(f.actor, {
+    if (!f.actor.orgId) {
+      throw new Error("Expected an owned organization");
+    }
+    // Infrastructure-only divergent entitlement snapshot, as in chat-events.
+    await upsertOrgPlanEntitlementFixture({
+      orgId: f.actor.orgId,
+      status: "suspended",
+      supportByok: true,
+      restrictedBuiltInModels: false,
+    });
+    const restricted = await sendRejectedAtPick(f.actor, {
+      agentId: f.agentId,
+      model: f.model,
+      prompt: "personal requires plan authority",
+    });
+    expect(restricted.rejected).toBeDefined();
+    const policies = await createMiscRoutesApi(context).listRunModels(f.actor);
+    expect(
+      policies.models.find((policy) => {
+        return policy.model === f.model;
+      })?.memberEffective,
+    ).toMatchObject({
+      providerType: f.type,
+      credentialScope: "member",
+      availability: "plan_restricted",
+    });
+    await deleteOrgPlanEntitlementFixture(f.actor.orgId);
+    // Missing canonical entitlement fails model selection before a thread,
+    // input or run can be created. Use raw HTTP for the invariant 500 status.
+    const clientThreadId = randomUUID();
+    createRouteMocks(context).clerk.session(
+      f.actor.userId,
+      f.actor.orgId,
+      f.actor.orgRole,
+    );
+    const missing = await setupRawAppRequestWithRoutes({
+      context,
+      routes: chatEventsRoutes,
+    })("/api/chat/events", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer clerk-session",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
         agentId: f.agentId,
         model: f.model,
-        prompt: "personal requires plan authority",
-      });
-      expect(restricted.rejected).toBeDefined();
-      const policies = await createMiscRoutesApi(context).listRunModels(
-        f.actor,
-      );
-      expect(
-        policies.models.find((policy) => {
-          return policy.model === f.model;
-        })?.memberEffective,
-      ).toMatchObject({
-        providerType: f.type,
-        credentialScope: "member",
-        availability: "plan_restricted",
-      });
-      await deleteOrgPlanEntitlementFixture(f.actor.orgId);
-      // Missing canonical entitlement fails model selection before a thread,
-      // input or run can be created. Use raw HTTP for the invariant 500 status.
-      const clientThreadId = randomUUID();
-      createRouteMocks(context).clerk.session(
-        f.actor.userId,
-        f.actor.orgId,
-        f.actor.orgRole,
-      );
-      const missing = await setupRawAppRequestWithRoutes({
-        context,
-        routes: chatEventsRoutes,
-      })("/api/chat/events", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer clerk-session",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          agentId: f.agentId,
-          model: f.model,
-          clientThreadId,
-          prompt: "missing plan authority",
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "missing plan authority" }],
-          },
-          hasTextContent: true,
-        }),
-      });
-      expect(missing).toStrictEqual({
-        status: 500,
-        body: { error: "Internal server error" },
-      });
-      await createChatFilesBddApi(context).requestReadThreadMetadata(
-        f.actor,
         clientThreadId,
-        [404],
-      );
-    },
-  );
+        prompt: "missing plan authority",
+        userMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "missing plan authority" }],
+        },
+        hasTextContent: true,
+      }),
+    });
+    expect(missing).toStrictEqual({
+      status: 500,
+      body: { error: "Internal server error" },
+    });
+    await createChatFilesBddApi(context).requestReadThreadMetadata(
+      f.actor,
+      clientThreadId,
+      [404],
+    );
+  });
 });
 
 describe("subscription bundle decryption ownership", () => {

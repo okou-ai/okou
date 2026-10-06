@@ -7,6 +7,7 @@ import { AUTO_RUN_MODEL, AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { loadMemberModelRouteContext } from "./effective-model-route.service";
 import { loadMemberSubscriptionModels } from "./member-subscription-models.service";
 import { db$ } from "../external/db";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 export const listAvailableRunModels$ = command(
   async (
@@ -23,6 +24,14 @@ export const listAvailableRunModels$ = command(
     signal.throwIfAborted();
     const subscriptions = await loadMemberSubscriptionModels(db, member);
     signal.throwIfAborted();
+    const capabilities =
+      subscriptions.length > 0
+        ? await loadOrgPlanCapabilities(db, params.orgId)
+        : null;
+    signal.throwIfAborted();
+    // Caller-owned subscriptions are exempt from retired organization BYOK limits.
+    // A suspended entitlement still blocks execution and must be shown as such.
+    const personalPlanRestricted = capabilities?.status !== "active";
     const auto: AvailableRunModel = {
       model: AUTO_RUN_MODEL,
       modelLabel: "Auto",
@@ -62,9 +71,11 @@ export const listAvailableRunModels$ = command(
               providerType: entry.providerType,
               runtimeProviderType: entry.providerType,
               credentialScope: "member",
-              availability: entry.needsReconnect
-                ? "reconnect_required"
-                : "available",
+              availability: personalPlanRestricted
+                ? "plan_restricted"
+                : entry.needsReconnect
+                  ? "reconnect_required"
+                  : "available",
               accountSelection: "capture_required",
             },
           };

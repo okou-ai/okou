@@ -391,7 +391,11 @@ const discordModelPicker$ = command(
       modelThreadTag: discordModelThreadTag(chatThreadId),
       action: "model",
       options,
-      selected: currentModel,
+      selected: options.some((option) => {
+        return option.value === currentModel;
+      })
+        ? currentModel
+        : policies.defaultModel,
       content: "Choose an allowed model for this conversation.",
     });
   },

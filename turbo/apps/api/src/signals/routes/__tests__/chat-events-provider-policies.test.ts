@@ -455,9 +455,8 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
   });
 
-  it("captures the fixed default without changing a thread whose model was removed", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+  it("rejects a disconnected thread subscription until its owner explicitly selects Auto", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -479,18 +478,46 @@ describe("CHAT-02: model-first provider policies", () => {
 
     await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
     await seedBuiltInModelKey("okou-1.0");
-    await authDeviceSupport.deletePersonalModelProviderAccount(
+    await misc.deletePersonalModelProvider(
       actor,
-      providerId,
+      "claude-code-oauth-token",
+      [204],
     );
     // The member preference does not replace an unavailable thread model.
     await api.updateUserModelPreference(actor, "okou-1.0");
     await preparePiResourceHandoff(actor, agentId);
 
+    const clientEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        prompt: "continue through my disconnected subscription",
+        clientEventId,
+      },
+      [201],
+    );
+    const { picked } = await waitForPickedInput(
+      actor,
+      first.threadId,
+      clientEventId,
+    );
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "conflict",
+    });
+    expect(picked.runId).toBeUndefined();
+    await expect(
+      chat.readThreadMetadata(actor, first.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: "claude-fable-5-1",
+    });
+    await chat.updateThreadModelSelection(actor, first.threadId, "okou-1.0");
     const fallback = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "continue through the fixed default",
+      prompt: "continue after explicitly selecting Auto",
     });
     const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
     expect(fallbackClaim.claim.modelUsageProvider).toBe(
@@ -499,7 +526,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       chat.readThreadMetadata(actor, first.threadId),
     ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
+      selectedModel: "okou-1.0",
     });
     await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
   }, 90_000);
@@ -682,11 +709,12 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);
 
-  it("passes Codex fast mode only for GPT 5.6 sends", async () => {
+  it("passes Fast only on a supported personal Codex route", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey("gpt-6-sol");
-
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-sonnet-5-5",
+    });
     await configureSubscriptionPiModel(actor, {}, "gpt-6-sol");
 
     await preparePiResourceHandoff(actor, agentId);
@@ -727,7 +755,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(fastClaim.claim.piModelConfig).toMatchObject({
       provider: "openai-codex",
       model: "gpt-6-sol",
-      serviceTier: "priority",
+      serviceTier: "fast",
     });
     await cancelChatRun(actor, fast.runId, fastClaim.sandboxHeaders);
     expect((await readThreadProjection(actor, fast.threadId)).serviceTier).toBe(
@@ -737,13 +765,13 @@ describe("CHAT-02: model-first provider policies", () => {
     const invalidFastPatch = await chat.requestUpdateThreadModelSelection(
       actor,
       fast.threadId,
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       [400],
       { codexServiceTier: "fast" },
     );
     expectApiError(invalidFastPatch.body);
     expect(invalidFastPatch.body.error.message).toBe(
-      "Codex fast mode is only available for GPT 5.6 runs",
+      "Fast mode is unavailable for this model route",
     );
     expect((await readThreadProjection(actor, fast.threadId)).serviceTier).toBe(
       "priority",
@@ -752,7 +780,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await chat.updateThreadModelSelection(
       actor,
       fast.threadId,
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       {
         codexServiceTier: null,
       },
@@ -773,7 +801,7 @@ describe("CHAT-02: model-first provider policies", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId: fast.threadId,
-        selectedModel: "claude-sonnet-5",
+        selectedModel: "claude-sonnet-5-5",
       }),
     );
     expect(updatedFastThreadEvents.body.events).toContainEqual(
@@ -843,7 +871,7 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         prompt: "Claude cannot use Codex fast mode",
         clientThreadId: rejectedThreadId,
-        model: "claude-sonnet-5",
+        model: "claude-sonnet-5-5",
         runOptions: { codexServiceTier: "fast" },
       },
       [400],

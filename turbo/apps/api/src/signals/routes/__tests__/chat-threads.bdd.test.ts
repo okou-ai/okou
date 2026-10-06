@@ -750,22 +750,27 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   it("preserves model settings through snapshot compaction and patch replay", async () => {
     const { actor, thread } =
       await createSnapshotCursorScenario("Effort snapshot");
-    await api.updateUserModelPreference(actor, "claude-sonnet-5");
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-sonnet-5", {
-      reasoningEffort: "high",
-    });
+    await api.updateUserModelPreference(actor, "claude-sonnet-5-5");
+    await chat.updateThreadModelSelection(
+      actor,
+      thread.id,
+      "claude-sonnet-5-5",
+      {
+        reasoningEffort: "high",
+      },
+    );
     await compactChatThreadSnapshots(actor);
     const snapshot = await chat.getThreadSnapshot(actor);
     expect(snapshot.chatThreads).toContainEqual(
       expect.objectContaining({
         id: thread.id,
-        modelSettings: { "claude-sonnet-5": { effort: "high" } },
+        modelSettings: { "claude-sonnet-5-5": { effort: "high" } },
       }),
     );
     if (snapshot.latestSeqId === null) {
       throw new Error("Expected snapshot cursor");
     }
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-5", {
+    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-5-5", {
       reasoningEffort: "extra",
     });
     const events = await threadEventPage(actor, snapshot.latestSeqId);
@@ -774,10 +779,10 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     ).toContainEqual(
       expect.objectContaining({
         id: thread.id,
-        selectedModel: "claude-opus-5",
+        selectedModel: "claude-opus-5-5",
         modelSettings: {
-          "claude-sonnet-5": { effort: "high" },
-          "claude-opus-5": { effort: "extra" },
+          "claude-sonnet-5-5": { effort: "high" },
+          "claude-opus-5-5": { effort: "extra" },
         },
       }),
     );
@@ -786,8 +791,8 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       expect.objectContaining({
         id: thread.id,
         modelSettings: {
-          "claude-sonnet-5": { effort: "high" },
-          "claude-opus-5": { effort: "extra" },
+          "claude-sonnet-5-5": { effort: "high" },
+          "claude-opus-5-5": { effort: "extra" },
         },
       }),
     );
@@ -1034,9 +1039,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       "Renamed event title",
       renameEventId,
     );
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-sonnet-5", {
-      eventId: modelSelectionEventId,
-    });
+    await chat.updateThreadModelSelection(
+      actor,
+      thread.id,
+      "claude-sonnet-5-5",
+      {
+        eventId: modelSelectionEventId,
+      },
+    );
 
     const allEvents = await chat.requestThreadEvents(actor, {}, [200]);
     expect(allEvents.status).toBe(200);
@@ -1074,7 +1084,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
           chatThreadId: thread.id,
           agentId: agent.agentId,
           title: null,
-          selectedModel: "claude-sonnet-5",
+          selectedModel: "claude-sonnet-5-5",
           createdAt: expect.any(String),
         }),
         expect.objectContaining({
@@ -2152,7 +2162,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await chat.updateThreadModelSelection(
       actor,
       liveThread.id,
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       { eventId: modelSelectionEventId },
     );
     if (!actor.orgId) {
@@ -2199,7 +2209,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         agentId: liveAgent.agentId,
         title: "Renamed compact title",
         renamedAt: expect.any(String),
-        selectedModel: "claude-sonnet-5",
+        selectedModel: "claude-sonnet-5-5",
         archived: true,
         muted: true,
       }),
@@ -2309,7 +2319,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const { actor, agentId } = await entitledChatActor(
       "Unavailable explicit thread model agent",
     );
-    await api.updateUserModelPreference(actor, "claude-opus-5");
+    await api.updateUserModelPreference(actor, "claude-opus-5-5");
 
     const rejectedThreadId = randomUUID();
     const rejectedCreate = await chat.requestCreateThread(
@@ -2323,13 +2333,13 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
     expectApiError(rejectedCreate.body);
     expect(rejectedCreate.body.error.message).toBe(
-      "The selected model is not available in this workspace",
+      "Select Auto or a model from your connected personal subscription",
     );
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
     });
     const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
       actor,
@@ -2339,7 +2349,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
     expectApiError(rejectedUpdate.body);
     expect(rejectedUpdate.body.error.message).toBe(
-      "The selected model is not available in this workspace",
+      "Select Auto or a model from your connected personal subscription",
     );
   }, 90_000);
 
@@ -2825,7 +2835,9 @@ describe("CHAT-01 chat thread read state", () => {
     });
     await api.grantProEntitlement(sameUserOtherOrg);
     await api.ensurePersonalSubscriptionModel(sameUserOtherOrg);
-    await chat.updateUserModelPreference(peer, "claude-fable-5-1");
+    await api.ensurePersonalSubscriptionModel(peer, {
+      model: "claude-fable-5-1",
+    });
 
     // A completed run's thread must not appear in the active list. Run it
     // first so the pro-tier concurrency slots stay free for the runs below.
