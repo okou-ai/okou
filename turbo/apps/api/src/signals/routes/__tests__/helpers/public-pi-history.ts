@@ -36,7 +36,73 @@ export async function completePublicPiHistory(
     stopReason: "stop",
     timestamp: 2,
   });
-  const raw = Buffer.from(session.toJsonl(), "utf8");
+  return await completePublicHistory(
+    context,
+    run,
+    headers,
+    Buffer.from(session.toJsonl(), "utf8"),
+    "pi",
+  );
+}
+
+/** Native Codex publishes its own JSONL format, never a retyped Pi session. */
+export async function completePublicCodexHistory(
+  context: TestContext,
+  run: { readonly runId: string; readonly threadId: string },
+  headers: { readonly authorization: string },
+  content: string,
+) {
+  const timestamp = "2026-09-02T00:00:00.000Z";
+  const records = [
+    {
+      timestamp,
+      type: "session_meta",
+      payload: {
+        id: run.threadId,
+        timestamp,
+        cwd: "/home/user/workspace",
+        originator: "codex_cli_rs",
+        source: "cli",
+        model_provider: "openai",
+      },
+    },
+    {
+      timestamp,
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: content }],
+      },
+    },
+    {
+      timestamp,
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "completed safely" }],
+      },
+    },
+  ];
+  const raw = Buffer.from(
+    records
+      .map((record) => {
+        return JSON.stringify(record);
+      })
+      .join("\n") + "\n",
+    "utf8",
+  );
+  return await completePublicHistory(context, run, headers, raw, "codex");
+}
+
+async function completePublicHistory(
+  context: TestContext,
+  run: { readonly runId: string; readonly threadId: string },
+  headers: { readonly authorization: string },
+  raw: Buffer,
+  cliAgentType: "pi" | "codex",
+) {
   const hash = createHash("sha256").update(raw).digest("hex");
   let preparedKey: string | undefined;
   const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
@@ -109,7 +175,7 @@ export async function completePublicPiHistory(
       exitCode: 0,
       lastEventSequence: 2,
       checkpoint: {
-        cliAgentType: "pi",
+        cliAgentType,
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: hash,
       },

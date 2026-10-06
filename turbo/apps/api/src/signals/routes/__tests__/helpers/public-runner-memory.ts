@@ -98,7 +98,7 @@ export function createPublicRunnerMemory(
     // Only an admin can initialize the organization's default Agent. The
     // member remains the owner of the Memory, Agent and Runner claims below.
     await fixture.fund(admin);
-    await api.ensurePersonalSubscriptionModel(admin, {
+    await api.ensurePersonalSubscriptionModel(fixture.actor, {
       model: "claude-fable-5-1",
     });
     createFirewallApi(context).seedClerkDirectory(fixture.actor);
@@ -116,8 +116,8 @@ export function createPublicRunnerMemory(
     const run = await api.createThreadRun(fixture.actor, {
       agentId,
       prompt,
-      // The admin's preferred model is personal; members select the same
-      // configured native carrier explicitly through the public request.
+      // The Memory owner selects their own connected native subscription;
+      // the organization admin's personal credentials are never borrowed.
       model: "claude-fable-5-1",
     });
     fixture.registerRun(run.runId);

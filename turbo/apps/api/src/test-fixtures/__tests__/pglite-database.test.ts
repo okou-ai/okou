@@ -92,8 +92,9 @@ describe("case-owned PGlite lifecycle", () => {
         ).toStrictEqual([{ alive: 1 }]);
         return context.signal;
       },
-      async () => {
+      () => {
         expect(context.signal.aborted).toBeTruthy();
+        return Promise.resolve();
       },
     );
     expect(cleanupSignal.aborted).toBeTruthy();
@@ -138,12 +139,12 @@ describe("case-owned PGlite lifecycle", () => {
     const drainFailure = new Error("drain failed");
     const result = await settleIncludingAbort(
       withPgliteDatabase(
-        async (owner) => {
+        (owner) => {
           captured = owner;
-          throw workFailure;
+          return Promise.reject(workFailure);
         },
-        async () => {
-          throw drainFailure;
+        () => {
+          return Promise.reject(drainFailure);
         },
       ),
     );
@@ -165,11 +166,12 @@ describe("case-owned PGlite lifecycle", () => {
     const failure = new Error("drain failed");
     await expect(
       withPgliteDatabase(
-        async (owner) => {
+        (owner) => {
           captured = owner;
+          return Promise.resolve();
         },
-        async () => {
-          throw failure;
+        () => {
+          return Promise.reject(failure);
         },
       ),
     ).rejects.toBe(failure);

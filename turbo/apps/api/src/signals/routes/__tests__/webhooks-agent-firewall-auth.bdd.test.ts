@@ -1,8 +1,8 @@
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { completePublicPiHistory } from "./helpers/public-pi-history";
 import { randomUUID } from "node:crypto";
+import { completePublicCodexHistory } from "./helpers/public-pi-history";
 
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
@@ -2481,7 +2481,7 @@ describe("FW-5: timeout closes firewall credential authority", () => {
               [200],
             );
           } else {
-            await completePublicPiHistory(
+            await completePublicCodexHistory(
               context,
               run,
               headers,

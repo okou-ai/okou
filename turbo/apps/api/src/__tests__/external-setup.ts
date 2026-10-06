@@ -43,7 +43,7 @@ aroundEach(async (runTest) => {
   await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
 });
 
-beforeAll(async () => {
+beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
   // SDK transports can import named HTTP exports instead of the CJS module.
   syncBuiltinESMExports();
