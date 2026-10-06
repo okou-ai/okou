@@ -352,7 +352,6 @@ export {
 } from "./test-telegram-state";
 export {
   cronCompactChatThreadSnapshotsContract,
-  cronCompactChatThreadSnapshotsResponseSchema,
   cronCleanupSandboxesContract,
   cronCleanupXResourceReadsContract,
   cronConnectorOauthStateCleanupContract,
