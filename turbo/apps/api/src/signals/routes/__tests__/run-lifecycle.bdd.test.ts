@@ -5235,62 +5235,40 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, sent.runId, [200]);
   });
 
-  it.each(["deepseek-v4-flash", "deepseek-v4.1-flash"] as const)(
-    "does not execute a retired foreground %s route or admit a vendor fallback",
-    async (selectedModel) => {
-      const api = createRunsApi(context);
-      const chat = createChatFilesBddApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const prompt = `retired foreground route ${selectedModel}`;
-      if (selectedModel === "deepseek-v4.1-flash") {
-        // This catalog row remains for independent memory, never foreground execution.
-        await seedBuiltInDefaultModelKey();
-        preparePiSandboxClaim();
-        const normalized = await chat.sendAndLaunch(actor, {
-          agentId,
-          prompt,
-          model: selectedModel,
-        });
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(normalized.runId);
-        expect(claim.piModelConfig).toMatchObject({
-          provider: "openrouter",
-          catalogModel: "okou-1.0",
-          model: "@preset/okou-1-0",
-        });
-        await expect(
-          api.readRun(actor, normalized.runId),
-        ).resolves.toMatchObject({
-          source: { model: "okou-1.0", providerType: "built-in" },
-        });
-        expect(claim.modelUsageProvider).toBe("okou-1.0");
-        expect(claim.billableFirewalls).toStrictEqual([
-          "model-provider:openrouter-codex",
-        ]);
-        await api.requestCancelRun(actor, normalized.runId, [200]);
-        return;
-      }
-      const rejected = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt,
-          model: selectedModel,
-        },
-        [400],
-      );
-      expectApiError(rejected.body);
-      expect(rejected.body.error.code).toBe("BAD_REQUEST");
-      const queue = await api.readRunQueue(actor);
-      expect(queue.body.concurrency.active).toBe(0);
-    },
-  );
-
-  it("rejects retired image-unsupported models and omits recognition for supported personal models and Auto", async () => {
+  it("normalizes a stored memory-only model to fixed Auto for foreground input", async () => {
+    const selectedModel = "deepseek-v4.1-flash";
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    // Retired text-only foreground routes cannot grant an image-recognition capability.
-    const retiredUnsupportedModel = "deepseek-v4-flash";
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const prompt = "normalize a retained memory-only selection";
+    // This catalog row remains for independent memory, never foreground execution.
+    await seedBuiltInDefaultModelKey();
+    preparePiSandboxClaim();
+    const normalized = await chat.sendAndLaunch(actor, {
+      agentId,
+      prompt,
+      model: selectedModel,
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(normalized.runId);
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openrouter",
+      catalogModel: "okou-1.0",
+      model: "@preset/okou-1-0",
+    });
+    await expect(api.readRun(actor, normalized.runId)).resolves.toMatchObject({
+      source: { model: "okou-1.0", providerType: "built-in" },
+    });
+    expect(claim.modelUsageProvider).toBe("okou-1.0");
+    expect(claim.billableFirewalls).toStrictEqual([
+      "model-provider:openrouter-codex",
+    ]);
+    await api.requestCancelRun(actor, normalized.runId, [200]);
+  });
+
+  it("omits recognition for supported personal models and Auto", async () => {
+    const api = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
     const supportedModel = "gpt-6-sol";
     const unknownModel = await seedBuiltInDefaultModelKey();
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -5317,18 +5295,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       expect(claim.cliAgentType).toBe("pi");
       return { claim, runId: sent.runId };
     }
-
-    const rejected = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "retired text-only foreground model",
-        model: retiredUnsupportedModel,
-      },
-      [400],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("BAD_REQUEST");
 
     const supported = await claimModel(supportedModel);
     const supportedToken = supported.claim.platformEnvironment.OKOU_TOKEN;

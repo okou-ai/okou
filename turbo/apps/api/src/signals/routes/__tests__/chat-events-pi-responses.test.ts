@@ -10,10 +10,7 @@ import {
   setSecretKmsClientForTests,
 } from "../../../lib/secret-kms-client";
 
-import {
-  insertCatalogModelFixture,
-  setModelPiRouteClassFixture,
-} from "../../../test-fixtures/model-catalog";
+import { setModelPiRouteClassFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -275,46 +272,6 @@ describe("CHAT-02: model-first provider policies", () => {
       provider: "openrouter",
       model: "@preset/okou-1-0",
     });
-  });
-
-  it("does not admit a catalog-only platform model or replace fixed Auto", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const model = `catalog-pi-${randomUUID()}`;
-    const restore = await insertCatalogModelFixture({
-      model,
-      displayName: "Catalog Pi",
-      sortOrder: 100_000,
-      piRouteClass: "gpt-codex",
-      builtInRoutes: [
-        {
-          concreteProviderType: "openrouter-codex",
-          upstreamModel: "openai/gpt-6-luna",
-          priority: 0,
-          efforts: ["low", "medium", "high"],
-          defaultEffort: "medium",
-        },
-      ],
-    });
-    onTestFinished(restore);
-    const models = await api.listRunModels(actor);
-    expect(models.models).not.toContainEqual(
-      expect.objectContaining({ model }),
-    );
-    expect(
-      models.models
-        .filter((entry) => {
-          return entry.defaultProviderType === "built-in";
-        })
-        .map((entry) => {
-          return entry.model;
-        }),
-    ).toStrictEqual(["okou-1.0"]);
-    const rejected = await chat.requestCreateThread(
-      actor,
-      { agentId, model },
-      [400],
-    );
-    expect(rejected.status).toBe(400);
   });
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {

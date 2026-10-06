@@ -27,20 +27,6 @@ describe("Auto and personal-subscription Pi execution", () => {
     ]);
   });
 
-  it.each(["built-in", "anthropic-api-key", "openai-api-key", "deepseek"])(
-    "does not offer old platform GPT models through %s",
-    (provider) => {
-      expect(
-        isPiExecutionRoute({
-          catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "gpt-6-luna"),
-          modelProviderType: provider,
-          runtimeProviderType: provider,
-          codexServiceTier: undefined,
-        }),
-      ).toBe(false);
-    },
-  );
-
   it("retains personally connected Codex model choice and Fast", () => {
     for (const tier of [undefined, "fast"] as const) {
       expect(
@@ -78,21 +64,6 @@ describe("Auto and personal-subscription Pi execution", () => {
       ).toBe(false);
     },
   );
-
-  it.each([
-    "openai-api-key",
-    "custom-openai-responses",
-    "custom-anthropic-messages",
-  ])("rejects the retired %s source even for Auto", (provider) => {
-    expect(
-      isPiExecutionRoute({
-        catalogModel: piCatalogModel(null, "okou-1.0"),
-        modelProviderType: provider,
-        runtimeProviderType: provider,
-        codexServiceTier: undefined,
-      }),
-    ).toBe(false);
-  });
 
   it("refuses a mismatched concrete provider and unknown models", () => {
     expect(

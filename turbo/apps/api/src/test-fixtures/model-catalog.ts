@@ -2,7 +2,6 @@ import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import type { PiRouteClass } from "@okouai/api-contracts/contracts/model-catalog";
 
 import { db } from "../lib/db";
@@ -106,123 +105,6 @@ export async function stageLegacyChatThreadSelectedModelFixture(args: {
     throw new Error("Expected one chat thread selection to be staged");
   }
 }
-
-/** One Built-in candidate route of a fixture catalog model. */
-export interface BuiltInRouteFixture {
-  readonly concreteProviderType:
-    | "anthropic-api-key"
-    | "openrouter-api-key"
-    | "deepseek"
-    | "openrouter-codex"
-    | "openai-api-key";
-  readonly upstreamModel: string;
-  readonly priority: number;
-  readonly efforts: readonly string[];
-  readonly defaultEffort: string | null;
-  readonly serviceTiers?: readonly ("priority" | "ultrafast")[];
-  /**
-   * `usage_pricing` provider of the route's pricing link. Defaults to the
-   * model ID, which the fixture prices for every category the route can
-   * bill; a test naming its own provider owns that provider's pricing.
-   */
-  readonly pricingProvider?: string;
-  /**
-   * The route's long-context pricing threshold
-   * (`long_context_min_total_input_tokens`); omitted: single tier.
-   */
-  readonly longContextMinTotalInputTokens?: number;
-}
-
-const FIXTURE_MODEL_PRICING_CATEGORIES = [
-  "tokens.input",
-  "tokens.output",
-  "tokens.cache_read",
-  "tokens.cache_creation",
-].flatMap((category) => {
-  return [category, `${category}.long_context`].flatMap((base) => {
-    return [base, `${base}.fast`, `${base}.ultrafast`];
-  });
-});
-
-/**
- * Operators launch a model on an already supported protocol purely by
- * inserting catalog and route rows. Both inserts share one transaction; the
- * restore deletes the routes before the catalog row.
- */
-export async function insertCatalogModelFixture(args: {
-  readonly model: string;
-  readonly displayName: string;
-  readonly sortOrder: number;
-  readonly piRouteClass?: PiRouteClass;
-  readonly builtInRoutes: readonly BuiltInRouteFixture[];
-}): Promise<() => Promise<void>> {
-  await db().transaction(async (tx) => {
-    await tx.insert(runModelCatalog).values({
-      model: args.model,
-      displayName: args.displayName,
-      sortOrder: args.sortOrder,
-      lineageRank: 0,
-      piRouteClass: args.piRouteClass ?? null,
-    });
-    await tx.insert(modelRoutes).values(
-      args.builtInRoutes.map((route) => {
-        return {
-          model: args.model,
-          providerType: "built-in",
-          concreteProviderType: route.concreteProviderType,
-          upstreamModel: route.upstreamModel,
-          priority: route.priority,
-          serviceTiers: [...(route.serviceTiers ?? [])],
-          efforts: [...route.efforts],
-          defaultEffort: route.defaultEffort,
-          priceTier: "$",
-          pricingKind: "model",
-          pricingProvider: route.pricingProvider ?? args.model,
-          longContextMinTotalInputTokens:
-            route.longContextMinTotalInputTokens ?? null,
-        };
-      }),
-    );
-    // Launching a model includes pricing its default (model ID) link.
-    if (
-      args.builtInRoutes.some((route) => {
-        return route.pricingProvider === undefined;
-      })
-    ) {
-      await tx.insert(usagePricing).values(
-        FIXTURE_MODEL_PRICING_CATEGORIES.map((category) => {
-          return {
-            kind: "model",
-            provider: args.model,
-            category,
-            unitPrice: 1,
-            unitSize: 1_000_000,
-          };
-        }),
-      );
-    }
-  });
-  return async () => {
-    await db().transaction(async (tx) => {
-      await tx
-        .delete(usagePricing)
-        .where(
-          and(
-            eq(usagePricing.kind, "model"),
-            eq(usagePricing.provider, args.model),
-          ),
-        );
-      await tx.delete(modelRoutes).where(eq(modelRoutes.model, args.model));
-      await tx
-        .delete(runModelCatalog)
-        .where(eq(runModelCatalog.model, args.model));
-    });
-  };
-}
-
-/** Operators reorder or disable a Built-in candidate directly in the database. */
-
-/** Operators relink a Built-in route's pricing directly in the database. */
 
 /**
  * Operators set a Built-in route's long-context pricing threshold directly in

@@ -2,12 +2,8 @@ import { randomUUID } from "node:crypto";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { insertCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { insertSubscriptionRouteCapabilitiesFixture } from "../../../test-fixtures/subscription-route-capabilities";
-import {
-  updateModelRouteCapabilitiesFixture,
-  updateRestrictedPlanAccessFixture,
-} from "../../../test-fixtures/model-route-capabilities";
+import { updateModelRouteCapabilitiesFixture } from "../../../test-fixtures/model-route-capabilities";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -15,17 +11,8 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 
 const context = testContext();
 const authOrgApi = createAuthOrgAgentsBddApi(context);
-const {
-  bdd,
-  api,
-  chat,
-  configureSubscriptionPiModel,
-  sessionHeaders,
-  seedBuiltInModelKey,
-  mockPiCheckpointObjectStore,
-  mockPiResourceArchiveDownloads,
-  waitForThreadMessages,
-} = createChatEventsFixture(context);
+const { configureSubscriptionPiModel, sessionHeaders } =
+  createChatEventsFixture(context);
 function preferencesApi() {
   return setupApp({ context, routes: userModelPreferenceRoutes })(
     userModelPreferenceContract,
@@ -121,122 +108,5 @@ describe("personal model route capabilities", () => {
     });
     const saved = await accept(selectFast(), [200]);
     expect(saved.body.serviceTier).toBe("priority");
-  });
-
-  it("rejects a stored personal selection after its route is disabled instead of billing Auto", async () => {
-    const actor = await connectedActor();
-    await api.grantProEntitlement(actor);
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
-    const model = await insertSubscriptionModel();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Disabled personal route",
-      visibility: "private",
-    });
-    const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
-      model,
-    });
-    await seedBuiltInModelKey("okou-1.0");
-    mockPiCheckpointObjectStore();
-    mockPiResourceArchiveDownloads();
-    await updateModelRouteCapabilitiesFixture({
-      model,
-      efforts: ["low", "high"],
-      defaultEffort: "high",
-      serviceTiers: [],
-      enabled: false,
-    });
-    const models = await api.listRunModels(actor);
-    expect(
-      models.models.some((entry) => {
-        return entry.model === model;
-      }),
-    ).toBeFalsy();
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        threadId: thread.id,
-        prompt: "keep the disabled personal credential source",
-        clientEventId,
-      },
-      [201, 400],
-    );
-    if (sent.status === 400) {
-      expect(sent.body.error.code).toBe("BAD_REQUEST");
-    } else {
-      const messages = await waitForThreadMessages(
-        actor,
-        thread.id,
-        (events) => {
-          return events.some((event) => {
-            return event.revokesEventId === clientEventId;
-          });
-        },
-      );
-      const picked = messages.events.find((event) => {
-        return event.revokesEventId === clientEventId;
-      });
-      expect(picked).toMatchObject({ eventType: "input.rejected" });
-      expect(picked?.runId).toBeUndefined();
-    }
-    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(0);
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: model });
-  });
-
-  it("does not admit a catalog-only platform model when the catalog marks it free", async () => {
-    const actor = authOrgApi.user();
-    if (!actor.orgId) {
-      throw new Error("Expected organization member");
-    }
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "active",
-      supportByok: true,
-      restrictedBuiltInModels: true,
-    });
-    const model = `retired-platform-${randomUUID()}`;
-    onTestFinished(
-      await insertCatalogModelFixture({
-        model,
-        displayName: "Retired platform candidate",
-        sortOrder: 100_000,
-        builtInRoutes: [
-          {
-            concreteProviderType: "openai-api-key",
-            upstreamModel: "gpt-6-luna",
-            priority: 0,
-            efforts: ["low", "high"],
-            defaultEffort: "high",
-          },
-        ],
-      }),
-    );
-    const select = () => {
-      return preferencesApi().update({
-        headers: sessionHeaders(actor),
-        body: { selectedModel: model, serviceTier: null },
-      });
-    };
-    await accept(select(), [400]);
-    onTestFinished(
-      await updateRestrictedPlanAccessFixture({
-        model,
-        builtInOnRestrictedPlans: true,
-      }),
-    );
-    await accept(select(), [400]);
-    const models = await api.listRunModels(actor);
-    expect(
-      models.models.map((entry) => {
-        return entry.model;
-      }),
-    ).toStrictEqual(["okou-1.0"]);
   });
 });

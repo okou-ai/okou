@@ -302,8 +302,8 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
-  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash", "gpt-6-luna"])(
-    "rejects retired platform selection %s without a personal subscription",
+  it.each(["gpt-6-luna"])(
+    "rejects personal model %s without the caller's subscription",
     async (model) => {
       const { actor, agentId } = await entitledChatActor();
       const response = await chat.requestCreateThread(

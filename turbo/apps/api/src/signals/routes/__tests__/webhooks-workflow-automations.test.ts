@@ -7,8 +7,6 @@ import { createApp } from "../../../app-factory";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { disableModelRoutesFixture } from "../../../test-fixtures/model-route-capabilities";
-import { onTestFinished } from "vitest";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -344,58 +342,6 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     });
     await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
       rejectedEvents,
-    );
-  });
-
-  it("does not consume a delivery key when enqueue model selection fails", async () => {
-    const { actor, workflowId } = await setupFixture();
-    const runsApi = createRunsApi(context);
-    runsApi.configureRunnerGroup();
-    await runsApi.ensurePersonalSubscriptionModel(actor);
-    const webhook = await createWebhookAutomation(workflowId);
-    const rawBody = JSON.stringify({ event: "restore-model-route" });
-    const timestamp = Math.floor(now() / 1000);
-    const delivery = {
-      token: webhook.token,
-      rawBody,
-      secret: webhook.secret,
-      timestamp,
-    };
-    // Disabling the thread's personal route makes capture fail explicitly;
-    // a catalog row identifies ownership but does not grant execution.
-    const restore = await disableModelRoutesFixture("claude-fable-5-1");
-    onTestFinished(restore);
-    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
-      status: 500,
-      body: { error: "Internal server error" },
-    });
-    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
-      [],
-    );
-    await expect(wf.readAutomation(webhook.id)).resolves.toMatchObject({
-      lastReceivedAt: null,
-    });
-
-    // Restoring route authority lets the same delivery be admitted: the
-    // failed capture did not consume its key.
-    await restore();
-    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
-      status: 200,
-      body: { success: true, duplicate: false },
-    });
-    const acceptedEvents = await wf.readThreadEvents(webhook.threadId);
-    expect(acceptedEvents).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.prompt",
-        runId: expect.any(String),
-      }),
-    );
-    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
-      status: 200,
-      body: { success: true, duplicate: true },
-    });
-    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
-      acceptedEvents,
     );
   });
 

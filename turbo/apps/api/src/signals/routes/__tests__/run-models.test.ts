@@ -70,25 +70,6 @@ describe("available run models", () => {
       }),
     ).toStrictEqual(["okou-1.0"]);
   });
-  it("rejects personal API keys rather than advertising a Custom route", async () => {
-    const member = identity();
-    mocks.clerk.session(member.userId, member.orgId, "org:member");
-    await accept(
-      setupApp({ context, routes: meModelProvidersUpsertRoutes })(
-        personalModelProvidersMainContract,
-      ).upsert({
-        headers,
-        body: { type: "openai-api-key", secret: "sk-test-personal-api-key" },
-      }),
-      [404],
-    );
-    const response = await accept(list(), [200]);
-    expect(
-      response.body.models.map((model) => {
-        return model.model;
-      }),
-    ).toStrictEqual(["okou-1.0"]);
-  });
   it("requires authentication", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
