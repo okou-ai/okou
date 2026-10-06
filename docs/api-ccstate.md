@@ -44,40 +44,45 @@ The target shape is:
    Keep only necessary short, lightweight transactions inside their owning
    command callbacks, with no `tx` escape.
 3. Each file exposes a small public computed/command surface for business
-   operations. Keep the internal graph private and do not pass computed or
-   command nodes as parameters, directly or through objects and callbacks.
+   operations. Read-only computed dependencies may be passed to a computed
+   factory when the owning graph connects them during graph construction.
+   Keep command nodes, accessors and database handles out of parameters.
 
 ## Node Roles
 
-| Node               | Use for                                                                  | Do not use for                                                                          |
-| ------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| Factory argument   | Plain values known when the graph is built (`claim`, `orgId`, thread id) | Database handles, computed/command nodes, signals, or values that must be queried first |
-| `computed`         | Reads and anything derivable from other nodes                            | Results of writes; values set by a command before a read                                |
-| `command`          | One write or one action; returns its result; `signal` is the final arg   | Passing parameters into computeds; dispatching callbacks                                |
-| `state`            | Results of writes that later computeds read; revision counters           | Inputs, intermediate conclusions, early-exit results, timing                            |
-| `db$` / `writeDb$` | Database handles, read inside the node that needs them                   | Passing handles through parameters, args/runtime objects, state, or escaping closures   |
+| Node               | Use for                                                                                                         | Do not use for                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Factory argument   | Plain values known when the graph is built; read-only computed dependencies connected during graph construction | Database handles, command nodes, signals, or accessors                                |
+| `computed`         | Reads and anything derivable from other nodes                                                                   | Results of writes; values set by a command before a read                              |
+| `command`          | One write or one action; returns its result; `signal` is the final arg                                          | Passing parameters into computeds; dispatching callbacks                              |
+| `state`            | Results of writes that later computeds read; revision counters                                                  | Inputs, intermediate conclusions, early-exit results, timing                          |
+| `db$` / `writeDb$` | Database handles, read inside the node that needs them                                                          | Passing handles through parameters, args/runtime objects, state, or escaping closures |
 
 ## Rules
 
-### 1. Factories take plain values
+### 1. Factories take plain values or read-only computed dependencies
 
 A signal factory such as `createThreadClaimRunObjects(claim)` receives a plain value
 that is already decided. Nodes read it through the closure. Each claim builds a
-fresh graph, so a value scoped to one claim needs no reset.
+fresh graph, so a value scoped to one claim needs no reset. A read-only factory
+may instead receive a computed dependency for input that must be queried or
+derived first; connect that dependency when constructing the owning graph.
 
 **Narrow exception — `AgentRunContextSignals`:** the identity-grouped read-only
 interface returned by `createAgentRunContextSignals(userId, orgId, agentId)` may
 cross the enqueue, pick and Thread graph boundaries. It contains only the three
 plain identity strings and async computed nodes. It must contain no command or
 state and must perform no writes. Consumers read only the groups they need;
-computed dependencies share the same identity-scoped sources. This exception
-does not permit passing individual internal nodes (such as pick's `orgModels$`),
-database handles, accessors or unrelated graph interfaces across boundaries.
+computed dependencies share the same identity-scoped sources. This interface exception
+does not permit database handles, accessors, commands, mutable state or unrelated
+graph interfaces across boundaries. Read-only computed factory inputs follow
+the separate graph-construction allowance above.
 
 Build the owning graph before commands execute. Do not call `command()` inside
 another command callback, including indirectly through a factory. Private nodes
-share dependencies through the owning graph's lexical scope, not node-valued
-parameters to helper functions or sub-factories. Pass plain business values and
+share dependencies through the owning graph's lexical scope or explicitly
+connected read-only computed factory inputs. Construct those factories with the
+owning graph, not inside computed evaluation or command execution. Pass plain business values and
 returned results across operation boundaries instead.
 
 ### 2. Do not use state to pass parameters to a computed
@@ -273,11 +278,13 @@ Keep intermediate reads, preparation steps, and state private. A factory's
 returned interface is also a public surface: do not expose every internal node
 through a large signal bundle, re-exports, or spreads.
 
-Do not accept computed or command nodes as function, command, or factory
-parameters, including through args objects, signal-group interfaces, callbacks,
-or closure adapters. This rule also applies to internal helpers and
-sub-factories. Replacing a database parameter with a getter, setter, or
-node-valued parameter does not satisfy the target shape. Ordinary ccstate
+Read-only computed nodes may be explicit inputs to a computed factory. The
+owning graph must create and connect the factory before evaluation; do not
+create another computed graph while evaluating one. The receiving computed reads
+its dependencies with `get` and obtains its own database dependency through
+`get(db$)`. This allowance does not permit command-node parameters, escaping
+getters/setters, database handles hidden in nodes, or mutable state slots used to
+supply request inputs. Ordinary ccstate
 `get(node$)` and `set(command$, args, signal)` calls inside an owning node are not
 node injection into a domain helper and remain the way to read or invoke nodes.
 
@@ -301,9 +308,10 @@ Answer these questions when you add or review an API ccstate node:
    takes no callbacks and does not call `waitUntil`.
 5. **Does a test need a change in production code?** If so, the design is
    wrong. Build the scenario through public interfaces, or delete the test.
-6. **Does a handle or computed/command node cross a parameter boundary?** Remove
-   it, including object-wrapped and callback forms. Obtain handles inside nodes
-   and keep reactive dependencies private to their owning graph.
+6. **Does a database handle, command node or accessor cross a parameter boundary?**
+   Remove it, including object-wrapped and callback forms. Obtain handles inside
+   nodes. Read-only computed factory inputs are allowed only when connected
+   during owning-graph construction, without hiding handles or rebuilding graphs.
 7. **Can one conditional statement or business-key upsert preserve the write?**
    Prefer it. Otherwise, name the invariant or local setting requiring a short
    transaction and keep all its SQL inside one command's transaction callback.

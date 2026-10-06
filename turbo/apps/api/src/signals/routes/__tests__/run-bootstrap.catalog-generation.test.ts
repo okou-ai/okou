@@ -49,8 +49,8 @@ describe("Run connector catalog selection", () => {
         select: (queryArgs) => {
           const text = barrierQueryText(queryArgs);
           return (
-            text.includes('from "connector_catalog_runtime_projections"') &&
-            text.includes('"connector_payload"') &&
+            text.includes('from "connector_catalog"') &&
+            text.includes('"connector_catalog_entries"') &&
             !text.includes('"catalog_gzip"')
           );
         },

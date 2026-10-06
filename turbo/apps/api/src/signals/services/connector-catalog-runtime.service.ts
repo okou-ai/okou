@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { computed, type Computed } from "ccstate";
 
 import type {
   PublicConnectorCatalogAuthMethodDetail,
@@ -36,7 +35,7 @@ import type {
   ConnectorCatalogSkill,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { singleton } from "../../lib/singleton";
-import { db$, type ReadonlyDb } from "../external/db";
+import type { ReadonlyDb } from "../external/db";
 import { onRejection } from "../utils";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
@@ -1248,108 +1247,6 @@ export function clearRuntimeSelectionInFlight(
   }
 }
 
-async function completeProjectedRuntimeSelection(args: {
-  readonly db: ReadonlyDb;
-  readonly timing: ConnectorCatalogLoadTiming;
-  readonly projection: ConnectorCatalogRuntimeProjectionReadyIdentity;
-  readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
-  readonly metadataConnectorSlugs: readonly ConnectorSlug[];
-}): Promise<ConnectorRuntimeSelection> {
-  const { timing, projection, runtimeConnectorSlugs, metadataConnectorSlugs } =
-    args;
-  const key = runtimeSelectionProjectionKey({
-    identity: projection.identity,
-    runtimeConnectorSlugs,
-    metadataConnectorSlugs,
-  });
-  timing.recordProjectionCacheObservation(
-    observeRuntimeSelection(projection.identity, key),
-  );
-  const cache = runtimeSelectionCache();
-  if (cache.inFlight?.key === key) {
-    const result = await cache.inFlight.promise;
-    timing.recordMaterializedConnectorCount(0);
-    timing.recordProjectionResult({
-      source: result.load.source,
-      cacheOutcome: "in_flight",
-      fallbackReason: result.load.fallbackReason,
-    });
-    return result.load.selection;
-  }
-  const promise = buildProjectedRuntimeSelection(args);
-  cache.inFlight = { key, promise };
-  const result = await onRejection(promise, () => {
-    clearRuntimeSelectionInFlight(cache, key, promise);
-  });
-  clearRuntimeSelectionInFlight(cache, key, promise);
-  timing.recordProjectionResult({
-    source: result.load.source,
-    cacheOutcome: result.cacheOutcome,
-    fallbackReason: result.load.fallbackReason,
-  });
-  return result.load.selection;
-}
-
-export interface CatalogRequest {
-  readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
-  readonly metadataConnectorSlugs: readonly ConnectorSlug[];
-}
-
-export function createConnectorRuntimeSelection(
-  requested$: Computed<Promise<CatalogRequest | null>>,
-): Computed<Promise<ConnectorRuntimeSelection | null>> {
-  return computed(async (get) => {
-    const requested = await get(requested$);
-    if (!requested) {
-      return null;
-    }
-    const db = get(db$);
-    const runtimeConnectorSlugs = uniqueSortedConnectorSlugs(
-      requested.runtimeConnectorSlugs,
-    );
-    const metadataConnectorSlugs = uniqueSortedConnectorSlugs(
-      requested.metadataConnectorSlugs,
-    );
-    const timing = new ConnectorCatalogLoadTiming(
-      undefined,
-      requested.runtimeConnectorSlugs.length,
-      requested.metadataConnectorSlugs.length,
-    );
-    return await timing.measureComplete(async () => {
-      const identity = await timing.measure(
-        "api_dispatch_connector_catalog_query_projection_identity",
-        async () => {
-          return await readConnectorCatalogRuntimeProjectionIdentity(db);
-        },
-      );
-      if (identity.kind === "fallback") {
-        const load = await completeRuntimeSelectionFallback({
-          db,
-          timing,
-          runtimeConnectorSlugs,
-          metadataConnectorSlugs,
-          reason: identity.reason,
-        });
-        timing.recordProjectionResult({
-          source: load.source,
-          cacheOutcome: "not_applicable",
-          fallbackReason: load.fallbackReason,
-        });
-        return load.selection;
-      }
-      return await completeProjectedRuntimeSelection({
-        db,
-        timing,
-        projection: identity.projection,
-        runtimeConnectorSlugs,
-        metadataConnectorSlugs,
-      });
-    });
-  });
-}
-
-// Existing transaction-bound callers retain their reader; bootstrap uses the
-// computed above so it owns its database dependency rather than injecting it.
 export async function loadConnectorRuntimeSelection(
   db: ReadonlyDb,
   options: {
@@ -1391,13 +1288,43 @@ export async function loadConnectorRuntimeSelection(
       });
       return load.selection;
     }
-    return await completeProjectedRuntimeSelection({
+    const key = runtimeSelectionProjectionKey({
+      identity: identity.projection.identity,
+      runtimeConnectorSlugs,
+      metadataConnectorSlugs,
+    });
+    timing.recordProjectionCacheObservation(
+      observeRuntimeSelection(identity.projection.identity, key),
+    );
+    const cache = runtimeSelectionCache();
+    if (cache.inFlight?.key === key) {
+      const result = await cache.inFlight.promise;
+      timing.recordMaterializedConnectorCount(0);
+      timing.recordProjectionResult({
+        source: result.load.source,
+        cacheOutcome: "in_flight",
+        fallbackReason: result.load.fallbackReason,
+      });
+      return result.load.selection;
+    }
+    const promise = buildProjectedRuntimeSelection({
       db,
       timing,
       projection: identity.projection,
       runtimeConnectorSlugs,
       metadataConnectorSlugs,
     });
+    cache.inFlight = { key, promise };
+    const result = await onRejection(promise, () => {
+      clearRuntimeSelectionInFlight(cache, key, promise);
+    });
+    clearRuntimeSelectionInFlight(cache, key, promise);
+    timing.recordProjectionResult({
+      source: result.load.source,
+      cacheOutcome: result.cacheOutcome,
+      fallbackReason: result.load.fallbackReason,
+    });
+    return result.load.selection;
   });
 }
 

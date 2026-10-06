@@ -53,10 +53,8 @@ import {
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { BootstrapAgent } from "./agent-data.service";
 
-import {
-  createConnectorRuntimeSelection,
-  type ConnectorRuntimeSelection,
-} from "./connector-catalog-runtime.service";
+import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";

@@ -11,6 +11,7 @@ import type {
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { db$ } from "../external/db";
+import { connectorCatalogSource } from "./connector-catalog-source";
 import {
   connectorCatalogExecutableCapabilityState,
   evaluateConnectorCatalogCompatibility,
@@ -19,6 +20,7 @@ import {
   materializeConnectorRuntimeLookup,
   uniqueSortedConnectorSlugs,
   type ConnectorRuntimeLookup,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 
 export interface ImmutableConnectorCatalogCapture {
@@ -43,14 +45,27 @@ interface SelectionInput {
   readonly capturedCatalog?: ImmutableConnectorCatalogCapture;
 }
 
+interface CapturedEntries {
+  readonly input: SelectionInput;
+  readonly capturedCatalog: ImmutableConnectorCatalogCapture;
+  readonly entries: readonly ImmutableConnectorCatalogEntry[];
+}
+
 /** One statement captures current and the requested union, including empty/unknown sets. */
-function capturedEntries(input: SelectionInput): Computed<
-  Promise<{
-    readonly capturedCatalog: ImmutableConnectorCatalogCapture;
-    readonly entries: readonly ImmutableConnectorCatalogEntry[];
-  }>
-> {
+function capturedEntries(
+  input$: Computed<Promise<SelectionInput>>,
+): Computed<Promise<CapturedEntries>>;
+function capturedEntries(
+  input$: Computed<Promise<SelectionInput | null>>,
+): Computed<Promise<CapturedEntries | null>>;
+function capturedEntries(
+  input$: Computed<Promise<SelectionInput | null>>,
+): Computed<Promise<CapturedEntries | null>> {
   return computed(async (get) => {
+    const input = await get(input$);
+    if (!input) {
+      return null;
+    }
     const slugs = uniqueSortedConnectorSlugs([
       ...input.requestedConnectorSlugs,
       ...(input.metadataConnectorSlugs ?? []),
@@ -129,7 +144,7 @@ function capturedEntries(input: SelectionInput): Computed<
       }
       selected.push(entry);
     }
-    return { capturedCatalog: captured, entries: selected };
+    return { input, capturedCatalog: captured, entries: selected };
   });
 }
 
@@ -137,39 +152,89 @@ function capturedEntries(input: SelectionInput): Computed<
 export function immutableConnectorRuntimeSelection(
   input: SelectionInput,
 ): Computed<Promise<ImmutableConnectorRuntimeSelection>> {
-  const source$ = capturedEntries(input);
+  const input$ = computed(() => {
+    return Promise.resolve(input);
+  });
+  const source$ = capturedEntries(input$);
   return computed(async (get) => {
-    const { capturedCatalog, entries } = await get(source$);
-    // Only code/configuration capability filtering is derived here. Feature,
-    // account and grant filtering remain with their existing request owners.
-    // No derived cache crosses a capability digest or request boundary.
-    const capability = connectorCatalogExecutableCapabilityState();
-    const filtered = evaluateConnectorCatalogCompatibility({
-      artifact: { ...capturedCatalog.header, connectors: [...entries] },
-      capability,
-    });
-    const filteredMethodKeys = new Set(
-      filtered.map((method) => {
-        return `${method.connectorSlug}\0${method.authMethodId}`;
-      }),
-    );
+    return materializeImmutableSelection(input, await get(source$));
+  });
+}
+
+interface CatalogRequest {
+  readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
+  readonly metadataConnectorSlugs: readonly ConnectorSlug[];
+}
+
+export function createConnectorRuntimeSelection(
+  requested$: Computed<Promise<CatalogRequest | null>>,
+): Computed<Promise<ConnectorRuntimeSelection | null>> {
+  const input$ = computed(async (get) => {
+    const requested = await get(requested$);
+    if (!requested) {
+      return null;
+    }
     return {
-      ...materializeConnectorRuntimeLookup({
-        connectors: entries,
-        filteredMethodKeys,
-        runtimeConnectorSlugs: uniqueSortedConnectorSlugs(
-          input.requestedConnectorSlugs,
-        ),
-        metadataConnectorSlugs: uniqueSortedConnectorSlugs(
-          input.metadataConnectorSlugs ?? [],
-        ),
-      }),
-      capturedCatalog,
+      requestedConnectorSlugs: requested.runtimeConnectorSlugs,
+      metadataConnectorSlugs: requested.metadataConnectorSlugs,
+    };
+  });
+  const source$ = capturedEntries(input$);
+  return computed(async (get) => {
+    const source = await get(source$);
+    if (!source) {
+      return null;
+    }
+    const selection = materializeImmutableSelection(source.input, source);
+    // Preserve the existing Run/Pi/permission-baseline identity contract using
+    // the captured catalog facts, never a second read of current or a legacy
+    // projection generation identifier.
+    return {
+      ...selection,
       catalogIdentity: {
-        schemaVersion: capturedCatalog.schemaVersion,
-        hash: capturedCatalog.hash,
-        capabilityDigest: capability.digest,
+        sourceId: connectorCatalogSource().sourceId,
+        schemaVersion: selection.capturedCatalog.schemaVersion,
+        catalogVersion: selection.capturedCatalog.header.catalogVersion,
+        catalogDigest: selection.capturedCatalog.hash,
+        capabilityDigest: selection.catalogIdentity.capabilityDigest,
       },
     };
   });
+}
+
+function materializeImmutableSelection(
+  input: SelectionInput,
+  { capturedCatalog, entries }: CapturedEntries,
+): ImmutableConnectorRuntimeSelection {
+  // Only code/configuration capability filtering is derived here. Feature,
+  // account and grant filtering remain with their existing request owners.
+  // No derived cache crosses a capability digest or request boundary.
+  const capability = connectorCatalogExecutableCapabilityState();
+  const filtered = evaluateConnectorCatalogCompatibility({
+    artifact: { ...capturedCatalog.header, connectors: [...entries] },
+    capability,
+  });
+  const filteredMethodKeys = new Set(
+    filtered.map((method) => {
+      return `${method.connectorSlug}\0${method.authMethodId}`;
+    }),
+  );
+  return {
+    ...materializeConnectorRuntimeLookup({
+      connectors: entries,
+      filteredMethodKeys,
+      runtimeConnectorSlugs: uniqueSortedConnectorSlugs(
+        input.requestedConnectorSlugs,
+      ),
+      metadataConnectorSlugs: uniqueSortedConnectorSlugs(
+        input.metadataConnectorSlugs ?? [],
+      ),
+    }),
+    capturedCatalog,
+    catalogIdentity: {
+      schemaVersion: capturedCatalog.schemaVersion,
+      hash: capturedCatalog.hash,
+      capabilityDigest: capability.digest,
+    },
+  };
 }
