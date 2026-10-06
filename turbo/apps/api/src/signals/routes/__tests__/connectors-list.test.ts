@@ -242,7 +242,7 @@ describe("GET /api/connectors", () => {
     expect(detail.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("keeps immutable stored lists available while legacy account lifecycle rejects unavailable compatibility", async () => {
+  it("keeps current-entry account reads available while full-snapshot scope reads reject unavailable compatibility", async () => {
     // Only this case-owned legacy compatibility generation becomes unavailable.
     // The accepted immutable current and entries remain intact.
     mockEnv(
@@ -304,7 +304,36 @@ describe("GET /api/connectors", () => {
     );
     expect(response.body).toStrictEqual(available.body);
 
-    // Unmigrated lifecycle endpoints still reject this legacy generation.
+    // Current-entry account readers retain the exact account and its status.
+    const connections = await accept(
+      accountClient.connections({ headers: authHeaders(), query: target }),
+      [200],
+    );
+    expect(connections.body).toStrictEqual(connected.body);
+    const connection = await accept(
+      accountClient.connection({
+        headers: authHeaders(),
+        query: target,
+        params: { connectionId: account.id },
+      }),
+      [200],
+    );
+    expect(connection.body).toStrictEqual(account);
+    const impact = await accept(
+      accountClient.deletionImpact({
+        headers: authHeaders(),
+        query: target,
+        params: { connectionId: account.id },
+      }),
+      [200],
+    );
+    expect(impact.body).toStrictEqual({
+      connectionId: account.id,
+      explicitSelectionCount: 0,
+      hasSibling: false,
+    });
+
+    // The nonexistent receipt and unchanged full-snapshot scope readers reject.
     const unavailableReads = await Promise.all([
       accept(
         accountClient.oauthCompletion({
@@ -315,29 +344,9 @@ describe("GET /api/connectors", () => {
         [404],
       ),
       accept(
-        accountClient.connections({ headers: authHeaders(), query: target }),
-        [404],
-      ),
-      accept(
-        accountClient.connection({
-          headers: authHeaders(),
-          query: target,
-          params: { connectionId: account.id },
-        }),
-        [404],
-      ),
-      accept(
         accountClient.scopeDiff({
           headers: authHeaders(),
           query: { connectorSlug: "gitlab" },
-          params: { connectionId: account.id },
-        }),
-        [404],
-      ),
-      accept(
-        accountClient.deletionImpact({
-          headers: authHeaders(),
-          query: target,
           params: { connectionId: account.id },
         }),
         [404],
@@ -364,7 +373,17 @@ describe("GET /api/connectors", () => {
       [200],
     );
     expect(inspected.body.results).toStrictEqual([
-      { kind: "unavailable", ...selection },
+      {
+        kind: "available",
+        ...selection,
+        authMethod: account.authMethod,
+        displayName: account.displayName,
+        externalId: account.externalId,
+        externalUsername: account.externalUsername,
+        externalEmail: account.externalEmail,
+        connectionStatus: account.connectionStatus,
+        reconnectReason: account.reconnectReason,
+      },
     ]);
   });
 
