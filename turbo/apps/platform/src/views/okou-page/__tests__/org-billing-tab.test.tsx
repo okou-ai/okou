@@ -430,14 +430,6 @@ test("Compare both usage-pack prices before choosing a plan", async () => {
     await openUsagePackPlanSelection();
   expect(choosePlanHeading).toBeInTheDocument();
   expect(
-    within(proPlan).queryByText(
-      "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
-    ),
-  ).not.toBeInTheDocument();
-  expect(
-    within(proPlan).queryByText("Bring your own LLM keys"),
-  ).not.toBeInTheDocument();
-  expect(
     within(proPlan).getByText("3 agents running at once"),
   ).toBeInTheDocument();
   expect(

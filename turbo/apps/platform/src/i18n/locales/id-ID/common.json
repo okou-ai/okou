@@ -1152,9 +1152,6 @@
       "downgradesOn": "Turun ke {{plan}} pada {{date}}",
       "downgradeTo": "Turun ke {{plan}}",
       "endsOn": "Berakhir pada {{date}}",
-      "features": {
-        "byok": "Gunakan kunci LLM Anda sendiri"
-      },
       "free": {
         "name": "Gratis"
       },
@@ -1169,7 +1166,6 @@
         "everythingInBuiltForTeams": "Semua di {{plan}}, dibuat untuk tim",
         "included": "Termasuk",
         "liveBrowser": "Pantau browser langsung agen dan ambil alih kendali",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "Lebih banyak custom connector & integrasi saluran",
         "supportEmail": "Dukungan email",
         "supportPriority": "Dukungan prioritas",
