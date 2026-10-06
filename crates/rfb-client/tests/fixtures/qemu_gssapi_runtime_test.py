@@ -127,11 +127,66 @@ class RuntimeInputs(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reviewed native producer pins"):
             qemu_gssapi.verify_runtime(self.runtime, "x86_64-linux-gnu", True, True)
 
-    def test_full_private_inventory_binds_every_regular_file_and_alias(self):
+    def full_private_inputs(self):
         baseline = self.inputs(full_qemu=True)
         baseline["aliases"] = {str(path.relative_to(self.runtime)): str(path.readlink())
                                for path in self.runtime.rglob("*") if path.is_symlink()}
+        # Header-only, non-loadable public parser data; never executed, loaded
+        # or admitted as a signed/native provider or completed runtime receipt.
+        role = 'usr/bin/public-header.canary'
+        path = self.runtime / role
+        header = bytearray(64)
+        header[:6] = b'\x7fELF\x02\x01'
+        header[18:20] = (62).to_bytes(2, 'little')
+        path.write_bytes(header)
+        path.chmod(0o755)
+        digest = hashlib.sha256(header).hexdigest()
+        baseline['files'][role] = digest
+        baseline['requiredBuildInputs'] = {role: {'file': role, 'sha256': digest, 'mode': 0o755}}
         self.save(baseline)
+        return baseline
+
+    def test_full_private_inventory_refuses_actual_program_mode_mutation(self):
+        baseline = self.full_private_inputs()
+        program = self.runtime / 'usr/bin/public-header.canary'
+        for mode in (0o644, 0o777, 0o4755):
+            with self.subTest(mode=oct(mode)):
+                program.chmod(mode)
+                with self.assertRaisesRegex(ValueError, 'full-private executable role'):
+                    qemu_gssapi.full_private_inventory(self.runtime, baseline)
+                self.assertEqual(hashlib.sha256(program.read_bytes()).hexdigest(),
+                                 baseline['files']['usr/bin/public-header.canary'])
+        program.chmod(0o755)
+        qemu_gssapi.full_private_inventory(self.runtime, baseline)
+
+    def test_full_private_inventory_refuses_wrong_native_program_header(self):
+        baseline = self.full_private_inputs()
+        baseline['architecture'] = 'arm64'
+        with self.assertRaisesRegex(ValueError, 'full-private executable role native'):
+            qemu_gssapi.full_private_inventory(self.runtime, baseline)
+
+    def test_full_private_program_role_refuses_escaping_path_and_changed_target(self):
+        baseline = self.full_private_inputs()
+        role = 'usr/bin/public-header.canary'
+        record = baseline['requiredBuildInputs'][role]
+        for declared in ('../outside.canary', '/outside.canary', 'usr/bin/kinit.mit'):
+            with self.subTest(declared=declared):
+                record['file'] = declared
+                with self.assertRaisesRegex(ValueError, 'full-private executable role'):
+                    qemu_gssapi.full_private_inventory(self.runtime, baseline)
+        record['file'] = role
+        alias = self.runtime / 'usr/bin/public-role.alias'
+        alias.symlink_to('public-header.canary')
+        baseline['aliases'][str(alias.relative_to(self.runtime))] = str(alias.readlink())
+        baseline['requiredBuildInputs'] = {str(alias.relative_to(self.runtime)): record}
+        qemu_gssapi.full_private_inventory(self.runtime, baseline)
+        alias.unlink()
+        alias.symlink_to('/outside.canary')
+        with self.assertRaisesRegex(ValueError, 'full-private executable role'):
+            qemu_gssapi.full_private_inventory(self.runtime, baseline)
+
+    def test_full_private_inventory_binds_every_regular_file_and_alias(self):
+        baseline = self.full_private_inputs()
         expected = hashlib.sha256(json.dumps({name: baseline[name] for name in ("files", "aliases")},
                                             sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         self.assertEqual(qemu_gssapi.full_private_inventory(self.runtime, baseline), expected)

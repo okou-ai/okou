@@ -43,10 +43,16 @@ bytes are recorded separately from the private native compiler/runtime closure.
 Exact MIT/Cyrus/GnuTLS identities above are retained; compiler, libc, Python/venv,
 shell/tools and development seeds are explicit. Dash `0.5.12-6ubuntu5` supplies
 the archive-provided `sh` realization required by the pinned configure's
-`#!/bin/sh`; Bash alone does not satisfy it. Before any source execution the
+`#!/bin/sh`; Bash alone does not satisfy it. Signed `bzip2` `1.0.8-5.1`
+supplies the CLI required by the selected `x86_64-softmmu` installed-firmware
+Meson path; `libbz2` alone does not provide that executable. The firmware/options
+are not disabled to avoid this requirement. Before any source execution the
 producer checks contained, executable native bytes for that exact interpreter
 and required compiler/Python/build tools, retaining their file/mode/hash roles in
-the input-closure binding. This is not complete transitive loaded-byte attribution.
+the input-closure binding. Full-private admission rechecks each declared role's
+actual contained canonical target, native header, digest and exact executable
+mode, rather than trusting a mode hashed only in metadata. This is not complete
+transitive loaded-byte attribution.
 Archive hashes are checked against signed metadata before collision/path-safe
 extraction. No package installation or maintainer script runs. Declared usrmerge,
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace

@@ -16,6 +16,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import tempfile
 import time
@@ -63,7 +64,44 @@ def run(argv, env, data=None):
     return result.stdout
 
 
+def verify_full_private_programs(runtime, baseline):
+    # A mode hashed in reviewed metadata is not an observation of the actual
+    # file. Recheck each executable role before credentials/native execution.
+    roles = baseline["requiredBuildInputs"]
+    if not isinstance(roles, dict) or not roles:
+        raise ValueError("full-private executable roles required")
+    machine = {"amd64": 62, "arm64": 183}[baseline["architecture"]]
+    for name, record in roles.items():
+        relative, declared = pathlib.PurePosixPath(name), pathlib.PurePosixPath(record["file"])
+        if (relative.is_absolute() or declared.is_absolute() or ".." in relative.parts
+                or ".." in declared.parts or not relative.parts or not declared.parts):
+            raise ValueError("full-private executable role path refused")
+        try:
+            actual = (runtime / relative).resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise ValueError("full-private executable role missing") from error
+        if (not actual.is_relative_to(runtime) or not actual.is_file()
+                or str(actual.relative_to(runtime)) != str(declared)
+                or baseline["files"].get(str(declared)) != record["sha256"]):
+            raise ValueError("full-private executable role target refused")
+        with actual.open("rb") as stream:
+            mode = stat.S_IMODE(os.fstat(stream.fileno()).st_mode)
+            if (type(record["mode"]) is not int or mode != record["mode"]
+                    or not mode & 0o111 or not os.access(actual, os.X_OK)):
+                raise ValueError("full-private executable role mode refused")
+            header = stream.read(64)
+            if (len(header) != 64 or header[:6] != b"\x7fELF\x02\x01"
+                    or int.from_bytes(header[18:20], "little") != machine):
+                raise ValueError("full-private executable role native identity refused")
+            digest = hashlib.sha256(header)
+            for data in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(data)
+            if digest.hexdigest() != record["sha256"]:
+                raise ValueError("full-private executable role digest refused")
+
+
 def full_private_inventory(runtime, baseline):
+    verify_full_private_programs(runtime, baseline)
     files, aliases = {}, {}
     for path in sorted(runtime.rglob("*")):
         name = str(path.relative_to(runtime))

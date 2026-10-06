@@ -94,6 +94,17 @@ class ProducerInputs(unittest.TestCase):
         self.assertIn('dash', self.producer.REQUIRED)
         self.assertEqual(self.producer.SEEDS['dash'], '0.5.12-6ubuntu5')
 
+    def test_source_required_firmware_unpacker_is_an_explicit_signed_seed(self):
+        self.assertIn('bzip2', self.producer.REQUIRED)
+        self.assertEqual(self.producer.SEEDS['bzip2'], '1.0.8-5.1')
+        # The selected x86_64-softmmu/installed-blob Meson path needs the
+        # executable, not just libbz2. This is a source boundary, not a build.
+        module = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        preflight = next(node for node in module.body if isinstance(node, ast.FunctionDef)
+                         and node.name == 'required_build_inputs')
+        roles = [node.value for node in ast.walk(preflight) if isinstance(node, ast.Constant)]
+        self.assertIn('usr/bin/bzip2', roles)
+
     def test_required_program_preflight_refuses_missing_interpreter_without_execution(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             with self.assertRaisesRegex(ValueError, 'required private build program missing: bin/sh'):
