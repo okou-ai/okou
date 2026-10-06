@@ -439,12 +439,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Replace the composer's flat slash menu with a two-pane panel that previews each template type's covers.",
     enabled: true,
   },
-  [FeatureSwitchKey.ComposerTemplateChipCover]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Show the chosen template's cover image on the composer's inline template chip instead of a generic glyph.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ComposerAddMenu]: {
     maintainer: "bingjie@okou.ai",
     description:
