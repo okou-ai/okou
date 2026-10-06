@@ -136,11 +136,25 @@ export function createPublicPiMemorySource(context: TestContext) {
       rollout_slug: "source",
     });
     server.use(
-      http.post(/https:\/\/chatgpt\.com\/.*\/responses/u, () => {
-        return new HttpResponse(extractionSse(text), {
-          headers: { "content-type": "text/event-stream" },
-        });
-      }),
+      http.post(
+        /https:\/\/chatgpt\.com\/.*\/responses/u,
+        async ({ request }) => {
+          await request.arrayBuffer();
+          // The Codex reader cancels after the terminal event. Close the source
+          // before cancellation can wait on an unconsumed response clone.
+          return new HttpResponse(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(
+                  new TextEncoder().encode(extractionSse(text)),
+                );
+                controller.close();
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        },
+      ),
     );
   }
   return { ...fixture, prepare, extract, installExtractionProvider, account };
