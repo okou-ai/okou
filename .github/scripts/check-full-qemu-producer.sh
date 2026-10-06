@@ -4,7 +4,12 @@
 set -euo pipefail
 [[ $# == 0 ]] || exit 1
 cd "$(git rev-parse --show-toplevel)"
-receipt="$PWD/crates/target/full-qemu-producer-receipt"
+target="$PWD/crates/target"
+[[ ! -L "$target" && ! -L "$PWD/crates" ]] || exit 1
+mkdir -p -m 700 "$target"
+[[ -d "$target" && $(realpath "$target") == "$target" && $(stat -c %u "$target") == "$(id -u)" ]] || exit 1
+git check-ignore -q "$target"
+receipt="$target/full-qemu-producer-receipt"
 [[ ! -e "$receipt" && ! -L "$receipt" ]] || exit 1
 mkdir -m 700 "$receipt"
 python3 -B .github/scripts/tests/test-qemu-gssapi-producer.py
@@ -24,9 +29,9 @@ shutil.copyfile(manifest,out/'provider.json')
 shutil.copyfile(binary,out/'qemu-system-x86_64')
 shutil.copyfile(root.parent/'build.log',out/'build.log')
 indexes=out/'signed-indexes'; indexes.mkdir(mode=0o700)
-for name,digest in data['signedIndexFiles'].items():
+for name,index_digest in data['signedIndexFiles'].items():
     path=root.parent/name
-    assert path.is_file() and not path.is_symlink() and hashlib.sha256(path.read_bytes()).hexdigest()==digest
+    assert path.is_file() and not path.is_symlink() and hashlib.sha256(path.read_bytes()).hexdigest()==index_digest
     shutil.copyfile(path,indexes/path.name)
 (out/'candidate.json').write_text(json.dumps({'head':data['producer']['head'],'ownerUid':os.geteuid(),
  'nativeArchitecture':platform.machine(),'binarySha256':digest,'packageLockSha256':data['packageLockSha256'],

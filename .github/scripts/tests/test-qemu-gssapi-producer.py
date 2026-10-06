@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Public inert input tests; no QEMU/helper/signature/runtime is impersonated."""
+import ast
 import hashlib
 import importlib.util
 import pathlib
+import subprocess
 import tempfile
 import unittest
 
@@ -55,6 +57,26 @@ class ProducerInputs(unittest.TestCase):
             files, aliases = self.producer.inventory(root)
             self.assertEqual(files, {"public.canary": hashlib.sha256(data).hexdigest()})
             self.assertEqual(aliases, {"alias": "public.canary"})
+
+    def test_fresh_driver_creates_only_its_ignored_target_parent(self):
+        # Execute only real shell preflight in an inert, local miniature repo.
+        # No producer, archive fetch, native program or receipt runs here.
+        prefix = (ROOT / ".github/scripts/check-full-qemu-producer.sh").read_text().split("python3 -B .github/scripts/tests/", 1)[0]
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            root = pathlib.Path(directory)
+            (root / "crates").mkdir()
+            (root / ".gitignore").write_text("/crates/target/\n")
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True, timeout=10)
+            result = subprocess.run(["bash", "-c", prefix], cwd=root, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((root / "crates/target/full-qemu-producer-receipt").is_dir())
+
+    def test_driver_does_not_rebind_binary_digest_to_signed_index(self):
+        # Structural metadata-binding guard, not native/runtime evidence.
+        body = (ROOT / ".github/scripts/check-full-qemu-producer.sh").read_text().split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+        for node in ast.walk(ast.parse(body)):
+            if isinstance(node, ast.For):
+                self.assertNotIn("digest", [name.id for name in ast.walk(node.target) if isinstance(name, ast.Name)])
 
     def test_source_and_bios_inputs_are_fixed_not_host_fallbacks(self):
         self.assertEqual(self.producer.QEMU_SHA256, "f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894")
