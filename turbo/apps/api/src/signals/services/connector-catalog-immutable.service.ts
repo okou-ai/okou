@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { eq, ne } from "drizzle-orm";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -7,9 +7,8 @@ import {
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
-  type ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   prepareConnectorCatalogSkills,
   registerPreparedConnectorCatalogSkills$,
@@ -35,8 +34,9 @@ export const immutableCatalogHash$ = command(
 );
 
 // Entry existence is the preparation receipt: every writer must finish storage
-// registration before publishing an entry. Partial generations are reusable;
-// only the owning sync command can publish the catalog pointer afterward.
+// registration before publishing an entry. An interrupted preparer leaves an
+// unreferenced partial generation that a retry at the same hash reuses; entries
+// of hashes already captured by readers are never rewritten or deleted.
 export const prepareImmutableCatalogEntries$ = command(
   async (
     { set },
@@ -88,7 +88,6 @@ export const prepareImmutableCatalogEntries$ = command(
                 hash: args.hash,
                 slug: connector.slug,
                 payload: { ...connector },
-                ...immutableCatalogEntryColumns(connector),
               };
             }),
         )
@@ -98,43 +97,24 @@ export const prepareImmutableCatalogEntries$ = command(
   },
 );
 
-// Shared by full sync, preview initialization and fixture writers.
-// The complete publisher payload remains the immutable source of truth.
-export function immutableCatalogEntryColumns(
-  connector: ConnectorCatalogArtifactConnector,
-) {
-  return {
-    label: connector.label,
-    description: connector.description,
-    category: connector.category,
-    authMethods: connector.authMethods,
-    firewall: connector.firewall,
-    storageName:
-      connector.skill.kind === "bundled" ? connector.skill.storageName : null,
-    versionId:
-      connector.skill.kind === "bundled" ? connector.skill.versionId : null,
-    mcpEndpoint: connector.mcp?.endpoint ?? null,
-  };
-}
-
-// Pure values only. The owning sync command performs CAS and Pi SQL in its
-// transaction callback, together with the unchanged legacy acceptance bridge.
-export function immutableCatalogValues(
-  artifact: ConnectorCatalogArtifact,
-  hash: string,
-  activatedAt: Date,
-) {
-  const { connectors, ...header } = artifact;
-  return {
-    schemaVersion: artifact.artifactSchemaVersion,
-    hash,
-    activatedAt,
-    catalogVersion: artifact.catalogVersion,
-    catalogHeader: { ...header },
-    entrySlugs: connectors
-      .map((entry) => {
-        return entry.slug;
-      })
-      .sort(),
-  };
+// Last writer wins: one scheduled cron owns production publication. The
+// caller has completed every entry at `hash` before calling this, so the
+// pointer never references a partial generation. The conditional upsert
+// returns a row only when it created the pointer or changed its hash, so
+// exactly one concurrent writer observes a given switch, even for the first
+// publication, and the caller applies switch effects in the same transaction.
+export async function publishImmutableCatalogPointer(
+  tx: Db,
+  args: { readonly schemaVersion: number; readonly hash: string },
+): Promise<{ readonly switched: boolean }> {
+  const changed = await tx
+    .insert(connectorCatalog)
+    .values({ schemaVersion: args.schemaVersion, hash: args.hash })
+    .onConflictDoUpdate({
+      target: connectorCatalog.schemaVersion,
+      set: { hash: args.hash },
+      setWhere: ne(connectorCatalog.hash, args.hash),
+    })
+    .returning({ hash: connectorCatalog.hash });
+  return { switched: changed.length === 1 };
 }

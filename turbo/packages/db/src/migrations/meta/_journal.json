@@ -1793,6 +1793,13 @@
       "when": 1791351116482,
       "tag": "1333_drop_dead_model_provider_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1334,
+      "version": "7",
+      "when": 1791356658491,
+      "tag": "1334_connector_catalog_release_2_contraction",
+      "breakpoints": true
     }
   ]
 }

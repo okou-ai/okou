@@ -78,6 +78,8 @@ case "${1:-}" in
       [ "${MOCK_CHAT_THREAD_PROVIDER_PIN_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1818181818181818181818181818181818181818" ]; then
       [ "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1919191919191919191919191919191919191919" ]; then
+      [ "${MOCK_CONNECTOR_CATALOG_RELEASE_2_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -109,6 +111,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CHAT_THREAD_PROVIDER_PIN_COMMIT-1717171717171717171717171717171717171717}"
     elif [[ "$*" == *1333_drop_dead_model_provider_columns.sql* ]]; then
       printf '%s\n' "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_COMMIT-1818181818181818181818181818181818181818}"
+    elif [[ "$*" == *1334_connector_catalog_release_2_contraction.sql* ]]; then
+      printf '%s\n' "${MOCK_CONNECTOR_CATALOG_RELEASE_2_COMMIT-1919191919191919191919191919191919191919}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -237,6 +241,8 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 1717171717171717171717171717171717171717 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread provider pin column drop floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql" "${tmp_dir}/boundaries.log" || fail "dead model provider column floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 1818181818181818181818181818181818181818 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the dead model provider column drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql" "${tmp_dir}/boundaries.log" || fail "connector catalog Release 2 floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1919191919191919191919191919191919191919 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the connector catalog Release 2 floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -457,6 +463,24 @@ grep -Fq '1818181818181818181818181818181818181818' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/dead-model-provider-columns-floor.output" ] || fail "pre-drop API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "dead model provider column floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged connector catalog Release 2 contraction" \
+    run_resolver "${tmp_dir}/connector-catalog-release-2-history.output" "MOCK_CONNECTOR_CATALOG_RELEASE_2_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/connector-catalog-release-2-history.output" ] || fail "invalid connector catalog Release 2 history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid connector catalog Release 2 history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the connector catalog Release 2 contraction" \
+  run_resolver "${tmp_dir}/connector-catalog-release-2-floor.output" MOCK_CONNECTOR_CATALOG_RELEASE_2_FLOOR_VALID=0
+grep -Fq '1919191919191919191919191919191919191919' "${tmp_dir}/failure.err" || fail "connector catalog Release 2 rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/connector-catalog-release-2-floor.output" ] || fail "pre-Release 2 API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "connector catalog Release 2 floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do

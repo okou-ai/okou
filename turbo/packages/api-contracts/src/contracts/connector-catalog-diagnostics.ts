@@ -47,55 +47,26 @@ const connectorCatalogStateSchema = z.enum([
 ]);
 
 /**
- * The sync writer's own report of the attempt it just made, built from its
- * internal sync state. Only the cron sync response carries it; staff
- * diagnostics do not. Removed with the sync state in Release 2.
+ * The sync writer's report of the attempt it just made. Nothing about the
+ * attempt is persisted: a later request cannot see it, and staff diagnostics
+ * do not carry it. `failureCode` is set only for a rejected attempt.
  */
 export const connectorCatalogSyncAttemptReportSchema = z.object({
   outcome: z.enum(["accepted", "unchanged", "rejected"]),
-  state: connectorCatalogStateSchema,
-  active: z
-    .object({
-      catalogVersion: z.string(),
-      catalogDigest: z.string(),
-      activatedAt: z.string().datetime(),
-    })
-    .nullable(),
-  lastAttempt: z
-    .object({
-      at: z.string().datetime(),
-      outcome: z.enum(["accepted", "unchanged", "rejected"]),
-      failureCode: connectorCatalogSyncFailureCodeSchema.nullable(),
-      reusedCachedRejection: z.boolean(),
-    })
-    .nullable(),
-  lastSuccessAt: z.string().datetime().nullable(),
-  rejectedCandidate: z
-    .object({
-      catalogVersion: z.string().nullable(),
-      catalogDigest: z
-        .string()
-        .regex(/^sha256:[a-f0-9]{64}$/u)
-        .nullable(),
-      failureCode: connectorCatalogSyncFailureCodeSchema,
-      backendVersion: z
-        .string()
-        .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u),
-    })
-    .nullable(),
+  failureCode: connectorCatalogSyncFailureCodeSchema.nullable(),
 });
 
 /**
  * Staff diagnostics derived from the current `connector_catalog` pointer and
  * the immutable entries at its hash. Sync history (`lastAttempt`,
  * `lastSuccessAt`, `rejectedCandidate`) and activation time cannot be derived
- * from them and are omitted; older API instances still send those keys and
- * this schema ignores them.
+ * from them and are omitted.
  */
 export const connectorCatalogDiagnosticsSchema = z.object({
   schemaVersion: z.literal(4),
-  // Current API instances report `never-synced` or `current`; `stale` remains
-  // for responses from older instances during a rolling deploy.
+  // Staff diagnostics report `never-synced` or `current`. The cron sync
+  // response reports `stale` when its own attempt was rejected while an
+  // existing pointer keeps serving.
   state: connectorCatalogStateSchema,
   // Both fields carry the pointer hash; `catalogVersion` is a legacy alias.
   active: z
@@ -132,4 +103,7 @@ export type ConnectorCredentialStorageReadiness = z.infer<
 >;
 export type ConnectorCatalogDiagnostics = z.infer<
   typeof connectorCatalogDiagnosticsSchema
+>;
+export type ConnectorCatalogSyncAttemptReport = z.infer<
+  typeof connectorCatalogSyncAttemptReportSchema
 >;

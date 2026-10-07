@@ -77,8 +77,10 @@ import { connectorCatalogExecutableCapabilityDigest } from "../../services/conne
 import { connectorCatalogSource } from "../../services/connector-catalog-source";
 import { currentConnectorCatalogValidatorIdentity } from "../../services/connector-catalog-validator-authority";
 import {
+  connectorCatalogArtifactConnectorSchema,
   connectorCatalogArtifactSchema,
   CONNECTOR_CATALOG_ACTIVE_KEY,
+  type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
 import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
@@ -369,12 +371,16 @@ function release(
   if (runtimeChange) {
     method.label = label;
   }
+  return publication(artifact);
+}
+
+function publication(artifact: ConnectorCatalogArtifact) {
   const raw = Buffer.from(JSON.stringify(artifact));
   const hash = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
-  const key = `connectors/v4/releases/${version}/catalog.json`;
+  const key = `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`;
   const pointer = Buffer.from(
     JSON.stringify({
-      catalogVersion: version,
+      catalogVersion: artifact.catalogVersion,
       catalogKey: key,
       catalogDigest: hash,
     }),
@@ -528,101 +534,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
   });
   it.todo("n1: rejects downloaded bytes whose hash differs from the pointer");
-  it("entry column migrations preserve payloads and backfill bundled and absent skills", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    // Historical schema upgrades cannot be constructed through a public API.
-    // Reuse the sole case-owned lifecycle engine, not another database binding.
-    await engine.exec(`ALTER TABLE connector_catalog_entries
-      DROP COLUMN label, DROP COLUMN description, DROP COLUMN category,
-      DROP COLUMN auth_methods, DROP COLUMN firewall, DROP COLUMN storage_name,
-      DROP COLUMN version_id, DROP COLUMN mcp_endpoint`);
-    const versionId = "a".repeat(64);
-    const entries = [
-      {
-        slug: "bundled",
-        label: "Bundled connector",
-        description: "Description",
-        category: "productivity",
-        authMethods: [{ id: "token" }],
-        firewall: { kind: "generated", config: { rules: [] } },
-        skill: {
-          kind: "bundled",
-          storageName: "connector-skill@bundled",
-          versionId,
-          storageVersionPrefix: `__system__/volume/connector-skill@bundled/${versionId}`,
-        },
-      },
-      {
-        slug: "no-skill",
-        label: "No skill connector",
-        description: "Other description",
-        category: "communication",
-        authMethods: [{ id: "oauth" }],
-        firewall: { kind: "none" },
-        skill: { kind: "none" },
-        mcp: {
-          transport: "streamable-http",
-          endpoint: "https://mcp.example.com/mcp",
-        },
-      },
-    ];
-    for (const entry of entries) {
-      await engine.query(
-        "INSERT INTO connector_catalog_entries VALUES ('catalog', $1, $2)",
-        [entry.slug, JSON.stringify(entry)],
-      );
-    }
-    for (const name of [
-      "1328_connector_catalog_entry_columns.sql",
-      "1329_backfill_connector_catalog_entry_columns.sql",
-    ]) {
-      await engine.exec(await readFile(new URL(name, migrationDir), "utf8"));
-    }
-    const expected = entries.map((entry) => {
-      return {
-        hash: "catalog",
-        slug: entry.slug,
-        payload: entry,
-        label: entry.label,
-        description: entry.description,
-        category: entry.category,
-        auth_methods: entry.authMethods,
-        firewall: entry.firewall,
-        storage_name: entry.skill.storageName ?? null,
-        version_id: entry.skill.versionId ?? null,
-        mcp_endpoint: entry.mcp?.endpoint ?? null,
-      };
-    });
-    expect(
-      (
-        await engine.query(
-          "SELECT * FROM connector_catalog_entries ORDER BY slug",
-        )
-      ).rows,
-    ).toStrictEqual(expected);
-    await engine.query(
-      "INSERT INTO connector_catalog_entries (hash, slug, payload) VALUES ('old-api', $1, $2)",
-      [entries[0]?.slug, JSON.stringify(entries[0])],
-    );
-    const backfill = await readFile(
-      new URL(
-        "1329_backfill_connector_catalog_entry_columns.sql",
-        migrationDir,
-      ),
-      "utf8",
-    );
-    await engine.exec(backfill);
-    await engine.exec(backfill);
-    expect(
-      (
-        await engine.query(
-          "SELECT * FROM connector_catalog_entries WHERE hash = 'old-api'",
-        )
-      ).rows,
-    ).toStrictEqual([{ ...expected[0], hash: "old-api" }]);
-  });
   it("n2: binds all existing gateways to the case engine and accepts the publisher-shaped digest through cron", async () => {
     if (!engine || !binding.database) {
       throw new Error("Missing case engine");
@@ -653,27 +564,14 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: first.artifact.catalogVersion },
+      active: { catalogVersion: first.hash, catalogDigest: first.hash },
     });
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: first.hash }]);
     const expectedColumns = first.artifact.connectors
       .map((entry) => {
-        return {
-          slug: entry.slug,
-          label: entry.label,
-          description: entry.description,
-          category: entry.category,
-          auth_methods: entry.authMethods,
-          firewall: entry.firewall,
-          storage_name:
-            entry.skill.kind === "bundled" ? entry.skill.storageName : null,
-          version_id:
-            entry.skill.kind === "bundled" ? entry.skill.versionId : null,
-          payload: entry,
-          mcp_endpoint: entry.mcp?.endpoint ?? null,
-        };
+        return { slug: entry.slug, payload: entry };
       })
       .sort((a, b) => {
         return a.slug.localeCompare(b.slug);
@@ -684,9 +582,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       }
       return (
         await engine.query(
-          `SELECT slug, label, description, category, auth_methods, firewall,
-                  storage_name, version_id, payload, mcp_endpoint
-           FROM connector_catalog_entries WHERE hash = $1 ORDER BY slug`,
+          "SELECT slug, payload FROM connector_catalog_entries WHERE hash = $1 ORDER BY slug",
           [first.hash],
         )
       ).rows;
@@ -703,7 +599,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(changed.status).toBe(200);
     expect(changed.body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: next.artifact.catalogVersion },
+      active: { catalogVersion: next.hash, catalogDigest: next.hash },
     });
     expect(
       (
@@ -719,8 +615,8 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       connectors: [{ displayName: "Next lifecycle catalog" }],
     });
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    // Start with a genuinely accepted legacy directory and no new-table mirror.
-    // This is per-case test fixture state only, never a preview database write.
+    // A database without a pointer or entries republishes the current
+    // publication. This is per-case fixture state, never a preview write.
     await engine.exec(
       "DELETE FROM connector_catalog; DELETE FROM connector_catalog_entries",
     );
@@ -763,19 +659,12 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     expect((await sync()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: failed.artifact.catalogVersion },
+      active: { catalogVersion: failed.hash, catalogDigest: failed.hash },
     });
     await directory(failed);
     expect((await mcpDirectory(mcpActor)).body).toMatchObject({
       connectors: [{ displayName: "Prepared retry catalog" }],
     });
-    expect(
-      (
-        await engine.query(
-          "SELECT catalog_digest FROM connector_catalog_active_snapshot",
-        )
-      ).rows,
-    ).toStrictEqual([{ catalog_digest: failed.hash }]);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: failed.hash }]);
@@ -831,6 +720,133 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: failed.hash }]);
+  });
+  it("keeps serving the previous generation when a later entry batch fails and completes the partial generation on retry", async () => {
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    const previous = release("2099-01-04.previous", "Previous generation");
+    serve(previous);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    const mcpActor = await ownedMcpRun(previous);
+
+    // Entries are inserted in batches of at most 100. Clones of one connector,
+    // each owning renamed storage, push the generation past a single batch so
+    // a failure can strike the second.
+    const base = release("2099-01-04.partial", "Partial generation");
+    const template = base.artifact.connectors.find((entry) => {
+      return entry.skill.kind === "none" && entry.mcp === undefined;
+    });
+    if (!template) {
+      throw new Error("Missing skill-free HTTP catalog connector");
+    }
+    const storageNames = [
+      ...new Set(
+        template.authMethods.flatMap((method) => {
+          return [...method.storage.secrets, ...method.storage.variables];
+        }),
+      ),
+    ];
+    const artifact = structuredClone(base.artifact);
+    while (artifact.connectors.length <= 110) {
+      const suffix = artifact.connectors.length;
+      let serialized = JSON.stringify({
+        ...template,
+        firewall: { kind: "none" },
+      });
+      for (const name of storageNames) {
+        serialized = serialized.replaceAll(
+          new RegExp(`\\b${name}\\b`, "gu"),
+          `${name}_CLONE_${suffix}`,
+        );
+      }
+      artifact.connectors.push(
+        connectorCatalogArtifactConnectorSchema.parse({
+          ...JSON.parse(serialized),
+          slug: `partial-clone-${suffix}`,
+        }),
+      );
+    }
+    const candidate = publication(artifact);
+    const firstBatch = artifact.connectors.slice(0, 100).map((entry) => {
+      return entry.slug;
+    });
+    const blocked = artifact.connectors[105]?.slug;
+    if (!blocked) {
+      throw new Error("Missing second-batch entry");
+    }
+    const readCandidateEntries = async () => {
+      if (!engine) {
+        throw new Error("Missing case engine");
+      }
+      return (
+        await engine.query<{ slug: string; payload: unknown }>(
+          'SELECT slug, payload FROM connector_catalog_entries WHERE hash = $1 ORDER BY slug COLLATE "C"',
+          [candidate.hash],
+        )
+      ).rows;
+    };
+    await engine.exec(
+      `ALTER TABLE connector_catalog_entries ADD CONSTRAINT second_batch_failure CHECK (hash <> '${candidate.hash}' OR slug <> '${blocked}')`,
+    );
+    serve(candidate);
+    await expect(sync()).rejects.toThrow(
+      "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
+    );
+    // Only the first batch exists, unreferenced; readers keep the previous one.
+    const partial = await readCandidateEntries();
+    expect(
+      partial.map((entry) => {
+        return entry.slug;
+      }),
+    ).toStrictEqual([...firstBatch].sort());
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: previous.hash }]);
+    await directory(previous);
+    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
+      connectors: [{ displayName: "Previous generation" }],
+    });
+
+    // The retry reuses the prepared first batch: any reinsertion of those
+    // slugs would violate this constraint, which existing rows bypass.
+    const firstBatchList = firstBatch
+      .map((slug) => {
+        return `'${slug}'`;
+      })
+      .join(", ");
+    await engine.exec(`
+      ALTER TABLE connector_catalog_entries DROP CONSTRAINT second_batch_failure;
+      ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_reprepare
+        CHECK (hash <> '${candidate.hash}' OR slug NOT IN (${firstBatchList})) NOT VALID;
+    `);
+    expect((await sync()).body).toMatchObject({
+      outcome: "accepted",
+      active: { catalogVersion: candidate.hash, catalogDigest: candidate.hash },
+      pointer: { hash: candidate.hash, entryCount: artifact.connectors.length },
+    });
+    const completed = await readCandidateEntries();
+    expect(completed).toStrictEqual(
+      artifact.connectors
+        .map((entry) => {
+          return { slug: entry.slug, payload: entry };
+        })
+        .sort((left, right) => {
+          return left.slug < right.slug ? -1 : 1;
+        }),
+    );
+    expect(
+      completed.filter((entry) => {
+        return firstBatch.includes(entry.slug);
+      }),
+    ).toStrictEqual(partial);
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: candidate.hash }]);
+    await directory(candidate);
+    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
+      connectors: [{ displayName: "Partial generation" }],
+    });
   });
   it("reuses registered skill metadata without comparing the catalog copy", async () => {
     if (!engine) {
@@ -891,7 +907,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(rejected.body).toMatchObject({ outcome: "rejected" });
     await directory(changed);
   });
-  it("n3: real cron competitors share atomic legacy/hash/Pi acceptance and winner-only postcommit wakeups", async () => {
+  it("n3: real cron competitors publish one complete generation with atomic Pi invalidation and switch-only wakeups", async () => {
     if (!engine) {
       throw new Error("Missing case engine");
     }
@@ -928,21 +944,17 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       [agentId, "a".repeat(64)],
     );
     const caseEngine = engine;
+    let switchedHash: string | undefined;
     context.mocks.ably.batchPublish.mockImplementation(async (spec) => {
       const current = (
         await caseEngine.query<{ hash: string }>(
           "SELECT hash FROM connector_catalog",
         )
       ).rows[0];
-      const legacy = (
-        await caseEngine.query<{ catalog_digest: string }>(
-          "SELECT catalog_digest FROM connector_catalog_active_snapshot",
-        )
-      ).rows[0];
-      if (!current || !legacy) {
+      // Wakeups follow the committed pointer switch of their own attempt.
+      if (!current || current.hash !== switchedHash) {
         throw new Error("Notification preceded committed acceptance");
       }
-      expect(current.hash).toBe(legacy.catalog_digest);
       expect(spec.channels).toStrictEqual(["runner-group:catalog-n3"]);
       expect(spec.messages).toHaveLength(1);
       expect(JSON.parse(String(spec.messages[0]?.data))).toStrictEqual({
@@ -963,23 +975,35 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         }),
       };
     });
+    // Both competitors complete. The last writer wins, so the later one either
+    // republishes the same generation without switching or observes it.
+    function expectCompetitorsComplete(
+      responses: readonly Awaited<ReturnType<typeof sync>>[],
+    ): void {
+      const outcomes = responses.map((response) => {
+        if (response.status !== 200) {
+          throw new Error("Concurrent cron request failed");
+        }
+        return response.body.outcome;
+      });
+      expect(outcomes).toContain("accepted");
+      for (const outcome of outcomes) {
+        expect(["accepted", "unchanged"]).toContain(outcome);
+      }
+    }
+    async function readEntryCount(hash: string): Promise<number> {
+      const rows = (
+        await caseEngine.query<{ count: number }>(
+          "SELECT count(*)::integer AS count FROM connector_catalog_entries WHERE hash = $1",
+          [hash],
+        )
+      ).rows;
+      return rows[0]?.count ?? 0;
+    }
     serve(first);
+    switchedHash = first.hash;
     const accepted = await Promise.all([sync(), sync()]);
-    expect(
-      accepted.map((response) => {
-        return response.status;
-      }),
-    ).toStrictEqual([200, 200]);
-    expect(
-      accepted
-        .map((response) => {
-          if (response.status !== 200) {
-            throw new Error("Concurrent cron request failed");
-          }
-          return response.body.outcome;
-        })
-        .sort(),
-    ).toStrictEqual(["accepted", "unchanged"]);
+    expectCompetitorsComplete(accepted);
     expect(
       (
         await engine.query(
@@ -991,23 +1015,18 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: first.hash }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT catalog_digest FROM connector_catalog_active_snapshot",
-        )
-      ).rows,
-    ).toStrictEqual([{ catalog_digest: first.hash }]);
-    // A legacy-accepted deployment can lack the additive mirror. Rebuilding it
-    // still validates/prepares (the existing public outcome is "accepted"),
-    // but must not repeat activation effects for existing consumers.
-    await engine.exec(
-      "DELETE FROM connector_catalog; DELETE FROM connector_catalog_entries",
+    await expect(readEntryCount(first.hash)).resolves.toBe(
+      first.artifact.connectors.length,
     );
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: first.hash }]);
+    // Same-hash idempotence: a repeated publication is unchanged, rewrites no
+    // entry and repeats neither Pi invalidation nor wakeups.
+    await engine.exec(
+      `ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_rewrite CHECK (hash <> '${first.hash}') NOT VALID`,
+    );
+    expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
+    await engine.exec(
+      "ALTER TABLE connector_catalog_entries DROP CONSTRAINT no_rewrite",
+    );
     expect(
       (
         await engine.query(
@@ -1015,15 +1034,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
         )
       ).rows,
     ).toStrictEqual([{ generation: 2 }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation, status FROM pi_stable_context_heads",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 2, status: "missing" }]);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
-    expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     const concurrent = release(
       "2099-01-01.same-baseline",
@@ -1031,17 +1041,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       true,
     );
     serve(concurrent);
+    switchedHash = concurrent.hash;
     const competed = await Promise.all([sync(), sync()]);
-    expect(
-      competed
-        .map((response) => {
-          if (response.status !== 200) {
-            throw new Error("Same-baseline cron failed");
-          }
-          return response.body.outcome;
-        })
-        .sort(),
-    ).toStrictEqual(["accepted", "unchanged"]);
+    expectCompetitorsComplete(competed);
     expect(
       (
         await engine.query(
@@ -1053,19 +1055,18 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: concurrent.hash }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT catalog_digest FROM connector_catalog_active_snapshot",
-        )
-      ).rows,
-    ).toStrictEqual([{ catalog_digest: concurrent.hash }]);
+    await expect(readEntryCount(concurrent.hash)).resolves.toBe(
+      concurrent.artifact.connectors.length,
+    );
     const next = release(
       "2099-01-01.changed",
       "Changed concurrent catalog",
       true,
     );
     serve(next);
+    switchedHash = next.hash;
+    // Pi invalidation shares the pointer transaction: its failure leaves the
+    // previous pointer serving, with the new entries prepared but unreferenced.
     await engine.exec(
       "ALTER TABLE pi_stable_context_generations ADD CONSTRAINT invalidation_failure CHECK (generation <= 3)",
     );
@@ -1075,13 +1076,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: concurrent.hash }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT catalog_digest FROM connector_catalog_active_snapshot",
-        )
-      ).rows,
-    ).toStrictEqual([{ catalog_digest: concurrent.hash }]);
+    await expect(readEntryCount(next.hash)).resolves.toBe(
+      next.artifact.connectors.length,
+    );
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
     await engine.exec(
       "ALTER TABLE pi_stable_context_generations DROP CONSTRAINT invalidation_failure",
@@ -1109,6 +1106,13 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       ).rows,
     ).toStrictEqual([{ generation: 4, status: "missing" }]);
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
+    expect(
+      (
+        await engine.query(
+          "SELECT generation FROM pi_stable_context_generations",
+        )
+      ).rows,
+    ).toStrictEqual([{ generation: 4 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
   });
   it("n4: real MCP consumer follows hash switches while captured entries retain their hash", async () => {
@@ -1269,10 +1273,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     });
     // An unadmitted slug has no matching account row and reads no catalog.
     expect(catalogReads).toHaveLength(3);
-    for (const query of catalogReads) {
-      expect(query).not.toContain("connector_catalog_active_snapshot");
-      expect(query).not.toContain("connector_catalog_compatibility_evaluation");
-    }
   });
 });
 
@@ -1296,31 +1296,13 @@ describe("slug-first current catalog business readers", () => {
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     return candidate;
   }
-  async function unreadableLegacySnapshot() {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    await engine.query(
-      "UPDATE connector_catalog_active_snapshot SET catalog_gzip = $1",
-      [Buffer.from("invalid gzip")],
-    );
-  }
-
   it("answers detail and permissions from current entries", async () => {
     await publishedCatalog();
-    const before = await accept(
+    const detail = await accept(
       catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
       [200],
     );
-    await unreadableLegacySnapshot();
-    expect(
-      (
-        await accept(
-          catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(before.body);
+    expect(detail.body.connector.slug).toBe("openai");
     const permissions = await accept(
       catalogClient().permissions({
         headers,
@@ -1332,7 +1314,6 @@ describe("slug-first current catalog business readers", () => {
   });
   it("reports an absent slug as unknown", async () => {
     await publishedCatalog();
-    await unreadableLegacySnapshot();
     const result = await accept(
       catalogClient().get({
         headers,
@@ -1344,16 +1325,6 @@ describe("slug-first current catalog business readers", () => {
   });
   it("serves complete lists, search and compatibility from published entries", async () => {
     const candidate = await publishedCatalog();
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    await unreadableLegacySnapshot();
-    await engine.exec(
-      "DELETE FROM connector_catalog_compatibility_evaluation; DELETE FROM connector_catalog_active_snapshot; DELETE FROM connector_catalog_sync_state",
-    );
-    await engine.query(
-      "UPDATE connector_catalog SET entry_slugs = '[]'::jsonb, catalog_version = 'ignored-publication-label'",
-    );
     const listed = await accept(catalogClient().list({ headers }), [200]);
     expect(listed.body.connectors).toContainEqual(
       expect.objectContaining({ slug: "github" }),
@@ -1435,9 +1406,6 @@ describe("slug-first current catalog business readers", () => {
         "INSERT INTO runner_job_queue (run_id, runner_group, execution_context, expires_at) VALUES ($1, 'vm0/default', $2, now() + interval '1 hour')",
         [actor.runId, JSON.stringify(storedContext)],
       );
-      await engine.exec(
-        "DELETE FROM connector_catalog_compatibility_evaluation; DELETE FROM connector_catalog_active_snapshot; DELETE FROM connector_catalog_sync_state",
-      );
       const claim = await accept(
         setupApp({ context, routes: runnersRoutes })(
           runnersJobClaimContract,
@@ -1474,12 +1442,8 @@ describe("slug-first current catalog business readers", () => {
     const client = setupApp({ context, routes: onboardingSourcesRoutes })(
       onboardingSourcesContract,
     );
-    const before = await accept(client.list({ headers }), [200]);
-    expect(before.body.connectors.length).toBeGreaterThan(0);
-    await unreadableLegacySnapshot();
-    expect((await accept(client.list({ headers }), [200])).body).toStrictEqual(
-      before.body,
-    );
+    const listed = await accept(client.list({ headers }), [200]);
+    expect(listed.body.connectors.length).toBeGreaterThan(0);
   });
   it("summarizes case-owned accounts using current methods and briefs", async () => {
     await publishedCatalog();
@@ -1499,7 +1463,6 @@ describe("slug-first current catalog business readers", () => {
       }),
       [200],
     );
-    await unreadableLegacySnapshot();
     const overview = await accept(
       client(connectorOverviewContract).overview({ headers }),
       [200],
@@ -1524,12 +1487,8 @@ describe("slug-first current catalog business readers", () => {
       context,
       routes: onboardingWorkflowConnectorsRoutes,
     })(onboardingWorkflowConnectorsContract);
-    const before = await accept(client.list({ headers }), [200]);
-    expect(before.body.connectors.length).toBeGreaterThan(0);
-    await unreadableLegacySnapshot();
-    expect((await accept(client.list({ headers }), [200])).body).toStrictEqual(
-      before.body,
-    );
+    const listed = await accept(client.list({ headers }), [200]);
+    expect(listed.body.connectors.length).toBeGreaterThan(0);
   });
   it("reports a missing entry as not found and a missing pointer as unavailable", async () => {
     const candidate = await publishedCatalog();
@@ -1613,23 +1572,9 @@ describe("slug-first current catalog business readers", () => {
 });
 
 // Account generation cases now publish only in their own lifecycle engine.
-// Staff diagnostics derive everything from the pointer and its entries, so a
-// case-owned engine can remove or corrupt every legacy store underneath them.
+// Staff diagnostics derive everything from the pointer and its entries.
 describe("staff connector catalog diagnostics from current entries", () => {
   const headers = { authorization: "Bearer clerk-session" };
-  const legacyTables = [
-    "connector_catalog_sync_state",
-    "connector_catalog_active_snapshot",
-    "connector_catalog_compatibility_evaluation",
-    "connector_catalog_runtime_projection",
-  ];
-  // Pointer columns slated for removal; only schema_version and hash remain.
-  const retiredPointerColumns = [
-    "catalog_version",
-    "activated_at",
-    "catalog_header",
-    "entry_slugs",
-  ];
 
   async function staffSession() {
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
@@ -1645,36 +1590,19 @@ describe("staff connector catalog diagnostics from current entries", () => {
   }
 
   async function diagnostics() {
-    statements = [];
     const response = await accept(
       setupApp({ context, routes: connectorCatalogRoutes })(
         connectorCatalogContract,
       ).diagnostics({ headers }),
       [200],
     );
-    for (const query of statements) {
-      for (const table of legacyTables) {
-        expect(query).not.toContain(table);
-      }
-      if (/\bfrom "connector_catalog"/u.test(query)) {
-        for (const column of retiredPointerColumns) {
-          expect(query).not.toContain(column);
-        }
-      }
-    }
     return response.body;
   }
 
-  it("reports the pointer and on-demand compatibility without legacy rows", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
+  it("reports the pointer and on-demand compatibility", async () => {
     const candidate = release(`2099-03-01.${randomUUID()}`, "Diagnostics");
     serve(candidate);
     expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    await engine.exec(
-      "DELETE FROM connector_catalog_compatibility_evaluation; DELETE FROM connector_catalog_active_snapshot; DELETE FROM connector_catalog_sync_state",
-    );
     await staffSession();
     context.mocks.s3.send.mockClear();
 
@@ -1748,7 +1676,7 @@ describe("staff connector catalog diagnostics from current entries", () => {
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
-  it("ignores corrupt legacy rows and flags a generation without entries", async () => {
+  it("flags a generation without entries and a missing pointer", async () => {
     if (!engine) {
       throw new Error("Missing case engine");
     }
@@ -1756,14 +1684,6 @@ describe("staff connector catalog diagnostics from current entries", () => {
     serve(candidate);
     const accepted = await accept(sync(), [200]);
     expect(accepted.body).toMatchObject({ outcome: "accepted" });
-    await engine.query(
-      "UPDATE connector_catalog_active_snapshot SET catalog_gzip = $1, catalog_digest = $2",
-      [Buffer.from("invalid gzip"), `sha256:${"0".repeat(64)}`],
-    );
-    // Legacy sync state now claims a rejected attempt the pointer never saw.
-    await engine.exec(
-      "DELETE FROM connector_catalog_compatibility_evaluation; UPDATE connector_catalog_sync_state SET last_attempt_outcome = 'rejected', last_failure_code = 'invalid-artifact', last_success_at = NULL",
-    );
     await staffSession();
 
     const current = await diagnostics();

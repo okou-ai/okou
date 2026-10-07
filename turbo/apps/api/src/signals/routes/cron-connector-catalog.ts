@@ -4,7 +4,6 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import type { RouteEntry } from "../route-entry";
 import { seedPreviewConnectorCatalog$ } from "../services/preview-connector-catalog.service";
-import { reconcileConnectorCatalogCompatibility$ } from "../services/connector-catalog-compatibility.service";
 import { connectorCatalogDiagnostics$ } from "../services/connector-catalog-diagnostics.service";
 import { syncConnectorCatalog$ } from "../services/connector-catalog-sync.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
@@ -16,21 +15,19 @@ const syncConnectorCatalogRoute$ = command(
     }
 
     const result = await set(syncConnectorCatalog$, signal);
-    await set(reconcileConnectorCatalogCompatibility$, signal);
     const diagnostics = await set(connectorCatalogDiagnostics$, signal);
-    // Pointer, filtering and storage readiness are the staff diagnostics. The
-    // writer's report of the attempt it just made (state, active identity and
-    // history) comes from its own sync state and leaves with it in Release 2.
+    // Diagnostics describe the serving pointer. This attempt's report is not
+    // persisted; a rejection while an existing pointer serves is `stale`.
     return {
       status: 200 as const,
       body: {
         ...diagnostics,
+        state:
+          result.outcome === "rejected" && diagnostics.pointer !== null
+            ? ("stale" as const)
+            : diagnostics.state,
         outcome: result.outcome,
-        state: result.state,
-        active: result.active,
-        lastAttempt: result.lastAttempt,
-        lastSuccessAt: result.lastSuccessAt,
-        rejectedCandidate: result.rejectedCandidate,
+        failureCode: result.failureCode,
       },
     };
   },

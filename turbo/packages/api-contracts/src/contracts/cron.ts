@@ -233,8 +233,8 @@ const cronSyncSkillsResponseSchema = z.object({
   total: z.number(),
 });
 
-// Pointer-derived diagnostics plus the writer's own report of this attempt,
-// whose `state` and `active` take precedence over the diagnostic fields.
+// Pointer-derived diagnostics plus the writer's report of this attempt. A
+// rejected attempt reports `state: "stale"` while an existing pointer serves.
 const connectorCatalogSyncResponseSchema =
   connectorCatalogDiagnosticsSchema.extend(
     connectorCatalogSyncAttemptReportSchema.shape,
@@ -629,7 +629,7 @@ export const cronConnectorCatalogContract = c.router({
       200: connectorCatalogSyncResponseSchema,
       401: apiErrorSchema,
     },
-    summary: "Sync the validated connector catalog snapshot",
+    summary: "Publish the validated official connector catalog",
   },
 });
 

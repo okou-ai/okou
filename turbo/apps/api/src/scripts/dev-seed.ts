@@ -22,7 +22,7 @@ import { createStore } from "ccstate";
 import { closeDbPool, db } from "../lib/db";
 import { optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
-import { reconcileConnectorCatalogCompatibility$ } from "../signals/services/connector-catalog-compatibility.service";
+import { immutableCatalogHash$ } from "../signals/services/connector-catalog-immutable.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
 import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
 import { onRejection } from "../signals/utils";
@@ -816,7 +816,7 @@ async function devSeed() {
     );
   }
 
-  // --- connector catalog (validated R2 snapshot + compatibility state) ---
+  // --- connector catalog (validated R2 publication -> pointer + entries) ---
   const store = createStore();
   const signal = new AbortController().signal;
   // The flag keeps its historical name because the CI preview workflow passes
@@ -830,14 +830,14 @@ async function devSeed() {
   }
   writeLine("Syncing connector catalog");
   const connectorCatalog = await store.set(syncConnectorCatalog$, signal);
-  await store.set(reconcileConnectorCatalogCompatibility$, signal);
-  if (!connectorCatalog.active) {
+  const catalogHash = await store.set(immutableCatalogHash$, signal);
+  if (catalogHash === null) {
     throw new Error(
-      "Connector catalog seed did not produce an active snapshot",
+      `Connector catalog seed did not publish a catalog (${connectorCatalog.outcome}${connectorCatalog.failureCode === null ? "" : `: ${connectorCatalog.failureCode}`})`,
     );
   }
   writeLine(
-    `Seeded connector catalog ${connectorCatalog.active.catalogVersion} (${connectorCatalog.outcome})`,
+    `Seeded connector catalog ${catalogHash} (${connectorCatalog.outcome})`,
   );
 }
 

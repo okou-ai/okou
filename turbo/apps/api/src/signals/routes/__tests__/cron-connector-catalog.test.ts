@@ -1,6 +1,5 @@
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
@@ -34,7 +33,6 @@ import {
   onTestFinished,
 } from "vitest";
 
-import apiPackage from "../../../../package.json";
 import { createApp } from "../../../app-factory";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -43,17 +41,8 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { singleton } from "../../../lib/singleton";
 import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  apiTestConnectorCatalogValidationAuthority,
-  deleteApiTestConnectorCatalogCompatibilityEvaluation,
-  installApiTestConnectorCatalog,
-  mockApiTestConnectorProviderConfiguration,
-  readApiTestConnectorCatalogCompatibilityEvaluations,
-  readApiTestConnectorCatalogSnapshot,
-  readApiTestConnectorCatalogValidationAuthority,
-  setApiTestConnectorCatalogValidationAuthority,
-} from "../../../test-fixtures/connector-catalog";
-import { createDeferredPromise, settle } from "../../utils";
+import { mockApiTestConnectorProviderConfiguration } from "../../../test-fixtures/connector-catalog";
+import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
 import { readConnectorCredentialStorageState } from "./helpers/connector-credential-storage-state";
@@ -118,9 +107,7 @@ const FIRST_SYNC_TIME = "2026-07-15T08:00:00.000Z";
 const DIAGNOSTICS_USER_ID = `user_${randomUUID()}`;
 const DIAGNOSTICS_ORG_ID = `org_${randomUUID()}`;
 const PRIVATE_VALUE = "SECRET_TOKEN";
-const DEFAULT_API_VERSION = apiPackage.version;
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
-const PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES = 32 * 1024 * 1024;
 const EXPECTED_CAPABILITY_DIGEST =
   "sha256:46b3e87b761c645f1a9f23200bc60659ca488b6d313654b2c42d69ddfce82af1";
 const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
@@ -204,6 +191,8 @@ function createConnectorCleanup(
 interface ReleaseFixture {
   readonly version: string;
   readonly connectorSlug: string;
+  // The catalog digest, which identifies the generation once it serves.
+  readonly digest: string;
   readonly pointer: Buffer;
   readonly catalogKey: string;
   readonly objects: ReadonlyMap<string, Buffer>;
@@ -256,10 +245,6 @@ function jsonBytes(value: unknown): Buffer {
 
 function digest(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-function objectEtag(bytes: Uint8Array): string {
-  return `"${createHash("sha256").update(bytes).digest("hex")}"`;
 }
 
 function catalogTemplate(reference: string): string {
@@ -1211,6 +1196,7 @@ function buildRelease(options: ReleaseFixtureOptions): ReleaseFixture {
   return {
     version: options.version,
     connectorSlug,
+    digest: digest(catalogBytes),
     pointer: jsonBytes(pointer),
     catalogKey: keys.catalog,
     objects: new Map([[keys.catalog, catalogBytes]]),
@@ -1322,18 +1308,9 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
     if (!bytes) {
       return Promise.reject(new Error("Object unavailable"));
     }
-    const etag = objectEtag(bytes);
-    if (input.IfNoneMatch === etag) {
-      return Promise.reject(
-        Object.assign(new Error("Not modified"), {
-          $metadata: { httpStatusCode: 304 },
-        }),
-      );
-    }
     return Promise.resolve({
       ContentLength: bytes.length,
       Body: s3Body(bytes),
-      ETag: etag,
     });
   });
 }
@@ -1342,23 +1319,6 @@ function configureSource(): string {
   const bucket = `connector-catalog-test-${randomUUID()}`;
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
   return bucket;
-}
-
-function previousConnectorCatalogSourceId(bucket: string): string {
-  const endpoint =
-    env("S3_ENDPOINT") ??
-    `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`;
-  return createHash("sha256")
-    .update(new URL(endpoint).origin)
-    .update("\0")
-    .update(bucket)
-    .update("\0connector-catalog-persisted-snapshot-generation:")
-    .update("2")
-    .digest("hex");
-}
-
-function setApiVersion(version: string): void {
-  apiPackage.version = version;
 }
 
 function cronHeaders(secret = CRON_SECRET): { readonly authorization: string } {
@@ -1504,38 +1464,21 @@ async function enableDiagnosticsFeatureSwitch(): Promise<void> {
   });
 }
 
-interface SyncResponseBody {
-  readonly outcome: unknown;
-  readonly state: unknown;
-  readonly active: { readonly catalogDigest: string } | null;
-  readonly lastAttempt: unknown;
-  readonly lastSuccessAt: unknown;
-  readonly rejectedCandidate: unknown;
-}
+type SyncResponseBody = Awaited<ReturnType<typeof syncCatalog>>["body"];
 
 // Staff diagnostics share the pointer, filtering and storage facts of a sync
-// response, identify the pointer by hash only and omit the writer's report.
-function staffDiagnosticsFromSync<T extends SyncResponseBody>(body: T) {
-  const {
-    outcome: _outcome,
-    state: _state,
-    active,
-    lastAttempt: _lastAttempt,
-    lastSuccessAt: _lastSuccessAt,
-    rejectedCandidate: _rejectedCandidate,
-    ...diagnostics
-  } = body;
+// response and omit the writer's report of its own attempt.
+function staffDiagnosticsFromSync(body: SyncResponseBody) {
+  const { outcome: _outcome, failureCode: _failureCode, ...diagnostics } = body;
   return {
     ...diagnostics,
-    state: active === null ? "never-synced" : "current",
-    active:
-      active === null
-        ? null
-        : {
-            catalogVersion: active.catalogDigest,
-            catalogDigest: active.catalogDigest,
-          },
+    state: diagnostics.pointer === null ? "never-synced" : "current",
   };
+}
+
+// The serving pointer identifies its generation by hash in both fields.
+function servingRelease(release: ReleaseFixture) {
+  return { catalogVersion: release.digest, catalogDigest: release.digest };
 }
 
 async function readStatus() {
@@ -1557,20 +1500,20 @@ async function rawCronRequest(path: string): Promise<Response> {
   });
 }
 
-function expectRejectedBeforeAcceptance(
-  body: Awaited<ReturnType<typeof syncCatalog>>["body"],
+// The pointer is shared by every case in this suite, so a rejection reports
+// whichever generation already serves: `stale` with a pointer, `never-synced`
+// without one. A rejected candidate itself never serves.
+function expectRejectedRetainingServingPointer(
+  body: SyncResponseBody,
   failureCode: string,
+  rejected?: ReleaseFixture,
 ): void {
-  expect(body).toMatchObject({
-    outcome: "rejected",
-    state: "never-synced",
-    active: null,
-    lastAttempt: {
-      outcome: "rejected",
-      failureCode,
-    },
-    lastSuccessAt: null,
-  });
+  expect(body).toMatchObject({ outcome: "rejected", failureCode });
+  expect(body.state).toBe(body.pointer === null ? "never-synced" : "stale");
+  expect(body.active?.catalogDigest ?? null).toBe(body.pointer?.hash ?? null);
+  if (rejected !== undefined) {
+    expect(body.pointer?.hash).not.toBe(rejected.digest);
+  }
 }
 
 beforeEach(() => {
@@ -1579,7 +1522,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setApiVersion(DEFAULT_API_VERSION);
   clearMockNow();
 });
 
@@ -1640,19 +1582,16 @@ describe("connector catalog valid lifecycle", () => {
     const acceptedFirst = await syncCatalog();
     expect(acceptedFirst.body).toMatchObject({
       outcome: "accepted",
+      failureCode: null,
       state: "current",
-      active: { catalogVersion: first.version },
-      lastAttempt: { outcome: "accepted", failureCode: null },
-      lastSuccessAt: FIRST_SYNC_TIME,
+      active: servingRelease(first),
+      pointer: { schemaVersion: 4, hash: first.digest, entryCount: 1 },
       filtering: {
         evaluatedAt: FIRST_SYNC_TIME,
         stale: false,
         filteredAuthMethods: [],
       },
     });
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(apiTestConnectorCatalogValidationAuthority());
     expect(
       commandInput(context.mocks.s3.send.mock.calls[0]?.[0]),
     ).toMatchObject({
@@ -1673,37 +1612,35 @@ describe("connector catalog valid lifecycle", () => {
     const unchanged = await syncCatalog();
     expect(unchanged.body).toMatchObject({
       outcome: "unchanged",
+      failureCode: null,
       state: "current",
-      active: { catalogVersion: first.version },
-      lastAttempt: { outcome: "unchanged", failureCode: null },
-      lastSuccessAt: "2026-07-15T08:01:00.000Z",
+      active: servingRelease(first),
       filtering: {
         evaluatedAt: "2026-07-15T08:01:00.000Z",
         stale: false,
         filteredAuthMethods: [],
       },
     });
+    // An unchanged pointer digest skips the catalog download entirely.
     expect(context.mocks.s3.send.mock.calls.length - callsBeforeUnchanged).toBe(
       1,
     );
-    expect(
-      commandInput(context.mocks.s3.send.mock.calls[callsBeforeUnchanged]?.[0]),
-    ).toMatchObject({
-      Bucket: bucket,
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(first.pointer),
-    });
+    const unchangedRequest = commandInput(
+      context.mocks.s3.send.mock.calls[callsBeforeUnchanged]?.[0],
+    );
+    expect(unchangedRequest).toMatchObject({ Bucket: bucket, Key: ACTIVE_KEY });
+    expect(unchangedRequest).not.toHaveProperty("IfNoneMatch");
 
     serveObjects(catalogObjects([first, second], second));
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: second.version },
+      active: servingRelease(second),
     });
 
     serveObjects(catalogObjects([first, second], first));
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: first.version },
+      active: servingRelease(first),
     });
 
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
@@ -4288,7 +4225,7 @@ describe("connector catalog valid lifecycle", () => {
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
       state: "current",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
   });
 
@@ -4307,7 +4244,7 @@ describe("connector catalog valid lifecycle", () => {
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
       state: "current",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
@@ -4353,7 +4290,7 @@ describe("connector catalog valid lifecycle", () => {
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
       state: "current",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
   });
 
@@ -4382,7 +4319,7 @@ describe("connector catalog valid lifecycle", () => {
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
       state: "current",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
     await expect(
       readOwnedVolumeStorageState(skill.storageId),
@@ -4443,13 +4380,11 @@ describe("connector catalog valid lifecycle", () => {
       });
       serveObjects(catalogObjects([release], release));
 
-      const response = await syncCatalog();
-      expect(response.body).toMatchObject({
-        outcome: "rejected",
-        state: "never-synced",
-        active: null,
-        lastAttempt: { failureCode: "invalid-artifact" },
-      });
+      expectRejectedRetainingServingPointer(
+        (await syncCatalog()).body,
+        "invalid-artifact",
+        release,
+      );
       await expect(
         readVolumeStorageState({
           orgId: SYSTEM_ORG_ID,
@@ -4493,11 +4428,11 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      active: null,
-      lastAttempt: { failureCode: "invalid-reference" },
-    });
+    expectRejectedRetainingServingPointer(
+      (await syncCatalog()).body,
+      "invalid-reference",
+      release,
+    );
     await expect(
       readVolumeStorageState({
         orgId: SYSTEM_ORG_ID,
@@ -4515,6 +4450,7 @@ describe("connector catalog valid lifecycle", () => {
   it.each(["storage name", "version ID"] as const)(
     "rejects bundled skills sharing one %s across connectors",
     async (sharedIdentity) => {
+      expect.hasAssertions();
       configureSource();
       const suffix = randomUUID().slice(0, 8);
       const firstConnectorSlug = `skill-identity-a-${suffix}`;
@@ -4570,12 +4506,11 @@ describe("connector catalog valid lifecycle", () => {
       });
       serveObjects(catalogObjects([release], release));
 
-      expect((await syncCatalog()).body).toMatchObject({
-        outcome: "rejected",
-        state: "never-synced",
-        active: null,
-        lastAttempt: { failureCode: "relationship-mismatch" },
-      });
+      expectRejectedRetainingServingPointer(
+        (await syncCatalog()).body,
+        "relationship-mismatch",
+        release,
+      );
     },
   );
 
@@ -4603,7 +4538,7 @@ describe("connector catalog valid lifecycle", () => {
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
       state: "current",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
     const response = await accept(
       runnerFirewallClient().resolve({
@@ -4620,81 +4555,19 @@ describe("connector catalog valid lifecycle", () => {
     const release = buildRelease({ version: "2026-07-15.concurrent" });
     serveObjects(catalogObjects([release], release));
     const results = await Promise.all([syncCatalog(), syncCatalog()]);
-    expect(
-      results
-        .map((result) => {
-          return result.body.outcome;
-        })
-        .sort(),
-    ).toStrictEqual(["accepted", "unchanged"]);
-    const served = results[0]?.body.active?.catalogDigest;
-    expect(served).toBeDefined();
+    // The last writer wins: both attempts may publish the same generation, or
+    // the later one may observe it already serving. Neither reports a failure.
+    const outcomes = results.map((result) => {
+      return result.body.outcome;
+    });
+    expect(outcomes).toContain("accepted");
+    for (const outcome of outcomes) {
+      expect(["accepted", "unchanged"]).toContain(outcome);
+    }
     expect((await readStatus()).body).toMatchObject({
       state: "current",
-      active: { catalogVersion: served, catalogDigest: served },
-      pointer: { hash: served },
-    });
-  });
-
-  it("rolls back a candidate snapshot when its state compare-and-swap loses", async () => {
-    configureSource();
-    const losing = buildRelease({
-      version: "2026-07-15.losing",
-      label: "Losing Candidate",
-    });
-    const winning = buildRelease({
-      version: "2026-07-15.winning",
-      label: "Winning Candidate",
-    });
-    const replacement = buildRelease({
-      version: losing.version,
-      label: "Replacement Candidate",
-    });
-    const objects = catalogObjects([losing, winning], winning);
-    const losingPublicKey = releaseKeys(losing.version).catalog;
-    const blocked = deferredGate();
-    const resume = deferredGate();
-    const activePointers = [losing.pointer, winning.pointer, winning.pointer];
-    let activeReads = 0;
-    let blockedLosingPublic = false;
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      const key = commandInput(command).Key;
-      if (key === losingPublicKey && !blockedLosingPublic) {
-        blockedLosingPublic = true;
-        blocked.release();
-        await resume.promise;
-      }
-      const bytes =
-        key === ACTIVE_KEY
-          ? activePointers[activeReads++]
-          : typeof key === "string"
-            ? objects.get(key)
-            : undefined;
-      if (!bytes) {
-        throw new Error("Object unavailable");
-      }
-      return {
-        ContentLength: bytes.length,
-        Body: s3Body(bytes),
-      };
-    });
-
-    const losingSync = syncCatalog();
-    await blocked.promise;
-    const settledWinningResult = await settle(syncCatalog(), context.signal);
-    resume.release();
-    if (!settledWinningResult.ok) {
-      throw settledWinningResult.error;
-    }
-    const winningResult = settledWinningResult.value;
-    const losingResult = await losingSync;
-    expect(winningResult.body.outcome).toBe("accepted");
-    expect(losingResult.body.outcome).toBe("unchanged");
-
-    serveObjects(catalogObjects([replacement], replacement));
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogVersion: replacement.version },
+      active: servingRelease(release),
+      pointer: { hash: release.digest, entryCount: 1 },
     });
   });
 
@@ -4726,55 +4599,19 @@ describe("connector catalog valid lifecycle", () => {
 
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: observed.version },
+      active: servingRelease(observed),
     });
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: current.version },
+      active: servingRelease(current),
     });
   });
 });
 
 describe("connector catalog executable compatibility", () => {
-  it("writes a deterministic empty compatibility evaluation", async () => {
+  it("evaluates canonical non-empty filtering on demand for the serving pointer", async () => {
     configureSource();
     mockApiTestConnectorProviderConfiguration();
-    const release = buildRelease({
-      version: "2026-07-31.empty-evaluation",
-    });
-    serveObjects(catalogObjects([release], release));
-
-    const synced = await syncCatalog();
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(evaluations).toHaveLength(1);
-    const [evaluation] = evaluations;
-
-    expect(evaluation?.capabilityDigest).toBe(EXPECTED_CAPABILITY_DIGEST);
-    expect(synced.body.filtering).toStrictEqual({
-      capabilityDigest: EXPECTED_CAPABILITY_DIGEST,
-      evaluatedAt: FIRST_SYNC_TIME,
-      stale: false,
-      filteredAuthMethods: [],
-    });
-    expect(evaluation?.payload).toStrictEqual({ filteredAuthMethods: [] });
-
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const headers = { authorization: "Bearer clerk-session" };
-    const client = diagnosticsClient();
-    await accept(client.list({ headers }), [200]);
-    await accept(client.status({ headers }), [200]);
-    await accept(
-      client.get({
-        headers,
-        params: { connectorSlug: release.connectorSlug },
-      }),
-      [200],
-    );
-  });
-
-  it("persists canonical non-empty filtering", async () => {
-    configureSource();
     const release = buildRelease({
       version: "2026-07-31.filtered-evaluation",
       connectorSlug: "future-auth",
@@ -4790,218 +4627,34 @@ describe("connector catalog executable compatibility", () => {
     serveObjects(catalogObjects([release], release));
 
     const synced = await syncCatalog();
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(evaluations).toHaveLength(1);
-    const [evaluation] = evaluations;
-    const wireMethods = synced.body.filtering.filteredAuthMethods;
-    const expectedMethods = wireMethods.map((method) => {
-      return {
-        connectorSlug: method.connectorSlug,
-        authMethodId: method.authMethodId,
-        reasons: method.reasons,
-      };
+    expect(synced.body).toMatchObject({
+      outcome: "accepted",
+      active: servingRelease(release),
+      filtering: {
+        capabilityDigest: EXPECTED_CAPABILITY_DIGEST,
+        evaluatedAt: FIRST_SYNC_TIME,
+        stale: false,
+        filteredAuthMethods: [
+          {
+            connectorSlug: "future-auth",
+            authMethodId: "oauth",
+            reasons: [expect.any(String)],
+          },
+        ],
+      },
     });
 
-    expect(evaluation?.payload).toStrictEqual({
-      filteredAuthMethods: expectedMethods,
-    });
-    expect(wireMethods).toStrictEqual(expectedMethods);
-  });
-
-  it("derives and reconciles a missing compatibility evaluation", async () => {
-    configureSource();
-    mockApiTestConnectorProviderConfiguration();
-    const release = buildRelease({
-      version: "2026-07-31.missing-canonical-evaluation",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-
-    await deleteApiTestConnectorCatalogCompatibilityEvaluation(
-      EXPECTED_CAPABILITY_DIGEST,
+    // Nothing is persisted: staff diagnostics and a later unchanged sync
+    // derive the same canonical filtering from the pointer's entries.
+    expect((await readStatus()).body.filtering).toStrictEqual(
+      synced.body.filtering,
     );
-    await expect(
-      readApiTestConnectorCatalogCompatibilityEvaluations(),
-    ).resolves.toHaveLength(0);
-
-    // Staff diagnostics evaluate the pointer on demand, so the missing
-    // persisted evaluation is invisible to them.
-    const onDemand = await readStatus();
-    expect(onDemand.body.filtering).toStrictEqual({
-      capabilityDigest: EXPECTED_CAPABILITY_DIGEST,
-      evaluatedAt: FIRST_SYNC_TIME,
-      stale: false,
-      filteredAuthMethods: [],
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const headers = { authorization: "Bearer clerk-session" };
-    const catalogClient = setupApp({
-      context,
-      routes: connectorCatalogRoutes,
-    })(connectorCatalogContract);
-    const beforeReconciliation = await accept(
-      catalogClient.list({ headers }),
-      [200],
-    );
-    expect(beforeReconciliation.body).toMatchObject({
-      connectors: [expect.objectContaining({ slug: release.connectorSlug })],
-    });
-    await expect(
-      readApiTestConnectorCatalogCompatibilityEvaluations(),
-    ).resolves.toHaveLength(0);
-
     mockNow(new Date("2026-07-31T08:01:00.000Z"));
-    const reconciled = await syncCatalog();
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-
-    expect(reconciled.body.outcome).toBe("unchanged");
-    expect(reconciled.body.filtering.capabilityDigest).toBe(
-      EXPECTED_CAPABILITY_DIGEST,
-    );
-    expect(evaluations).toHaveLength(1);
-    expect(evaluations[0]?.payload).toStrictEqual({
-      filteredAuthMethods: [],
-    });
-    expect(
-      (await accept(catalogClient.list({ headers }), [200])).body,
-    ).toMatchObject({
-      connectors: [expect.objectContaining({ slug: release.connectorSlug })],
-    });
-  });
-
-  it("replaces the compatibility evaluation with a new catalog", async () => {
-    configureSource();
-    const first = buildRelease({
-      version: "2026-07-31.replacement-1",
-    });
-    serveObjects(catalogObjects([first], first));
-    await syncCatalog();
-    const firstEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(firstEvaluations).toHaveLength(1);
-    const firstCatalogDigest = firstEvaluations[0]?.catalogDigest;
-    if (firstCatalogDigest === undefined) {
-      throw new Error("Expected initial compatibility evaluations");
-    }
-
-    const second = buildRelease({
-      version: "2026-07-31.replacement-2",
-    });
-    serveObjects(catalogObjects([first, second], second));
-    const replaced = await syncCatalog();
-    const replacementEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-
-    expect(replacementEvaluations).toHaveLength(1);
-    expect(
-      replacementEvaluations.every((evaluation) => {
-        return evaluation.catalogDigest === replaced.body.active?.catalogDigest;
-      }),
-    ).toBeTruthy();
-    expect(
-      replacementEvaluations.some((evaluation) => {
-        return evaluation.catalogDigest === firstCatalogDigest;
-      }),
-    ).toBeFalsy();
-    expect(replacementEvaluations[0]?.payload).toStrictEqual({
-      filteredAuthMethods: [],
-    });
-  });
-
-  it("repairs missing and newer validator package authorities", async () => {
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-27.validation-authority-repair",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    const currentAuthority = apiTestConnectorCatalogValidationAuthority();
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-
-    await setApiTestConnectorCatalogValidationAuthority(null);
-    mockNow(new Date("2026-07-27T08:01:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-
-    // A release that serves after a newer one — a rollback, for example — must
-    // reclaim the attestation. Its readers accept only their own validator
-    // identity, so leaving the newer one behind would strand them on the full
-    // fallback for as long as that release serves.
-    await setApiTestConnectorCatalogValidationAuthority({
-      ...currentAuthority,
-      validatorVersion: "999999.0.0",
-    });
-    mockNow(new Date("2026-07-27T08:02:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-  });
-
-  it("preserves accepted authority across an API-only release", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const release = buildRelease({
-      version: "2026-07-27.validation-backend-release",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    const currentAuthority = apiTestConnectorCatalogValidationAuthority();
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-
-    setApiVersion("1.319.0");
-    mockNow(new Date("2026-07-27T08:01:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(currentAuthority);
-    const evaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(evaluations).toHaveLength(1);
-    expect(
-      evaluations.map((evaluation) => {
-        return evaluation.validationAuthority;
-      }),
-    ).toStrictEqual([currentAuthority]);
-  });
-
-  it("repairs accepted validation authority after a preview build", async () => {
-    configureSource();
-    mockEnv("ENV", "preview");
-    const firstCommit = "a".repeat(40);
-    const secondCommit = "b".repeat(40);
-    mockEnv("GIT_COMMIT_SHA", firstCommit);
-    const release = buildRelease({
-      version: "2026-07-27.validation-preview-build",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    const validatorVersion =
-      apiTestConnectorCatalogValidationAuthority().validatorVersion;
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual({
-      validatorVersion,
-      buildCommitSha: firstCommit,
-    });
-
-    mockEnv("GIT_COMMIT_SHA", secondCommit);
-    mockNow(new Date("2026-07-27T08:01:00.000Z"));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-    await expect(
-      readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual({
-      validatorVersion,
-      buildCommitSha: secondCommit,
+    const unchanged = await syncCatalog();
+    expect(unchanged.body.outcome).toBe("unchanged");
+    expect(unchanged.body.filtering).toStrictEqual({
+      ...synced.body.filtering,
+      evaluatedAt: "2026-07-31T08:01:00.000Z",
     });
   });
 
@@ -5301,7 +4954,7 @@ describe("connector catalog executable compatibility", () => {
     );
   });
 
-  it("reconciles configuration changes and retains rolling-build evaluations", async () => {
+  it("follows configuration changes with on-demand filtering", async () => {
     configureSource();
     mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
     const first = buildRelease({
@@ -5372,7 +5025,7 @@ describe("connector catalog executable compatibility", () => {
     expect(configured.body).toMatchObject({
       outcome: "rejected",
       state: "stale",
-      active: { catalogVersion: first.version },
+      active: servingRelease(first),
     });
     expect(configured.body.filtering).toMatchObject({
       evaluatedAt: "2026-07-15T08:20:00.000Z",
@@ -5389,21 +5042,6 @@ describe("connector catalog executable compatibility", () => {
       ...missingConfiguration.body.filtering,
       evaluatedAt: "2026-07-15T08:20:00.000Z",
     });
-    const rollingEvaluations =
-      await readApiTestConnectorCatalogCompatibilityEvaluations();
-    expect(rollingEvaluations).toHaveLength(2);
-    expect(
-      rollingEvaluations.every(({ payload }) => {
-        return !Array.isArray(payload);
-      }),
-    ).toBeTruthy();
-    expect(
-      new Set(
-        rollingEvaluations.map((evaluation) => {
-          return evaluation.catalogDigest;
-        }),
-      ),
-    ).toStrictEqual(new Set([missingConfiguration.body.active?.catalogDigest]));
 
     const second = buildRelease({
       version: "2026-07-15.steam-2",
@@ -5483,24 +5121,8 @@ describe("connector catalog executable compatibility", () => {
 });
 
 describe("connector catalog rejection and latest-valid retention", () => {
-  it("accepts 64 MiB in a rollback-isolated source generation and rejects 64 MiB plus one with latest-valid retention", async () => {
-    const bucket = configureSource();
-    const previousSourceId = previousConnectorCatalogSourceId(bucket);
-    await installApiTestConnectorCatalog({
-      catalogVersion: "2026-07-14.rollback-compatible",
-      sourceId: previousSourceId,
-    });
-    const previousSnapshot =
-      await readApiTestConnectorCatalogSnapshot(previousSourceId);
-    expect(previousSnapshot.catalogRawSize).toBeLessThanOrEqual(
-      PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES,
-    );
-    const previousRawBytes = gunzipSync(previousSnapshot.catalogGzip, {
-      maxOutputLength: PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES,
-    });
-    expect(previousRawBytes.byteLength).toBe(previousSnapshot.catalogRawSize);
-    expect(digest(previousRawBytes)).toBe(previousSnapshot.catalogDigest);
-
+  it("accepts 64 MiB and rejects 64 MiB plus one with latest-valid retention", async () => {
+    configureSource();
     expect(CONNECTOR_CATALOG_MAX_RAW_BYTES).toBe(64 * 1024 * 1024);
     const acceptedVersion = "2026-07-15.sixty-four-mib-limit";
     const unpadded = buildRelease({
@@ -5526,11 +5148,9 @@ describe("connector catalog rejection and latest-valid retention", () => {
 
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: accepted.version },
+      active: servingRelease(accepted),
+      pointer: { hash: accepted.digest, entryCount: 1 },
     });
-    await expect(
-      readApiTestConnectorCatalogSnapshot(previousSourceId),
-    ).resolves.toStrictEqual(previousSnapshot);
 
     const rejected = buildRelease({
       version: "2026-07-15.over-sixty-four-mib-limit",
@@ -5540,16 +5160,11 @@ describe("connector catalog rejection and latest-valid retention", () => {
 
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "rejected",
+      failureCode: "object-too-large",
       state: "stale",
-      active: { catalogVersion: accepted.version },
-      lastAttempt: {
-        outcome: "rejected",
-        failureCode: "object-too-large",
-      },
+      active: servingRelease(accepted),
+      pointer: { hash: accepted.digest, entryCount: 1 },
     });
-    await expect(
-      readApiTestConnectorCatalogSnapshot(previousSourceId),
-    ).resolves.toStrictEqual(previousSnapshot);
   });
 
   it("classifies unavailable and oversized objects before acceptance", async () => {
@@ -5558,7 +5173,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
     context.mocks.s3.send.mockRejectedValue(
       new Error("private source credentials and URL must stay private"),
     );
-    expectRejectedBeforeAcceptance(
+    expectRejectedRetainingServingPointer(
       (await syncCatalog()).body,
       "source-unavailable",
     );
@@ -5568,7 +5183,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
       ContentLength: 16 * 1024 + 1,
       Body: s3Body(Buffer.from("oversized")),
     });
-    expectRejectedBeforeAcceptance(
+    expectRejectedRetainingServingPointer(
       (await syncCatalog()).body,
       "object-too-large",
     );
@@ -5577,7 +5192,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
     context.mocks.s3.send.mockResolvedValue({
       Body: s3Body(Buffer.alloc(16 * 1024 + 1)),
     });
-    expectRejectedBeforeAcceptance(
+    expectRejectedRetainingServingPointer(
       (await syncCatalog()).body,
       "object-too-large",
     );
@@ -5600,7 +5215,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
 
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
   });
 
@@ -5641,7 +5256,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
 
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
   });
 
@@ -5674,7 +5289,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
 
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
   });
 
@@ -5728,7 +5343,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
 
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: release.version },
+      active: servingRelease(release),
     });
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const diagnostic = await accept(
@@ -6240,7 +5855,11 @@ describe("connector catalog rejection and latest-valid retention", () => {
     configureSource();
     const fixture = release();
     serveObjects(catalogObjects([fixture], fixture));
-    expectRejectedBeforeAcceptance((await syncCatalog()).body, expected);
+    expectRejectedRetainingServingPointer(
+      (await syncCatalog()).body,
+      expected,
+      fixture,
+    );
   });
 
   it("retains the latest valid snapshot and exposes sanitized status", async () => {
@@ -6258,18 +5877,13 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([accepted, invalid], invalid));
     const rejected = await syncCatalog();
+    expect(acceptedDigest).toBe(accepted.digest);
     expect(rejected.body).toMatchObject({
       outcome: "rejected",
+      failureCode: "invalid-pointer",
       state: "stale",
-      active: {
-        catalogVersion: accepted.version,
-        catalogDigest: acceptedDigest,
-      },
-      lastAttempt: {
-        outcome: "rejected",
-        failureCode: "invalid-pointer",
-      },
-      lastSuccessAt: FIRST_SYNC_TIME,
+      active: servingRelease(accepted),
+      pointer: { hash: accepted.digest },
     });
 
     // Staff diagnostics keep reporting the serving pointer; the rejection
@@ -6284,14 +5898,14 @@ describe("connector catalog rejection and latest-valid retention", () => {
     serveObjects(catalogObjects([accepted], accepted));
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "unchanged",
+      failureCode: null,
       state: "current",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: null,
+      active: servingRelease(accepted),
     });
   });
 
   it.each(["invalid-artifact", "relationship-mismatch"])(
-    "retains the active catalog while reusing a cached %s rejection",
+    "retains the active catalog while revalidating a %s rejection",
     async (failureCode) => {
       configureSource();
       const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
@@ -6309,398 +5923,65 @@ describe("connector catalog rejection and latest-valid retention", () => {
         },
       });
       serveObjects(catalogObjects([accepted, invalid], invalid));
-      const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
-      const freshRejection = await syncCatalog();
-      expect(freshRejection.body).toMatchObject({
-        outcome: "rejected",
-        state: "stale",
-        active: { catalogVersion: accepted.version },
-        lastAttempt: {
+      // No rejection is remembered: every attempt downloads and validates the
+      // pointer and catalog again while the accepted generation keeps serving.
+      for (const attempt of [1, 2]) {
+        const callsBeforeRejection = context.mocks.s3.send.mock.calls.length;
+        const rejection = await syncCatalog();
+        expect(rejection.body, `attempt ${attempt}`).toMatchObject({
+          outcome: "rejected",
           failureCode,
-          reusedCachedRejection: false,
-        },
-        rejectedCandidate: {
-          catalogVersion: invalid.version,
-          failureCode,
-          backendVersion: DEFAULT_API_VERSION,
-        },
-      });
-      expect(
-        context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
-      ).toBe(2);
+          state: "stale",
+          active: servingRelease(accepted),
+        });
+        expect(
+          context.mocks.s3.send.mock.calls
+            .slice(callsBeforeRejection)
+            .map((call) => {
+              return commandInput(call[0]).Key;
+            }),
+        ).toStrictEqual([ACTIVE_KEY, invalid.catalogKey]);
+        expect(JSON.stringify(rejection.body)).not.toContain(
+          invalid.catalogKey,
+        );
+      }
 
-      const callsBeforeCachedRejection =
-        context.mocks.s3.send.mock.calls.length;
-      const cachedRejection = await syncCatalog();
-      expect(cachedRejection.body).toMatchObject({
-        outcome: "rejected",
-        state: "stale",
-        active: { catalogVersion: accepted.version },
-        lastAttempt: {
-          failureCode,
-          reusedCachedRejection: true,
-        },
-        rejectedCandidate: {
-          catalogVersion: invalid.version,
-          failureCode,
-          backendVersion: DEFAULT_API_VERSION,
-        },
-      });
-      expect(
-        context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-      ).toBe(1);
-      expect(
-        commandInput(
-          context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-        ),
-      ).toMatchObject({
-        Key: ACTIVE_KEY,
-        IfNoneMatch: objectEtag(invalid.pointer),
-      });
-      expect(JSON.stringify(cachedRejection.body)).not.toContain(
-        invalid.catalogKey,
-      );
-      expect(JSON.stringify(cachedRejection.body)).not.toContain(
-        objectEtag(invalid.pointer),
-      );
       const recovered = buildRelease({ version: "2026-07-15.cache-recovered" });
       serveObjects(catalogObjects([accepted, invalid, recovered], recovered));
       expect((await syncCatalog()).body).toMatchObject({
         outcome: "accepted",
+        failureCode: null,
         state: "current",
-        active: { catalogVersion: recovered.version },
-        lastAttempt: { failureCode: null, reusedCachedRejection: false },
-        rejectedCandidate: null,
+        active: servingRelease(recovered),
       });
     },
   );
 
-  it("revalidates a rejection when the production backend version advances", async () => {
+  it("activates a pointer once its previously rejected catalog validates", async () => {
     configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const invalid = buildRelease({
-      version: "2026-07-25.backend-version-rejection",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: "1.318.0" },
-    });
-
-    setApiVersion("1.319.0");
-    const callsBeforeNewBackend = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeNewBackend,
-    ).toBe(2);
-
-    setApiVersion("1.318.0");
-    const callsBeforeOlderBackend = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: true },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeOlderBackend,
-    ).toBe(1);
-  });
-
-  it("activates a candidate after backend-version revalidation succeeds", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
     const candidate = buildRelease({
-      version: "2026-07-25.backend-version-acceptance",
+      version: "2026-07-25.revalidated-acceptance",
     });
     const rejectedObjects = new Map(catalogObjects([candidate], candidate));
     rejectedObjects.set(candidate.catalogKey, Buffer.from("{}"));
     serveObjects(rejectedObjects);
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: {
-        failureCode: "digest-mismatch",
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: { backendVersion: "1.318.0" },
-    });
+    expectRejectedRetainingServingPointer(
+      (await syncCatalog()).body,
+      "digest-mismatch",
+      candidate,
+    );
 
-    setApiVersion("1.319.0");
     serveObjects(catalogObjects([candidate], candidate));
     const callsBeforeAcceptance = context.mocks.s3.send.mock.calls.length;
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
+      failureCode: null,
       state: "current",
-      active: { catalogVersion: candidate.version },
-      lastAttempt: {
-        failureCode: null,
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: null,
+      active: servingRelease(candidate),
     });
     expect(
       context.mocks.s3.send.mock.calls.length - callsBeforeAcceptance,
     ).toBe(2);
-  });
-
-  it("uses build commits to invalidate preview rejections", async () => {
-    configureSource();
-    mockEnv("ENV", "preview");
-    mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
-    const invalid = buildRelease({
-      version: "2026-07-25.preview-commit-rejection",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: DEFAULT_API_VERSION },
-    });
-
-    mockEnv("GIT_COMMIT_SHA", "b".repeat(40));
-    const callsBeforeNewCommit = context.mocks.s3.send.mock.calls.length;
-    const revalidated = await syncCatalog();
-    expect(revalidated.body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: DEFAULT_API_VERSION },
-    });
-    expect(context.mocks.s3.send.mock.calls.length - callsBeforeNewCommit).toBe(
-      2,
-    );
-
-    const callsBeforeCachedCommit = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: true },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedCommit,
-    ).toBe(1);
-    expect(JSON.stringify(revalidated.body)).not.toContain("a".repeat(40));
-    expect(JSON.stringify(revalidated.body)).not.toContain("b".repeat(40));
-  });
-
-  it("keeps the newer rejection authority across concurrent backend versions", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const invalid = buildRelease({
-      version: "2026-07-25.concurrent-backend-rejection",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    const objects = catalogObjects([invalid], invalid);
-    const blocked = deferredGate();
-    const resume = deferredGate();
-    let blockedFirstCatalogRead = false;
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      const input = commandInput(command);
-      const key = typeof input.Key === "string" ? input.Key : undefined;
-      const bytes = key ? objects.get(key) : undefined;
-      if (!bytes) {
-        throw new Error("Object unavailable");
-      }
-      if (key === invalid.catalogKey && !blockedFirstCatalogRead) {
-        blockedFirstCatalogRead = true;
-        blocked.release();
-        await resume.promise;
-      }
-      const etag = objectEtag(bytes);
-      if (input.IfNoneMatch === etag) {
-        throw Object.assign(new Error("Not modified"), {
-          $metadata: { httpStatusCode: 304 },
-        });
-      }
-      return {
-        ContentLength: bytes.length,
-        Body: s3Body(bytes),
-        ETag: etag,
-      };
-    });
-
-    const olderSync = syncCatalog();
-    await blocked.promise;
-    setApiVersion("1.319.0");
-    const newerResult = await syncCatalog();
-    resume.release();
-    const olderResult = await olderSync;
-
-    expect(newerResult.body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: false },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    expect(olderResult.body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: true },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-    // The persisted rejection keeps the newer authority, so the newer
-    // backend reuses it instead of revalidating.
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: { reusedCachedRejection: true },
-      rejectedCandidate: { backendVersion: "1.319.0" },
-    });
-  });
-
-  it("re-evaluates a rejected identity when the pointer ETag changes", async () => {
-    configureSource();
-    const invalid = buildRelease({
-      version: "2026-07-15.changed-rejection-etag",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-artifact",
-    );
-
-    const changedPointer = Buffer.concat([invalid.pointer, Buffer.from("\n")]);
-    const changedObjects = new Map(catalogObjects([invalid], invalid));
-    changedObjects.set(ACTIVE_KEY, changedPointer);
-    serveObjects(changedObjects);
-    const callsBeforeReevaluation = context.mocks.s3.send.mock.calls.length;
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-artifact",
-    );
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeReevaluation,
-    ).toBe(2);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeReevaluation]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(invalid.pointer),
-    });
-  });
-
-  it("caches an oversized active pointer by its observed ETag", async () => {
-    configureSource();
-    const oversizedPointer = Buffer.alloc(16 * 1024 + 1);
-    const etag = objectEtag(oversizedPointer);
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const input = commandInput(command);
-      if (input.IfNoneMatch === etag) {
-        return Promise.reject(
-          Object.assign(new Error("Not modified"), {
-            $metadata: { httpStatusCode: 304 },
-          }),
-        );
-      }
-      return Promise.resolve({
-        ContentLength: oversizedPointer.length,
-        Body: s3Body(oversizedPointer),
-        ETag: etag,
-      });
-    });
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "object-too-large",
-    );
-
-    const callsBeforeCachedRejection = context.mocks.s3.send.mock.calls.length;
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "object-too-large",
-    );
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: etag,
-    });
-  });
-
-  it("revalidates an ETag-only pointer rejection after a backend release", async () => {
-    configureSource();
-    mockEnv("ENV", "production");
-    setApiVersion("1.318.0");
-    const invalid = buildRelease({
-      version: "2026-07-15.malformed-pointer-cache",
-      mutatePointer: (pointer) => {
-        pointer.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([invalid], invalid));
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-pointer",
-    );
-
-    const callsBeforeCachedRejection = context.mocks.s3.send.mock.calls.length;
-    expectRejectedBeforeAcceptance(
-      (await syncCatalog()).body,
-      "invalid-pointer",
-    );
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(invalid.pointer),
-    });
-
-    setApiVersion("1.319.0");
-    const callsBeforeNewBackend = context.mocks.s3.send.mock.calls.length;
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      lastAttempt: {
-        failureCode: "invalid-pointer",
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: {
-        catalogVersion: null,
-        catalogDigest: null,
-        backendVersion: "1.319.0",
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeNewBackend,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeNewBackend]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-    });
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeNewBackend]?.[0],
-      ),
-    ).toMatchObject({
-      IfNoneMatch: undefined,
-    });
   });
 
   it("retries transient candidate download failures", async () => {
@@ -6711,26 +5992,23 @@ describe("connector catalog rejection and latest-valid retention", () => {
     const unavailableObjects = new Map(catalogObjects([candidate], candidate));
     unavailableObjects.delete(releaseKeys(candidate.version).catalog);
     serveObjects(unavailableObjects);
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      state: "never-synced",
-      lastAttempt: { failureCode: "source-unavailable" },
-    });
+    expectRejectedRetainingServingPointer(
+      (await syncCatalog()).body,
+      "source-unavailable",
+      candidate,
+    );
 
     serveObjects(catalogObjects([candidate], candidate));
     const callsBeforeRetry = context.mocks.s3.send.mock.calls.length;
     expect((await syncCatalog()).body).toMatchObject({
       outcome: "accepted",
       state: "current",
-      active: { catalogVersion: candidate.version },
+      active: servingRelease(candidate),
     });
     expect(context.mocks.s3.send.mock.calls.length - callsBeforeRetry).toBe(2);
     expect(
       commandInput(context.mocks.s3.send.mock.calls[callsBeforeRetry]?.[0]),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(candidate.pointer),
-    });
+    ).toMatchObject({ Key: ACTIVE_KEY });
   });
 
   it("replaces current content when a catalog version is reused", async () => {
@@ -6745,14 +6023,15 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([conflicting], conflicting));
     const replacementResponse = await syncCatalog();
+    expect(originalResponse.body.active).toStrictEqual(
+      servingRelease(original),
+    );
     expect(replacementResponse.body).toMatchObject({
       outcome: "accepted",
       state: "current",
-      active: { catalogVersion: original.version },
+      active: servingRelease(conflicting),
     });
-    expect(replacementResponse.body.active?.catalogDigest).not.toBe(
-      originalResponse.body.active?.catalogDigest,
-    );
+    expect(conflicting.digest).not.toBe(original.digest);
   });
 
   it("does not return raw source failures", async () => {
@@ -6763,7 +6042,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
     context.mocks.s3.send.mockRejectedValue(new Error(privateError));
     const response = await syncCatalog();
 
-    expectRejectedBeforeAcceptance(response.body, "source-unavailable");
+    expectRejectedRetainingServingPointer(response.body, "source-unavailable");
     for (const privateText of [
       PRIVATE_VALUE,
       bucket,
