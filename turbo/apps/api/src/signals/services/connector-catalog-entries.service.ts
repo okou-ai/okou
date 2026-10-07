@@ -19,6 +19,10 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { catalogIdentityFromCapture } from "./connector-catalog-view";
+import {
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogRuntimeRow,
+} from "./connector-catalog-columns";
 
 export interface ImmutableConnectorCatalogCapture {
   readonly schemaVersion: number;
@@ -81,10 +85,7 @@ function capturedEntries(
                 schemaVersion: connectorCatalog.schemaVersion,
                 hash: connectorCatalog.hash,
               },
-              entry: {
-                slug: connectorCatalogEntries.slug,
-                payload: connectorCatalogEntries.payload,
-              },
+              entry: connectorCatalogRuntimeColumns,
             })
             .from(connectorCatalog)
             .leftJoin(
@@ -102,8 +103,17 @@ function capturedEntries(
             )
         : await db
             .select({
-              slug: connectorCatalogEntries.slug,
-              payload: connectorCatalogEntries.payload,
+              slug: connectorCatalogRuntimeColumns.slug,
+              label: connectorCatalogRuntimeColumns.label,
+              description: connectorCatalogRuntimeColumns.description,
+              category: connectorCatalogRuntimeColumns.category,
+              icon: connectorCatalogRuntimeColumns.icon,
+              tags: connectorCatalogRuntimeColumns.tags,
+              generation: connectorCatalogRuntimeColumns.generation,
+              authMethods: connectorCatalogRuntimeColumns.authMethods,
+              mcp: connectorCatalogRuntimeColumns.mcp,
+              skill: connectorCatalogRuntimeColumns.skill,
+              firewall: connectorCatalogRuntimeColumns.firewall,
             })
             .from(connectorCatalogEntries)
             .where(
@@ -117,10 +127,13 @@ function capturedEntries(
       if ("current" in row) {
         captured = row.current;
         if (row.entry !== null) {
-          entries.set(row.entry.slug, row.entry.payload);
+          entries.set(
+            row.entry.slug,
+            materializeConnectorCatalogRuntimeRow(row.entry),
+          );
         }
       } else {
-        entries.set(row.slug, row.payload);
+        entries.set(row.slug, materializeConnectorCatalogRuntimeRow(row));
       }
     }
     if (captured === undefined) {

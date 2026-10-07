@@ -35,6 +35,10 @@ import {
   connectorCatalogSlugRuntimeFromRows,
 } from "./connector-catalog-slug-source.service";
 import {
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogRuntimeRow,
+} from "./connector-catalog-columns";
+import {
   buildCustomConnectorRuntimeContext,
   customConnectorRuntimeExecutionState,
   loadEffectiveCustomConnectorPermissionBundle,
@@ -275,10 +279,7 @@ async function loadCustomSnapshot(args: {
             schemaVersion: connectorCatalog.schemaVersion,
             hash: connectorCatalog.hash,
           },
-          entry: {
-            slug: connectorCatalogEntries.slug,
-            payload: connectorCatalogEntries.payload,
-          },
+          entry: connectorCatalogRuntimeColumns,
         })
         .from(connectorCatalog)
         .leftJoin(
@@ -289,7 +290,15 @@ async function loadCustomSnapshot(args: {
       // Permission-bundle dependencies are metadata only. A missing entry
       // resolves through the fail-closed unavailable custom runtime row.
       const connectorCatalogSelection = connectorCatalogSlugRuntimeFromRows(
-        catalogRows,
+        catalogRows.map((row) => {
+          return {
+            ...row,
+            entry:
+              row.entry === null
+                ? null
+                : materializeConnectorCatalogRuntimeRow(row.entry),
+          };
+        }),
         {
           runtimeConnectorSlugs: [],
           metadataConnectorSlugs,
@@ -561,23 +570,30 @@ async function resolveConnectorRuntimeTargetStates(args: {
   const builtinCatalogSelection =
     builtinConnectorSlugs.length > 0
       ? connectorCatalogSlugRuntimeFromRows(
-          await args.db
-            .select({
-              current: {
-                schemaVersion: connectorCatalog.schemaVersion,
-                hash: connectorCatalog.hash,
-              },
-              entry: {
-                slug: connectorCatalogEntries.slug,
-                payload: connectorCatalogEntries.payload,
-              },
-            })
-            .from(connectorCatalog)
-            .leftJoin(
-              connectorCatalogEntries,
-              connectorCatalogSlugJoin(builtinConnectorSlugs),
-            )
-            .where(connectorCatalogCurrentWhere()),
+          (
+            await args.db
+              .select({
+                current: {
+                  schemaVersion: connectorCatalog.schemaVersion,
+                  hash: connectorCatalog.hash,
+                },
+                entry: connectorCatalogRuntimeColumns,
+              })
+              .from(connectorCatalog)
+              .leftJoin(
+                connectorCatalogEntries,
+                connectorCatalogSlugJoin(builtinConnectorSlugs),
+              )
+              .where(connectorCatalogCurrentWhere())
+          ).map((row) => {
+            return {
+              ...row,
+              entry:
+                row.entry === null
+                  ? null
+                  : materializeConnectorCatalogRuntimeRow(row.entry),
+            };
+          }),
           // Registered targets are required, but per target: a missing entry
           // becomes `unresolved` below, never an authoritative `absent`.
           {

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/connectors",
-  "version": "3.16.4",
+  "version": "3.16.5",
   "private": true,
   "type": "module",
   "exports": {
@@ -31,6 +31,10 @@
     "./connector-catalog/contracts": {
       "import": "./src/connector-catalog/contracts.ts",
       "types": "./src/connector-catalog/contracts.ts"
+    },
+    "./connector-catalog/entry-columns": {
+      "import": "./src/connector-catalog/entry-columns.ts",
+      "types": "./src/connector-catalog/entry-columns.ts"
     },
     "./connector-catalog/entry-payload": {
       "import": "./src/connector-catalog/entry-payload.ts",

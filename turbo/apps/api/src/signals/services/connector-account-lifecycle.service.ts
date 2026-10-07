@@ -67,7 +67,10 @@ import {
   connectorCredentialStatusForAccess,
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
-import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
+import {
+  materializeConnectorRuntimeAuthLookup,
+  type ConnectorRuntimeAuthLookup,
+} from "./connector-catalog-runtime.service";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -75,8 +78,12 @@ import {
 import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,
-  connectorCatalogSlugRuntimeFromRows,
+  connectorCatalogSlugSourceFromRows,
 } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCompatibilityColumns,
+  materializeConnectorCatalogCompatibilityRow,
+} from "./connector-catalog-columns";
 
 const log = logger("connector-account-lifecycle");
 
@@ -408,7 +415,7 @@ async function customTargetIsVisible(
 
 function builtinConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeLookup,
+  snapshot: ConnectorRuntimeAuthLookup,
   now: Date,
   includeScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -563,7 +570,7 @@ function customConnection(
 
 function projectConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeLookup | null,
+  snapshot: ConnectorRuntimeAuthLookup | null,
   now: Date,
   includeBuiltinScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -581,7 +588,7 @@ type ConnectorAccountSummaryGroup = Awaited<
 
 function projectSummaryGroup(
   row: ConnectorAccountSummaryGroup,
-  snapshot: ConnectorRuntimeLookup | null,
+  snapshot: ConnectorRuntimeAuthLookup | null,
   now: Date,
 ): {
   readonly target: ConnectorAccountTarget;
@@ -678,7 +685,7 @@ export async function listConnectorAccountSummaries(
   ]);
   // Every default account belongs to a group, so the groups name every
   // builtin connector this projection reads.
-  const snapshot = await loadConnectorAccountRuntimeSelection(db, groups);
+  const snapshot = await loadConnectorAccountAuthLookup(db, groups);
   const defaultConnections = new Map<string, ConnectorAccountConnection>();
   for (const row of defaultRows) {
     const connection = projectConnection(row, snapshot, now);
@@ -718,12 +725,12 @@ export async function listConnectorAccountSummaries(
 }
 
 /** Custom accounts project without the connector catalog. */
-async function loadConnectorTargetRuntimeSelection(
+async function loadConnectorTargetAuthLookup(
   db: ReadonlyDb,
   target: ConnectorAccountTarget,
-): Promise<ConnectorRuntimeLookup | null> {
+): Promise<ConnectorRuntimeAuthLookup | null> {
   return target.kind === "builtin"
-    ? await loadConnectorAccountRuntimeSelection(db, [
+    ? await loadConnectorAccountAuthLookup(db, [
         { connectorSlug: target.connectorSlug },
       ])
     : null;
@@ -754,7 +761,7 @@ export async function listConnectorAccountsForTarget(
   if (args.cursor && !cursor) {
     return { kind: "invalid-cursor" };
   }
-  const snapshot = await loadConnectorTargetRuntimeSelection(db, args.target);
+  const snapshot = await loadConnectorTargetAuthLookup(db, args.target);
   if (
     args.target.kind === "builtin" &&
     (!snapshot || !snapshot.connectors.has(args.target.connectorSlug))
@@ -835,14 +842,14 @@ export async function getConnectorAccount(
   if (!row) {
     return null;
   }
-  const snapshot = await loadConnectorAccountRuntimeSelection(db, [row]);
+  const snapshot = await loadConnectorAccountAuthLookup(db, [row]);
   return projectConnection(row, snapshot, nowDate());
 }
 
-async function loadConnectorAccountRuntimeSelection(
+async function loadConnectorAccountAuthLookup(
   db: ReadonlyDb,
   rows: readonly { readonly connectorSlug: string | null }[],
-): Promise<ConnectorRuntimeLookup | null> {
+): Promise<ConnectorRuntimeAuthLookup | null> {
   const connectorSlugs = rows.flatMap((row) => {
     const slug = connectorSlugSchema.safeParse(row.connectorSlug);
     return slug.success ? [slug.data] : [];
@@ -858,10 +865,7 @@ async function loadConnectorAccountRuntimeSelection(
             schemaVersion: connectorCatalog.schemaVersion,
             hash: connectorCatalog.hash,
           },
-          entry: {
-            slug: connectorCatalogEntries.slug,
-            payload: connectorCatalogEntries.payload,
-          },
+          entry: connectorCatalogCompatibilityColumns,
         })
         .from(connectorCatalog)
         .leftJoin(
@@ -871,9 +875,19 @@ async function loadConnectorAccountRuntimeSelection(
         .where(connectorCatalogCurrentWhere());
       // Account projections are presentation and single-item reads: a stored
       // account whose connector has no entry is omitted (404 for one item).
-      return connectorCatalogSlugRuntimeFromRows(catalogRows, {
-        runtimeConnectorSlugs: connectorSlugs,
-      });
+      const source = connectorCatalogSlugSourceFromRows(
+        catalogRows.map((row) => {
+          return {
+            ...row,
+            entry:
+              row.entry === null
+                ? null
+                : materializeConnectorCatalogCompatibilityRow(row.entry),
+          };
+        }),
+        connectorSlugs,
+      );
+      return materializeConnectorRuntimeAuthLookup(source);
     })(),
   );
   if (result.ok) {
@@ -904,7 +918,7 @@ export async function listConnectorAccountsByIds(
     ...args,
     connectionIds,
   });
-  const snapshot = await loadConnectorAccountRuntimeSelection(db, rows);
+  const snapshot = await loadConnectorAccountAuthLookup(db, rows);
   const now = nowDate();
   return rows.flatMap((row) => {
     const connection = projectConnection(row, snapshot, now);

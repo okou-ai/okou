@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.2...runner-executor-v0.5.3) (2026-10-07)
+
+
+### Refactoring
+
+* remove custom provider and gateway traces ([#37890](https://github.com/okou-ai/okou/issues/37890)) ([f59490d](https://github.com/okou-ai/okou/commit/f59490d298d2c0b3c3b903d005846e13524bc59e))
+
 ## [0.5.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.1...runner-executor-v0.5.2) (2026-10-07)
 
 

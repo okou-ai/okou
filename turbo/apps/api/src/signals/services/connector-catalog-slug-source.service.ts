@@ -38,15 +38,19 @@ export function connectorCatalogSlugJoin(slugs: readonly ConnectorSlug[]) {
   );
 }
 
-interface CatalogSlugRow {
+type CatalogCompatibilityEntry = Pick<
+  ImmutableConnectorCatalogEntry,
+  "slug" | "authMethods" | "mcp"
+>;
+
+interface CatalogSlugRow<
+  Entry extends CatalogCompatibilityEntry = ImmutableConnectorCatalogEntry,
+> {
   readonly current: {
     readonly schemaVersion: number;
     readonly hash: string;
   };
-  readonly entry: {
-    readonly slug: string;
-    readonly payload: ImmutableConnectorCatalogEntry;
-  } | null;
+  readonly entry: Entry | null;
 }
 
 interface CatalogSlugIdentityRow extends CatalogSlugRow {
@@ -56,7 +60,7 @@ interface CatalogSlugIdentityRow extends CatalogSlugRow {
   };
 }
 
-function currentFromRows<Row extends CatalogSlugRow>(
+function currentFromRows<Row extends CatalogSlugRow<CatalogCompatibilityEntry>>(
   rows: readonly Row[],
 ): Row["current"] {
   const current = rows[0]?.current;
@@ -71,14 +75,16 @@ function currentFromRows<Row extends CatalogSlugRow>(
 /**
  * Missing entries are omitted here, as if the slug were never authorized.
  */
-export function connectorCatalogSlugSourceFromRows(
-  rows: readonly CatalogSlugRow[],
+export function connectorCatalogSlugSourceFromRows<
+  Entry extends CatalogCompatibilityEntry,
+>(
+  rows: readonly CatalogSlugRow<Entry>[],
   requestedSlugs: readonly ConnectorSlug[],
-): ConnectorCatalogSlugSource {
+): ConnectorCatalogSlugSource<Entry> {
   currentFromRows(rows);
   const entries = new Map(
     rows.flatMap(({ entry }) => {
-      return entry === null ? [] : [[entry.slug, entry.payload] as const];
+      return entry === null ? [] : [[entry.slug, entry] as const];
     }),
   );
   const connectors = [...new Set(requestedSlugs)].flatMap((slug) => {

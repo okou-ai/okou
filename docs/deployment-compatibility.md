@@ -1,5 +1,64 @@
 # Deployment Compatibility
 
+## Connector catalog column reads (expand release)
+
+Migrations `1339_expand_connector_catalog_entry_columns` and
+`1340_backfill_connector_catalog_entry_columns` prepare removal of the large
+`connector_catalog_entries.payload`. The entry identity remains `(hash, slug)`
+and the catalog pointer remains `(schema_version, hash)`. No publication,
+Runner, App or API response schema changes.
+
+Independent columns hold `label`, `description`, `category`, `icon`, `tags`,
+`generation`, `auth_methods`, `mcp`, `skill`, `firewall` and
+`permission_summary`. The API computes the summary during immutable entry
+preparation using the existing permission and compact-default-policy semantics.
+It is application-derived, not part of the publisher artifact or its hash.
+Any later change to that derivation must explicitly backfill retained hashes;
+same-hash writer retries do not refresh immutable entries.
+
+The first migration only adds nullable columns. The second backfills every
+retained generation, separately from the DDL transaction so the data rewrite
+does not retain the column-addition lock. `mcp` stays SQL NULL for connectors
+without an MCP descriptor. New writers atomically insert every column together
+with `payload`; skill registration and complete-generation pointer publication
+keep their existing order and interruption behavior.
+
+**Reads.** List, search, discovery, status, connected briefs, one-click connect
+items and onboarding catalog reads select display/authentication columns and
+the stored permission summary. Account-status projections select only slug,
+auth methods and MCP metadata, reusing the existing executable-method rules.
+The display catalog cache contains no firewall or skill objects. Permission details select runtime fields only for the named
+slug. Runtime captures, sync, Pi recapture and staff diagnostics use independent
+column selections instead of returning the complete payload. Runtime consumers
+that materialize full executable connectors still load auth, skill and firewall
+fields; this change does not claim a new minimal runtime projection or measured
+S1–S3 latency improvement.
+
+**Mixed versions and bounded fallback.** Migrations must run before promotion
+of the new API. The previous API keeps reading and writing `payload`, including
+inserts after the backfill. Therefore the new columns are temporarily nullable,
+and `connector-catalog-columns.ts` uses SQL `COALESCE` per field for those rows.
+Permission-summary fallback computes the same summary inside PostgreSQL; no
+whole payload crosses the database boundary. MCP absence is distinguished from
+an old writer using the required `auth_methods` projection, so normal non-MCP
+reads do not consult payload. Both old and new writers can publish during this
+window. A new API against a pre-expansion database is unsupported. Rollback to
+the previous API remains supported because payload is preserved and dual-written.
+
+**Contraction gate.** [Follow-up #37899](https://github.com/okou-ai/okou/issues/37899)
+must verify that payload-only writers and
+rollback targets have drained, reconcile any remaining unprojected retained
+rows, remove the field-level fallbacks, and make required projections NOT NULL
+(`mcp` remains optional). Physically dropping payload additionally requires that
+no serving or rollback API still declares/writes it. Migrations precede API
+promotion, so this release's dual writer cannot serve while payload is dropped.
+Ship a payload-independent writer before the destructive migration unless an
+explicit deployment boundary guarantees the dual writer has drained. Do not
+combine these stages merely because reads no longer return payload.
+
+This PR prepares that contraction; it neither drops payload nor activates or
+releases production changes.
+
 ## Frozen model provider state dropped (2026-10-07)
 
 Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
