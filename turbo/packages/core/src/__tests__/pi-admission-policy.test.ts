@@ -10,8 +10,8 @@ import {
   SEEDED_ROUTED_MODELS,
 } from "./seeded-model-catalog";
 
-// Custom's combinatorial platform/BYOK/gateway matrix is retired. Enumerate
-// the remaining source boundary so adding catalog rows cannot reopen it.
+// Enumerate the platform source boundary so adding catalog rows cannot admit
+// another platform Pi route.
 describe("Auto-only platform admission", () => {
   it("admits only Auto from the platform, regardless of legacy catalog rows", () => {
     const admitted = SEEDED_ROUTED_MODELS.filter((model) => {

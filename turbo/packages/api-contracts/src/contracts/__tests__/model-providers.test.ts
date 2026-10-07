@@ -10,7 +10,6 @@ import {
   normalizeBuiltInModelId,
   getModelImageInputSupport,
   modelSupportsImageInput,
-  getSelectableProviderTypes,
   getBuiltInModelRouteVendors,
   getCatalogRunModelRouteAccess,
   normalizeRunModelId,
@@ -24,7 +23,6 @@ import {
   modelProviderCredentialScopeSchema,
   modelProviderResponseSchema,
   availableRunModelSchema,
-  upsertModelProviderRequestSchema,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
@@ -366,7 +364,6 @@ describe("model image input support", () => {
 describe("deepseek Responses provider", () => {
   it("uses the Codex framework with the DeepSeek API key", () => {
     expect(modelProviderTypeSchema.safeParse("deepseek").success).toBe(true);
-    expect(getSelectableProviderTypes()).toContain("deepseek");
     expect(getFrameworkForType("deepseek")).toBe("codex");
     expect(getSecretNameForType("deepseek")).toBe("DEEPSEEK_API_KEY");
     expect(getModels("deepseek")).toEqual([
@@ -376,15 +373,8 @@ describe("deepseek Responses provider", () => {
     expect(getDefaultModel("deepseek")).toBe("deepseek-flash");
   });
 
-  it("accepts the native default as a provider model with a matching runtime catalog", () => {
+  it("pairs the native default model with a matching runtime catalog", () => {
     const defaultModel = MODEL_PROVIDER_TYPES.deepseek.defaultModel;
-    expect(
-      upsertModelProviderRequestSchema.safeParse({
-        type: "deepseek",
-        secret: "test-deepseek-key",
-        selectedModel: defaultModel,
-      }).success,
-    ).toBe(true);
     expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
       modelCatalog: {
         models: expect.arrayContaining([
@@ -657,10 +647,6 @@ describe("model provider firewall placeholders", () => {
 describe("codex-oauth-token codex provider", () => {
   it("declares codex framework", () => {
     expect(getFrameworkForType("codex-oauth-token")).toBe("codex");
-  });
-
-  it("appears in selectable provider types", () => {
-    expect(getSelectableProviderTypes()).toContain("codex-oauth-token");
   });
 
   it("supports only the auth_json multi-auth shape with CHATGPT_* fields", () => {
@@ -952,12 +938,6 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
     },
   );
 
-  it("appear in selectable provider types", () => {
-    const selectable = getSelectableProviderTypes();
-    expect(selectable).toContain("openrouter-codex");
-    expect(selectable).toContain("vercel-ai-gateway-codex");
-  });
-
   it("share the secretName with their claude-code twin gateway", () => {
     // Same API key powers both protocols on the same upstream gateway.
     // The codex twin must not invent a separate secret environment name.
@@ -1012,12 +992,6 @@ describe("custom model gateway provider types", () => {
     expect(getFrameworkForType("custom-openai-responses")).toBe("codex");
   });
 
-  it("stay out of the provider picker", () => {
-    const selectable = getSelectableProviderTypes();
-    expect(selectable).not.toContain("custom-anthropic-messages");
-    expect(selectable).not.toContain("custom-openai-responses");
-  });
-
   it("are accepted by modelProviderTypeSchema so stored rows parse", () => {
     expect(
       modelProviderTypeSchema.safeParse("custom-anthropic-messages").success,
@@ -1041,18 +1015,6 @@ describe("custom model gateway provider types", () => {
       expect(getDefaultModel(type)).toBeUndefined();
       expect(hasModelSelection(type)).toBe(false);
     }
-  });
-
-  it("leave the genuine Vercel BYOK types intact", () => {
-    expect(getSecretNameForType("vercel-ai-gateway")).toBe(
-      "VERCEL_AI_GATEWAY_API_KEY",
-    );
-    expect(
-      getModelProviderEnvBindings("vercel-ai-gateway-codex")?.OPENAI_BASE_URL,
-    ).toBe("https://ai-gateway.vercel.sh/v1");
-    const selectable = getSelectableProviderTypes();
-    expect(selectable).toContain("vercel-ai-gateway");
-    expect(selectable).toContain("vercel-ai-gateway-codex");
   });
 });
 
@@ -1107,12 +1069,5 @@ describe("built-in provider discriminator contract", () => {
     expect(getSecretNameForType("built-in")).toBeUndefined();
     expect(getModelProviderFirewall("anthropic-api-key")).toBeDefined();
     expect(MODEL_PROVIDER_FIREWALL_CONFIGS).not.toHaveProperty("built-in");
-
-    const selectable = getSelectableProviderTypes();
-    expect(
-      selectable.filter((type) => {
-        return type === "built-in";
-      }),
-    ).toHaveLength(1);
   });
 });

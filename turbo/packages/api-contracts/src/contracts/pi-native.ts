@@ -207,11 +207,9 @@ function validateMessagesEndpoint(
     // Captured global contexts remain valid; US is accepted only for the
     // verified platform-owned route.
     const eligibleUsBase =
-      config.route === "openrouter-api-key"
-        ? getOpenRouterBaseUrl("messages", {
-            credentialOwner: config.credentialOwner,
-            model: config.model,
-          })
+      config.route === "openrouter-api-key" &&
+      config.credentialOwner === "builtin"
+        ? getOpenRouterBaseUrl("messages", { model: config.model })
         : policy[0];
     if (
       (config.baseUrl !== policy[0] && config.baseUrl !== eligibleUsBase) ||

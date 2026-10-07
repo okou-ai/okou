@@ -59,7 +59,7 @@ export interface CompiledModelRuntime {
   readonly selectedModel: string;
   readonly upstreamModel: string;
   readonly providerType: string;
-  readonly credentialOwner: "builtin" | "organization" | "member";
+  readonly credentialOwner: "builtin" | "member";
   readonly transport: ModelTransport;
   readonly authentication: ModelAuthentication;
   readonly environment: Readonly<Record<string, string>>;

@@ -755,37 +755,6 @@ export function normalizeRunModelId(model: string): string {
   return CANONICAL_RUN_MODEL_ALIASES[model] ?? model;
 }
 
-/**
- * Provider types hidden from user-facing selection UI.
- * `aws-bedrock` and `azure-foundry` lack static firewall support (dynamic URLs
- * or SigV4), so token replacement cannot be used.  New selection is blocked
- * until a proper solution is implemented; existing configurations continue to
- * work.  The custom gateway types are never picked directly either: they are
- * derived from a model provider surface's protocol.
- */
-const HIDDEN_PROVIDER_LIST = [
-  "aws-bedrock",
-  "azure-foundry",
-  "custom-anthropic-messages",
-  "custom-openai-responses",
-] as const;
-
-const HIDDEN_PROVIDER_TYPES: ReadonlySet<ModelProviderType> = new Set(
-  HIDDEN_PROVIDER_LIST,
-);
-
-/**
- * Get provider types available for user selection.
- * Excludes providers that are hidden from the UI (e.g., those without token replacement support).
- */
-export function getSelectableProviderTypes(): ModelProviderType[] {
-  return (Object.keys(MODEL_PROVIDER_TYPES) as ModelProviderType[]).filter(
-    (type) => {
-      return !HIDDEN_PROVIDER_TYPES.has(type);
-    },
-  );
-}
-
 export const modelProviderTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
 export const modelProviderWriteTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
 
@@ -963,19 +932,6 @@ export function getModelProviderCodexCatalogForModel(
   };
 }
 
-const CUSTOM_GATEWAY_PROVIDER_TYPES: ReadonlySet<ModelProviderType> = new Set([
-  "custom-anthropic-messages",
-  "custom-openai-responses",
-]);
-
-/**
- * Check whether a provider type routes through an org-configured gateway
- * surface. Its upstream is stored per surface in `model_provider_surfaces`.
- */
-export function isCustomGatewayProviderType(type: ModelProviderType): boolean {
-  return CUSTOM_GATEWAY_PROVIDER_TYPES.has(type);
-}
-
 /**
  * Get available models for a model provider type
  * Returns undefined for providers without model selection
@@ -1109,7 +1065,8 @@ export type ModelProviderListResponse = z.infer<
  * Multi-auth providers use `authMethod` + `secrets` (map)
  */
 export const upsertModelProviderRequestSchema = z.object({
-  type: modelProviderWriteTypeSchema,
+  // Members connect only their own subscription accounts.
+  type: z.enum(["claude-code-oauth-token", "codex-oauth-token"]),
   secret: z.string().min(1).optional(), // Legacy single secret
   authMethod: z.string().optional(), // For multi-auth providers
   secrets: z.record(z.string(), z.string()).optional(), // For multi-auth providers

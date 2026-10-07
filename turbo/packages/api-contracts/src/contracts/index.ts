@@ -434,7 +434,6 @@ export {
   // Provider compatibility
   normalizeRunModelId,
   // Selectable provider filtering
-  getSelectableProviderTypes,
   isBuiltInModelProviderType,
   // Multi-auth provider support
   hasAuthMethods,

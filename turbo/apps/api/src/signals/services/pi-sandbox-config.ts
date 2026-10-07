@@ -122,7 +122,6 @@ export function shouldUsePiExecution(args: {
 
 interface PiModelProviderConfigInput {
   readonly upstreamModel?: string;
-  readonly credentialOwner?: "builtin" | "organization" | "member";
   readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
@@ -276,10 +275,9 @@ function resolveResponsesPiModelConfig(
     concreteType.data,
     "openai-responses",
     // Captured global endpoints remain readable; only a captured US endpoint
-    // selects the owner-gated US route.
-    provider.credentialOwner &&
-      provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
-      ? { credentialOwner: provider.credentialOwner, model }
+    // selects the model-gated US route.
+    provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
+      ? { model }
       : undefined,
   );
   if (!endpoint) {

@@ -11,7 +11,6 @@ import type {
   StoredConnectorPermissionBaseline,
   ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
-import type { PiModelConfigV4 } from "@okouai/api-contracts/contracts/pi-native";
 import type {
   ExpandedFirewallConfig,
   ExecutionFirewalls,
@@ -58,7 +57,7 @@ export interface AgentRunRequestAgent {
 }
 
 export interface ResolvedModelProviderEnvironment {
-  readonly credentialOwner: PiModelConfigV4["credentialOwner"];
+  readonly credentialOwner: "builtin" | "member";
   readonly authMethod?: string | null;
   readonly piModelConfig?: PiModelConfig;
   readonly id: string | null;

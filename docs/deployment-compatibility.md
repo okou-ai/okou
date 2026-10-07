@@ -1,5 +1,16 @@
 # Deployment Compatibility
 
+## Retired member API-key provider writes
+
+`POST /api/me/model-providers` now accepts only `claude-code-oauth-token` and
+`codex-oauth-token` in its request schema, so a retired API-key or gateway type
+fails request validation (`400`) instead of reaching the former `404` branch.
+Current Platform, CLI and E2E callers send only those two subscription types,
+so they work against either API version. A stale client that still submits a
+retired type was already rejected; it now receives `400` instead of `404`. No persisted shape, Runner payload or captured route
+changes: OpenRouter US selection still depends only on the captured upstream
+model, and every OpenRouter credential is platform-owned.
+
 ## Additive immutable connector entry columns
 
 Migrations `1328_connector_catalog_entry_columns` and

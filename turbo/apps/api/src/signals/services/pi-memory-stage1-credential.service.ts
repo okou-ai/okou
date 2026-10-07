@@ -276,10 +276,7 @@ async function builtinCredential(
       model: route.upstreamModel,
       baseUrl:
         provider === "openrouter"
-          ? getOpenRouterBaseUrl("responses", {
-              credentialOwner: "builtin",
-              model: route.upstreamModel,
-            })
+          ? getOpenRouterBaseUrl("responses", { model: route.upstreamModel })
           : endpoint.baseUrl,
       dialect: "openai-responses",
       transport: "sse",

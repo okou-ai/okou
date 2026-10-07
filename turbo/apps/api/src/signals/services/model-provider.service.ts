@@ -180,10 +180,7 @@ function builtInModelProviderEnvironmentFromSnapshot(args: {
     key.apiKey,
     route.upstreamModel,
   );
-  const routing = {
-    credentialOwner: "builtin" as const,
-    model: route.upstreamModel,
-  };
+  const routing = { model: route.upstreamModel };
   const firewall = getModelProviderFirewall(route.providerType, routing);
   const usesUsEndpoint = firewall?.apis.some((api) => {
     return api.base.startsWith(`${OPENROUTER_US_ORIGIN}/`);

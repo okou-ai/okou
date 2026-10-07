@@ -105,7 +105,6 @@ export {
   allowsCustomModel,
   getCustomModelPlaceholder,
   normalizeRunModelId,
-  getSelectableProviderTypes,
   hasAuthMethods,
   getAuthMethodsForType,
   getDefaultAuthMethod,

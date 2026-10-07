@@ -326,19 +326,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
     }
     expect(initial.body.modelProviders).toStrictEqual([]);
 
-    const unsupported = await api.upsertPersonalModelProvider(
-      admin,
-      {
-        type: "anthropic-api-key",
-        secret: "bdd-anthropic-key",
-      },
-      [404],
-    );
-    expectApiError(unsupported.body);
-    expect(unsupported.body.error.message).toBe(
-      'Provider "anthropic-api-key" not found',
-    );
-
     const missingSecret = await api.upsertPersonalModelProvider(
       admin,
       {

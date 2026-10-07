@@ -1,17 +1,17 @@
 # Platform OpenRouter US routing
 
 Platform OpenRouter routing selects `https://us.openrouter.ai` for all users,
-but only for platform-owned keys and the product-approved non-DeepSeek
-model/API pairs in `openrouter-routing.ts`. It does not change built-in
-provider priority or any DeepSeek endpoint. BYOK, connection presets, saved
-URLs, other direct providers and model defaults are unchanged.
+but only for the product-approved non-DeepSeek model/API pairs in
+`openrouter-routing.ts`. Every OpenRouter credential is a platform-owned key;
+members connect only their own Claude or ChatGPT/Codex subscriptions, which
+never use OpenRouter. It does not change built-in provider priority or any
+DeepSeek endpoint. Other direct providers and model defaults are unchanged.
 
 Platform-owned built-in DeepSeek models always skip the direct `deepseek`
 candidate and evaluate the remaining candidates in their canonical order for
 all users. OpenRouter is currently the only remaining candidate, but the policy
 does not restrict future fallback providers to OpenRouter. DeepSeek OpenRouter
 candidates always use the global endpoint.
-BYOK DeepSeek credentials keep their direct endpoint.
 
 The 2026-09-13 tests and official US catalog comparison in
 [#33565](https://github.com/vm0-ai/vm0/issues/33565), plus the 2026-09-18
