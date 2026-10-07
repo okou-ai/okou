@@ -173,6 +173,9 @@ describe("Run connector catalog selection", () => {
       "X_TOKEN",
     );
     await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+    // openai is still enabled but has no entry in the replacement generation;
+    // that required connector would reject the next input, so drop it first.
+    await createRunsApi(context).enableAgentConnectors(actor, agentId, ["x"]);
     const next = await sendChatRun(actor, {
       agentId,
       prompt: "use the replacement catalog",

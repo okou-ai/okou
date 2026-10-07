@@ -28,8 +28,7 @@ function builtinMcpConnectors(args: {
   readonly sourceIds: Readonly<Record<string, string>>;
 }): Computed<Promise<readonly McpConnector[]>> {
   return computed(async (get) => {
-    const slugs = Object.keys(args.sourceIds);
-    if (slugs.length === 0) {
+    if (Object.keys(args.sourceIds).length === 0) {
       return [];
     }
     const rows = await get(db$)
@@ -66,18 +65,25 @@ function builtinMcpConnectors(args: {
           eq(agentRuns.userId, args.userId),
         ),
       );
-    if (rows.length === 0) {
+    const admitted = rows.flatMap((row) => {
+      return row.slug !== null && args.sourceIds[row.slug] === row.id
+        ? [{ ...row, slug: row.slug }]
+        : [];
+    });
+    if (admitted.length === 0) {
       return [];
     }
+    // These accounts were admitted to the Run. A missing catalog entry must
+    // not silently shrink the Run's MCP scope, so it fails the request.
     const snapshot = await get(
       immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: slugs,
+        requestedConnectorSlugs: admitted.map((row) => {
+          return row.slug;
+        }),
+        missingEntries: "reject",
       }),
     );
-    return rows.flatMap((row): McpConnector[] => {
-      if (row.slug === null || args.sourceIds[row.slug] !== row.id) {
-        return [];
-      }
+    return admitted.flatMap((row): McpConnector[] => {
       const connector = getConnectorRuntimeConnector(snapshot, row.slug);
       const mcp = connector?.catalogConnector.mcp;
       const runtimeMethod = connector?.methods.get(row.authMethod);

@@ -51,6 +51,11 @@ interface ConnectorCatalogConnectorReadArgs extends ConnectorCatalogReadArgs {
   readonly connectorSlug: ConnectorSlug;
 }
 
+/**
+ * Every caller here is an optional read (connected briefs, connect items by
+ * slug, single-item status and permission GETs), so a slug without an entry
+ * is omitted or becomes 404. Required paths reject through their own readers.
+ */
 async function loadSlugSource(db: ReadonlyDb, slugs: readonly ConnectorSlug[]) {
   return connectorCatalogSlugSourceFromRows(
     await db

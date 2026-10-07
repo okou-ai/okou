@@ -329,7 +329,8 @@ export const loadStoredBuiltinConnectorRuntimeSnapshot$ = command(
 /**
  * Loads only the catalog entries for the given stored connectors from the
  * immutable entries, instead of decoding the full catalog. Empty stored
- * sets retain the local null contract; missing current/manifest rows fail fast.
+ * sets retain the local null contract; a missing current row fails fast. This
+ * list is presentation, so a stored connection without an entry is omitted.
  */
 function loadStoredBuiltinConnectorRuntimeSelection(
   connectorSlugs: readonly string[],
@@ -343,7 +344,10 @@ function loadStoredBuiltinConnectorRuntimeSelection(
       return null;
     }
     return await get(
-      immutableConnectorRuntimeSelection({ requestedConnectorSlugs }),
+      immutableConnectorRuntimeSelection({
+        requestedConnectorSlugs,
+        missingEntries: "omit",
+      }),
     );
   });
 }

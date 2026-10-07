@@ -869,7 +869,12 @@ async function loadConnectorAccountRuntimeSelection(
           connectorCatalogSlugJoin(connectorSlugs),
         )
         .where(connectorCatalogCurrentWhere());
-      return connectorCatalogSlugRuntimeFromRows(catalogRows, connectorSlugs);
+      // Account projections are presentation and single-item reads: a stored
+      // account whose connector has no entry is omitted (404 for one item).
+      return connectorCatalogSlugRuntimeFromRows(catalogRows, {
+        runtimeConnectorSlugs: connectorSlugs,
+        missingRuntimeEntries: "omit",
+      });
     })(),
   );
   if (result.ok) {

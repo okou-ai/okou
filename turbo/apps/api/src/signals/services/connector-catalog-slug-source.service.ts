@@ -7,9 +7,11 @@ import type { ImmutableConnectorCatalogEntry } from "@okouai/db/jsonb-contracts/
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
+  assertRequiredConnectorCatalogEntries,
   ExternalConnectorCatalogUnavailableError,
   type ConnectorCatalogSlugSource,
 } from "./connector-catalog-external-reader.service";
+import type { MissingConnectorCatalogEntryPolicy } from "./connector-catalog-entries.service";
 import {
   connectorCatalogExecutableCapabilityState,
   evaluateConnectorCatalogCompatibility,
@@ -68,7 +70,11 @@ function currentFromRows<Row extends CatalogSlugRow>(
   return current;
 }
 
-/** Missing entries are absent; callers enforce their required-slug contract. */
+/**
+ * Missing entries are omitted here. Optional readers (search, single-item GET,
+ * discovery) use this directly; required callers use
+ * `connectorCatalogSlugRuntimeFromRows` with `missingRuntimeEntries: "reject"`.
+ */
 export function connectorCatalogSlugSourceFromRows(
   rows: readonly CatalogSlugRow[],
   requestedSlugs: readonly ConnectorSlug[],
@@ -97,15 +103,34 @@ export function connectorCatalogSlugSourceFromRows(
   };
 }
 
+/**
+ * `missingRuntimeEntries` is the caller's required-slug decision for runtime
+ * slugs; metadata-only dependencies are always optional.
+ */
 export function connectorCatalogSlugRuntimeFromRows(
   rows: readonly CatalogSlugRow[],
-  runtimeConnectorSlugs: readonly ConnectorSlug[],
-  metadataConnectorSlugs: readonly ConnectorSlug[] = [],
+  args: {
+    readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
+    readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
+    readonly missingRuntimeEntries: MissingConnectorCatalogEntryPolicy;
+  },
 ) {
+  const runtimeConnectorSlugs = args.runtimeConnectorSlugs;
+  const metadataConnectorSlugs = args.metadataConnectorSlugs ?? [];
   const source = connectorCatalogSlugSourceFromRows(rows, [
     ...runtimeConnectorSlugs,
     ...metadataConnectorSlugs,
   ]);
+  if (args.missingRuntimeEntries === "reject") {
+    assertRequiredConnectorCatalogEntries(
+      new Set(
+        source.connectors.map((connector) => {
+          return connector.slug;
+        }),
+      ),
+      runtimeConnectorSlugs,
+    );
+  }
   return materializeConnectorRuntimeLookup({
     ...source,
     runtimeConnectorSlugs: uniqueSortedConnectorSlugs(runtimeConnectorSlugs),
