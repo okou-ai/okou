@@ -23,8 +23,10 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-// Same order of magnitude as the official publication (~4,600 entries).
-const LARGE_EXTRA_COUNT = 4600;
+// Beyond the onboarding/Runner subset and across several 100-row entry insert
+// batches, including a partial final batch. Completeness does not depend on
+// matching the ~4,600-entry official publication size.
+const MULTI_BATCH_EXTRA_COUNT = 250;
 
 function seedClient() {
   return setupApp({ context, routes: cronConnectorCatalogRoutes })(
@@ -66,9 +68,9 @@ function sortedSlugs(connectors: readonly { readonly slug: string }[]) {
     .sort();
 }
 
-test("a large official catalog is installed completely and served by public discovery and the Runner firewall", async () => {
+test("a multi-batch official catalog is installed completely and served by public discovery and the Runner firewall", async () => {
   const publication = createPublicConnectorCatalog(context);
-  const artifact = previewConnectorCatalogFixture(LARGE_EXTRA_COUNT);
+  const artifact = previewConnectorCatalogFixture(MULTI_BATCH_EXTRA_COUNT);
   const published = publication.stage(artifact);
   mockEnv("ENV", "preview");
   const seeded = await accept(seed(), [200]);
@@ -83,16 +85,16 @@ test("a large official catalog is installed completely and served by public disc
     expect.arrayContaining([
       "github",
       previewCatalogExtraSlug(0),
-      previewCatalogExtraSlug(LARGE_EXTRA_COUNT - 1),
+      previewCatalogExtraSlug(MULTI_BATCH_EXTRA_COUNT - 1),
     ]),
   );
-  const lastSlug = previewCatalogExtraSlug(LARGE_EXTRA_COUNT - 1);
+  const lastSlug = previewCatalogExtraSlug(MULTI_BATCH_EXTRA_COUNT - 1);
   const last = await accept(
     client.get({ headers: authHeaders(), params: { connectorSlug: lastSlug } }),
     [200],
   );
   expect(last.body.connector.label).toBe(
-    `Preview Catalog ${LARGE_EXTRA_COUNT - 1}`,
+    `Preview Catalog ${MULTI_BATCH_EXTRA_COUNT - 1}`,
   );
   const discovered = await accept(
     client.discovery({ headers: authHeaders(), query: { keyword: lastSlug } }),
