@@ -32,8 +32,8 @@ describe("Pi session construction digest", () => {
 
   it("isolates returned limit snapshots from live models and later digests", async () => {
     const config = {
-      provider: "openai",
-      model: "gpt-6-luna",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
       baseUrl: "https://snapshot.example.test",
       apiKey: "snapshot-isolation-test",
       dialect: "openai-responses",
@@ -49,14 +49,19 @@ describe("Pi session construction digest", () => {
     const document = await computePiSessionConstructionDocument();
 
     // JavaScript tooling may transform the returned document despite readonly types.
-    Object.assign(document.modelLimitOverrides.openai["gpt-6-luna"], {
-      contextWindow: 4_096,
-      maxTokens: 2_048,
-    });
+    Object.assign(
+      document.modelLimitOverrides.openrouter["deepseek/deepseek-v4.1-flash"],
+      {
+        contextWindow: 4_096,
+        maxTokens: 2_048,
+      },
+    );
 
     expect(resolvePiAgentModel(config)).toMatchObject(limits);
     const next = await computePiSessionConstructionDocument();
-    expect(next.modelLimitOverrides.openai["gpt-6-luna"]).toStrictEqual(limits);
+    expect(
+      next.modelLimitOverrides.openrouter["deepseek/deepseek-v4.1-flash"],
+    ).toStrictEqual(limits);
     expect(await computePiSessionConstructionDigest()).toBe(digest);
   });
 

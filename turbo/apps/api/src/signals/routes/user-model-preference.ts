@@ -37,13 +37,13 @@ import {
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 
-function configuredPolicyProviderType(
+function configuredRunModelProviderType(
   catalog: ModelCatalog,
-  policy: AvailableRunModel | undefined,
+  runModel: AvailableRunModel | undefined,
 ): string | null {
-  return policy &&
-    isMemberRunModelConfigurable(policy, memberRunModelCatalog(catalog))
-    ? getMemberRunModelRoute(policy).providerType
+  return runModel &&
+    isMemberRunModelConfigurable(runModel, memberRunModelCatalog(catalog))
+    ? getMemberRunModelRoute(runModel).providerType
     : null;
 }
 
@@ -51,7 +51,7 @@ function validateModelSettingsPatch(args: {
   readonly catalog: ModelCatalog;
   readonly patch: ModelSettingsPatch | undefined;
   readonly selectedModel: string | null;
-  readonly configuredPolicy: AvailableRunModel | undefined;
+  readonly configuredRunModel: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (args.patch === undefined) {
     return undefined;
@@ -64,7 +64,7 @@ function validateModelSettingsPatch(args: {
       args.catalog,
       args.patch.model,
       args.patch.effort,
-      configuredPolicyProviderType(args.catalog, args.configuredPolicy),
+      configuredRunModelProviderType(args.catalog, args.configuredRunModel),
     )
   ) {
     return badRequestMessage(
@@ -77,17 +77,17 @@ function validateModelSettingsPatch(args: {
 function validateUltrafastServiceTier(args: {
   readonly catalog: ModelCatalog;
   readonly requested: boolean;
-  readonly configuredPolicy: AvailableRunModel | undefined;
+  readonly configuredRunModel: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (!args.requested) {
     return undefined;
   }
   if (
-    !args.configuredPolicy ||
+    !args.configuredRunModel ||
     !isCatalogUltrafastServiceTierSupported(
       args.catalog,
-      args.configuredPolicy.model,
-      configuredPolicyProviderType(args.catalog, args.configuredPolicy),
+      args.configuredRunModel.model,
+      configuredRunModelProviderType(args.catalog, args.configuredRunModel),
     )
   ) {
     return badRequestMessage("Ultrafast is unavailable for this model route");
@@ -98,27 +98,27 @@ function validateUltrafastServiceTier(args: {
 function validatePriorityServiceTier(args: {
   readonly catalog: ModelCatalog;
   readonly requested: boolean;
-  readonly configuredPolicy: AvailableRunModel | undefined;
+  readonly configuredRunModel: AvailableRunModel | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (!args.requested) {
     return undefined;
   }
   if (
-    !args.configuredPolicy ||
+    !args.configuredRunModel ||
     !isMemberRunModelConfigurable(
-      args.configuredPolicy,
+      args.configuredRunModel,
       memberRunModelCatalog(args.catalog),
     )
   ) {
     return badRequestMessage("Invalid request");
   }
   if (
-    (args.configuredPolicy.subscriptionOptions &&
-      args.configuredPolicy.subscriptionOptions.serviceTier !== "priority") ||
+    (args.configuredRunModel.subscriptionOptions &&
+      args.configuredRunModel.subscriptionOptions.serviceTier !== "priority") ||
     !isCatalogFastServiceTierSupported(
       args.catalog,
-      args.configuredPolicy.model,
-      configuredPolicyProviderType(args.catalog, args.configuredPolicy),
+      args.configuredRunModel.model,
+      configuredRunModelProviderType(args.catalog, args.configuredRunModel),
     )
   ) {
     return badRequestMessage(
@@ -202,8 +202,8 @@ const updateUserModelPreferenceInner$ = command(
 
     // Every write carries the run preference, including one that only changes
     // a media model. Echoing the stored run preference unchanged is not a new
-    // selection, so it skips admission; otherwise a model the org policy has
-    // since dropped would block the member from changing their image model.
+    // selection, so it skips admission; otherwise a model that has since
+    // become unavailable would block the member from changing their image model.
     const stored = await get(
       userModelPreference({ orgId: auth.orgId, userId: auth.userId }),
     );
@@ -223,7 +223,7 @@ const updateUserModelPreferenceInner$ = command(
       return data;
     }
 
-    const policies =
+    const runModels =
       data.selectedModel !== null
         ? await set(
             listAvailableRunModels$,
@@ -231,10 +231,10 @@ const updateUserModelPreferenceInner$ = command(
             signal,
           )
         : undefined;
-    const configuredPolicy = policies?.models.find((policy) => {
-      return policy.model === data.selectedModel;
+    const configuredRunModel = runModels?.models.find((runModel) => {
+      return runModel.model === data.selectedModel;
     });
-    if (data.selectedModel !== null && !configuredPolicy) {
+    if (data.selectedModel !== null && !configuredRunModel) {
       return badRequestMessage("Invalid request");
     }
 
@@ -242,8 +242,8 @@ const updateUserModelPreferenceInner$ = command(
     signal.throwIfAborted();
     if (
       modelSettingsPatch &&
-      configuredPolicy?.subscriptionOptions &&
-      !configuredPolicy.subscriptionOptions.efforts.includes(
+      configuredRunModel?.subscriptionOptions &&
+      !configuredRunModel.subscriptionOptions.efforts.includes(
         modelSettingsPatch.effort,
       )
     ) {
@@ -256,7 +256,7 @@ const updateUserModelPreferenceInner$ = command(
       catalog,
       patch: modelSettingsPatch,
       selectedModel: data.selectedModel,
-      configuredPolicy,
+      configuredRunModel,
     });
     if (modelSettingsError) {
       return modelSettingsError;
@@ -266,12 +266,12 @@ const updateUserModelPreferenceInner$ = command(
       validateUltrafastServiceTier({
         catalog,
         requested: data.serviceTier === "ultrafast",
-        configuredPolicy,
+        configuredRunModel,
       }) ??
       validatePriorityServiceTier({
         catalog,
         requested: data.serviceTier === "priority",
-        configuredPolicy,
+        configuredRunModel,
       });
     if (serviceTierError) {
       return serviceTierError;

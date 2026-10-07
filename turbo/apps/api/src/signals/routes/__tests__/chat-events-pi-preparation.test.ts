@@ -23,7 +23,7 @@ const {
   mockPiCheckpointObjectStore,
 } = createChatEventsFixture(context);
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   it("launches an at-capacity Pi send on a fresh session once a slot frees", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await api.heartbeatRunner(runnerGroup);

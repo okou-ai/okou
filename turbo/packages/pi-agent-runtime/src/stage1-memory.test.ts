@@ -10,7 +10,7 @@ import {
   PI_MEMORY_CITATION_CLOSE,
 } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
-import { PI_MEMORY_STAGE1_BYOK_MODEL } from "./memory-background-config";
+import { PI_MEMORY_STAGE1_PERSONAL_MODEL } from "./memory-background-config";
 import {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   projectPiMemoryStage1Evidence as projectEvidence,
@@ -355,10 +355,10 @@ describe("Pi memory Stage 1 runtime", () => {
     try {
       const result = await runPiMemoryStage1Extraction({
         model: {
-          provider: "openai",
+          provider: "openrouter",
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
           apiKey: "test-key",
-          model: PI_MEMORY_STAGE1_BYOK_MODEL,
+          model: `openai/${PI_MEMORY_STAGE1_PERSONAL_MODEL}`,
           dialect: "openai-responses",
           transport: "sse",
         },
@@ -372,7 +372,7 @@ describe("Pi memory Stage 1 runtime", () => {
       });
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({
-        model: "gpt-6-luna",
+        model: "openai/gpt-6-luna",
         reasoning: { effort: "low" },
         text: {
           format: {

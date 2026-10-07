@@ -103,7 +103,7 @@ type ChatThreadRow = {
   readonly title: string | null;
   readonly agentId: string;
   readonly modelProviderId: string | null;
-  readonly modelProviderType: ModelProviderType | null;
+  readonly modelProviderType: string | null;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly computerUseHostId: string | null;
@@ -213,10 +213,7 @@ function ownedChatThread(
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
       modelProviderId: thread.modelProviderId,
-      modelProviderType:
-        thread.modelProviderType === null
-          ? null
-          : modelProviderTypeSchema.parse(thread.modelProviderType),
+      modelProviderType: thread.modelProviderType,
       modelProviderCredentialScope: modelProviderCredentialScopeSchema
         .nullable()
         .parse(thread.modelProviderCredentialScope),

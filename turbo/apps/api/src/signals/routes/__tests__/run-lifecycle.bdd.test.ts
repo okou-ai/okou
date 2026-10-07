@@ -3,7 +3,6 @@ import {
   createPublicRunnerMemory,
   memoryArchive,
 } from "./helpers/public-runner-memory";
-import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
@@ -4503,14 +4502,14 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     }
     await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 20_000 });
     await api.ensurePersonalSubscriptionModel(actor);
-    // A BYOK default route and a selectable built-in route.
+    // A personal subscription default route and a selectable built-in route.
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD suspended-org agent",
       description: "Covers the suspended entitlement admission branch.",
       visibility: "private",
     });
-    const byokPrompt = `suspended BYOK ${randomUUID()}`;
+    const subscriptionPrompt = `suspended subscription ${randomUUID()}`;
     const builtInPrompt = `suspended built-in ${randomUUID()}`;
     await seedOrgMetadata({
       orgId: actor.orgId,
@@ -4525,7 +4524,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     await expect(
       api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
-        prompt: byokPrompt,
+        prompt: subscriptionPrompt,
       }),
     ).resolves.toBe("insufficient_credits");
 
@@ -4544,7 +4543,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     });
     expect(
       runs.runs.filter((run) => {
-        return run.prompt === byokPrompt || run.prompt === builtInPrompt;
+        return (
+          run.prompt === subscriptionPrompt || run.prompt === builtInPrompt
+        );
       }),
     ).toHaveLength(0);
     const queue = await api.readRunQueue(actor);
@@ -4807,7 +4808,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
     const completed = await bdd.completeOnboarding(actor);
@@ -4815,11 +4815,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
     await api.ensurePersonalSubscriptionModel(actor);
-    // A BYOK default route and a selectable built-in route.
+    // A personal subscription default route and a selectable built-in route.
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD staff entitlement admission agent",
@@ -4835,13 +4834,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
 
     const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
-      prompt: "staff entitlement BYOK run",
+      prompt: "staff entitlement subscription run",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -4854,16 +4852,15 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "suspended",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
 
-    const byokPrompt = `staff suspended BYOK ${randomUUID()}`;
+    const subscriptionPrompt = `staff suspended subscription ${randomUUID()}`;
     const builtInPrompt = `staff suspended built-in ${randomUUID()}`;
     await expect(
       api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
-        prompt: byokPrompt,
+        prompt: subscriptionPrompt,
       }),
     ).resolves.toBe("insufficient_credits");
     await expect(
@@ -4881,7 +4878,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(
       runs.runs.filter((candidate) => {
         return (
-          candidate.prompt === byokPrompt || candidate.prompt === builtInPrompt
+          candidate.prompt === subscriptionPrompt ||
+          candidate.prompt === builtInPrompt
         );
       }),
     ).toHaveLength(0);
@@ -4889,7 +4887,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(queue.body.concurrency.active).toBe(0);
   });
 
-  it("uses the fixed Auto default for unavailable limited-free chat models and rejects pins outside it", async () => {
+  it("runs limited-free chats on fixed Auto and rejects unavailable model pins", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -4912,11 +4910,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       onboardingPaymentPending: false,
     });
     // A new organization starts in Auto with only the fixed default.
-    const modelPolicies = await misc.listRunModels(actor);
-    expect(modelPolicies.defaultModel).toBe("okou-1.0");
+    const runModels = await misc.listRunModels(actor);
+    expect(runModels.defaultModel).toBe("okou-1.0");
     expect(
-      modelPolicies.models.map((policy) => {
-        return policy.model;
+      runModels.models.map((runModel) => {
+        return runModel.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
 
@@ -5139,92 +5137,27 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, sent.runId, [200]);
   });
 
-  it("normalizes a stored memory-only model to fixed Auto for foreground input", async () => {
+  it("rejects a memory-only model for foreground input", async () => {
     const selectedModel = "deepseek-v4.1-flash";
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const prompt = "normalize a retained memory-only selection";
+    const { actor, agentId } = await entitledRunActor();
     // This catalog row remains for independent memory, never foreground execution.
     await seedBuiltInDefaultModelKey();
-    preparePiSandboxClaim();
-    const normalized = await chat.sendAndLaunch(actor, {
-      agentId,
-      prompt,
-      model: selectedModel,
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(normalized.runId);
-    expect(claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      catalogModel: "okou-1.0",
-      model: "@preset/okou-1-0",
-    });
-    await expect(api.readRun(actor, normalized.runId)).resolves.toMatchObject({
-      source: { model: "okou-1.0", providerType: "built-in" },
-    });
-    expect(claim.modelUsageProvider).toBe("okou-1.0");
-    expect(claim.billableFirewalls).toStrictEqual([
-      "model-provider:openrouter-codex",
-    ]);
-    await api.requestCancelRun(actor, normalized.runId, [200]);
-  });
-
-  it("omits recognition for supported personal models and Auto", async () => {
-    const api = createRunsApi(context);
-    const chat = createChatFilesBddApi(context);
-    const supportedModel = "gpt-6-sol";
-    const unknownModel = await seedBuiltInDefaultModelKey();
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await api.ensurePersonalSubscriptionModel(actor);
-
-    await createBddIntegrationApi(context)
-      .configureNativeSubscriptionModels(actor)
-      .then(() => {
-        return api.updateUserModelPreference(actor, "claude-fable-5-1");
-      });
-
-    // Every model here is Pi-eligible in a chat thread; inspect the frozen
-    // sandbox Pi claim.
-    preparePiSandboxClaim();
-
-    async function claimModel(model: string) {
-      const sent = await chat.sendAndLaunch(actor, {
+    const rejected = await chat.requestSendEvent(
+      actor,
+      {
         agentId,
-        prompt: `recognition eligibility for ${model}`,
-        model,
-      });
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.runId);
-      expect(claim.cliAgentType).toBe("pi");
-      return { claim, runId: sent.runId };
-    }
-
-    const supported = await claimModel(supportedModel);
-    const supportedToken = supported.claim.platformEnvironment.OKOU_TOKEN;
-    if (!supportedToken) {
-      throw new Error("Expected the supported-model run to expose OKOU_TOKEN");
-    }
-    expect(supported.claim.appendSystemPrompt ?? "").not.toContain(
-      "okou image-recognition",
+        prompt: "reject a retained memory-only selection",
+        model: selectedModel,
+        clientEventId: randomUUID(),
+      },
+      [400],
     );
-    expect(verifyOkouToken(supportedToken)?.capabilities).not.toContain(
-      "image-recognition:write",
-    );
-    await api.requestCancelRun(actor, supported.runId, [200]);
-
-    const unknown = await claimModel(unknownModel);
-    const unknownToken = unknown.claim.platformEnvironment.OKOU_TOKEN;
-    if (!unknownToken) {
-      throw new Error("Expected the unknown-model run to expose OKOU_TOKEN");
-    }
-    expect(unknown.claim.appendSystemPrompt ?? "").not.toContain(
-      "okou image-recognition",
-    );
-    expect(verifyOkouToken(unknownToken)?.capabilities).not.toContain(
-      "image-recognition:write",
-    );
-    await api.requestCancelRun(actor, unknown.runId, [200]);
+    expectApiError(rejected.body);
+    expect(rejected.body.error.code).toBe("BAD_REQUEST");
+    const queue = await api.readRunQueue(actor);
+    expect(queue.body.concurrency.active).toBe(0);
   });
 
   it("does not add Codex image upload guidance outside web chat Codex runs", async () => {
@@ -6301,39 +6234,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
   // longer writes these stored Pi generations, which
   // pi-model-config-claim-capability.ts still reads and negotiates. Delete with
   // that reader once older generations can no longer be pending.
-  it.each(nativePiFixtures)(
-    "claims stored native $name only with generation 4 capability",
-    async ({ config: piModelConfig }) => {
-      const api = createRunsApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createThreadRun(actor, {
-        agentId,
-        prompt: "read a future native context",
-      });
-      await setRunnerJobPiContextAsVersionedWriter(
-        context,
-        run.runId,
-        piModelConfig,
-      );
-      await api.heartbeatRunner(runnerGroup);
-      await api.requestClaimRunnerJob(true, run.runId, [404], {
-        capabilities: { piModelConfigGenerations: [1, 2, 3] },
-      });
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "pending",
-      });
-      const claim = await api.claimRunnerJob(run.runId, {
-        capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
-      });
-      expect(claim).toMatchObject({
-        cliAgentType: "pi",
-        piSessionId: run.runId,
-        piModelConfig,
-      });
-      await api.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
-
   // Current admission cannot produce generation 3 or future/invalid rows.
   // The explicit stored-writer fixture exercises claim/read API behavior first.
   it.each([1, 2, 3] as const)(
@@ -6348,11 +6248,11 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       const piModelConfig: PiModelConfig =
         generation === 1
           ? {
-              provider: "openai",
-              baseUrl: "https://api.openai.com/v1",
+              provider: "openrouter",
+              baseUrl: "https://openrouter.ai/api/v1",
               model: "gpt-6-luna",
               apiKeyEnv: "OPENAI_API_KEY",
-              credentialSecretName: "OPENAI_API_KEY",
+              credentialSecretName: "OPENROUTER_API_KEY",
             }
           : generation === 3
             ? {
@@ -6380,14 +6280,14 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
                 schemaVersion: 2,
                 dialect: "openai-responses",
                 transport: "sse",
-                provider: "openai",
-                baseUrl: "https://api.openai.com/v1",
+                provider: "openrouter",
+                baseUrl: "https://openrouter.ai/api/v1",
                 model: "gpt-5.4",
                 credentialBindings: [
                   {
                     kind: "api-key",
                     environment: "OPENAI_API_KEY",
-                    secretName: "OPENAI_API_KEY",
+                    secretName: "OPENROUTER_API_KEY",
                   },
                 ],
               };
@@ -10416,30 +10316,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(
       grantedContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
     ).toStrictEqual(expect.any(String));
-    expect(grantedContext.claim.networkPolicyRefreshes).not.toHaveProperty(
-      "model-provider:anthropic-api-key",
-    );
     expect(grantedContext.claim.environment).toMatchObject({
       CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
     });
     expect(grantedContext.claim.billableFirewalls).toStrictEqual([]);
-    expect(
-      findFirewallEntry(
-        grantedContext.claim.firewalls,
-        "model-provider:anthropic-api-key",
-      ),
-    ).toBeUndefined();
     expect(grantedContext.claim.connectorRuntimeTargets).toContainEqual({
       kind: "builtin",
       connectorSlug: "slack",
       sourceId: expect.any(String),
     });
-    expect(grantedContext.claim.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({
-        kind: "builtin",
-        connectorSlug: "model-provider:anthropic-api-key",
-      }),
-    );
     expect(granted.allow).toContain("chat:write");
     expect(granted.allow).toContain("files:read");
     expect(granted.deny).not.toContain("chat:write");
@@ -11103,7 +10988,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "Public-web search, current public facts, and source discovery",
       "okou web-search <query>",
       "framework-native web search tool is exposed",
-      "managed Web Search is disabled for a BYOK Run",
+      "managed Web Search is disabled for a personal-subscription Run",
       "external public-web provider",
       "bounded, ranked results",
       "result-count, recency, and domain filters",
@@ -11308,18 +11193,25 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       .then(() => {
         return api.updateUserModelPreference(actor, "claude-fable-5-1");
       });
-    const codexByok = await api.createThreadRun(actor, {
+    const codexSubscription = await api.createThreadRun(actor, {
       agentId,
       prompt: "use Codex native web search",
       model: "gpt-6-astra",
     });
-    const codexByokClaim = await api.claimRunnerJob(codexByok.runId);
-    expect(codexByokClaim.cliAgentType).toBe("codex");
+    const codexSubscriptionClaim = await api.claimRunnerJob(
+      codexSubscription.runId,
+    );
+    expect(codexSubscriptionClaim.cliAgentType).toBe("codex");
     expect(
-      codexByokClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+      codexSubscriptionClaim.platformEnvironment[
+        ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR
+      ],
     ).toBe("true");
-    await api.requestCancelRun(actor, codexByok.runId, [200]);
-    await finishCancelledRun(codexByok.runId, codexByokClaim.sandboxToken);
+    await api.requestCancelRun(actor, codexSubscription.runId, [200]);
+    await finishCancelledRun(
+      codexSubscription.runId,
+      codexSubscriptionClaim.sandboxToken,
+    );
 
     const builtIn = await api.createThreadRun(actor, {
       agentId,
@@ -14708,7 +14600,6 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
       baseConcurrencyLimit: 2,
       canBuyConcurrency: false,
       autoRechargeAllowed: false,
-      supportByok: true,
       restrictedBuiltInModels: true,
       workflowWebhookAutomationAllowed: false,
       stripeSubscriptionId: granted.subscriptionId,

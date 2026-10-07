@@ -48,7 +48,6 @@ const COMMAND_CAPABILITY_MAP: Record<
   credit: ["billing:read", "billing:write"],
   upgrade: null,
   model: null,
-  "model-provider": null,
   subscription: ["subscription:read", "subscription:switch"],
   search: null,
   chat: [
@@ -85,19 +84,12 @@ const COMMAND_CAPABILITY_MAP: Record<
   "people-search": "people-search:read",
   "web-search": "web-search:read",
   social: "social:read",
-  "image-recognition": "image-recognition:write",
   finance: "finance:read",
   seo: "seo:read",
   banking: "banking:read",
 };
 
-const RUN_ONLY_COMMANDS = new Set([
-  "mcp",
-  "ssh",
-  "vnc",
-  "run",
-  "image-recognition",
-]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "run"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -141,13 +133,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "List and select Auto or personal subscription models",
     load: async () => {
       return (await import("./commands/model")).modelCommand;
-    },
-  },
-  {
-    name: "model-provider",
-    description: "Inspect Auto and personal subscription routes",
-    load: async () => {
-      return (await import("./commands/model-provider")).modelProviderCommand;
     },
   },
   {
@@ -433,14 +418,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
-    name: "image-recognition",
-    description: "Recognize one image through a managed multimodal model",
-    load: async () => {
-      return (await import("./commands/image-recognition"))
-        .imageRecognitionCommand;
-    },
-  },
-  {
     name: "finance",
     description: "Query financial instruments through managed Okou finance",
     load: async () => {
@@ -635,7 +612,6 @@ export function buildHelpText(
     "  Upload phone file?    okou phone upload-file --help",
     "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
-    "  Personal models?      okou model ls",
     "  Subscriptions?        okou subscription list",
     "  Update yourself?       okou agent --help",
     "  Manage workflows?     okou workflow --help",
@@ -687,11 +663,6 @@ export function buildHelpText(
     ...commandExampleIfVisible(
       "social",
       "  Analyze social data?   okou social transcript https://youtu.be/dQw4w9WgXcQ --json",
-      payload,
-    ),
-    ...commandExampleIfVisible(
-      "image-recognition",
-      '  Recognize an image?    okou image-recognition --file ./image.png --prompt "Describe it"',
       payload,
     ),
     ...commandExampleIfVisible(

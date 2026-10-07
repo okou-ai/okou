@@ -1,155 +1,87 @@
 import { describe, expect, it } from "vitest";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 
-import {
-  materializePiAgentModelConfig,
-  resolvePiAgentCredential,
-} from "./credential";
+import { materializePiAgentModelConfig } from "./credential";
 
 describe("Pi agent credential resolution", () => {
-  it("keeps native provider credentials in the SDK API-key slot", () => {
-    expect(
-      resolvePiAgentCredential({
-        credential: "native-secret",
-        target: "direct",
-      }),
-    ).toStrictEqual({ apiKey: "native-secret" });
-  });
-
-  it("resolves a custom header directly without copying its secret into Authorization", () => {
-    expect(
-      resolvePiAgentCredential({
-        credential: "gateway-secret",
-        header: {
-          name: "x-api-key",
-          valueTemplate: "Key {{secret}}",
+  it("materializes generation 3 Auto priority in the API-key slot", async () => {
+    const config = piModelConfigSchema.parse({
+      schemaVersion: 3,
+      dialect: "openai-responses",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "okou-1.0",
+      serviceTier: "priority",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
         },
-        target: "direct",
-      }),
-    ).toStrictEqual({
-      apiKey: "unused",
-      requestHeaders: {
-        authorization: null,
-        "x-api-key": "Key gateway-secret",
+      ],
+    });
+    const materialized = await materializePiAgentModelConfig({
+      config,
+      resolveCredential(binding) {
+        expect(binding.secretName).toBe("OPENROUTER_API_KEY");
+        return "opaque-key-placeholder";
       },
     });
-  });
-
-  it("sends only the placeholder through the Sandbox firewall", () => {
-    expect(
-      resolvePiAgentCredential({
-        credential: "safe-placeholder",
-        header: {
-          name: "Authorization",
-          valueTemplate: "Bearer {{secret}}",
-        },
-        target: "sandbox-firewall",
-      }),
-    ).toStrictEqual({
-      apiKey: "unused",
-      requestHeaders: { Authorization: "safe-placeholder" },
+    expect(materialized).toStrictEqual({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "okou-1.0",
+      serviceTier: "priority",
+      dialect: "openai-responses",
+      transport: "sse",
+      apiKey: "opaque-key-placeholder",
     });
   });
 
-  it("overrides the SDK Authorization value with the configured template", () => {
-    expect(
-      resolvePiAgentCredential({
-        credential: "gateway-secret",
-        header: {
-          name: "Authorization",
-          valueTemplate: "Bearer {{secret}}",
-        },
-        target: "direct",
-      }),
-    ).toStrictEqual({
-      apiKey: "unused",
-      requestHeaders: { Authorization: "Bearer gateway-secret" },
+  it("fails closed when the Auto credential is blank", async () => {
+    const config = piModelConfigSchema.parse({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "okou-1.0",
+      apiKeyEnv: "OPENAI_API_KEY",
+      credentialSecretName: "OPENROUTER_API_KEY",
     });
-  });
-
-  it.each(["missing placeholder", "{{secret}} {{other}}"])(
-    "fails closed for malformed credential header policy %s",
-    (valueTemplate) => {
-      expect(() => {
-        resolvePiAgentCredential({
-          credential: "gateway-secret",
-          header: { name: "x-api-key", valueTemplate },
-          target: "direct",
-        });
-      }).toThrow("Pi credential header policy is invalid");
-    },
-  );
-
-  it.each(["direct", "sandbox-firewall"] as const)(
-    "materializes generation 3 public priority at the %s edge",
-    async (target) => {
-      const config = piModelConfigSchema.parse({
-        schemaVersion: 3,
-        dialect: "openai-responses",
-        transport: "sse",
-        provider: "openai",
-        baseUrl: "https://gateway.example.test/v1",
-        model: "gpt-6-luna",
-        serviceTier: "priority",
-        credentialBindings: [
-          {
-            kind: "api-key",
-            environment: "OPENAI_API_KEY",
-            secretName: "OPENAI_API_KEY",
-          },
-        ],
-      });
-      const materialized = await materializePiAgentModelConfig({
+    await expect(
+      materializePiAgentModelConfig({
         config,
-        target,
-        resolveCredential(binding) {
-          expect(binding.environment).toBe("OPENAI_API_KEY");
-          return target === "direct"
-            ? "selected-provider-key"
-            : "opaque-key-placeholder";
+        resolveCredential() {
+          return " ";
         },
-      });
-      expect(materialized).toEqual({
-        provider: "openai",
-        baseUrl: "https://gateway.example.test/v1",
-        model: "gpt-6-luna",
-        serviceTier: "priority",
-        dialect: "openai-responses",
-        transport: "sse",
-        apiKey:
-          target === "direct"
-            ? "selected-provider-key"
-            : "opaque-key-placeholder",
-      });
-    },
-  );
+      }),
+    ).rejects.toThrow("Pi api-key credential is unavailable");
+  });
 
   it("materializes canonical Gen1 as public Responses", async () => {
     const config = piModelConfigSchema.parse({
-      provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      model: "gpt-6-luna",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "okou-1.0",
       apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENAI_API_KEY",
+      credentialSecretName: "OPENROUTER_API_KEY",
     });
 
     await expect(
       materializePiAgentModelConfig({
         config,
-        target: "direct",
         resolveCredential(binding) {
           expect(binding).toMatchObject({
             kind: "api-key",
             environment: "OPENAI_API_KEY",
-            secretName: "OPENAI_API_KEY",
+            secretName: "OPENROUTER_API_KEY",
           });
           return "selected-key";
         },
       }),
     ).resolves.toStrictEqual({
-      provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      model: "gpt-6-luna",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "okou-1.0",
       dialect: "openai-responses",
       apiKey: "selected-key",
       transport: "sse",
@@ -185,7 +117,6 @@ describe("Pi agent credential resolution", () => {
       await expect(
         materializePiAgentModelConfig({
           config,
-          target: "direct",
           resolveCredential(binding) {
             resolutionOrder.push(binding.kind);
             switch (binding.environment) {

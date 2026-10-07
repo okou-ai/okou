@@ -237,7 +237,7 @@ function modelLabel(option: TeamsModelPickerOption): string {
   if (!option.isDefault) {
     return choiceLabel(option.label);
   }
-  const suffix = " (workspace default)";
+  const suffix = " (default)";
   if (option.label.length + suffix.length <= 80) {
     return `${option.label}${suffix}`;
   }
@@ -796,7 +796,7 @@ const teamsModelPickerState$ = command(
     readonly options: readonly TeamsModelPickerOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const { response: policies, systemDefaultModel } = await set(
+    const { response: runModels, systemDefaultModel } = await set(
       listAvailableRunModelsWithDefault$,
       { orgId, userId },
       signal,
@@ -805,15 +805,15 @@ const teamsModelPickerState$ = command(
 
     return {
       enabled: true,
-      options: policies.models
-        .flatMap((policy) => {
-          if (policy.routeStatus !== "valid") {
+      options: runModels.models
+        .flatMap((runModel) => {
+          if (runModel.routeStatus !== "valid") {
             return [];
           }
           return {
-            model: policy.model,
-            label: policy.modelLabel,
-            isDefault: policy.model === systemDefaultModel,
+            model: runModel.model,
+            label: runModel.modelLabel,
+            isDefault: runModel.model === systemDefaultModel,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),
@@ -1579,7 +1579,6 @@ const persistTeamsChatMessage$ = command(
           {
             orgId: args.installation.orgId,
             userId: args.connection.userId,
-            defaultSource: undefined,
             orgPlanCapabilities: undefined,
           },
           signal,

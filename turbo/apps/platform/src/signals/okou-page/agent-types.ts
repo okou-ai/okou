@@ -6,9 +6,6 @@ export interface AgentDetail {
   displayName: string | null;
   sound: string | null;
   avatarUrl: string | null;
-  modelProviderId: string | null;
-  selectedModel: string | null;
-  preferPersonalProvider: boolean;
   visibility?: "public" | "private";
 }
 

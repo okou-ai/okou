@@ -1,11 +1,8 @@
-mod native;
-
 use std::collections::HashMap;
 
 use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
 use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-    PI_MODEL_CONFIG_NATIVE_GENERATION,
 };
 use api_contracts::generated::types::runners::{
     runs::{CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3},
@@ -139,7 +136,6 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
     validate_resume_session_id(context)?;
     validate_model_provider_env_placeholders(context)?;
     validate_pi_execution_context(context)?;
-    native::validate_environment(context)?;
     validate_user_environment_for_guest(context)?;
     let prepared_run_payload =
         prepare_run_payload_for_run(context).map_err(|error| match error {
@@ -214,12 +210,6 @@ fn validate_legacy_pi_model_config(value: &serde_json::Value) -> Result<(), Stri
     if !is_pi_credential_secret_name(&model.credential_secret_name) {
         return Err("Pi model config credentialSecretName is invalid".to_string());
     }
-    if value
-        .get("credentialHeader")
-        .is_some_and(|header| !is_valid_pi_credential_header(header))
-    {
-        return Err("Pi model config credentialHeader is invalid".to_string());
-    }
     Ok(())
 }
 
@@ -232,48 +222,6 @@ fn has_exact_object_fields(
         && object
             .keys()
             .all(|field| allowed.iter().any(|allowed_field| field == allowed_field))
-}
-
-fn is_valid_pi_credential_header(value: &serde_json::Value) -> bool {
-    let Some(header) = value.as_object() else {
-        return false;
-    };
-    if !has_exact_object_fields(
-        header,
-        &["name", "valueTemplate"],
-        &["name", "valueTemplate"],
-    ) {
-        return false;
-    }
-    let Some(name) = header.get("name").and_then(serde_json::Value::as_str) else {
-        return false;
-    };
-    let mut name_bytes = name.bytes();
-    if name.is_empty()
-        || name.len() > 128
-        || !name_bytes
-            .next()
-            .is_some_and(|byte| byte.is_ascii_alphabetic())
-        || !name_bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    {
-        return false;
-    }
-    let Some(template) = header
-        .get("valueTemplate")
-        .and_then(serde_json::Value::as_str)
-    else {
-        return false;
-    };
-    if template.is_empty()
-        || template.encode_utf16().count() > 1024
-        || template.contains('\r')
-        || template.contains('\n')
-        || template.match_indices("{{secret}}").count() != 1
-    {
-        return false;
-    }
-    let static_template = template.replacen("{{secret}}", "", 1);
-    !static_template.contains("{{") && !static_template.contains("}}")
 }
 
 fn validate_pi_v2_credential_bindings(
@@ -303,28 +251,13 @@ fn validate_pi_v2_credential_bindings(
                 if !has_exact_object_fields(
                     object,
                     &["kind", "environment", "secretName"],
-                    &["kind", "environment", "secretName", "credentialHeader"],
+                    &["kind", "environment", "secretName"],
                 ) || object
                     .get("environment")
                     .and_then(serde_json::Value::as_str)
                     != Some("OPENAI_API_KEY")
-                {
-                    return Err("Pi API-key binding is invalid".to_string());
-                }
-                let known_secret = matches!(
-                    object.get("secretName").and_then(serde_json::Value::as_str),
-                    Some(
-                        "DEEPSEEK_API_KEY"
-                            | "OPENAI_API_KEY"
-                            | "OPENROUTER_API_KEY"
-                            | "VERCEL_AI_GATEWAY_API_KEY"
-                            | "OKOU_MODEL_PROVIDER_API_KEY"
-                    )
-                );
-                if !known_secret
-                    || object
-                        .get("credentialHeader")
-                        .is_some_and(|header| !is_valid_pi_credential_header(header))
+                    || object.get("secretName").and_then(serde_json::Value::as_str)
+                        != Some("OPENROUTER_API_KEY")
                 {
                     return Err("Pi API-key binding is invalid".to_string());
                 }
@@ -522,11 +455,6 @@ fn validate_pi_model_config(value: &serde_json::Value) -> Result<(), String> {
             if generation.as_u64() == Some(u64::from(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION)) =>
         {
             validate_pi_model_config_v3(value)
-        }
-        Some(serde_json::Value::Number(generation))
-            if generation.as_u64() == Some(u64::from(PI_MODEL_CONFIG_NATIVE_GENERATION)) =>
-        {
-            native::validate(value)
         }
         Some(_) => Err("Pi model config generation is unsupported".to_string()),
     }

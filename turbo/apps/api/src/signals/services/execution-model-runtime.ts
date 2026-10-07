@@ -4,9 +4,8 @@ import {
   getModelProviderFirewall,
   getSecretNameForType,
   getSecretsForAuthMethod,
-  hasAuthMethods,
   MODEL_PROVIDER_TYPES,
-  modelProviderTypeSchema,
+  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 export type ModelCredentialValues = Readonly<Record<string, string>>;
@@ -28,45 +27,29 @@ export interface ModelRuntimeInput {
   readonly source: ModelSourceSnapshot;
   readonly credentials: ModelCredentialValues;
 }
-export type ModelTransport =
-  | {
-      readonly kind: "http";
-      readonly protocol: "anthropic-messages" | "openai-responses";
-      readonly baseUrl: string;
-    }
-  | { readonly kind: "bedrock"; readonly region: string };
-export interface HeaderModelAuthentication {
+export interface ModelTransport {
+  readonly kind: "http";
+  readonly protocol: "anthropic-messages" | "openai-responses";
+  readonly baseUrl: string;
+}
+export interface ModelAuthentication {
   readonly kind: "header";
   readonly headerName: string;
   readonly valueTemplate: string;
   readonly secretName: string;
 }
-export interface AwsBearerModelAuthentication {
-  readonly kind: "aws-bearer";
-  readonly secretName: string;
-}
-export interface AwsSigV4ModelAuthentication {
-  readonly kind: "aws-sigv4";
-  readonly accessKeyIdSecretName: string;
-  readonly secretAccessKeySecretName: string;
-  readonly sessionTokenSecretName: string | null;
-}
-export type ModelAuthentication =
-  | HeaderModelAuthentication
-  | AwsBearerModelAuthentication
-  | AwsSigV4ModelAuthentication;
 export interface CompiledModelRuntime {
   readonly selectedModel: string;
   readonly upstreamModel: string;
   readonly providerType: string;
-  readonly credentialOwner: "builtin" | "organization" | "member";
+  readonly credentialOwner: "builtin" | "member";
   readonly transport: ModelTransport;
   readonly authentication: ModelAuthentication;
   readonly environment: Readonly<Record<string, string>>;
   readonly secrets: Readonly<Record<string, string>>;
 }
 
-function compileMultiAuthRuntime(
+function compileCodexSubscriptionRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
@@ -76,10 +59,7 @@ function compileMultiAuthRuntime(
   ) {
     throw new Error("Multi-auth runtime requires a selected registered source");
   }
-  const type = modelProviderTypeSchema.parse(source.configuration.providerType);
-  if (!hasAuthMethods(type)) {
-    throw new Error("Selected provider is not multi-auth");
-  }
+  const type = "codex-oauth-token";
   const authMethod = source.configuration.authMethod;
   const required = authMethod
     ? getSecretsForAuthMethod(type, authMethod)
@@ -126,41 +106,33 @@ function compileMultiAuthRuntime(
       return [[name, value]];
     }),
   );
-  let transport: ModelTransport;
-  let authentication: ModelAuthentication;
-  if (type === "codex-oauth-token") {
-    const accountId = credentials.CHATGPT_ACCOUNT_ID;
-    if (!accountId) {
-      throw new Error("Codex account routing identity is missing");
-    }
-    environment.CODEX_OAUTH_ACCOUNT_ID = accountId;
-    transport = {
-      kind: "http",
-      protocol: "openai-responses",
-      baseUrl: "https://chatgpt.com/backend-api/codex",
-    };
-    authentication = {
-      kind: "header",
-      headerName: "Authorization",
-      valueTemplate: "Bearer {{secret}}",
-      secretName: "CHATGPT_ACCESS_TOKEN",
-    };
-  } else {
-    throw new Error("Unsupported multi-auth runtime protocol");
+  const accountId = credentials.CHATGPT_ACCOUNT_ID;
+  if (!accountId) {
+    throw new Error("Codex account routing identity is missing");
   }
+  environment.CODEX_OAUTH_ACCOUNT_ID = accountId;
   return {
     selectedModel: selection.selectedModel,
     upstreamModel,
     providerType: type,
     credentialOwner: source.credentialOwner,
-    transport,
-    authentication,
+    transport: {
+      kind: "http",
+      protocol: "openai-responses",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+    },
+    authentication: {
+      kind: "header",
+      headerName: "Authorization",
+      valueTemplate: "Bearer {{secret}}",
+      secretName: "CHATGPT_ACCESS_TOKEN",
+    },
     environment,
     secrets: forwardable,
   };
 }
 
-function compileRegisteredRuntime(
+function compileClaudeSubscriptionRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
@@ -170,13 +142,8 @@ function compileRegisteredRuntime(
   ) {
     throw new Error("Registered source requires configured selection");
   }
-  const type = modelProviderTypeSchema.parse(source.configuration.providerType);
+  const type = "claude-code-oauth-token";
   const config = MODEL_PROVIDER_TYPES[type];
-  if (!("secretName" in config) || !("envBindings" in config)) {
-    throw new Error(
-      "This registered protocol has not migrated to the pure runtime contract",
-    );
-  }
   const secretName = config.secretName;
   const key = credentials[secretName];
   if (!key?.trim()) {
@@ -197,27 +164,20 @@ function compileRegisteredRuntime(
       ];
     }),
   );
-  const protocol =
-    config.framework === "claude-code"
-      ? "anthropic-messages"
-      : "openai-responses";
-  const baseUrl =
-    environment.ANTHROPIC_BASE_URL ??
-    environment.OPENAI_BASE_URL ??
-    (protocol === "anthropic-messages"
-      ? "https://api.anthropic.com"
-      : "https://api.openai.com/v1");
   return {
     selectedModel: selection.selectedModel,
     upstreamModel,
     providerType: type,
     credentialOwner: source.credentialOwner,
-    transport: { kind: "http", protocol, baseUrl },
+    transport: {
+      kind: "http",
+      protocol: "anthropic-messages",
+      baseUrl: environment.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
+    },
     authentication: {
       kind: "header",
-      headerName: type === "anthropic-api-key" ? "x-api-key" : "Authorization",
-      valueTemplate:
-        type === "anthropic-api-key" ? "{{secret}}" : "Bearer {{secret}}",
+      headerName: "Authorization",
+      valueTemplate: "Bearer {{secret}}",
       secretName,
     },
     environment,
@@ -237,13 +197,14 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
     throw new Error("Managed model source and route identity mismatch");
   }
   const managedVendor = source.configuration.managedVendor;
-  const type = modelProviderTypeSchema.parse(selection.providerType);
-  const permitted = Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).some(
+  const type = Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).find(
     ([provider, facts]) => {
-      return provider === type && facts.vendor === managedVendor;
+      return (
+        provider === selection.providerType && facts.vendor === managedVendor
+      );
     },
-  );
-  if (!permitted) {
+  )?.[0] as ModelProviderType | undefined;
+  if (!type) {
     throw new Error(
       "Managed model vendor does not match its selected provider",
     );
@@ -307,9 +268,8 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
     transport: { kind: "http", protocol, baseUrl },
     authentication: {
       kind: "header",
-      headerName: type === "anthropic-api-key" ? "x-api-key" : "Authorization",
-      valueTemplate:
-        type === "anthropic-api-key" ? "{{secret}}" : "Bearer {{secret}}",
+      headerName: "Authorization",
+      valueTemplate: "Bearer {{secret}}",
       secretName,
     },
     environment,
@@ -327,21 +287,21 @@ export function compileModelRuntime(
       "Model runtime requires its selected logical and upstream facts",
     );
   }
-  const config = source.configuration;
   if (selection.kind === "built-in") {
     return compileManagedRuntime(input);
   }
   if (
-    source.identity.kind !== "member" ||
-    source.credentialOwner !== "member" ||
-    (config.providerType !== "codex-oauth-token" &&
-      config.providerType !== "claude-code-oauth-token")
+    source.identity.kind === "member" &&
+    source.credentialOwner === "member"
   ) {
-    throw new Error(
-      "Configured runtime requires a personal subscription account",
-    );
+    if (source.configuration.providerType === "codex-oauth-token") {
+      return compileCodexSubscriptionRuntime(input);
+    }
+    if (source.configuration.providerType === "claude-code-oauth-token") {
+      return compileClaudeSubscriptionRuntime(input);
+    }
   }
-  return hasAuthMethods(modelProviderTypeSchema.parse(config.providerType))
-    ? compileMultiAuthRuntime(input)
-    : compileRegisteredRuntime(input);
+  throw new Error(
+    "Configured runtime requires a personal subscription account",
+  );
 }

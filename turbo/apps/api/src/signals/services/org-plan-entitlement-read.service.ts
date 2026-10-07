@@ -14,7 +14,6 @@ export interface OrgPlanCapabilities {
   readonly canBuyCredits: boolean;
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
@@ -30,7 +29,6 @@ export const ORG_PLAN_CAPABILITY_SELECTION = {
   canBuyCredits: orgPlanEntitlements.canBuyCredits,
   showUsagePack: orgPlanEntitlements.showUsagePack,
   autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-  supportByok: orgPlanEntitlements.supportByok,
   restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
   workflowWebhookAutomationAllowed:
     orgPlanEntitlements.workflowWebhookTriggerAllowed,

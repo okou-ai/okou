@@ -54,8 +54,8 @@ export function chatThreadColumns() {
      */
     lastReadAt: timestamp("last_read_at"),
     /**
-     * Legacy provider pin columns. Model-first chat threads now persist only
-     * selectedModel and re-resolve provider routing from org policy for each run.
+     * Provider pin columns. Chat threads persist selectedModel; each run
+     * resolves it to platform Auto or the caller's personal subscription.
      */
     modelProviderId: uuid("model_provider_id"),
     modelProviderType: varchar("model_provider_type", { length: 50 }),

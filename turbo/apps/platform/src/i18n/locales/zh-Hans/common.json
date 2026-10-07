@@ -4651,11 +4651,8 @@
     "actions": {
       "addCredits": "充值积分",
       "openModelProviders": "打开模型服务商",
-      "reconnectClaude": "重新连接Claude Code",
-      "shareWithAdmin": "分享给管理员"
+      "reconnectClaude": "重新连接Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code无法用当前配置的Anthropic API密钥完成验证。请在「模型服务商」中更新或更换API密钥，然后重试。",
-    "anthropicKeyMember": "Claude Code无法用当前配置的Anthropic API密钥完成验证。请联系工作区管理员更新或更换API密钥。",
     "askAdmin": "请联系工作区管理员充值积分或升级工作区套餐。",
     "claudeReconnect": "Claude Code订阅验证失败。请在「模型服务商」中重新连接Claude Code，然后重试。",
     "claudeTerms": "Claude Code需要你接受更新后的消费者条款和隐私政策。请用「模型服务商」中已连接的Claude账号登录https://claude.ai，接受更新后的条款和政策，然后重试。",
@@ -4670,7 +4667,7 @@
     "overloaded": "{{model}}负载过高。请稍等几分钟后重试，或改用其他模型。",
     "providerBalance": "你连接的模型服务商账户余额不足。",
     "transient": "出了点问题，请稍后再试。",
-    "vm0Credits": "积分不足。请充值积分，或配置自己的API密钥后继续。"
+    "vm0Credits": "积分不足。请充值积分，或连接个人 Codex 或 Claude 订阅后继续。"
   },
   "serviceStatus": {
     "dismiss": "忽略服务更新",
@@ -4922,7 +4919,7 @@
           "lowest": "单次生成成本最低",
           "typical": "单次生成成本一般"
         },
-        "inheritDefault": "组织默认（Auto）",
+        "inheritDefault": "默认（Auto）",
         "loadError": "无法加载模型。",
         "loading": "正在加载模型…",
         "models": "模型",
@@ -4989,10 +4986,6 @@
         "image-generation": {
           "description": "用内置模型生成图片。",
           "name": "图片生成"
-        },
-        "image-recognition": {
-          "description": "读取和分析图片。",
-          "name": "图片识别"
         },
         "maps": {
           "description": "查找地点、地址和路线。",

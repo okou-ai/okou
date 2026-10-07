@@ -55,7 +55,6 @@ export function memberModelBootstrapFromSources({
     ).values(),
   ];
   const member = memberModelRouteContextFromAccounts(
-    userId,
     accounts.map((account) => {
       return {
         ...account,

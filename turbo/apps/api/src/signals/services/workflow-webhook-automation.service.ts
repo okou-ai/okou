@@ -445,10 +445,8 @@ type DispatchWorkflowWebhookResult =
   | { readonly kind: "ok"; readonly duplicate: true }
   | { readonly kind: "not_found" }
   | { readonly kind: "unauthorized" }
-  | { readonly kind: "bad_request"; readonly message: string }
   | { readonly kind: "payload_too_large" }
-  | { readonly kind: "rate_limited" }
-  | { readonly kind: "run_error"; readonly message: string };
+  | { readonly kind: "rate_limited" };
 
 type PreparedWorkflowWebhookDispatch =
   | {
@@ -564,8 +562,8 @@ async function prepareWebhookDelivery(
       ),
     )
     .limit(1);
-  // Completed admissions remain duplicates even if their model is unavailable
-  // now. The unique index still arbitrates concurrent first deliveries.
+  // A recorded delivery stays a duplicate regardless of later automation
+  // changes. The unique index still arbitrates concurrent first deliveries.
   return existing
     ? null
     : { id: randomUUID(), deliveryKey, bodySha256: sha256Hex(args.rawBody) };

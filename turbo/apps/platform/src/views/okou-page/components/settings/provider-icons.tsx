@@ -6,23 +6,14 @@ import { settingsIconAssetUrl } from "./settings-icon-assets.ts";
 const PROVIDER_ICONS: Readonly<Partial<Record<ModelProviderType, string>>> =
   Object.freeze({
     "claude-code-oauth-token": settingsIconAssetUrl("anthropic"),
-    "anthropic-api-key": settingsIconAssetUrl("anthropic"),
-    "openrouter-api-key": settingsIconAssetUrl("openrouter"),
-    deepseek: settingsIconAssetUrl("deepseek"),
-    "vercel-ai-gateway": settingsIconAssetUrl("vercel"),
     "openrouter-codex": settingsIconAssetUrl("openrouter"),
-    "vercel-ai-gateway-codex": settingsIconAssetUrl("vercel"),
-    "openai-api-key": settingsIconAssetUrl("openai"),
     "codex-oauth-token": settingsIconAssetUrl("openai"),
-    "azure-foundry": settingsIconAssetUrl("azure"),
-    "aws-bedrock": settingsIconAssetUrl("bedrock"),
     "built-in": platformOkouMarkDarkImg,
   });
 
 const DARK_INVERT_PROVIDER_ICONS: Readonly<
   Partial<Record<ModelProviderType, true>>
 > = Object.freeze({
-  "openai-api-key": true,
   "codex-oauth-token": true,
   "built-in": true,
 });

@@ -3,7 +3,6 @@ import { initializeMemberMemory$ } from "./member-memory-initialization.service"
 import type {
   OnboardingIndustry,
   OnboardingStatusResponse,
-  OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
@@ -47,8 +46,8 @@ type CompleteOnboardingResponse = {
 
 /**
  * A member's completion is theirs alone: it stamps their own membership row and
- * never touches the organization's onboarding state, model policies or
- * provisioning, which stay with the admin who set the workspace up.
+ * never touches the organization's onboarding state or provisioning, which
+ * stay with the admin who set the workspace up.
  */
 const markMemberOnboardingComplete$ = command(
   async (
@@ -128,7 +127,6 @@ interface CompleteOnboardingArgs {
   readonly isAdmin: boolean;
   readonly timezone?: string;
   readonly industry?: OnboardingIndustry;
-  readonly modelProvider?: OnboardingSubscriptionProvider;
 }
 
 interface MorningBriefOnboardingOutcome {
@@ -383,7 +381,6 @@ export const completeOnboarding$ = command(
         orgId: args.orgId,
         userId: args.member.userId,
         industry: args.industry,
-        modelProvider: args.modelProvider,
       },
       signal,
     );

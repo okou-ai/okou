@@ -1122,46 +1122,26 @@ async function getSecretValue(args: {
     return values.get(args.name) ?? null;
   }
   // Personal subscription credentials live only on their exact account.
-  if (args.type === "model-provider" && args.sourceId) {
-    const [row] = await args.db
-      .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
-      .from(modelProviderAccountSecrets)
-      .innerJoin(
-        modelProviderAccounts,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccountSecrets.name, args.name),
-        ),
-      )
-      .limit(1);
-    return row
-      ? await decryptStoredSecretValue(
-          row.encryptedValue,
-          args.featureSwitchContext,
-        )
-      : null;
-  }
-  if (args.type === "model-provider") {
+  if (!args.sourceId) {
     return null;
   }
   const [row] = await args.db
-    .select({ encryptedValue: secretsTable.encryptedValue })
-    .from(secretsTable)
+    .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
+    .from(modelProviderAccountSecrets)
+    .innerJoin(
+      modelProviderAccounts,
+      eq(
+        modelProviderAccountSecrets.modelProviderAccountId,
+        modelProviderAccounts.id,
+      ),
+    )
     .where(
       and(
-        eq(secretsTable.orgId, args.orgId),
-        eq(secretsTable.userId, args.userId),
-        eq(secretsTable.name, args.name),
-        eq(secretsTable.type, args.type),
+        eq(modelProviderAccounts.id, args.sourceId),
+        personalSubscriptionAccountAccessCondition(args.runId),
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.userId),
+        eq(modelProviderAccountSecrets.name, args.name),
       ),
     )
     .limit(1);
@@ -1378,15 +1358,10 @@ async function getCurrentAccessSecrets(
           featureSwitchContext: args.featureSwitchContext,
         })
       : new Map();
-  } else if (
-    args.sourceType === "model-provider" &&
-    isPersonalSubscriptionProviderType(
-      args.metadata.metadataKey ?? args.accessSourceKey,
-    )
-  ) {
+  } else {
     const type = args.metadata.metadataKey ?? args.accessSourceKey;
-    if (!isPersonalSubscriptionProviderType(type)) {
-      throw new Error("Expected a subscription type");
+    if (!isPersonalSubscriptionProviderType(type) || !args.sourceId) {
+      throw new Error("Expected an exact personal subscription account");
     }
     const bundle = await readSubscriptionBundle(args.subscriptionBundles, {
       db: args.db,
@@ -1398,24 +1373,6 @@ async function getCurrentAccessSecrets(
       featureSwitchContext: args.featureSwitchContext,
     });
     values = bundle?.values ?? new Map();
-  } else {
-    const modelProviderValues = new Map<string, string>();
-    for (const secretName of secretNames) {
-      const value = await getSecretValue({
-        db: args.db,
-        orgId: args.orgId,
-        userId: secretUserId,
-        name: secretName,
-        type: args.sourceType,
-        sourceId: args.sourceId,
-        runId: args.runId,
-        featureSwitchContext: args.featureSwitchContext,
-      });
-      if (value !== null) {
-        modelProviderValues.set(secretName, value);
-      }
-    }
-    values = modelProviderValues;
   }
   return Object.fromEntries(
     Object.entries(runtimeOutputSecrets).map(([envName, secretName]) => {
@@ -1509,7 +1466,7 @@ interface ModelProviderSourceLookup {
   readonly providerKey: string;
   readonly providerType: string;
   readonly userId: string;
-  readonly sourceId?: string;
+  readonly sourceId: string;
 }
 
 interface SourceStateSnapshot {
@@ -1524,11 +1481,14 @@ function modelProviderSourceLookup(args: {
   readonly providerKey: string;
   readonly userId: string;
   readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
-}): ModelProviderSourceLookup {
+}): ModelProviderSourceLookup | null {
   const metadata = resolveRefreshMetadata(
     args.providerKey,
     args.metadataByAccessSource.get(args.providerKey),
   );
+  if (!metadata.sourceId) {
+    return null;
+  }
   return {
     providerKey: args.providerKey,
     providerType:
@@ -1540,7 +1500,7 @@ function modelProviderSourceLookup(args: {
       args.userId,
       metadata.sourceUserId,
     ),
-    ...(metadata.sourceId ? { sourceId: metadata.sourceId } : {}),
+    sourceId: metadata.sourceId,
   };
 }
 
@@ -1617,22 +1577,16 @@ async function loadModelProviderSourceStates(args: {
     return result;
   }
 
-  const sourceLookups = args.providerKeys.map((providerKey) => {
-    return modelProviderSourceLookup({
+  const sourceLookups = args.providerKeys.flatMap((providerKey) => {
+    const lookup = modelProviderSourceLookup({
       providerKey,
       userId: args.userId,
       metadataByAccessSource: args.metadataByAccessSource,
     });
+    return lookup ? [lookup] : [];
   });
-  const exactLookups = sourceLookups.filter(
-    (
-      lookup,
-    ): lookup is ModelProviderSourceLookup & { readonly sourceId: string } => {
-      return lookup.sourceId !== undefined;
-    },
-  );
   const exactEntries = await Promise.all(
-    exactLookups.map(async (lookup) => {
+    sourceLookups.map(async (lookup) => {
       const [row] = await args.db
         .select({
           tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
@@ -3115,46 +3069,17 @@ async function getModelProviderRuntimeSecretValue(args: {
   readonly userId: string;
   readonly providerType: ModelProviderType;
   readonly secretName: string;
-  readonly sourceId?: string;
+  readonly sourceId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
 }): Promise<string | null> {
-  if (isPersonalSubscriptionProviderType(args.providerType)) {
-    const bundle = await readPersonalSubscriptionCredentialBundle({
-      ...args,
-      type: args.providerType,
-    });
-    return bundle?.values.get(args.secretName) ?? null;
+  if (!isPersonalSubscriptionProviderType(args.providerType)) {
+    return null;
   }
-  if (args.sourceId) {
-    const [row] = await args.db
-      .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
-      .from(modelProviderAccountSecrets)
-      .innerJoin(
-        modelProviderAccounts,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccounts.type, args.providerType),
-          eq(modelProviderAccountSecrets.name, args.secretName),
-        ),
-      )
-      .limit(1);
-    return row
-      ? await decryptStoredSecretValue(
-          row.encryptedValue,
-          args.featureSwitchContext,
-        )
-      : null;
-  }
-  return null;
+  const bundle = await readPersonalSubscriptionCredentialBundle({
+    ...args,
+    type: args.providerType,
+  });
+  return bundle?.values.get(args.secretName) ?? null;
 }
 
 interface ModelProviderRuntimeSecretForApiArgs {
@@ -3170,6 +3095,7 @@ interface ModelProviderRuntimeSecretForApiArgs {
 
 interface ResolvedModelProviderRuntimeSecretLookup {
   readonly metadata: SecretConnectorMetadata;
+  readonly sourceId: string;
   readonly providerType: ModelProviderType;
   readonly secretName: string;
   readonly userId: string;
@@ -3220,12 +3146,13 @@ function resolveModelProviderRuntimeSecretLookup(
     providerKey: args.providerKey,
     metadata,
   });
-  if (!providerType || !secretName) {
+  if (!providerType || !secretName || !metadata.sourceId) {
     return null;
   }
 
   return {
     metadata,
+    sourceId: metadata.sourceId,
     providerType,
     secretName,
     userId: resolveSecretUserId(
@@ -3242,28 +3169,24 @@ async function loadModelProviderRuntimeRefreshState(args: {
   readonly runId?: string;
   readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
 }): Promise<ModelProviderRuntimeRefreshState | null> {
-  if (args.lookup.metadata.sourceId) {
-    const [row] = await args.db
-      .select({
-        tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-        needsReconnect: modelProviderAccounts.needsReconnect,
-        lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
-      })
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.lookup.metadata.sourceId),
-          personalSubscriptionAccountAccessCondition(args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.lookup.userId),
-          eq(modelProviderAccounts.type, args.lookup.providerType),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  }
-
-  return null;
+  const [row] = await args.db
+    .select({
+      tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+      needsReconnect: modelProviderAccounts.needsReconnect,
+      lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
+    })
+    .from(modelProviderAccounts)
+    .where(
+      and(
+        eq(modelProviderAccounts.id, args.lookup.sourceId),
+        personalSubscriptionAccountAccessCondition(args.runId),
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.lookup.userId),
+        eq(modelProviderAccounts.type, args.lookup.providerType),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 async function readModelProviderRuntimeSecretForApi(
@@ -3276,7 +3199,7 @@ async function readModelProviderRuntimeSecretForApi(
     userId: lookup.userId,
     providerType: lookup.providerType,
     secretName: lookup.secretName,
-    sourceId: lookup.metadata.sourceId,
+    sourceId: lookup.sourceId,
     runId: args.runId,
     featureSwitchContext: args.featureSwitchContext,
   });
@@ -3358,7 +3281,7 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
     userId: args.userId,
     sourceType: "model-provider",
     sourceUserId: lookup.metadata.sourceUserId,
-    sourceId: lookup.metadata.sourceId,
+    sourceId: lookup.sourceId,
     runId: args.runId,
     metadataKey: lookup.metadata.metadataKey,
     connectorSecrets: {},
@@ -3404,77 +3327,6 @@ async function syncModelProviderRuntimeSecrets(args: {
 
   // Resolve ancillary subscription keys together; refresh owns reconnect errors.
   await syncPersonalSubscriptionRuntimeBundles(args, false);
-
-  const lookups = [...args.referencedKeys].flatMap((key) => {
-    const accessSourceKey = getOwnConnectorOwner(args.secretConnectorMap, key);
-    if (!accessSourceKey) {
-      return [];
-    }
-    const metadata = resolveRefreshMetadata(
-      accessSourceKey,
-      args.secretConnectorMetadataMap?.[key],
-    );
-    if (metadata.sourceType !== "model-provider") {
-      return [];
-    }
-    const providerKey = accessSourceKey;
-    if (
-      modelProviderAccessSecretName({
-        key,
-        providerKey,
-        metadata,
-      }) !== undefined
-    ) {
-      return [];
-    }
-    const providerType = modelProviderTypeForMetadata(providerKey, metadata);
-    if (providerType && isPersonalSubscriptionProviderType(providerType)) {
-      return [];
-    }
-    const secretName = modelProviderRuntimeSecretName({
-      key,
-      providerKey,
-      metadata,
-    });
-    return providerType && secretName
-      ? [
-          {
-            key,
-            providerType,
-            secretName,
-            userId: resolveSecretUserId(
-              "model-provider",
-              args.userId,
-              metadata.sourceUserId,
-            ),
-            sourceId: metadata.sourceId,
-          },
-        ]
-      : [];
-  });
-  if (lookups.length === 0) {
-    return;
-  }
-
-  await Promise.all(
-    lookups.map(async (lookup) => {
-      const value = await getModelProviderRuntimeSecretValue({
-        db: args.db,
-        orgId: args.orgId,
-        userId: lookup.userId,
-        providerType: lookup.providerType,
-        secretName: lookup.secretName,
-        sourceId: lookup.sourceId,
-        runId: args.runId,
-        featureSwitchContext: args.featureSwitchContext,
-      });
-      if (value === null || value.trim().length === 0) {
-        delete args.secrets[lookup.key];
-      } else {
-        args.secrets[lookup.key] = value;
-      }
-    }),
-  );
 }
 
 function syncPlatformRuntimeSecrets(args: {
@@ -6056,7 +5908,7 @@ function personalSubscriptionRuntimeGroups(
     {
       readonly type: "claude-code-oauth-token" | "codex-oauth-token";
       readonly userId: string;
-      readonly sourceId: string | undefined;
+      readonly sourceId: string;
       readonly outputs: { readonly key: string; readonly name: string }[];
     }
   >();
@@ -6074,7 +5926,12 @@ function personalSubscriptionRuntimeGroups(
     }
     const type = modelProviderTypeForMetadata(providerKey, metadata);
     const name = modelProviderRuntimeSecretName({ key, providerKey, metadata });
-    if (!type || !isPersonalSubscriptionProviderType(type) || !name) {
+    if (
+      !type ||
+      !isPersonalSubscriptionProviderType(type) ||
+      !name ||
+      !metadata.sourceId
+    ) {
       continue;
     }
     const userId = resolveSecretUserId(
@@ -6137,6 +5994,9 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
   args: ModelProviderRuntimeSecretForApiArgs,
   signal: AbortSignal,
 ) {
+  if (!args.metadata.sourceId) {
+    return { status: "unavailable" as const, reconnectState: null };
+  }
   const lookup = resolveModelProviderRuntimeSecretLookup(args);
   if (!lookup || !isPersonalSubscriptionProviderType(lookup.providerType)) {
     throw new Error("Expected a personal subscription credential lookup");
@@ -6146,7 +6006,7 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
     orgId: args.orgId,
     userId: lookup.userId,
     type: lookup.providerType,
-    sourceId: lookup.metadata.sourceId,
+    sourceId: lookup.sourceId,
     runId: args.runId,
     featureSwitchContext: args.featureSwitchContext,
   };

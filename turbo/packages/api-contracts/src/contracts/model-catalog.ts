@@ -5,11 +5,7 @@ import { apiErrorSchema } from "./errors";
 const c = initContract();
 
 /** The Pi route classes `run_model_catalog.pi_route_class` may hold. */
-export const PI_ROUTE_CLASSES = [
-  "claude-native",
-  "gpt-codex",
-  "deepseek",
-] as const;
+export const PI_ROUTE_CLASSES = ["gpt-codex"] as const;
 
 export type PiRouteClass = (typeof PI_ROUTE_CLASSES)[number];
 
@@ -35,10 +31,9 @@ const modelCatalogModelSchema = z.object({
   priceTier: z.string().nullable(),
   /**
    * Plan policy for organizations whose plan restricts Built-in models:
-   * whether they may run this model on a Built-in route. Their own routes
-   * (BYOK, organization credentials, custom gateways) are never a plan
-   * entitlement; only a member's connected personal subscription on the
-   * model's catalog subscription route is.
+   * whether they may run this model on a Built-in route. Only a member's
+   * connected personal subscription on the model's catalog subscription route
+   * is allowed otherwise.
    */
   builtInOnRestrictedPlans: z.boolean(),
   /**
@@ -87,28 +82,3 @@ export const modelCatalogContract = c.router({
 });
 
 export type ModelCatalogContract = typeof modelCatalogContract;
-
-const THIRD_PARTY_GATEWAY_PROVIDER_TYPES: ReadonlySet<string> = new Set([
-  "openrouter-api-key",
-  "vercel-ai-gateway",
-  "openrouter-codex",
-  "vercel-ai-gateway-codex",
-]);
-
-/**
- * Whether an organization's custom gateway may serve a model, from the
- * provider types of the model's enabled non-Built-in routes. A model offered
- * on its own routes only through the vendor's API and subscription (no
- * third-party gateway route) is not served through custom gateways either;
- * models without own routes are left to the gateway mapping.
- */
-export function ownRoutesAllowCustomGateway(
-  ownRouteProviderTypes: readonly string[],
-): boolean {
-  return (
-    ownRouteProviderTypes.length === 0 ||
-    ownRouteProviderTypes.some((providerType) => {
-      return THIRD_PARTY_GATEWAY_PROVIDER_TYPES.has(providerType);
-    })
-  );
-}

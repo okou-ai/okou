@@ -3,13 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { OpenRouterRequestError, generateTextWithUsage } from "../openrouter";
 import {
-  openRouterFailureReason,
-  type OpenRouterDiagnostics,
-} from "../openrouter-failure";
-
-const endpoint = "https://openrouter.ai/api/v1/chat/completions";
+  OPENROUTER_DECISIONS_URL,
+  OpenRouterRequestError,
+  generateDecisions,
+} from "../openrouter";
 
 /**
  * Provider payloads are untrusted: prompt history, credentials and unbounded
@@ -139,10 +137,12 @@ const cases = Object.freeze([
   },
 ]);
 
-async function rejectedGeneration() {
-  return await generateTextWithUsage("synthetic/model", [
-    { role: "user", content: "Summarize the launch plan" },
-  ]).then(
+async function rejectedDecisions() {
+  return await generateDecisions({
+    model: "synthetic/model",
+    state: { summary: "launch plan" },
+    questions: {},
+  }).then(
     () => {
       throw new Error("Expected the rejected OpenRouter request to throw");
     },
@@ -153,88 +153,19 @@ async function rejectedGeneration() {
 }
 
 describe("OpenRouter request error diagnostics", () => {
-  it.each([true, false])(
-    "preserves body-read error identity with observation %s",
-    async (observe) => {
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
-      const original = new Error(privateDetail, {
-        cause: { code: "ECONNRESET" },
-      });
-      server.use(
-        http.post(endpoint, () => {
-          return new HttpResponse(
-            new ReadableStream({
-              start(controller) {
-                controller.error(original);
-              },
-            }),
-          );
-        }),
-      );
-      const diagnostics: OpenRouterDiagnostics = { phase: "configuration" };
-      const generation = generateTextWithUsage(
-        "synthetic/model",
-        [{ role: "user", content: "Describe" }],
-        100,
-        observe ? { diagnostics } : {},
-      );
-      await expect(generation).rejects.toBe(original);
-      expect(openRouterFailureReason(original)).toBe("network");
-      if (observe) {
-        expect(diagnostics).toStrictEqual({
-          phase: "body_read",
-          upstreamStatus: 200,
-        });
-      }
-    },
-  );
-
-  it.each([true, false])(
-    "preserves opted-in partial output with observation %s",
-    async (observe) => {
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
-      server.use(
-        http.post(endpoint, () => {
-          return HttpResponse.json({
-            choices: [
-              {
-                finish_reason: "length",
-                message: { content: " Partial summary " },
-              },
-            ],
-            usage: { completion_tokens: 100 },
-          });
-        }),
-      );
-      const diagnostics: OpenRouterDiagnostics = { phase: "configuration" };
-      await expect(
-        generateTextWithUsage(
-          "synthetic/model",
-          [{ role: "user", content: "Summarize" }],
-          100,
-          { acceptTruncatedText: true, ...(observe ? { diagnostics } : {}) },
-        ),
-      ).resolves.toStrictEqual({
-        text: "Partial summary",
-        usage: { completion_tokens: 100 },
-        truncated: true,
-      });
-    },
-  );
-
   it.each(cases)(
     "keeps only allowlisted, bounded fields for $name",
     async ({ body, expected }) => {
       mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
       server.use(
-        http.post(endpoint, () => {
+        http.post(OPENROUTER_DECISIONS_URL, () => {
           return typeof body === "string"
             ? HttpResponse.text(body, { status: 400 })
             : HttpResponse.json(body, { status: 400 });
         }),
       );
 
-      const error = await rejectedGeneration();
+      const error = await rejectedDecisions();
 
       expect(error).toBeInstanceOf(OpenRouterRequestError);
       if (!(error instanceof OpenRouterRequestError)) {

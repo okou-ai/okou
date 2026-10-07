@@ -147,7 +147,7 @@ async function sendUntilPicked(
   };
 }
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   it("adds Codex image upload guidance for web chat Codex sends", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -985,7 +985,6 @@ describe("CHAT-02: model-first provider policies", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId: requireOrgId(actor),
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: true,
     });
 

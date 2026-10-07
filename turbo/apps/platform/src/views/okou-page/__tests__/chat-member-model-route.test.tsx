@@ -79,7 +79,6 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
     });
     const trigger = await composerModelTrigger("GPT 5.6 Sol");
-    expect(trigger).not.toHaveTextContent("BYOK");
     click(trigger);
 
     const option = await findModelMenuOption((name) => {

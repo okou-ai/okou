@@ -63,7 +63,10 @@ describe("DELETE /api/me/model-providers/:type", () => {
       routes: personalModelProvidersByTypeTestRoutes,
     })(personalModelProvidersByTypeContract);
     const response = await accept(
-      client.delete({ params: { type: "anthropic-api-key" }, headers: {} }),
+      client.delete({
+        params: { type: "claude-code-oauth-token" },
+        headers: {},
+      }),
       [401],
     );
     expect(response.body).toMatchObject({
@@ -79,7 +82,7 @@ describe("DELETE /api/me/model-providers/:type", () => {
     })(personalModelProvidersByTypeContract);
     const response = await accept(
       client.delete({
-        params: { type: "anthropic-api-key" },
+        params: { type: "claude-code-oauth-token" },
         headers: { authorization: "Bearer clerk-session" },
       }),
       [401],

@@ -38,7 +38,6 @@ export const resolveRequiredDefaultChatThreadModelPin$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        defaultSource: undefined,
         orgPlanCapabilities: orgPlanCapabilities,
         modelBootstrap: args.modelBootstrap,
       },

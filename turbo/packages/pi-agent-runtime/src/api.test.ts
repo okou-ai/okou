@@ -111,8 +111,8 @@ describe("Pi API facade", () => {
       role: "assistant",
       content: [{ type: "text", text: "complete" }],
       api: "openai-responses",
-      provider: "deepseek",
-      model: "deepseek-v4-flash",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
       usage: {
         input: 1,
         output: 1,

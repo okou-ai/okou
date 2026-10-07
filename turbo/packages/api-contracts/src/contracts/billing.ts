@@ -87,7 +87,6 @@ const billingStatusResponseSchema = z.object({
   canBuyCredits: z.boolean(),
   showUsagePack: z.boolean(),
   autoRechargeAllowed: z.boolean(),
-  supportByok: z.boolean(),
   restrictedBuiltInModels: z.boolean(),
   workflowWebhookAutomationAllowed: z.boolean(),
   credits: z.number(),

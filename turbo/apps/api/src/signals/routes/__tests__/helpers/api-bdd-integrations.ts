@@ -1274,7 +1274,7 @@ export function createBddIntegrationApi(context: TestContext) {
       await createRunsApi(context).ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
       });
-      mockCodexDeviceAuthProvider({ tokenScope: "personal" });
+      mockCodexDeviceAuthProvider();
       const auth = createAuthDeviceApiActions(context);
       const started = await auth.requestCodexStart(actor, "personal", [200], {
         mode: "add",

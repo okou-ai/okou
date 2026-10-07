@@ -502,9 +502,8 @@ production release or fleet-drain evidence.
 Chat stores effort preferences per model in `model_settings`. At run admission,
 normal sends, queued inputs, and workflow launches resolve the preference against
 the selected runtime and concrete provider. An unsupported route choice falls
-back to the model default without rewriting the preference. DeepSeek defaults to
-`high`, supported by both its direct and OpenRouter routes; their other choices
-remain distinct. Claude's `extra` product label maps to Pi's `xhigh` level.
+back to the route's `model_routes.default_effort` without rewriting the
+preference. Claude's `extra` product label maps to Pi's `xhigh` level.
 
 The effective preference is captured in `agent_runs.reasoning_effort` and applied
 to the existing `piModelConfig.thinkingLevel` field before the execution context
@@ -513,11 +512,11 @@ When starting a new run from prior JSONL, the Sandbox appends a thinking
 change if the captured level differs. Historical entries remain intact, and the
 run keeps its captured level. Launches without a configured level
 retain the SDK session/default behavior. Memory learning and consolidation keep
-their own model policies.
+their own model binding.
 
-The model-policy API advertises the current concrete built-in provider to the
-picker; server admission resolves it again when the run starts. This advisory
-response does not reserve a route. New API launch contexts select the corresponding
+`GET /api/run-models` lists Auto and the caller's connected personal
+subscription models for the picker; server admission resolves the route again
+when the run starts. This advisory response does not reserve a route. New API launch contexts select the corresponding
 commit-addressed CLI containing the runtime change; queued execution contexts retain
 the CLI and configuration they captured. API rollback does not rewrite stored effort
 or history; this staff-only feature requires the updated API and CLI to honor changed

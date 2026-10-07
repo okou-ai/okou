@@ -3,14 +3,10 @@ import {
   hasModelSelection,
   getModels,
   getDefaultModel,
-  getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getFrameworkForType,
   getModelProviderPresentationLabel,
   normalizeBuiltInModelId,
-  getModelImageInputSupport,
-  modelSupportsImageInput,
-  getSelectableProviderTypes,
   getBuiltInModelRouteVendors,
   getCatalogRunModelRouteAccess,
   normalizeRunModelId,
@@ -24,12 +20,10 @@ import {
   modelProviderCredentialScopeSchema,
   modelProviderResponseSchema,
   availableRunModelSchema,
-  upsertModelProviderRequestSchema,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
   modelProviderTypeSchema,
-  modelProviderFrameworkSchema,
 } from "../model-providers";
 import {
   findMatchingPermissions,
@@ -103,7 +97,7 @@ describe("model-first canonical catalog", () => {
       "allowed",
     );
     expect(
-      getCatalogRunModelRouteAccess(freeModel, "openai-api-key", true),
+      getCatalogRunModelRouteAccess(freeModel, "codex-oauth-token", true),
     ).toBe("pro_required");
     expect(getCatalogRunModelRouteAccess(paidModel, "built-in", true)).toBe(
       "pro_required",
@@ -112,17 +106,12 @@ describe("model-first canonical catalog", () => {
       "allowed",
     );
     expect(
-      getCatalogRunModelRouteAccess(paidModel, "openai-api-key", false),
+      getCatalogRunModelRouteAccess(paidModel, "codex-oauth-token", false),
     ).toBe("allowed");
   });
 
   it("lists every Built-in route provider vendor", () => {
-    expect(getBuiltInModelRouteVendors()).toEqual([
-      "anthropic",
-      "openrouter",
-      "deepseek",
-      "openai",
-    ]);
+    expect(getBuiltInModelRouteVendors()).toEqual(["openrouter"]);
   });
 
   it("recognizes only own Okou model IDs", () => {
@@ -213,14 +202,14 @@ describe("model-first canonical catalog", () => {
 });
 
 describe("model selection for Anthropic-native providers", () => {
-  it.each(["claude-code-oauth-token", "anthropic-api-key"] as const)(
+  it.each(["claude-code-oauth-token"] as const)(
     "%s supports model selection",
     (type) => {
       expect(hasModelSelection(type)).toBe(true);
     },
   );
 
-  it.each(["claude-code-oauth-token", "anthropic-api-key"] as const)(
+  it.each(["claude-code-oauth-token"] as const)(
     "%s offers fable, sonnet, and opus models",
     (type) => {
       const models = getModels(type);
@@ -231,58 +220,18 @@ describe("model selection for Anthropic-native providers", () => {
     },
   );
 
-  it.each(["claude-code-oauth-token", "anthropic-api-key"] as const)(
+  it.each(["claude-code-oauth-token"] as const)(
     "%s defaults to claude-sonnet-5",
     (type) => {
       expect(getDefaultModel(type)).toBe("claude-sonnet-5");
     },
   );
 
-  it("anthropic-api-key maps ANTHROPIC_MODEL via env bindings", () => {
-    const envBindings = getModelProviderEnvBindings("anthropic-api-key");
-    expect(envBindings).toBeDefined();
-    expect(envBindings!["ANTHROPIC_API_KEY"]).toBe("$secret");
-    expect(envBindings!["ANTHROPIC_MODEL"]).toBe("$model");
-  });
-
   it("claude-code-oauth-token maps ANTHROPIC_MODEL via env bindings", () => {
     const envBindings = getModelProviderEnvBindings("claude-code-oauth-token");
     expect(envBindings).toBeDefined();
     expect(envBindings!["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("$secret");
     expect(envBindings!["ANTHROPIC_MODEL"]).toBe("$model");
-  });
-});
-
-describe("model selection for Claude-compatible gateway providers", () => {
-  it("openrouter-api-key exposes current Claude models", () => {
-    expect(getModels("openrouter-api-key")).toEqual([
-      "anthropic/claude-fable-5.1",
-      "anthropic/claude-opus-5.5",
-      "anthropic/claude-opus-5",
-      "anthropic/claude-sonnet-5",
-      "anthropic/claude-opus-4.5",
-      "anthropic/claude-sonnet-4.5",
-    ]);
-  });
-
-  it.each(["openrouter-api-key", "vercel-ai-gateway"] as const)(
-    "%s supports current Anthropic models",
-    (type) => {
-      expect(getModels(type)).toContain("anthropic/claude-fable-5.1");
-      expect(getModels(type)).toContain("anthropic/claude-opus-5.5");
-      expect(getModels(type)).toContain("anthropic/claude-opus-5");
-    },
-  );
-
-  it.each([
-    "anthropic-api-key",
-    "claude-code-oauth-token",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-  ] as const)("%s keeps Claude Code attachments enabled", (type) => {
-    const envBindings = getModelProviderEnvBindings(type);
-    expect(envBindings).toBeDefined();
-    expect(envBindings!["CLAUDE_CODE_DISABLE_ATTACHMENTS"]).toBeUndefined();
   });
 });
 
@@ -304,252 +253,9 @@ describe("normalizeBuiltInModelId", () => {
   });
 });
 
-describe("model image input support", () => {
-  it.each([
-    ["deepseek-flash", "deepseek", "supported"],
-    ["deepseek-v4-flash", "deepseek", "supported"],
-    ["deepseek-v4-pro", "deepseek", "unsupported"],
-    ["deepseek-flash", undefined, "unknown"],
-    ["deepseek-v4-flash", undefined, "unsupported"],
-    ["deepseek-flash", "openrouter-codex", "unknown"],
-    ["deepseek-v4-flash", "openrouter-codex", "unsupported"],
-    ["deepseek-v4-flash", "custom-openai-responses", "unsupported"],
-    ["deepseek/deepseek-v4-flash", "deepseek", "unknown"],
-  ] as const)(
-    "resolves %s image support on %s as %s",
-    (model, providerType, support) => {
-      expect(getModelImageInputSupport(model, providerType)).toBe(support);
-      expect(modelSupportsImageInput(model, providerType)).toBe(
-        support === "supported",
-      );
-    },
-  );
-
-  it.each([
-    "gpt-6-astra",
-    "openai/gpt-6-astra",
-    "gpt-6-sol",
-    "openai/gpt-6-sol",
-    "gpt-6-luna",
-    "openai/gpt-6-luna",
-    "deepseek-v4.1-flash",
-    "deepseek/deepseek-v4.1-flash",
-    "claude-fable-5-1",
-    "anthropic/claude-fable-5.1",
-    "claude-opus-5-5",
-    "anthropic/claude-opus-5.5",
-    "claude-opus-5",
-    "anthropic/claude-opus-5",
-    "claude-sonnet-4-6",
-    "claude-sonnet-5",
-    "anthropic/claude-sonnet-5",
-    "claude-opus-4-8",
-  ])("marks %s as image-input capable", (model) => {
-    expect(modelSupportsImageInput(model)).toBe(true);
-    expect(getModelImageInputSupport(model)).toBe("supported");
-  });
-
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"])(
-    "marks %s as not image-input capable",
-    (model) => {
-      expect(modelSupportsImageInput(model)).toBe(false);
-      expect(getModelImageInputSupport(model)).toBe("unsupported");
-    },
-  );
-
-  it("treats unknown model ids as unknown rather than unsupported", () => {
-    expect(modelSupportsImageInput("custom/model")).toBe(false);
-    expect(getModelImageInputSupport("custom/model")).toBe("unknown");
-  });
-});
-
-describe("deepseek Responses provider", () => {
-  it("uses the Codex framework with the DeepSeek API key", () => {
-    expect(modelProviderTypeSchema.safeParse("deepseek").success).toBe(true);
-    expect(getSelectableProviderTypes()).toContain("deepseek");
-    expect(getFrameworkForType("deepseek")).toBe("codex");
-    expect(getSecretNameForType("deepseek")).toBe("DEEPSEEK_API_KEY");
-    expect(getModels("deepseek")).toEqual([
-      "deepseek-flash",
-      "deepseek-v4-flash",
-    ]);
-    expect(getDefaultModel("deepseek")).toBe("deepseek-flash");
-  });
-
-  it("accepts the native default as a provider model with a matching runtime catalog", () => {
-    const defaultModel = MODEL_PROVIDER_TYPES.deepseek.defaultModel;
-    expect(
-      upsertModelProviderRequestSchema.safeParse({
-        type: "deepseek",
-        secret: "test-deepseek-key",
-        selectedModel: defaultModel,
-      }).success,
-    ).toBe(true);
-    expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
-      modelCatalog: {
-        models: expect.arrayContaining([
-          expect.objectContaining({
-            slug: defaultModel,
-            input_modalities: ["text", "image"],
-          }),
-        ]),
-      },
-    });
-    expect(normalizeRunModelId(defaultModel)).toBe("deepseek-flash");
-    expect(normalizeRunModelId("deepseek-v4-flash")).toBe("deepseek-v4-flash");
-    expect(normalizeRunModelId("deepseek-v4.1-flash")).toBe(
-      "deepseek-v4.1-flash",
-    );
-  });
-
-  it.each([
-    ["deepseek", "deepseek-v4-flash", ["text", "image"]],
-    ["custom-openai-responses", "custom-flash", ["text"]],
-  ] as const)(
-    "projects legacy Flash capabilities for the %s route",
-    (providerType, runtimeModel, modalities) => {
-      expect(
-        getModelProviderCodexCatalogForModel(
-          "deepseek-v4-flash",
-          runtimeModel,
-          providerType,
-        )?.models,
-      ).toEqual([
-        expect.objectContaining({
-          slug: runtimeModel,
-          input_modalities: modalities,
-        }),
-      ]);
-    },
-  );
-
-  it("configures the official DeepSeek Responses model catalog", () => {
-    expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
-      providerId: "deepseek",
-      name: "DeepSeek",
-      baseUrl: "https://api.deepseek.com/",
-      envKey: "OPENAI_API_KEY",
-      requiresOpenaiAuth: false,
-      wireApi: "responses",
-      supportsWebsockets: false,
-      modelCatalog: {
-        models: [
-          expect.objectContaining({
-            slug: "deepseek-flash",
-            display_name: "DeepSeek-V4.1-Flash",
-            context_window: 1_048_576,
-            input_modalities: ["text", "image"],
-            apply_patch_tool_type: "freeform",
-          }),
-          expect.objectContaining({
-            slug: "deepseek-v4-flash",
-            display_name: "DeepSeek-V4.1-Flash",
-            input_modalities: ["text", "image"],
-            default_reasoning_level: "high",
-            context_window: 1_048_576,
-            minimal_client_version: "0.144.0",
-            experimental_supported_tools: [],
-            supports_search_tool: true,
-            default_service_tier: null,
-            supports_reasoning_summaries: true,
-            base_instructions: expect.stringContaining("You are Codex"),
-            model_messages: expect.objectContaining({
-              instructions_template: expect.stringContaining("You are Codex"),
-            }),
-          }),
-        ],
-      },
-    });
-  });
-
-  it("scopes the firewall to the native Responses endpoint", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS.deepseek;
-    expect(config.apis[0]!.base).toBe("https://api.deepseek.com/responses");
-    expect(config.apis[0]!.auth.headers).toEqual({
-      Authorization: "Bearer ${{ secrets.DEEPSEEK_API_KEY }}",
-    });
-  });
-
-  it("keeps Pi credential injection on the Responses endpoint", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS.deepseek;
-    expect(
-      config.apis.map((api) => {
-        return api.base;
-      }),
-    ).toEqual(["https://api.deepseek.com/responses"]);
-    for (const api of config.apis) {
-      expect(api.auth.headers).toEqual({
-        Authorization: "Bearer ${{ secrets.DEEPSEEK_API_KEY }}",
-      });
-    }
-  });
-});
-
-describe("openai-api-key codex provider", () => {
-  it("declares codex framework", () => {
-    expect(getFrameworkForType("openai-api-key")).toBe("codex");
-  });
-
-  it("maps OPENAI_API_KEY and OPENAI_MODEL via env bindings", () => {
-    const envBindings = getModelProviderEnvBindings("openai-api-key");
-    expect(envBindings).toBeDefined();
-    expect(envBindings!["OPENAI_API_KEY"]).toBe("$secret");
-    expect(envBindings!["OPENAI_MODEL"]).toBe("$model");
-  });
-
-  it("offers codex-compatible models with gpt-5.6-sol default", () => {
-    expect(getModels("openai-api-key")).toEqual([
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-    ]);
-    expect(getDefaultModel("openai-api-key")).toBe("gpt-5.6-sol");
-  });
-
-  it("supports model selection", () => {
-    expect(hasModelSelection("openai-api-key")).toBe(true);
-  });
-
-  it("firewall scopes to OpenAI Responses API", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS["openai-api-key"];
-    expect(config.apis[0]!.base).toBe("https://api.openai.com/v1/responses");
-    expect(config.apis[0]!.auth.headers).toEqual({
-      Authorization: "Bearer ${{ secrets.OPENAI_API_KEY }}",
-    });
-  });
-
-  it("also covers the Pi sandbox chat-completions path, still scoped", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS["openai-api-key"];
-    expect(
-      config.apis.map((api) => {
-        return api.base;
-      }),
-    ).toEqual([
-      "https://api.openai.com/v1/responses",
-      "https://api.openai.com/v1/chat/completions",
-    ]);
-  });
-
-  it("modelProviderTypeSchema accepts openai-api-key", () => {
-    expect(modelProviderTypeSchema.safeParse("openai-api-key").success).toBe(
-      true,
-    );
-  });
-
-  it("modelProviderFrameworkSchema accepts codex", () => {
-    expect(modelProviderFrameworkSchema.safeParse("codex").success).toBe(true);
-  });
-});
-
 describe("firewall base URL scoped to /v1/messages (#9560)", () => {
   it.each([
-    ["anthropic-api-key", "https://api.anthropic.com/v1/messages"],
     ["claude-code-oauth-token", "https://api.anthropic.com/v1/messages"],
-    ["openrouter-api-key", "https://openrouter.ai/api/v1/messages"],
-    ["vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1/messages"],
   ] as const)(
     "%s scopes firewall to /v1/messages path prefix",
     (type, expectedBase) => {
@@ -590,43 +296,13 @@ describe("firewall base URL scoped to /v1/messages (#9560)", () => {
 describe("model provider firewall placeholders", () => {
   it.each([
     [
-      "anthropic-api-key",
-      "ANTHROPIC_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_API_KEY,
-    ],
-    [
       "claude-code-oauth-token",
       "CLAUDE_CODE_OAUTH_TOKEN",
       MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN,
     ],
     [
-      "openrouter-api-key",
-      "OPENROUTER_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN,
-    ],
-    [
-      "deepseek",
-      "DEEPSEEK_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-    ],
-    [
-      "vercel-ai-gateway",
-      "VERCEL_AI_GATEWAY_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN,
-    ],
-    [
       "openrouter-codex",
       "OPENROUTER_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-    ],
-    [
-      "vercel-ai-gateway-codex",
-      "VERCEL_AI_GATEWAY_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-    ],
-    [
-      "openai-api-key",
-      "OPENAI_API_KEY",
       MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
     ],
   ] as const)(
@@ -657,10 +333,6 @@ describe("model provider firewall placeholders", () => {
 describe("codex-oauth-token codex provider", () => {
   it("declares codex framework", () => {
     expect(getFrameworkForType("codex-oauth-token")).toBe("codex");
-  });
-
-  it("appears in selectable provider types", () => {
-    expect(getSelectableProviderTypes()).toContain("codex-oauth-token");
   });
 
   it("supports only the auth_json multi-auth shape with CHATGPT_* fields", () => {
@@ -893,29 +565,23 @@ describe("codex-oauth-token codex provider", () => {
 
 describe("model provider primary firewall bases", () => {
   it.each([
-    ["anthropic-api-key", "https://api.anthropic.com/v1/messages"],
     ["claude-code-oauth-token", "https://api.anthropic.com/v1/messages"],
-    ["openrouter-api-key", "https://openrouter.ai/api/v1/messages"],
-    ["deepseek", "https://api.deepseek.com/responses"],
-    ["vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1/messages"],
-    ["openai-api-key", "https://api.openai.com/v1/responses"],
     ["codex-oauth-token", "https://chatgpt.com/backend-api"],
     ["openrouter-codex", "https://openrouter.ai/api/v1/responses"],
-    ["vercel-ai-gateway-codex", "https://ai-gateway.vercel.sh/v1/responses"],
   ] as const)("%s firewall base URL is %s", (type, expected) => {
     expect(MODEL_PROVIDER_FIREWALL_CONFIGS[type]!.apis[0]!.base).toBe(expected);
   });
 });
 
-describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway-codex)", () => {
-  it.each(["openrouter-codex", "vercel-ai-gateway-codex"] as const)(
+describe("Auto concrete provider (openrouter-codex)", () => {
+  it.each(["openrouter-codex"] as const)(
     "%s declares codex framework",
     (type) => {
       expect(getFrameworkForType(type)).toBe("codex");
     },
   );
 
-  it.each(["openrouter-codex", "vercel-ai-gateway-codex"] as const)(
+  it.each(["openrouter-codex"] as const)(
     "%s maps OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL",
     (type) => {
       const envBindings = getModelProviderEnvBindings(type);
@@ -926,60 +592,26 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
     },
   );
 
-  it.each(["openrouter-codex", "vercel-ai-gateway-codex"] as const)(
+  it.each(["openrouter-codex"] as const)(
     "%s offers current GPT models with gpt-5.6-luna default",
     (type) => {
       expect(getModels(type)).toEqual(
         expect.arrayContaining(["openai/gpt-5.6-sol", "openai/gpt-5.6-luna"]),
       );
-      if (type === "openrouter-codex") {
-        expect(getModels(type)).toEqual(
-          expect.arrayContaining([
-            "openai/gpt-6-astra",
-            "openai/gpt-6-sol",
-            "openai/gpt-6-luna",
-            "deepseek/deepseek-v4.1-flash",
-            "deepseek/deepseek-v4-flash",
-          ]),
-        );
-      }
-      if (type === "vercel-ai-gateway-codex") {
-        expect(getModels(type)).not.toContain("openai/gpt-6-astra");
-        expect(getModels(type)).not.toContain("openai/gpt-6-sol");
-        expect(getModels(type)).not.toContain("openai/gpt-6-luna");
-      }
+      expect(getModels(type)).toEqual(
+        expect.arrayContaining([
+          "openai/gpt-6-astra",
+          "openai/gpt-6-sol",
+          "openai/gpt-6-luna",
+          "deepseek/deepseek-v4.1-flash",
+          "deepseek/deepseek-v4-flash",
+        ]),
+      );
       expect(getDefaultModel(type)).toBe("openai/gpt-5.6-luna");
     },
   );
 
-  it("appear in selectable provider types", () => {
-    const selectable = getSelectableProviderTypes();
-    expect(selectable).toContain("openrouter-codex");
-    expect(selectable).toContain("vercel-ai-gateway-codex");
-  });
-
-  it("share the secretName with their claude-code twin gateway", () => {
-    // Same API key powers both protocols on the same upstream gateway.
-    // The codex twin must not invent a separate secret environment name.
-    const openrouterCodex = MODEL_PROVIDER_TYPES["openrouter-codex"];
-    const openrouterClaudeCode = MODEL_PROVIDER_TYPES["openrouter-api-key"];
-    expect(openrouterCodex.secretName).toBe(openrouterClaudeCode.secretName);
-
-    const vercelCodex = MODEL_PROVIDER_TYPES["vercel-ai-gateway-codex"];
-    const vercelClaudeCode = MODEL_PROVIDER_TYPES["vercel-ai-gateway"];
-    expect(vercelCodex.secretName).toBe(vercelClaudeCode.secretName);
-  });
-
-  it("modelProviderTypeSchema accepts both new types", () => {
-    expect(modelProviderTypeSchema.safeParse("openrouter-codex").success).toBe(
-      true,
-    );
-    expect(
-      modelProviderTypeSchema.safeParse("vercel-ai-gateway-codex").success,
-    ).toBe(true);
-  });
-
-  it.each(["openrouter-codex", "vercel-ai-gateway-codex"] as const)(
+  it.each(["openrouter-codex"] as const)(
     "%s injects Authorization only on exact OpenAI inference paths",
     (type) => {
       const config = MODEL_PROVIDER_FIREWALL_CONFIGS[type];
@@ -1002,58 +634,6 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
       }
     },
   );
-});
-
-describe("custom model gateway provider types", () => {
-  it("resolve the framework the runtime adapter needs", () => {
-    expect(getFrameworkForType("custom-anthropic-messages")).toBe(
-      "claude-code",
-    );
-    expect(getFrameworkForType("custom-openai-responses")).toBe("codex");
-  });
-
-  it("stay out of the provider picker", () => {
-    const selectable = getSelectableProviderTypes();
-    expect(selectable).not.toContain("custom-anthropic-messages");
-    expect(selectable).not.toContain("custom-openai-responses");
-  });
-
-  it("are accepted by modelProviderTypeSchema so stored rows parse", () => {
-    expect(
-      modelProviderTypeSchema.safeParse("custom-anthropic-messages").success,
-    ).toBe(true);
-    expect(
-      modelProviderTypeSchema.safeParse("custom-openai-responses").success,
-    ).toBe(true);
-  });
-
-  it("carry no static credential, binding, or model catalog", () => {
-    // The runtime is compiled from the surface row, so a static entry here
-    // would be a second source of truth.
-    for (const type of [
-      "custom-anthropic-messages",
-      "custom-openai-responses",
-    ] as const) {
-      expect(getSecretNameForType(type)).toBeUndefined();
-      expect(getAuthMethodsForType(type)).toBeUndefined();
-      expect(getModelProviderEnvBindings(type)).toBeUndefined();
-      expect(getModels(type)).toBeUndefined();
-      expect(getDefaultModel(type)).toBeUndefined();
-      expect(hasModelSelection(type)).toBe(false);
-    }
-  });
-
-  it("leave the genuine Vercel BYOK types intact", () => {
-    expect(getSecretNameForType("vercel-ai-gateway")).toBe(
-      "VERCEL_AI_GATEWAY_API_KEY",
-    );
-    expect(
-      getModelProviderEnvBindings("vercel-ai-gateway-codex")?.OPENAI_BASE_URL,
-    ).toBe("https://ai-gateway.vercel.sh/v1");
-    const selectable = getSelectableProviderTypes();
-    expect(selectable).toContain("vercel-ai-gateway");
-    expect(selectable).toContain("vercel-ai-gateway-codex");
-  });
 });
 
 describe("built-in provider discriminator contract", () => {
@@ -1105,14 +685,7 @@ describe("built-in provider discriminator contract", () => {
       "Built-in model",
     );
     expect(getSecretNameForType("built-in")).toBeUndefined();
-    expect(getModelProviderFirewall("anthropic-api-key")).toBeDefined();
+    expect(getModelProviderFirewall("openrouter-codex")).toBeDefined();
     expect(MODEL_PROVIDER_FIREWALL_CONFIGS).not.toHaveProperty("built-in");
-
-    const selectable = getSelectableProviderTypes();
-    expect(
-      selectable.filter((type) => {
-        return type === "built-in";
-      }),
-    ).toHaveLength(1);
   });
 });

@@ -134,10 +134,10 @@ it("exports real Pi spans through the authenticated relay without connector cred
       const created = await createPiAgentSessionForRuntime({
         ...target,
         model: {
-          provider: "openai",
+          provider: "openrouter",
           baseUrl: `${origin}/v1`,
           apiKey: "test-model-key",
-          model: "gpt-6-luna",
+          model: "openai/gpt-6-luna",
           dialect: "openai-responses",
           transport: "sse",
         },

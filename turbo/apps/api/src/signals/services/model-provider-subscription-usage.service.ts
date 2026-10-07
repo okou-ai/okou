@@ -122,7 +122,7 @@ async function refreshCodexProvider(
   signal: AbortSignal,
 ): Promise<ModelProviderResponse> {
   const readResetCreditExpiry = prepareCodexResetCreditExpiryRead(
-    { scope: "personal", orgId: args.orgId, userId: args.userId },
+    { orgId: args.orgId, userId: args.userId },
     args.provider.modelProviderId ? args.provider.id : null,
   );
   const accountMetadata = {
@@ -424,7 +424,7 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
 
     const invalidateExpiry = () => {
       invalidateCodexResetCreditExpiry(
-        { scope: "personal", orgId: args.orgId, userId: args.userId },
+        { orgId: args.orgId, userId: args.userId },
         { binding: args.modelProviderAccountId ?? null },
       );
     };

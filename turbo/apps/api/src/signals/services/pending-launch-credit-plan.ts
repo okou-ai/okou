@@ -18,7 +18,6 @@ const capabilitiesSchema = z.object({
   canBuyCredits: z.boolean(),
   showUsagePack: z.boolean(),
   autoRechargeAllowed: z.boolean(),
-  supportByok: z.boolean(),
   restrictedBuiltInModels: z.boolean().nullable(),
   workflowWebhookAutomationAllowed: z.boolean(),
   audioLifetimeLimit: z.number().nullable(),
@@ -38,7 +37,7 @@ export function pendingCreditPlanSql(orgId: string) {
     'baseConcurrencyLimit', ${orgPlanEntitlements.baseConcurrencyLimit},
     'canBuyConcurrency', ${orgPlanEntitlements.canBuyConcurrency}, 'canBuyCredits', ${orgPlanEntitlements.canBuyCredits},
     'showUsagePack', ${orgPlanEntitlements.showUsagePack}, 'autoRechargeAllowed', ${orgPlanEntitlements.autoRechargeAllowed},
-    'supportByok', ${orgPlanEntitlements.supportByok}, 'restrictedBuiltInModels', ${orgPlanEntitlements.restrictedBuiltInModels},
+    'restrictedBuiltInModels', ${orgPlanEntitlements.restrictedBuiltInModels},
     'workflowWebhookAutomationAllowed', ${orgPlanEntitlements.workflowWebhookTriggerAllowed},
     'audioLifetimeLimit', ${orgPlanEntitlements.audioLifetimeLimit}, 'audioDailyRateLimit', ${orgPlanEntitlements.audioDailyRateLimit},
     'audioDailyDurationSeconds', ${orgPlanEntitlements.audioDailyDurationSeconds})`

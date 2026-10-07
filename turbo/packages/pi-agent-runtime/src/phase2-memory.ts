@@ -424,7 +424,7 @@ type ResolvedPiAgentModel = NonNullable<ReturnType<typeof resolvePiAgentModel>>;
  * Maintenance is pinned to the source run's own binding, so the sandbox sees
  * the binding only through its resolved model. `null` in the published map
  * means the level is unsupported, and only the built-in binding's DeepSeek
- * model reports that for `medium`; every BYOK binding's GPT model publishes it
+ * model reports that for `medium`; the personal Codex binding's GPT model publishes it
  * and therefore keeps the unchanged effort. A missing key is a provider
  * default, not an unsupported level.
  */

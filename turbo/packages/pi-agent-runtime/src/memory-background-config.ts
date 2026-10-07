@@ -11,7 +11,6 @@ import type { PiAgentThinkingLevel } from "./types";
  * Both stages pin to the source run's own credential owner and have no
  * fallback. The independent built-in binding runs the cheaper DeepSeek Flash
  * pair on OpenRouter; personal Codex credentials use the supported GPT pair.
- * The historical BYOK billing name does not authorize organization credentials.
  *
  * These values are deliberately independent from the foreground chat reasoning
  * defaults in `@okouai/api-contracts` (`model-reasoning-effort`): tuning the
@@ -23,11 +22,11 @@ import type { PiAgentThinkingLevel } from "./types";
  * a selectable foreground chat route and has no alternate vendor.
  */
 export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "deepseek-v4.1-flash";
-export const PI_MEMORY_STAGE1_BYOK_MODEL = "gpt-6-luna";
+export const PI_MEMORY_STAGE1_PERSONAL_MODEL = "gpt-6-luna";
 
 export type PiMemoryStage1Model =
   | typeof PI_MEMORY_STAGE1_BUILT_IN_MODEL
-  | typeof PI_MEMORY_STAGE1_BYOK_MODEL;
+  | typeof PI_MEMORY_STAGE1_PERSONAL_MODEL;
 
 /**
  * Both the fixed built-in maintenance binding and personal Codex extraction
@@ -35,7 +34,7 @@ export type PiMemoryStage1Model =
  */
 export const PI_MEMORY_STAGE1_REASONING = "low" satisfies PiAgentThinkingLevel;
 
-/** BYOK consolidation keeps `medium`, which its GPT model publishes. */
+/** Personal Codex consolidation keeps `medium`, which its GPT model publishes. */
 export const PI_MEMORY_PHASE2_MAINTENANCE_REASONING =
   "medium" satisfies PiAgentThinkingLevel;
 

@@ -133,7 +133,6 @@ export const prepareWorkflowUserAutomationThread$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        defaultSource: undefined,
         orgPlanCapabilities: undefined,
       },
       signal,

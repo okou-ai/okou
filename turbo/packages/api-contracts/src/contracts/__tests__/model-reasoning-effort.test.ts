@@ -116,7 +116,7 @@ describe("route effort preferences", () => {
       efforts: CLAUDE_EFFORTS,
       defaultEffort: "high",
       piExecution: true,
-      runtimeProviderType: "anthropic-api-key",
+      runtimeProviderType: "claude-code-oauth-token",
       expected: "extra",
     },
     {
@@ -125,17 +125,8 @@ describe("route effort preferences", () => {
       efforts: CLAUDE_EFFORTS,
       defaultEffort: "high",
       piExecution: true,
-      runtimeProviderType: "anthropic-api-key",
+      runtimeProviderType: "claude-code-oauth-token",
       expected: "high",
-    },
-    {
-      model: "deepseek-v4-flash",
-      effort: "low",
-      efforts: DEEPSEEK_EFFORTS,
-      defaultEffort: "high",
-      piExecution: true,
-      runtimeProviderType: "deepseek",
-      expected: "low",
     },
     {
       model: "deepseek-v4-flash",
@@ -154,15 +145,6 @@ describe("route effort preferences", () => {
       piExecution: true,
       runtimeProviderType: "openrouter-codex",
       expected: "xhigh",
-    },
-    {
-      model: "deepseek-v4-flash",
-      effort: "xhigh",
-      efforts: DEEPSEEK_EFFORTS,
-      defaultEffort: "high",
-      piExecution: true,
-      runtimeProviderType: "deepseek",
-      expected: "high",
     },
   ] as const)(
     "resolves $model $effort on $runtimeProviderType",

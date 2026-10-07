@@ -56,10 +56,8 @@ function response(): AvailableRunModelsResponse {
         runtimeProviderType: account.type,
         credentialScope: "member",
         modelProviderId: account.id,
-        routeStatus: account.needsReconnect ? "invalid" : "valid",
-        routeStatusReason: account.needsReconnect
-          ? "Reconnect your subscription"
-          : null,
+        routeStatus: "valid",
+        routeStatusReason: null,
         memberEffective: {
           providerType: account.type,
           runtimeProviderType: account.type,

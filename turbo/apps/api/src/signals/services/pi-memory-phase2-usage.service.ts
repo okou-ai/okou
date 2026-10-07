@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { and, eq, isNull, isNotNull, inArray, or } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
@@ -55,24 +55,8 @@ export function piMemoryPhase2ProviderCondition() {
     ),
     and(
       isNotNull(agentRuns.modelProviderId),
-      or(
-        and(
-          inArray(agentRuns.modelProvider, [
-            "openai-api-key",
-            "openrouter-codex",
-            "vercel-ai-gateway-codex",
-          ]),
-          inArray(agentRuns.modelProviderCredentialScope, ["org", "member"]),
-        ),
-        and(
-          eq(agentRuns.modelProvider, "codex-oauth-token"),
-          eq(agentRuns.modelProviderCredentialScope, "member"),
-        ),
-        and(
-          eq(agentRuns.modelProvider, "custom-openai-responses"),
-          eq(agentRuns.modelProviderCredentialScope, "org"),
-        ),
-      ),
+      eq(agentRuns.modelProvider, "codex-oauth-token"),
+      eq(agentRuns.modelProviderCredentialScope, "member"),
     ),
   );
 }

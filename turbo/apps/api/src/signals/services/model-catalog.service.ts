@@ -4,7 +4,6 @@ import {
   getFrameworkForType,
   isBuiltInModelProviderType,
   MODEL_PROVIDER_TYPES,
-  modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -51,7 +50,7 @@ export type CatalogRoute = Readonly<{
   priceTier: string | null;
   /**
    * `usage_pricing` key that bills usage on this route (Built-in only; NULL on
-   * BYOK and subscription routes, which are not platform-billed).
+   * personal subscription routes, which are not platform-billed).
    */
   pricingKind: string | null;
   pricingProvider: string | null;
@@ -283,9 +282,9 @@ export function catalogBuiltInRoute(
 /**
  * Whether code can execute an enabled route. Adapters are keyed by provider,
  * never by model ID: a Built-in route needs a concrete provider with a vendor
- * key pool and environment bindings, and any other route needs a provider
- * type this code knows. A model added only as catalog rows on an existing
- * protocol is therefore executable without a code change.
+ * key pool, and any other route must be a personal Codex or Claude Code
+ * subscription. A model added only as catalog rows on an existing protocol is
+ * therefore executable without a code change.
  */
 export function isCatalogRouteExecutable(
   route: Pick<
@@ -301,7 +300,10 @@ export function isCatalogRouteExecutable(
       getBuiltInRouteProviderVendor(route.concreteProviderType) !== undefined
     );
   }
-  return modelProviderTypeSchema.safeParse(route.providerType).success;
+  return (
+    route.providerType === "codex-oauth-token" ||
+    route.providerType === "claude-code-oauth-token"
+  );
 }
 
 /**

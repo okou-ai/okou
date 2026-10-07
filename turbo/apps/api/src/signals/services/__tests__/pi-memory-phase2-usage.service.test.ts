@@ -404,7 +404,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
     async ({ status, type }) => {
       const run = await launchMaintenance(type);
       // Both models stay legitimate forever: the built-in binding dispatches
-      // DeepSeek while every BYOK binding keeps dispatching GPT. The delayed
+      // DeepSeek while every personal subscription binding keeps dispatching GPT. The delayed
       // cleanup below only reports `deleted: 0` while the retained binding is
       // still resolvable, so this asserts the full set is honoured.
       expect(run.run.selectedModel).toBe(

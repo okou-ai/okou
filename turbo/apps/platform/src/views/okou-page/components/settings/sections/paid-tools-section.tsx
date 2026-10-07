@@ -49,7 +49,6 @@ const TOOL_ICONS = {
   maps: MapPin,
   seo: Globe,
   social: MessageCircle,
-  "image-recognition": Image,
   "image-generation": Image,
 } as const;
 

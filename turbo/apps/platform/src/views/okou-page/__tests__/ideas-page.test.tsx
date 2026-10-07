@@ -28,9 +28,6 @@ function agentFixture(): AgentResponse {
     displayName: "Research Agent",
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
 }

@@ -205,10 +205,7 @@ export async function createPiAgentSessionForRuntime(
       return createPiModelRuntime({
         model,
         config: args.model,
-        ...(args.resourceSnapshot ||
-        ["anthropic-messages", "bedrock-converse-stream"].includes(
-          args.model.dialect,
-        )
+        ...(args.resourceSnapshot
           ? { credentials: new InMemoryCredentialStore() }
           : {}),
       });

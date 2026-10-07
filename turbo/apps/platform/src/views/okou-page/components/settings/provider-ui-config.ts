@@ -37,8 +37,6 @@ export function getMediaModelPriceTierLabel(tier: ModelPriceTier): string {
 
 // Brand icons follow the vendor that serves a model's routes in the catalog.
 const BRAND_ICON_VENDORS: readonly ModelProviderType[] = [
-  "anthropic-api-key",
-  "openai-api-key",
   "claude-code-oauth-token",
   "codex-oauth-token",
 ];

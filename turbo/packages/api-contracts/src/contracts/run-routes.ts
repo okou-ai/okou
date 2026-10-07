@@ -15,7 +15,7 @@ import {
   networkLogsResponseSchema,
   createLogPaginationQuerySchema,
 } from "./runs";
-import { modelProviderWriteTypeSchema } from "./model-providers";
+import { modelProviderTypeSchema } from "./model-providers";
 import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
@@ -46,7 +46,7 @@ export const runCreateBodySchema = unifiedRunRequestSchema
     // This endpoint owns the source; never strip an obsolete execution request
     // into an ordinary launch. Callers must omit source authority entirely.
     triggerSource: z.never().optional(),
-    modelProvider: modelProviderWriteTypeSchema.optional(),
+    modelProvider: modelProviderTypeSchema.optional(),
   });
 
 const c = initContract();

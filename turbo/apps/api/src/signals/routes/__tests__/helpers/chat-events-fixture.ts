@@ -1,4 +1,3 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -148,7 +147,6 @@ const GPT_USAGE_PRICING = [
 });
 
 export type PiUsageProvider =
-  | z.infer<typeof piNativeCatalogModelSchema>
   | "deepseek-v4-flash"
   | "deepseek-v4.1-flash"
   | "okou-1.0"
@@ -624,7 +622,6 @@ export function createChatEventsFixture(context: TestContext) {
     selectedModel: PiGptBddModel = "gpt-6-luna",
   ) {
     const oauth = mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       ...options,
     });
     const started = await authDevice.requestCodexStart(
@@ -1399,7 +1396,6 @@ export function createChatEventsFixture(context: TestContext) {
     readonly actor: ApiTestUser;
     readonly answer: string;
     readonly outputTokens?: number;
-    readonly nativeModel?: z.infer<typeof piNativeCatalogModelSchema>;
     readonly responsesModel?: {
       readonly provider: "openai" | "openai-codex" | "deepseek" | "openrouter";
       readonly model: string;
@@ -1420,11 +1416,9 @@ export function createChatEventsFixture(context: TestContext) {
     session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: args.answer }],
-      api: args.nativeModel ? "anthropic-messages" : "openai-responses",
-      provider: args.nativeModel
-        ? "anthropic"
-        : (args.responsesModel?.provider ?? "openai"),
-      model: args.nativeModel ?? args.responsesModel?.model ?? "gpt-6-luna",
+      api: "openai-responses",
+      provider: args.responsesModel?.provider ?? "openai",
+      model: args.responsesModel?.model ?? "gpt-6-luna",
       usage: {
         input: 0,
         output: args.outputTokens ?? 0,

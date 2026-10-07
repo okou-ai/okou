@@ -41,9 +41,6 @@ export function agentFixture(
     displayName,
     sound: "professional",
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
     ...overrides,
   };

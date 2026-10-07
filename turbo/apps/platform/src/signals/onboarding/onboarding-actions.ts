@@ -80,7 +80,7 @@ export const completeOnboarding$ = command(
       [200],
     );
     signal.throwIfAborted();
-    // Completion provisions org defaults such as model models. Snapshots
+    // Completion provisions organization state these routes read. Snapshots
     // prefetched into the onboarding page's HTML predate them.
     for (const route of [
       orgContract.get,

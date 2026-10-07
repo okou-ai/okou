@@ -3,6 +3,11 @@ import {
   type ModelCatalogResponse,
 } from "@okouai/api-contracts/contracts/model-catalog";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  AUTO_RUN_MODEL,
+  AUTO_RUN_PROVIDER,
+  AUTO_RUN_UPSTREAM_MODEL,
+} from "@okouai/core/auto-run-model";
 import { mockApi } from "../msw-contract.ts";
 
 type MockCatalogModel = ModelCatalogResponse["models"][number];
@@ -11,24 +16,9 @@ type MockCatalogRoute = ModelCatalogResponse["routes"][number];
 const CLAUDE_EFFORTS = ["low", "medium", "high", "extra", "max", "ultracode"];
 const GPT_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
 const GPT_LUNA_EFFORTS = ["low", "medium", "high", "xhigh"];
-const DEEPSEEK_EFFORTS = ["low", "high", "xhigh", "max"];
-const ANTHROPIC_BYOK = [
-  "anthropic-api-key",
-  "openrouter-api-key",
-  "vercel-ai-gateway",
-  "azure-foundry",
-  "aws-bedrock",
-  "custom-anthropic-messages",
-] as const;
-const OPENAI_BYOK = [
-  "openai-api-key",
-  "openrouter-codex",
-  "vercel-ai-gateway-codex",
-  "custom-openai-responses",
-] as const;
-
-// Mirrors the seeded production catalog (migration 1298), including retired
-// models and their single-hop replacements.
+// Mirrors the seeded production catalog rows, including retired models and
+// their single-hop replacements. DeepSeek V4.1 Flash backs memory maintenance
+// and is never offered as a foreground route.
 const MODEL_ROWS: readonly (readonly [
   model: string,
   displayName: string,
@@ -59,127 +49,78 @@ const MODEL_ROWS: readonly (readonly [
   ["okou-1.0-max", "Okou 1.0 Max", 220, "okou-1.0"],
 ];
 
-interface MockModelProfile {
-  builtIn: string;
-  priceTier: string;
+interface MockSubscriptionProfile {
   efforts: readonly string[];
   defaultEffort: string | null;
   serviceTiers: readonly string[];
-  byok: readonly string[];
-  subscription: string | null;
+  subscription: "claude-code-oauth-token" | "codex-oauth-token";
 }
 
-function profileFor(model: string): MockModelProfile {
-  if (model === "okou-1.0") {
-    return {
-      builtIn: "openrouter-codex",
-      priceTier: "$",
-      efforts: [],
-      defaultEffort: null,
-      serviceTiers: [],
-      byok: [],
-      subscription: null,
-    };
-  }
+/** The personal subscription route of a model; null without one. */
+function subscriptionProfileFor(model: string): MockSubscriptionProfile | null {
   if (model.startsWith("claude-")) {
-    const premium = model.startsWith("claude-fable");
-    const opus = model.startsWith("claude-opus");
     return {
-      builtIn: "anthropic-api-key",
-      priceTier: premium ? "$$$$" : opus ? "$$$" : "$$",
       efforts: CLAUDE_EFFORTS,
-      defaultEffort: premium ? "max" : "high",
+      defaultEffort: model.startsWith("claude-fable") ? "max" : "high",
       serviceTiers: [],
-      byok: ANTHROPIC_BYOK,
       subscription: "claude-code-oauth-token",
     };
   }
-  if (model.startsWith("deepseek-")) {
-    return {
-      builtIn: "deepseek",
-      priceTier: "$",
-      efforts: model === "deepseek-v4.1-flash" ? [] : DEEPSEEK_EFFORTS,
-      defaultEffort: model === "deepseek-v4.1-flash" ? null : "high",
-      serviceTiers: [],
-      byok: ["deepseek", "openrouter-codex", "custom-openai-responses"],
-      subscription: null,
-    };
+  if (!model.startsWith("gpt-")) {
+    return null;
   }
   const luna = model.includes("luna");
-  const legacyLuna = model === "gpt-5.5";
   return {
-    builtIn: "openai-api-key",
-    priceTier:
-      model === "gpt-6-astra" ? "$$$$" : luna || legacyLuna ? "$" : "$$$",
     efforts: luna
       ? GPT_LUNA_EFFORTS
-      : legacyLuna
+      : model === "gpt-5.5"
         ? [...GPT_LUNA_EFFORTS, "max"]
         : GPT_EFFORTS,
     defaultEffort: luna ? "xhigh" : "max",
     serviceTiers: ["priority"],
-    byok: OPENAI_BYOK,
     subscription: "codex-oauth-token",
   };
 }
 
-function gatewayUpstreamModel(model: string, providerType: string): string {
-  if (
-    providerType !== "openrouter-codex" &&
-    providerType !== "vercel-ai-gateway-codex"
-  ) {
-    return model;
-  }
-  return `${model.startsWith("deepseek-") ? "deepseek" : "openai"}/${model}`;
-}
+const AUTO_ROUTE: MockCatalogRoute = {
+  model: AUTO_RUN_MODEL,
+  providerType: "built-in",
+  concreteProviderType: AUTO_RUN_PROVIDER,
+  subscriptionType: null,
+  upstreamModel: AUTO_RUN_UPSTREAM_MODEL,
+  enabled: true,
+  priority: 0,
+  serviceTiers: [],
+  defaultServiceTier: null,
+  efforts: [],
+  defaultEffort: null,
+  priceTier: null,
+};
 
-function routesFor(model: string): MockCatalogRoute[] {
-  const profile = profileFor(model);
-  const base = {
-    model,
-    subscriptionType: null,
-    upstreamModel: model,
-    enabled: true,
-    priority: 0,
-    efforts: [...profile.efforts],
-    defaultEffort: profile.defaultEffort,
-  };
-  const routes: MockCatalogRoute[] = [
+function subscriptionRouteFor(
+  model: string,
+  replacedBy: string | null,
+): MockCatalogRoute[] {
+  const profile = subscriptionProfileFor(model);
+  if (!profile || replacedBy !== null) {
+    return [];
+  }
+  return [
     {
-      ...base,
-      providerType: "built-in",
-      concreteProviderType: profile.builtIn,
+      model,
+      providerType: profile.subscription,
+      concreteProviderType: profile.subscription,
+      subscriptionType: profile.subscription,
+      upstreamModel: model,
+      enabled: true,
+      priority: 0,
       serviceTiers: [...profile.serviceTiers],
       defaultServiceTier: null,
-      priceTier: profile.priceTier,
+      efforts: [...profile.efforts],
+      defaultEffort: profile.defaultEffort,
+      priceTier: null,
     },
   ];
-  for (const providerType of profile.byok) {
-    routes.push({
-      ...base,
-      // Gateway routes send the vendor-prefixed upstream ID, as seeded.
-      upstreamModel: gatewayUpstreamModel(model, providerType),
-      providerType,
-      concreteProviderType: providerType,
-      // Astra Ultrafast is temporarily disabled: the seeded direct OpenAI
-      // route offers no Ultrafast tier, as in migration 1298.
-      serviceTiers: [...profile.serviceTiers],
-      defaultServiceTier: null,
-      priceTier: null,
-    });
-  }
-  if (profile.subscription) {
-    routes.push({
-      ...base,
-      providerType: profile.subscription,
-      subscriptionType: profile.subscription,
-      concreteProviderType: profile.subscription,
-      serviceTiers: [...profile.serviceTiers],
-      defaultServiceTier: null,
-      priceTier: null,
-    });
-  }
-  return routes;
 }
 
 function resolveReplacement(model: string): string {
@@ -189,28 +130,19 @@ function resolveReplacement(model: string): string {
   return row?.[3] ? resolveReplacement(row[3]) : model;
 }
 
-// Plan runModel seeded by migration 1300.
 /** Seeded `run_model_catalog.built_in_on_restricted_plans` (migration 1300). */
 const RESTRICTED_PLAN_BUILT_IN_MODELS: ReadonlySet<string> = new Set([
   "okou-1.0",
 ]);
 
 /** Seeded `run_model_catalog.pi_route_class` (migration 1301). */
-const PI_ROUTE_CLASS_BY_MODEL: Readonly<
-  Record<string, "claude-native" | "gpt-codex" | "deepseek">
-> = {
+const PI_ROUTE_CLASS_BY_MODEL: Readonly<Record<string, "gpt-codex">> = {
   "okou-1.0": "gpt-codex",
-  "claude-opus-5-5": "claude-native",
-  "claude-opus-5": "claude-native",
-  "claude-sonnet-5-5": "claude-native",
-  "claude-sonnet-5": "claude-native",
   "gpt-6.1-sol": "gpt-codex",
   "gpt-6-sol": "gpt-codex",
   "gpt-6-luna": "gpt-codex",
   "gpt-5.6-sol": "gpt-codex",
   "gpt-5.6-luna": "gpt-codex",
-  "deepseek-v4.1-flash": "deepseek",
-  "deepseek-v4-flash": "deepseek",
 };
 
 /** The seeded catalog's system default. */
@@ -228,7 +160,7 @@ export function createMockModelCatalog(
         isSystemDefault: model === systemDefaultModel,
         replacedBy,
         resolvedModel: resolveReplacement(model),
-        priceTier: profileFor(model).priceTier,
+        priceTier: null,
         builtInOnRestrictedPlans: RESTRICTED_PLAN_BUILT_IN_MODELS.has(model),
         piRouteClass: PI_ROUTE_CLASS_BY_MODEL[model] ?? null,
       };
@@ -237,14 +169,12 @@ export function createMockModelCatalog(
   return {
     systemDefaultModel,
     models,
-    routes: MODEL_ROWS.flatMap(([model]) => {
-      return routesFor(model).filter((route) => {
-        return model === systemDefaultModel
-          ? route.providerType === "built-in"
-          : route.providerType === "codex-oauth-token" ||
-              route.providerType === "claude-code-oauth-token";
-      });
-    }),
+    routes: [
+      AUTO_ROUTE,
+      ...MODEL_ROWS.flatMap(([model, , , replacedBy]) => {
+        return subscriptionRouteFor(model, replacedBy);
+      }),
+    ],
   };
 }
 

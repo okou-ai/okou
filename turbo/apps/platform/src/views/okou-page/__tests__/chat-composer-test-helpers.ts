@@ -165,7 +165,6 @@ export function mockPersonalModelRoutes(): void {
 function billingStatus(
   tier: string,
   modelCapabilities?: {
-    readonly supportByok?: boolean;
     readonly restrictedBuiltInModels?: boolean;
   },
 ): BillingStatusResponse {
@@ -195,7 +194,6 @@ function billingStatus(
 
 export function mockBillingCapabilities(
   modelCapabilities: {
-    readonly supportByok: boolean;
     readonly restrictedBuiltInModels: boolean;
   },
   tier = "pro",
@@ -205,11 +203,7 @@ export function mockBillingCapabilities(
   });
 }
 
-export function mockAgent(options?: {
-  selectedModel?: string | null;
-  modelProviderId?: string | null;
-  includeOtherAgent?: boolean;
-}): void {
+export function mockAgent(options?: { includeOtherAgent?: boolean }): void {
   const agents = [
     {
       agentId: AGENT_ID,
@@ -241,9 +235,6 @@ export function mockAgent(options?: {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: isOtherAgent ? null : (options?.modelProviderId ?? null),
-      selectedModel: isOtherAgent ? null : (options?.selectedModel ?? null),
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });
@@ -389,10 +380,6 @@ async function findComposerModel(label: string): Promise<HTMLElement> {
     }
     return trigger;
   });
-}
-
-export async function expectComposerModel(label: string): Promise<void> {
-  await expect(findComposerModel(label)).resolves.toBeInTheDocument();
 }
 
 export function composerInlineTemplates(): HTMLElement[] {

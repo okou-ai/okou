@@ -106,8 +106,8 @@ await runPiOfficialRpcMode({
   sessionFile: join(root, "session.jsonl"),
   appendSystemPrompt: null,
   model: {
-    provider: "openai",
-    model: "gpt-6-luna",
+    provider: "openrouter",
+    model: "openai/gpt-6-luna",
     dialect: "openai-responses",
     transport: "sse",
     apiKey: "synthetic-key",

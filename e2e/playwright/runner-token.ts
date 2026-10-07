@@ -249,7 +249,7 @@ async function preparePaidRunner(
       activeOrganizationId: target.organizationId,
     });
     // Observe the public entitlement after Stripe/webhook settlement before
-    // exposing credentials to shards that require paid models and BYOK.
+    // exposing credentials to shards that require paid models.
     await expect
       .poll(
         async () => {

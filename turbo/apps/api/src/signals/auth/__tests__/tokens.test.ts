@@ -113,7 +113,6 @@ describe("auth tokens", () => {
       {
         computerUseHostId,
         cloudBrowserEnabled: true,
-        imageRecognitionAvailable: true,
         customConnectorSourceIds: {
           [customConnectorId]: customConnectorSourceId,
         },
@@ -136,7 +135,6 @@ describe("auth tokens", () => {
         "browser:read",
         "browser:write",
         "computer-use:write",
-        "image-recognition:write",
       ]),
       iat: expect.any(Number),
       exp: expect.any(Number),
@@ -340,28 +338,6 @@ describe("auth tokens", () => {
 
     expect(verifyOkouToken(token)?.capabilities).toContain(
       "people-search:read",
-    );
-  });
-
-  it("gates image recognition on run eligibility", () => {
-    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-    const ineligibleToken = generateOkouToken(
-      "user_okou",
-      "run_okou",
-      staffOrgId,
-    );
-    const eligibleToken = generateOkouToken(
-      "user_okou",
-      "run_okou",
-      staffOrgId,
-      undefined,
-      { imageRecognitionAvailable: true },
-    );
-    expect(verifyOkouToken(ineligibleToken)?.capabilities).not.toContain(
-      "image-recognition:write",
-    );
-    expect(verifyOkouToken(eligibleToken)?.capabilities).toContain(
-      "image-recognition:write",
     );
   });
 

@@ -2,13 +2,13 @@
  * Model identities the pinned Pi runtime can resolve, grouped by the Pi catalog
  * provider that owns them.
  *
- * Identities are runtime knowledge, not a product model list. Built-in and
- * API-key Responses routes ask the runtime for the route's `upstream_model`,
- * so a model added only as catalog rows is admitted to Pi when its route points
- * at an upstream model listed here (for example a new catalog model whose
+ * Identities are runtime knowledge, not a product model list. Built-in
+ * Responses routes ask the runtime for the route's `upstream_model`, so a
+ * model added only as catalog rows is admitted to Pi when its route points at
+ * an upstream model listed here (for example a new catalog model whose
  * `openrouter-codex` route sends `openai/gpt-6-luna`). Only routes that pin
- * `catalogModel` (native Claude, the Codex subscription, custom gateways and
- * OpenRouter presets) resolve by the catalog model ID.
+ * `catalogModel` (the Codex subscription and OpenRouter presets) resolve by
+ * the catalog model ID.
  *
  * This is a leaf data module on purpose. `@okouai/core/pi-execution` is part of
  * the Platform browser bundle graph, so Pi admission must never reach for
@@ -23,13 +23,7 @@
  * route and fails when this module and the runtime disagree in either
  * direction.
  */
-export const PI_CATALOG_PROVIDERS = [
-  "anthropic",
-  "deepseek",
-  "openai",
-  "openai-codex",
-  "openrouter",
-] as const;
+export const PI_CATALOG_PROVIDERS = ["openai-codex", "openrouter"] as const;
 
 export type PiCatalogProvider = (typeof PI_CATALOG_PROVIDERS)[number];
 
@@ -40,25 +34,6 @@ export interface PiRuntimeIdentity {
 }
 
 export const PI_RUNTIME_RESOLVABLE_MODELS = {
-  // `claude-fable-5-1` is absent because the Fable frontier line runs on the
-  // Claude Code vendor harness, so no admitted route asks Pi to resolve it.
-  anthropic: [
-    "claude-opus-5-5",
-    "claude-opus-5",
-    "claude-sonnet-5-5",
-    "claude-sonnet-5",
-  ],
-  // `deepseek-flash` and `deepseek-v4.1-flash` exist only as hand-pinned
-  // definitions; the pinned upstream DeepSeek catalog does not carry them.
-  deepseek: ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash"],
-  // 6.1 Sol uses the reviewed pinned resolver until the upstream catalog ships.
-  openai: [
-    "gpt-6.1-sol",
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "gpt-5.6-sol",
-    "gpt-5.6-luna",
-  ],
   "openai-codex": [
     "gpt-6.1-sol",
     "gpt-6-sol",

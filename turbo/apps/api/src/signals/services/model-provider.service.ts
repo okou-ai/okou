@@ -3,7 +3,6 @@ import {
   getFrameworkForType,
   getModelProviderCodexCatalogForModel,
   getModelProviderCodexRuntimeCapabilities,
-  getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getModelProviderFirewall,
   getSecretNameForType,
@@ -13,7 +12,6 @@ import {
   type ModelProviderCodexRuntimeConfig,
   type ModelProviderEnvBindings,
   type ModelProviderType,
-  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   type FeatureSwitchContext,
@@ -198,9 +196,7 @@ function builtInModelProviderEnvironmentFromSnapshot(args: {
   const usesUsEndpoint = firewall?.apis.some((api) => {
     return api.base.startsWith(`${OPENROUTER_US_ORIGIN}/`);
   });
-  if (route.providerType === "openrouter-api-key") {
-    environment.ANTHROPIC_BASE_URL = getOpenRouterBaseUrl("messages", routing);
-  } else if (route.providerType === "openrouter-codex") {
+  if (route.providerType === "openrouter-codex") {
     environment.OPENAI_BASE_URL = getOpenRouterBaseUrl("responses", routing);
   }
   const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
@@ -343,8 +339,7 @@ export async function prepareRegisteredModelEnvironment(
   },
 ): Promise<ResolvedModelProviderEnvironment | null> {
   const { catalog, userId, sourceId, piExecution } = options;
-  const type = modelProviderTypeSchema.parse(source.configuration.providerType);
-  const deferred = getModelProviderFirewall(type) !== undefined;
+  const type = source.configuration.providerType;
   if (
     source.identity.kind !== "member" ||
     source.credentialOwner !== "member" ||
@@ -352,6 +347,7 @@ export async function prepareRegisteredModelEnvironment(
   ) {
     return null;
   }
+  const deferred = getModelProviderFirewall(type) !== undefined;
   // As on main, a firewall-injected single-secret credential that Pi does not
   // capture stays encrypted: the runtime only sees its secret reference.
   const credentials =
@@ -495,13 +491,6 @@ export async function prepareManagedModelEnvironment(
     return null;
   }
   const environment = { ...compiled.environment };
-  if (route.providerType === "openrouter-api-key") {
-    const endpoint = protocol.environment.ANTHROPIC_BASE_URL;
-    if (!endpoint) {
-      throw new Error("Managed messages endpoint is missing");
-    }
-    environment.ANTHROPIC_BASE_URL = endpoint;
-  }
   if (route.providerType === "openrouter-codex") {
     const endpoint = protocol.environment.OPENAI_BASE_URL;
     if (!endpoint) {
@@ -524,10 +513,6 @@ function resolveModelProviderCodexRuntimeConfig(args: {
   readonly runtimeModel: string;
   readonly environment: Readonly<Record<string, string>>;
 }): ModelProviderCodexRuntimeConfig | undefined {
-  const providerConfig = getModelProviderCodexRuntimeConfig(args.type);
-  if (providerConfig) {
-    return providerConfig;
-  }
   const providerCapabilities = getModelProviderCodexRuntimeCapabilities(
     args.type,
   );

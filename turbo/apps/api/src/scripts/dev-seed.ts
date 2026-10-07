@@ -38,10 +38,8 @@ function writeLine(message: string): void {
  * Pricing convention: 1 USD = 1000 credits.
  * Token prices use integer credits with a per-row token unit size.
  *
- * API keys are read from environment variables per vendor:
- *   DEV_MODEL_{VENDOR_UPPER}_KEY (e.g., DEV_MODEL_ANTHROPIC_KEY, DEV_MODEL_OPENAI_KEY)
- * Anthropic and OpenAI also fall back to their provider env names because
- * CI and local dev already use them for real model smoke tests.
+ * Built-in route API keys are read from environment variables per vendor:
+ *   DEV_MODEL_{VENDOR_UPPER}_KEY (e.g., DEV_MODEL_OPENROUTER_KEY)
  */
 
 /** 1 USD = 1000 credits */
@@ -731,15 +729,8 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ]),
 ];
 
-function getVendorApiKeyEnvVars(vendor: string): string[] {
-  const envVar = `DEV_MODEL_${vendor.toUpperCase()}_KEY`;
-  if (vendor === "anthropic") {
-    return [envVar, "ANTHROPIC_API_KEY"];
-  }
-  if (vendor === "openai") {
-    return [envVar, "OPENAI_API_KEY"];
-  }
-  return [envVar];
+function getVendorApiKeyEnvVar(vendor: string): string {
+  return `DEV_MODEL_${vendor.toUpperCase()}_KEY`;
 }
 
 type OptionalEnvReader = (name: string) => string | undefined;
@@ -747,8 +738,7 @@ type LineWriter = (message: string) => void;
 
 /**
  * Build built_in_model_keys entries from environment variables.
- * Vendors are derived from all built-in candidates so new providers are
- * automatically picked up.
+ * Vendors are derived from the built-in route providers.
  */
 export function buildBuiltInModelKeys(
   readEnv: OptionalEnvReader = optionalEnv,
@@ -756,16 +746,10 @@ export function buildBuiltInModelKeys(
 ): (typeof builtInModelKeys.$inferInsert)[] {
   const keys: (typeof builtInModelKeys.$inferInsert)[] = [];
   for (const vendor of getBuiltInModelRouteVendors()) {
-    const envVars = getVendorApiKeyEnvVars(vendor);
-    const apiKey = envVars
-      .map((name) => {
-        return readEnv(name);
-      })
-      .find((value): value is string => {
-        return typeof value === "string" && value.length > 0;
-      });
+    const envVar = getVendorApiKeyEnvVar(vendor);
+    const apiKey = readEnv(envVar);
     if (!apiKey) {
-      logLine(`Skipping ${vendor}: ${envVars.join(" or ")} is not configured`);
+      logLine(`Skipping ${vendor}: ${envVar} is not configured`);
       continue;
     }
     keys.push({ vendor, apiKey, label: "dev-seed" });

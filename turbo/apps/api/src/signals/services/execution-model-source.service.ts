@@ -38,7 +38,6 @@ export interface RegisteredProviderConfiguration {
   readonly providerType: string;
   readonly authMethod: string | null;
   readonly managedVendor?: string;
-  readonly configuredModel: string | null;
 }
 export type ModelSourceConfiguration = RegisteredProviderConfiguration;
 export interface ModelSourceSnapshot {
@@ -88,7 +87,6 @@ export function createModelSourceSnapshot(
         : await db
             .select({
               account: modelProviderAccounts,
-              configuredModel: modelProviders.selectedModel,
               secret: {
                 name: modelProviderAccountSecrets.name,
                 encryptedValue: modelProviderAccountSecrets.encryptedValue,
@@ -125,7 +123,6 @@ export function createModelSourceSnapshot(
           kind: "registered-provider",
           providerType: first.account.type,
           authMethod: first.account.authMethod,
-          configuredModel: first.configuredModel,
         },
         credentials: rows.flatMap((row) => {
           return row.secret

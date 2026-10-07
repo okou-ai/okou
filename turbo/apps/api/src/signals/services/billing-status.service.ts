@@ -133,7 +133,6 @@ interface BillingStatusResponse {
   canBuyCredits: boolean;
   showUsagePack: boolean;
   autoRechargeAllowed: boolean;
-  supportByok: boolean;
   restrictedBuiltInModels: boolean;
   workflowWebhookAutomationAllowed: boolean;
   credits: number;
@@ -573,7 +572,6 @@ function billingStatusResponse(args: {
   showUsagePack: boolean;
   status: OrgPlanCapabilities["status"];
   autoRechargeAllowed: boolean;
-  supportByok: boolean;
   restrictedBuiltInModels: boolean;
   workflowWebhookAutomationAllowed: boolean;
   unsettledExpired: number;
@@ -603,7 +601,6 @@ function billingStatusResponse(args: {
     showUsagePack: args.showUsagePack,
     status: args.status,
     autoRechargeAllowed: args.autoRechargeAllowed,
-    supportByok: args.supportByok,
     restrictedBuiltInModels: args.restrictedBuiltInModels,
     workflowWebhookAutomationAllowed: args.workflowWebhookAutomationAllowed,
     credits: displayedCredits,
@@ -750,7 +747,6 @@ export function orgBillingStatus(
       showUsagePack: capabilities?.showUsagePack === true,
       status: billingPlanStatus(capabilities),
       autoRechargeAllowed: capabilities?.autoRechargeAllowed ?? false,
-      supportByok: capabilities?.supportByok ?? false,
       restrictedBuiltInModels: capabilities?.restrictedBuiltInModels ?? false,
       workflowWebhookAutomationAllowed:
         capabilities?.workflowWebhookAutomationAllowed ?? false,

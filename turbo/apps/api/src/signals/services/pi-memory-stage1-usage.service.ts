@@ -99,9 +99,9 @@ export async function recordPiMemoryStage1Usage(
   db: Db,
   args: RecordPiMemoryStage1UsageArgs,
 ): Promise<PiMemoryStage1UsageReceipt> {
-  // BYOK vendor usage is never a model-credit event, including replay/zero usage.
+  // Personal subscription usage is never a model-credit event, including replay/zero usage.
   if (args.billing.mode !== "builtin") {
-    return { disposition: "byok", accountingAt: null };
+    return { disposition: "subscription", accountingAt: null };
   }
   const expected = piMemoryStage1UsageEntries(
     args.usage,
@@ -220,7 +220,7 @@ export interface PiMemoryStage1UsageReceipt {
     | "replay"
     | "legacy_replay"
     | "zero_usage"
-    | "byok";
+    | "subscription";
 }
 
 /** Opaque logical response identity; category delivery/outcome is not identity. */

@@ -27,20 +27,6 @@ import { resolvePiAgentModel } from "./model";
  * module and the runtime disagree about any admitted route.
  */
 function resolvesInRuntime(identity: PiRuntimeIdentity): boolean {
-  if (identity.provider === "anthropic") {
-    return (
-      resolvePiAgentModel({
-        dialect: "anthropic-messages",
-        transport: "sse",
-        provider: "anthropic",
-        baseUrl: "https://api.anthropic.com",
-        apiKey: "capability-probe",
-        model: identity.model,
-        catalogModel: identity.model,
-        requestHeaders: {},
-      }) !== null
-    );
-  }
   if (identity.provider === "openai-codex") {
     return (
       resolvePiAgentModel({
@@ -179,10 +165,7 @@ describe("pinned Pi runtime capability", () => {
     expect(disagreements).toStrictEqual([]);
   });
 
-  it("resolves Claude Opus 5.5 through the native catalog", () => {
-    expect(
-      resolvesInRuntime({ provider: "anthropic", model: "claude-opus-5-5" }),
-    ).toBe(true);
+  it("never admits Claude Opus 5.5 as a Pi execution route", () => {
     for (const modelProviderType of seededProviderTypes("claude-opus-5-5")) {
       expect(
         isPiExecutionRoute({
@@ -199,7 +182,6 @@ describe("pinned Pi runtime capability", () => {
     "resolves %s through the pinned Pi catalog",
     (model) => {
       const identities: readonly PiRuntimeIdentity[] = [
-        { provider: "openai", model },
         { provider: "openai-codex", model },
         { provider: "openrouter", model: `openai/${model}` },
       ];

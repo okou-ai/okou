@@ -186,7 +186,7 @@ function publicRejection(
       return {
         code: "insufficient_credits",
         message:
-          "Insufficient credits. Add credits or configure your own API key.",
+          "Insufficient credits. Add credits or connect a personal Codex or Claude subscription.",
       };
     }
     case "pro_required": {

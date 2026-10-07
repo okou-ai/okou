@@ -327,7 +327,7 @@ describe("stored selections of replaced models", () => {
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 
-  it("preserves a legacy Codex selection while using Auto without a Codex account", async () => {
+  it("projects a legacy Codex selection without a Codex account as unavailable", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, {
       agentId,
@@ -341,8 +341,8 @@ describe("stored selections of replaced models", () => {
     const projected = await mcpThread(actor, thread.id);
     expect(projected.model).toStrictEqual({
       selectedModel: "gpt-5.6-terra",
-      effectiveModel: "okou-1.0",
-      source: "org_default",
+      effectiveModel: null,
+      source: null,
       admission: "checked_on_send",
     });
   }, 90_000);

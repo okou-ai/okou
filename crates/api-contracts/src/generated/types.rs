@@ -124,21 +124,9 @@ pub mod runners {
         /// Model providers supported by the Pi runtime contract.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigProvider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// Moonshot AI provider.
-            #[serde(rename = "moonshotai")]
-            Moonshotai,
-            /// OpenAI provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
-            /// Vercel AI Gateway provider.
-            #[serde(rename = "vercel-ai-gateway")]
-            VercelAiGateway,
             /// Codex provider.
             #[serde(rename = "codex")]
             Codex,
@@ -181,25 +169,12 @@ pub mod runners {
         /// Environment variables supported for Pi provider credentials.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigApiKeyEnv {
-            /// Anthropic authentication token.
-            #[serde(rename = "ANTHROPIC_AUTH_TOKEN")]
-            ANTHROPICAUTHTOKEN,
             /// OpenAI-compatible API key.
             #[serde(rename = "OPENAI_API_KEY")]
             OPENAIAPIKEY,
             /// ChatGPT access token.
             #[serde(rename = "CHATGPT_ACCESS_TOKEN")]
             CHATGPTACCESSTOKEN,
-        }
-
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
         }
 
         /// API-owned non-secret Pi model configuration.
@@ -225,9 +200,6 @@ pub mod runners {
             pub api_key_env: PiModelConfigApiKeyEnv,
             /// API-owned credential secret backing the environment entry.
             pub credential_secret_name: String,
-            /// Optional non-secret custom gateway credential header policy.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub credential_header: Option<PiModelConfigCredentialHeader>,
         }
 
         /// Native Pi request dialects supported by this generation.
@@ -244,12 +216,6 @@ pub mod runners {
         /// Native Pi catalog providers supported by this generation.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV2Provider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// OpenAI public API provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
@@ -292,16 +258,6 @@ pub mod runners {
             Priority,
         }
 
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV2CredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
-        }
-
         /// One non-secret execution-edge credential binding.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "kind", rename_all_fields = "camelCase")]
@@ -313,9 +269,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header: Option<PiModelConfigV2CredentialBindingApiKeyCredentialHeader>,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -375,12 +328,6 @@ pub mod runners {
         /// Native Pi catalog providers for this dialect.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV3OpenaiResponsesProvider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// OpenAI public API provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
@@ -418,19 +365,6 @@ pub mod runners {
             /// Public Responses priority service tier.
             #[serde(rename = "priority")]
             Priority,
-            /// Astra Ultrafast public API service tier.
-            #[serde(rename = "ultrafast")]
-            Ultrafast,
-        }
-
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV3OpenaiResponsesCredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
         }
 
         /// One non-secret execution-edge credential binding.
@@ -444,10 +378,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header:
-                    Option<PiModelConfigV3OpenaiResponsesCredentialBindingApiKeyCredentialHeader>,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -517,16 +447,6 @@ pub mod runners {
             Fast,
         }
 
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV3OpenaiCodexResponsesCredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
-        }
-
         /// One non-secret execution-edge credential binding.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "kind", rename_all_fields = "camelCase")]
@@ -538,11 +458,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header: Option<
-                    PiModelConfigV3OpenaiCodexResponsesCredentialBindingApiKeyCredentialHeader,
-                >,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -615,398 +530,6 @@ pub mod runners {
                 service_tier: Option<PiModelConfigV3OpenaiCodexResponsesServiceTier>,
                 /// Bounded non-secret credential bindings materialized only at an execution edge.
                 credential_bindings: Vec<PiModelConfigV3OpenaiCodexResponsesCredentialBinding>,
-            },
-        }
-
-        /// Native catalog vocabulary.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesCatalogModel {
-            /// Native wire value claude-fable-5-1.
-            #[serde(rename = "claude-fable-5-1")]
-            ClaudeFable51,
-            /// Native wire value claude-opus-5-5.
-            #[serde(rename = "claude-opus-5-5")]
-            ClaudeOpus55,
-            /// Native wire value claude-opus-5.
-            #[serde(rename = "claude-opus-5")]
-            ClaudeOpus5,
-            /// Native wire value claude-opus-4-8.
-            #[serde(rename = "claude-opus-4-8")]
-            ClaudeOpus48,
-            /// Native wire value claude-sonnet-5-5.
-            #[serde(rename = "claude-sonnet-5-5")]
-            ClaudeSonnet55,
-            /// Native wire value claude-sonnet-5.
-            #[serde(rename = "claude-sonnet-5")]
-            ClaudeSonnet5,
-            /// Native wire value claude-sonnet-4-6.
-            #[serde(rename = "claude-sonnet-4-6")]
-            ClaudeSonnet46,
-        }
-
-        /// Selected credential owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesCredentialOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value organization.
-            #[serde(rename = "organization")]
-            Organization,
-            /// Native wire value member.
-            #[serde(rename = "member")]
-            Member,
-        }
-
-        /// Model-token billing owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesBillingOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value user.
-            #[serde(rename = "user")]
-            User,
-        }
-
-        /// Native thinking level.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesThinkingLevel {
-            /// Native wire value off.
-            #[serde(rename = "off")]
-            Off,
-            /// Native wire value minimal.
-            #[serde(rename = "minimal")]
-            Minimal,
-            /// Native wire value low.
-            #[serde(rename = "low")]
-            Low,
-            /// Native wire value medium.
-            #[serde(rename = "medium")]
-            Medium,
-            /// Native wire value high.
-            #[serde(rename = "high")]
-            High,
-            /// Native wire value xhigh.
-            #[serde(rename = "xhigh")]
-            Xhigh,
-            /// Native wire value max.
-            #[serde(rename = "max")]
-            Max,
-        }
-
-        /// Native cache retention policy.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesRequestPolicyCacheRetention {
-            /// Native wire value short.
-            #[serde(rename = "short")]
-            Short,
-        }
-
-        /// Fixed native request policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4AnthropicMessagesRequestPolicy {
-            /// Exactly one native HTTP attempt.
-            pub max_attempts: i64,
-            /// Existing short cache retention.
-            pub cache_retention: PiModelConfigV4AnthropicMessagesRequestPolicyCacheRetention,
-        }
-
-        /// Native framing protocol.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesTransport {
-            /// Native wire value sse.
-            #[serde(rename = "sse")]
-            Sse,
-        }
-
-        /// Trusted native catalog provider.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesProvider {
-            /// Native wire value anthropic.
-            #[serde(rename = "anthropic")]
-            Anthropic,
-        }
-
-        /// Concrete native Messages route.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4AnthropicMessagesRoute {
-            /// Native wire value anthropic-api-key.
-            #[serde(rename = "anthropic-api-key")]
-            AnthropicApiKey,
-            /// Native wire value openrouter-api-key.
-            #[serde(rename = "openrouter-api-key")]
-            OpenrouterApiKey,
-            /// Native wire value vercel-ai-gateway.
-            #[serde(rename = "vercel-ai-gateway")]
-            VercelAiGateway,
-            /// Native wire value custom-anthropic-messages.
-            #[serde(rename = "custom-anthropic-messages")]
-            CustomAnthropicMessages,
-            /// Native wire value azure-foundry.
-            #[serde(rename = "azure-foundry")]
-            AzureFoundry,
-        }
-
-        /// Native header ownership.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4AnthropicMessagesCredentialBindingCredentialHeader {
-            /// Credential header name.
-            pub name: String,
-            /// Exactly one secret placeholder.
-            pub value_template: String,
-        }
-
-        /// Non-secret native credential reference.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4AnthropicMessagesCredentialBinding {
-            /// Native API-key binding.
-            pub kind: String,
-            /// Sandbox marker environment name.
-            pub environment: String,
-            /// Trusted execution-edge secret reference.
-            pub secret_name: String,
-            /// Exact configured credential header policy.
-            pub credential_header:
-                PiModelConfigV4AnthropicMessagesCredentialBindingCredentialHeader,
-        }
-
-        /// Native catalog vocabulary.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamCatalogModel {
-            /// Native wire value claude-fable-5-1.
-            #[serde(rename = "claude-fable-5-1")]
-            ClaudeFable51,
-            /// Native wire value claude-opus-5-5.
-            #[serde(rename = "claude-opus-5-5")]
-            ClaudeOpus55,
-            /// Native wire value claude-opus-5.
-            #[serde(rename = "claude-opus-5")]
-            ClaudeOpus5,
-            /// Native wire value claude-opus-4-8.
-            #[serde(rename = "claude-opus-4-8")]
-            ClaudeOpus48,
-            /// Native wire value claude-sonnet-5-5.
-            #[serde(rename = "claude-sonnet-5-5")]
-            ClaudeSonnet55,
-            /// Native wire value claude-sonnet-5.
-            #[serde(rename = "claude-sonnet-5")]
-            ClaudeSonnet5,
-            /// Native wire value claude-sonnet-4-6.
-            #[serde(rename = "claude-sonnet-4-6")]
-            ClaudeSonnet46,
-        }
-
-        /// Selected credential owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamCredentialOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value organization.
-            #[serde(rename = "organization")]
-            Organization,
-            /// Native wire value member.
-            #[serde(rename = "member")]
-            Member,
-        }
-
-        /// Model-token billing owner.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamBillingOwner {
-            /// Native wire value builtin.
-            #[serde(rename = "builtin")]
-            Builtin,
-            /// Native wire value user.
-            #[serde(rename = "user")]
-            User,
-        }
-
-        /// Native thinking level.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamThinkingLevel {
-            /// Native wire value off.
-            #[serde(rename = "off")]
-            Off,
-            /// Native wire value minimal.
-            #[serde(rename = "minimal")]
-            Minimal,
-            /// Native wire value low.
-            #[serde(rename = "low")]
-            Low,
-            /// Native wire value medium.
-            #[serde(rename = "medium")]
-            Medium,
-            /// Native wire value high.
-            #[serde(rename = "high")]
-            High,
-            /// Native wire value xhigh.
-            #[serde(rename = "xhigh")]
-            Xhigh,
-            /// Native wire value max.
-            #[serde(rename = "max")]
-            Max,
-        }
-
-        /// Native cache retention policy.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamRequestPolicyCacheRetention {
-            /// Native wire value short.
-            #[serde(rename = "short")]
-            Short,
-        }
-
-        /// Fixed native request policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV4BedrockConverseStreamRequestPolicy {
-            /// Exactly one native HTTP attempt.
-            pub max_attempts: i64,
-            /// Existing short cache retention.
-            pub cache_retention: PiModelConfigV4BedrockConverseStreamRequestPolicyCacheRetention,
-        }
-
-        /// Native framing protocol.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamTransport {
-            /// Native wire value aws-event-stream.
-            #[serde(rename = "aws-event-stream")]
-            AwsEventStream,
-        }
-
-        /// Trusted native catalog provider.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamProvider {
-            /// Native wire value amazon-bedrock.
-            #[serde(rename = "amazon-bedrock")]
-            AmazonBedrock,
-        }
-
-        /// Native Bedrock route.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamRoute {
-            /// Native wire value aws-bedrock.
-            #[serde(rename = "aws-bedrock")]
-            AwsBedrock,
-        }
-
-        /// Explicit Bedrock authentication mode.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigV4BedrockConverseStreamAuthMode {
-            /// Native wire value bearer.
-            #[serde(rename = "bearer")]
-            Bearer,
-            /// Native wire value sigv4.
-            #[serde(rename = "sigv4")]
-            Sigv4,
-        }
-
-        /// Non-secret native credential reference.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "kind", rename_all_fields = "camelCase")]
-        pub enum PiModelConfigV4BedrockConverseStreamCredentialBinding {
-            /// Native wire value aws-bearer-token.
-            #[serde(rename = "aws-bearer-token")]
-            AwsBearerToken {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-            /// Native wire value aws-access-key-id.
-            #[serde(rename = "aws-access-key-id")]
-            AwsAccessKeyId {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-            /// Native wire value aws-secret-access-key.
-            #[serde(rename = "aws-secret-access-key")]
-            AwsSecretAccessKey {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-            /// Native wire value aws-session-token.
-            #[serde(rename = "aws-session-token")]
-            AwsSessionToken {
-                /// Sandbox marker environment name.
-                environment: String,
-                /// Trusted execution-edge secret reference.
-                secret_name: String,
-            },
-        }
-
-        /// Strict native reader contract; existing launch writers remain unchanged.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "dialect", rename_all_fields = "camelCase")]
-        pub enum PiModelConfigV4 {
-            /// Native Messages over SSE.
-            #[serde(rename = "anthropic-messages")]
-            AnthropicMessages {
-                /// Independent Pi model configuration generation.
-                schema_version: i64,
-                /// Exact public inference base URL.
-                base_url: String,
-                /// Configured upstream model, deployment or profile.
-                model: String,
-                /// Trusted logical model for native catalog capabilities.
-                catalog_model: PiModelConfigV4AnthropicMessagesCatalogModel,
-                /// Owner of the selected credential bundle.
-                credential_owner: PiModelConfigV4AnthropicMessagesCredentialOwner,
-                /// Owner of model-token billing.
-                billing_owner: PiModelConfigV4AnthropicMessagesBillingOwner,
-                /// Captured model thinking policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                thinking_level: Option<PiModelConfigV4AnthropicMessagesThinkingLevel>,
-                /// Fixed native request attempt and cache policy.
-                request_policy: PiModelConfigV4AnthropicMessagesRequestPolicy,
-                /// Native framing protocol.
-                transport: PiModelConfigV4AnthropicMessagesTransport,
-                /// Trusted catalog provider identity.
-                provider: PiModelConfigV4AnthropicMessagesProvider,
-                /// Selected concrete provider route.
-                route: PiModelConfigV4AnthropicMessagesRoute,
-                /// Non-secret references resolved at the execution edge.
-                credential_bindings: Vec<PiModelConfigV4AnthropicMessagesCredentialBinding>,
-            },
-            /// Native Converse over AWS event-stream.
-            #[serde(rename = "bedrock-converse-stream")]
-            BedrockConverseStream {
-                /// Independent Pi model configuration generation.
-                schema_version: i64,
-                /// Exact public inference base URL.
-                base_url: String,
-                /// Configured upstream model, deployment or profile.
-                model: String,
-                /// Trusted logical model for native catalog capabilities.
-                catalog_model: PiModelConfigV4BedrockConverseStreamCatalogModel,
-                /// Owner of the selected credential bundle.
-                credential_owner: PiModelConfigV4BedrockConverseStreamCredentialOwner,
-                /// Owner of model-token billing.
-                billing_owner: PiModelConfigV4BedrockConverseStreamBillingOwner,
-                /// Captured model thinking policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                thinking_level: Option<PiModelConfigV4BedrockConverseStreamThinkingLevel>,
-                /// Fixed native request attempt and cache policy.
-                request_policy: PiModelConfigV4BedrockConverseStreamRequestPolicy,
-                /// Native framing protocol.
-                transport: PiModelConfigV4BedrockConverseStreamTransport,
-                /// Trusted catalog provider identity.
-                provider: PiModelConfigV4BedrockConverseStreamProvider,
-                /// Selected concrete provider route.
-                route: PiModelConfigV4BedrockConverseStreamRoute,
-                /// Frozen AWS region.
-                region: String,
-                /// Selected explicit Bedrock authentication mode.
-                auth_mode: PiModelConfigV4BedrockConverseStreamAuthMode,
-                /// Non-secret references resolved at the execution edge.
-                credential_bindings: Vec<PiModelConfigV4BedrockConverseStreamCredentialBinding>,
             },
         }
 

@@ -1,7 +1,4 @@
-import type {
-  CodexDeviceAuthMode,
-  CodexDeviceAuthScope,
-} from "@okouai/api-contracts/contracts/codex-device-auth";
+import type { CodexDeviceAuthMode } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { command } from "ccstate";
@@ -103,7 +100,6 @@ type CodexDeviceAuthStartResult =
   | {
       readonly ok: true;
       readonly sessionToken: string;
-      readonly scope: CodexDeviceAuthScope;
       readonly browserUrl: string;
       readonly verificationCode: string;
       readonly expiresIn: number;
@@ -465,7 +461,6 @@ const moveSessionToAwaitingApproval$ = command(
     { set },
     args: {
       readonly session: ModelProviderAuthSession;
-      readonly scope: CodexDeviceAuthScope;
       readonly mode?: CodexDeviceAuthMode;
       readonly modelProviderId?: string;
       readonly deviceAuthId: string;
@@ -476,7 +471,7 @@ const moveSessionToAwaitingApproval$ = command(
       {
         version: 1,
         type: "codex",
-        scope: args.scope,
+        scope: "personal",
         ...(args.mode ? { mode: args.mode } : {}),
         ...(args.modelProviderId
           ? { modelProviderId: args.modelProviderId }
@@ -658,7 +653,6 @@ export const startCodexDeviceAuth$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly scope: CodexDeviceAuthScope;
       readonly mode?: CodexDeviceAuthMode;
       readonly modelProviderId?: string;
     },
@@ -728,7 +722,6 @@ export const startCodexDeviceAuth$ = command(
       const updated = await settle(
         set(moveSessionToAwaitingApproval$, {
           session,
-          scope: args.scope,
           mode: args.mode,
           modelProviderId: args.modelProviderId,
           deviceAuthId: userCodeResult.value.deviceAuthId,
@@ -751,7 +744,6 @@ export const startCodexDeviceAuth$ = command(
       return {
         ok: true,
         sessionToken: encodeSession({ version: 1, sessionId: session.id }),
-        scope: args.scope,
         browserUrl: CODEX_DEVICE_AUTH_VERIFICATION_URL,
         verificationCode: userCodeResult.value.userCode,
         expiresIn: remainingTtlSeconds(updated.value.expiresAt, nowDate()),
@@ -821,7 +813,6 @@ function personalAccountMutation(args: {
 
 interface ImportCodexAuthJsonArgs {
   readonly authSession?: DeviceAuthSessionPublication;
-  readonly scope: CodexDeviceAuthScope;
   readonly orgId: string;
   readonly userId: string;
   readonly rawAuthJson: string;
@@ -891,7 +882,6 @@ const importCodexAuthJson$ = command(
 
     const response = await handleCodexAuthJsonPaste(
       {
-        scope: "personal",
         orgId: args.orgId,
         userId: args.userId,
         ...common,
@@ -981,7 +971,6 @@ const completeLoadedCodexDeviceAuth$ = command(
       readonly session: ModelProviderAuthSession;
       readonly orgId: string;
       readonly userId: string;
-      readonly orgRole: "admin" | "member" | undefined;
     },
     signal: AbortSignal,
   ): Promise<CodexDeviceAuthCompleteResult> => {
@@ -1048,7 +1037,6 @@ const completeLoadedCodexDeviceAuth$ = command(
       importClaimedCodexDeviceAuth$,
       {
         session,
-        scope: providerState.scope,
         mode: providerState.mode,
         modelProviderId: providerState.modelProviderId,
         orgId: args.orgId,
@@ -1066,7 +1054,6 @@ const importClaimedCodexDeviceAuth$ = command(
     { set },
     args: {
       readonly session: ModelProviderAuthSession;
-      readonly scope: CodexDeviceAuthScope;
       readonly mode: CodexDeviceAuthMode | undefined;
       readonly modelProviderId: string | undefined;
       readonly orgId: string;
@@ -1114,7 +1101,6 @@ const importClaimedCodexDeviceAuth$ = command(
             userId: args.userId,
             source: "codex-device-auth",
           },
-          scope: args.scope,
           orgId: args.orgId,
           userId: args.userId,
           rawAuthJson: authJsonFromTokens(tokens.value),
@@ -1169,7 +1155,6 @@ export const completeCodexDeviceAuth$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly orgRole: "admin" | "member" | undefined;
       readonly sessionToken: string;
     },
     signal: AbortSignal,
@@ -1201,7 +1186,6 @@ export const completeCodexDeviceAuth$ = command(
         session,
         orgId: args.orgId,
         userId: args.userId,
-        orgRole: args.orgRole,
       },
       signal,
     );

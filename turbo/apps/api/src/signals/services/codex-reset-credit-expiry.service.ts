@@ -7,13 +7,10 @@ import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import { awaitWithSignal, onRejection, settle, tapError } from "../utils";
 
-type CodexExpiryScope =
-  | { readonly scope: "org"; readonly orgId: string }
-  | {
-      readonly scope: "personal";
-      readonly orgId: string;
-      readonly userId: string;
-    };
+interface CodexExpiryOwner {
+  readonly orgId: string;
+  readonly userId: string;
+}
 
 interface Credentials {
   readonly accessToken: string;
@@ -27,7 +24,7 @@ interface Flight {
 }
 
 interface Entry {
-  readonly scopeKey: string;
+  readonly ownerKey: string;
   readonly binding: string | null;
   credentialKey: string | undefined;
   accountKey: string | undefined;
@@ -74,7 +71,7 @@ function record(outcome: keyof ReturnType<typeof observation>["counts"]): void {
   );
   if (now() - summary.since >= COOLDOWN_MS) {
     // Demand-driven, at most one aggregate per minute per warm instance. Never
-    // include scope keys, account IDs, credentials, or per-waiter log records.
+    // include owner keys, account IDs, credentials, or per-waiter log records.
     L.info("codex reset credit expiry outcomes", {
       windowMs: now() - summary.since,
       ...summary.counts,
@@ -87,12 +84,8 @@ function digest(parts: readonly unknown[]): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
-function scopeKey(scope: CodexExpiryScope): string {
-  return digest([
-    scope.scope,
-    scope.orgId,
-    scope.scope === "personal" ? scope.userId : null,
-  ]);
+function ownerKey(owner: CodexExpiryOwner): string {
+  return digest([owner.orgId, owner.userId]);
 }
 
 function invalidate(entry: Entry): void {
@@ -107,14 +100,14 @@ function invalidate(entry: Entry): void {
 }
 
 export function invalidateCodexResetCreditExpiry(
-  scope: CodexExpiryScope,
+  expiryOwner: CodexExpiryOwner,
   target: { readonly binding: string | null } | { readonly accountId: string },
 ): void {
-  const owner = scopeKey(scope);
+  const owner = ownerKey(expiryOwner);
   const accountKey =
     "accountId" in target ? digest([target.accountId]) : undefined;
   for (const entry of entries().values()) {
-    if (entry.scopeKey !== owner) {
+    if (entry.ownerKey !== owner) {
       continue;
     }
     const matches =
@@ -294,10 +287,10 @@ async function load(
  * still awaiting credentials. The returned accessor rechecks at serialization,
  * after the independent main usage GET/body may have finished much later. */
 export function prepareCodexResetCreditExpiryRead(
-  scope: CodexExpiryScope,
+  expiryOwner: CodexExpiryOwner,
   binding: string | null = null,
 ) {
-  const owner = scopeKey(scope);
+  const owner = ownerKey(expiryOwner);
   const key = digest([owner, binding]);
   const cache = entries();
   let entry = cache.get(key);
@@ -312,7 +305,7 @@ export function prepareCodexResetCreditExpiryRead(
       }
     }
     entry = {
-      scopeKey: owner,
+      ownerKey: owner,
       binding,
       credentialKey: undefined,
       accountKey: undefined,

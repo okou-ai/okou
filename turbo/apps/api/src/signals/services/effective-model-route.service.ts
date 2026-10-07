@@ -5,7 +5,6 @@ import {
   isCatalogModelRunnable,
   type ModelCatalog,
 } from "./model-catalog.service";
-const ORG_SENTINEL_USER_ID = "__org__";
 const PERSONAL_TYPES = [
   "claude-code-oauth-token",
   "codex-oauth-token",
@@ -19,74 +18,7 @@ interface PersonalCandidate {
 }
 
 export interface MemberModelRouteContext {
-  /** False only for the `__no_preference__` and `__org__` sentinel contexts. */
-  readonly memberScoped: boolean;
   readonly subscriptions: readonly PersonalCandidate[];
-}
-
-interface LoadedPersonalModelRouteMetadata {
-  readonly kind: "loaded";
-  readonly subscriptions: readonly PersonalCandidate[];
-}
-
-/**
- * One request's member observations. `not-applicable` is authoritative;
- * `not-loaded` is the only state that may issue the scoped metadata read.
- */
-export interface PreparedMemberModelRouteContext {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly memberScoped: boolean;
-  readonly personalMetadata:
-    | { readonly kind: "not-applicable" }
-    | {
-        readonly kind: "not-loaded";
-        readonly load: () => Promise<LoadedPersonalModelRouteMetadata>;
-      };
-}
-
-export function prepareMemberModelRouteContext(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-): PreparedMemberModelRouteContext {
-  if (userId === "__no_preference__" || userId === ORG_SENTINEL_USER_ID) {
-    return Object.freeze({
-      orgId,
-      userId,
-      memberScoped: false,
-      personalMetadata: Object.freeze({ kind: "not-applicable" as const }),
-    });
-  }
-
-  let loading: Promise<LoadedPersonalModelRouteMetadata> | undefined;
-  const personalMetadata = Object.freeze({
-    kind: "not-loaded" as const,
-    load: (): Promise<LoadedPersonalModelRouteMetadata> => {
-      loading ??= (async () => {
-        const subscriptions = await loadPersonalModelRouteSubscriptions(
-          db,
-          orgId,
-          userId,
-        );
-        return Object.freeze({
-          kind: "loaded" as const,
-          subscriptions: Object.freeze(
-            subscriptions.map((candidate) => {
-              return Object.freeze({ ...candidate });
-            }),
-          ),
-        });
-      })();
-      return loading;
-    },
-  });
-  return Object.freeze({
-    orgId,
-    userId,
-    memberScoped: true,
-    personalMetadata,
-  });
 }
 
 export async function loadMemberModelRouteContext(
@@ -94,14 +26,8 @@ export async function loadMemberModelRouteContext(
   orgId: string,
   userId: string,
 ): Promise<MemberModelRouteContext> {
-  const prepared = prepareMemberModelRouteContext(db, orgId, userId);
-  if (prepared.personalMetadata.kind === "not-applicable") {
-    return { memberScoped: false, subscriptions: [] };
-  }
-  const loaded = await prepared.personalMetadata.load();
   return {
-    memberScoped: true,
-    subscriptions: loaded.subscriptions,
+    subscriptions: await loadPersonalModelRouteSubscriptions(db, orgId, userId),
   };
 }
 
@@ -165,7 +91,6 @@ export function isMemberSubscriptionRoute(args: {
   if (
     !model ||
     !type ||
-    !args.member.memberScoped ||
     (args.credentialScope !== undefined &&
       args.credentialScope !== null &&
       args.credentialScope !== "member") ||
@@ -188,7 +113,6 @@ export function isMemberSubscriptionRoute(args: {
 }
 
 export function memberModelRouteContextFromAccounts(
-  userId: string,
   accounts: readonly {
     readonly type: string;
     readonly providerId: string;
@@ -197,8 +121,6 @@ export function memberModelRouteContextFromAccounts(
   }[],
 ): MemberModelRouteContext {
   return {
-    memberScoped:
-      userId !== "__no_preference__" && userId !== ORG_SENTINEL_USER_ID,
     subscriptions: PERSONAL_TYPES.flatMap((type) => {
       const connected = accounts.filter((account) => {
         return account.type === type;

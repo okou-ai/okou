@@ -51,7 +51,6 @@ describe("Okou CLI program", () => {
   it("should register all expected Okou commands", () => {
     const expectedCommands = [
       "model",
-      "model-provider",
       "agent",
       "connector",
       "mcp",
@@ -93,7 +92,6 @@ describe("Okou CLI program", () => {
       "web-search",
       "people-search",
       "social",
-      "image-recognition",
       "finance",
       "seo",
       "banking",
@@ -126,8 +124,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 49 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(49);
+  it("should have exactly 47 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(47);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });
@@ -211,14 +209,14 @@ describe("Okou CLI lazy command loading", () => {
     },
     {
       label: "direct canonical invocation",
-      argv: ["node", "okou", "image-recognition", "--help"],
-      expectedName: "image-recognition",
+      argv: ["node", "okou", "social", "--help"],
+      expectedName: "social",
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
       label: "canonical help invocation",
-      argv: ["node", "okou", "help", "image-recognition"],
-      expectedName: "image-recognition",
+      argv: ["node", "okou", "help", "social"],
+      expectedName: "social",
       expectedHelpCode: "commander.help",
     },
   ])(
@@ -231,7 +229,7 @@ describe("Okou CLI lazy command loading", () => {
             ? "lark:write"
             : expectedName === "artifact"
               ? "artifact:read"
-              : "image-recognition:write",
+              : "social:read",
         ]),
       );
       let helpOutput = "";
@@ -263,7 +261,7 @@ describe("Okou CLI lazy command loading", () => {
 
   it("should reject help for an unknown command", async () => {
     const argv = ["node", "okou", "help", "not-a-command"];
-    vi.stubEnv("OKOU_TOKEN", buildOkouToken(["image-recognition:write"]));
+    vi.stubEnv("OKOU_TOKEN", buildOkouToken(["social:read"]));
     let errorOutput = "";
     const prog = new Command()
       .name("okou")

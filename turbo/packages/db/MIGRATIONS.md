@@ -242,13 +242,27 @@ the complete migration consistency command remain active.
 
 ## Model catalog
 
-After Custom retirement (#37746), migration
-`1322_prune_retired_model_routes` removes obsolete execution routes. The only
-remaining route families are fixed Auto, personal Claude/Codex subscriptions,
-and the independent OpenRouter DeepSeek memory binding. Historical catalog
-metadata and pricing remain unchanged; active metadata without a route does
-not grant execution. This cleanup must follow the retirement API rollback
-floor. See [cleanup boundaries](../../../docs/retired-model-route-cleanup.md).
+Migration `1326_prune_retired_model_routes` keeps only these execution route
+families: fixed Auto (`okou-1.0` on `openrouter-codex`), personal Claude/Codex
+subscriptions, and the independent OpenRouter DeepSeek memory binding.
+Historical catalog metadata and pricing remain unchanged; active metadata
+without a route does not grant execution. See
+[cleanup boundaries](../../../docs/retired-model-route-cleanup.md).
+
+Migrations `1330_drop_retired_model_configuration_columns` and
+`1331_delete_organization_model_provider_rows` contract the remaining model
+configuration schema: they drop `agents.model_provider_id`,
+`agents.selected_model`, `agents.prefer_personal_provider`,
+`model_providers.secret_id` and `org_plan_entitlements.support_byok`, narrow
+the `model_routes` provider checks to `built-in`/`openrouter-codex` and the two
+subscription types, and delete organization-owned (`__org__`)
+`model_providers` rows. Rollout: an API built before 1330 still reads the
+dropped columns, so it must not serve after 1330 is applied. Apply them only
+after every serving API (and any rollback target) no longer reads these
+columns. Because this is not a rolling-compatible contraction, it requires an
+explicitly owner-accepted interruption under the
+[deployment compatibility](../../../docs/deployment-compatibility.md) rules;
+this document does not record such an acceptance.
 
 `scripts/test-retired-model-route-cleanup.ts` replays the preceding migrations
 and protects exact retained rows, future/disabled subscriptions, NULL-marker
@@ -258,8 +272,8 @@ validator until the migration is shipped and its surviving invariants are
 promoted; `test-model-catalog-seed.ts` permanently checks the retained route
 families and historical replacement chains.
 
-The following records describe the pre-retirement catalog and its historical
-migrations, not authority to restore retired platform or BYOK routes.
+The following records describe historical catalog migrations; they do not
+describe current routes.
 
 The API projects the system default from `run_model_catalog.is_system_default`.
 Model availability and replacement use `replaced_by`; subscription routes are

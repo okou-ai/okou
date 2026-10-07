@@ -22,7 +22,6 @@ interface OrgPlanEntitlementFixtureState {
   readonly canBuyCredits: boolean;
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
@@ -44,7 +43,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
   readonly canBuyCredits?: boolean;
   readonly showUsagePack?: boolean;
   readonly autoRechargeAllowed?: boolean;
-  readonly supportByok?: boolean;
   readonly restrictedBuiltInModels?: boolean;
   readonly workflowWebhookAutomationAllowed?: boolean;
   readonly audioLifetimeLimit?: number | null;
@@ -62,7 +60,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
     canBuyCredits: values.canBuyCredits,
     showUsagePack: values.showUsagePack,
     autoRechargeAllowed: values.autoRechargeAllowed,
-    supportByok: values.supportByok,
     restrictedBuiltInModels: values.restrictedBuiltInModels,
     workflowWebhookTriggerAllowed: values.workflowWebhookAutomationAllowed,
     audioLifetimeLimit: values.audioLifetimeLimit,
@@ -100,9 +97,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
         ...(row.autoRechargeAllowed === undefined
           ? {}
           : { autoRechargeAllowed: row.autoRechargeAllowed }),
-        ...(row.supportByok === undefined
-          ? {}
-          : { supportByok: row.supportByok }),
         ...(row.restrictedBuiltInModels === undefined
           ? {}
           : { restrictedBuiltInModels: row.restrictedBuiltInModels }),
@@ -140,7 +134,6 @@ export async function readOrgPlanEntitlementFixture(
       canBuyCredits: orgPlanEntitlements.canBuyCredits,
       showUsagePack: orgPlanEntitlements.showUsagePack,
       autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-      supportByok: orgPlanEntitlements.supportByok,
       restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
       workflowWebhookAutomationAllowed:
         orgPlanEntitlements.workflowWebhookTriggerAllowed,

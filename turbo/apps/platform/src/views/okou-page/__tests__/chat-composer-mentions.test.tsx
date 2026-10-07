@@ -48,9 +48,6 @@ function agent(
     description: null,
     sound: null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility,
   };
 }

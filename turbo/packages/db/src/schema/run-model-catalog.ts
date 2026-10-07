@@ -55,10 +55,9 @@ export const runModelCatalog = pgTable(
      * Plan policy for organizations whose plan restricts Built-in models
      * (`org_plan_entitlements.restricted_built_in_models`, every free plan):
      * whether they may run this model on a Built-in route. A new model
-     * defaults to paid-only. Restricted plans never get their own BYOK,
-     * organization or gateway routes as a plan entitlement; only a member's
-     * connected personal subscription on the model's catalog subscription
-     * route (`model_routes.subscription_type`) is exempt.
+     * defaults to paid-only. Only a member's connected personal subscription
+     * on the model's catalog subscription route
+     * (`model_routes.subscription_type`) is exempt.
      */
     builtInOnRestrictedPlans: boolean("built_in_on_restricted_plans")
       .notNull()

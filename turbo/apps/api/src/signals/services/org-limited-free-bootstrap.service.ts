@@ -415,9 +415,6 @@ async function finalizeBootstrap(
       description: null,
       sound: DEFAULT_AGENT_SOUND,
       avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       createdAt,
       updatedAt: createdAt,
     })

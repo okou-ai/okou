@@ -1,5 +1,4 @@
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
-import type { BuiltInModelRouteProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -12,7 +11,7 @@ import {
 } from "@okouai/pi-agent-runtime";
 import {
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_BYOK_MODEL,
+  PI_MEMORY_STAGE1_PERSONAL_MODEL,
   type PiMemoryStage1Model,
 } from "@okouai/pi-agent-runtime/api";
 import { eq } from "drizzle-orm";
@@ -60,7 +59,7 @@ export class PiMemoryStage1CredentialRefreshError extends Error {
 }
 
 export interface PiMemoryStage1Billing {
-  readonly mode: "builtin" | "byok";
+  readonly mode: "builtin" | "subscription";
   readonly orgId: string;
   readonly userId: string;
 }
@@ -147,17 +146,17 @@ export function piMemoryStage1ModelPricingThreshold(
 }
 
 /**
- * BYOK extraction is not billed; its cost observation values usage with the
+ * Personal subscription extraction is not billed; its cost observation values usage with the
  * `usage_pricing` rows of the model's own ID and so follows that rule's
  * threshold.
  */
-function byokStage1Selection(catalog: ModelCatalog): Stage1Selection {
+function subscriptionStage1Selection(catalog: ModelCatalog): Stage1Selection {
   return {
-    selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL,
-    mode: "byok",
+    selectedModel: PI_MEMORY_STAGE1_PERSONAL_MODEL,
+    mode: "subscription",
     longContextMinTotalInputTokens: piMemoryStage1ModelPricingThreshold(
       catalog,
-      PI_MEMORY_STAGE1_BYOK_MODEL,
+      PI_MEMORY_STAGE1_PERSONAL_MODEL,
     ),
   };
 }
@@ -200,22 +199,6 @@ function availableCredential(
     },
   };
 }
-/** Pi provider identity for eligible built-in extraction routes. */
-function builtInStage1PiProvider(
-  type: BuiltInModelRouteProviderType,
-): "openai" | "openrouter" | null {
-  switch (type) {
-    case "openai-api-key": {
-      return "openai";
-    }
-    case "openrouter-codex": {
-      return "openrouter";
-    }
-    default: {
-      return null;
-    }
-  }
-}
 
 async function builtinCredential(
   args: ResolutionContext,
@@ -233,15 +216,7 @@ async function builtinCredential(
   // Pricing still uses the held snapshot of the actual served route.
   const route = await resolvePiMemoryBuiltinRoute(db, signal);
   signal.throwIfAborted();
-  const provider = route ? builtInStage1PiProvider(route.providerType) : null;
-  if (!route || !provider) {
-    return skip("provider_model_unsupported");
-  }
-  const endpoint = getModelProviderPiEndpoint(
-    route.providerType,
-    "openai-responses",
-  );
-  if (!endpoint) {
+  if (route?.providerType !== "openrouter-codex") {
     return skip("provider_model_unsupported");
   }
   // The served route's own pricing trigger. The route was resolved from this
@@ -273,20 +248,17 @@ async function builtinCredential(
   return availableCredential(
     args,
     {
-      provider,
+      provider: "openrouter",
       apiKey,
       model: route.upstreamModel,
-      baseUrl:
-        provider === "openrouter"
-          ? getOpenRouterBaseUrl("responses", {
-              credentialOwner: "builtin",
-              model: route.upstreamModel,
-              usRoutingEnabled: isFeatureEnabled(
-                FeatureSwitchKey.OpenRouterUsRouting,
-                context,
-              ),
-            })
-          : endpoint.baseUrl,
+      baseUrl: getOpenRouterBaseUrl("responses", {
+        credentialOwner: "builtin",
+        model: route.upstreamModel,
+        usRoutingEnabled: isFeatureEnabled(
+          FeatureSwitchKey.OpenRouterUsRouting,
+          context,
+        ),
+      }),
       dialect: "openai-responses",
       transport: "sse",
     },
@@ -367,13 +339,13 @@ async function codexCredential(
     {
       provider: "openai-codex",
       baseUrl: endpoint.baseUrl,
-      model: PI_MEMORY_STAGE1_BYOK_MODEL,
+      model: PI_MEMORY_STAGE1_PERSONAL_MODEL,
       apiKey: token,
       accountId,
       dialect: "openai-codex-responses",
       transport: "sse",
     },
-    byokStage1Selection(args.catalog),
+    subscriptionStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await personalModelProviderAccountById(accountArgs);
       validationSignal.throwIfAborted();
@@ -451,7 +423,7 @@ export async function resolvePiMemoryStage1Credential(
   if (!binding.id) {
     return skip("source_binding_invalid");
   }
-  if (binding.scope !== "member" && binding.scope !== "org") {
+  if (binding.scope !== "member") {
     return skip("source_scope_mismatch");
   }
   switch (binding.type) {

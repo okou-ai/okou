@@ -96,9 +96,6 @@ function prepareAgentProfile(
     sound: "professional",
     avatarUrl,
     visibility: "public",
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
   };
 
   context.mocks.data.agents([
@@ -432,9 +429,6 @@ test("Keep the default agent’s canonical identity read-only", async () => {
     sound: "professional",
     avatarUrl: DEFAULT_AGENT_AVATAR_URL,
     visibility: "public",
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
   };
   let saved: AgentMetadataRequest | undefined;
   context.mocks.api(agentsByIdContract.updateMetadata, ({ body, respond }) => {
@@ -506,9 +500,6 @@ test.each([true])(
       sound: "professional",
       avatarUrl: DEFAULT_AGENT_AVATAR_URL,
       visibility: "public",
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
     };
     // The optional identity models a previous API during the rollout window.
     context.mocks.api(agentsByIdContract.get, ({ respond }) => {
@@ -708,9 +699,6 @@ function copyTarget(
     sound: null,
     avatarUrl: null,
     visibility: "public",
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
   };
 }
 

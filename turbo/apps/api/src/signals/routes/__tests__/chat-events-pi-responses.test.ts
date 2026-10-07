@@ -186,7 +186,7 @@ async function configureResponsesWithOwnedRuns(args: {
   };
 }
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   it.each(
     [false, true].map((usRoutingEnabled) => {
       return { selectedModel: "okou-1.0" as const, usRoutingEnabled };

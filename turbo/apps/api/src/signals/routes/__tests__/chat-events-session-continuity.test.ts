@@ -57,7 +57,6 @@ describe("CHAT-02: run-level model overrides", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "chat-codex-account-a",
       workspaceName: "Chat Account A",
     });
@@ -84,7 +83,6 @@ describe("CHAT-02: run-level model overrides", () => {
     const accountAId = completedA.body.provider.id;
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "chat-codex-account-b",
       workspaceName: "Chat Account B",
     });

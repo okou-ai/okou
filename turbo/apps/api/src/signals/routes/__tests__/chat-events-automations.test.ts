@@ -401,14 +401,14 @@ describe("CHAT effort: automation launches", () => {
         model: "claude-fable-5-1",
         effort: "ultracode",
         pi: false,
-        providerType: "anthropic-api-key",
+        providerType: "claude-code-oauth-token",
         effectiveEffort: "max",
       },
       {
         model: "gpt-6-sol",
         effort: "high",
         pi: true,
-        providerType: "openai-api-key",
+        providerType: "codex-oauth-token",
         effectiveEffort: "high",
       },
     ] as const) {

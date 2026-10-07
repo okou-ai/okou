@@ -272,8 +272,8 @@ describe("native Pi history structural boundaries", () => {
       agentDir: join(directory, "agent"),
       appendSystemPrompt: null,
       model: {
-        provider: "openai",
-        model: "gpt-6-luna",
+        provider: "openrouter",
+        model: "openai/gpt-6-luna",
         dialect: "openai-responses" as const,
         transport: "sse" as const,
         apiKey: "synthetic-key",

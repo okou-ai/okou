@@ -40,7 +40,6 @@ try {
       pending_subscription_schedule_id text,
       pending_subscription_target_tier text,
       pending_subscription_change_at timestamp,
-      model_mode text NOT NULL DEFAULT 'custom',
       onboarding_complete boolean NOT NULL DEFAULT true,
       updated_at timestamp NOT NULL DEFAULT '2026-01-01'
     );

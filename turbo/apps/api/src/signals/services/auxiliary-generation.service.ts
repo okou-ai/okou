@@ -8,7 +8,6 @@ import { VertexTextError } from "../external/vertex-text";
 import {
   isTransientProviderFailure,
   openRouterFailureReason,
-  openRouterFailureTokenCounts,
   type OpenRouterFailureReason,
   type OpenRouterTokenCounts,
 } from "../external/openrouter-failure";
@@ -284,10 +283,7 @@ export async function generateAuxiliary<T>(
           feature: args.feature,
           outcome,
           reason,
-          tokens:
-            error instanceof VertexTextError
-              ? error.tokens
-              : openRouterFailureTokenCounts(error),
+          tokens: error instanceof VertexTextError ? error.tokens : {},
           ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
           ...(runId === undefined ? {} : { runId }),
           startedAt,

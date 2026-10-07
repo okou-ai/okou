@@ -129,9 +129,6 @@ function buildAgentUpsertConflictSet(body: AgentUpdateBody, updatedAt: Date) {
     ...(body.description !== undefined && { description: body.description }),
     ...(body.sound !== undefined && { sound: body.sound }),
     ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     ...(body.visibility !== undefined && { visibility: body.visibility }),
   };
 }
@@ -267,9 +264,6 @@ async function readAgentForResponse(
       description: agents.description,
       sound: agents.sound,
       avatarUrl: agents.avatarUrl,
-      modelProviderId: agents.modelProviderId,
-      selectedModel: agents.selectedModel,
-      preferPersonalProvider: agents.preferPersonalProvider,
       visibility: agents.visibility,
     })
     .from(agents)
@@ -317,9 +311,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     description: body.data.description ?? null,
     sound: body.data.sound ?? null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility,
   };
 

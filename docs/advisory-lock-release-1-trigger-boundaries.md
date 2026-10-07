@@ -78,7 +78,8 @@ The following producer changes are implemented:
   command ownership of that caller graph remains unfinished.
 - Ordinary Runner usage and mixed X resource batches explicitly retain the live
   owner, validate/capture canonical billing identity, insert their bounded event
-  set and mark observation in their owning command. BYOK model exclusion remains.
+  set and mark observation in their owning command. Model events from non-built-in
+  (personal subscription) providers remain excluded.
   X source reservations, ordered resource claims, final quantities and replay
   checks commit together; database clock samples after possible waits preserve
   the existing date-admission window. Pure builders replace all transaction-aware

@@ -4651,11 +4651,8 @@
     "actions": {
       "addCredits": "クレジットを追加",
       "openModelProviders": "モデルプロバイダーを開く",
-      "reconnectClaude": "Claude Code を再接続",
-      "shareWithAdmin": "管理者に共有"
+      "reconnectClaude": "Claude Code を再接続"
     },
-    "anthropicKeyAdmin": "設定された Anthropic API キーで Claude Code を認証できませんでした。モデルプロバイダーで API キーを更新または置き換えてから、もう一度お試しください。",
-    "anthropicKeyMember": "設定された Anthropic API キーで Claude Code を認証できませんでした。ワークスペースの管理者に API キーの更新または置き換えを依頼してください。",
     "askAdmin": "ワークスペースの管理者にクレジットの追加またはプランのアップグレードを依頼してください。",
     "claudeReconnect": "Claude Code サブスクリプションの認証に失敗しました。モデルプロバイダーで Claude Code を再接続してから、もう一度お試しください。",
     "claudeTerms": "Claude Code を利用するには、更新された利用規約とプライバシーポリシーへの同意が必要です。モデルプロバイダーに接続した Claude アカウントで https://claude.ai にログインし、更新内容に同意してから、もう一度お試しください。",
@@ -4670,7 +4667,7 @@
     "overloaded": "{{model}} は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
     "providerBalance": "接続されているモデルプロバイダーのアカウント残高が不足しています。",
     "transient": "エラーが発生しました。しばらくしてからもう一度お試しください。",
-    "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、ご自身の API キーを設定してください。"
+    "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、個人の Codex または Claude サブスクリプションを接続してください。"
   },
   "serviceStatus": {
     "dismiss": "サービス更新を閉じる",
@@ -4922,7 +4919,7 @@
           "lowest": "1 回の生成あたりのコストが最も低い",
           "typical": "1 回の生成あたりの標準的なコスト"
         },
-        "inheritDefault": "組織のデフォルト（Auto）",
+        "inheritDefault": "デフォルト（Auto）",
         "loadError": "モデルをロードできません。",
         "loading": "モデルをロード中...",
         "models": "モデル",
@@ -4989,10 +4986,6 @@
         "image-generation": {
           "description": "組み込みモデルで画像を生成します。",
           "name": "画像生成"
-        },
-        "image-recognition": {
-          "description": "画像を読み取り、分析します。",
-          "name": "画像認識"
         },
         "maps": {
           "description": "場所、住所、経路を検索します。",

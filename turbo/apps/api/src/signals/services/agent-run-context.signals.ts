@@ -283,8 +283,6 @@ function contextAgentSelection() {
     displayName: agents.displayName,
     description: agents.description,
     sound: agents.sound,
-    modelProviderId: agents.modelProviderId,
-    selectedModel: agents.selectedModel,
   };
 }
 

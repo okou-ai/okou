@@ -58,7 +58,6 @@ const AGENT_EXCLUDED_CAPABILITIES = [
 interface OkouTokenOptions {
   readonly computerUseHostId?: string;
   readonly cloudBrowserEnabled?: boolean;
-  readonly imageRecognitionAvailable?: boolean;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
   readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
 }
@@ -196,9 +195,6 @@ function isCapabilityAvailableToAgent(
   }
   if (capability === "browser:read" || capability === "browser:write") {
     return options?.cloudBrowserEnabled === true;
-  }
-  if (capability === "image-recognition:write") {
-    return options?.imageRecognitionAvailable === true;
   }
   return true;
 }

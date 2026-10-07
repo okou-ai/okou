@@ -12,14 +12,14 @@ import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 export const listAvailableRunModels$ = command(
   async (
     { get },
-    params: { readonly orgId: string; readonly userId?: string },
+    params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<AvailableRunModelsResponse> => {
     const db = get(db$);
     const member = await loadMemberModelRouteContext(
       db,
       params.orgId,
-      params.userId ?? "__no_preference__",
+      params.userId,
     );
     signal.throwIfAborted();
     const subscriptions = await loadMemberSubscriptionModels(db, member);
@@ -29,7 +29,6 @@ export const listAvailableRunModels$ = command(
         ? await loadOrgPlanCapabilities(db, params.orgId)
         : null;
     signal.throwIfAborted();
-    // Caller-owned subscriptions are exempt from retired organization BYOK limits.
     // A suspended entitlement still blocks execution and must be shown as such.
     const personalPlanRestricted = capabilities?.status !== "active";
     const auto: AvailableRunModel = {
@@ -88,7 +87,7 @@ export const listAvailableRunModels$ = command(
 export const listAvailableRunModelsWithDefault$ = command(
   async (
     { set },
-    params: { readonly orgId: string; readonly userId?: string },
+    params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ) => {
     const response = await set(listAvailableRunModels$, params, signal);

@@ -13,7 +13,6 @@ import {
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
-import { piNativeTypeBindings } from "./pi-native-types";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
@@ -186,7 +185,6 @@ export const rustTypeBindings = [
   },
   ...sshTypeBindings,
   ...vncTypeBindings,
-  ...piNativeTypeBindings,
   {
     schema: modelProviderCodexRuntimeConfigSchema,
     rustModulePath: ["runners", "runs"],
@@ -316,30 +314,13 @@ export const rustTypeBindings = [
           credentialSecretName: [
             "API-owned credential secret backing the environment entry.",
           ],
-          credentialHeader: [
-            "Optional non-secret custom gateway credential header policy.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigCredentialHeader",
-        rustDoc: ["Non-secret custom gateway credential header policy."],
-        fields: {
-          name: ["Request header name."],
-          valueTemplate: [
-            "Header value template containing the credential placeholder exactly once.",
-          ],
         },
       },
       {
         rustTypeName: "PiModelConfigProvider",
         rustDoc: ["Model providers supported by the Pi runtime contract."],
         variants: {
-          deepseek: ["DeepSeek provider."],
-          moonshotai: ["Moonshot AI provider."],
-          openai: ["OpenAI provider."],
           openrouter: ["OpenRouter provider."],
-          "vercel-ai-gateway": ["Vercel AI Gateway provider."],
           codex: ["Codex provider."],
         },
       },
@@ -371,7 +352,6 @@ export const rustTypeBindings = [
           "Environment variables supported for Pi provider credentials.",
         ],
         variants: {
-          ANTHROPIC_AUTH_TOKEN: ["Anthropic authentication token."],
           OPENAI_API_KEY: ["OpenAI-compatible API key."],
           CHATGPT_ACCESS_TOKEN: ["ChatGPT access token."],
         },
@@ -420,8 +400,6 @@ export const rustTypeBindings = [
         rustTypeName: "PiModelConfigV2Provider",
         rustDoc: ["Native Pi catalog providers supported by this generation."],
         variants: {
-          deepseek: ["DeepSeek provider."],
-          openai: ["OpenAI public API provider."],
           openrouter: ["OpenRouter provider."],
           "openai-codex": ["OpenAI Codex subscription provider."],
         },
@@ -452,24 +430,11 @@ export const rustTypeBindings = [
         fields: {
           environment: ["Sandbox environment entry containing the value."],
           secretName: ["API-owned encrypted secret containing the value."],
-          credentialHeader: [
-            "Optional non-secret custom gateway header policy.",
-          ],
         },
         variants: {
           "api-key": ["Public Responses API-key binding."],
           "access-token": ["ChatGPT access-token binding."],
           "account-id": ["ChatGPT account-ID binding."],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigV2CredentialBindingApiKeyCredentialHeader",
-        rustDoc: ["Non-secret custom gateway credential header policy."],
-        fields: {
-          name: ["Request header name."],
-          valueTemplate: [
-            "Header value template containing the credential placeholder exactly once.",
-          ],
         },
       },
     ],
@@ -525,8 +490,6 @@ export const rustTypeBindings = [
               variants:
                 dialect === "OpenaiResponses"
                   ? {
-                      deepseek: ["DeepSeek provider."],
-                      openai: ["OpenAI public API provider."],
                       openrouter: ["OpenRouter provider."],
                     }
                   : { "openai-codex": ["OpenAI Codex subscription provider."] },
@@ -551,7 +514,6 @@ export const rustTypeBindings = [
                 dialect === "OpenaiResponses"
                   ? {
                       priority: ["Public Responses priority service tier."],
-                      ultrafast: ["Astra Ultrafast public API service tier."],
                     }
                   : { fast: ["Native Codex Responses fast service tier."] },
             },
@@ -565,24 +527,11 @@ export const rustTypeBindings = [
                 secretName: [
                   "API-owned encrypted secret containing the value.",
                 ],
-                credentialHeader: [
-                  "Optional non-secret custom gateway header policy.",
-                ],
               },
               variants: {
                 "api-key": ["Public Responses API-key binding."],
                 "access-token": ["ChatGPT access-token binding."],
                 "account-id": ["ChatGPT account-ID binding."],
-              },
-            },
-            {
-              rustTypeName: `PiModelConfigV3${dialect}CredentialBindingApiKeyCredentialHeader`,
-              rustDoc: ["Non-secret custom gateway credential header policy."],
-              fields: {
-                name: ["Request header name."],
-                valueTemplate: [
-                  "Header value template containing the credential placeholder exactly once.",
-                ],
               },
             },
           ];

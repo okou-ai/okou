@@ -4651,11 +4651,8 @@
     "actions": {
       "addCredits": "充值積分",
       "openModelProviders": "開啟模型服務商",
-      "reconnectClaude": "重新連線Claude Code",
-      "shareWithAdmin": "分享給管理員"
+      "reconnectClaude": "重新連線Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code無法用當前配置的Anthropic API金鑰完成驗證。請在「模型服務商」中更新或更換API金鑰，然後重試。",
-    "anthropicKeyMember": "Claude Code無法用當前配置的Anthropic API金鑰完成驗證。請聯絡工作區管理員更新或更換API金鑰。",
     "askAdmin": "請聯絡工作區管理員充值積分或升級工作區套餐。",
     "claudeReconnect": "Claude Code訂閱驗證失敗。請在「模型服務商」中重新連線Claude Code，然後重試。",
     "claudeTerms": "Claude Code需要你接受更新後的消費者條款和隱私政策。請用「模型服務商」中已連線的Claude帳號登入https://claude.ai，接受更新後的條款和政策，然後重試。",
@@ -4670,7 +4667,7 @@
     "overloaded": "{{model}}負載過高。請稍等幾分鐘後重試，或改用其他模型。",
     "providerBalance": "你連線的模型服務商帳戶餘額不足。",
     "transient": "出了點問題，請稍後再試。",
-    "vm0Credits": "積分不足。請充值積分，或配置自己的API金鑰後繼續。"
+    "vm0Credits": "積分不足。請充值積分，或連接個人 Codex 或 Claude 訂閱後繼續。"
   },
   "serviceStatus": {
     "dismiss": "忽略服務更新",
@@ -4922,7 +4919,7 @@
           "lowest": "單次生成成本最低",
           "typical": "單次生成成本一般"
         },
-        "inheritDefault": "組織預設（Auto）",
+        "inheritDefault": "預設（Auto）",
         "loadError": "無法載入模型。",
         "loading": "正在載入模型…",
         "models": "模型",
@@ -4989,10 +4986,6 @@
         "image-generation": {
           "description": "用內建模型生成圖片。",
           "name": "圖片生成"
-        },
-        "image-recognition": {
-          "description": "讀取和分析圖片。",
-          "name": "圖片識別"
         },
         "maps": {
           "description": "查詢地點、地址和路線。",

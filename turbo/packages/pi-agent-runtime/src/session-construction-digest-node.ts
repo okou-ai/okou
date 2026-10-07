@@ -11,10 +11,10 @@ import type { PiAgentModelConfig } from "./types";
 const PI_SESSION_CONSTRUCTION_CWD = "/home/user/workspace";
 const PI_SESSION_CONSTRUCTION_AGENT_DIR = "/home/user/.pi/agent";
 const PI_SESSION_CONSTRUCTION_MODEL: PiAgentModelConfig = {
-  provider: "openai",
-  baseUrl: "https://api.openai.com/v1",
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
   apiKey: "session-construction-digest",
-  model: "gpt-6-luna",
+  model: "openai/gpt-6-luna",
   dialect: "openai-responses",
   transport: "sse",
   thinkingLevel: "max",
