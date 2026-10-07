@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct ChatDetailView: View {
-  @Bindable var store: WorkspaceStore
-  let thread: ChatThread
+  @Bindable var conversation: ConversationStore
+  private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var hasPositionedHistory = false
   @State private var followsLatestMessage = true
@@ -13,8 +13,8 @@ struct ChatDetailView: View {
     let isAwayFromBottom: Bool
   }
 
-  private var history: ChatHistory { store.histories[thread.id] ?? .empty }
-  private var messages: [ChatMessage] { store.messages(for: thread.id) }
+  private var history: ChatHistory { conversation.history ?? .empty }
+  private var messages: [ChatMessage] { conversation.messages }
   var body: some View {
     let displayedMessages = messages
     ScrollViewReader { proxy in
@@ -45,7 +45,7 @@ struct ChatDetailView: View {
           if !displayedMessages.isEmpty {
             Link(
               "Open conversation on web",
-              destination: store.webURL.appending(path: "chats/\(thread.id)")
+              destination: conversation.webURL.appending(path: "chats/\(thread.id)")
             )
             .font(.caption).foregroundStyle(.secondary)
           }
@@ -61,7 +61,7 @@ struct ChatDetailView: View {
       .environment(\.defaultMinListRowHeight, 0)
       .scrollContentBackground(.hidden)
       .scrollDismissesKeyboard(.interactively)
-      .refreshable { await store.loadHistory(thread.id) }
+      .refreshable { await conversation.refresh() }
       .onScrollPhaseChange { _, phase in
         if phase == .tracking || phase == .interacting { followsLatestMessage = false }
         if phase == .idle && hasPositionedHistory && !isAwayFromBottom {
@@ -119,8 +119,7 @@ struct ChatDetailView: View {
         // Incoming updates preserve the reading position; a local send follows its new bubble.
         guard
           !hasPositionedHistory || followsLatestMessage
-            || store.pending[thread.id]?.contains(where: { $0.id == displayedMessages.last?.id })
-              == true
+            || conversation.pending.contains(where: { $0.id == displayedMessages.last?.id })
         else { return }
         followsLatestMessage = true
         await Task.yield()
@@ -140,10 +139,25 @@ struct ChatDetailView: View {
         }
       }
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) { ChatComposerView(store: store, thread: thread) }
-    .task(id: thread.id) { await store.loadHistory(thread.id) }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      ChatComposerView(
+        draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
+        showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
+        error: conversation.error,
+        attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+        submit: {
+          if history.canStop
+            && conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          {
+            await conversation.stop()
+          } else {
+            await conversation.send()
+          }
+        }, refresh: { await conversation.refresh() })
+    }
+    .task(id: thread.id) { await conversation.refresh() }
     .overlay {
-      if store.loadingThreads.contains(thread.id) && store.histories[thread.id] == nil {
+      if conversation.isLoading && conversation.history == nil {
         ProgressView("Loading conversation…").padding(20).background(
           .regularMaterial, in: Capsule())
       }
@@ -164,18 +178,20 @@ struct ChatDetailView: View {
         Text("Notice")
           .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
       }
-      MessageBodyView(text: message.text, baseURL: store.webURL, markdown: store.messageMarkdown)
-        .equatable()
-        .foregroundStyle(message.isError ? Color.red : Color.primary)
-        .padding(.leading, message.role == .assistant ? 6 : 0)
-      if let pending = store.pending[thread.id]?.first(where: { $0.id == message.id }) {
+      MessageBodyView(
+        text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown
+      )
+      .equatable()
+      .foregroundStyle(message.isError ? Color.red : Color.primary)
+      .padding(.leading, message.role == .assistant ? 6 : 0)
+      if let pending = conversation.pending.first(where: { $0.id == message.id }) {
         HStack {
           Text(pending.needsRetry ? "Delivery not confirmed" : "Sending…")
             .font(.caption).foregroundStyle(.secondary)
           if pending.needsRetry {
-            Button("Check and retry") { Task { await store.retry(pending, in: thread) } }
+            Button("Check and retry") { Task { await conversation.retry(pending) } }
               .font(.caption)
-              .disabled(store.sendingThreads.contains(thread.id))
+              .disabled(conversation.isSending)
           }
         }
       }

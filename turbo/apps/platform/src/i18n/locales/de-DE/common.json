@@ -3593,40 +3593,6 @@
         "sendToLabel": "Senden an",
         "tryAgain": "Erneut versuchen"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Aktiver Katalogauszug",
-          "entries": "Einträge",
-          "evaluated": "Bewertet",
-          "evaluation": "Auswertung",
-          "executableCapabilityDigest": "Zusammenfassung der ausführbaren Funktionen",
-          "filteredAuthMethods": "Gefilterte Authentifizierungsmethoden",
-          "missingVersions": "Fehlende Versionen",
-          "syncState": "Synchronisierungsstatus",
-          "unownedSecrets": "Nicht zugeordnete Secrets",
-          "unownedVariables": "Unbesessene Variablen",
-          "unresolvedBridgeCredentials": "Ungelöste Bridge-Anmeldeinformationen"
-        },
-        "loading": "Laden",
-        "none": "Keiner",
-        "sections": {
-          "compatibility": "Kompatibilität",
-          "credentialStorage": "Anmeldeinformationsspeicher"
-        },
-        "title": "Integrationskatalog",
-        "unavailable": "Nicht verfügbar",
-        "values": {
-          "current": "Aktuell",
-          "missingAccessProvider": "Fehlender Access-Provider",
-          "missingGrantProvider": "Fehlender Grant-Provider",
-          "missingPlatformConfiguration": "Fehlende Plattformkonfiguration",
-          "missingRevokeProvider": "Fehlender Revoke-Provider",
-          "neverSynced": "Nie synchronisiert",
-          "providerContractMismatch": "Provider-Vertrag stimmt nicht überein",
-          "stale": "Veraltet",
-          "unsupportedProtocol": "Nicht unterstütztes Protokoll"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Das Autorisierungsfenster konnte nicht geöffnet werden"
       },
@@ -5440,6 +5406,10 @@
     },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
+    "tailscale": {
+      "editUnavailable": "Dieser Host verwendet jetzt Tailscale. Das Bearbeiten und erneute Zuordnen von Tailscale ist hier noch nicht verfügbar. Brich diese Bearbeitung ab, um die gespeicherte Verbindungsart beizubehalten.",
+      "needsRebind": "Dieser Host benötigt eine neue Tailscale-Konfiguration. Die Einrichtung und erneute Zuordnung von Tailscale sind hier noch nicht verfügbar."
+    },
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
@@ -5685,6 +5655,7 @@
       "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Ein Chat kann diese Route nur nutzen, wenn dieser SSH-Host dort ebenfalls aktiviert ist.",
       "sshNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Cloudflare-Access-Zuordnung. Verknüpfe ihn in den SSH-Einstellungen erneut oder wähle dort ausdrücklich Direkt, bevor du dich verbindest.",
       "sshNeedsRebindStatus": "SSH muss neu verknüpft werden",
+      "sshTailscaleNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Tailscale-Konfiguration. Tailscale-Einrichtung und erneute Verknüpfung sind hier noch nicht verfügbar.",
       "title": "Verbindungsroute",
       "unavailable": "SSH-Einstellungen sind für dieses Konto nicht verfügbar.",
       "via": "SSH-Host:"

@@ -713,16 +713,6 @@ export default [
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // Pi resource snapshots are a byte-identical discovery contract shared
-      // with the sandbox runtime; route output cannot expose its full virtual
-      // filesystem, ignore-rule, and precedence matrix.
-      "src/signals/services/__tests__/pi-resource-snapshot.service.test.ts",
-      // Stable-context projection bytes are shared with persisted artifacts,
-      // while PostgreSQL generation/CAS and lease races have no production
-      // endpoint that can construct or observe their exact transition matrix.
-      // Run creation and cron routes retain the externally visible coverage.
-      "src/signals/services/__tests__/pi-stable-context.service.test.ts",
-      "src/signals/services/__tests__/pi-stable-context-generation.service.test.ts",
       // The production cron exposes aggregate Phase 2 outcomes, but no API
       // constructs or inspects exact job and Storage state matrices. These
       // focused tests pin the finite job, usage, worker composition, generic
@@ -895,15 +885,6 @@ export default [
       // policy lookup byte-for-byte; individual provider routes cannot cover
       // every lookup-table row without duplicating the contract under test.
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // Pi resource snapshots are a byte-identical discovery contract shared
-      // with the sandbox runtime; route output cannot expose its full virtual
-      // filesystem, ignore-rule, and precedence matrix.
-      "src/signals/services/__tests__/pi-resource-snapshot.service.test.ts",
-      // Stable-context projection bytes are shared with persisted artifacts,
-      // while generation/CAS and lease races have no exact HTTP setup or
-      // observation surface. Route tests retain externally visible behavior.
-      "src/signals/services/__tests__/pi-stable-context.service.test.ts",
-      "src/signals/services/__tests__/pi-stable-context-generation.service.test.ts",
       // The production cron exposes aggregate Phase 2 outcomes, but cannot
       // construct or inspect the exact usage, worker, PostgreSQL concurrency,
       // generic Storage publication guard, notification, and selection state

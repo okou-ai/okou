@@ -247,7 +247,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     ["claude-sonnet-4-6", "claude-sonnet-5-5"],
     ["claude-opus-4-8", "claude-opus-5-5"],
   ] as const)(
-    "stores the replacement when an old client requests retired %s",
+    "stores and records the replacement when an old client requests retired %s",
     async (retiredModel, replacement) => {
       const fixture = await seedChatThread("Model retirement");
 
@@ -270,6 +270,22 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         [200],
       );
       expect(thread.body.selectedModel).toBe(replacement);
+      // The event carries the stored model, so replay never restores the
+      // retired id.
+      const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
+      if (events.status !== 200) {
+        throw new Error("Expected thread events");
+      }
+      expect(
+        events.body.events.filter((event) => {
+          return (
+            event.chatThreadId === fixture.threadId &&
+            event.kind === "model_selection_updated"
+          );
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({ selectedModel: replacement }),
+      ]);
     },
   );
 

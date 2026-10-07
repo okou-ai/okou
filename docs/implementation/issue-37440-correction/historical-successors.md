@@ -27,3 +27,9 @@ Decision: keep unchanged. Inspected the whole current declaration and nested set
 - Fixture teardown uses normal run/connector/Clerk deletion routes. Its private feature-switch cleanup is cleanup only; this declaration never sets a private feature-switch or constructs state through it.
 
 No follow-up code commit is needed for these six historical names. The original chat declaration is preserved through its public successor and carries no new deletion credit.
+
+## Pi stable-context retirement during protected-merge preparation
+
+Main #37905 (`c339e73f0fb5d0ca0a8f4a4e80c67331ea9fb79d`, included in integrated main `1a4cbda1d901006994149202b74d5135d8b74f6d`) retired the unused stable-context/snapshot product path. It already removed two decisions recorded in this correction: `records ready stable-context demand in the system-skill V2 transaction` and `builds stable context when a captured gzip hint differs from the ready index`. Deduct these overlaps from this PR's current-main deletion count.
+
+The same main PR separately removed `keeps an archive-less empty writeback empty after its index is ready` and `prepares a snapshot from a different gzip size and reuses the logical index`. These two were not part of the original 529-declaration deletion inventory; preserve their product retirement without claiming new correction credit. The remaining ready-index reuse consumer's private construction is separately documented in construction-and-documentation.md before deletion.

@@ -538,39 +538,6 @@ export const apiConnectorsHandlers = [
     return respond(200, { connectors: [] });
   }),
 
-  mockApi(connectorCatalogContract.diagnostics, ({ respond }) => {
-    return respond(200, {
-      schemaVersion: 4,
-      state: "current",
-      active: { catalogDigest: `sha256:${"a".repeat(64)}` },
-      pointer: {
-        schemaVersion: 4,
-        hash: `sha256:${"a".repeat(64)}`,
-        entryCount: 2,
-      },
-      filtering: {
-        capabilityDigest: `sha256:${"b".repeat(64)}`,
-        evaluatedAt: "2026-07-25T01:00:00.000Z",
-        stale: false,
-        filteredAuthMethods: [
-          {
-            connectorSlug: "github",
-            authMethodId: "oauth",
-            reasons: ["missing-revoke-provider"],
-          },
-        ],
-      },
-      credentialStorage: {
-        missingConnectorVersions: 1,
-        unownedConnectorSecrets: 2,
-        unownedConnectorVariables: 3,
-        unresolvedBridgeCredentials: 5,
-      },
-    });
-  }),
-
-  // Keep this parameterized route after the static /diagnostics route so the
-  // mock server does not interpret "diagnostics" as a connector slug.
   mockApi(connectorCatalogContract.get, ({ params, respond }) => {
     const connector = mockConnectorCatalogStatus().find((candidate) => {
       return candidate.slug === params.connectorSlug;

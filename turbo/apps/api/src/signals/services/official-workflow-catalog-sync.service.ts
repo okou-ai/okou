@@ -1,4 +1,3 @@
-import { invalidateAllPiStableContextsSql } from "./pi-stable-context-generation.service";
 import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import type {
   OfficialWorkflowAcceptedDefinition,
@@ -820,7 +819,6 @@ async function activateCandidate(
       { previous: current, payload: candidate.payload, releaseId },
       signal,
     );
-    await tx.execute(invalidateAllPiStableContextsSql(nowDate()));
     return {
       outcome: "accepted" as const,
       releaseId,

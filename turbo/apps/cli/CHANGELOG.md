@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.378.21](https://github.com/okou-ai/okou/compare/cli-v9.378.20...cli-v9.378.21) (2026-10-07)
+
+
+### Refactoring
+
+* represent auto model selection as null ([#37901](https://github.com/okou-ai/okou/issues/37901)) ([d0e0b71](https://github.com/okou-ai/okou/commit/d0e0b7191fe168e8935e1abf3df1fa1806efea2a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.537.14
+    * @okouai/connectors bumped to 3.16.6
+    * @okouai/core bumped to 8.734.7
+    * @okouai/pi-agent-runtime bumped to 1.46.21
+
 ## [9.378.20](https://github.com/okou-ai/okou/compare/cli-v9.378.19...cli-v9.378.20) (2026-10-07)
 
 

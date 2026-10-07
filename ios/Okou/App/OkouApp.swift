@@ -98,7 +98,13 @@ private struct WorkspaceRootView: View {
     let client = APIClient(baseURL: configuration.apiURL) {
       try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
     }
-    _store = State(initialValue: WorkspaceStore(client: client, webURL: configuration.webURL))
+    _store = State(
+      initialValue: WorkspaceStore(
+        client: client, webURL: configuration.webURL,
+        cache: ChatCache(
+          scope: ChatCacheScope(
+            apiBaseURL: configuration.apiURL,
+            userID: userID, workspaceID: workspaceID))))
   }
 
   var body: some View {
@@ -126,15 +132,18 @@ private struct WorkspaceRootView: View {
         VStack(spacing: 0) {
           mainHeader
           Group {
-            if let id = store.selectedThreadID,
-              let thread = store.threads.first(where: { $0.id == id })
-            {
-              ChatDetailView(store: store, thread: thread)
-                .id(thread.id)
+            if let conversation = store.selectedConversation {
+              ChatDetailView(conversation: conversation)
+                .id(conversation.thread.id)
             } else {
               newChatHome
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                  ChatComposerView(store: store, thread: nil)
+                  ChatComposerView(
+                    draft: $store.newChatDraft, isBusy: store.isCreating,
+                    showsProgress: store.isCreating, canStop: false,
+                    needsUpgrade: store.needsUpgrade,
+                    error: store.error ?? store.list.error, attachmentURL: store.webURL,
+                    submit: { await store.sendNewChat() }, refresh: nil)
                 }
             }
           }
@@ -201,7 +210,7 @@ private struct WorkspaceRootView: View {
     .onReceive(
       NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
     ) { _ in
-      store.messageMarkdown.clear()
+      Task { await store.reduceMemory() }
     }
     .onChange(of: scenePhase) { _, phase in
       store.setForeground(phase == .active)
@@ -224,7 +233,7 @@ private struct WorkspaceRootView: View {
   private var mainHeader: some View {
     ZStack {
       Text(
-        store.threads.first(where: { $0.id == store.selectedThreadID })?.displayTitle
+        store.list.threads.first(where: { $0.id == store.selectedThreadID })?.displayTitle
           ?? store.currentAgentName
       )
       .font(.system(size: 17, weight: .semibold))
@@ -253,7 +262,7 @@ private struct WorkspaceRootView: View {
     VStack {
       Spacer(minLength: 24)
       HStack(spacing: 16) {
-        if let agent = store.agents.first(where: { $0.agentId == store.selectedAgentID }),
+        if let agent = store.list.agents.first(where: { $0.agentId == store.selectedAgentID }),
           !agent.isDefaultAgent
         {
           Text(String((agent.displayName ?? "A").prefix(1)))

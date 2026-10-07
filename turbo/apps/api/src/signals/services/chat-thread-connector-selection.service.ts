@@ -1,5 +1,3 @@
-import { nowDate } from "../../lib/time";
-import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
@@ -527,16 +525,6 @@ export const updateChatThreadConnectorSelection$ = command(
             { ...args, target: selection.target },
             signal,
           );
-          await tx.execute(
-            invalidatePiStableContextSql(
-              {
-                orgId: args.orgId,
-                userId: args.userId,
-                agentId: thread.agentId,
-              },
-              nowDate(),
-            ),
-          );
           return {
             kind: "updated",
             selection: updated,
@@ -549,7 +537,7 @@ export const updateChatThreadConnectorSelection$ = command(
       return result.value;
     }
     // Wait for the whole transaction to roll back before reporting a lost
-    // parent, including its selection change and generation invalidation.
+    // parent, including its selection change.
     switch (selectionParentMissing(result.error)) {
       case "thread": {
         return { kind: "not_found" };
@@ -583,11 +571,8 @@ export async function clearChatThreadConnectorSelection(
       return { kind: "not_found" };
     }
     // Only event sources also change the owner's automation projections.
-    // A deleted row stays locked until commit, so an Agent/thread cascade
-    // waits for the generation invalidation below. Clearing an absent
-    // selection leaves the generation alone (it may belong to a deleted
-    // Agent); the reprojection still recomputes from current rows.
-    const deleted = await tx
+    // The reprojection recomputes from current rows.
+    await tx
       .delete(chatThreadConnectorSelections)
       .where(
         and(
@@ -602,21 +587,8 @@ export async function clearChatThreadConnectorSelection(
                 args.target.customConnectorId,
               ),
         ),
-      )
-      .returning({ connectorId: chatThreadConnectorSelections.connectorId });
-    await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-    if (deleted.length > 0) {
-      await tx.execute(
-        invalidatePiStableContextSql(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: thread.agentId,
-          },
-          nowDate(),
-        ),
       );
-    }
+    await reprojectWorkflowAutomationsForOwner(tx, args, signal);
     return { kind: "cleared" };
   });
 }

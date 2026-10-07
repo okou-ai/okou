@@ -1,16 +1,10 @@
 import {
-  piStableContextPublications,
-  piStableContextGenerations,
-} from "@okouai/db/schema/pi-stable-context";
-import {
-  invalidatePiStableContextSql,
-  piStableContextGenerationValues,
-  piStableContextPublicationKeyCondition,
-  retirePiStableContextPublicationSql,
-  publicationScopePendingSql,
-  publicationReadinessSql,
-  piStableContextWorkflowPublicationKey,
-} from "../services/pi-stable-context-generation.service";
+  ensurePublicationGenerations,
+  publicationIsPending,
+  retirePublicationSql,
+  lockPublicationScopeSql,
+  workflowPublicationKey,
+} from "../services/storage-publication-fence.service";
 import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { randomUUID } from "node:crypto";
@@ -537,16 +531,6 @@ async function createPreparedWorkflow(
       );
     }
     signal.throwIfAborted();
-    await tx.execute(
-      invalidatePiStableContextSql(
-        {
-          orgId: args.orgId,
-          agentId: body.agentId,
-          ...(visibility === "private" ? { userId: member.userId } : {}),
-        },
-        nowDate(),
-      ),
-    );
     return { kind: "created" as const, workflow, chatThreadId };
   });
 }
@@ -1573,16 +1557,6 @@ async function copyWorkflowDatabaseRows(
       );
     }
     signal.throwIfAborted();
-    await tx.execute(
-      invalidatePiStableContextSql(
-        {
-          orgId: args.orgId,
-          agentId: args.targetAgentId,
-          userId: args.userId,
-        },
-        nowDate(),
-      ),
-    );
     // The shared user/org sequence is the final lock: all external work and
     // unrelated row updates have finished before the thread event is appended.
     if (
@@ -2177,41 +2151,11 @@ async function applyVisibilityUpdate(
         userId: args.workflow.ownerUserId,
       },
     ] as const;
-    await tx
-      .insert(piStableContextGenerations)
-      .values(piStableContextGenerationValues(scopes))
-      .onConflictDoNothing();
-    const publicationKey = piStableContextWorkflowPublicationKey(
-      args.workflow.id,
-    );
+    await ensurePublicationGenerations(tx, scopes);
+    const publicationKey = workflowPublicationKey(args.workflow.id);
     const currentScope =
       args.workflow.visibility === "public" ? scopes[0] : scopes[1];
-    const [piMutation3Publication] = await tx
-      .select({ token: piStableContextPublications.token })
-      .from(piStableContextPublications)
-      .innerJoin(
-        piStableContextGenerations,
-        and(
-          eq(
-            piStableContextGenerations.orgId,
-            piStableContextPublications.orgId,
-          ),
-          eq(
-            piStableContextGenerations.agentId,
-            piStableContextPublications.agentId,
-          ),
-          eq(
-            piStableContextGenerations.subject,
-            piStableContextPublications.subject,
-          ),
-        ),
-      )
-      .where(
-        piStableContextPublicationKeyCondition(currentScope, publicationKey),
-      )
-      .limit(1);
-
-    if (piMutation3Publication !== undefined) {
+    if (await publicationIsPending(tx, currentScope, publicationKey)) {
       return false;
     }
 
@@ -2228,14 +2172,8 @@ async function applyVisibilityUpdate(
       return false;
     }
     for (const scope of scopes) {
-      await tx.execute(publicationScopePendingSql(scope, nowDate()));
-      await tx.execute(
-        retirePiStableContextPublicationSql(scope, publicationKey),
-      );
-      await tx.execute(publicationReadinessSql(scope, nowDate()));
-    }
-    for (const scope of scopes) {
-      await tx.execute(invalidatePiStableContextSql(scope, nowDate()));
+      await tx.execute(lockPublicationScopeSql(scope, nowDate()));
+      await tx.execute(retirePublicationSql(scope, publicationKey));
     }
     return true;
   });

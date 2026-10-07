@@ -202,3 +202,12 @@ write_json "$REPO/.release-please-manifest.json" '.ios = "0.1.0"'
 expect_success "$REPO"
 printf '0.1.1\n' > "$REPO/ios/version.txt"
 expect_failure "$REPO" "iOS manifest, version.txt, and MARKETING_VERSION must agree"
+
+setup_repo "standalone-desktop"
+mkdir -p "$REPO/desktop"
+printf '0.49.71\n' > "$REPO/desktop/version.txt"
+write_json "$REPO/release-please-config.json" '.packages.desktop = {"release-type":"simple","component":"desktop"}'
+write_json "$REPO/.release-please-manifest.json" '.desktop = "0.49.71"'
+expect_success "$REPO"
+printf '0.50.0\n' > "$REPO/desktop/version.txt"
+expect_failure "$REPO" "Desktop manifest and version.txt must agree"

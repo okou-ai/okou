@@ -32,15 +32,6 @@ struct ThreadSnapshotArchive: Codable, Sendable {
   let chatThreads: [ThreadProjection]
 }
 
-struct ThreadModelSetting: Codable, Equatable, Sendable {
-  let effort: String?
-}
-
-struct ThreadModelSettingsPatch: Codable, Sendable {
-  let model: String
-  let effort: String
-}
-
 struct ThreadProjection: Codable, Sendable {
   let id: String
   let agentId: String
@@ -75,17 +66,9 @@ struct ThreadEventsPage: Decodable, Sendable {
 }
 
 struct ThreadEvent: Codable, Sendable {
-  enum Kind: String, Codable, Sendable {
-    case created, renamed, deleted, pinned, unpinned
-    case modelSelectionUpdated = "model_selection_updated"
-    case serviceTierUpdated = "service_tier_updated"
-    case computerUseHostUpdated = "computer_use_host_updated"
-    case sortTouched = "sort_touched"
-    case archived, unarchived
-  }
   let id: String
   let seqId: Int
-  let kind: Kind
+  let kind: ChatThreadChange.Kind
   let chatThreadId: String
   let agentId: String
   let reassignedAgentId: String?
@@ -98,6 +81,15 @@ struct ThreadEvent: Codable, Sendable {
   let computerUseHostId: String?
   let cloudBrowserEnabled: Bool?
   let createdAt: Date
+  var change: ChatThreadChange {
+    ChatThreadChange(
+      kind: kind, chatThreadId: chatThreadId, agentId: agentId,
+      reassignedAgentId: reassignedAgentId, title: title, selectedModel: selectedModel,
+      pinOrder: pinOrder, modelSettings: modelSettings, modelSettingsPatch: modelSettingsPatch,
+      serviceTier: serviceTier, computerUseHostId: computerUseHostId,
+      cloudBrowserEnabled: cloudBrowserEnabled, createdAt: createdAt)
+  }
+
 }
 
 struct ThreadMetadata: Decodable, Sendable {
@@ -138,24 +130,6 @@ struct EventRowsPage: Decodable, Sendable {
   let hasMore: Bool
 }
 
-enum ChatEventType: String, Decodable, Sendable {
-  case inputPrompt = "input.prompt"
-  case inputAutomation = "input.automation"
-  case inputBudget = "input.budget"
-  case inputRejected = "input.rejected"
-  case outputMessage = "output.message"
-  case outputError = "output.error"
-  case outputFollowups = "output.followups"
-  case runCompleted = "run.completed"
-  case runFailed = "run.failed"
-  case runCancelled = "run.cancelled"
-  case controlInterrupt = "control.interrupt"
-  case controlRevoke = "control.revoke"
-  case usageRecorded = "usage.recorded"
-
-  var isTerminal: Bool { self == .runCompleted || self == .runFailed || self == .runCancelled }
-}
-
 struct ChatEventRow: Decodable, Sendable {
   let id: String
   let chatThreadId: String
@@ -164,24 +138,12 @@ struct ChatEventRow: Decodable, Sendable {
   let seqId: Int
   let createdAt: Date
   let eventType: ChatEventType
-  let payload: Payload?
+  let payload: ChatEvent.Payload?
 
-  struct Payload: Decodable, Sendable {
-    let content: String?
-    let error: String?
-    let userMessage: UserMessage?
-  }
-  struct UserMessage: Decodable, Sendable {
-    let version: Int
-    let parts: [Part]
-    struct Part: Decodable, Sendable {
-      let type: String
-      let text: String?
-      let titleSnapshot: String?
-      let nameSnapshot: String?
-      let filenameSnapshot: String?
-      let workflowName: String?
-    }
+  var event: ChatEvent {
+    ChatEvent(
+      id: id, runId: runId, revokesEventId: revokesEventId,
+      createdAt: createdAt, eventType: eventType, payload: payload)
   }
 }
 

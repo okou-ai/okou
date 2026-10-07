@@ -42,10 +42,6 @@ import {
   onboardingWorkflowConnectorsContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
@@ -85,7 +81,7 @@ import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/conn
 import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { clearMockedEnv, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
@@ -561,9 +557,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       })}\n`,
     );
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
+    expect(response.body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogDigest: first.hash },
+      failureCode: null,
     });
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -596,10 +592,13 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     serve(next);
     const changed = await sync();
     expect(changed.status).toBe(200);
-    expect(changed.body).toMatchObject({
+    expect(changed.body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogDigest: next.hash },
+      failureCode: null,
     });
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: next.hash }]);
     expect(
       (
         await engine.query(
@@ -656,10 +655,10 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await engine.exec(
       "ALTER TABLE connector_catalog_entries DROP CONSTRAINT preparation_failure",
     );
-    expect((await sync()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogDigest: failed.hash },
-    });
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: failed.hash }]);
     await directory(failed);
     expect((await mcpDirectory(mcpActor)).body).toMatchObject({
       connectors: [{ displayName: "Prepared retry catalog" }],
@@ -819,11 +818,10 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_reprepare
         CHECK (hash <> '${candidate.hash}' OR slug NOT IN (${firstBatchList})) NOT VALID;
     `);
-    expect((await sync()).body).toMatchObject({
-      outcome: "accepted",
-      active: { catalogDigest: candidate.hash },
-      pointer: { hash: candidate.hash, entryCount: artifact.connectors.length },
-    });
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: candidate.hash }]);
     const completed = await readCandidateEntries();
     expect(completed).toStrictEqual(
       artifact.connectors
@@ -906,7 +904,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(rejected.body).toMatchObject({ outcome: "rejected" });
     await directory(changed);
   });
-  it("n3: real cron competitors publish one complete generation with atomic Pi invalidation and switch-only wakeups", async () => {
+  it("n3: real cron competitors publish one complete generation with switch-only wakeups", async () => {
     if (!engine) {
       throw new Error("Missing case engine");
     }
@@ -933,14 +931,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await engine.query(
       "INSERT INTO connectors (auth_method, user_id, org_id, storage_version, connector_slug) VALUES ('token', 'catalog-lifecycle-user', 'catalog-lifecycle-org', 1, $1)",
       [connector.slug],
-    );
-    await engine.query(
-      "INSERT INTO pi_stable_context_generations (org_id, agent_id, subject) VALUES ('catalog-lifecycle-org', $1, '@agent')",
-      [agentId],
-    );
-    await engine.query(
-      "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2)",
-      [agentId, "a".repeat(64)],
     );
     const caseEngine = engine;
     let switchedHash: string | undefined;
@@ -1003,13 +993,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     switchedHash = first.hash;
     const accepted = await Promise.all([sync(), sync()]);
     expectCompetitorsComplete(accepted);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 2 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -1018,7 +1001,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       first.artifact.connectors.length,
     );
     // Same-hash idempotence: a repeated publication is unchanged, rewrites no
-    // entry and repeats neither Pi invalidation nor wakeups.
+    // entry and repeats no wakeups.
     await engine.exec(
       `ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_rewrite CHECK (hash <> '${first.hash}') NOT VALID`,
     );
@@ -1026,13 +1009,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await engine.exec(
       "ALTER TABLE connector_catalog_entries DROP CONSTRAINT no_rewrite",
     );
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 2 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     const concurrent = release(
       "2099-01-01.same-baseline",
@@ -1043,13 +1019,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     switchedHash = concurrent.hash;
     const competed = await Promise.all([sync(), sync()]);
     expectCompetitorsComplete(competed);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 3 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -1064,10 +1033,10 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     serve(next);
     switchedHash = next.hash;
-    // Pi invalidation shares the pointer transaction: its failure leaves the
-    // previous pointer serving, with the new entries prepared but unreferenced.
+    // A pointer-transaction failure leaves the previous pointer serving, with
+    // the new entries prepared but unreferenced.
     await engine.exec(
-      "ALTER TABLE pi_stable_context_generations ADD CONSTRAINT invalidation_failure CHECK (generation <= 3)",
+      `ALTER TABLE connector_catalog ADD CONSTRAINT pointer_failure CHECK (hash <> '${next.hash}') NOT VALID`,
     );
     await expect(sync()).rejects.toThrow(
       "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
@@ -1080,7 +1049,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
     await engine.exec(
-      "ALTER TABLE pi_stable_context_generations DROP CONSTRAINT invalidation_failure",
+      "ALTER TABLE connector_catalog DROP CONSTRAINT pointer_failure",
     );
     context.mocks.ably.batchPublish.mockRejectedValueOnce(
       new Error("Controlled realtime boundary unavailable"),
@@ -1089,29 +1058,8 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: next.hash }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 4 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation, status FROM pi_stable_context_heads",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 4, status: "missing" }]);
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 4 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
   });
   it("n4: real MCP consumer follows hash switches while captured entries retain their hash", async () => {
@@ -1620,166 +1568,6 @@ describe("slug-first current catalog business readers", () => {
         )
       ).body.connector.label,
     ).toBe("Next OpenAI");
-  });
-});
-
-// Account generation cases now publish only in their own lifecycle engine.
-// Staff diagnostics derive everything from the pointer and its entries.
-describe("staff connector catalog diagnostics from current entries", () => {
-  const headers = { authorization: "Bearer clerk-session" };
-
-  async function staffSession() {
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-      }),
-      [200],
-    );
-  }
-
-  async function diagnostics() {
-    const response = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).diagnostics({ headers }),
-      [200],
-    );
-    return response.body;
-  }
-
-  it("reports the pointer and on-demand compatibility", async () => {
-    const candidate = release(`2099-03-01.${randomUUID()}`, "Diagnostics");
-    serve(candidate);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    await staffSession();
-    context.mocks.s3.send.mockClear();
-
-    const requestedAt = now();
-    const current = await diagnostics();
-    expect(
-      Date.parse(current.filtering.evaluatedAt ?? ""),
-    ).toBeGreaterThanOrEqual(requestedAt);
-    expect(current).toMatchObject({
-      schemaVersion: 4,
-      state: "current",
-      active: { catalogDigest: candidate.hash },
-      pointer: {
-        schemaVersion: 4,
-        hash: candidate.hash,
-        entryCount: candidate.artifact.connectors.length,
-      },
-      filtering: {
-        capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
-        stale: false,
-      },
-    });
-    expect(current).not.toHaveProperty("lastAttempt");
-    expect(current).not.toHaveProperty("lastSuccessAt");
-    expect(current).not.toHaveProperty("rejectedCandidate");
-    expect(current.active).not.toHaveProperty("activatedAt");
-
-    // Unconfigure one provider used by the published entries: the next
-    // request filters that method against the new capability, with no sync.
-    const entryMethods = new Set(
-      candidate.artifact.connectors.flatMap((entry) => {
-        return entry.authMethods.map((method) => {
-          return `${entry.slug}\0${method.id}`;
-        });
-      }),
-    );
-    const registration =
-      getConnectorAuthProviderRegistrationCapabilities().find((capability) => {
-        return (
-          capability.requiredConfigurationNames.length > 0 &&
-          entryMethods.has(
-            `${capability.connectorSlug}\0${capability.authMethodId}`,
-          )
-        );
-      });
-    const configurationName = registration?.requiredConfigurationNames[0];
-    if (!registration || !configurationName) {
-      throw new Error("Missing configurable catalog auth method");
-    }
-    const filteredMethod = {
-      connectorSlug: registration.connectorSlug,
-      authMethodId: registration.authMethodId,
-      reasons: ["missing-platform-configuration"],
-    };
-    expect(current.filtering.filteredAuthMethods).not.toContainEqual(
-      filteredMethod,
-    );
-    mockOptionalEnv(configurationName, undefined);
-    const unconfigured = await diagnostics();
-    expect(unconfigured.filtering.capabilityDigest).toBe(
-      connectorCatalogExecutableCapabilityDigest(),
-    );
-    expect(unconfigured.filtering.capabilityDigest).not.toBe(
-      current.filtering.capabilityDigest,
-    );
-    expect(unconfigured.filtering.stale).toBeFalsy();
-    expect(unconfigured.filtering.filteredAuthMethods).toContainEqual(
-      filteredMethod,
-    );
-    expect(unconfigured.pointer).toStrictEqual(current.pointer);
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-
-  it("flags a generation without entries and a missing pointer", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    const candidate = release(`2099-03-02.${randomUUID()}`, "Diagnostics");
-    serve(candidate);
-    const accepted = await accept(sync(), [200]);
-    expect(accepted.body).toMatchObject({ outcome: "accepted" });
-    await staffSession();
-
-    const current = await diagnostics();
-    expect(current).toMatchObject({
-      state: "current",
-      active: { catalogDigest: candidate.hash },
-      pointer: {
-        hash: candidate.hash,
-        entryCount: candidate.artifact.connectors.length,
-      },
-      filtering: { stale: false },
-    });
-    expect(current.filtering.filteredAuthMethods).toStrictEqual(
-      accepted.body.filtering.filteredAuthMethods,
-    );
-
-    // A pointer whose hash has no retained entries cannot serve.
-    const emptyHash = `sha256:${"e".repeat(64)}`;
-    await engine.query("UPDATE connector_catalog SET hash = $1", [emptyHash]);
-    await expect(diagnostics()).resolves.toMatchObject({
-      state: "current",
-      active: { catalogDigest: emptyHash },
-      pointer: { schemaVersion: 4, hash: emptyHash, entryCount: 0 },
-      filtering: {
-        capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
-        evaluatedAt: null,
-        stale: true,
-        filteredAuthMethods: [],
-      },
-    });
-
-    await engine.exec("DELETE FROM connector_catalog");
-    await expect(diagnostics()).resolves.toMatchObject({
-      schemaVersion: 4,
-      state: "never-synced",
-      active: null,
-      pointer: null,
-      filtering: {
-        capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
-        evaluatedAt: null,
-        stale: true,
-        filteredAuthMethods: [],
-      },
-    });
   });
 });
 

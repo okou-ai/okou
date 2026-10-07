@@ -538,90 +538,123 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
   });
 
-  it.each([
-    { name: "stored selection", requestedModel: undefined },
-    { name: "retired personal alias", requestedModel: "claude-fable-5" },
-  ])(
-    "rejects a disconnected thread subscription ($name) until its owner explicitly selects Auto",
-    async ({ requestedModel }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
-      await api.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-fable-5-1",
-      });
+  it("rejects a disconnected thread subscription until its owner explicitly selects Auto", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
 
-      const first = await sendChatRun(actor, {
-        agentId,
-        prompt: "start before the thread model is removed",
-        model: "claude-fable-5-1",
-      });
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim.cliAgentType).toBe("claude-code");
-      expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
-        "claude-fable-5-1",
-      );
-      chatCallbacks.mockChatOutputEvents([]);
-      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
-      await flushWaitUntilForTest();
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "start before the thread model is removed",
+      model: "claude-fable-5-1",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim.cliAgentType).toBe("claude-code");
+    expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
+      "claude-fable-5-1",
+    );
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
 
-      await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-      await misc.deletePersonalModelProvider(
-        actor,
-        "claude-code-oauth-token",
-        [204],
-      );
-      // The member preference does not replace an unavailable thread model.
-      await api.updateUserModelPreference(actor, null);
-      await preparePiResourceHandoff(actor, agentId);
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
+    await misc.deletePersonalModelProvider(
+      actor,
+      "claude-code-oauth-token",
+      [204],
+    );
+    // The member preference does not replace an unavailable thread model.
+    await api.updateUserModelPreference(actor, null);
+    await preparePiResourceHandoff(actor, agentId);
 
-      const clientEventId = randomUUID();
-      await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: first.threadId,
-          prompt: "continue through my disconnected subscription",
-          model: requestedModel,
-          clientEventId,
-        },
-        [201],
-      );
-      const { picked } = await waitForPickedInput(
-        actor,
-        first.threadId,
-        clientEventId,
-      );
-      expect(picked).toMatchObject({
-        eventType: "input.rejected",
-        error: "conflict",
-      });
-      expect(picked.runId).toBeUndefined();
-      // A send may persist its requested alias as metadata; that alias must still
-      // capture the personal source rather than authorizing platform execution.
-      await expect(
-        chat.readThreadMetadata(actor, first.threadId),
-      ).resolves.toMatchObject({
-        selectedModel: requestedModel ?? "claude-fable-5-1",
-      });
-      await chat.updateThreadModelSelection(actor, first.threadId, null);
-      const fallback = await sendChatRun(actor, {
+    const clientEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
         agentId,
         threadId: first.threadId,
-        prompt: "continue after explicitly selecting Auto",
-      });
-      const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
-      expect(fallbackClaim.claim.modelUsageProvider).toBe(
-        SEEDED_SYSTEM_DEFAULT_MODEL,
-      );
-      await expect(
-        chat.readThreadMetadata(actor, first.threadId),
-      ).resolves.toMatchObject({
-        selectedModel: null,
-      });
-      await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
-    },
-    90_000,
-  );
+        prompt: "continue through my disconnected subscription",
+        clientEventId,
+      },
+      [201],
+    );
+    const { picked } = await waitForPickedInput(
+      actor,
+      first.threadId,
+      clientEventId,
+    );
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "conflict",
+    });
+    expect(picked.runId).toBeUndefined();
+    await expect(
+      chat.readThreadMetadata(actor, first.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: "claude-fable-5-1",
+    });
+    await chat.updateThreadModelSelection(actor, first.threadId, null);
+    const fallback = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "continue after explicitly selecting Auto",
+    });
+    const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
+    expect(fallbackClaim.claim.modelUsageProvider).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
+    await expect(
+      chat.readThreadMetadata(actor, first.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: null,
+    });
+    await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
+  }, 90_000);
+
+  it("rejects a requested retired Claude alias once its subscription account is deleted", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+    await misc.deletePersonalModelProvider(
+      actor,
+      "claude-code-oauth-token",
+      [204],
+    );
+    const before = await chat.listThreadEvents(actor, thread.id);
+
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt: "continue through my deleted subscription",
+        model: "claude-fable-5",
+        clientEventId: randomUUID(),
+      },
+      [400],
+    );
+
+    expect(sent.body).toMatchObject({
+      error: {
+        message:
+          "Claude Fable 5 was replaced by Claude Fable 5.1, which requires a Claude subscription. Select Auto or connect your Claude subscription.",
+      },
+    });
+    await flushWaitUntilForTest();
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).toStrictEqual(before.events);
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
+  }, 90_000);
 
   it("keeps the enqueued model after thread and member defaults change", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

@@ -93,7 +93,7 @@ jobs:
       app_deploy_version: ${{ steps.app-release.outputs.version }}
       ios_release_created: ${{ steps.release.outputs['ios--release_created'] }}
       ios_version: ${{ steps.release.outputs['ios--version'] }}
-      desktop_release_created: ${{ steps.release.outputs['turbo/apps/desktop--release_created'] }}
+      desktop_release_created: ${{ steps.release.outputs['desktop--release_created'] }}
       host_worker_release_created: ${{ steps.release.outputs['turbo/apps/host-worker--release_created'] }}
       runner_rs_release_created: ${{ steps.release.outputs['crates/runner--release_created'] }}
       api_runtime_dependency_release_created: ${{ steps.release.outputs['turbo/packages/core--release_created'] == 'true' || steps.release.outputs['turbo/packages/api-contracts--release_created'] == 'true' || steps.release.outputs['turbo/packages/connectors--release_created'] == 'true' }}
@@ -102,7 +102,7 @@ jobs:
       api_version: ${{ steps.release.outputs['turbo/apps/api--version'] }}
       app_version: ${{ steps.release.outputs['turbo/apps/platform--version'] }}
       app_worker_version: ${{ steps.release.outputs['turbo/apps/app-worker--version'] }}
-      desktop_version: ${{ steps.release.outputs['turbo/apps/desktop--version'] }}
+      desktop_version: ${{ steps.release.outputs['desktop--version'] }}
     steps:
       - uses: okou-ai/release-please-action@420308b1502ae6728b0654ceb84f863eedf8e621 # vm0
         id: release
@@ -199,7 +199,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/guest-control-tests--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/api--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/cli--sha']) }},
-              ${{ toJSON(steps.release.outputs['turbo/apps/desktop--sha']) }},
+              ${{ toJSON(steps.release.outputs['desktop--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/host-worker--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/platform--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/app-worker--sha']) }},
@@ -291,7 +291,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/guest-control-tests--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/api--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/cli--tag_name']) }},
-              ${{ toJSON(steps.release.outputs['turbo/apps/desktop--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['desktop--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/host-worker--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/platform--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/app-worker--tag_name']) }},
@@ -302,8 +302,8 @@ jobs:
               ${{ toJSON(steps.release.outputs['turbo/packages/pi-agent-runtime--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/ui--tag_name']) }}
             ]
-          DESKTOP_RELEASE_CREATED: ${{ steps.release.outputs['turbo/apps/desktop--release_created'] }}
-          DESKTOP_VERSION: ${{ steps.release.outputs['turbo/apps/desktop--version'] }}
+          DESKTOP_RELEASE_CREATED: ${{ steps.release.outputs['desktop--release_created'] }}
+          DESKTOP_VERSION: ${{ steps.release.outputs['desktop--version'] }}
         run: |
           set -euo pipefail
 
@@ -500,7 +500,7 @@ jobs:
     environment: production
     defaults:
       run:
-        working-directory: turbo
+        shell: bash
     permissions:
       contents: write
     env:
@@ -519,15 +519,9 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.33.4
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: turbo/pnpm-lock.yaml
 
       - name: Notify Slack - Starting
         id: slack-start
@@ -549,9 +543,6 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --strict-peer-dependencies --filter @okouai/desktop...
-
       - name: Verify Desktop release inputs
         run: |
           if ! [[ "$DESKTOP_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
@@ -559,7 +550,7 @@ jobs:
             exit 1
           fi
 
-          package_version=$(node -p "require('./apps/desktop/package.json').version")
+          package_version=$(cat desktop/version.txt)
           if [ "$package_version" != "$DESKTOP_VERSION" ]; then
             echo "::error::Desktop package version $package_version does not match release version $DESKTOP_VERSION"
             exit 1
@@ -597,7 +588,7 @@ jobs:
           artifact_uri="s3://${R2_BUCKET_NAME}/okou-desktop/${ARTIFACT_SHA}"
           ready_key="okou-desktop/${ARTIFACT_SHA}/ready.json"
           artifact_dir="$(mktemp -d)"
-          okou_package_dir="$PWD/apps/desktop/out/Okou-darwin-arm64"
+          okou_package_dir="$PWD/desktop/out/Okou-darwin-arm64"
           error_log="$(mktemp)"
 
           for attempt in $(seq 1 60); do
@@ -625,11 +616,11 @@ jobs:
             sleep 10
           done
 
-          bash ../.github/scripts/fetch-okou-desktop-artifact.sh \
+          bash .github/scripts/fetch-okou-desktop-artifact.sh \
             "$r2_endpoint" \
             "$artifact_uri" \
             "$artifact_dir"
-          bash ../.github/scripts/verify-okou-desktop-artifact.sh \
+          bash .github/scripts/verify-okou-desktop-artifact.sh \
             "$artifact_dir" \
             "$ARTIFACT_SHA" \
             "$DESKTOP_VERSION"
@@ -709,178 +700,41 @@ jobs:
           OKOU_DESKTOP_NOTARIZE_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           OKOU_DESKTOP_NOTARIZE_API_ISSUER: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
-          set -o pipefail
-
-          app_dir="${{ steps.desktop-app.outputs.okou_app_dir }}"
-          zip_artifact_path="apps/desktop/out/Okou-darwin-arm64-$DESKTOP_VERSION.zip"
-          dmg_artifact_path="apps/desktop/out/Okou-darwin-arm64-$DESKTOP_VERSION.dmg"
-
-          node apps/desktop/scripts/sign-and-notarize-packaged-app.mjs \
-            --app "$app_dir"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$app_dir" \
-            "$zip_artifact_path"
-          node apps/desktop/scripts/create-styled-dmg.mjs \
-            --app "$app_dir" \
-            --out "$dmg_artifact_path" \
-            --volume-name "Okou" \
-            --background-svg apps/desktop/assets/dmg-background-okou.svg
-          codesign --force --sign "$OKOU_DESKTOP_SIGNING_IDENTITY" --timestamp "$dmg_artifact_path"
-          # A single timed-out status poll makes notarytool exit non-zero while the
-          # submission itself is still healthy, which loses the whole release. Retry
-          # the submission twice; a terminal Apple verdict is never retried.
-          notarize_log="$(mktemp)"
-          notarize_status=1
-          for attempt in 1 2 3; do
-            if xcrun notarytool submit "$dmg_artifact_path" \
-              --key "$OKOU_DESKTOP_NOTARIZE_API_KEY_PATH" \
-              --key-id "$OKOU_DESKTOP_NOTARIZE_API_KEY_ID" \
-              --issuer "$OKOU_DESKTOP_NOTARIZE_API_ISSUER" \
-              --wait 2>&1 | tee "$notarize_log"; then
-              notarize_status=0
-              break
-            fi
-
-            if grep -Eq '^[[:space:]]+status: (Invalid|Rejected)$' "$notarize_log"; then
-              echo "::error::Apple rejected notarization of ${dmg_artifact_path}"
-              exit 1
-            fi
-
-            echo "::warning::Notarization did not complete (attempt ${attempt}/3)"
-            if [ "$attempt" -lt 3 ]; then
-              sleep 30
-            fi
-          done
-
-          if [ "$notarize_status" -ne 0 ]; then
-            echo "::error::Notarization did not complete after 3 attempts"
-            exit 1
-          fi
-
-          xcrun stapler staple "$dmg_artifact_path"
-
+          python3 desktop/scripts/build.py \
+            --app "${{ steps.desktop-app.outputs.okou_app_dir }}" \
+            --sign "$OKOU_DESKTOP_SIGNING_IDENTITY" --package --notarize
           {
-            echo "okou_zip_path=$zip_artifact_path"
-            echo "okou_dmg_path=$dmg_artifact_path"
+            echo "okou_zip_path=desktop/out/Okou-darwin-arm64-$DESKTOP_VERSION.zip"
+            echo "okou_dmg_path=desktop/out/Okou-darwin-arm64-$DESKTOP_VERSION.dmg"
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify signed and notarized macOS artifacts
         run: |
-          app_name="Okou"
-          bundle_id="ai.okou.desktop"
-          auth_scheme="ai.okou.desktop"
-          app_dir="apps/desktop/out/${app_name}-darwin-arm64/${app_name}.app"
-          plist="$app_dir/Contents/Info.plist"
-          runtime_config="$app_dir/Contents/Resources/app/desktop-runtime-config.json"
-          zip_artifact_path="apps/desktop/out/${app_name}-darwin-arm64-$DESKTOP_VERSION.zip"
-          dmg_artifact_path="apps/desktop/out/${app_name}-darwin-arm64-$DESKTOP_VERSION.dmg"
-          dmg_mount="$RUNNER_TEMP/okou-desktop-dmg"
-
-          if [ ! -f "$zip_artifact_path" ] || [ ! -f "$dmg_artifact_path" ]; then
-            echo "Missing $app_name release artifacts"
-            find apps/desktop/out -maxdepth 5 -type f -print || true
-            exit 1
-          fi
-          if [ ! -d "$app_dir" ]; then
-            echo "No packaged app found: $app_dir"
-            find apps/desktop/out -maxdepth 4 -type d -print || true
-            exit 1
-          fi
-          if [ ! -f "$runtime_config" ]; then
-            echo "Okou production artifact should contain Desktop runtime config"
-            exit 1
-          fi
-          RUNTIME_CONFIG="$runtime_config" node <<'NODE'
-          const fs = require("node:fs");
-
-          const config = JSON.parse(
-            fs.readFileSync(process.env.RUNTIME_CONFIG, "utf8"),
-          );
-          if (
-            config.product !== "okou" ||
-            config.platformUrl !== "https://app.okou.ai"
-          ) {
-            throw new Error(`Unexpected Okou runtime config: ${JSON.stringify(config)}`);
-          }
-          NODE
-
-          minimum_system_version=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$plist" 2>/dev/null || true)
-          if [ "$minimum_system_version" != "14.0" ]; then
-            echo "::error::Expected LSMinimumSystemVersion 14.0, found ${minimum_system_version:-missing}"
-            exit 1
-          fi
-          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$plist" | grep -qx "$app_name"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" | grep -qx "$app_name"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$plist" | grep -qx "$app_name"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" | grep -qx "$bundle_id"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$plist" | grep -qx "$auth_scheme"
-          file "$app_dir/Contents/MacOS/$app_name" | grep -q "arm64"
-          file "$app_dir/Contents/Resources/native/computer-use-helper" | grep -q "arm64"
-          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          app_dir="${{ steps.desktop-app.outputs.okou_app_dir }}"
+          python3 desktop/scripts/build.py --app "$app_dir" --verify-only
+          codesign --verify --deep --strict "$app_dir"
           codesign --display --verbose=4 "$app_dir" 2>&1 | grep -F "Authority=$OKOU_DESKTOP_SIGNING_IDENTITY"
           xcrun stapler validate "$app_dir"
-          unzip -l "$zip_artifact_path" | grep -q "$app_name.app/Contents/MacOS/$app_name"
-          codesign --verify --verbose=2 "$dmg_artifact_path"
-          codesign --display --verbose=4 "$dmg_artifact_path" 2>&1 | grep -F "Authority=$OKOU_DESKTOP_SIGNING_IDENTITY"
-          xcrun stapler validate "$dmg_artifact_path"
-          hdiutil verify "$dmg_artifact_path"
-
-          (
-            rm -rf "$dmg_mount"
-            mkdir -p "$dmg_mount"
-            hdiutil attach "$dmg_artifact_path" -nobrowse -readonly -mountpoint "$dmg_mount"
-            trap 'hdiutil detach "$dmg_mount"' EXIT
-
-            mounted_app="$dmg_mount/$app_name.app"
-            if [ ! -d "$mounted_app" ]; then
-              echo "DMG should contain $app_name.app"
-              find "$dmg_mount" -maxdepth 2 -print || true
-              exit 1
-            fi
-            mounted_plist="$mounted_app/Contents/Info.plist"
-            mounted_minimum_system_version=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$mounted_plist" 2>/dev/null || true)
-            if [ "$mounted_minimum_system_version" != "14.0" ]; then
-              echo "::error::Expected mounted app LSMinimumSystemVersion 14.0, found ${mounted_minimum_system_version:-missing}"
-              exit 1
-            fi
-            if [ ! -L "$dmg_mount/Applications" ] || [ "$(readlink "$dmg_mount/Applications")" != "/Applications" ]; then
-              echo "DMG Applications symlink should point to /Applications"
-              exit 1
-            fi
-            if [ ! -f "$dmg_mount/.background/background.png" ]; then
-              echo "DMG should contain the Finder background image"
-              find "$dmg_mount" -maxdepth 3 -print || true
-              exit 1
-            fi
-            background_info="$(sips -g pixelWidth -g pixelHeight -g dpiWidth -g dpiHeight "$dmg_mount/.background/background.png")"
-            echo "$background_info"
-            echo "$background_info" | grep -q "pixelWidth: 1320"
-            echo "$background_info" | grep -q "pixelHeight: 800"
-            echo "$background_info" | grep -q "dpiWidth: 144.000"
-            echo "$background_info" | grep -q "dpiHeight: 144.000"
-            codesign --verify --deep --strict --verbose=2 "$mounted_app"
-            xcrun stapler validate "$mounted_app"
-
-            install_dir="$RUNNER_TEMP/okou-install-smoke/Applications"
-            installed_app="$install_dir/Okou.app"
-            update_dir="$RUNNER_TEMP/okou-update-smoke"
-            rm -rf "$install_dir" "$update_dir"
-            mkdir -p "$install_dir" "$update_dir"
-
-            ditto "$mounted_app" "$installed_app"
-            OKOU_DESKTOP_PRODUCT=okou \
-            OKOU_DESKTOP_PLATFORM_URL=https://app.okou.ai \
-            OKOU_DESKTOP_SMOKE_APP_PATH="$installed_app" \
-            node apps/desktop/scripts/smoke-test-packaged-app.js
-
-            unzip -q "$zip_artifact_path" -d "$update_dir"
-            rm -rf "$installed_app"
-            ditto "$update_dir/Okou.app" "$installed_app"
-            OKOU_DESKTOP_PRODUCT=okou \
-            OKOU_DESKTOP_PLATFORM_URL=https://app.okou.ai \
-            OKOU_DESKTOP_SMOKE_APP_PATH="$installed_app" \
-            node apps/desktop/scripts/smoke-test-packaged-app.js
-          )
+          dmg="desktop/out/Okou-darwin-arm64-$DESKTOP_VERSION.dmg"
+          xcrun stapler validate "$dmg"
+          mount="$RUNNER_TEMP/okou-desktop-dmg"
+          mkdir -p "$mount"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          test "$(readlink "$mount/Applications")" = /Applications
+          python3 desktop/scripts/build.py --app "$mount/Okou.app" --verify-only
+          codesign --verify --deep --strict "$mount/Okou.app"
+          xcrun stapler validate "$mount/Okou.app"
+          install_dir="$RUNNER_TEMP/okou-native-install-smoke"
+          mkdir -p "$install_dir"
+          ditto "$mount/Okou.app" "$install_dir/Okou.app"
+          python3 desktop/scripts/build.py --app "$install_dir/Okou.app" --verify-only
+          zip_dir="$RUNNER_TEMP/okou-native-update-smoke"
+          mkdir -p "$zip_dir"
+          ditto -x -k "desktop/out/Okou-darwin-arm64-$DESKTOP_VERSION.zip" "$zip_dir"
+          python3 desktop/scripts/build.py --app "$zip_dir/Okou.app" --verify-only
+          codesign --verify --deep --strict "$zip_dir/Okou.app"
+          xcrun stapler validate "$zip_dir/Okou.app"
 
       - name: Upload Desktop artifacts to GitHub Releases
         env:
@@ -959,13 +813,15 @@ jobs:
 
   publish-desktop-update-manifest:
     name: publish-desktop-update-manifest
-    needs: [release-please, promote-desktop-release]
-    if: ${{ needs.release-please.outputs.desktop_release_created == 'true' && needs.promote-desktop-release.result == 'success' }}
+    # The first native release needs the API's new appcast route before old
+    # Electron clients are offered the native ZIP.
+    needs: [release-please, promote-desktop-release, promote-api-production]
+    if: ${{ needs.release-please.outputs.desktop_release_created == 'true' && needs.promote-desktop-release.result == 'success' && needs.promote-api-production.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: turbo
+        shell: bash
     permissions:
       contents: write
     env:
@@ -1000,7 +856,7 @@ jobs:
         run: |
           manifest_tag=ai-okou-desktop-updates
           manifest_filename=ai-okou-desktop-update-manifest.json
-          manifest_dir="apps/desktop/out/update-manifest/okou"
+          manifest_dir="desktop/out/update-manifest/okou"
           manifest_path="$manifest_dir/$manifest_filename"
 
           mkdir -p "$manifest_dir"
@@ -1024,7 +880,7 @@ jobs:
           fi
 
           zip_url="https://github.com/${{ github.repository }}/releases/download/$OKOU_RELEASE_TAG/Okou-darwin-arm64-$DESKTOP_VERSION.zip"
-          node apps/desktop/scripts/update-desktop-release-manifest.mjs \
+          node desktop/scripts/update-desktop-release-manifest.mjs \
             --manifest "$manifest_path" \
             --version "$DESKTOP_VERSION" \
             --zip-url "$zip_url" \
@@ -1597,28 +1453,19 @@ jobs:
             exit 0
           fi
 
-          if ! summary=$(jq -c '{
-            outcome,
-            failureCode,
-            state,
-            hasActive: (.active != null),
-            entryCount: .pointer.entryCount,
-            filtering: {
-              stale: .filtering.stale,
-              filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)
-            }
-          }' <<< "$response"); then
+          # The deployment just created from this commit returns the attempt
+          # report `{ outcome, failureCode }`. Pre-change API builds also return
+          # `outcome` and `failureCode`; their extra fields are ignored.
+          if ! summary=$(jq -c '{outcome, failureCode}' <<< "$response"); then
             echo "::warning::Connector catalog reconcile returned invalid JSON; the scheduled cron will retry"
             exit 0
           fi
 
           echo "Connector catalog reconcile: ${summary}"
           if ! jq -e '
-            .state == "current"
-            and .active != null
-            and .filtering.stale == false
+            .outcome == "accepted" or .outcome == "unchanged"
           ' <<< "$response" >/dev/null; then
-            echo "::warning::Connector catalog is not ready; the scheduled cron will retry"
+            echo "::warning::Connector catalog reconcile was rejected or reported no outcome; the scheduled cron will retry"
           fi
 
       - name: Resolve Vercel dashboard URL

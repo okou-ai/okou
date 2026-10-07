@@ -7,6 +7,7 @@ import {
   type ModelProviderCredentialScope,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { formatReplacementSubscriptionRequiredMessage } from "@okouai/api-contracts/contracts/errors";
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -25,6 +26,7 @@ import type {
   OrgModelBootstrap,
 } from "./model-bootstrap.service";
 import {
+  catalogDisplayName,
   loadModelCatalog$,
   resolveCatalogModel,
   resolveCatalogRunModel,
@@ -274,6 +276,49 @@ export const resolveModelSelectionPin$ = command(
     );
   },
 );
+const SUBSCRIPTION_LABELS: Readonly<Record<string, "Codex" | "Claude">> = {
+  "codex-oauth-token": "Codex",
+  "claude-code-oauth-token": "Claude",
+};
+/**
+ * A replaced selection whose runnable successor is offered only by a personal
+ * subscription the member has not connected. A connected account, including one
+ * that needs reconnecting, routes the successor and keeps its own errors.
+ */
+export function replacementSubscriptionRequired(
+  catalog: ModelCatalog,
+  selectedId: string,
+  pin: ModelFirstPin,
+): {
+  readonly subscriptionType: string;
+  readonly response: ReturnType<typeof badRequestMessage>;
+} | null {
+  const subscriptionType = pin.modelProviderType;
+  const label = subscriptionType
+    ? SUBSCRIPTION_LABELS[subscriptionType]
+    : undefined;
+  if (
+    !subscriptionType ||
+    label === undefined ||
+    pin.modelProviderCredentialScope !== "member" ||
+    pin.modelProviderId !== null ||
+    pin.selectedModel === null ||
+    !isReplacedModelSelection(catalog, selectedId) ||
+    resolveCatalogRunModel(catalog, pin.selectedModel) === null
+  ) {
+    return null;
+  }
+  return {
+    subscriptionType,
+    response: badRequestMessage(
+      formatReplacementSubscriptionRequiredMessage({
+        replacedModelLabel: catalogDisplayName(catalog, selectedId),
+        successorLabel: catalogDisplayName(catalog, pin.selectedModel),
+        subscriptionLabel: label,
+      }),
+    ),
+  };
+}
 export type ProviderModelSupport = "validate" | "trust-enqueued";
 export function validateCodexServiceTier(params: {
   readonly catalog: ModelCatalog;
@@ -295,6 +340,12 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
   readonly subscriptionModels: readonly MemberSubscriptionModelRoute[];
+  /**
+   * The member's logical provider types. A provider is removed with its last
+   * account row, so a type here means an account of it exists, including a
+   * retained disconnected one, as at capture.
+   */
+  readonly memberProviderTypes: ReadonlySet<string>;
 }): ModelFirstPin | ReturnType<typeof badRequestMessage> {
   // An Auto input captured the internal Auto run model.
   if (params.selectedModel === AUTO_RUN_MODEL) {
@@ -312,10 +363,25 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   }
   // Queued inputs can lose route authority after capture. Preserve canonical
   // ownership across disabling and replacement; never settle them against Auto.
-  return (
-    unavailablePersonalPin(params.catalog, params.selectedModel) ??
-    badRequestMessage(
-      "Select Auto or a model from your connected personal subscription",
-    )
+  const unavailable = unavailablePersonalPin(
+    params.catalog,
+    params.selectedModel,
   );
+  if (!unavailable) {
+    return badRequestMessage(
+      "Select Auto or a model from your connected personal subscription",
+    );
+  }
+  // A replaced input of a member without any account of the successor's
+  // subscription names the subscription; a retained disconnected account
+  // keeps the reconnect error, as at capture.
+  const subscriptionRequired = replacementSubscriptionRequired(
+    params.catalog,
+    params.selectedModel,
+    unavailable,
+  );
+  return subscriptionRequired &&
+    !params.memberProviderTypes.has(subscriptionRequired.subscriptionType)
+    ? subscriptionRequired.response
+    : unavailable;
 }

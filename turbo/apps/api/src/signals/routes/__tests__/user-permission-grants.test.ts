@@ -162,9 +162,20 @@ describe("zero user permission grants", () => {
       action: "deny",
     });
 
+    const otherListed = await listPermissionGrants(agentId);
+    expect(otherListed).toHaveLength(1);
+    expect(otherListed[0]).toMatchObject({
+      agentId,
+      connectorSlug: SLACK_CONNECTOR,
+      permission: SLACK_WRITE_PERMISSION,
+      action: "deny",
+      expiresAt: null,
+    });
+
     signIn(fixture);
     const listed = await listPermissionGrants(agentId);
 
+    expect(listed).toStrictEqual([patched]);
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
       agentId,
@@ -221,6 +232,12 @@ describe("zero user permission grants", () => {
       action: "allow",
     });
     expect(ownerResponse.agentId).toBe(privateAgentId);
+    await expect(listPermissionGrants(privateAgentId)).resolves.toStrictEqual([
+      ownerResponse,
+    ]);
+    await expect(listPermissionGrants(publicAgentId)).resolves.toStrictEqual(
+      [],
+    );
 
     signIn(sameOrgUser);
     const sameOrgPublicResponse = await applyPermissionGrant({
@@ -244,6 +261,14 @@ describe("zero user permission grants", () => {
       [404],
     );
     expect(sameOrgResponse.body.error.code).toBe("NOT_FOUND");
+    const privateListResponse = await accept(
+      client.list({
+        query: { agentId: privateAgentId },
+        headers: AUTH_HEADERS,
+      }),
+      [404],
+    );
+    expect(privateListResponse.body.error.code).toBe("NOT_FOUND");
 
     signIn(otherOrgUser);
     const crossOrgResponse = await accept(
@@ -254,6 +279,14 @@ describe("zero user permission grants", () => {
       [404],
     );
     expect(crossOrgResponse.body.error.code).toBe("NOT_FOUND");
+    const crossOrgPublicResponse = await accept(
+      client.list({
+        query: { agentId: publicAgentId },
+        headers: AUTH_HEADERS,
+      }),
+      [404],
+    );
+    expect(crossOrgPublicResponse.body.error.code).toBe("NOT_FOUND");
 
     const missingResponse = await accept(
       client.list({

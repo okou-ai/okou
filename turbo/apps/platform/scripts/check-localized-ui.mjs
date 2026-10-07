@@ -136,6 +136,10 @@ function getInternalAllowedLiterals() {
 function getConnectorAllowedLiterals() {
   return [
     [
+      "src/views/okou-page/ssh-management.tsx\u0000Tailscale",
+      "Official private-network product name on retained SSH metadata",
+    ],
+    [
       "src/views/okou-page/components/settings/custom-connector-create-dialog.tsx\u0000Acme API",
       "example connector name",
     ],

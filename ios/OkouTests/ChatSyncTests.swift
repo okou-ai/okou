@@ -40,8 +40,8 @@ final class ChatSyncTests: XCTestCase {
           id: syncEventID(1), seqID: 1, data: Data(syncRow(1, text: "Old cached output").utf8))
       ],
       cursor: ChatCacheCursor(eventID: syncEventID(1), seqID: 1), schemaVersion: 7)
-    let service = ChatService(client: fixture.client)
-    await service.configureCache(scope: scope, directory: directory)
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
 
     let previousSchemaHistory = await service.cachedHistory(threadID: syncThreadID)
     XCTAssertNil(previousSchemaHistory)
@@ -55,8 +55,8 @@ final class ChatSyncTests: XCTestCase {
     XCTAssertTrue(
       observed.allSatisfy { $0.value(forHTTPHeaderField: "X-Chat-Event-Schema-Version") == nil })
 
-    let restarted = ChatService(client: fixture.client)
-    await restarted.configureCache(scope: scope, directory: directory)
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Current snapshot"])
     XCTAssertEqual(restored?.executionState, .completed)
@@ -95,9 +95,13 @@ final class ChatSyncTests: XCTestCase {
       }
     }
     let scope = syncScope(fixture)
-    let service = ChatService(client: fixture.client)
-    await service.configureCache(scope: scope, directory: directory)
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let first = try await service.history(threadID: syncThreadID)
+    _ = await service.releaseHistory(threadID: syncThreadID)
+    let retained = await service.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(retained?.messages.map(\.text), ["Initial answer"])
+
     XCTAssertEqual(first.messages.map(\.text), ["Initial answer"])
 
     try FileManager.default.removeItem(at: blocker)
@@ -105,8 +109,8 @@ final class ChatSyncTests: XCTestCase {
     let latest = try await service.history(threadID: syncThreadID)
     XCTAssertEqual(latest.messages.map(\.text), ["Initial answer", "Later answer"])
 
-    let restarted = ChatService(client: fixture.client)
-    await restarted.configureCache(scope: scope, directory: directory)
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Initial answer", "Later answer"])
     XCTAssertEqual(restored?.executionState, .completed)
@@ -158,8 +162,8 @@ final class ChatSyncTests: XCTestCase {
       }
     }
     let scope = syncScope(fixture)
-    let service = ChatService(client: fixture.client)
-    await service.configureCache(scope: scope, directory: directory)
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let firstRead = Task { try await service.history(threadID: syncThreadID) }
     await fulfillment(of: [firstTailStarted], timeout: 2)
     let secondRead = Task {
@@ -182,8 +186,8 @@ final class ChatSyncTests: XCTestCase {
     let cache = ChatCache(scope: scope, directory: directory)
     let durable = try await cache.loadHistory(threadID: syncThreadID)
     XCTAssertEqual(durable?.cursor, ChatCacheCursor(eventID: syncEventID(4), seqID: 4))
-    let restarted = ChatService(client: fixture.client)
-    await restarted.configureCache(scope: scope, directory: directory)
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Initial answer", "Latest answer"])
   }

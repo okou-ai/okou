@@ -4,7 +4,6 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import type { RouteEntry } from "../route-entry";
 import { seedPreviewConnectorCatalog$ } from "../services/preview-connector-catalog.service";
-import { connectorCatalogDiagnostics$ } from "../services/connector-catalog-diagnostics.service";
 import { syncConnectorCatalog$ } from "../services/connector-catalog-sync.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
@@ -15,20 +14,9 @@ const syncConnectorCatalogRoute$ = command(
     }
 
     const result = await set(syncConnectorCatalog$, signal);
-    const diagnostics = await set(connectorCatalogDiagnostics$, signal);
-    // Diagnostics describe the serving pointer. This attempt's report is not
-    // persisted; a rejection while an existing pointer serves is `stale`.
     return {
       status: 200 as const,
-      body: {
-        ...diagnostics,
-        state:
-          result.outcome === "rejected" && diagnostics.pointer !== null
-            ? ("stale" as const)
-            : diagnostics.state,
-        outcome: result.outcome,
-        failureCode: result.failureCode,
-      },
+      body: { outcome: result.outcome, failureCode: result.failureCode },
     };
   },
 );

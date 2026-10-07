@@ -3653,40 +3653,6 @@
         "sendToLabel": "Enviar para",
         "tryAgain": "Tentar novamente"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Digest do catálogo ativo",
-          "entries": "Entradas",
-          "evaluated": "Avaliado",
-          "evaluation": "Avaliação",
-          "executableCapabilityDigest": "Digest de recursos executáveis",
-          "filteredAuthMethods": "Métodos de autenticação filtrados",
-          "missingVersions": "Versões ausentes",
-          "syncState": "Estado da sincronização",
-          "unownedSecrets": "Segredos sem proprietário",
-          "unownedVariables": "Variáveis sem proprietário",
-          "unresolvedBridgeCredentials": "Credenciais de ponte não resolvidas"
-        },
-        "loading": "Carregando",
-        "none": "Nenhum",
-        "sections": {
-          "compatibility": "Compatibilidade",
-          "credentialStorage": "Armazenamento de credenciais"
-        },
-        "title": "Catálogo de conectores",
-        "unavailable": "Indisponível",
-        "values": {
-          "current": "Atual",
-          "missingAccessProvider": "Provedor de acesso ausente",
-          "missingGrantProvider": "Provedor de concessão ausente",
-          "missingPlatformConfiguration": "Configuração da plataforma ausente",
-          "missingRevokeProvider": "Provedor de revogação ausente",
-          "neverSynced": "Nunca sincronizado",
-          "providerContractMismatch": "Contrato do provedor incompatível",
-          "stale": "Desatualizado",
-          "unsupportedProtocol": "Protocolo não compatível"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Falha ao abrir a janela de autorização"
       },
@@ -5512,6 +5478,10 @@
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
+    "tailscale": {
+      "editUnavailable": "Este host agora usa Tailscale. A edição e a revinculação do Tailscale ainda não estão disponíveis aqui. Cancele esta edição para manter o transporte salvo.",
+      "needsRebind": "Este host precisa de uma nova configuração do Tailscale. A configuração e a revinculação do Tailscale ainda não estão disponíveis aqui."
+    },
     "unavailable": "O acesso SSH não está disponível para esta conta.",
     "username": "Nome de usuário SSH"
   },
@@ -5762,6 +5732,7 @@
       "sshHelp": "O SSH protege o trecho do Runner até o servidor SSH. Esse servidor deve conseguir acessar o destino RFB. Um chat só pode usar esta rota se esse host SSH também estiver ativado nele.",
       "sshNeedsRebind": "O host SSH desta conexão VNC precisa ser vinculado novamente ao Cloudflare Access. Vincule-o nas configurações de SSH ou escolha explicitamente Direta ali antes de conectar.",
       "sshNeedsRebindStatus": "SSH precisa de nova vinculação",
+      "sshTailscaleNeedsRebind": "O host SSH desta conexão VNC precisa de uma nova configuração do Tailscale. A configuração e a vinculação do Tailscale ainda não estão disponíveis aqui.",
       "title": "Rota de conexão",
       "unavailable": "As configurações de SSH não estão disponíveis para esta conta.",
       "via": "Host SSH:"

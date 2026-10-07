@@ -10712,11 +10712,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
           [200],
         );
-        // A slug without a catalog entry is never authoritatively absent: the
-        // Runner keeps its registered scope and retries.
+        // A slug without a catalog entry is treated as never authorized.
         expect(sameUserRuntime.body.results[0]).toMatchObject({
           target: { kind: "builtin", connectorSlug: "missing-builtin" },
-          state: "unresolved",
+          state: "absent",
           reason: "connector-unavailable",
         });
         expect(sameUserRuntime.body.results[1]).toMatchObject({

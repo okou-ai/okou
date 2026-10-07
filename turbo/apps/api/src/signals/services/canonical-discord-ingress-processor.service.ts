@@ -408,19 +408,20 @@ const enqueueMessage$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: args.ingress.chatThreadId,
+        orgId: args.orgId,
+        userId: args.ingress.userId,
+      },
+      signal,
+    );
     const values = {
       id: args.ingress.id,
       chatThreadId: args.ingress.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: args.ingress.chatThreadId,
-          orgId: args.orgId,
-          userId: args.ingress.userId,
-        },
-        signal,
-      ),
+      modelSelection: enqueuedModel.modelSelection,
       runId: null,
       userMessage: createUserMessageDocument({
         text: args.context.messageText,
@@ -438,6 +439,7 @@ const enqueueMessage$ = command(
       {
         orgId: args.orgId,
         input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
         ingress: {
           kind: "discord",
           ingressId: args.ingress.id,

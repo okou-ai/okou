@@ -1,4 +1,3 @@
-import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import {
   workflowAutomationCreateRequestSchema,
   type WorkflowAutomationCreateRequest,
@@ -960,18 +959,6 @@ async function completeInstallation(
         ownerUserId: workflows.ownerUserId,
       });
     signal.throwIfAborted();
-    if (installed) {
-      await tx.execute(
-        invalidatePiStableContextSql(
-          {
-            orgId: args.installation.orgId,
-            userId: installed.ownerUserId,
-            agentId: installed.agentId,
-          },
-          nowDate(),
-        ),
-      );
-    }
     return installed ? ("installed" as const) : ("lost" as const);
   });
   signal.throwIfAborted();

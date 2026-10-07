@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   type UserLocale,
   type UserPreferencesResponse,
@@ -26,7 +25,7 @@ const context = testContext();
 
 async function openDialog(
   role: "admin" | "member" = "admin",
-  section: "debug" | "general" | "model" | "preference" = "general",
+  section: "general" | "model" | "preference" = "general",
   host = "localhost",
 ): Promise<void> {
   context.mocks.data.org({
@@ -46,8 +45,7 @@ async function openDialog(
     context,
     host,
     path: `/?settings=${section}`,
-    featureSwitches:
-      section === "debug" ? { [FeatureSwitchKey.OkouDebug]: true } : {},
+    featureSwitches: {},
   });
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -99,22 +97,6 @@ function mockMissingLocaleInitialization(
     }
     return respond(200, preferences());
   });
-}
-
-function connectorCatalogDisclosure(region: HTMLElement): {
-  readonly details: HTMLDetailsElement;
-  readonly summary: HTMLElement;
-} {
-  const title = within(region).getByText("Connector catalog");
-  const summary = title.closest("summary");
-  const details = summary?.closest("details");
-  if (!(summary instanceof HTMLElement)) {
-    throw new Error("Connector catalog summary not found");
-  }
-  if (!(details instanceof HTMLDetailsElement)) {
-    throw new Error("Connector catalog disclosure not found");
-  }
-  return { details, summary };
 }
 
 function indexedDbDisclosure(region: HTMLElement): {
@@ -428,71 +410,4 @@ test("Measure the threads inside a singleton snapshot on demand", async () => {
   expect(values[0]).toHaveTextContent("3");
   expect(values[1]).toHaveTextContent(/^[1-9][\d.]*KB$/u);
   expect(values[2]).toHaveTextContent(/^[\d,.]+ ms$/u);
-});
-
-test("Inspect connector catalog diagnostics", async () => {
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Connector catalog",
-  });
-  const { details, summary } = connectorCatalogDisclosure(diagnostics);
-  expect(details.open).toBeFalsy();
-  expect(summary).toHaveTextContent("Sync state: Current");
-  expect(summary).toHaveTextContent(
-    `Active catalog digest: sha256:${"a".repeat(64)}`,
-  );
-  expect(summary).toHaveTextContent("Entries: 2");
-  expect(summary).toHaveTextContent("Evaluation: Current");
-
-  click(summary);
-  expect(details.open).toBeTruthy();
-  expect(within(diagnostics).getByText("github / oauth")).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("Missing revoke provider"),
-  ).toBeInTheDocument();
-  expect(within(diagnostics).getByText("Missing versions")).toBeInTheDocument();
-  expect(within(diagnostics).getByText("Unowned secrets")).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("Unowned variables"),
-  ).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("Unresolved bridge credentials"),
-  ).toBeInTheDocument();
-
-  click(summary);
-  expect(details.open).toBeFalsy();
-});
-
-test("Flag a connector catalog generation without entries as unavailable", async () => {
-  const hash = `sha256:${"c".repeat(64)}`;
-  context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
-    return respond(200, {
-      schemaVersion: 4,
-      state: "current",
-      active: { catalogDigest: hash },
-      pointer: { schemaVersion: 4, hash, entryCount: 0 },
-      filtering: {
-        capabilityDigest: `sha256:${"b".repeat(64)}`,
-        evaluatedAt: null,
-        stale: true,
-        filteredAuthMethods: [],
-      },
-      credentialStorage: {
-        missingConnectorVersions: 0,
-        unownedConnectorSecrets: 0,
-        unownedConnectorVariables: 0,
-        unresolvedBridgeCredentials: 0,
-      },
-    });
-  });
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Connector catalog",
-  });
-  const { summary } = connectorCatalogDisclosure(diagnostics);
-  expect(summary).toHaveTextContent("Sync state: Current");
-  expect(summary).toHaveTextContent("Entries: Unavailable");
-  expect(summary).toHaveTextContent("Evaluation: Stale");
 });

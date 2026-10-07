@@ -42,7 +42,6 @@ import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-pr
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
-import { cleanupExpiredPiLaunchArtifacts$ } from "./pi-launch-artifacts-cleanup.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import {
   cleanupThreadlessRuns$,
@@ -582,8 +581,6 @@ const cleanupGlobalMaintenance$ = command(
     await tapError(set(retryPendingFeishuConnectWelcomes$, signal), (error) => {
       L.error("Failed to retry Feishu connect welcomes", { error });
     });
-    signal.throwIfAborted();
-    await set(cleanupExpiredPiLaunchArtifacts$, signal);
     signal.throwIfAborted();
   },
 );

@@ -39,8 +39,9 @@
         "turbo/apps/app-worker": {
             "release-type": "node"
         },
-        "turbo/apps/desktop": {
-            "release-type": "node",
+        "desktop": {
+            "release-type": "simple",
+            "version-file": "version.txt",
             "component": "desktop"
         },
         "turbo/apps/host-worker": {

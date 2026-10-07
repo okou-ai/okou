@@ -244,24 +244,26 @@ function metadataEvents(
           },
         ]
       : []),
-    ...(hasModel(args.patch)
+    // The event carries the resolved model the snapshot stores, so replay
+    // never restores a replaced model.
+    ...(columns
       ? [
           {
             ...base,
             kind: "model_selection_updated" as const,
-            selectedModel: args.patch.model,
-            modelSettingsPatch: columns?.modelSettingsPatch,
+            selectedModel: columns.selectedModel,
+            modelSettingsPatch: columns.modelSettingsPatch,
             eventId: args.eventIds?.model,
           },
         ]
       : []),
-    ...(hasModel(args.patch) && args.emitServiceTierEvent
+    ...(columns && args.emitServiceTierEvent
       ? [
           {
             ...base,
             kind: "service_tier_updated" as const,
             serviceTier: chatThreadServiceTierFromCodex(
-              columns?.codexServiceTier ?? null,
+              columns.codexServiceTier,
             ),
             eventId: args.eventIds?.serviceTier,
           },

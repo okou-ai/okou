@@ -1242,19 +1242,20 @@ const persistTelegramChatMessage$ = command(
       });
       signal.throwIfAborted();
     }
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: binding.chatThreadId,
+        orgId: args.source.orgId,
+        userId: args.source.userLink.userId,
+      },
+      signal,
+    );
     const values = {
       id: chatEventId,
       chatThreadId: binding.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: binding.chatThreadId,
-          orgId: args.source.orgId,
-          userId: args.source.userLink.userId,
-        },
-        signal,
-      ),
+      modelSelection: enqueuedModel.modelSelection,
       content: null,
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? runPrompt.text : args.prompt,
@@ -1276,7 +1277,11 @@ const persistTelegramChatMessage$ = command(
     } as const;
     const eventId = await set(
       enqueueIntegrationChatInput$,
-      { orgId: args.source.orgId, input: values },
+      {
+        orgId: args.source.orgId,
+        input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
+      },
       signal,
     );
     signal.throwIfAborted();

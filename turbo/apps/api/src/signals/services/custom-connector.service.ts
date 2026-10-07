@@ -1,4 +1,3 @@
-import { invalidatePiStableContextsForOrgSql } from "./pi-stable-context-generation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
@@ -1801,9 +1800,6 @@ const persistCustomConnectorCreate$ = command(
         oauthConfig = insertedOAuthConfig;
       }
       requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
-      await tx.execute(
-        invalidatePiStableContextsForOrgSql(args.orgId, nowDate()),
-      );
       return { row, oauthConfig };
     });
   },
@@ -2168,9 +2164,6 @@ const persistCustomConnectorUpdate$ = command(
         );
       const storedOAuthConfig = oauthConfig ?? null;
       requireCustomConnectorOAuthConfig(updated.authMode, storedOAuthConfig);
-      await tx.execute(
-        invalidatePiStableContextsForOrgSql(args.orgId, nowDate()),
-      );
       return { row: updated, oauthConfig: storedOAuthConfig };
     });
   },
@@ -2468,9 +2461,6 @@ export const deleteCustomConnector$ = command(
             eq(orgCustomConnectors.orgId, args.orgId),
           ),
         );
-      await tx.execute(
-        invalidatePiStableContextsForOrgSql(args.orgId, nowDate()),
-      );
       return true;
     });
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;

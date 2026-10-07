@@ -8,7 +8,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { invalidateFeatureSwitchPiStableContexts$ } from "./pi-stable-context-generation.service";
 import {
   ORG_SCOPED_FEATURE_SWITCH_KEYS,
   ORG_SENTINEL_USER_ID,
@@ -118,16 +117,6 @@ export const updateUserFeatureSwitches$ = command(
           },
         });
       signal.throwIfAborted();
-      await set(
-        invalidateFeatureSwitchPiStableContexts$,
-        {
-          orgId: args.orgId,
-          ...(Object.keys(orgSwitches).length > 0
-            ? {}
-            : { userId: args.userId }),
-        },
-        signal,
-      );
     }
     const context = await set(
       loadUserFeatureSwitchContext$,
@@ -172,10 +161,5 @@ export const deleteUserFeatureSwitches$ = command(
       .delete(userFeatureSwitches)
       .where(and(orgCondition, eq(userFeatureSwitches.switches, {})));
     signal.throwIfAborted();
-    await set(
-      invalidateFeatureSwitchPiStableContexts$,
-      { orgId: args.orgId },
-      signal,
-    );
   },
 );

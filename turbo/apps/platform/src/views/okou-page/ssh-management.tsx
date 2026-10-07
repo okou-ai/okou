@@ -532,6 +532,11 @@ function SshConflictReview() {
   }
   const current = review.state === "hasData" ? review.data : null;
   const hostConflict = conflict === SSH_ERROR_CODES.GENERATION_CONFLICT;
+  const editingTailscale =
+    current?.kind === "edit" &&
+    current.connection !== null &&
+    "transport" in current.connection &&
+    current.connection.transport.type === "tailscale";
   return (
     <div className="grid gap-3 rounded-lg border p-4 text-sm">
       <p role="alert">
@@ -573,26 +578,31 @@ function SshConflictReview() {
               <p>{current.connection.credentialName}</p>
               <p>
                 {"transport" in current.connection
-                  ? t(($) => {
-                      return $.ssh.cloudflare.title;
-                    })
+                  ? current.connection.transport.type === "tailscale"
+                    ? "Tailscale"
+                    : t(($) => {
+                        return $.ssh.cloudflare.title;
+                      })
                   : t(($) => {
                       return $.ssh.cloudflare.direct;
                     })}
               </p>
             </div>
           )}
-          <p>
+          <p role={editingTailscale ? "alert" : undefined}>
             {t(($) => {
-              return $.ssh.cloudflare.reviewHelp;
+              return editingTailscale
+                ? $.ssh.tailscale.editUnavailable
+                : $.ssh.cloudflare.reviewHelp;
             })}
           </p>
           <Button
             type="button"
             variant="outline"
             disabled={
-              current.kind === "delete-credential" &&
-              (current.credential?.hosts.length ?? 0) > 0
+              editingTailscale ||
+              (current.kind === "delete-credential" &&
+                (current.credential?.hosts.length ?? 0) > 0)
             }
             onClick={() => {
               return detach(acceptReview(current, signal), Reason.DomCallback);
@@ -917,6 +927,14 @@ export function SshDialog() {
   );
 }
 
+function cloudflareConfigId(connection: SshConnectionResponse): string | null {
+  return "transport" in connection &&
+    connection.transport.type === "cloudflare_access" &&
+    "configId" in connection.transport
+    ? connection.transport.configId
+    : null;
+}
+
 function HostCard({
   connection,
 }: {
@@ -926,10 +944,9 @@ function HostCard({
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
   const configs = useLoadable(cloudflareAccessConfigs$);
-  const configId =
-    "transport" in connection && "configId" in connection.transport
-      ? connection.transport.configId
-      : null;
+  const tailscale =
+    "transport" in connection && connection.transport.type === "tailscale";
+  const configId = cloudflareConfigId(connection);
   const needsRebind =
     "transport" in connection && "needsRebind" in connection.transport;
   const unavailable =
@@ -949,7 +966,9 @@ function HostCard({
           className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
         >
           {t(($) => {
-            return $.ssh.cloudflare.needsRebind;
+            return tailscale
+              ? $.ssh.tailscale.needsRebind
+              : $.ssh.cloudflare.needsRebind;
           })}
         </p>
       ) : (
@@ -964,6 +983,7 @@ function HostCard({
       <p className="break-all text-sm">
         {connection.username}@{connection.host}:{connection.port}
       </p>
+      {tailscale && <p className="text-sm text-muted-foreground">Tailscale</p>}
       {configId && (
         <p className="text-sm text-muted-foreground">
           {unavailable
@@ -1001,7 +1021,7 @@ function HostCard({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          disabled={unavailable}
+          disabled={unavailable || tailscale}
           onClick={() => {
             return detach(open("edit", connection, signal), Reason.DomCallback);
           }}

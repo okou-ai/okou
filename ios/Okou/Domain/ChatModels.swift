@@ -78,7 +78,7 @@ struct SendReceipt: Sendable {
   let clientEventID: String
 }
 
-enum ChatServiceError: LocalizedError, Sendable {
+enum ChatError: LocalizedError, Sendable {
   case noDefaultAgent
   case agentUnavailable
   case invalidContract(String)

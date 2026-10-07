@@ -69,3 +69,12 @@ Final orphan closure: removed the unused private fixture writers/readers for mod
 Authenticated Runner correction: the retained AWS/custom-OAuth/Google-Analytics firewall fixtures previously signed a sandbox token for an unclaimed public Run. Each now uses production Runner heartbeat and claim and passes the returned sandbox token. The generic firewall public fixture is corrected in the same way after independent review, preserving selected public refresh/account/isolation cases without fabricating admission.
 
 Runner fixture ownership: register genuine claims with the existing cleanup owner so cancellation is followed by authenticated completion before teardown.
+
+## Main-integration consumer decision
+
+Recorded before conflict resolution against main `1a4cbda1d901006994149202b74d5135d8b74f6d`:
+
+- **delete** `turbo/apps/api/src/signals/routes/__tests__/pi-resource-index-work.test.ts` — `does not requeue a ready index when reusing a registered volume` (original baseline line 390). Workflow creation and storage preparation/commit are public setup, but the decisive observations are `testPiResourceIndexWorkRoutes.run` claimed counters and `prepareUnpublishedPiVolumeFixture` -> `prepareVolumeServerSide$` internal execution followed by S3 write counts. No independently asserted public lifecycle phase remains after removing those private steps; the gzip-buffer size comparison only checks test setup. Lose the exact internal ready-index non-requeue and unpublished-volume no-write coverage. Remove the now-empty suite and its sole remaining private fixture driver after deleting the already-recorded cron-sync suite. Keep the test resource-index route/contract because a separate, unchanged workflow-volume-index-reuse suite still consumes it; this is not a new endpoint-removal campaign.
+- Preserve #37905's deletion of `pi-stable-context.ts` and retired snapshot preparation helpers rather than bringing their removed schema/service back. Its separate product-retirement deletions are not new correction credit.
+
+This adds one shared-fixture-consumer deletion to the previous 529-declaration correction inventory. Two previously recorded deletions were independently merged on main, so the net correction against this main is 528 whole declarations, with the same 7 removed branches in 5 retained declarations.

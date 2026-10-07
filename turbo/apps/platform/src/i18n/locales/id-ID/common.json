@@ -3574,40 +3574,6 @@
         "sendToLabel": "Kirim ke",
         "tryAgain": "Coba lagi"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Digest katalog aktif",
-          "entries": "Entri",
-          "evaluated": "Dievaluasi",
-          "evaluation": "Evaluasi",
-          "executableCapabilityDigest": "Digest kemampuan eksekusi",
-          "filteredAuthMethods": "Metode autentikasi yang difilter",
-          "missingVersions": "Versi yang hilang",
-          "syncState": "Status sinkronisasi",
-          "unownedSecrets": "Secret yang tidak dimiliki",
-          "unownedVariables": "Variabel yang tidak dimiliki",
-          "unresolvedBridgeCredentials": "Kredensial bridge yang belum terselesaikan"
-        },
-        "loading": "Memuat",
-        "none": "Tidak ada",
-        "sections": {
-          "compatibility": "Kompatibilitas",
-          "credentialStorage": "Penyimpanan kredensial"
-        },
-        "title": "Katalog konektor",
-        "unavailable": "Tidak tersedia",
-        "values": {
-          "current": "Saat ini",
-          "missingAccessProvider": "Penyedia akses tidak ada",
-          "missingGrantProvider": "Penyedia pemberian akses tidak ada",
-          "missingPlatformConfiguration": "Konfigurasi platform tidak ada",
-          "missingRevokeProvider": "Penyedia pencabutan tidak ada",
-          "neverSynced": "Belum pernah disinkronkan",
-          "providerContractMismatch": "Ketidakcocokan kontrak penyedia",
-          "stale": "Usang",
-          "unsupportedProtocol": "Protokol tidak didukung"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Gagal membuka jendela otorisasi"
       },
@@ -5416,6 +5382,10 @@
     },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
+    "tailscale": {
+      "editUnavailable": "Host ini kini menggunakan Tailscale. Pengeditan dan pengikatan ulang Tailscale belum tersedia di sini. Batalkan pengeditan ini untuk mempertahankan transport yang tersimpan.",
+      "needsRebind": "Host ini memerlukan konfigurasi Tailscale baru. Penyiapan dan pengikatan ulang Tailscale belum tersedia di sini."
+    },
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
@@ -5660,6 +5630,7 @@
       "sshHelp": "SSH melindungi jalur Runner ke server SSH. Server tersebut harus dapat menjangkau tujuan RFB. Chat hanya dapat menggunakan rute ini jika host SSH tersebut juga diaktifkan di chat itu.",
       "sshNeedsRebind": "Host SSH untuk koneksi VNC ini perlu ditautkan kembali ke Cloudflare Access. Tautkan kembali di pengaturan SSH atau pilih Direct secara eksplisit di sana sebelum menyambung.",
       "sshNeedsRebindStatus": "SSH perlu ditautkan kembali",
+      "sshTailscaleNeedsRebind": "Host SSH untuk koneksi VNC ini memerlukan konfigurasi Tailscale baru. Pengaturan dan penautan ulang Tailscale belum tersedia di sini.",
       "title": "Rute koneksi",
       "unavailable": "Pengaturan SSH tidak tersedia untuk akun ini.",
       "via": "Host SSH:"

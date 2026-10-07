@@ -85,7 +85,6 @@ import { safeSync, settle, tapError } from "../utils";
 import {
   agentConnectorScopeFromRows,
   type AgentConnectorScopeSnapshot,
-  type CustomConnectorDefinitionVersion,
 } from "./agent-connector-scope.service";
 import {
   type AgentExecutionDefinition,
@@ -484,12 +483,6 @@ import type {
   AgentRunLaunchSnapshot,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import type {
-  PiStableContextOwner,
-  PiStableContextPromptProjection,
-  PiStableContextSemanticInput,
-  PiStableContextSourceVector,
-} from "@okouai/db/jsonb-contracts/pi-stable-context";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -617,7 +610,6 @@ import {
 } from "./official-workflow-reconciliation-dispatch.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { PiModelConfigurationError } from "./pi-model-configuration-error";
-import { piStableContextVariantDigest } from "./pi-stable-context.service";
 import {
   additionalVolumesForRun,
   selectedUserPresentationTemplateIds,
@@ -2926,10 +2918,10 @@ export function createThreadClaimRunObjects(
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
       const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
-      const { accounts } = await get(
+      const { accounts, providers } = await get(
         (await get(queuedIdentityContext$)).memberModels$,
       );
-      return { orgId, userId, accounts };
+      return { orgId, userId, accounts, providers };
     },
   );
   const memberRoutes$ = computed(async (get) => {
@@ -2969,6 +2961,13 @@ export function createThreadClaimRunObjects(
           catalog: await get(claimCatalog$),
           selectedModel: selection.selectedModel,
           subscriptionModels: await get(subscriptionModels$),
+          memberProviderTypes: new Set(
+            (
+              await get(queuedMemberModelRoutesMemberAccountSnapshot$)
+            ).providers.map((provider) => {
+              return provider.type;
+            }),
+          ),
         })
       : badRequestMessage("Queued input is missing its model selection");
   });
@@ -5985,9 +5984,6 @@ export function createThreadClaimRunObjects(
       }),
       customConnectorRows: selection.customConnectors,
     });
-    const expirations = permissionGrants.flatMap((grant) => {
-      return grant.expiresAt === null ? [] : [grant.expiresAt.getTime()];
-    });
     const metadataSlugs = new Set(
       selection.customConnectors.flatMap((connector) => {
         const ref = connector.permissionBundleRef;
@@ -6016,10 +6012,6 @@ export function createThreadClaimRunObjects(
           };
         },
       ),
-      permissionValidityHorizon:
-        expirations.length === 0
-          ? null
-          : new Date(Math.min(...expirations)).toISOString(),
       connectorCatalogMetadataSlugs: [...metadataSlugs].sort(),
     };
   });
@@ -8980,11 +8972,11 @@ export function createThreadClaimRunObjects(
       }
       const { args, timing } = await get(contextInput$);
       const finalAppendSystemPrompt =
-        args.piExecution && args.piStableContext
+        args.piExecution && args.piSystemPrompt
           ? bindStableAppendSystemPrompt(
-              args.piStableContext.buildPrompt(),
+              args.piSystemPrompt.buildPrompt(),
               args.body.appendSystemPrompt ??
-                args.piStableContext.dynamicAppendSystemPrompt,
+                args.piSystemPrompt.dynamicAppendSystemPrompt,
             )
           : args.body.appendSystemPrompt;
       const launchSnapshot = {
@@ -15286,8 +15278,15 @@ function buildCurrentUserPrompt(
   return lines.join("\n");
 }
 
+/** Agent-level system-prompt sections shared by every run of the agent. */
+interface AgentSystemPromptSections {
+  readonly agentIdentity: string;
+  readonly executionLimit: string;
+  readonly tools: string;
+}
+
 function buildAppendSystemPrompt(args: {
-  readonly stable: PiStableContextPromptProjection;
+  readonly stable: AgentSystemPromptSections;
   readonly userInfo: UserInfo;
   readonly triggerSource: TriggerSource;
 }): string {
@@ -15316,7 +15315,7 @@ function buildStableAgentPrompt(args: {
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
-}): PiStableContextPromptProjection {
+}): AgentSystemPromptSections {
   return {
     agentIdentity: buildAgentIdentityPrompt(args.agent) ?? "",
     executionLimit: buildExecutionTimeLimitPrompt(),
@@ -15407,7 +15406,7 @@ function createRunBody(args: {
   readonly body: AgentRunCreateBody;
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
-  readonly stablePrompt: PiStableContextPromptProjection;
+  readonly stablePrompt: AgentSystemPromptSections;
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly appendSystemPrompt: string | undefined;
@@ -15486,20 +15485,18 @@ interface ProductRunArgsInput {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly userInfo: UserInfo;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly permissionValidityHorizon: string | null;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly workflows: readonly RunWorkflowRef[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
-  readonly customConnectorDefinitions: readonly CustomConnectorDefinitionVersion[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
-function emptyStablePrompt(): PiStableContextPromptProjection {
+function emptyStablePrompt(): AgentSystemPromptSections {
   return {
     agentIdentity: "",
     executionLimit: "",
@@ -15526,8 +15523,8 @@ function standaloneIntegrationNote(args: ProductRunArgsInput): string {
 
 function buildStableRunPromptContext(args: ProductRunArgsInput): {
   readonly userInfo: UserInfo;
-  readonly initialStablePrompt: PiStableContextPromptProjection;
-  readonly piStableContext: PiStableContextInput;
+  readonly initialStablePrompt: AgentSystemPromptSections;
+  readonly piSystemPrompt: PiSystemPromptInput;
 } {
   const promptInputs = buildAgentToolsPromptInputs({
     featureSwitchContext: args.featureSwitchContext,
@@ -15535,14 +15532,7 @@ function buildStableRunPromptContext(args: ProductRunArgsInput): {
     cloudBrowserEnabled: args.cloudBrowserEnabled,
   });
   const userInfo = { ...args.userInfo, ...args.command.userInfoExtras };
-  const connectorScope = {
-    allowedConnectorSlugs: args.allowedConnectorSlugs,
-    allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-    customConnectorGrants: args.customConnectorGrants,
-    customConnectorDefinitions: args.customConnectorDefinitions,
-    workflows: args.workflows,
-  };
-  let stablePrompt: PiStableContextPromptProjection | undefined;
+  let stablePrompt: AgentSystemPromptSections | undefined;
   const buildPrompt = () => {
     stablePrompt ??= buildStableAgentPrompt({
       ...promptInputs,
@@ -15550,62 +15540,13 @@ function buildStableRunPromptContext(args: ProductRunArgsInput): {
     });
     return stablePrompt;
   };
-  let cacheIdentity:
-    | ReturnType<PiStableContextInput["buildCacheIdentity"]>
-    | undefined;
-  const buildCacheIdentity = () => {
-    if (cacheIdentity) {
-      return cacheIdentity;
-    }
-    const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
-    cacheIdentity = {
-      owner: {
-        orgId: args.command.owner.orgId,
-        userId: args.command.owner.userId,
-        agentId: args.agent.id,
-        resourceOwner: {
-          orgId: args.agent.orgId,
-          userId: args.agent.owner,
-        },
-      },
-      variantDigest: piStableContextVariantDigest({
-        triggerSource: promptInputs.triggerSource,
-        cloudBrowserEnabled: promptInputs.cloudBrowserEnabled,
-        connectorSource: "stored_agent",
-      }),
-      semantic: { promptInputs, connectorScope },
-      source: {
-        catalogIdentity:
-          args.connectorCatalogSelection.kind === "scoped"
-            ? piStableContextVariantDigest(
-                args.connectorCatalogSelection.selection.catalogIdentity,
-              )
-            : null,
-        catalogSourceId:
-          args.connectorCatalogSelection.kind === "scoped"
-            ? args.connectorCatalogSelection.selection.catalogIdentity.sourceId
-            : null,
-        agentIdentityDigest: piStableContextVariantDigest(agentIdentity),
-        featurePromptDigest: piStableContextVariantDigest(promptInputs),
-        permissionDigest: piStableContextVariantDigest(
-          args.runPermissionPolicies ?? null,
-        ),
-        connectorScopeDigest: piStableContextVariantDigest(connectorScope),
-        validityHorizon: args.permissionValidityHorizon,
-        promptSchemaVersion: 1,
-        runtimeSchemaVersion: 1,
-      },
-    };
-    return cacheIdentity;
-  };
   return {
     userInfo,
     initialStablePrompt: args.command.piExecution
       ? emptyStablePrompt()
       : buildPrompt(),
-    piStableContext: {
+    piSystemPrompt: {
       buildPrompt,
-      buildCacheIdentity,
       dynamicAppendSystemPrompt: [
         buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
         args.command.appendSystemPrompt,
@@ -15619,20 +15560,10 @@ function buildStableRunPromptContext(args: ProductRunArgsInput): {
   };
 }
 
-/** Stable, nonsecret source bindings captured by the product entry point. */
-interface PiStableContextInput {
-  /** Built only for a miss/dynamic path; ready artifacts supply this text. */
-  readonly buildPrompt: () => PiStableContextPromptProjection;
-  /** Built only by the durable stable-context consumer from captured input. */
-  readonly buildCacheIdentity: () => {
-    readonly owner: PiStableContextOwner;
-    readonly variantDigest: string;
-    readonly semantic: PiStableContextSemanticInput;
-    readonly source: Omit<
-      PiStableContextSourceVector,
-      "agentGeneration" | "userGeneration" | "extractorVersion"
-    >;
-  };
+/** Pi system-prompt parts captured by the product entry point. */
+interface PiSystemPromptInput {
+  /** Agent identity, execution limit, and tool sections, built on demand. */
+  readonly buildPrompt: () => AgentSystemPromptSections;
   /** Dynamic profile/channel text and explicit caller appendage, bound later. */
   readonly dynamicAppendSystemPrompt: string;
 }
@@ -15656,7 +15587,7 @@ interface ProductRunArgs {
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly body: CreateRunBody;
   readonly apiStartTime: number;
-  readonly piStableContext?: PiStableContextInput;
+  readonly piSystemPrompt?: PiSystemPromptInput;
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
@@ -15679,7 +15610,7 @@ interface ProductRunArgs {
 
 function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   const command = args.command;
-  const { userInfo, initialStablePrompt, piStableContext } =
+  const { userInfo, initialStablePrompt, piSystemPrompt } =
     buildStableRunPromptContext(args);
   const productAgentExecutionPlan = {
     identity: "agent" as const,
@@ -15699,7 +15630,7 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       standaloneIntegrationNote: standaloneIntegrationNote(args),
     }),
     apiStartTime: command.apiStartTime,
-    piStableContext,
+    piSystemPrompt,
     chatThreadId: command.chatThreadId,
     ...(command.connectorSourceId
       ? { connectorSourceId: command.connectorSourceId }
@@ -15764,7 +15695,6 @@ interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly workflows: readonly RunWorkflowRef[];
   readonly permissionGrants: readonly FirewallPermissionGrant[];
-  readonly permissionValidityHorizon: string | null;
   readonly connectorCatalogMetadataSlugs: readonly ConnectorSlug[];
 }
 interface AgentRunIdentityInput {
@@ -16586,7 +16516,7 @@ interface PreparePiLaunchResourcesArgs {
 }
 
 function bindStableAppendSystemPrompt(
-  prompt: PiStableContextPromptProjection,
+  prompt: AgentSystemPromptSections,
   dynamicAppendSystemPrompt: string,
 ): string {
   return [

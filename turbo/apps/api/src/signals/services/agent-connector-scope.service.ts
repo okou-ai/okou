@@ -160,19 +160,6 @@ export async function loadAgentConnectorScope(
   return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
 }
 
-/** Transaction-safe form for writers that hold one PostgreSQL client. */
-export async function loadAgentConnectorScopeSerial(
-  db: ReadonlyDb,
-  args: LoadAgentConnectorScopeArgs,
-): Promise<AgentConnectorScopeSnapshot> {
-  const connectorRows = await loadAgentAllowedConnectorSlugRows(db, args);
-  const customConnectorRows = await loadAgentAllowedCustomConnectorRows(
-    db,
-    args,
-  );
-  return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
-}
-
 export const loadAgentConnectorScope$ = command(
   async (
     { set },

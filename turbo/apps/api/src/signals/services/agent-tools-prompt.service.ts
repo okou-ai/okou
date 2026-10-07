@@ -5,7 +5,6 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { PiStableContextPromptInputs } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CODEX_HOME_DIR,
@@ -57,11 +56,26 @@ function buildIntegrationToolsPrompt(
   ];
 }
 
+/** Feature and surface inputs that select the agent tools prompt text. */
+export interface AgentToolsPromptInputs {
+  readonly privateArtifactsEnabled: boolean;
+  readonly bankingEnabled: boolean;
+  readonly vncEnabled: boolean;
+  readonly larkEnabled: boolean;
+  readonly discordEnabled: boolean;
+  readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly presentationConvertEnabled: boolean;
+  readonly browserNativeInputEnabled: boolean;
+  readonly customConnectorMcpEnabled: boolean;
+  readonly triggerSource: TriggerSource;
+  readonly cloudBrowserEnabled: boolean | undefined;
+}
+
 export function buildAgentToolsPromptInputs(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
-}): PiStableContextPromptInputs {
+}): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
     privateArtifactsEnabled: isFeatureEnabled(

@@ -168,7 +168,7 @@ function VncAuthenticationLabel({
   return null;
 }
 
-function VncRebindWarning() {
+function VncRebindWarning({ tailscale }: { readonly tailscale: boolean }) {
   const { t } = useTranslation();
   return (
     <p
@@ -176,7 +176,9 @@ function VncRebindWarning() {
       className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
     >
       {t(($) => {
-        return $.vnc.transport.sshNeedsRebind;
+        return tailscale
+          ? $.vnc.transport.sshTailscaleNeedsRebind
+          : $.vnc.transport.sshNeedsRebind;
       })}
     </p>
   );
@@ -257,12 +259,19 @@ function VncHostCard({
           return candidate.id === sshConnectionId;
         })
       : null;
+  const sshTransport =
+    sshConnection && "transport" in sshConnection
+      ? sshConnection.transport
+      : null;
   const needsSshRebind =
-    !!sshConnection &&
-    "transport" in sshConnection &&
-    typeof sshConnection.transport === "object" &&
-    sshConnection.transport !== null &&
-    "needsRebind" in sshConnection.transport;
+    typeof sshTransport === "object" &&
+    sshTransport !== null &&
+    "needsRebind" in sshTransport;
+  const tailscale =
+    typeof sshTransport === "object" &&
+    sshTransport !== null &&
+    "type" in sshTransport &&
+    sshTransport.type === "tailscale";
   const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
     <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>
@@ -276,7 +285,7 @@ function VncHostCard({
           })}
         </span>
       </div>
-      {needsSshRebind && <VncRebindWarning />}
+      {needsSshRebind && <VncRebindWarning tailscale={tailscale} />}
       <p className="text-sm text-muted-foreground">
         {sshConnectionId
           ? t(($) => {

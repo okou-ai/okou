@@ -16,10 +16,6 @@ const scopedConnectorCatalogSource = singleton(() => {
   return new AsyncLocalStorage<ConnectorCatalogSource>();
 });
 
-export function connectorCatalogSourceIsTestScoped(): boolean {
-  return scopedConnectorCatalogSource.peek()?.getStore() !== undefined;
-}
-
 export function connectorCatalogSource(): ConnectorCatalogSource {
   const scoped = scopedConnectorCatalogSource.peek()?.getStore();
   if (scoped) {

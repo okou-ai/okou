@@ -67,7 +67,7 @@ import {
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import {
   deleteClerkAgentLifecycleData$,
-  deleteStableContextLifecycleAfterAuthorityRemoval$,
+  deletePublicationFencesAfterAuthorityRemoval$,
 } from "./clerk-agent-lifecycle.service";
 import {
   deleteBuiltinConnectorLocalState$,
@@ -820,11 +820,11 @@ const deleteOrgData$ = command(
     signal.throwIfAborted();
     await db.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
     signal.throwIfAborted();
-    // Membership is the durable stable-context admission parent. Re-run only
-    // stable-context cleanup after removing it so a request that raced the early
-    // pass cannot recreate state or repeat unrelated usage/billing lifecycle.
+    // Re-run only publication fence cleanup after removing membership so a
+    // request that raced the early pass cannot leave fence rows behind or
+    // repeat unrelated usage/billing lifecycle.
     await set(
-      deleteStableContextLifecycleAfterAuthorityRemoval$,
+      deletePublicationFencesAfterAuthorityRemoval$,
       { kind: "organization", orgId },
       signal,
     );
@@ -943,7 +943,7 @@ const deleteUserData$ = command(
     // authoritative membership removal. Future initialization now fails its
     // parent lock; this narrow second pass removes any state created before it.
     await set(
-      deleteStableContextLifecycleAfterAuthorityRemoval$,
+      deletePublicationFencesAfterAuthorityRemoval$,
       { kind: "user", userId },
       signal,
     );

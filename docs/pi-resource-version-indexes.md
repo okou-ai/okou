@@ -73,6 +73,11 @@ plan backfill and retirement of older generations.
 
 ## Acceptance
 
+The `pi_resource_snapshot_prepare` operation below came from the retired Pi
+resource snapshot preparation, which the API no longer runs (see
+[deployment compatibility](deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07)).
+The paragraph is kept as the historical acceptance record.
+
 Production `pi_resource_snapshot_prepare` operations in the existing sandbox
 operation dataset report full-cache lookup, index lookup, archive download/decode,
 and composition durations, archive counts/bytes, and total resource time with the

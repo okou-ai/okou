@@ -92,7 +92,7 @@ Required associated interfaces:
 - `services/model-catalog.service.ts`
 - `services/shared-thread-artifacts.service.ts`
 - `services/shared-thread-artifact-snapshot.service.ts`
-- `services/pi-stable-context-generation.service.ts`
+- `services/storage-publication-fence.service.ts`
 - `services/usage-allowance.service.ts`
 - `services/get-started-invitation.service.ts` (including its callers and
   cancellation boundary; do not rewrite already-compliant code merely for churn)

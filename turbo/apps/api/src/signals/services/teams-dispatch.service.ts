@@ -1621,19 +1621,20 @@ const persistTeamsChatMessage$ = command(
       ),
     });
     const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: route.chatThreadId,
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+      },
+      signal,
+    );
     const values = {
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: route.chatThreadId,
-          orgId: args.installation.orgId,
-          userId: args.connection.userId,
-        },
-        signal,
-      ),
+      modelSelection: enqueuedModel.modelSelection,
       userMessage: createUserMessageDocument({
         text: [
           args.activity.text,
@@ -1662,7 +1663,11 @@ const persistTeamsChatMessage$ = command(
     } as const;
     const eventId = await set(
       enqueueIntegrationChatInput$,
-      { orgId: args.installation.orgId, input: values },
+      {
+        orgId: args.installation.orgId,
+        input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
+      },
       signal,
     );
     signal.throwIfAborted();

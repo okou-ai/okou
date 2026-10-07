@@ -1,15 +1,13 @@
 import {
-  completePiStableContextPublicationSql,
-  piStableContextGenerationReceiptSchema,
-  publicationScopeCondition,
-  publicationScopePendingSql,
-  publicationReadinessSql,
-  beginPiStableContextPublicationSql,
-  piStableContextPublicationFromReceipt,
-  PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
-  type PiStableContextPublicationFence,
-} from "../services/pi-stable-context-generation.service";
-import { piStableContextPublications } from "@okouai/db/schema/pi-stable-context";
+  completePublicationSql,
+  publicationGenerationReceiptSchema,
+  publicationFenceIsCurrent,
+  lockPublicationScopeSql,
+  beginPublicationSql,
+  publicationFenceFromReceipt,
+  AGENT_INSTRUCTIONS_PUBLICATION_KEY,
+  type StoragePublicationFence,
+} from "../services/storage-publication-fence.service";
 import { and, eq, sql } from "drizzle-orm";
 import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
@@ -83,7 +81,7 @@ interface ReservedInstructionPublication {
   readonly agentId: string;
   readonly agentName: string;
   readonly storage: ServerSideVolumeStorage;
-  readonly fence: PiStableContextPublicationFence;
+  readonly fence: StoragePublicationFence;
 }
 
 const instructionAgentColumns = Object.freeze({
@@ -200,24 +198,19 @@ const publishPreparedAgentInstructions$ = command(
         return { kind: "conflict" as const };
       }
       const { rowCount: admittedScope } = await tx.execute(
-        publicationScopePendingSql(reservation.fence.scope, nowDate()),
+        lockPublicationScopeSql(reservation.fence.scope, nowDate()),
       );
       signal.throwIfAborted();
       if (admittedScope !== 1) {
         return { kind: "conflict" as const };
       }
-      const [piMutation0Publication] = await tx
-        .select({ token: piStableContextPublications.token })
-        .from(piStableContextPublications)
-        .where(publicationScopeCondition(reservation.fence))
-        .limit(1);
-      signal.throwIfAborted();
-      await tx.execute(
-        publicationReadinessSql(reservation.fence.scope, nowDate()),
+      const fenceIsCurrent = await publicationFenceIsCurrent(
+        tx,
+        reservation.fence,
       );
       signal.throwIfAborted();
 
-      if (!(piMutation0Publication !== undefined)) {
+      if (!fenceIsCurrent) {
         signal.throwIfAborted();
         return { kind: "conflict" as const };
       }
@@ -229,19 +222,13 @@ const publishPreparedAgentInstructions$ = command(
       if (publishedStorageCount !== 1) {
         throw new StorageVersionIdentityConflictError(volume.version.versionId);
       }
-      // Reservation invalidates every scoped input. No demand can register while
-      // this scope is pending; next use recaptures the newly committed source.
       const { rowCount: completedPublicationCount } = await tx.execute(
-        completePiStableContextPublicationSql(reservation.fence),
-      );
-      signal.throwIfAborted();
-      await tx.execute(
-        publicationReadinessSql(reservation.fence.scope, nowDate()),
+        completePublicationSql(reservation.fence),
       );
       signal.throwIfAborted();
       if (!(completedPublicationCount === 1)) {
         throw new Error(
-          "Stable-context publication fence changed while locked",
+          "Agent instructions publication fence changed while locked",
         );
       }
       const [updated] = await tx
@@ -307,7 +294,7 @@ const reserveAgentInstructionPublication$ = command(
     signal: AbortSignal,
   ) => {
     const writeDb = set(writeDb$);
-    let reservedFence: PiStableContextPublicationFence | undefined;
+    let reservedFence: StoragePublicationFence | undefined;
     const reservation = writeDb.transaction(async (tx) => {
       const current = (
         await tx
@@ -364,14 +351,13 @@ const reserveAgentInstructionPublication$ = command(
       // Reserve BEFORE IO: a slow older preparation must never supersede a
       // request that started preparing later and already published its HEAD.
       const piMutation1Scope = { orgId: args.orgId, agentId: current.id };
-      const piMutation1Key =
-        PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY;
+      const piMutation1Key = AGENT_INSTRUCTIONS_PUBLICATION_KEY;
       const piMutation1Token = randomUUID();
-      const fence = piStableContextPublicationFromReceipt(
+      const fence = publicationFenceFromReceipt(
         parseRawRows(
-          piStableContextGenerationReceiptSchema,
+          publicationGenerationReceiptSchema,
           await tx.execute(
-            beginPiStableContextPublicationSql(
+            beginPublicationSql(
               piMutation1Scope,
               piMutation1Key,
               piMutation1Token,
@@ -408,13 +394,12 @@ const reserveAgentInstructionPublication$ = command(
 
 async function settleInstructionPublication(
   db: Db,
-  fence: PiStableContextPublicationFence,
+  fence: StoragePublicationFence,
 ): Promise<void> {
   // Deliberately outlive request cancellation; await exact-token settlement.
   await db.transaction(async (tx) => {
-    await tx.execute(publicationScopePendingSql(fence.scope, nowDate()));
-    await tx.execute(completePiStableContextPublicationSql(fence));
-    await tx.execute(publicationReadinessSql(fence.scope, nowDate()));
+    await tx.execute(lockPublicationScopeSql(fence.scope, nowDate()));
+    await tx.execute(completePublicationSql(fence));
   });
 }
 

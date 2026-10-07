@@ -4,11 +4,9 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import {
-  piStableContextArtifacts,
-  piStableContextGenerations,
-  piStableContextHeads,
-  piStableContextPublications,
-} from "@okouai/db/schema/pi-stable-context";
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
 import { and, eq, gte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -139,50 +137,35 @@ export function runFreeAgentDeleteSql(
     )`;
 }
 
-/** Remove generation fences before ordered heads and artifact cascades. */
-export function clerkStableContextCleanupSql(
+/** Remove storage publication generations, then their tokens. */
+export function clerkPublicationFenceCleanupSql(
   scope: ClerkDeletionScope,
   agentIds: readonly string[],
 ) {
   const ownedAgents = sql`ANY(${sql.param(agentIds)}::uuid[])`;
   const generation =
     scope.kind === "organization"
-      ? eq(piStableContextGenerations.orgId, scope.orgId)
+      ? eq(storagePublicationGenerations.orgId, scope.orgId)
       : or(
-          eq(piStableContextGenerations.subject, scope.userId),
-          eq(piStableContextGenerations.agentId, ownedAgents),
+          eq(storagePublicationGenerations.subject, scope.userId),
+          eq(storagePublicationGenerations.agentId, ownedAgents),
         );
   const publication =
     scope.kind === "organization"
-      ? eq(piStableContextPublications.orgId, scope.orgId)
+      ? eq(storagePublicationTokens.orgId, scope.orgId)
       : or(
-          eq(piStableContextPublications.subject, scope.userId),
-          eq(piStableContextPublications.agentId, ownedAgents),
+          eq(storagePublicationTokens.subject, scope.userId),
+          eq(storagePublicationTokens.agentId, ownedAgents),
         );
-  const heads =
-    scope.kind === "organization"
-      ? eq(piStableContextHeads.orgId, scope.orgId)
-      : or(
-          eq(piStableContextHeads.userId, scope.userId),
-          eq(piStableContextHeads.agentId, ownedAgents),
-        );
-  if (!generation || !publication || !heads) {
-    throw new Error("Stable-context lifecycle conditions must be present");
+  if (!generation || !publication) {
+    throw new Error("Publication fence lifecycle conditions must be present");
   }
   return [
-    sql`SELECT ${piStableContextGenerations.orgId} FROM ${piStableContextGenerations}
-      WHERE ${generation} ORDER BY ${piStableContextGenerations.orgId},
-      ${piStableContextGenerations.agentId}, ${piStableContextGenerations.subject} FOR UPDATE`,
-    sql`DELETE FROM ${piStableContextGenerations} WHERE ${generation}`,
-    sql`DELETE FROM ${piStableContextPublications} WHERE ${publication}`,
-    sql`SELECT ${piStableContextHeads.id} FROM ${piStableContextHeads}
-      WHERE ${heads} ORDER BY ${piStableContextHeads.id} FOR UPDATE`,
-    sql`DELETE FROM ${piStableContextHeads} WHERE ${heads}`,
-    ...(scope.kind === "user"
-      ? [
-          sql`DELETE FROM ${piStableContextArtifacts} WHERE ${eq(piStableContextArtifacts.userId, scope.userId)}`,
-        ]
-      : []),
+    sql`SELECT ${storagePublicationGenerations.orgId} FROM ${storagePublicationGenerations}
+      WHERE ${generation} ORDER BY ${storagePublicationGenerations.orgId},
+      ${storagePublicationGenerations.agentId}, ${storagePublicationGenerations.subject} FOR UPDATE`,
+    sql`DELETE FROM ${storagePublicationGenerations} WHERE ${generation}`,
+    sql`DELETE FROM ${storagePublicationTokens} WHERE ${publication}`,
   ];
 }
 

@@ -3574,40 +3574,6 @@
         "sendToLabel": "傳送至",
         "tryAgain": "重試"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "生效目錄摘要",
-          "entries": "項目",
-          "evaluated": "已評估",
-          "evaluation": "評估",
-          "executableCapabilityDigest": "可執行能力摘要",
-          "filteredAuthMethods": "已過濾的認證方式",
-          "missingVersions": "缺失版本",
-          "syncState": "同步狀態",
-          "unownedSecrets": "無歸屬金鑰",
-          "unownedVariables": "無歸屬變數",
-          "unresolvedBridgeCredentials": "未解析的橋接憑據"
-        },
-        "loading": "載入中",
-        "none": "無",
-        "sections": {
-          "compatibility": "相容性",
-          "credentialStorage": "憑據儲存"
-        },
-        "title": "連接器目錄",
-        "unavailable": "不可用",
-        "values": {
-          "current": "當前",
-          "missingAccessProvider": "缺少訪問提供方",
-          "missingGrantProvider": "缺少授權提供方",
-          "missingPlatformConfiguration": "缺少平臺配置",
-          "missingRevokeProvider": "缺少撤銷提供方",
-          "neverSynced": "從未同步",
-          "providerContractMismatch": "提供方契約不匹配",
-          "stale": "已過期",
-          "unsupportedProtocol": "不支援的協議"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "無法開啟授權視窗"
       },
@@ -5416,6 +5382,10 @@
     },
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",
+    "tailscale": {
+      "editUnavailable": "此主機現已使用 Tailscale。此處尚未提供 Tailscale 編輯和重新綁定功能。請取消此次編輯以保留已儲存的傳輸方式。",
+      "needsRebind": "此主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。"
+    },
     "unavailable": "該帳號無法使用SSH訪問。",
     "username": "SSH使用者名稱"
   },
@@ -5660,6 +5630,7 @@
       "sshHelp": "SSH 僅保護 Runner 到 SSH 伺服器這一段。該伺服器必須能夠存取 RFB 目標。只有在聊天中同時啟用該 SSH 主機，才能使用此路由。",
       "sshNeedsRebind": "此 VNC 連線使用的 SSH 主機需要重新綁定 Cloudflare Access。請先在 SSH 設定中重新綁定，或明確選擇直接連線，再嘗試連線。",
       "sshNeedsRebindStatus": "SSH 需要重新綁定",
+      "sshTailscaleNeedsRebind": "此 VNC 連線使用的 SSH 主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。",
       "title": "連線路由",
       "unavailable": "此帳戶無法使用SSH設定。",
       "via": "SSH主機："

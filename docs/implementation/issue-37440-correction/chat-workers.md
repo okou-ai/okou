@@ -360,3 +360,7 @@ TERMINAL_RUN_STATUSES = [
 ### Cancelled Runner heartbeat public prefix restored after independent review
 
 The original recovery-grace declaration now retains only the independently public sequence: launch and claim through the matching Runner group, user cancellation, authenticated Runner heartbeat rejected with 404, public queue still occupied, then authenticated completion for cleanup. The private clock jumps and sandbox cleanup sweeps remain deleted. The exact new name is `rejects a cancelled run heartbeat before its Runner completes`. This restores one existing declaration without adding cleanup credit. C subtotal is now **193 whole declarations deleted, 7 rewritten, and 2 declarations with parameter branches removed** before cross-group deduplication.
+
+## Attribution after main integration
+
+The 193 original C deletions are decisions against the recorded baseline. Main #37905 independently removed `cron-sync-skills.test.ts` — `records ready stable-context demand in the system-skill V2 transaction` before integration. Current-main C contribution is therefore 192 declarations; the remaining scoped skill-sync suite is still deleted for its private driver/state construction. This overlap is deducted once in the aggregate README. The 2 branch-only removals and public rewrites are unchanged.
