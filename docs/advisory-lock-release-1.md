@@ -63,7 +63,7 @@ The initial implementation baseline was main
 one catalog fixture acquisition, and one attribution operator acquisition.
 Historical migration SQL is counted separately. The integration branch also
 includes main `3103651`, preserving browser preferences, thread-image schema
-contraction, retired Agent SSH/VNC grants, current generation identity, the
+contraction, current generation identity, the
 Okou Pro/Max retirement and default-policy repair, and the rule prohibiting new
 database triggers. Main's migrations 1289/1290, X509None VNC profile and Cloudflare trigger retirement are preserved; main's later migrations through 1304 are preserved; the PR-only migrations follow at 1305–1310. Integration `/model` controls retain main's routed-thread-only
 behavior and no longer change a member default or recreate a retired session.

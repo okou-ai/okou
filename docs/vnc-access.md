@@ -76,7 +76,6 @@ their host and thread, so deleting a host also removes its access overrides. Liv
 membership and credential revision checks remain unchanged. No App/Runner wire
 contract, persisted field, coordination table or authorization flag is added.
 
-The separate obsolete Agent grant-table contraction is not part of this change.
 Shared initial-chat creation still has its own transaction-aware override
 validation/insert helpers; retiring that wider command graph is tracked by the
 Release 1 API transaction inventory, not certified by the VNC lock removal.
@@ -353,12 +352,9 @@ Saving does not verify Mac VNC settings or prove the SSH server has no
 downstream proxy. A real product session must separately validate saved-host
 creation, chat host permission, screenshot and bounded input before activation.
 
-Adding or recreating a VNC host does not grant Agent-wide permission or change
-any chat's access. New hosts default off until their owner enables a host
-default or the chat explicitly overrides it. Retired Agent grant rows do not
-authorize Run access and the owner grant endpoints are retired. The physical
-Agent grant tables are removed by the separate #37272 migration; until it is
-actually deployed, old rows may still exist in the database.
+Adding or recreating a VNC host does not change any chat's access. New hosts
+default off until their owner enables a host default or the chat explicitly
+overrides it.
 
 Manage VNC access with each saved host's chat default and the chat's `On`, `Off`,
 or `Use default` choice. Direct rows appear in live Run inventory when the Run's
@@ -427,13 +423,8 @@ unchanged; a future rotation must include VNC in its current inventory.
 ## Membership and deletion lifecycle
 
 The configuration tables are `vnc_credentials` and `vnc_connections`. Both use the
-organization/user pair as their owner, matching SSH configuration. The retired
-`agent_vnc_access` table is dropped by migration
-`1288_drop_retired_agent_grant_tables` in #37272, **after** the code-only API
-release in PR #37305 was promoted and older invocations drained. The migration
-is not a production receipt until deployed; current code does not read or
-write the retired table, and only current chat host permission authorizes Run
-access. Rollback to a pre-#37305 API will be unsupported after the drop.
+organization/user pair as their owner, matching SSH configuration. Only current
+chat host permission authorizes Run access.
 Current membership authorizes access to that owner's configuration. If the user leaves and rejoins before cleanup removes
 the configuration, it remains the same owner's data and is accessible again.
 Each saved connection retains its own identity across membership changes.
@@ -472,8 +463,8 @@ and Apple RSA/SRP each use distinct methods and profiles and do not reinterpret
 X509Plain or each other. A later profile extends the
 allowed values and adds its concrete typed fields or references, but cannot
 reinterpret an existing value or require clearing saved VNC state. Every schema
-extension must exercise its migration against populated credentials, connections
-and grants. A protocol with different credential bounds gets a new method value
+extension must exercise its migration against populated credentials and
+connections. A protocol with different credential bounds gets a new method value
 even when its UI also looks like username/password; it does not broaden
 `username_password`.
 
@@ -505,8 +496,8 @@ connection authentication method with a temporary `vnc_password` default, then
 remove that default. Existing constraints prove every pre-change credential and
 connection is the exact `vnc_password` / `x509_vnc` pair, so the temporary default
 is a bounded backfill rather than a policy inference. The final schema requires
-all new writes to select a method explicitly. No VNC credentials, connections or
-Agent grants are deleted or rewritten.
+all new writes to select a method explicitly. No VNC credentials or connections
+are deleted or rewritten.
 
 Two later generated migrations establish the SSH route reference in dependency
 order: the first adds the composite SSH connection owner key, and the second adds
@@ -516,13 +507,13 @@ shape checks. Existing and old-writer rows remain direct because the database
 default is intentionally retained.
 
 The Apple DH generated migration expands only the exact profile and credential
-shape checks. It leaves retained X509 rows, generations, grants and the direct
+shape checks. It leaves retained X509 rows, generations and the direct
 default untouched. API readers of Apple rows and Runner support must be
 deployed before admitting those rows; rollback below that reader floor is unsafe
 once they exist. No merge enables the switch or authorizes production rollout.
 
 The Apple Direct SRP migration similarly expands only the exact credential,
-profile and trust checks; existing row values, generations, grants and the
+profile and trust checks; existing row values, generations and the
 direct default remain intact. New API readers and current Runners are required
 before an SRP row is admitted. An older Runner fails the exact capability check
 before KMS; an older API is not a safe rollback target after SRP rows are
@@ -532,23 +523,21 @@ activate `VncAccess`.
 
 The Apple RSA/SRP generated migration extends only the exact credential,
 profile and trust constraints while retaining all X509 and Apple rows,
-generations, grants, SSH references and the direct default. Because `VncAccess`
+generations, SSH references and the direct default. Because `VncAccess`
 has never been activated, this change does not require mixed-version Runner
 support or a production-data rollback exercise. It still requires all serving
 API readers to understand the new discriminators before a type 33 row can be
 stored; a revision that cannot read these rows is not a safe rollback target
 once they exist. This migration does not activate `VncAccess`.
 
-The X509None profile migration `1289_thick_bruce_banner` follows the separate
-1288 grant-table contraction. It allows a null credential only for the exact
+The X509None profile migration `1289_thick_bruce_banner` allows a null credential only for the exact
 `none` / `x509_none` pair; existing saved rows retain their meaning. Deploy the
 compatible API before the new Runner: an old strict API rejects the new
 Runner's advertised pairs even for legacy connections. Old Runners reject
 X509None rows before KMS. An old App cannot be relied upon to manage the new
 credentialless response, and the old API's credential inner join omits these
 rows. Once one exists, disabling the switch does not make an old API a safe
-rollback target. The exact old/new App, API and Runner matrix and the separate
-1288 deployment gate are in [deployment compatibility](deployment-compatibility.md#vnc-x509none-owner-selected-rollout-default-off).
+rollback target. The exact old/new App, API and Runner matrix is in [deployment compatibility](deployment-compatibility.md#vnc-x509none-owner-selected-rollout-default-off).
 
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band

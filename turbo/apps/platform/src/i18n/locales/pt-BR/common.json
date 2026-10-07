@@ -5523,7 +5523,7 @@
     "displayName": "Nome de exibição",
     "edit": "Editar host",
     "editHelp": "Selecionar outra credencial altera apenas este host. Alterações no destino direto apagam a chave de host aprendida; alterações envolvendo Cloudflare Access a preservam.",
-    "empty": "Nenhum host SSH configurado. Adicione um host para disponibilizá-lo aos Agents com acesso SSH.",
+    "empty": "Nenhum host SSH configurado. Adicione um host e ative-o por padrão ou em chats específicos.",
     "errors": {
       "configurationChanged": "Este host mudou durante a edição. Seu rascunho foi preservado. Revise as configurações mais recentes antes de aplicar suas alterações.",
       "credentialChanged": "Esta credencial mudou enquanto você a editava. Seu rascunho foi preservado. Revise as configurações mais recentes e os hosts afetados antes de salvar.",
@@ -5817,7 +5817,7 @@
       "selectionUnavailable": "O host SSH selecionado não está mais disponível. Selecione outro ou altere explicitamente para Direta.",
       "ssh": "Por um host SSH salvo",
       "sshConnection": "Host SSH",
-      "sshHelp": "O SSH protege o trecho do Runner até o servidor SSH. Esse servidor deve conseguir acessar o destino RFB. O Agent precisa de acesso VNC e SSH.",
+      "sshHelp": "O SSH protege o trecho do Runner até o servidor SSH. Esse servidor deve conseguir acessar o destino RFB. Um chat só pode usar esta rota se esse host SSH também estiver ativado nele.",
       "sshNeedsRebind": "O host SSH desta conexão VNC precisa ser vinculado novamente ao Cloudflare Access. Vincule-o nas configurações de SSH ou escolha explicitamente Direta ali antes de conectar.",
       "sshNeedsRebindStatus": "SSH precisa de nova vinculação",
       "title": "Rota de conexão",

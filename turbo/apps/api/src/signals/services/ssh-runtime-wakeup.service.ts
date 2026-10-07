@@ -15,7 +15,6 @@ const L = logger("SshRuntimeWakeup");
 type SshInvalidationScope = {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId?: string;
   readonly chatThreadId?: string;
 } & (
   | { readonly connectionId: string | null; readonly connectionIds?: never }
@@ -39,16 +38,13 @@ const loadSshInvalidationRecipients$ = command(
             scope.chatThreadId === undefined
               ? undefined
               : eq(agentRuns.chatThreadId, scope.chatThreadId),
-            scope.agentId === undefined
-              ? undefined
-              : eq(agentSessions.agentId, scope.agentId),
           ),
         ),
     );
   },
 );
 
-/** Best-effort post-commit eviction. Deleted grants/connections must not filter out Runs. */
+/** Best-effort post-commit eviction. Deleted connections must not filter out Runs. */
 export const publishSshRunnerInvalidation$ = command(
   async ({ set }, scope: SshInvalidationScope): Promise<void> => {
     const connectionIds = scope.connectionIds ?? [scope.connectionId];

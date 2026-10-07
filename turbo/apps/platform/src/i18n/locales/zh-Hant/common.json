@@ -5428,7 +5428,7 @@
     "displayName": "顯示名稱",
     "edit": "編輯主機",
     "editHelp": "選擇其他憑據只會影響該主機。修改直連地址會清除已記錄的主機金鑰；涉及Cloudflare Access的修改則會保留它。",
-    "empty": "還沒有配置SSH主機。新增主機後，擁有SSH權限的智能體就能使用它。",
+    "empty": "還沒有配置SSH主機。新增主機後，可將其設為預設啟用，或在個別聊天中啟用。",
     "errors": {
       "configurationChanged": "該主機在你編輯期間發生了變化。你的草稿已保留。請先檢視最新設定，再應用你的更改。",
       "credentialChanged": "該憑據在你編輯期間發生了變化。你的草稿已保留。請先檢視最新設定和受影響的主機，再儲存你的更改。",
@@ -5715,7 +5715,7 @@
       "selectionUnavailable": "所選SSH主機已無法使用。請選擇其他主機，或明確切換為直接連線。",
       "ssh": "透過已儲存的SSH主機",
       "sshConnection": "SSH主機",
-      "sshHelp": "SSH僅保護Runner到SSH伺服器這一段。該伺服器必須能夠存取RFB目標。Agent必須同時取得VNC和SSH存取權限。",
+      "sshHelp": "SSH僅保護Runner到SSH伺服器這一段。該伺服器必須能夠存取RFB目標。只有在聊天中同時啟用該SSH主機，才能使用此路由。",
       "sshNeedsRebind": "此 VNC 連線使用的 SSH 主機需要重新綁定 Cloudflare Access。請先在 SSH 設定中重新綁定，或明確選擇直接連線，再嘗試連線。",
       "sshNeedsRebindStatus": "SSH 需要重新綁定",
       "title": "連線路由",

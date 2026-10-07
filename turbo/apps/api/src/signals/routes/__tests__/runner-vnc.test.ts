@@ -829,7 +829,7 @@ describe("private Runner VNC authority", () => {
     });
   });
 
-  it("requires both grants and binds SSH-backed handoff and checks to the exact SSH generation", async () => {
+  it("requires both chat host permissions and binds SSH-backed handoff and checks to the exact SSH generation", async () => {
     const f = await claimedFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(

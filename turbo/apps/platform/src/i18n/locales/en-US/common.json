@@ -5444,7 +5444,7 @@
     "displayName": "Display name",
     "edit": "Edit host",
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
-    "empty": "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
+    "empty": "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
     "errors": {
       "configurationChanged": "This host changed while you were editing. Your draft is preserved. Review its latest settings before applying your changes.",
       "credentialChanged": "This credential changed while you were editing. Your draft is preserved. Review its latest settings and affected hosts before saving your changes.",
@@ -5732,7 +5732,7 @@
       "selectionUnavailable": "The selected SSH host is no longer available. Select another host or switch explicitly to Direct.",
       "ssh": "Through saved SSH host",
       "sshConnection": "SSH host",
-      "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. The Agent needs both VNC and SSH access.",
+      "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. A chat can use this route only when that SSH host is also enabled.",
       "sshNeedsRebind": "The SSH host for this VNC connection needs a new Cloudflare Access binding. Rebind it or explicitly choose Direct in SSH settings before connecting.",
       "sshNeedsRebindStatus": "SSH needs rebind",
       "title": "Connection route",

@@ -5428,7 +5428,7 @@
     "displayName": "Nama tampilan",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
-    "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host agar tersedia bagi Agent dengan akses SSH.",
+    "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host, lalu aktifkan secara default atau di chat tertentu.",
     "errors": {
       "configurationChanged": "Host ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbarunya sebelum menerapkan perubahan Anda.",
       "credentialChanged": "Kredensial ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbaru dan host yang terpengaruh sebelum menyimpan.",
@@ -5715,7 +5715,7 @@
       "selectionUnavailable": "Host SSH yang dipilih tidak lagi tersedia. Pilih host lain atau ubah secara eksplisit ke Langsung.",
       "ssh": "Melalui host SSH tersimpan",
       "sshConnection": "Host SSH",
-      "sshHelp": "SSH melindungi jalur Runner ke server SSH. Server tersebut harus dapat menjangkau tujuan RFB. Agent memerlukan akses VNC dan SSH.",
+      "sshHelp": "SSH melindungi jalur Runner ke server SSH. Server tersebut harus dapat menjangkau tujuan RFB. Chat hanya dapat menggunakan rute ini jika host SSH tersebut juga diaktifkan di chat itu.",
       "sshNeedsRebind": "Host SSH untuk koneksi VNC ini perlu ditautkan kembali ke Cloudflare Access. Tautkan kembali di pengaturan SSH atau pilih Direct secara eksplisit di sana sebelum menyambung.",
       "sshNeedsRebindStatus": "SSH perlu ditautkan kembali",
       "title": "Rute koneksi",

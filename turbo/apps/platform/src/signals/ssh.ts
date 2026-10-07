@@ -29,7 +29,6 @@ import {
   invalidateCloudflareAccess$,
   retryCloudflareAccess$,
 } from "./cloudflare-access.ts";
-import { reloadAgents$, reloadAgentById$ } from "./agent.ts";
 import { accept } from "../lib/accept.ts";
 import {
   createDeferredPromise,
@@ -480,9 +479,6 @@ const initializeSshSelections$ = command(
   },
 );
 export const retrySsh$ = command(async ({ set }, signal: AbortSignal) => {
-  // Grant views also depend on shared Agent data that may have failed to load.
-  set(reloadAgents$);
-  set(reloadAgentById$);
   set(retryCloudflareAccess$, signal);
   set(invalidateSsh$);
   await set(initializeSshSelections$, signal);

@@ -32,7 +32,6 @@ import { accept } from "../lib/accept.ts";
 import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
-import { reloadAgents$, reloadAgentById$ } from "./agent.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal, settle, waitForOperation } from "./utils.ts";
@@ -88,9 +87,6 @@ export const invalidateVnc$ = command(({ set }) => {
 });
 
 export const retryVnc$ = command(({ set }) => {
-  // Remote settings also depend on shared Agent data that may have failed to load.
-  set(reloadAgents$);
-  set(reloadAgentById$);
   set(invalidateVnc$);
 });
 

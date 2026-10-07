@@ -152,7 +152,7 @@ Choose session start --mode shared or --mode exclusive explicitly. Shared viewer
 
 Take a screenshot with --output <file> --json before coordinate input. Reuse its exact geometry, then take another screenshot to inspect the result. Never automatically replay an uncertain operation or switch sharing modes on failure. Close sessions when finished.
 
-VNC requires the owner's grant, an enabled VNC feature and a supporting Runner. Ready means configured to attempt, not connectivity-tested. Ask the owner to check saved host diagnostics if connection or authentication fails.`,
+VNC requires the host to be enabled for this chat (an SSH-backed host also needs its SSH host enabled), an enabled VNC feature and a supporting Runner. Ready means configured to attempt, not connectivity-tested. Ask the owner to check saved host diagnostics if connection or authentication fails.`,
     )
     .addCommand(createVncHostCommand())
     .addCommand(createSessionCommand());

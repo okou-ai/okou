@@ -321,7 +321,7 @@ test("An unused credential can be deleted with confirmation and the rendered rev
   expect(queryAction("button", "Delete credential")).toBeNull();
 });
 
-test("Connection warnings explain the failure and recover through notifications without changing grants", async () => {
+test("Connection warnings explain the failure and recover through notifications", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, {
       connections: [
@@ -613,7 +613,7 @@ test.each(["paste", "file"])(
     });
     await page();
     await screen.findByText(
-      "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
+      "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
     );
     click(getAction("button", "Add host"));
     const dialog = await screen.findByRole("dialog");
@@ -899,7 +899,7 @@ test("Reset requires confirmation, generation conflict refreshes without retry, 
   expect(screen.getByText("deploy@ssh.example.com:22")).toBeInTheDocument();
   click(getAction("button", "Delete host", remove));
   await screen.findByText(
-    "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
+    "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
   );
 });
 

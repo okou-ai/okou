@@ -15,7 +15,7 @@ credentials or command. The shared fleet secret authenticates the fleet, not an
 individual machine: the process identity is checked against the Run's immutable
 winning claim. Protecting the fleet secret remains a trust assumption.
 
-Each call requires the Run's current chat thread and that thread's effective permission for the exact SSH host. The host default applies when no override row exists. Explicit `false` denies even when the default is enabled; an explicit `true` allows independently of any legacy Agent grant. A Run without a chat thread is denied.
+Each call requires the Run's current chat thread and that thread's effective permission for the exact SSH host. The host default applies when no override row exists. Explicit `false` denies even when the default is enabled; an explicit `true` allows even when the default is disabled. A Run without a chat thread is denied.
 
 Each call joins the current running Run, session, currently visible Agent,
 exact user-owned connection and its credential.
@@ -76,7 +76,7 @@ After a successful connection edit, deletion or
 explicit host-key reset, the API sends identifier-only `ssh-authority-invalidated`
 messages on `runner-group:<group>` for affected running owner Runs. Payloads are
 `{runId, connectionId}`; null `connectionId` means the whole Run. Recipient discovery
-must not require a grant or connection row that the mutation may have deleted.
+must not require a connection row that the mutation may have deleted.
 Changing a shared credential's username, secret or authentication method advances
 all referencing host generations in one transaction, then sends a Run-wide
 invalidation with null `connectionId`. Renaming a credential changes its revision
@@ -86,8 +86,7 @@ before the credential, matching the connection-first pin/observation lock order.
 Encryption occurs before row locks; the credential revision is rechecked after
 locking. Invalidation is best-effort after commit, not part of that transaction.
 The Run-wide hook remains available for shared credential rotation. Creating
-a host targets its own connection ID instead of changing Agent-wide grants.
-Recipient discovery does not depend on a grant. Current Agent visibility is
+a host targets its own connection ID. Current Agent visibility is
 rechecked on live inventory and actual resolve/pin calls; the accepted cache
 lifetime below remains unchanged.
 

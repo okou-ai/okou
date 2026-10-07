@@ -1155,53 +1155,6 @@ chat model has left the policy can still change their image model. Older APIs
 reject that case with `400`; the new Settings dropdown then reports a save
 error until the API is promoted.
 
-## SSH/VNC Agent-grant interface contraction (#36360)
-
-The live Run and Runner authority uses exact chat host defaults/overrides (cutover
-#36440, switch graduation #37235). This step retires the old owner Agent-grant
-GET/PUT routes, public contracts and first-host auto-grant inserts. An older
-client calling those routes cannot gain new broad host authority; the new API
-has no handler for them. Current SSH/VNC host inventory and private Runner
-checks continue to require the Run's chat permission.
-
-The physical `agent_ssh_access` and `agent_vnc_access` tables remain in the
-#36360 release. Production migrations precede API promotion, so a still-serving
-older API could have read or written those rows during the overlap. Existing
-rows never authorize access on the new API. The owner does not require
-preserving rollback to a pre-cutover API for this cleanup.
-
-### Remaining Agent-grant reader retirement (PR #37305)
-
-#36360 intentionally retained VNC owner-cleanup reads, locks and deletes on
-`agent_vnc_access` for serving older APIs. Production API versions containing
-#37274, including the `8531a2b` build observed on 2026-09-29, **still access
-this table** during user, organization and membership cleanup. The earlier
-production drain proved only that pre-#37274 binaries had stopped serving; it
-did not make a same-release VNC grant table drop safe.
-
-PR #37305 removed this last production VNC grant dependency and the test-only
-SSH grant writer, while **retaining both physical grant tables and their schema
-declarations**. It merged as `712de8a72b7e4613311ea1b29812074dba43e0ce`.
-The production API containing it (`4608b8d21cd67cccf9ca1a50aa654e94130085ea`)
-completed [promotion](https://github.com/okou-ai/okou/actions/runs/36524823248/job/109268010829)
-at 2026-09-29 05:22:31 UTC. At 05:52:55 UTC, the READY Vercel deployment
-`dpl_3Wn7roDDKTdDvuSA2JkUzkPQpQca` owned all four production API aliases,
-and cache-bypassed `/api/build-info` on each reported that SHA. The elapsed
-window exceeded Vercel's 30-minute maximum extended function invocation bound.
-Current chat-scoped SSH/VNC host authority, VNC configuration cleanup and
-historical migration replay remain unchanged.
-
-**Separate physical contraction (#37272, not yet deployed):** Generated migration
-`1288_drop_retired_agent_grant_tables` drops `agent_ssh_access` and
-`agent_vnc_access` without cascading into other objects. The user excludes
-rollback compatibility with pre-#37305 APIs after this migration, but not safety
-for any earlier API still serving. Immediately before any **authorized**
-production table-drop deployment, recheck all aliases and serving builds plus
-the full old-invocation execution bound; a merged PR, prior check or one sampled
-response is insufficient. Since migrations run before API promotion, combining
-the final-reader removal and table drop in one release was unsafe. The above is
-pre-drop gate evidence, **not** a production migration receipt.
-
 ## Video model columns and `video_model_updated` dropped (#37249)
 
 Final contract step of the video retirement (#37242, #37256).
@@ -2063,9 +2016,7 @@ arbitrate duplicate IDs. A losing insert rolls back the whole transaction,
 including any inline credential, before resolving an owned replay or an ID
 conflict. Only the requested table's primary-key violation is handled; unrelated
 constraint and database failures still propagate. Existing-resource VNC replays
-still skip KMS. At that release, the owner lifecycle locks and first-host
-Agent grants remained; the later [grant contraction](#sshvnc-agent-grant-interface-contraction-36360)
-retired first-host writes.
+still skip KMS.
 
 Banking Connect creates sessions under a short `FOR NO KEY UPDATE` lock on the
 existing connection row, retaining the partial unique index for one pending
@@ -6705,11 +6656,10 @@ triggers, and views after that release drains.
 SSH, including Direct and Cloudflare Access, is generally available. The
 `sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
 retired together. Existing registered-key filtering ignores retired overrides;
-no migration, data deletion or rewrite is needed. At that GA stage, owner
-isolation, Agent grants, winning Run/Runner authority, credential encryption
-and host trust remained required. The later
-[chat remote access](thread-remote-access.md) cutover replaces Agent grants
-with per-chat host permission for Run authority. The Run-lifetime authority
+no migration, data deletion or rewrite is needed. Owner isolation,
+[chat remote access](thread-remote-access.md) host permission, winning
+Run/Runner authority, credential encryption and host trust remain required.
+The Run-lifetime authority
 cache and missed-notification window remain unchanged.
 
 Promote the API before the App. An older API can still enforce its rollout switch;
@@ -6717,7 +6667,7 @@ the App retains its existing unavailable/error handling for that response, never
 an authorization bypass. Older loaded Apps may hide SSH until refreshed. Already
 created Runs retain their minted capabilities and prompt snapshot; create a new
 Run to obtain SSH guidance and capabilities. Runner/guest/CLI DTOs and stored
-hosts, credentials, pins, grants and observations do not change. Source-level GA
+hosts, credentials, pins and observations do not change. Source-level GA
 does not attest deployment state or waive the protected-reader constraints below.
 
 ## Cloudflare Access for SSH
@@ -6726,9 +6676,8 @@ The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
 Direct and Cloudflare Access are generally available with no rollout switches;
-at the original delivery, the SSH Agent grant covered both. The later
-[chat remote access](thread-remote-access.md) cutover applies the same per-chat
-host permission to both transports. The initial delivery used the
+the same [chat remote access](thread-remote-access.md) host permission applies
+to both transports. The initial delivery used the
 [pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
@@ -7188,12 +7137,10 @@ that process.
 
 ## VNC X509None owner-selected rollout (default off)
 
-Migration `1289_thick_bruce_banner` follows the separate 1288 retired-grant
-contraction. It makes `vnc_connections.credential_id` nullable only for the
+Migration `1289_thick_bruce_banner` makes `vnc_connections.credential_id` nullable only for the
 exact `none` / `x509_none` profile; existing credential-backed rows and the
 retained direct-route default keep their meaning. Apply it before promoting an
-API that can write credentialless rows. Its ordering does not waive the
-separate pre-deployment gate for the 1288 grant-table drop above.
+API that can write credentialless rows.
 
 - Old App with new API: existing credential-backed responses retain their shape.
   An App predating this profile cannot be relied upon to read or edit new

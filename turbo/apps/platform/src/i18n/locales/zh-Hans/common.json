@@ -5428,7 +5428,7 @@
     "displayName": "显示名称",
     "edit": "编辑主机",
     "editHelp": "选择其他凭据只会影响该主机。修改直连地址会清除已记录的主机密钥；涉及Cloudflare Access的修改则会保留它。",
-    "empty": "还没有配置SSH主机。添加主机后，拥有SSH权限的智能体就能使用它。",
+    "empty": "还没有配置SSH主机。添加主机后，可将其设为默认启用，或在单个聊天中启用。",
     "errors": {
       "configurationChanged": "该主机在你编辑期间发生了变化。你的草稿已保留。请先查看最新设置，再应用你的更改。",
       "credentialChanged": "该凭据在你编辑期间发生了变化。你的草稿已保留。请先查看最新设置和受影响的主机，再保存你的更改。",
@@ -5715,7 +5715,7 @@
       "selectionUnavailable": "所选SSH主机已不可用。请选择其他主机，或明确切换为直连。",
       "ssh": "通过已保存的SSH主机",
       "sshConnection": "SSH主机",
-      "sshHelp": "SSH仅保护Runner到SSH服务器这一跳。该服务器必须能够访问RFB目标。Agent必须同时获得VNC和SSH访问权限。",
+      "sshHelp": "SSH仅保护Runner到SSH服务器这一跳。该服务器必须能够访问RFB目标。只有在聊天中同时启用该SSH主机，才能使用此路由。",
       "sshNeedsRebind": "此 VNC 连接使用的 SSH 主机需要重新绑定 Cloudflare Access。请先在 SSH 设置中重新绑定，或明确选择直连，再尝试连接。",
       "sshNeedsRebindStatus": "SSH 需要重新绑定",
       "title": "连接路由",

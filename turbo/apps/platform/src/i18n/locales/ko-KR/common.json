@@ -5428,7 +5428,7 @@
     "displayName": "표시 이름",
     "edit": "호스트 편집",
     "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 직접 연결 대상 변경 시 저장된 호스트 키가 지워지며, Cloudflare Access 관련 변경 시에는 유지됩니다.",
-    "empty": "구성된 SSH 호스트가 없습니다. 호스트를 추가하면 SSH 접근 권한이 있는 Agent가 사용할 수 있습니다.",
+    "empty": "구성된 SSH 호스트가 없습니다. 호스트를 추가한 뒤 기본으로 또는 개별 채팅에서 사용하도록 설정하세요.",
     "errors": {
       "configurationChanged": "편집 중에 이 호스트가 변경되었습니다. 입력 내용은 유지됩니다. 변경 사항을 적용하기 전에 최신 설정을 검토하세요.",
       "credentialChanged": "편집하는 동안 이 인증 정보가 변경되었습니다. 입력 내용은 유지됩니다. 저장하기 전에 최신 설정과 영향을 받는 호스트를 확인하세요.",
@@ -5715,7 +5715,7 @@
       "selectionUnavailable": "선택한 SSH 호스트를 더 이상 사용할 수 없습니다. 다른 호스트를 선택하거나 명시적으로 직접 연결로 전환하세요.",
       "ssh": "저장된 SSH 호스트를 통해",
       "sshConnection": "SSH 호스트",
-      "sshHelp": "SSH는 Runner에서 SSH 서버까지의 구간을 보호합니다. 해당 서버에서 RFB 대상에 연결할 수 있어야 합니다. Agent에는 VNC와 SSH 액세스가 모두 필요합니다.",
+      "sshHelp": "SSH는 Runner에서 SSH 서버까지의 구간을 보호합니다. 해당 서버에서 RFB 대상에 연결할 수 있어야 합니다. 채팅에서 이 경로를 사용하려면 해당 SSH 호스트도 사용하도록 설정되어 있어야 합니다.",
       "sshNeedsRebind": "이 VNC 연결의 SSH 호스트는 Cloudflare Access에 다시 연결해야 합니다. 연결하기 전에 SSH 설정에서 다시 연결하거나 명시적으로 직접 연결을 선택하세요.",
       "sshNeedsRebindStatus": "SSH 재연결 필요",
       "title": "연결 경로",

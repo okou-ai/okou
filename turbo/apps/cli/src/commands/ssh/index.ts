@@ -140,7 +140,7 @@ Command guide (read the relevant subcommand's --help before use):
 
 Operational safety:
   - Start with okou ssh host list --json and use an exact current ID only when availability.status=ready. A blocked needs_rebind host must be explicitly rebound to permitted Cloudflare Access or changed to Direct by its owner. Ready means configured to attempt, not connectivity-tested. Never invent an ID or automatically replay an uncertain command.
-  - The owner controls SSH host access through Agent settings or per-chat host selection; agents cannot grant themselves access. Ask for a least-privilege remote SSH user.
+  - The owner controls SSH host access with each host's chat default and per-chat host selection; agents cannot grant themselves access. Ask for a least-privilege remote SSH user.
   - First contact learns a host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings, never automatic acceptance.
   - Inspect structured failure_reason and effects instead of matching error text. effects=unknown means the remote operation may have run.
   - Host inventory is live, while execution authority is cached for this Run and invalidated by notifications. A missed notification can leave stale authority until this Run ends. Ask the owner to end active Runs when immediate revocation is required.

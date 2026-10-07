@@ -10,10 +10,7 @@ its connection policy.
 Live VNC inventory, private resolve, and check require the Run's chat thread
 and that thread's effective permission for the exact VNC host. SSH-backed hosts
 also require effective permission for the referenced SSH host. A Run without a
-chat thread is denied. Retired Agent-grant rows do not authorize runtime VNC
-access. Migration `1288_drop_retired_agent_grant_tables` removes their physical
-tables after the last old API readers have drained; that migration is not a
-production receipt until deployed.
+chat thread is denied.
 
 ## RSA-AES private handoff (#37500)
 
@@ -38,13 +35,9 @@ owned full-session EAX or explicit ne raw transition. ne is admitted only throug
 selected host-key-verified saved SSH to literal server loopback, not a public or
 hostname-alias destination. The separate live product PNG gate remains required.
 
-## Inventory and retired grants
+## Inventory
 
-The former owner GET/PUT `/api/agents/:agentId/vnc-access` routes and first-host
-Agent auto-grants are retired. Creating or recreating a VNC host no longer writes
-Agent-grant rows or changes chat host permissions. Old clients cannot grant broad
-access through the new API. Historical grant rows remain until older serving API
-instances have drained; #37272 tracks physical table removal.
+Creating or recreating a VNC host does not change chat host permissions.
 
 Agent tokens receive `vnc:read` and `vnc:write` only when the feature is enabled.
 These capabilities do not replace current chat host selection. GET `/api/vnc/hosts` requires
@@ -212,16 +205,12 @@ no 30-second lease or promise to disconnect an idle session within that interval
 Per-operation enforcement and real-server multi-client behavior must be verified
 before activation. This API slice alone does not enforce a live Runner socket.
 
-Current host configuration writes retain owner admission and cleanup without
-reading or writing the retired grant tables. The earlier code-only cleanup
-removed their last readers before the separate physical table drop. KMS and
+Current host configuration writes retain owner admission and cleanup. KMS and
 Clerk calls never run under VNC configuration row locks.
 
 ## Deployment
 
-Apply the generated VNC authority migration before the new API. It adds the
-Agent grant table; the existing connection schema and public responses stay
-unchanged. Runners predating the original VNC runtime make no VNC calls; missing
+Runners predating the original VNC runtime make no VNC calls; missing
 endpoints cannot authorize a new Runner operation.
 
 Deploy the widened API request/response contract before Runners that advertise
@@ -257,14 +246,8 @@ support old VNC clients or Runners. `VncAccess` remains disabled; neither
 backward-compatibility nor production activation is an acceptance gate for
 this still-off profile.
 
-The original grant-table rollout required serving and rollback APIs to support
-grant cleanup before grants were created. Current APIs no longer create or read
-those grants. Migration `1288_drop_retired_agent_grant_tables` is their separate
-physical table drop after the code-only cleanup and old invocation drain; API
-rollback across that drop is restricted as described in
-[deployment compatibility](deployment-compatibility.md). The X509None
-credentialless profile migration `1289_thick_bruce_banner` follows 1288 and
-must be applied before exposing the upgraded API. VNC product activation
+The X509None credentialless profile migration `1289_thick_bruce_banner` must be
+applied before exposing the upgraded API. VNC product activation
 remains a separate decision after #34780
 verifies real-server sessions, current checks and socket teardown; #34781/#34782
 own CLI, owner UI and end-to-end mode selection.

@@ -5452,7 +5452,7 @@
     "displayName": "Anzeigename",
     "edit": "Host bearbeiten",
     "editHelp": "Andere Zugangsdaten auszuwählen ändert nur diesen Host. Änderungen am direkten Endpunkt löschen den gespeicherten Hostschlüssel; Änderungen mit Cloudflare Access behalten ihn bei.",
-    "empty": "Keine SSH-Hosts konfiguriert. Fügen Sie einen Host hinzu, um ihn Agents mit SSH-Zugriff bereitzustellen.",
+    "empty": "Keine SSH-Hosts konfiguriert. Füge einen Host hinzu und aktiviere ihn standardmäßig oder in einzelnen Chats.",
     "errors": {
       "configurationChanged": "Dieser Host wurde während der Bearbeitung geändert. Dein Entwurf bleibt erhalten. Prüfe die aktuellen Einstellungen, bevor du deine Änderungen anwendest.",
       "credentialChanged": "Diese Zugangsdaten wurden während der Bearbeitung geändert. Ihr Entwurf bleibt erhalten. Prüfen Sie vor dem Speichern die neuesten Einstellungen und betroffenen Hosts.",
@@ -5740,7 +5740,7 @@
       "selectionUnavailable": "Der ausgewählte SSH-Host ist nicht mehr verfügbar. Wähle einen anderen Host oder stelle ausdrücklich auf Direkt um.",
       "ssh": "Über gespeicherten SSH-Host",
       "sshConnection": "SSH-Host",
-      "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Der Agent benötigt VNC- und SSH-Zugriff.",
+      "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Ein Chat kann diese Route nur nutzen, wenn dieser SSH-Host dort ebenfalls aktiviert ist.",
       "sshNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Cloudflare-Access-Zuordnung. Verknüpfe ihn in den SSH-Einstellungen erneut oder wähle dort ausdrücklich Direkt, bevor du dich verbindest.",
       "sshNeedsRebindStatus": "SSH muss neu verknüpft werden",
       "title": "Verbindungsroute",

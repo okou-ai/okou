@@ -10,9 +10,8 @@ SSH uses neither connector accounts nor connector permissions.
 Open **Connectors -> Remote control** (`/connectors?scope=remote-control&type=ssh`) to manage hosts for your
 current organization and user, without selecting or creating an Agent. While
 any host reports a current failure, the host list shows how many SSH hosts need
-attention, and each failed host explains its failure. Agent-wide grant controls
-are no longer shown. Each host has a chat default, and each chat can explicitly
-allow or deny that exact host; see [Chat remote access](thread-remote-access.md).
+attention, and each failed host explains its failure. Each host has a chat
+default, and each chat can explicitly allow or deny that exact host; see [Chat remote access](thread-remote-access.md).
 SSH never opens generic connector account or permission dialogs.
 
 While no host is configured, the chat composer's connector directory offers an
@@ -71,7 +70,7 @@ UUID `id`, stored as the existing resource's primary key. The first successful
 create returns `201`. A same-ID request reaching the write transaction returns
 `204` with no body when the resource already belongs to the same organization and
 user. It does not overwrite metadata or secrets, create more inline resources, or
-repeat grants and notifications. First commit wins even if the payload differs.
+repeat notifications. First commit wins even if the payload differs.
 An ID belonging to another owner returns an opaque `SSH_RESOURCE_ID_CONFLICT`;
 it never acknowledges or exposes that resource.
 
@@ -115,7 +114,7 @@ records of the schema they migrated, not an inventory of current encrypted field
 
 Migration `1113_reusable_ssh_credentials` implements the explicitly approved
 pre-GA reset: it deletes old SSH hosts, their bound credentials, observations and
-learned pins. Agent SSH grants and unrelated data are retained. There is no
+learned pins. Unrelated data is retained. There is no
 backfill, legacy writer or rollback restoration; old hosts must be configured
 again. Applying this migration is destructive. A production cutover must stop
 outgoing owner API writers before applying the migration and starting the new
@@ -123,14 +122,10 @@ API; ordinary overlapping API deployment is not supported for this reset.
 Already-loaded staff pages must reload. This is separate from the Runner's
 existing support for both key and password authority responses.
 
-The Agent-wide SSH authorization row and services-popover grant switch are
-retired. Configure each saved host's chat default in Remote control; choose
-`On`, `Off`, or `Use default` per host from the chat's Remote access menu.
-Creating the first host does not write Agent-grant records or enable chat
-access by itself. Retired Agent grant rows never authorize Run access; migration
-`1288_drop_retired_agent_grant_tables` in #37272 removes the physical tables,
-without changing host authority. **Add connectors** continues to offer zero-host
-SSH setup.
+Configure each saved host's chat default in Remote control; choose `On`,
+`Off`, or `Use default` per host from the chat's Remote access menu. A new
+host's chat default is off, so creating a host does not enable chat access by
+itself. **Add connectors** continues to offer zero-host SSH setup.
 The Connectors dialog and Discover directory include this setup entry when
 no hosts are configured. In Discover, it appears after built-in shelves and
 under **Remote access**, participates in search, and stays out of the Custom
@@ -197,16 +192,14 @@ and port 443. The origin SSH port belongs to Cloudflare, not this binding. Shari
 a configuration across hosts does not share it across users or workspaces.
 Protected execution uses the same chat SSH host permission as Direct; there is
 no separate Access grant. Creating or changing an Access configuration does
-not create a host or change chat permissions. First-SSH-host onboarding does not write legacy Agent grants or authorize
-execution. Any
-visible Agent with a Run in an authorized chat can use the bound host owned by
+not create a host or change chat permissions. Any visible Agent with a Run in an authorized chat can use the bound host owned by
 that Run's user. SSH username/key/password and server host-key trust remain
 independent of the Service Token.
 
 Cloudflare Access also has a Connector card that opens
 `/connectors?scope=private-network`; see [Cloudflare Access](cloudflare-access.md).
 It is owner configuration rather than a directly usable Agent service, so it
-has no Agent grant, connector account, chat trigger or direct command. The
+has no connector account, chat trigger or direct command. The
 **Private network** scope manages Cloudflare Access configurations; the
 **Remote control** scope manages SSH and, when enabled, VNC. Referenced configurations cannot be deleted
 until their hosts are rebound or deleted. Client ID and Client Secret are never
@@ -286,7 +279,7 @@ pre-authentication handshake/timeout failures are connection failures. A verifie
 host key followed by successful SSH authentication clears the previous warning,
 even if the command is rejected, returns nonzero, disconnects or times out later.
 Command outcomes, cancellation, admission and authority failures do not create
-host warnings. No command is retried and no trust or grant is changed.
+host warnings. No command is retried and no trust or chat permission is changed.
 
 Saving or editing a host is not a connection test. Any configuration generation
 change hides observations for the previous configuration without claiming success.
@@ -482,8 +475,7 @@ timeout failures do not justify replay when effects are unknown.
 Inventory and owner configuration are live reads. Execution authority uses the
 existing Run-lifetime Runner cache while notifications are connected. Host
 edits, rotation, deletion, reset and chat default or override changes publish
-invalidation notices. The retired Agent-grant owner endpoints no longer issue
-Run-wide invalidations; creating a host targets its own connection ID.
+invalidation notices; creating a host targets its own connection ID.
 Notification failure does not roll back a committed edit. A missed notice can
 leave cached authority until the Run ends. End affected active Runs when
 immediate revocation is necessary.

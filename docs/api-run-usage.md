@@ -16,7 +16,7 @@ Run identity and the current MITM addon generation before Agent work starts. The
 ```
 
 The method accepts no Run ID, addon generation, path, endpoint or source totals.
-It requires no SSH grant. The result is versioned and source preserving:
+It requires no SSH access. The result is versioned and source preserving:
 
 ```json
 {

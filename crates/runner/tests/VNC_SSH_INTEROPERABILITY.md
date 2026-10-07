@@ -294,6 +294,6 @@ Record all of the following against the exact PR head:
 
 The existing deterministic Runner/API tests remain authoritative for negative
 cases: wrong SSH/VNC credentials, bad host key, channel refusal, certificate
-identity mismatch, unsupported Runner tuples, route/grant/generation changes,
+identity mismatch, unsupported Runner tuples, route/permission/generation changes,
 cancellation, capacity and cleanup. This external matrix proves independent
 implementation compatibility and does not replace those cases.
