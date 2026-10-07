@@ -128,9 +128,9 @@ fn generated_model_provider_failure_request_requires_connection_source() {
 #[test]
 fn generated_codex_runtime_config_round_trips_full_wire_shape() {
     let config = CodexRuntimeConfig {
-        provider_id: "gateway".to_string(),
-        name: "Gateway".to_string(),
-        base_url: "https://gateway.example.test/v1".to_string(),
+        provider_id: "openrouter-codex".to_string(),
+        name: "OpenRouter".to_string(),
+        base_url: "https://openrouter.ai/api/v1".to_string(),
         env_key: "OPENAI_API_KEY".to_string(),
         requires_openai_auth: Some(false),
         wire_api: "responses".to_string(),
@@ -147,9 +147,9 @@ fn generated_codex_runtime_config_round_trips_full_wire_shape() {
     assert_eq!(
         value,
         json!({
-            "providerId": "gateway",
-            "name": "Gateway",
-            "baseUrl": "https://gateway.example.test/v1",
+            "providerId": "openrouter-codex",
+            "name": "OpenRouter",
+            "baseUrl": "https://openrouter.ai/api/v1",
             "envKey": "OPENAI_API_KEY",
             "requiresOpenaiAuth": false,
             "wireApi": "responses",

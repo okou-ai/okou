@@ -38,9 +38,9 @@ const {
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
 
-// Queue ownership tests need an unfinished native Runner run. The default
-// Sonnet policy is Pi-eligible, so explicitly select the Fable native route
-// instead of relying on an API-first attempt to remain pending.
+// Queue ownership tests need an unfinished native Runner run, so explicitly
+// select Fable's native personal-subscription route instead of relying on an
+// API-first attempt to remain pending.
 async function entitledChatActor() {
   const result = await createEntitledChatActor();
   await api.updateUserModelPreference(result.actor, "claude-fable-5-1");

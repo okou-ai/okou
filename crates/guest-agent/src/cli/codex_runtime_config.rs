@@ -250,6 +250,28 @@ mod tests {
     }
 
     #[test]
+    fn startup_config_overrides_disable_openai_auth_when_requested() {
+        let config = CodexRuntimeConfig {
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            env_key: "OPENAI_API_KEY".to_string(),
+            requires_openai_auth: Some(false),
+            wire_api: "responses".to_string(),
+            supports_websockets: false,
+            model_catalog: None,
+        };
+
+        let overrides = startup_config_overrides(Some(&config), Path::new("/tmp/codex-home"));
+
+        assert!(
+            overrides.contains(
+                &"model_providers.openrouter-codex.requires_openai_auth=false".to_string()
+            )
+        );
+    }
+
+    #[test]
     fn parse_raw_rejects_unsafe_provider_key_segments() {
         let raw = r#"{
             "providerId": "provider.with.dot",

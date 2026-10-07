@@ -49,20 +49,19 @@ class TestReleaseResponseStreamState:
                 "/v1/messages",
                 "application/json",
                 {
-                    metadata_keys.FIREWALL_NAME: "model-provider:anthropic-api-key",
-                    metadata_keys.FIREWALL_BILLABLE: True,
-                    metadata_keys.MODEL_USAGE_PROVIDER: "claude-sonnet-4-6",
+                    metadata_keys.FIREWALL_NAME: "model-provider:claude-code-oauth-token",
+                    metadata_keys.FIREWALL_BILLABLE: False,
                 },
                 "model_json_usage_finish",
                 False,
                 id="model-json",
             ),
             pytest.param(
-                "api.openai.com",
-                "/v1/responses",
+                "openrouter.ai",
+                "/api/v1/responses",
                 "text/event-stream",
                 {
-                    metadata_keys.FIREWALL_NAME: "model-provider:openai-api-key",
+                    metadata_keys.FIREWALL_NAME: "model-provider:openrouter-codex",
                     metadata_keys.CLI_AGENT_TYPE: "codex",
                     metadata_keys.FIREWALL_BILLABLE: True,
                     metadata_keys.MODEL_USAGE_PROVIDER: "gpt-5.5",
@@ -164,9 +163,8 @@ class TestReleaseResponseStreamState:
 
     def test_release_after_response_is_removed_still_drops_metadata(self, real_flow):
         flow = real_flow(with_response=False, host="api.anthropic.com")
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
-        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
-        flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "claude-sonnet-4-6"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
+        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "application/json"})
         )

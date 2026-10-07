@@ -145,9 +145,6 @@ function useUpgradePath(tier: string): UpgradePath | undefined {
       t(($) => {
         return $.queue.upgrade.features.unlimitedAgents;
       }),
-      t(($) => {
-        return $.queue.upgrade.features.ownKeys;
-      }),
       support,
     ],
   };

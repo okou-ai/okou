@@ -3,16 +3,15 @@
 ## Frozen model provider state dropped (2026-10-07)
 
 Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
-Custom migration `1336_retire_unused_model_route_data` clears
+Custom migration `1337_retire_unused_model_route_data` clears
 `run_model_catalog.pi_route_class` values other than `gpt-codex`, resets the
 already-rejected `chat_threads.selected_model = 'deepseek/deepseek-v4-pro'`
-pins to NULL (unpinned, which resolves to Auto), and deletes every
-`built_in_model_keys` row except `openrouter`. No foreign key references
-`built_in_model_keys`; `agent_runs.built_in_model_key_id` remains unconstrained
-run history. The retired vendor keys are revoked upstream by the owner,
-outside this change.
+pins to NULL (unpinned, which resolves to Auto). The retired-vendor
+`built_in_model_keys` rows are deleted by main's
+`1335_clear_unselectable_thread_models_and_unused_model_keys`; the owner revokes
+those keys upstream outside this change.
 
-Generated migration `1337_retire_model_route_state` narrows
+Generated migration `1338_retire_model_route_state` narrows
 `chk_run_model_catalog_pi_route_class` to NULL or `gpt-codex` (the table has a
 handful of rows, so the check is added and validated directly), drops
 `model_provider_auth_sessions.sandbox_id` with its partial index, and drops the
@@ -24,22 +23,24 @@ new API selects explicit `model_providers` columns, and the Pi memory phase 2
 credential gate uses the account's `needs_reconnect` only.
 
 Database ordering: migrations run before API promotion. An API built before
-1337 selects every `model_providers` column when listing, connecting,
+1338 selects every `model_providers` column when listing, connecting,
 activating or deleting personal subscription accounts, and every
 `model_provider_auth_sessions` column in the Claude Code and Codex device
 authorization flows, so those paths receive `42703` until it drains. This drop
 is **not rolling-compatible**. A new API against the old schema is compatible
-because it never names the dropped columns. An API built before 1336 that is
-still draining is unaffected by the data changes: the cleared pins and keys
-were already rejected or unused.
+because it never names the dropped columns. An API built before 1337 that is
+still draining is unaffected by the data changes: the cleared pins were
+already rejected.
 
-**Rollout interruption (1337, model provider columns): owner acceptance pending.** No acceptance is
-recorded here. Do not deploy until the owner explicitly accepts the bounded
-interruption above or a preparatory release that stops these reads ships
-first.
+**Accepted rollout interruption (1338, model provider columns):** Ethan
+explicitly accepted (2026-10-07) a brief unavailability during deployment while
+the outgoing API drains, so personal subscription account and device
+authorization reads from a pre-1338 API may receive `42703` in that window. No
+preparatory release or old-column compatibility branch is required. Acceptance
+of that risk is not an instruction to deploy.
 
 Rollback floor: the rollback resolver resolves the first-parent `main` commit
-that added `1337_retire_model_route_state.sql` and rejects earlier
+that added `1338_retire_model_route_state.sql` and rejects earlier
 targets before artifact or host access. Recovering below it requires a reviewed
 forward migration that recreates the columns before an older API serves. This
 does not claim production activation.
@@ -47,15 +48,15 @@ does not claim production activation.
 ## Ultrafast service tier retired (2026-10-07)
 
 Ultrafast is retired across the App, API, contracts, runner and proxy pricing.
-Migration `1335_retire_ultrafast_data` clears stored Ultrafast selections:
+Migration `1336_retire_ultrafast_data` clears stored Ultrafast selections:
 `chat_threads.codex_service_tier`, `org_members_metadata.service_tier`, and the
 `model_routes.service_tiers` / `default_service_tier` values. Migration
-`1337_retire_model_route_state` then limits route tiers to `priority`
+`1338_retire_model_route_state` then limits route tiers to `priority`
 and adds `chk_chat_threads_codex_service_tier` (NULL or `fast`) and
 `chk_org_members_metadata_service_tier` (NULL or `priority`). The two new checks
-are added `NOT VALID` and validated in a separate statement after 1337 repeats
-the Ultrafast cleanup, so a value written by a draining pre-1337 API cannot fail
-validation. 1337 runs in one transaction, so the lock taken by `ADD CONSTRAINT`
+are added `NOT VALID` and validated in a separate statement after 1338 repeats
+the Ultrafast cleanup, so a value written by a draining pre-1338 API cannot fail
+validation. 1338 runs in one transaction, so the lock taken by `ADD CONSTRAINT`
 is held through the `VALIDATE` scan, bounded by the migration statement
 timeout.
 
@@ -63,10 +64,10 @@ New requests that send `ultrafast` are rejected with 400. Immutable history
 (thread events, snapshots, client caches and queued chat input model
 selections) still reads a stored Ultrafast value as Standard (null) instead of
 failing; `agent_runs.codex_service_tier` and usage `.ultrafast` categories stay
-readable for historical runs and billing. An API built before 1337 that is
+readable for historical runs and billing. An API built before 1338 that is
 still draining can only fail when it writes `ultrafast`, which the current
 catalog no longer offers. Rolling back below this change restores no Ultrafast
-offering because 1335 removed it from the catalog data.
+offering because 1336 removed it from the catalog data.
 
 ## Built-in model candidate cooldown removed (2026-10-07)
 
@@ -76,7 +77,7 @@ longer reads or writes a route cooldown when resolving Auto for new runs, queued
 claims or Pi memory maintenance. The staff cooldown diagnostics endpoints
 (`GET`/`DELETE /api/model-providers/cooldown-diagnostics`), their Settings
 debug block, and the test-runtime cooldown actions are removed. Generated
-migration `1337_retire_model_route_state` drops
+migration `1338_retire_model_route_state` drops
 `built_in_model_candidate_cooldown`; its rows were transient deadlines with no
 history value, so nothing is converted or archived.
 
@@ -95,22 +96,22 @@ the removed diagnostics endpoint inside that debug-only block; no user flow
 depends on it.
 
 Database ordering: migrations run before API promotion. Every API built before
-1337 queries the table while resolving the Auto route for run claims and Pi
+1338 queries the table while resolving the Auto route for run claims and Pi
 memory maintenance, and writes it from runner failure reports, so it receives
 `42P01` on those paths until it drains. This drop is not rolling-compatible.
 A new API against the old schema is compatible because it never names the
 table.
 
-**Accepted rollout interruption (1337, cooldown table):** Ethan explicitly accepted
+**Accepted rollout interruption (1338, cooldown table):** Ethan explicitly accepted
 (2026-10-07) a brief unavailability during deployment while the outgoing API
 drains, so Auto run claims, Pi memory maintenance and runner failure reports
-handled by a pre-1337 API may receive `42P01` in that window. No preparatory
+handled by a pre-1338 API may receive `42P01` in that window. No preparatory
 release or old-table compatibility branch is required. Prefer the same rollout
 as 1332/1333 or low traffic. Acceptance of that risk is not an instruction to
 deploy.
 
 Rollback floor: the rollback resolver resolves the first-parent `main` commit
-that added `1337_retire_model_route_state.sql` and rejects earlier
+that added `1338_retire_model_route_state.sql` and rejects earlier
 targets before artifact or host access. Recovering below it requires a reviewed
 forward migration that recreates the table before an older API serves. This
 does not claim production activation.
@@ -132,6 +133,56 @@ Built-in US-routed run since 2026-10-04 and no in-flight run carrying a US
 endpoint, so no drain gate or migration is required. Runner, guest, and mitm
 code never special-cased the US origin; old Runners receive the same built-in
 firewall name they already resolve. No persisted schema changes.
+
+## Unselectable chat thread models and unused built-in keys cleared
+
+Data-only migration `1335_clear_unselectable_thread_models_and_unused_model_keys`
+has two parts.
+
+It deletes the `built_in_model_keys` rows for `zai`, `anthropic`, `openai`,
+`deepseek`, `minimax` and `moonshot`. Built-in runs read only the
+`openrouter` key (`AUTO_RUN_KEY_VENDOR`). Every API at or above the 1332
+rollback floor selects or resolves only that vendor, so no deployable API
+reads the deleted rows. MaskDB (2026-10-07) showed exactly these seven
+vendors. The deleted keys still need to be revoked at each vendor; that is a
+separate operator action.
+
+It also returns chat threads to Auto when the API cannot resolve their stored
+`selected_model`. A selection is resolvable when it is a `run_model_catalog`
+model (active or replaced) or the upstream id of a `model_routes` row. These
+are the two lookups of `catalogModelForSelectedId`, evaluated against the
+database catalog at migration time. MaskDB (2026-10-07) showed 252 such rows
+across 43 users. They are leftovers of retired providers, for example
+`claude-sonnet-4.6` (213), `vm0-model` (11), `kimi-k2.5`, `claude-opus-4.6`,
+`deepseek/deepseek-v4-pro`, MiniMax ids, `deepseek-chat`, `gpt-5.3*` and
+`codex`. On production these rows, and the 65k threads pinned to active
+catalog models without a route, were already remapped by an operator SQL on
+2026-10-07 (unrouted models to their subscription successors or `okou-1.0`,
+unknown ids to `okou-1.0`, each with its `model_selection_updated` event), so
+this part is expected to change no production row; it still cleans other
+environments. Each thread is changed the same way as picking Auto in the model
+selection route, in one transaction:
+
+- `selected_model` and `codex_service_tier` become NULL and `updated_at` is
+  set; `model_settings` is kept.
+- One `model_selection_updated` event with a NULL model is appended to the
+  owner's `(user_id, org_id)` stream. A `service_tier_updated` event with a
+  NULL tier follows it when a tier was cleared. Sequence positions are
+  reserved per stream in key order, as in 1213 and 1299.
+- Threads without an agent have no event stream and get no event.
+- The update re-checks the selection under its row lock, so a selection an API
+  changes concurrently is kept and gets no event.
+
+Clients apply the appended events after their snapshot position. No snapshot
+or cache needs a rewrite.
+
+Old and new APIs both treat NULL as Auto, so either order of migration and API
+deploy is compatible. The migration adds no schema and does not move the
+rollback floor. Rolling back does not restore the deleted keys or selections;
+nothing at or above the floor reads them.
+`scripts/test-unselectable-thread-model-cleanup.ts` covers the snapshot
+change, the appended events and their sequence, retained selections, the
+remaining OpenRouter key and an idempotent rerun.
 
 ## Connector catalog Release 2 contraction (migration 1334)
 
@@ -1176,6 +1227,11 @@ code check: migration 1298 seeds the `gpt-6-astra` `openai-api-key` route with
 `service_tiers = {priority}` only, so every Ultrafast check (pickers, member
 preference, thread selection, send, run creation and claim) finds no route
 offering it and returns `400`. Re-enabling is a `model_routes` data change.
+
+> **Superseded.** Migration `1326_prune_retired_model_routes` deleted the
+> `gpt-6-astra` `openai-api-key` route along with every other non-subscription,
+> non-Auto route. The remaining `gpt-6-astra` `codex-oauth-token` route still
+> lists only `priority`, so Ultrafast stays unavailable.
 
 ## Global model catalog and projected system default (2026-09-30)
 
@@ -7656,10 +7712,6 @@ For persisted state changes:
 Do not add broad defensive fallbacks just to hide incompatibility. The goal is a
 specific compatibility contract for the rollout window, with clear deletion
 criteria after the old version is gone.
-
-## Pi native provider reader preparation
-
-For the generation 4 reader-first release, see [Pi native provider preparation](pi-native-provider-preparation.md). Its model generation is independent of launch snapshot V3. Native writers remain absent until the controller verifies compatible API readers and rollback targets, Runner capabilities, pinned CLI artifacts and existing-route health. The preparation merge alone does not close these gates. Generation 4 native routes have since been removed entirely; this section is a historical record.
 
 ## Connector OAuth completion receipts
 

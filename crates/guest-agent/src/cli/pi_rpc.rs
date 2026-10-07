@@ -656,18 +656,11 @@ impl PiRpcProjection {
         else {
             return;
         };
-        match delta.get("type").and_then(Value::as_str) {
-            Some("text_start") => {
-                if let Some(text) = delta.get("initialText").and_then(Value::as_str) {
-                    stream.push(source, text);
-                }
-            }
-            Some("text_delta") => {
-                if let Some(text) = delta.get("delta").and_then(Value::as_str) {
-                    stream.push(source, text);
-                }
-            }
-            _ => {}
+        if delta.get("type").and_then(Value::as_str) != Some("text_delta") {
+            return;
+        }
+        if let Some(text) = delta.get("delta").and_then(Value::as_str) {
+            stream.push(source, text);
         }
     }
 
@@ -1580,15 +1573,29 @@ mod tests {
                     "type": "message_update",
                     "assistantMessageEvent": {
                         "type": "text_start",
-                        "contentIndex": 0,
-                        "initialText": "  Alpha<oai-mem-"
+                        "contentIndex": 0
                     },
                     "usage": {}
                 }),
                 &responses,
                 0,
             )
-            .expect("initial Anthropic text should stream");
+            .expect("first text start");
+        projection
+            .project(
+                json!({
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "contentIndex": 0,
+                        "delta": "  Alpha<oai-mem-"
+                    },
+                    "usage": {}
+                }),
+                &responses,
+                0,
+            )
+            .expect("first text delta should stream");
         projection
             .project(
                 json!({

@@ -398,8 +398,8 @@ class TestErrorHandler:
             host="api.anthropic.com",
             port=443,
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
-        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
+        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
         flow.response = tutils.tresp(
             status_code=200,
             headers=header_map({"content-type": "application/json"}),
@@ -781,12 +781,12 @@ class TestErrorHandler:
 
         Verifies that error() hook delivers partial usage through loopback HTTP.
         """
-        flow = real_flow(with_response=False, host="api.anthropic.com")
+        flow = real_flow(with_response=False, host="openrouter.ai")
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-int-002"
         flow.metadata[metadata_keys.SANDBOX_NETWORK_LOG_PATH] = ""
-        flow.metadata[metadata_keys.ORIGINAL_URL] = "https://api.anthropic.com/v1/messages"
+        flow.metadata[metadata_keys.ORIGINAL_URL] = "https://openrouter.ai/api/v1/responses"
         flow.metadata[metadata_keys.FIREWALL_ACTION] = "ALLOW"
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
         flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "claude-sonnet-4-6"
         flow.metadata[metadata_keys.SANDBOX_AUTH_KEY] = "tok-xyz"

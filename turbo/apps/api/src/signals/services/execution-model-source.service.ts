@@ -38,7 +38,6 @@ export interface ModelSourceConfiguration {
 }
 export interface ModelSourceSnapshot {
   readonly identity: ModelSourceIdentity;
-  readonly credentialOwner: "builtin" | "member";
   readonly configuration: ModelSourceConfiguration;
   readonly credentials: readonly ModelSourceCredential[];
 }
@@ -101,7 +100,6 @@ export function createModelSourceSnapshot(
       }
       return {
         identity: source,
-        credentialOwner: "member",
         configuration: {
           providerType: first.account.type,
           authMethod: first.account.authMethod,

@@ -47,7 +47,8 @@ const OTHER_AGENT_ID = "e0000000-0000-4000-a000-000000000011";
 
 export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 
-export const CLAUDE_CODE_ACCOUNT_ID = "00000000-0000-4000-a000-000000000002";
+export const CLAUDE_SUBSCRIPTION_PROVIDER_ID =
+  "00000000-0000-4000-a000-000000000002";
 
 export function expectTextBefore(firstText: string, secondText: string): void {
   const first = screen.getByText(firstText);
@@ -116,7 +117,7 @@ export function buildRunModel(options: {
 export function mockPersonalModelRoutes(): void {
   context.mocks.data.personalModelProviders([
     buildProvider({
-      id: CLAUDE_CODE_ACCOUNT_ID,
+      id: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
       type: "claude-code-oauth-token",
     }),
   ]);
@@ -125,25 +126,25 @@ export function mockPersonalModelRoutes(): void {
       model: "claude-fable-5-1",
       modelLabel: "Claude Fable 5.1",
       providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
     buildRunModel({
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
       providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
     buildRunModel({
       model: "claude-opus-5-5",
       modelLabel: "Claude Opus 5.5",
       providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
     buildRunModel({
       model: "claude-opus-5",
       modelLabel: "Claude Opus 5",
       providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
     buildRunModel({
       model: MOCK_SYSTEM_DEFAULT_MODEL,

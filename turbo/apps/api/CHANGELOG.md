@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.712.5](https://github.com/okou-ai/okou/compare/api-v1.712.4...api-v1.712.5) (2026-10-07)
+
+
+### Bug Fixes
+
+* **api:** omit agent-enabled connectors missing from the catalog instead of rejecting the run ([#37893](https://github.com/okou-ai/okou/issues/37893)) ([3ff1f40](https://github.com/okou-ai/okou/commit/3ff1f404e2b2908ddc3a39dff60abe1e12177d90))
+
+
+### Refactoring
+
+* contract connector catalog storage to pointer and immutable entries ([#37886](https://github.com/okou-ai/okou/issues/37886)) ([baf302f](https://github.com/okou-ai/okou/commit/baf302f5373a000999dfde0abf521752a779e29c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.12
+    * @okouai/connectors bumped to 3.16.4
+    * @okouai/core bumped to 8.734.5
+    * @okouai/db bumped to 1.323.6
+    * @okouai/pi-agent-runtime bumped to 1.46.19
+
 ## [1.712.4](https://github.com/okou-ai/okou/compare/api-v1.712.3...api-v1.712.4) (2026-10-07)
 
 

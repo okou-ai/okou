@@ -16,7 +16,7 @@ import {
 import { validateModelCatalog } from "./model-catalog.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
 
-/** Two statement snapshots retain the catalog's pre-enqueue failure boundary. */
+/** One statement snapshot makes every global read gate enqueue with the catalog. */
 export function createGlobalModelContext() {
   const keys = {
     id: builtInModelKeys.id,
@@ -53,7 +53,7 @@ export function createGlobalModelContext() {
     longContextMinTotalInputTokens: modelRoutes.longContextMinTotalInputTokens,
   };
   const builder = new QueryBuilder();
-  const credentialsRaw$ = computed(async (get) => {
+  const globalRaw$ = computed(async (get) => {
     const keyRows = builder
       .select({
         payload: contextJsonProjection(keys)
@@ -68,22 +68,6 @@ export function createGlobalModelContext() {
           .as("payload"),
       })
       .from(usagePricing);
-    const [row] = await get(db$)
-      .select({
-        keys: contextJsonRows(keyRows).mapWith(
-          zodDriverValueDecoder(z.unknown()),
-        ),
-        pricing: contextJsonRows(prices).mapWith(
-          zodDriverValueDecoder(z.unknown()),
-        ),
-      })
-      .from(sql`(values (1)) as context_seed(value)`);
-    if (!row) {
-      throw new Error("Global model credentials query returned no row");
-    }
-    return row;
-  });
-  const catalogRaw$ = computed(async (get) => {
     const modelRows = builder
       .select({
         payload: contextJsonProjection(models)
@@ -107,6 +91,12 @@ export function createGlobalModelContext() {
       );
     const [row] = await get(db$)
       .select({
+        keys: contextJsonRows(keyRows).mapWith(
+          zodDriverValueDecoder(z.unknown()),
+        ),
+        pricing: contextJsonRows(prices).mapWith(
+          zodDriverValueDecoder(z.unknown()),
+        ),
         models: contextJsonRows(modelRows).mapWith(
           zodDriverValueDecoder(z.unknown()),
         ),
@@ -116,24 +106,24 @@ export function createGlobalModelContext() {
       })
       .from(sql`(values (1)) as context_seed(value)`);
     if (!row) {
-      throw new Error("Global model catalog query returned no row");
+      throw new Error("Global model context query returned no row");
     }
     return row;
   });
   const managedModelKeys$ = computed(async (get) => {
     return z
       .array(contextProjectionSchema(keys))
-      .parse((await get(credentialsRaw$)).keys);
+      .parse((await get(globalRaw$)).keys);
   });
   const modelPricing$ = computed(async (get) => {
     return usagePricingByKey(
       z
         .array(contextProjectionSchema(pricing))
-        .parse((await get(credentialsRaw$)).pricing),
+        .parse((await get(globalRaw$)).pricing),
     );
   });
   const catalog$ = computed(async (get) => {
-    const row = await get(catalogRaw$);
+    const row = await get(globalRaw$);
     return validateModelCatalog(
       z.array(contextProjectionSchema(models)).parse(row.models),
       z.array(contextProjectionSchema(routes)).parse(row.routes),

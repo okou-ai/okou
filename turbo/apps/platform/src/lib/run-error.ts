@@ -15,18 +15,23 @@ import {
 } from "@okouai/api-contracts/contracts/run-balance-errors";
 import { i18n } from "../i18n/index.ts";
 
+// Run errors persisted before the copy named Settings > Models still carry the
+// earlier location text, so both spellings localize to the current copy.
 function localizedCredentialError(message: string): string | undefined {
   switch (message) {
+    case "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.":
     case CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE: {
       return i18n.t(($) => {
         return $.runErrors.codexReconnect;
       });
     }
+    case "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.":
     case CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE: {
       return i18n.t(($) => {
         return $.runErrors.claudeReconnect;
       });
     }
+    case "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.":
     case CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE: {
       return i18n.t(($) => {
         return $.runErrors.claudeTerms;
@@ -181,9 +186,10 @@ function localizedRunErrorAction(action: string): string {
           return $.runErrors.actions.reconnectClaude;
         });
       }
-      case "Open Model Providers": {
+      case "Open Model Providers":
+      case "Open model settings": {
         return i18n.t(($) => {
-          return $.runErrors.actions.openModelProviders;
+          return $.runErrors.actions.openModelSettings;
         });
       }
       case "Add credits": {

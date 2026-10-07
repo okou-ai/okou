@@ -46,7 +46,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 
-const POLICY_DATE = "2026-08-12T09:00:00.000Z";
+const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 
 function runModelFixture(
   model: string,
@@ -78,7 +78,7 @@ function preference(
     serviceTier,
     modelSettings: {},
     selectedImageModel: null,
-    updatedAt: POLICY_DATE,
+    updatedAt: FIXTURE_DATE,
   };
 }
 
@@ -525,7 +525,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
       },
       serviceTier: null,
       computerUseHostId: null,
-      createdAt: POLICY_DATE,
+      createdAt: FIXTURE_DATE,
     });
     changeChatThreadList();
     await waitFor(() => {

@@ -523,7 +523,7 @@ describe("built-in provider discriminator contract", () => {
     needsReconnect: false,
     lastRefreshErrorCode: null,
   } as const;
-  const policyResponse = {
+  const availableModelResponse = {
     id: "22222222-2222-4222-8222-222222222222",
     model: "okou-1.0",
     modelLabel: "Auto",
@@ -549,7 +549,7 @@ describe("built-in provider discriminator contract", () => {
       "built-in",
     );
     expect(
-      availableRunModelSchema.parse(policyResponse).memberEffective
+      availableRunModelSchema.parse(availableModelResponse).memberEffective
         .providerType,
     ).toBe("built-in");
   });

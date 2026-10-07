@@ -265,17 +265,15 @@ def _configure_response_inspection_stream(
                     else:
                         run_usage.observe(flow, usage_dict)
                         log_parse_error("compressed_body", decode_error)
-                        incomplete_body = decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
-                        if usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL and incomplete_body:
-                            usage_dict.clear()
+                        usage_dict.clear()
+                        if (
+                            usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
+                            and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
+                        ):
                             usage.merge_openai_responses_usage_result(
                                 usage_dict,
                                 openai_recoverable_usage,
                             )
-                        elif not (
-                            usage_protocol == _ANTHROPIC_MESSAGES_SSE_PROTOCOL and incomplete_body
-                        ):
-                            usage_dict.clear()
                     if not observed_terminal:
                         run_usage.mark(flow, "interrupted")
                     finished = True

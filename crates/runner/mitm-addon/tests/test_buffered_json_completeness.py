@@ -16,7 +16,7 @@ from body_limits import STREAM_BUFFER_LIMIT
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_response_helpers import (
-    ANTHROPIC_JSON_CASE,
+    OPENAI_RESPONSES_CASE,
     expected_event_quantities,
     model_provider_flow,
     standard_success_payload,
@@ -104,19 +104,19 @@ def test_x_buffered_json_requires_complete_capture(
 def test_model_buffered_json_requires_complete_capture(
     tmp_path, real_flow, usage_webhook_api, chunk_size, truncated
 ):
-    flow = model_provider_flow(real_flow, tmp_path, ANTHROPIC_JSON_CASE)
+    flow = model_provider_flow(real_flow, tmp_path, OPENAI_RESPONSES_CASE)
     flow.response = tutils.tresp(
         status_code=200,
         headers=header_map({"content-type": "application/json", "content-encoding": "zstd"}),
     )
-    payload = standard_success_payload(ANTHROPIC_JSON_CASE)
+    payload = standard_success_payload(OPENAI_RESPONSES_CASE)
     _stream_wire_body(flow, _zstd_wire_body(payload, truncated=truncated), chunk_size)
 
     with usage_webhook_api() as webhook:
         mitm_addon.response(flow)
         usage.flush_usage_events(trigger="test")
 
-    expected = {} if truncated else expected_event_quantities(ANTHROPIC_JSON_CASE)
+    expected = {} if truncated else expected_event_quantities(OPENAI_RESPONSES_CASE)
     events = webhook.usage_events()
     assert {event["category"]: event["quantity"] for event in events} == expected
     assert len(events) == len(expected)

@@ -252,13 +252,13 @@ const AGENT_EXECUTION_TIMEOUT_RUN_ERROR =
   /^Agent execution timed out after [1-9]\d* seconds$/u;
 
 export const CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE =
-  "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.";
+  "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.";
 
 export const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
-  "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.";
+  "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.";
 
 export const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
-  "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.";
+  "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.";
 
 const CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL = "Claude Model";
 export const CLAUDE_PROVIDER_OVERLOADED_GUIDANCE =
@@ -788,7 +788,7 @@ function formatStructuredRunError(params: {
     case "terms": {
       return withOptionalActionUrl(
         CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
-        "Open Model Providers",
+        "Open model settings",
         params.claudeCodeCredentialRecovery?.modelProvidersUrl,
       );
     }
@@ -868,7 +868,7 @@ export function formatRunErrorForExternalSurface(params: {
   if (isClaudeCodeTermsAcceptanceRequiredError(errorMessage)) {
     return withOptionalActionUrl(
       CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
-      "Open Model Providers",
+      "Open model settings",
       params.claudeCodeCredentialRecovery?.modelProvidersUrl,
     );
   }

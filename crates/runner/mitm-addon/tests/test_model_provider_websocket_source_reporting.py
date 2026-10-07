@@ -64,7 +64,7 @@ class TestModelProviderWebSocketUsageSourceRelease:
         assert entry["reason"] == "missing_reporting_context"
         assert entry["underbilling_class"] == "confirmed"
         assert entry["run_id"] == "run-abc-123"
-        assert entry["firewall_name"] == "model-provider:openai-api-key"
+        assert entry["firewall_name"] == "model-provider:openrouter-codex"
         assert entry["missing_sandbox_token"] is True
         assert entry["missing_api_url"] is False
         assert all(event["buffer_accepted"] is False for event in source_entry["usage_events"])
@@ -210,7 +210,7 @@ class TestModelProviderWebSocketSourceReporting:
         assert source_entry["transport"] == "websocket"
         assert source_entry["buffer_mode"] == "source"
         assert source_entry["method"] == "GET"
-        assert source_entry["url"] == "https://api.openai.com/v1/responses"
+        assert source_entry["url"] == "https://openrouter.ai/api/v1/responses"
         assert all(event["buffer_accepted"] is True for event in source_entry["usage_events"])
         assert {event["source_idempotency_key"] for event in source_entry["usage_events"]} == {
             event["idempotencyKey"] for event in webhook.usage_events()

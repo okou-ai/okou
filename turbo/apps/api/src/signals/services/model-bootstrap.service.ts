@@ -1,12 +1,11 @@
-import { computed } from "ccstate";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
 import { modelCatalogForOrg, type ModelCatalog } from "./model-catalog.service";
-import { createMemberModelSources } from "./model-source-context.service";
+import type { memberModelSourcesFromRows } from "./model-source-context.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 export type OrgModelBootstrap = ReturnType<typeof modelFactsFromSnapshot>;
-export type MemberModelBootstrap = Awaited<
-  ReturnType<ReturnType<typeof createMemberModelBootstrap>["read"]>
+export type MemberModelBootstrap = ReturnType<
+  typeof memberModelBootstrapFromSources
 >;
 export interface RunOrgMetadata {
   readonly credits: number;
@@ -14,18 +13,12 @@ export interface RunOrgMetadata {
   readonly openrouterPreset: string | null;
 }
 
-export function createMemberModelBootstrap(orgId: string, userId: string) {
-  const sources$ = createMemberModelSources(orgId, userId);
-  return computed(async (get) => {
-    return memberModelBootstrapFromSources(await get(sources$));
-  });
-}
 export function memberModelBootstrapFromSources({
   orgId,
   userId,
   rows,
   providers,
-}: Awaited<ReturnType<ReturnType<typeof createMemberModelSources>["read"]>>) {
+}: ReturnType<typeof memberModelSourcesFromRows>) {
   const accounts = [
     ...new Map(
       rows.map((row) => {

@@ -30,15 +30,15 @@ export const mcpChatThreadModels$ = command(
         return [row.model, row.replacedBy];
       }),
     );
-    // A configured selection is not a promise of current Run admission. Quota
+    // A listed model is not a promise of current Run admission. Quota
     // and transient provider availability are checked by the ordinary send;
     // they must not erase a stored model's canonical replacement in a read.
-    const configured = new Set(
+    const listed = new Set(
       listing.response.models.map((runModel) => {
         return runModel.model;
       }),
     );
-    const defaultModel = configured.has(listing.systemDefaultModel)
+    const defaultModel = listed.has(listing.systemDefaultModel)
       ? listing.systemDefaultModel
       : null;
     const result = new Map<string | null, McpChatThread["model"]>();
@@ -67,7 +67,7 @@ export const mcpChatThreadModels$ = command(
       }
       // An unavailable stored selection is rejected on send; it never runs as
       // the default model.
-      const available = configured.has(finalModel);
+      const available = listed.has(finalModel);
       result.set(selectedModel, {
         selectedModel,
         effectiveModel: available ? finalModel : null,

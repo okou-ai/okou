@@ -1930,7 +1930,7 @@
         "personalAccountDisconnected": "Abonnement personnel déconnecté",
         "providerBalanceDescription": "Vérifiez l'utilisation ou le solde de crédit de votre compte d'abonnement, puis réessayez.",
         "providerBalanceTitle": "Votre compte d'abonnement a besoin de plus de crédit",
-        "providerConnectionDescription": "Ouvrez « Fournisseurs de modèles » pour reconnecter ou mettre à jour votre compte, puis réessayez.",
+        "providerConnectionDescription": "Ouvrez « Paramètres > Modèles » pour reconnecter ou mettre à jour votre compte, puis réessayez.",
         "providerQueueTimeoutTitle": "Le modèle n’a pas démarré à temps",
         "providerRateLimitedTitle": "Il y a trop de demandes au modèle en ce moment",
         "providerServerErrorTitle": "Le fournisseur de modèles a rencontré une erreur temporaire",
@@ -2279,7 +2279,7 @@
       "loading": "Chargement de l’abonnement…",
       "noCredit": "Aucun crédit de réinitialisation disponible.",
       "nothingToReset": "Aucune fenêtre d’utilisation épuisée à réinitialiser.",
-      "reconnect": "Reconnectez cet abonnement dans Modèles personnels.",
+      "reconnect": "Reconnectez cet abonnement dans Paramètres > Modèles.",
       "reset": "Utilisation réinitialisée avec succès.",
       "resetting": "Réinitialisation…",
       "title": "Reset card",
@@ -4672,7 +4672,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} crédits / mois",
         "emailSupport": "Support par e-mail",
-        "ownKeys": "Apportez vos propres clés LLM",
         "payAsYouGo": "Payer à l'utilisation après cela",
         "prioritySupport": "Support prioritaire",
         "unlimitedAgents": "Agents illimités au total"
@@ -4685,14 +4684,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Ajouter des crédits",
-      "openModelProviders": "Ouvrir les fournisseurs de modèles",
+      "openModelSettings": "Ouvrir les paramètres des modèles",
       "reconnectClaude": "Reconnecter Claude Code"
     },
     "askAdmin": "Demandez à un administrateur de l’espace de travail d’ajouter des crédits ou de passer à une offre supérieure.",
-    "claudeReconnect": "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans les fournisseurs de modèles, puis réessayez.",
-    "claudeTerms": "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour. Connectez-vous à https://claude.ai avec le compte Claude associé dans les fournisseurs de modèles, acceptez les nouvelles conditions et la politique, puis réessayez.",
+    "claudeReconnect": "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans Paramètres > Modèles, puis réessayez.",
+    "claudeTerms": "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour. Connectez-vous à https://claude.ai avec le compte Claude associé dans Paramètres > Modèles, acceptez les nouvelles conditions et la politique, puis réessayez.",
     "codexOverloaded": "Le modèle sélectionné est saturé. Veuillez essayer un autre modèle.",
-    "codexReconnect": "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans les fournisseurs de modèles, puis réessayez.",
+    "codexReconnect": "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans Paramètres > Modèles, puis réessayez.",
     "contentPolicyRejected": "Le fournisseur de modèle a refusé cette demande en raison de sa politique de sécurité du contenu. Réessayer avec la même saisie échouera à nouveau. Reformulez la demande, commencez une nouvelle conversation ou choisissez un autre modèle.",
     "executionTimeout": "Cette exécution a atteint sa limite de temps.",
     "failed": "Échec de l’exécution",

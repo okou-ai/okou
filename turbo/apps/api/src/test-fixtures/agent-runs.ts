@@ -62,7 +62,7 @@ export async function listAgentRunsFixture(args: {
   );
 }
 
-/** Simulate historical or alternate built-in model route metadata not constructible through current policy. */
+/** Simulate historical or alternate built-in model route metadata not constructible through current routing. */
 export async function setRunModelRuntimeRouteFixture(args: {
   readonly runId: string;
   readonly modelRuntimeProvider: string | null;

@@ -24,8 +24,8 @@ class TestResponseEncodingInspectionRisk:
     ) -> http.HTTPFlow:
         flow = real_flow(
             with_response=False,
-            host="api.anthropic.com",
-            path="/v1/messages",
+            host="openrouter.ai",
+            path="/api/v1/responses",
             method="POST",
         )
         flow.response = tutils.tresp(
@@ -41,9 +41,9 @@ class TestResponseEncodingInspectionRisk:
             {
                 metadata_keys.SANDBOX_RUN_ID: "run-encoding-risk",
                 metadata_keys.SANDBOX_PROXY_LOG_PATH: str(tmp_path / "proxy.jsonl"),
-                metadata_keys.FIREWALL_NAME: "model-provider:anthropic-api-key",
+                metadata_keys.FIREWALL_NAME: "model-provider:openrouter-codex",
                 metadata_keys.FIREWALL_BILLABLE: True,
-                metadata_keys.MODEL_USAGE_PROVIDER: "claude-sonnet-4-6",
+                metadata_keys.MODEL_USAGE_PROVIDER: "gpt-5.5",
                 metadata_keys.RESPONSE_ENCODING_NEGOTIATION: "rewritten_stream_decodable",
             }
         )
@@ -104,7 +104,7 @@ class TestResponseEncodingInspectionRisk:
             assert entry["underbilling_class"] == "risk"
             assert entry["component"] == "mitm_addon"
             assert entry["run_id"] == "run-encoding-risk"
-            assert entry["firewall_name"] == "model-provider:anthropic-api-key"
+            assert entry["firewall_name"] == "model-provider:openrouter-codex"
             assert entry["firewall_billable"] is True
             assert entry["status_code"] == 200
             assert entry["inspection_disposition"] == "fail_closed"
@@ -158,7 +158,11 @@ class TestResponseEncodingInspectionRisk:
             content_encoding="br",
             content_type="text/event-stream",
         )
+        flow.request.host = "api.anthropic.com"
+        flow.request.path = "/v1/messages"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
+        flow.metadata.pop(metadata_keys.MODEL_USAGE_PROVIDER)
 
         with mitm_ctx():
             mitm_addon.responseheaders(flow)

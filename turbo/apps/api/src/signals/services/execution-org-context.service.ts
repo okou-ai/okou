@@ -3,7 +3,7 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { computed } from "ccstate";
-import { eq, sql, sum } from "drizzle-orm";
+import { eq, type SQL, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
@@ -34,8 +34,13 @@ const planSchema = z.object({
   audioDailyRateLimit: z.number(),
   audioDailyDurationSeconds: z.number(),
 });
-/** Transport only: business decoding belongs to independent derived consumers. */
-export function createExecutionOrgRows(orgId: string) {
+/**
+ * Transport only: business decoding belongs to independent derived consumers.
+ * `attached` is an optional scalar subquery that is already awaited before
+ * enqueue alongside these rows, so it can share this statement without moving
+ * any failure across the enqueue boundary.
+ */
+export function createExecutionOrgRows(orgId: string, attached?: SQL) {
   return computed(async (get) => {
     const at = nowDate();
     const expired = executionCreditQueries({ orgId, userId: "" }, at).expired;
@@ -79,6 +84,9 @@ export function createExecutionOrgRows(orgId: string) {
         ),
         slots: sql`(${slots})`.mapWith(rawDecoder),
         expired: sql`(${expiredTotal})`.mapWith(rawDecoder),
+        attached: (attached ? sql`(${attached})` : sql`NULL`).mapWith(
+          rawDecoder,
+        ),
       })
       .from(orgMetadata)
       // Preserve entitlement-only organizations and absent metadata without a second read.
@@ -92,6 +100,9 @@ export function createExecutionOrgRows(orgId: string) {
 export type ExecutionOrgRows = Awaited<
   ReturnType<ReturnType<typeof createExecutionOrgRows>["read"]>
 >;
+export function executionOrgAttached(snapshot: ExecutionOrgRows): unknown {
+  return requiredOrgRow(snapshot).attached;
+}
 function requiredOrgRow(snapshot: ExecutionOrgRows) {
   const row = snapshot.rows[0];
   if (!row) {

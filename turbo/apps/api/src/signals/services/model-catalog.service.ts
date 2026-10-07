@@ -361,19 +361,18 @@ export function catalogAutoRoute(
 }
 
 /**
- * Upstream model ID of the model's enabled route for a selected (non
- * Built-in) provider type, or null when the catalog has no such route.
+ * Upstream model ID of the model's enabled route for a personal subscription
+ * type, or null when the catalog has no such route.
  */
-export function catalogProviderUpstreamModel(
+export function catalogSubscriptionUpstreamModel(
   catalog: ModelCatalog,
   model: string,
-  providerType: string,
   subscriptionType: string,
 ): string | null {
   const [route] = catalogRoutesFor(
     catalog,
     model,
-    providerType,
+    subscriptionType,
     subscriptionType,
   );
   return route?.upstreamModel ?? null;

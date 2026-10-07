@@ -2083,54 +2083,51 @@ describe("Stage 1 source credentials", () => {
     });
   });
 
-  it.each(["codex"] as const)(
-    "never writes %s model credits for no-output, malformed output and replay",
-    async () => {
-      const storage = createStorageFixture();
-      const source = (await codexSource(storage)).binding;
-      const candidate = await seedSource(storage, source);
-      installSourceProvider(() => {
-        return "not valid JSON";
+  it("never writes codex model credits for no-output, malformed output and replay", async () => {
+    const storage = createStorageFixture();
+    const source = (await codexSource(storage)).binding;
+    const candidate = await seedSource(storage, source);
+    installSourceProvider(() => {
+      return "not valid JSON";
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      retryableFailure: 1,
+    });
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    await storage.action({
+      action: "make-retry-due",
+      pi_session_id: candidate.pi_session_id,
+    });
+    installSourceProvider(() => {
+      return JSON.stringify({
+        raw_memory: "",
+        rollout_summary: "",
+        rollout_slug: null,
       });
-      await expect(runScoped(storage)).resolves.toMatchObject({
-        retryableFailure: 1,
-      });
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-      await storage.action({
-        action: "make-retry-due",
-        pi_session_id: candidate.pi_session_id,
-      });
-      installSourceProvider(() => {
-        return JSON.stringify({
-          raw_memory: "",
-          rollout_summary: "",
-          rollout_slug: null,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      succeededNoOutput: 1,
+    });
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    // Writer boundary exception: deliberately replay reported vendor usage
+    // directly through the test route, independently from the worker's caller.
+    for (const usage of [
+      { input: 272_001, output: 5, cacheRead: 7, cacheWrite: 8 },
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    ]) {
+      for (let replay = 0; replay < 2; replay += 1) {
+        await storage.action({
+          action: "record-usage",
+          pi_session_id: candidate.pi_session_id,
+          source_history_hash: candidate.source_history_hash,
+          response_source_id: "subscription-replay",
+          billing_mode: "subscription",
+          usage,
         });
-      });
-      await expect(runScoped(storage)).resolves.toMatchObject({
-        succeededNoOutput: 1,
-      });
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-      // Writer boundary exception: deliberately replay reported vendor usage
-      // directly through the test route, independently from the worker's caller.
-      for (const usage of [
-        { input: 272_001, output: 5, cacheRead: 7, cacheWrite: 8 },
-        { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      ]) {
-        for (let replay = 0; replay < 2; replay += 1) {
-          await storage.action({
-            action: "record-usage",
-            pi_session_id: candidate.pi_session_id,
-            source_history_hash: candidate.source_history_hash,
-            response_source_id: "subscription-replay",
-            billing_mode: "subscription",
-            usage,
-          });
-        }
       }
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-    },
-  );
+    }
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
 
   it.each([
     "missing-provider",

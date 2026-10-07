@@ -50,7 +50,7 @@ function piProvider(concreteType: ModelProviderType): "openrouter" | null {
 }
 
 /**
- * Route canonical chat threads by model and provider policy. Trigger source is
+ * Route canonical chat threads by model and provider route. Trigger source is
  * intentionally absent so every thread-bound launch shares the same admission.
  */
 export function shouldUsePiExecution(args: {

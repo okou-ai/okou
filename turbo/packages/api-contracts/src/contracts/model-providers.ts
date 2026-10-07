@@ -435,16 +435,16 @@ export type ModelProviderListResponse = z.infer<
 >;
 
 /**
- * Create/update model provider request
+ * Connect or update a personal subscription.
  *
- * Legacy providers use `secret` (single string)
- * Multi-auth providers use `authMethod` + `secrets` (map)
+ * Claude Code sends its OAuth token as `secret`. Codex sends
+ * `authMethod: "auth_json"` with `secrets.CODEX_AUTH_JSON`.
  */
 export const upsertModelProviderRequestSchema = z.object({
-  type: modelProviderTypeSchema,
-  secret: z.string().min(1).optional(), // Legacy single secret
-  authMethod: z.string().optional(), // For multi-auth providers
-  secrets: z.record(z.string(), z.string()).optional(), // For multi-auth providers
+  type: z.enum(["claude-code-oauth-token", "codex-oauth-token"]),
+  secret: z.string().min(1).optional(),
+  authMethod: z.string().optional(),
+  secrets: z.record(z.string(), z.string()).optional(),
 });
 
 export type UpsertModelProviderRequest = z.infer<

@@ -14,7 +14,7 @@ export type ModelRuntimeSelection =
       readonly modelKeyId: string;
     }
   | {
-      readonly kind: "configured";
+      readonly kind: "subscription";
       readonly selectedModel: string;
       readonly upstreamModel: string;
     };
@@ -27,7 +27,6 @@ export interface CompiledModelRuntime {
   readonly selectedModel: string;
   readonly upstreamModel: string;
   readonly providerType: string;
-  readonly credentialOwner: "builtin" | "member";
   readonly environment: Readonly<Record<string, string>>;
   readonly secrets: Readonly<Record<string, string>>;
 }
@@ -41,8 +40,8 @@ function compileCodexSubscriptionRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
-  if (selection.kind !== "configured") {
-    throw new Error("Multi-auth runtime requires a selected registered source");
+  if (selection.kind !== "subscription") {
+    throw new Error("Multi-auth runtime requires a selected subscription");
   }
   const type = "codex-oauth-token";
   const authMethod = source.configuration.authMethod;
@@ -73,7 +72,6 @@ function compileCodexSubscriptionRuntime(
     selectedModel: selection.selectedModel,
     upstreamModel: selection.upstreamModel,
     providerType: type,
-    credentialOwner: source.credentialOwner,
     environment: {
       CHATGPT_ACCESS_TOKEN: secretReference("CHATGPT_ACCESS_TOKEN"),
       CHATGPT_ACCOUNT_ID: secretReference("CHATGPT_ACCOUNT_ID"),
@@ -87,9 +85,9 @@ function compileCodexSubscriptionRuntime(
 function compileClaudeSubscriptionRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
-  const { source, selection, credentials } = input;
-  if (selection.kind !== "configured") {
-    throw new Error("Registered source requires configured selection");
+  const { selection, credentials } = input;
+  if (selection.kind !== "subscription") {
+    throw new Error("Subscription source requires a subscription selection");
   }
   const type = "claude-code-oauth-token";
   const secretName = MODEL_PROVIDER_TYPES[type].secretName;
@@ -101,7 +99,6 @@ function compileClaudeSubscriptionRuntime(
     selectedModel: selection.selectedModel,
     upstreamModel: selection.upstreamModel,
     providerType: type,
-    credentialOwner: source.credentialOwner,
     environment: {
       CLAUDE_CODE_OAUTH_TOKEN: secretReference(secretName),
       ANTHROPIC_MODEL: selection.upstreamModel,
@@ -115,8 +112,7 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
   if (
     selection.kind !== "built-in" ||
     source.identity.kind !== "built-in" ||
-    source.identity.modelKeyId !== selection.modelKeyId ||
-    source.credentialOwner !== "builtin"
+    source.identity.modelKeyId !== selection.modelKeyId
   ) {
     throw new Error("Managed model source and route identity mismatch");
   }
@@ -148,7 +144,6 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
     selectedModel: selection.selectedModel,
     upstreamModel: selection.upstreamModel,
     providerType: AUTO_RUN_PROVIDER,
-    credentialOwner: "builtin",
     environment: {
       OPENAI_API_KEY: secretReference(secretName),
       OPENAI_BASE_URL:
@@ -172,10 +167,7 @@ export function compileModelRuntime(
   if (selection.kind === "built-in") {
     return compileManagedRuntime(input);
   }
-  if (
-    source.identity.kind === "member" &&
-    source.credentialOwner === "member"
-  ) {
+  if (source.identity.kind === "member") {
     if (source.configuration.providerType === "codex-oauth-token") {
       return compileCodexSubscriptionRuntime(input);
     }
@@ -184,6 +176,6 @@ export function compileModelRuntime(
     }
   }
   throw new Error(
-    "Configured runtime requires a personal subscription account",
+    "Subscription runtime requires a personal subscription account",
   );
 }

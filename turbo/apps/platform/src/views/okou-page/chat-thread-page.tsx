@@ -5178,7 +5178,7 @@ function AssistantRecoveryDestinationAction({
         }}
       >
         {t(($) => {
-          return $.runErrors.actions.openModelProviders;
+          return $.runErrors.actions.openModelSettings;
         })}
       </Button>
     );

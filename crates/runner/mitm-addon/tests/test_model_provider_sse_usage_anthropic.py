@@ -1,6 +1,5 @@
-"""Anthropic Messages SSE usage integration tests."""
+"""Anthropic Messages SSE usage diagnostics integration tests."""
 
-import gzip
 from pathlib import Path
 
 import pytest
@@ -10,7 +9,6 @@ from mitmproxy.flow import Error
 import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
-import usage
 from tests.flow_helpers import response_stream
 from tests.model_provider_flow_helpers import RealFlowFactory
 from tests.model_provider_sse_usage_helpers import (
@@ -21,12 +19,9 @@ from tests.model_provider_sse_usage_helpers import (
     run_error,
     run_response,
 )
-from tests.usage_helpers import (
-    UsageWebhookServer,
-)
 
 
-def _anthropic_messages_sse_flow(
+def _claude_code_sse_flow(
     tmp_path: Path,
     real_flow: RealFlowFactory,
 ) -> http.HTTPFlow:
@@ -35,105 +30,26 @@ def _anthropic_messages_sse_flow(
         real_flow,
         host="api.anthropic.com",
         original_url="https://api.anthropic.com/v1/messages",
-        firewall_name="model-provider:anthropic-api-key",
-        model_usage_provider="claude-sonnet-4-6",
+        firewall_name="model-provider:claude-code-oauth-token",
+        cli_agent_type="claude-code",
+        model_usage_provider=None,
     )
-    flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "00000000-0000-0000-0000-000000025133"
+    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
     return flow
 
 
 class TestAnthropicMessagesSseUsage:
-    """Tests for Anthropic Messages SSE usage."""
+    """Tests for Anthropic Messages SSE usage diagnostics."""
 
     @pytest.fixture(autouse=True)
     def _sync_usage_delivery(self, sync_usage_executor, usage_webhook_api):
         self._usage_webhook_api = usage_webhook_api
 
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
-    @pytest.mark.parametrize("hook_name", ["response", "error"])
-    @pytest.mark.parametrize("include_message_stop", [False, True], ids=["partial", "terminal"])
-    def test_full_pipeline_incomplete_compressed_anthropic_sse_recovers_complete_usage_events(
-        self,
-        tmp_path,
-        real_flow,
-        encoding,
-        hook_name,
-        include_message_stop,
-    ):
-        flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
-        assert flow.response is not None
-        flow.response.headers["content-encoding"] = encoding
-        plaintext = (
-            b"event: message_start\n"
-            b'data: {"type":"message_start","message":{"id":"msg_private",'
-            b'"model":"claude-sonnet-4-6","usage":{"input_tokens":101,'
-            b'"cache_read_input_tokens":202,"cache_creation_input_tokens":303,'
-            b'"output_tokens":1}}}\n\n'
-            b"event: content_block_delta\n"
-            b'data: {"type":"content_block_delta","delta":{"text":"sensitive-body"}}\n\n'
-            b"event: message_delta\n"
-            b'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},'
-            b'"usage":{"output_tokens":404}}\n\n'
-            + (
-                b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
-                if include_message_stop
-                else b""
-            )
-        )
-
-        mitm_addon.responseheaders(flow)
-        response_stream(flow)(compress_zlib_sse(plaintext, encoding)[:-1])
-
-        if hook_name == "error":
-            flow.error = Error("connection reset by peer")
-            webhook = run_error(flow, self._usage_webhook_api)
-        else:
-            assert hook_name == "response"
-            webhook = run_response(flow, self._usage_webhook_api)
-
-        expected_quantities = {
-            "tokens.input": 101,
-            "tokens.output": 404,
-            "tokens.cache_read": 202,
-            "tokens.cache_creation": 303,
-        }
-        assert {
-            event["category"]: event["quantity"] for event in webhook.usage_events()
-        } == expected_quantities
-        assert_single_model_sse_parse_warning(
-            flow,
-            usage_protocol="anthropic_messages_sse",
-            event="compressed_body",
-            error=body_decoding.INCOMPLETE_COMPRESSED_BODY,
-        )
-
-    def test_full_pipeline_incomplete_compressed_anthropic_sse_does_not_flush_fragment(
-        self, tmp_path, real_flow
-    ):
-        flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
-        assert flow.response is not None
-        flow.response.headers["content-encoding"] = "gzip"
-        plaintext = (
-            b"event: message_start\n"
-            b'data: {"type":"message_start","message":{"model":"claude-sonnet-4-6",'
-            b'"usage":{"input_tokens":50,"output_tokens":0}}}\n\n'
-            b"event: message_delta\n"
-            b'data: {"type":"message_delta","usage":{"output_tokens":987654}}'
-        )
-
-        mitm_addon.responseheaders(flow)
-        response_stream(flow)(gzip.compress(plaintext)[:-1])
-        webhook = run_response(flow, self._usage_webhook_api)
-
-        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
-            "tokens.input": 50
-        }
-
-    @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
-    def test_full_pipeline_invalid_compressed_anthropic_sse_remains_fail_closed(
+    def test_full_pipeline_invalid_compressed_anthropic_sse_logs_warning(
         self, tmp_path, real_flow, encoding
     ):
-        flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         assert flow.response is not None
         flow.response.headers["content-encoding"] = encoding
         plaintext = (
@@ -144,9 +60,8 @@ class TestAnthropicMessagesSseUsage:
 
         mitm_addon.responseheaders(flow)
         response_stream(flow)(compress_zlib_sse(plaintext, encoding) + b"not-compressed")
-        webhook = run_response(flow, self._usage_webhook_api)
+        run_response(flow, self._usage_webhook_api)
 
-        assert webhook.request_count == 0
         assert_single_model_sse_parse_warning(
             flow,
             usage_protocol="anthropic_messages_sse",
@@ -154,10 +69,8 @@ class TestAnthropicMessagesSseUsage:
             error=body_decoding.INVALID_COMPRESSED_BODY,
         )
 
-    def test_full_pipeline_decoded_limit_anthropic_sse_remains_fail_closed(
-        self, tmp_path, real_flow
-    ):
-        flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
+    def test_full_pipeline_decoded_limit_anthropic_sse_logs_warning(self, tmp_path, real_flow):
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         assert flow.response is not None
         flow.response.headers["content-encoding"] = "gzip"
         plaintext = (
@@ -169,10 +82,9 @@ class TestAnthropicMessagesSseUsage:
         )
 
         mitm_addon.responseheaders(flow)
-        response_stream(flow)(gzip.compress(plaintext))
-        webhook = run_response(flow, self._usage_webhook_api)
+        response_stream(flow)(compress_zlib_sse(plaintext, "gzip"))
+        run_response(flow, self._usage_webhook_api)
 
-        assert webhook.request_count == 0
         assert_single_model_sse_parse_warning(
             flow,
             usage_protocol="anthropic_messages_sse",
@@ -180,54 +92,15 @@ class TestAnthropicMessagesSseUsage:
             error=body_decoding.DECODED_BODY_LIMIT_EXCEEDED,
         )
 
-    def test_full_pipeline_response_then_error_emits_recovered_usage_once(
-        self, tmp_path, real_flow, mitm_ctx
-    ):
-        flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
-        assert flow.response is not None
-        flow.response.headers["content-encoding"] = "gzip"
-        plaintext = (
-            b"event: message_start\n"
-            b'data: {"type":"message_start","message":{"model":"claude-sonnet-4-6",'
-            b'"usage":{"input_tokens":50}}}\n\n'
-        )
-
-        mitm_addon.responseheaders(flow)
-        response_stream(flow)(gzip.compress(plaintext)[:-1])
-        webhook = UsageWebhookServer()
-        with webhook.run(), mitm_ctx(api_url=webhook.api_url):
-            mitm_addon.response(flow)
-            flow.error = Error("connection reset after response")
-            mitm_addon.error(flow)
-            usage.flush_usage_events(trigger="test")
-
-        assert [(event["category"], event["quantity"]) for event in webhook.usage_events()] == [
-            ("tokens.input", 50)
-        ]
-        assert_single_model_sse_parse_warning(
-            flow,
-            usage_protocol="anthropic_messages_sse",
-            event="compressed_body",
-            error=body_decoding.INCOMPLETE_COMPRESSED_BODY,
-        )
-
     def test_full_pipeline_anthropic_sse_logs_truncated_message_start(self, tmp_path, real_flow):
-        flow = model_provider_sse_flow(
-            tmp_path,
-            real_flow,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
-            model_usage_provider="claude-sonnet-4-6",
-        )
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","mod'
         )
 
-        webhook = run_response(flow, self._usage_webhook_api)
+        run_response(flow, self._usage_webhook_api)
 
-        assert webhook.request_count == 0
         assert_single_model_sse_parse_warning(
             flow,
             usage_protocol="anthropic_messages_sse",
@@ -237,23 +110,15 @@ class TestAnthropicMessagesSseUsage:
     def test_full_pipeline_anthropic_sse_error_logs_truncated_message_start(
         self, tmp_path, real_flow
     ):
-        flow = model_provider_sse_flow(
-            tmp_path,
-            real_flow,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
-            model_usage_provider="claude-sonnet-4-6",
-        )
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","mod'
         )
         flow.error = Error("connection reset by peer")
 
-        webhook = run_error(flow, self._usage_webhook_api)
+        run_error(flow, self._usage_webhook_api)
 
-        assert webhook.request_count == 0
         assert_single_model_sse_parse_warning(
             flow,
             usage_protocol="anthropic_messages_sse",
@@ -261,20 +126,12 @@ class TestAnthropicMessagesSseUsage:
         )
 
     def test_full_pipeline_anthropic_sse_logs_malformed_message_start(self, tmp_path, real_flow):
-        flow = model_provider_sse_flow(
-            tmp_path,
-            real_flow,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
-            model_usage_provider="claude-sonnet-4-6",
-        )
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         mitm_addon.responseheaders(flow)
         response_stream(flow)(b"event: message_start\ndata: {invalid json}\n\n")
 
-        webhook = run_response(flow, self._usage_webhook_api)
+        run_response(flow, self._usage_webhook_api)
 
-        assert webhook.request_count == 0
         assert_single_model_sse_parse_warning(
             flow,
             usage_protocol="anthropic_messages_sse",
@@ -284,14 +141,7 @@ class TestAnthropicMessagesSseUsage:
     def test_full_pipeline_anthropic_sse_logs_truncated_message_delta_after_start(
         self, tmp_path, real_flow
     ):
-        flow = model_provider_sse_flow(
-            tmp_path,
-            real_flow,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
-            model_usage_provider="claude-sonnet-4-6",
-        )
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b"event: message_start\n"
@@ -301,12 +151,8 @@ class TestAnthropicMessagesSseUsage:
             b'data: {"type":"message_delta","usage":{"output_tokens":'
         )
 
-        webhook = run_response(flow, self._usage_webhook_api)
+        run_response(flow, self._usage_webhook_api)
 
-        events = webhook.usage_events()
-        by_category = {event["category"]: event["quantity"] for event in events}
-        assert by_category == {"tokens.input": 50}
-        assert {event["provider"] for event in events} == {"claude-sonnet-4-6"}
         assert_single_model_sse_parse_warning(
             flow,
             usage_protocol="anthropic_messages_sse",
@@ -316,22 +162,14 @@ class TestAnthropicMessagesSseUsage:
     def test_full_pipeline_eventless_incomplete_anthropic_usage_sse_warns(
         self, tmp_path, real_flow
     ):
-        flow = model_provider_sse_flow(
-            tmp_path,
-            real_flow,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
-            model_usage_provider="claude-sonnet-4-6",
-        )
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b'data: {"type":"message_start","message":{"id":"msg_1","model":"claude'
         )
 
-        webhook = run_response(flow, self._usage_webhook_api)
+        run_response(flow, self._usage_webhook_api)
 
-        assert webhook.request_count == 0
         assert_single_model_sse_parse_warning(
             flow,
             usage_protocol="anthropic_messages_sse",
@@ -341,21 +179,13 @@ class TestAnthropicMessagesSseUsage:
     def test_full_pipeline_anthropic_non_usage_incomplete_sse_does_not_warn(
         self, tmp_path, real_flow
     ):
-        flow = model_provider_sse_flow(
-            tmp_path,
-            real_flow,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
-            model_usage_provider="claude-sonnet-4-6",
-        )
+        flow = _claude_code_sse_flow(tmp_path, real_flow)
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b"event: content_block_delta\n"
             b'data: {"type":"content_block_delta","delta":{"text":"hello'
         )
 
-        webhook = run_response(flow, self._usage_webhook_api)
+        run_response(flow, self._usage_webhook_api)
 
-        assert webhook.request_count == 0
         assert model_sse_parse_warnings(flow) == []

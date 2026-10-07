@@ -51,7 +51,6 @@ function personalStatusForRunModel(
   const route = runModel.memberEffective;
   if (
     route.availability === "plan_restricted" ||
-    route.credentialScope !== "member" ||
     !isPersonalSubscriptionProviderType(route.providerType)
   ) {
     return null;

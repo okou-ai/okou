@@ -67,7 +67,6 @@ export interface BuiltInModelRuntimeRoute {
 
 /** Captured Auto presets survive later operator edits, never vendor changes. */
 export function isBuiltInModelRuntimeRoutePermitted(
-  _catalog: ModelCatalog,
   route: BuiltInModelRuntimeRoute,
 ): boolean {
   return (

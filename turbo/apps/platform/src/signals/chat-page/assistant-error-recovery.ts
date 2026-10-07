@@ -503,10 +503,7 @@ function createCurrentPersonalSubscriptionComputed(
       return null;
     }
     const route = runModel.memberEffective;
-    if (
-      route.credentialScope !== "member" ||
-      !isPersonalSubscriptionProviderType(route.providerType)
-    ) {
+    if (!isPersonalSubscriptionProviderType(route.providerType)) {
       return null;
     }
     return {

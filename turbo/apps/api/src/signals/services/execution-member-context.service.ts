@@ -12,6 +12,13 @@ import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { executionCreditQueries } from "./execution-credit-balance.service";
+import { memberModelBootstrapFromSources } from "./model-bootstrap.service";
+import { memberModelSourcesAggregate } from "./model-source-context.service";
+import { modelProviders } from "@okouai/db/schema/model-provider";
+import {
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
+} from "@okouai/db/schema/model-provider-account";
 import {
   userFeatureSwitchRowCondition,
   userFeatureSwitchOverridesFromRows,
@@ -39,8 +46,15 @@ const switchSchema = z.array(
 );
 const toolSchema = z.array(z.object({ toolId: z.string() }));
 
-/** One member statement; consumers decode only their own UNION payload. */
-function createExecutionMemberRows(owner: ExecutionMemberIdentity) {
+/**
+ * One member statement; consumers decode only their own UNION payload. The
+ * member model sources are gated before enqueue together with this metadata,
+ * so they share the statement without moving a failure boundary.
+ */
+function createExecutionMemberRows(
+  owner: ExecutionMemberIdentity,
+  sources: ReturnType<typeof memberModelSourcesAggregate>,
+) {
   return computed(async (get) => {
     const at = nowDate();
     const db = get(db$);
@@ -115,12 +129,24 @@ function createExecutionMemberRows(owner: ExecutionMemberIdentity) {
           })
           .from(usagePackCreditGrants)
           .where(pack.where),
+      )
+      .unionAll(
+        db
+          .select({
+            kind: sql`'modelSources'::text`.mapWith(rawDecoder),
+            payload: sources.payload,
+          })
+          .from(modelProviders)
+          .leftJoin(modelProviderAccounts, sources.joins.account)
+          .leftJoin(modelProviderAccountSecrets, sources.joins.secret)
+          .where(sources.joins.provider),
       );
   });
 }
 
 export function createExecutionMemberContext(owner: ExecutionMemberIdentity) {
-  const rows$ = createExecutionMemberRows(owner);
+  const sources = memberModelSourcesAggregate(owner.orgId, owner.userId);
+  const rows$ = createExecutionMemberRows(owner, sources);
   const metadata$ = computed(async (get): Promise<ExecutionMemberMetadata> => {
     const rows = await get(rows$);
     const profile = rows.find((row) => {
@@ -173,5 +199,21 @@ export function createExecutionMemberContext(owner: ExecutionMemberIdentity) {
       ? 0
       : pgInt8ToSafeIntegerSchema.parse(row.payload);
   });
-  return { metadata$, overrides$, disabledPaidTools$, packCredits$ };
+  const memberModels$ = computed(async (get) => {
+    const rows = await get(rows$);
+    const row = rows.find((entry) => {
+      return entry.kind === "modelSources";
+    });
+    if (!row) {
+      throw new Error("Execution member model sources query returned no row");
+    }
+    return memberModelBootstrapFromSources(sources.decode(row.payload));
+  });
+  return {
+    metadata$,
+    overrides$,
+    disabledPaidTools$,
+    packCredits$,
+    memberModels$,
+  };
 }

@@ -1,7 +1,3 @@
-import {
-  modelCatalog$,
-  type ModelCatalog,
-} from "../services/model-catalog.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
@@ -35,7 +31,7 @@ import {
 } from "./test-endpoint-helpers";
 import { ensureAgentInstructionsStorageFixture } from "./test-agent-instructions-storage";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
-import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 
 const actionBody$ = bodyResultOf(testTelegramStateContract.action);
 
@@ -352,14 +348,13 @@ async function seedTelegramPostDefaultAgent(
 }
 
 async function seedTelegramPostModelKeys(
-  catalogSnapshot: ModelCatalog,
   db: Db,
   seed: TelegramPostFixtureSeed,
   signal: AbortSignal,
 ): Promise<void> {
   await acquireBuiltInModelKeyFixture(db, seed.composeId, [
     {
-      vendor: await loadSystemDefaultBuiltInVendor(catalogSnapshot),
+      vendor: AUTO_RUN_KEY_VENDOR,
       apiKey: `built-in-key-default-${seed.composeId}`,
     },
   ]);
@@ -385,7 +380,6 @@ async function seedTelegramPostLinks(
 }
 
 async function seedTelegramPostFixtureForAction(
-  catalogSnapshot: ModelCatalog,
   db: Db,
   body: Record<string, unknown>,
   signal: AbortSignal,
@@ -418,7 +412,7 @@ async function seedTelegramPostFixtureForAction(
   if (readActionBoolean(body, "seed_default_agent", true)) {
     await seedTelegramPostDefaultAgent(db, seed, signal);
   }
-  await seedTelegramPostModelKeys(catalogSnapshot, db, seed, signal);
+  await seedTelegramPostModelKeys(db, seed, signal);
   await seedTelegramPostLinks(db, body, seed, signal);
 
   return actionOk({
@@ -619,19 +613,13 @@ const telegramStateActionHandlers = {
 >;
 
 async function mutateTestTelegramStateAction(
-  catalogSnapshot: ModelCatalog,
   db: Db,
   body: Record<string, unknown>,
   action: TestTelegramStateActionBody["action"],
   signal: AbortSignal,
 ) {
   if (action === "seed-post-fixture") {
-    return await seedTelegramPostFixtureForAction(
-      catalogSnapshot,
-      db,
-      body,
-      signal,
-    );
+    return await seedTelegramPostFixtureForAction(db, body, signal);
   }
   return await telegramStateActionHandlers[action](db, body, signal);
 }
@@ -650,7 +638,6 @@ const mutateTestTelegramState$ = command(
 
     const body = bodyResult.data as Record<string, unknown>;
     return await mutateTestTelegramStateAction(
-      await get(modelCatalog$),
       set(writeDb$),
       body,
       bodyResult.data.action,

@@ -130,8 +130,8 @@ async function setup(
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  // Scheduler scenarios that claim and complete a Runner job use a native
-  // default; explicit Pi cases select their own model policy below.
+  // Scheduler scenarios that claim and complete a Runner job select a native
+  // model; explicit Pi cases select their own model below.
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",

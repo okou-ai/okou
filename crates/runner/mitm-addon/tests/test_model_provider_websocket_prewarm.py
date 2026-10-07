@@ -360,7 +360,7 @@ class TestModelProviderWebSocketPrewarmUsage:
         assert ignored_entry["source_id"] == f"{flow.id}:warm-1"
         assert ignored_entry["usage"] == {"tokens.input": 6050}
         assert ignored_entry["usage_events"] == []
-        assert ignored_entry["url"] == "https://api.openai.com/v1/responses"
+        assert ignored_entry["url"] == "https://openrouter.ai/api/v1/responses"
         proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
         assert sensitive_marker not in proxy_log.read_text()
         assert model_provider_usage_sources(flow) == {}

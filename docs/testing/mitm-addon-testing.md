@@ -118,7 +118,7 @@ enforcement after a rejected application.
 `test_delivery_control.py` covers real blocked API delivery, short status/log
 progress, registry enforcement, wake coalescing, drain overload/deadlines,
 disconnect ownership, failed delivery outcomes and shutdown handoff. Existing
-usage/timing suites now observe pending state through `delivery.status` instead
+usage suites now observe pending state through `delivery.status` instead
 of files. Rust delivery tests include a locked-Python round trip and verify
 bounded job-end wakes and no automatic replay after a lost reply.
 The packaged suite sends a synthetic provider request through production hooks
@@ -297,7 +297,7 @@ suites before committing the upgrade.
 | `test_model_provider_json_streaming.py`                 | Model provider streaming JSON response usage pipeline                                                                |
 | `model_provider_sse_usage_helpers.py`                   | Shared model-provider SSE flow, hook-driving, compression, and warning test mechanics                                |
 | `test_model_provider_sse_usage_openai_responses.py`     | OpenAI Responses-shaped model-provider SSE usage pipeline                                                            |
-| `test_model_provider_sse_usage_anthropic.py`            | Anthropic Messages SSE recovery, usage, accounting, retention, and diagnostics pipeline                              |
+| `test_model_provider_sse_usage_anthropic.py`            | Anthropic Messages SSE compressed-body and parse diagnostics                                                         |
 | `test_model_provider_websocket_prewarm.py`              | Model provider WebSocket prewarm intent, response correlation, and ignored-source diagnostics                        |
 | `test_model_provider_websocket_source_reporting.py`     | Model provider WebSocket source reporting, admission, and frame parsing                                              |
 | `test_model_provider_websocket_usage_aggregation.py`    | Model provider WebSocket source reconciliation, aggregation, and billing tier state                                  |

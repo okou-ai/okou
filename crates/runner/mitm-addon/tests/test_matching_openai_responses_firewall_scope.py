@@ -1,12 +1,12 @@
-"""Tests for custom OpenAI Responses firewall scope matching."""
+"""Tests for OpenAI Responses model-provider firewall scope matching."""
 
 import matching
 
 
 class TestOpenAIResponsesFirewallScope:
-    """Keep custom gateway credentials inside the Responses API path."""
+    """Keep model-provider credentials inside the Responses API path."""
 
-    BASE = "https://gateway.example.com/openai/v1/responses"
+    BASE = "https://openrouter.ai/api/v1/responses"
 
     def test_responses_endpoint_matches(self):
         assert matching.match_base_url(self.BASE, self.BASE) == ("/", {})
@@ -22,7 +22,7 @@ class TestOpenAIResponsesFirewallScope:
     def test_sibling_endpoint_rejected(self):
         assert (
             matching.match_base_url(
-                "https://gateway.example.com/openai/v1/models",
+                "https://openrouter.ai/api/v1/models",
                 self.BASE,
             )
             is None
@@ -31,7 +31,7 @@ class TestOpenAIResponsesFirewallScope:
     def test_prefix_confusion_attack_rejected(self):
         assert (
             matching.match_base_url(
-                "https://gateway.example.com/openai/v1/responses_admin",
+                "https://openrouter.ai/api/v1/responses_admin",
                 self.BASE,
             )
             is None

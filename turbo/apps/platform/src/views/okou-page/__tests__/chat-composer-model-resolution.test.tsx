@@ -1,7 +1,4 @@
-import type {
-  AvailableRunModel,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -28,16 +25,11 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
-const POLICY_DATE = "2026-08-12T09:00:00.000Z";
+const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 
-function runModelFixture(
-  model: string,
-  index: number,
-  options: { readonly providerType?: ModelProviderType } = {},
-): AvailableRunModel {
+function runModelFixture(model: string, index: number): AvailableRunModel {
   return buildRunModel({
     model,
-    ...options,
     modelProviderId: `e4000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
   });
 }
@@ -60,7 +52,7 @@ function preference(
     serviceTier,
     modelSettings: {},
     selectedImageModel: null,
-    updatedAt: POLICY_DATE,
+    updatedAt: FIXTURE_DATE,
   });
 }
 
@@ -124,9 +116,7 @@ test("Show Auto when an existing thread's model is no longer selectable", async 
   context.mocks.data.availableRunModels([
     runModelFixture("okou-1.0", 1),
     {
-      ...runModelFixture("gpt-6-sol", 2, {
-        providerType: "codex-oauth-token",
-      }),
+      ...runModelFixture("gpt-6-sol", 2),
       subscriptionOptions: { efforts: ["low", "high"], serviceTier: null },
     },
   ]);

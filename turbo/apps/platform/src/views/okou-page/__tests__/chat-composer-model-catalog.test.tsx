@@ -22,7 +22,7 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
-const POLICY_DATE = "2026-09-30T09:00:00.000Z";
+const FIXTURE_DATE = "2026-09-30T09:00:00.000Z";
 
 function configureRunModels(models: readonly string[]): void {
   installConnectedPersonalSubscriptions(context);
@@ -39,7 +39,7 @@ function preference(selectedModel: string): void {
     serviceTier: null,
     modelSettings: {},
     selectedImageModel: null,
-    updatedAt: POLICY_DATE,
+    updatedAt: FIXTURE_DATE,
   } as Parameters<typeof context.mocks.data.userModelPreference>[0]);
 }
 

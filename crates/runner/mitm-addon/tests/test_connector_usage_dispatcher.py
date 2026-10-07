@@ -58,7 +58,7 @@ class TestConnectorUsageDispatcher:
         it early-returns and never reaches the X parser even when
         firewall_billable=True."""
         flow = self._make_x_flow(real_flow, tmp_path)
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         assert self._call_and_get_billing(flow) == []
         proxy_log = tmp_path / "proxy.jsonl"
         if jsonl_exists_after_flush(proxy_log):

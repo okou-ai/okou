@@ -47,14 +47,14 @@ async def test_http1_handshake_classification_bounds_raw_value_conversion(
     *,
     is_upgrade: bool,
 ) -> None:
-    firewall_name = "model-provider:openai-api-key"
+    firewall_name = "model-provider:openrouter-codex"
     registry_path = _write_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(
             tmp_path,
             firewall_name=firewall_name,
             api_entry={
-                "base": "https://api.openai.com/v1/responses",
+                "base": "https://openrouter.ai/api/v1/responses",
                 "auth": {"headers": {"Authorization": "Bearer token"}},
                 "permissions": [],
             },
@@ -64,7 +64,7 @@ async def test_http1_handshake_classification_bounds_raw_value_conversion(
         ),
     )
     fields = [
-        (b"Host", b"api.openai.com"),
+        (b"Host", b"openrouter.ai"),
         (b"Upgrade", b"websocket"),
         (b"Connection", b"upgrade"),
         (b"Sec-WebSocket-Key", _KEY),
@@ -74,7 +74,7 @@ async def test_http1_handshake_classification_bounds_raw_value_conversion(
     fields = [(name, value) for name, value in fields if name != header_name]
     fields.extend((header_name, value) for value in values)
     wire = (
-        b"GET https://api.openai.com/v1/responses HTTP/1.1\r\n"
+        b"GET https://openrouter.ai/api/v1/responses HTTP/1.1\r\n"
         + b"\r\n".join(name + b": " + value for name, value in fields)
         + b"\r\n\r\n"
     )
@@ -92,9 +92,7 @@ async def test_http1_handshake_classification_bounds_raw_value_conversion(
         addon_context.options.update(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
         )
-        client, http_layer = start_http_layer(
-            addon_context, alpn=b"http/1.1", host="api.openai.com"
-        )
+        client, http_layer = start_http_layer(addon_context, alpn=b"http/1.1", host="openrouter.ai")
         initial_commands = list(http_layer.handle_event(events.DataReceived(client, wire)))
         headers_hook = next(
             command for command in initial_commands if isinstance(command, HttpRequestHeadersHook)

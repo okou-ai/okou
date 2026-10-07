@@ -91,7 +91,6 @@ export function preparePiMemoryBuiltinEnvironment(
 ): ResolvedModelProviderEnvironment | null {
   if (
     source.identity.kind !== "built-in" ||
-    source.credentialOwner !== "builtin" ||
     !route ||
     route.modelKeyId !== source.identity.modelKeyId ||
     route.selectedModel !== PI_MEMORY_BUILTIN_BINDING.selectedModel ||

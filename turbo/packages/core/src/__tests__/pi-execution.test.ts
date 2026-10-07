@@ -60,7 +60,7 @@ describe("Auto and personal-subscription Pi execution", () => {
       isPiExecutionRoute({
         catalogModel: piCatalogModel(null, "okou-1.0"),
         modelProviderType: "built-in",
-        runtimeProviderType: "openai-api-key",
+        runtimeProviderType: "codex-oauth-token",
         codexServiceTier: undefined,
       }),
     ).toBe(false);

@@ -92,6 +92,44 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high", "high"])
   }
 
+  func testCreateWithoutSavedModelUsesAutoInsteadOfSubscriptionCatalogDefault() async throws {
+    struct CreatedRequest: Decodable, Sendable {
+      let model: String
+    }
+    let createdModels = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body:
+            "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
+        )
+      case "/api/user-model-preference":
+        return ChatHTTPResponse(
+          body:
+            "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
+        )
+      case "/api/run-models":
+        return runModelsResponse([
+          SubscriptionRunModel(model: "gpt-5.6-sol", providerType: "codex-oauth-token")
+        ])
+      case "/api/model-catalog": return modelCatalogResponse()
+      case "/api/chat-threads":
+        let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
+        createdModels.withLock { $0.append(body.model) }
+        return ChatHTTPResponse(
+          status: 201,
+          body:
+            "{\"id\":\"\(newThread)\",\"title\":null,\"createdAt\":\"\(fixtureDate)\",\"selectedModel\":\"\(body.model)\",\"serviceTier\":null}"
+        )
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let created = try await ChatService(client: fixture.client).createThread()
+    XCTAssertEqual(created.selectedModel, "okou-1.0")
+    XCTAssertEqual(createdModels.withLock { $0 }, ["okou-1.0"])
+  }
+
   func testCreateResolvesRetiredSavedModelThroughCatalog() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let model: String

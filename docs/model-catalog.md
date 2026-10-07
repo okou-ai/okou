@@ -30,16 +30,20 @@ Returns the authenticated member's available choices:
     {
       "model": "okou-1.0",
       "modelLabel": "Auto",
-      "defaultProviderType": "built-in",
-      "runtimeProviderType": "openrouter-codex",
-      "credentialScope": "org",
-      "modelProviderId": null
+      "modelProviderId": null,
+      "memberEffective": {
+        "providerType": "built-in",
+        "runtimeProviderType": "openrouter-codex",
+        "credentialScope": "org",
+        "availability": "available",
+        "accountSelection": "not_applicable"
+      }
     }
   ]
 }
 ```
 
-The example omits route-status and member-capability fields; the route contract
+The example omits subscription option fields; the route contract
 in `turbo/packages/api-contracts/src/contracts/run-models.ts` and its response
 schema `availableRunModelsResponseSchema` (defined in
 `turbo/packages/api-contracts/src/contracts/model-providers.ts`) are

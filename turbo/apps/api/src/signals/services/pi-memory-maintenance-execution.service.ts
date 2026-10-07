@@ -83,7 +83,7 @@ import {
   modelCatalogForOrg,
   type ModelCatalog,
 } from "./model-catalog.service";
-import { prepareRegisteredModelEnvironment } from "./model-provider.service";
+import { prepareSubscriptionModelEnvironment } from "./model-provider.service";
 import { readDisabledPaidTools } from "./paid-tools.service";
 import {
   preparePiMemoryBuiltinEnvironment,
@@ -370,7 +370,7 @@ async function prepareMaintenanceModel(
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
     source.identity.kind === "built-in"
       ? preparePiMemoryBuiltinEnvironment(source, credential.route ?? undefined)
-      : await prepareRegisteredModelEnvironment(source, selectedModel, {
+      : await prepareSubscriptionModelEnvironment(source, selectedModel, {
           catalog,
           userId: job.userId,
           sourceId: credential.pin.modelProviderId ?? "",
@@ -1452,10 +1452,7 @@ async function validateMaintenanceSubscription(
   record: Pick<MaintenanceRunRecord, "modelProvider" | "orgId" | "userId">,
 ): Promise<{ readonly identity: string | null } | null> {
   const provider = record.modelProvider;
-  if (
-    !isPersonalSubscriptionProviderType(provider.type) ||
-    provider.credentialOwner !== "member"
-  ) {
+  if (!isPersonalSubscriptionProviderType(provider.type)) {
     return { identity: null };
   }
   if (!provider.id) {

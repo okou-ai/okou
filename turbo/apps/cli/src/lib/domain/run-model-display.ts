@@ -36,7 +36,7 @@ export function formatRunModelStatus(
     case "available":
       return null;
     case "reconnect_required":
-      return "reconnect_required: Reconnect your personal subscription in Preferences / Personal Models.";
+      return "reconnect_required: Reconnect your personal subscription in Settings > Models.";
     case "plan_restricted":
       return "plan_restricted: Review your organization's plan in Billing.";
   }

@@ -65,17 +65,21 @@ import type { AgentConnectorSelection } from "./execution-agent-connectors.servi
 import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
+import {
+  contextJsonProjection,
+  contextProjectionSchema,
+} from "./context-rowset";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
 import { createExecutionMemberContext } from "./execution-member-context.service";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
   createExecutionOrgRows,
   executionExpiredCredits,
+  executionOrgAttached,
   executionOrgMetadata,
   executionOrgPlan,
   executionOrgSlots,
 } from "./execution-org-context.service";
-import { createProviderContext } from "./execution-provider-context.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import {
   createUsageAllowanceContext,
@@ -302,11 +306,15 @@ function hasGlobalModelOwner(
 function createModelSourceGroups(
   orgId: string,
   userId: string,
+  memberContext: ReturnType<typeof createExecutionMemberContext>,
   supplied?: AgentRunContextSignals,
 ) {
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
   const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  const providers = sharedMember ?? createProviderContext(orgId, userId);
+  // Unshared member sources ride on the member statement read before enqueue.
+  const providers = sharedMember ?? {
+    memberModels$: memberContext.memberModels$,
+  };
   const globalReferences = supplied
     ? hasGlobalModelOwner(supplied)
       ? {
@@ -325,6 +333,12 @@ function createModelSourceGroups(
     modelPricing$: globalReferences.modelPricing$,
     globalReferences,
   };
+}
+
+/** The agent row rides on an unshared org statement; both gate enqueue. */
+function contextAgentRowSql(agentId: string) {
+  return sql`SELECT ${contextJsonProjection(contextAgentSelection())}
+    FROM ${agents} WHERE ${eq(agents.id, agentId)} LIMIT 1`;
 }
 
 function createRunAgentRow(agentId: string) {
@@ -355,12 +369,24 @@ function requirePreparedContextAgent(agent: BootstrapAgent | null): void {
 function createOrgContext(
   orgId: string,
   userId: string,
+  agentId: string,
+  memberContext: ReturnType<typeof createExecutionMemberContext>,
   supplied?: AgentRunContextSignals,
 ) {
   const { globalReferences, memberModels$, ...modelSources } =
-    createModelSourceGroups(orgId, userId, supplied);
+    createModelSourceGroups(orgId, userId, memberContext, supplied);
   const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
-  const orgRows$ = sharedOrg?.orgRows$ ?? createExecutionOrgRows(orgId);
+  const orgRows$ =
+    sharedOrg?.orgRows$ ??
+    createExecutionOrgRows(orgId, contextAgentRowSql(agentId));
+  // A shared org statement was issued for another agent; read this one alone.
+  const agentRow$ = sharedOrg
+    ? createRunAgentRow(agentId)
+    : computed(async (get) => {
+        return contextProjectionSchema(contextAgentSelection())
+          .nullable()
+          .parse(executionOrgAttached(await get(orgRows$)));
+      });
   const orgMetadata$ =
     sharedOrg?.orgMetadata$ ??
     computed(async (get) => {
@@ -396,6 +422,7 @@ function createOrgContext(
     });
   return {
     orgRows$,
+    agentRow$,
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
@@ -414,8 +441,10 @@ function createIdentityContext(
   supplied?: AgentRunContextSignals,
 ): AgentRunContextSignals {
   const scope = { userId, orgId, agentId };
+  const memberContext = createExecutionMemberContext(scope);
   const {
     orgRows$,
+    agentRow$,
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
@@ -424,17 +453,15 @@ function createIdentityContext(
     globalReferences,
     memberModels$,
     modelSources,
-  } = createOrgContext(orgId, userId, supplied);
+  } = createOrgContext(orgId, userId, agentId, memberContext, supplied);
   const sharedMember =
     supplied?.orgId === orgId && supplied.userId === userId
       ? supplied
       : undefined;
-  const agentRow$ = createRunAgentRow(agentId);
   const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
     const [row, org] = await Promise.all([get(agentRow$), get(orgMetadata$)]);
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
-  const memberContext = createExecutionMemberContext(scope);
   const memberMetadata$ =
     sharedMember?.memberMetadata$ ?? memberContext.metadata$;
   const credits$ =

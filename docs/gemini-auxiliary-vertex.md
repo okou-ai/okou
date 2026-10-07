@@ -1,8 +1,8 @@
 # Gemini auxiliary generation on Vertex AI
 
 API-owned Gemini generation uses native Google `generateContent`, not OpenRouter
-chat completions. This is independent of organization model-mode retirement,
-execution-route cleanup, caller-owned subscriptions and Runner model selection.
+chat completions. This is independent of Run model selection, caller-owned
+subscriptions and Runner model routing.
 
 ## Scope
 

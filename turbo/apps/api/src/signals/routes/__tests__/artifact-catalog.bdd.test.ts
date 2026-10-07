@@ -71,8 +71,8 @@ async function catalogActor(
   const runnerGroup = api.configureRunnerGroup();
   if (options.bootstrapOrg !== false) {
     await api.grantProEntitlement(actor);
-    // Catalog fixtures complete claimed native Runner runs, so the org
-    // default is Fable, which model policy keeps off Pi.
+    // Catalog fixtures complete claimed native Runner runs, so the owner
+    // selects Fable, whose personal subscription route never uses Pi.
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
