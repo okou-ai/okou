@@ -824,13 +824,33 @@ describe("usage pack subscription Stripe lifecycle", () => {
   );
 
   it.each([
-    { tier: "pro", planVersion: "usagePack", showUsagePack: true },
-    { tier: "team", planVersion: "usagePack", showUsagePack: true },
-    { tier: "pro", planVersion: "legacy", showUsagePack: false },
-    { tier: "team", planVersion: "legacy", showUsagePack: false },
+    {
+      tier: "pro",
+      planVersion: "usagePack",
+      showUsagePack: true,
+      expectedCredits: 0,
+    },
+    {
+      tier: "team",
+      planVersion: "usagePack",
+      showUsagePack: true,
+      expectedCredits: 0,
+    },
+    {
+      tier: "pro",
+      planVersion: "legacy",
+      showUsagePack: false,
+      expectedCredits: 20_000,
+    },
+    {
+      tier: "team",
+      planVersion: "legacy",
+      showUsagePack: false,
+      expectedCredits: 120_000,
+    },
   ] as const)(
-    "sets package visibility for an Atom $planVersion $tier grant without public credits",
-    async ({ tier, planVersion, showUsagePack }) => {
+    "sets package visibility and credits for an Atom $planVersion $tier grant",
+    async ({ tier, planVersion, showUsagePack, expectedCredits }) => {
       const fixture: UsagePackLifecycleFixture = {
         orgId: `org_atom_visibility_${randomUUID()}`,
         tier,
@@ -932,7 +952,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
           tier,
           showUsagePack,
           subscriptionStatus: "atom_grant",
-          credits: 0,
+          credits: expectedCredits,
           hasSubscription: false,
         });
       });
