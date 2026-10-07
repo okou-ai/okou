@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.220.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.17...runner-rs-v0.220.18) (2026-10-07)
+
+
+### Refactoring
+
+* remove custom provider and gateway traces ([#37890](https://github.com/okou-ai/okou/issues/37890)) ([f59490d](https://github.com/okou-ai/okou/commit/f59490d298d2c0b3c3b903d005846e13524bc59e))
+* retire cooldown, ultrafast, us routing and model provider leftovers ([#37884](https://github.com/okou-ai/okou/issues/37884)) ([a9c3270](https://github.com/okou-ai/okou/commit/a9c3270099034c0f7ee73f6c730b07efa7d1d733))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.220.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.16...runner-rs-v0.220.17) (2026-10-07)
 
 ### Release Dependencies
