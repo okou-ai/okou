@@ -58,6 +58,7 @@ import {
   piStableContextProjectionFromInput,
   preparePiStableContext,
 } from "../pi-stable-context.service";
+import { piStableContextVariantDigest } from "../pi-stable-context-digest.service";
 import { updateWorkflow$ } from "../workflow-update.service";
 import { normalizeMountOverlay } from "../storage-mount-overlay";
 
@@ -1208,6 +1209,38 @@ describe("Pi stable context generation fences", () => {
       ),
     ).resolves.toMatchObject({ kind: "missing" });
     await expect(variantHeads()).resolves.toStrictEqual([{ status: "ready" }]);
+
+    // Launch keys the cache on the stored, unfiltered connector scope, so the
+    // published context must carry that digest and serve the next launch.
+    const [published] = await db
+      .select({ input: piStableContextHeads.input })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.variantDigest, variantDigest));
+    const publishedSource = published?.input?.source;
+    if (!publishedSource) {
+      throw new Error("Expected published stable-context source");
+    }
+    expect(publishedSource.connectorScopeDigest).toBe(
+      piStableContextVariantDigest(args.semantic.connectorScope),
+    );
+    const launchSource = {
+      ...args.source,
+      catalogIdentity: publishedSource.catalogIdentity,
+      catalogSourceId: publishedSource.catalogSourceId,
+      agentIdentityDigest: publishedSource.agentIdentityDigest,
+      featurePromptDigest: publishedSource.featurePromptDigest,
+      permissionDigest: publishedSource.permissionDigest,
+      connectorScopeDigest: publishedSource.connectorScopeDigest,
+      validityHorizon: publishedSource.validityHorizon,
+    };
+    await expect(
+      createStore().get(
+        preparePiStableContext(
+          { ...args, source: launchSource },
+          AbortSignal.timeout(5000),
+        ),
+      ),
+    ).resolves.toMatchObject({ kind: "ready" });
   });
 
   it("keeps V2 demand when a delayed request captured latest instructions V1", async () => {

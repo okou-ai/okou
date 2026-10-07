@@ -263,7 +263,7 @@ async function loadStableContextSourceSnapshot(
   });
   const runWorkflows = await loadRunWorkflows(db, input);
   const permission = await loadPermissionSnapshot(db, input, checkedAt);
-  let connectorScope = {
+  const connectorScope = {
     ...connectorScopeBase,
     workflows: runWorkflows,
   };
@@ -300,12 +300,6 @@ async function loadStableContextSourceSnapshot(
       catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogRows),
     };
     catalogSelection = { kind: "scoped", selection };
-    // Same scope as Run launch: an enabled connector that left the catalog is
-    // dropped as if never authorized, so the context still publishes.
-    connectorScope = connectorScopeForRuntimeSnapshot(
-      connectorScope,
-      selection,
-    );
   }
   const permissionPolicies =
     catalogSelection.kind === "empty"
@@ -377,10 +371,16 @@ function builtinConnectorMounts(
   }
   const selection = snapshot.catalogSelection.selection;
   const desired: DesiredDynamicMount[] = [];
-  for (const slug of snapshot.connectorScope.allowedConnectorSlugs) {
+  // Mirrors Run launch: cache identity keeps the stored scope, while mounts
+  // drop a connector that left the catalog as if it were never authorized.
+  const { allowedConnectorSlugs } = connectorScopeForRuntimeSnapshot(
+    snapshot.connectorScope,
+    selection,
+  );
+  for (const slug of allowedConnectorSlugs) {
     const connector = selection.connectors.get(slug);
     if (!connector) {
-      return null;
+      continue;
     }
     if (connector.skill.kind !== "none") {
       desired.push({
