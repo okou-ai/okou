@@ -24,6 +24,9 @@ import {
 } from "@okouai/connectors/auth-providers";
 import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { command } from "ccstate";
 import { and, eq, inArray, or } from "drizzle-orm";
 
@@ -49,7 +52,10 @@ import {
 import {
   builtinConnectorById,
   connectorConnectionWriteRejection,
-  upsertBuiltinConnectorTokenConnection$,
+  commitBuiltinConnectorTokenConnection,
+  finalizeBuiltinConnectorTokenConnection$,
+  prepareBuiltinConnectorTokenConnection$,
+  resolveBuiltinConnectorTokenConnectionMutation,
 } from "./connector-data.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 import {
@@ -59,6 +65,8 @@ import {
 } from "./connected-connector-authorization.service";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
 import { resolveConnectorConnectionMutation } from "./connector-connection-write.service";
+import { memberRewardWalletQuery } from "./get-started-member-reward";
+import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 
 const SUPERSEDABLE_EXTERNAL_CODE_SESSION_STATUSES = ["pending"] as const;
 const SUPERSEDED_SESSION_ERROR_CODE = "session_superseded";
@@ -494,16 +502,16 @@ async function markClaimComplete(
     readonly writeDb: Db;
     readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
-    readonly connector: BuiltinConnectorResponse;
+    readonly connectorId: string;
   },
   signal: AbortSignal,
-): Promise<CompleteSuccess> {
+): Promise<void> {
   const completedAt = nowDate();
   const [completedSession] = await args.writeDb
     .update(builtinConnectorExternalCodeSessions)
     .set({
       status: "complete",
-      completedConnectorId: args.connector.id,
+      completedConnectorId: args.connectorId,
       errorCode: null,
       errorMessage: null,
       updatedAt: completedAt,
@@ -522,73 +530,127 @@ async function markClaimComplete(
   if (!completedSession) {
     throw new Error("External-code authorization session is no longer active");
   }
-  return {
-    status: 200,
-    body: { status: "complete", connector: args.connector },
-  };
 }
 
-async function persistClaimedConnector(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorExternalCodeSessionRow;
-    readonly claimStartedAt: Date;
-    readonly token: ConnectorAuthProviderGrantResult;
-    readonly persistConnector: (
-      args: { readonly token: ConnectorAuthProviderGrantResult },
-      signal: AbortSignal,
-    ) => Promise<
-      | { readonly ok: true; readonly connector: BuiltinConnectorResponse }
-      | { readonly ok: false; readonly message: string }
-    >;
-  },
-  signal: AbortSignal,
-): Promise<CompleteSuccess | ReturnType<typeof conflict>> {
-  return await args.writeDb.transaction(async (tx) => {
-    if (
-      !(await claimStillCurrent(
-        {
-          writeDb: tx,
-          sessionId: args.session.id,
-          claimStartedAt: args.claimStartedAt,
-        },
-        signal,
-      ))
-    ) {
-      throw new Error(
-        "External-code authorization session is no longer active",
-      );
-    }
-
-    const persisted = await args.persistConnector(
-      { token: args.token },
+const persistClaimedConnector$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: BuiltinConnectorExternalCodeSessionRow;
+      readonly claimStartedAt: Date;
+      readonly token: ConnectorAuthProviderGrantResult;
+      readonly resolvedMethod: ResolvedConnectorActionMethod;
+    },
+    signal: AbortSignal,
+  ): Promise<CompleteSuccess | ReturnType<typeof conflict>> => {
+    // Preparation can read unrelated rows and call external services. Complete
+    // it before taking the transaction that owns the session and connector.
+    const prepared = await set(
+      prepareBuiltinConnectorTokenConnection$,
+      {
+        orgId: args.session.orgId,
+        userId: args.session.userId,
+        runtimeMethod: args.resolvedMethod.runtimeMethod,
+        snapshot: args.resolvedMethod.snapshot,
+        outputs: args.token.outputs,
+        userInfo: args.token.userInfo,
+        oauthRequestedScopes: externalCodeRequestedOauthScopes(
+          args.session.oauthRequestedScopes,
+          args.resolvedMethod,
+        ),
+        oauthGrantedScopes: args.token.scopes,
+        expiresIn: args.token.expiresIn,
+        extraConnectorSecrets: args.token.extraConnectorSecrets,
+        account: args.session.accountMutation,
+      },
       signal,
     );
-    signal.throwIfAborted();
-    if (!persisted.ok) {
-      await markClaimError(
+    const writeDb = set(writeDb$);
+    let postCommitAbort: unknown = null;
+    const result = await writeDb.transaction(async (tx) => {
+      const [insertedWallet] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId: prepared.orgId })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId });
+      await tx.select().from(memberRewardWalletQuery(prepared.orgId));
+      if (insertedWallet) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(slackRewardWalletEntitlement(prepared.orgId))
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
+      const write = { ...prepared, db: tx };
+      const resolution = await resolveBuiltinConnectorTokenConnectionMutation(
+        write,
+        signal,
+      );
+      if (
+        !(await claimStillCurrent(
+          {
+            writeDb: tx,
+            sessionId: args.session.id,
+            claimStartedAt: args.claimStartedAt,
+          },
+          signal,
+        ))
+      ) {
+        throw new Error(
+          "External-code authorization session is no longer active",
+        );
+      }
+      const connectionResult = await commitBuiltinConnectorTokenConnection(
+        { ...write, resolution },
+        signal,
+      );
+      if (connectionResult.status !== "connected") {
+        const rejection = connectorConnectionWriteRejection(
+          connectionResult.status,
+        );
+        await markClaimError(
+          {
+            writeDb: tx,
+            session: args.session,
+            claimStartedAt: args.claimStartedAt,
+            errorMessage: rejection.message,
+          },
+          signal,
+        );
+        return conflict(rejection.message);
+      }
+      await markClaimComplete(
         {
           writeDb: tx,
           session: args.session,
           claimStartedAt: args.claimStartedAt,
-          errorMessage: persisted.message,
+          connectorId: connectionResult.connectorRow.id,
         },
         signal,
       );
-      return conflict(persisted.message);
+      return connectionResult;
+    });
+    if (signal.aborted) {
+      postCommitAbort = signal.reason;
     }
-
-    return await markClaimComplete(
+    if (result.status !== "connected") {
+      signal.throwIfAborted();
+      return result;
+    }
+    const connected = await set(
+      finalizeBuiltinConnectorTokenConnection$,
       {
-        writeDb: tx,
-        session: args.session,
-        claimStartedAt: args.claimStartedAt,
-        connector: persisted.connector,
+        prepared,
+        connectionResult: result,
+        postCommitAbort,
       },
       signal,
     );
-  });
-}
+    return {
+      status: 200,
+      body: { status: "complete", connector: connected.connector },
+    };
+  },
+);
 
 function terminalErrorResponse(
   session: BuiltinConnectorExternalCodeSessionRow,
@@ -708,10 +770,7 @@ async function completeClaimedExternalCodeSession(
     readonly persistConnector: (
       args: { readonly token: ConnectorAuthProviderGrantResult },
       signal: AbortSignal,
-    ) => Promise<
-      | { readonly ok: true; readonly connector: BuiltinConnectorResponse }
-      | { readonly ok: false; readonly message: string }
-    >;
+    ) => Promise<CompleteSuccess | ReturnType<typeof conflict>>;
   },
   signal: AbortSignal,
 ) {
@@ -772,16 +831,7 @@ async function completeClaimedExternalCodeSession(
   // client disconnects after provider success.
   const commitSignal = new AbortController().signal;
   const persistedConnector = await onRejection(
-    persistClaimedConnector(
-      {
-        writeDb: args.writeDb,
-        session: args.session,
-        claimStartedAt: args.claimStartedAt,
-        persistConnector: args.persistConnector,
-        token: providerResult.value,
-      },
-      commitSignal,
-    ),
+    args.persistConnector({ token: providerResult.value }, commitSignal),
     async (error) => {
       throwIfAbort(error);
       await markClaimError(
@@ -1009,46 +1059,6 @@ export const startBuiltinConnectorExternalCodeSession$ = command(
   },
 );
 
-const persistExternalCodeConnector$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly resolvedMethod: ResolvedConnectorActionMethod;
-      readonly oauthRequestedScopes: string | null;
-      readonly account: ConnectorAccountMutationIntent;
-      readonly token: ConnectorAuthProviderGrantResult;
-    },
-    signal: AbortSignal,
-  ) => {
-    const connectorResult = await set(
-      upsertBuiltinConnectorTokenConnection$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        runtimeMethod: args.resolvedMethod.runtimeMethod,
-        snapshot: args.resolvedMethod.snapshot,
-        outputs: args.token.outputs,
-        userInfo: args.token.userInfo,
-        oauthRequestedScopes: externalCodeRequestedOauthScopes(
-          args.oauthRequestedScopes,
-          args.resolvedMethod,
-        ),
-        oauthGrantedScopes: args.token.scopes,
-        expiresIn: args.token.expiresIn,
-        extraConnectorSecrets: args.token.extraConnectorSecrets,
-        account: args.account,
-      },
-      signal,
-    );
-    if (connectorResult.status !== "connected") {
-      return connectorConnectionWriteRejection(connectorResult.status);
-    }
-    return { ok: true as const, connector: connectorResult.connector };
-  },
-);
-
 export const completeBuiltinConnectorExternalCodeSession$ = command(
   async (
     { get, set },
@@ -1148,13 +1158,11 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
         claimStartedAt,
         persistConnector: async ({ token }, persistSignal: AbortSignal) => {
           return await set(
-            persistExternalCodeConnector$,
+            persistClaimedConnector$,
             {
-              orgId: args.orgId,
-              userId: args.userId,
+              session: claimedSession,
+              claimStartedAt,
               resolvedMethod,
-              oauthRequestedScopes: claimedSession.oauthRequestedScopes,
-              account: claimedSession.accountMutation,
               token,
             },
             persistSignal,

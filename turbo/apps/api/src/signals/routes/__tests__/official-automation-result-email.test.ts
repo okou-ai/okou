@@ -325,57 +325,6 @@ describe("Official Automation result email callbacks", () => {
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
   });
 
-  it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
-    const scenario = await publicResults.setupOfficial({ morningBrief: true });
-    const { runId } = await publicResults.start(
-      scenario.actor,
-      scenario.automationId,
-      scenario.runnerGroup,
-    );
-    await publicResults.complete(scenario.actor, runId, scenario.runnerGroup);
-    await expect(
-      publicResults.drain(runId, scenario.automationId),
-    ).resolves.toBe(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    const sent = context.mocks.resend.send.mock.calls[0]?.[0];
-    expect(sent).toMatchObject({ subject: "Morning Brief" });
-    const manageUrl =
-      "https://app.okou.ai/agents?settings=preference&focus=morning-brief";
-    const accountUnsubscribeUrl = `https://app.okou.ai/email/unsubscribe?token=${unsubscribeToken(
-      scenario.actor.userId,
-    )}`;
-    expect(sent).toMatchObject({ text: expect.stringContaining(manageUrl) });
-    const sentHeaders =
-      typeof sent === "object" && sent !== null && "headers" in sent
-        ? sent.headers
-        : undefined;
-    expect(sentHeaders).toStrictEqual({
-      "List-Unsubscribe": `<https://api.okou.ai/api/email/unsubscribe?token=${unsubscribeToken(
-        scenario.actor.userId,
-      )}>`,
-      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-    });
-
-    const send = context.mocks.resend.send.mock.calls[0]?.[0];
-    const html =
-      typeof send === "object" &&
-      send !== null &&
-      "html" in send &&
-      typeof send.html === "string"
-        ? send.html
-        : "";
-    expect(html).toContain(
-      'alt="Wake up to what matters. Your morning brief is ready."',
-    );
-    expect(html).toContain(
-      'href="https://app.okou.ai/agents?settings=preference&amp;focus=morning-brief"',
-    );
-    expect(html).toContain(
-      `>Manage</a> &middot; <a href="${accountUnsubscribeUrl}"`,
-    );
-  });
-
   it("retries independently of Run success and renders bounded Okou Markdown multipart output", async () => {
     const scenario = await setupScenario();
     const runId = await startRun(scenario, "https://app.okou.ai");
@@ -613,59 +562,6 @@ describe("Official Automation result email callbacks", () => {
     );
   });
 
-  it("falls back after pathological Markdown expansion and sends one bounded multipart email", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
-    const scenario = await publicResults.setupOfficial();
-    const { runId } = await publicResults.start(
-      scenario.actor,
-      scenario.automationId,
-      scenario.runnerGroup,
-    );
-    const pathologicalOutput = Array.from({ length: 2000 }, () => {
-      return "- x";
-    }).join("\n");
-    expect(Array.from(pathologicalOutput)).toHaveLength(7999);
-
-    await publicResults.complete(scenario.actor, runId, scenario.runnerGroup, {
-      exitCode: 0,
-      output: pathologicalOutput,
-    });
-    expect((await runs.readRun(scenario.actor, runId)).status).toBe(
-      "completed",
-    );
-    await expect(
-      publicResults.drain(runId, scenario.automationId),
-    ).resolves.toBe(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    const send = context.mocks.resend.send.mock.calls[0]?.[0];
-    const html =
-      typeof send === "object" &&
-      send !== null &&
-      "html" in send &&
-      typeof send.html === "string"
-        ? send.html
-        : "";
-    const text =
-      typeof send === "object" &&
-      send !== null &&
-      "text" in send &&
-      typeof send.text === "string"
-        ? send.text
-        : "";
-    expect(html).toContain(pathologicalOutput);
-    expect(html).toContain("white-space:pre-wrap");
-    expect(html).not.toContain("<li");
-    expect(html).toContain("- x\n- x");
-    expect(Buffer.byteLength(html, "utf8")).toBeLessThanOrEqual(96 * 1024);
-    expect(text).toContain("- x\n- x");
-    expect(text).toContain(`https://app.okou.ai/activities/${runId}`);
-    expect(text).toContain("https://app.okou.ai/email/unsubscribe");
-    await expect(
-      publicResults.drain(runId, scenario.automationId),
-    ).resolves.toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-  });
-
   it("keeps the existing automation switch separate from account-level unsubscribe", async () => {
     const scenario = await setupScenario();
 
@@ -706,36 +602,6 @@ describe("Official Automation result email callbacks", () => {
       [200],
     );
     expect(afterRepeatedUnsubscribe.body.enabled).toBeFalsy();
-  });
-
-  it("keeps suppression at send and leaves a successful Run unchanged", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
-    const scenario = await publicResults.setupOfficial();
-    const { runId } = await publicResults.start(
-      scenario.actor,
-      scenario.automationId,
-      scenario.runnerGroup,
-    );
-    await publicResults.complete(scenario.actor, runId, scenario.runnerGroup);
-    const bounced = {
-      type: "email.bounced",
-      data: {
-        email_id: `email_${randomUUID()}`,
-        to: [scenario.actor.email],
-      },
-    };
-    await webhooks.requestResendInboundWebhook(
-      bounced,
-      webhooks.signedResendWebhookHeaders(bounced),
-      [200],
-    );
-    await expect(
-      publicResults.drain(runId, scenario.automationId),
-    ).resolves.toBe(1);
-    expect(context.mocks.resend.send).not.toHaveBeenCalled();
-    expect((await runs.readRun(scenario.actor, runId)).status).toBe(
-      "completed",
-    );
   });
 
   describe("with a seeded cancellation callback", () => {
@@ -797,54 +663,6 @@ describe("Official Automation result email callbacks", () => {
           sourceWorkflowAutomationId: cancelledScenario.automationId,
         }),
       ).resolves.toStrictEqual({ items: [], claim: null });
-    });
-  });
-
-  describe("with a real failed Official Run", () => {
-    it("keeps terminal-failure Runs ineligible for result email", async () => {
-      await setupApp({ context, routes: [], isolatePg: true });
-      const scenario = await publicResults.setupOfficial();
-      const { runId } = await publicResults.start(
-        scenario.actor,
-        scenario.automationId,
-        scenario.runnerGroup,
-      );
-      await publicResults.complete(
-        scenario.actor,
-        runId,
-        scenario.runnerGroup,
-        { exitCode: 1 },
-      );
-      await publicResults.drain(runId, scenario.automationId);
-      expect((await runs.readRun(scenario.actor, runId)).status).toBe("failed");
-      expect(context.mocks.resend.send).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("with a real successful Official Run", () => {
-    it("honors account unsubscribe for successful result callbacks", async () => {
-      await setupApp({ context, routes: [], isolatePg: true });
-      const scenario = await publicResults.setupOfficial();
-      const { runId } = await publicResults.start(
-        scenario.actor,
-        scenario.automationId,
-        scenario.runnerGroup,
-      );
-      await misc.requestEmailUnsubscribe(
-        unsubscribeToken(scenario.actor.userId),
-        [200],
-      );
-      await publicResults.complete(
-        scenario.actor,
-        runId,
-        scenario.runnerGroup,
-        { output: "Unsubscribed result" },
-      );
-      await publicResults.drain(runId, scenario.automationId);
-      expect((await runs.readRun(scenario.actor, runId)).status).toBe(
-        "completed",
-      );
-      expect(context.mocks.resend.send).not.toHaveBeenCalled();
     });
   });
 
@@ -969,4 +787,196 @@ describe("Official Automation result email callbacks", () => {
       ).resolves.toStrictEqual({ items: [], claim: beforeDelete.claim });
     },
   );
+
+  describe("with a published Official catalog", () => {
+    beforeEach(async () => {
+      await setupApp({ context, routes: [], isolatePg: true });
+    });
+
+    it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
+      const scenario = await publicResults.setupOfficial({
+        morningBrief: true,
+      });
+      const { runId } = await publicResults.start(
+        scenario.actor,
+        scenario.automationId,
+        scenario.runnerGroup,
+      );
+      await publicResults.complete(scenario.actor, runId, scenario.runnerGroup);
+      await expect(
+        publicResults.drain(runId, scenario.automationId),
+      ).resolves.toBe(1);
+      expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+      const sent = context.mocks.resend.send.mock.calls[0]?.[0];
+      expect(sent).toMatchObject({ subject: "Morning Brief" });
+      const manageUrl =
+        "https://app.okou.ai/agents?settings=preference&focus=morning-brief";
+      const accountUnsubscribeUrl = `https://app.okou.ai/email/unsubscribe?token=${unsubscribeToken(
+        scenario.actor.userId,
+      )}`;
+      expect(sent).toMatchObject({ text: expect.stringContaining(manageUrl) });
+      const sentHeaders =
+        typeof sent === "object" && sent !== null && "headers" in sent
+          ? sent.headers
+          : undefined;
+      expect(sentHeaders).toStrictEqual({
+        "List-Unsubscribe": `<https://api.okou.ai/api/email/unsubscribe?token=${unsubscribeToken(
+          scenario.actor.userId,
+        )}>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      });
+
+      const send = context.mocks.resend.send.mock.calls[0]?.[0];
+      const html =
+        typeof send === "object" &&
+        send !== null &&
+        "html" in send &&
+        typeof send.html === "string"
+          ? send.html
+          : "";
+      expect(html).toContain(
+        'alt="Wake up to what matters. Your morning brief is ready."',
+      );
+      expect(html).toContain(
+        'href="https://app.okou.ai/agents?settings=preference&amp;focus=morning-brief"',
+      );
+      expect(html).toContain(
+        `>Manage</a> &middot; <a href="${accountUnsubscribeUrl}"`,
+      );
+    });
+
+    it("falls back after pathological Markdown expansion and sends one bounded multipart email", async () => {
+      const scenario = await publicResults.setupOfficial();
+      const { runId } = await publicResults.start(
+        scenario.actor,
+        scenario.automationId,
+        scenario.runnerGroup,
+      );
+      const pathologicalOutput = Array.from({ length: 2000 }, () => {
+        return "- x";
+      }).join("\n");
+      expect(Array.from(pathologicalOutput)).toHaveLength(7999);
+
+      await publicResults.complete(
+        scenario.actor,
+        runId,
+        scenario.runnerGroup,
+        {
+          exitCode: 0,
+          output: pathologicalOutput,
+        },
+      );
+      expect((await runs.readRun(scenario.actor, runId)).status).toBe(
+        "completed",
+      );
+      await expect(
+        publicResults.drain(runId, scenario.automationId),
+      ).resolves.toBe(1);
+      expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+      const send = context.mocks.resend.send.mock.calls[0]?.[0];
+      const html =
+        typeof send === "object" &&
+        send !== null &&
+        "html" in send &&
+        typeof send.html === "string"
+          ? send.html
+          : "";
+      const text =
+        typeof send === "object" &&
+        send !== null &&
+        "text" in send &&
+        typeof send.text === "string"
+          ? send.text
+          : "";
+      expect(html).toContain(pathologicalOutput);
+      expect(html).toContain("white-space:pre-wrap");
+      expect(html).not.toContain("<li");
+      expect(html).toContain("- x\n- x");
+      expect(Buffer.byteLength(html, "utf8")).toBeLessThanOrEqual(96 * 1024);
+      expect(text).toContain("- x\n- x");
+      expect(text).toContain(`https://app.okou.ai/activities/${runId}`);
+      expect(text).toContain("https://app.okou.ai/email/unsubscribe");
+      await expect(
+        publicResults.drain(runId, scenario.automationId),
+      ).resolves.toBe(0);
+      expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps suppression at send and leaves a successful Run unchanged", async () => {
+      const scenario = await publicResults.setupOfficial();
+      const { runId } = await publicResults.start(
+        scenario.actor,
+        scenario.automationId,
+        scenario.runnerGroup,
+      );
+      await publicResults.complete(scenario.actor, runId, scenario.runnerGroup);
+      const bounced = {
+        type: "email.bounced",
+        data: {
+          email_id: `email_${randomUUID()}`,
+          to: [scenario.actor.email],
+        },
+      };
+      await webhooks.requestResendInboundWebhook(
+        bounced,
+        webhooks.signedResendWebhookHeaders(bounced),
+        [200],
+      );
+      await expect(
+        publicResults.drain(runId, scenario.automationId),
+      ).resolves.toBe(1);
+      expect(context.mocks.resend.send).not.toHaveBeenCalled();
+      expect((await runs.readRun(scenario.actor, runId)).status).toBe(
+        "completed",
+      );
+    });
+
+    describe("with a real failed Official Run", () => {
+      it("keeps terminal-failure Runs ineligible for result email", async () => {
+        const scenario = await publicResults.setupOfficial();
+        const { runId } = await publicResults.start(
+          scenario.actor,
+          scenario.automationId,
+          scenario.runnerGroup,
+        );
+        await publicResults.complete(
+          scenario.actor,
+          runId,
+          scenario.runnerGroup,
+          { exitCode: 1 },
+        );
+        await publicResults.drain(runId, scenario.automationId);
+        expect((await runs.readRun(scenario.actor, runId)).status).toBe(
+          "failed",
+        );
+        expect(context.mocks.resend.send).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("with a real successful Official Run", () => {
+      it("honors account unsubscribe for successful result callbacks", async () => {
+        const scenario = await publicResults.setupOfficial();
+        const { runId } = await publicResults.start(
+          scenario.actor,
+          scenario.automationId,
+          scenario.runnerGroup,
+        );
+        await misc.requestEmailUnsubscribe(
+          unsubscribeToken(scenario.actor.userId),
+          [200],
+        );
+        await publicResults.complete(
+          scenario.actor,
+          runId,
+          scenario.runnerGroup,
+          { output: "Unsubscribed result" },
+        );
+        await publicResults.drain(runId, scenario.automationId);
+        expect((await runs.readRun(scenario.actor, runId)).status).toBe(
+          "completed",
+        );
+        expect(context.mocks.resend.send).not.toHaveBeenCalled();
+      });
+    });
+  });
 });

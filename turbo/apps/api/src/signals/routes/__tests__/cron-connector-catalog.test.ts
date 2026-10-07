@@ -5129,25 +5129,18 @@ describe("connector catalog rejection and latest-valid retention", () => {
     configureSource();
     expect(CONNECTOR_CATALOG_MAX_RAW_BYTES).toBe(64 * 1024 * 1024);
     const acceptedVersion = "2026-07-15.sixty-four-mib-limit";
-    const unpadded = buildRelease({
-      version: acceptedVersion,
-      mutateCatalog: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").description = "";
-      },
-    });
-    const descriptionBytes =
-      CONNECTOR_CATALOG_MAX_RAW_BYTES -
-      releaseCatalogBytes(unpadded).byteLength;
+    const unpadded = buildRelease({ version: acceptedVersion });
+    // Exercise the real raw-byte limit without persisting a 64 MiB description
+    // in JSONB: trailing JSON whitespace is downloaded, hashed and parsed too.
+    const acceptedBytes = Buffer.alloc(CONNECTOR_CATALOG_MAX_RAW_BYTES, " ");
+    releaseCatalogBytes(unpadded).copy(acceptedBytes);
     const accepted = buildRelease({
       version: acceptedVersion,
-      mutateCatalog: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").description = "x".repeat(
-          descriptionBytes,
-        );
-      },
+      catalogBytes: acceptedBytes,
     });
-    const acceptedBytes = releaseCatalogBytes(accepted);
-    expect(acceptedBytes.byteLength).toBe(CONNECTOR_CATALOG_MAX_RAW_BYTES);
+    expect(releaseCatalogBytes(accepted).byteLength).toBe(
+      CONNECTOR_CATALOG_MAX_RAW_BYTES,
+    );
     serveObjects(catalogObjects([accepted], accepted));
 
     expect((await syncCatalog()).body).toMatchObject({

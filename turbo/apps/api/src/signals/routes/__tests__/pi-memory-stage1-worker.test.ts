@@ -1352,61 +1352,66 @@ describe("Pi memory Stage 1 worker", () => {
     );
   });
 
-  it("bills built-in extraction at the served route's catalog long-context threshold", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
-    const below = await createPublicStorageFixture();
-    const atBoundary = await createPublicStorageFixture();
-    await below.seed({
-      raw: (piSessionId) => {
-        return settledHistory(piSessionId, "total input below the boundary");
-      },
-    });
-    await atBoundary.seed({
-      raw: (piSessionId) => {
-        return settledHistory(piSessionId, "total input at the boundary");
-      },
-    });
-    await below.prepareExecution();
-    await atBoundary.prepareExecution();
-    // The pricing-only operator change belongs to extraction, after the
-    // ordinary native source/trigger Runs have used their normal priced routes.
-    // An operator sets a long-context band on the served OpenRouter route; the
-    // extraction must bill that band from the same catalog it routed with.
-    const restore = await setBuiltInRouteLongContextThresholdFixture({
-      model: "deepseek-v4.1-flash",
-      concreteProviderType: "openrouter-codex",
-      longContextMinTotalInputTokens: 272_001,
-    });
-    onTestFinished(restore);
-    installProvider(({ request }) => {
-      const boundary = JSON.stringify(request).includes("at the boundary");
-      return {
-        text: defaultProviderOutput(),
-        usage: {
-          input_tokens: boundary ? 272_001 : 272_000,
-          output_tokens: 8,
-          cached_tokens: 1,
-          cache_write_tokens: 1,
-        },
-      };
+  describe("with a changed catalog pricing threshold", () => {
+    beforeEach(async () => {
+      await setupApp({ context, routes: [], isolatePg: true });
     });
 
-    await expect(runScoped(below)).resolves.toMatchObject({ succeeded: 1 });
-    await expect(runScoped(atBoundary)).resolves.toMatchObject({
-      succeeded: 1,
+    it("bills built-in extraction at the served route's catalog long-context threshold", async () => {
+      const below = await createPublicStorageFixture();
+      const atBoundary = await createPublicStorageFixture();
+      await below.seed({
+        raw: (piSessionId) => {
+          return settledHistory(piSessionId, "total input below the boundary");
+        },
+      });
+      await atBoundary.seed({
+        raw: (piSessionId) => {
+          return settledHistory(piSessionId, "total input at the boundary");
+        },
+      });
+      await below.prepareExecution();
+      await atBoundary.prepareExecution();
+      // The pricing-only operator change belongs to extraction, after the
+      // ordinary native source/trigger Runs have used their normal priced routes.
+      // An operator sets a long-context band on the served OpenRouter route; the
+      // extraction must bill that band from the same catalog it routed with.
+      const restore = await setBuiltInRouteLongContextThresholdFixture({
+        model: "deepseek-v4.1-flash",
+        concreteProviderType: "openrouter-codex",
+        longContextMinTotalInputTokens: 272_001,
+      });
+      onTestFinished(restore);
+      installProvider(({ request }) => {
+        const boundary = JSON.stringify(request).includes("at the boundary");
+        return {
+          text: defaultProviderOutput(),
+          usage: {
+            input_tokens: boundary ? 272_001 : 272_000,
+            output_tokens: 8,
+            cached_tokens: 1,
+            cache_write_tokens: 1,
+          },
+        };
+      });
+
+      await expect(runScoped(below)).resolves.toMatchObject({ succeeded: 1 });
+      await expect(runScoped(atBoundary)).resolves.toMatchObject({
+        succeeded: 1,
+      });
+      await expect(inspectUsageCategories(below)).resolves.toStrictEqual([
+        "tokens.cache_creation",
+        "tokens.cache_read",
+        "tokens.input",
+        "tokens.output",
+      ]);
+      await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual([
+        "tokens.cache_creation.long_context",
+        "tokens.cache_read.long_context",
+        "tokens.input.long_context",
+        "tokens.output.long_context",
+      ]);
     });
-    await expect(inspectUsageCategories(below)).resolves.toStrictEqual([
-      "tokens.cache_creation",
-      "tokens.cache_read",
-      "tokens.input",
-      "tokens.output",
-    ]);
-    await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual([
-      "tokens.cache_creation.long_context",
-      "tokens.cache_read.long_context",
-      "tokens.input.long_context",
-      "tokens.output.long_context",
-    ]);
   });
 
   it("isolates invalid sources permanently before the provider", async () => {

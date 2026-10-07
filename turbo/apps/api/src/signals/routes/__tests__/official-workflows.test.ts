@@ -8734,12 +8734,18 @@ describe("Official Workflow Run admission", () => {
 
   it("launches an idle Official agent-run input with the annotated source budget", async () => {
     const definitionName = `api-test-idle-official-${randomUUID()}`;
+    const sourceDefinitionName = `api-test-idle-source-${randomUUID()}`;
     const { actor } = await workflowBdd.setupWorkflowOrg({
       model: "claude-fable-5-1",
     });
     const { agentId } = await workflowBdd.createAgent(actor);
     installCatalogStorageFixture();
-    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, []),
+        activeDefinition(sourceDefinitionName, [loopBlueprint()]),
+      ]),
+    );
     await setOfficialWorkflowsEnabled(actor, true);
     const installation = await accept(
       officialClient().install({
@@ -8765,44 +8771,43 @@ describe("Official Workflow Run admission", () => {
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
 
-    const sourceThread = await chat.createThread(actor, { agentId });
-    let { runId: sourceRunId } = await chat.sendAndLaunch(actor, {
-      agentId,
-      threadId: sourceThread.id,
-      prompt: "source for idle Official launch",
-    });
-    let sourceThreadId = sourceThread.id;
-    let sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    // Spend 31 of the 32 public delegation hops through real admission.
-    // Each completed parent releases its slot before the next child is claimed.
-    for (let hop = 0; hop < 31; hop += 1) {
-      const child = await accept(
-        workflowClient().run({
-          headers: officialQueueHeaders(actor, sourceRunId, {
-            origin: "agent_run",
-          }),
-          extraHeaders: { origin: "https://app.okou.ai" },
-          params: { workflowId: installation.body.workflow.id },
-        }),
-        [200],
-      );
-      await webhooks.requestAgentComplete(
-        { runId: sourceRunId, exitCode: 1 },
-        { authorization: `Bearer ${sourceClaim.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const childRunId = await launchedAutomationRunId(
-        actor,
-        child.body.chatThreadId,
-      );
-      if (!childRunId || childRunId === sourceRunId) {
-        throw new Error("Expected a distinct public delegation child");
-      }
-      sourceRunId = childRunId;
-      sourceThreadId = child.body.chatThreadId;
-      sourceClaim = await runs.claimRunnerJob(sourceRunId);
+    // The source's public Blueprint grants one delegation hop to the target.
+    const sourceInstallation = await accept(
+      officialClient().install({
+        headers: authHeaders(actor),
+        params: { definitionName: sourceDefinitionName },
+        body: {
+          agentId,
+          blueprints: [
+            {
+              blueprintKey: "pulse",
+              bindings: [
+                { key: "interval-seconds", value: 3600 },
+                { key: "autonomy-budget", value: 1 },
+              ],
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const sourceAutomation = sourceInstallation.body.workflow.automations[0];
+    if (!sourceAutomation) {
+      throw new Error("Expected a one-hop Official source Automation");
     }
+    const source = await accept(
+      automationClient().run({
+        headers: authHeaders(actor),
+        params: { id: sourceAutomation.id },
+      }),
+      [201],
+    );
+    const sourceThreadId = source.body.chatThreadId;
+    const sourceRunId = await launchedAutomationRunId(actor, sourceThreadId);
+    if (!sourceRunId) {
+      throw new Error("Expected the Official source Automation Run");
+    }
+    const sourceClaim = await runs.claimRunnerJob(sourceRunId);
     await webhooks.requestAgentComplete(
       { runId: sourceRunId, exitCode: 1 },
       { authorization: `Bearer ${sourceClaim.sandboxToken}` },
@@ -8828,7 +8833,7 @@ describe("Official Workflow Run admission", () => {
     if (!launchedRunId) {
       throw new Error("Expected the idle Official input to dispatch itself");
     }
-    expect(launched.body.chatThreadId).not.toBe(sourceThread.id);
+    expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
     const claim = await runs.claimRunnerJob(launchedRunId);
     expect(claim.prompt).toBe(`/${installation.body.workflow.name}`);
     expect(claim.appendSystemPrompt).toContain(`SOURCE_RUN_ID: ${sourceRunId}`);
