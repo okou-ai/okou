@@ -585,16 +585,14 @@ describe("okou workflow automations", () => {
   async function setupFixture(
     tier: "pro" | "team" = "pro",
   ): Promise<AutomationScenario> {
+    // Fable keeps automation runs on the claimable native Runner route.
     const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
       tier,
+      model: "claude-fable-5-1",
     });
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    // Fable keeps automation runs on the claimable native Runner route.
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
     const agent = await wf.createAgent(actor, {
       displayName: "Automation Agent",
     });

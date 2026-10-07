@@ -21,12 +21,12 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
  *   the old DB fixture matrix can be ported without DB writes. This file covers
  *   model-provider setup through API routes and run-context GET boundaries.
  * - RUN-01/RUN-03/CHAIN-RUN successful dispatch is covered by
- *   run-lifecycle.bdd.test.ts via the public Stripe invoice.paid entitlement
+ *   run-lifecycle.bdd.cases.ts via the public Stripe invoice.paid entitlement
  *   helper (grantProEntitlement); this file keeps the unauthenticated and
  *   malformed admission boundaries plus runner auth surfaces.
  * - RUN-04 persisted runner log ingestion needs callback/event API helpers.
  *   Checkpoint creation through the sandbox webhook is covered by
- *   run-lifecycle.bdd.test.ts; missing-run GET boundaries stay here.
+ *   run-lifecycle-completion.bdd.test.ts; missing-run GET boundaries stay here.
  * - SCHED-02 sync-skills valid-path coverage needs a focused external GitHub
  *   tarball/S3 helper; this file keeps shared cron auth rejection route-based
  *   without running valid global sweeps from the wrong owner file.
