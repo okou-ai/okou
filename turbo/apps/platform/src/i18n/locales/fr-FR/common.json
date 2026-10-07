@@ -5478,6 +5478,10 @@
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",
+    "tailscale": {
+      "editUnavailable": "Cet hôte utilise désormais Tailscale. La modification et la réassociation de Tailscale ne sont pas encore disponibles ici. Annulez cette modification pour conserver son transport enregistré.",
+      "needsRebind": "Cet hôte nécessite une nouvelle configuration Tailscale. La configuration et la réassociation de Tailscale ne sont pas encore disponibles ici."
+    },
     "unavailable": "L’accès SSH n’est pas disponible pour ce compte.",
     "username": "Nom d’utilisateur SSH"
   },
@@ -5728,6 +5732,7 @@
       "sshHelp": "SSH protège le trajet du Runner au serveur SSH. Ce serveur doit pouvoir joindre la destination RFB. Un chat ne peut utiliser cette route que si cet hôte SSH y est aussi activé.",
       "sshNeedsRebind": "L’hôte SSH de cette connexion VNC doit être réassocié à Cloudflare Access. Réassociez-le dans les paramètres SSH ou choisissez-y explicitement Direct avant de vous connecter.",
       "sshNeedsRebindStatus": "SSH à réassocier",
+      "sshTailscaleNeedsRebind": "L’hôte SSH de cette connexion VNC nécessite une nouvelle configuration Tailscale. La configuration et la réassociation de Tailscale ne sont pas encore disponibles ici.",
       "title": "Route de connexion",
       "unavailable": "Les paramètres SSH ne sont pas disponibles pour ce compte.",
       "via": "Hôte SSH :"

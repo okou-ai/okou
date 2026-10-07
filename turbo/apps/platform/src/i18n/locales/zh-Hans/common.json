@@ -5382,6 +5382,10 @@
     },
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
+    "tailscale": {
+      "editUnavailable": "此主机现已使用 Tailscale。此处尚未提供 Tailscale 编辑和重新绑定功能。请取消此次编辑以保留已保存的传输方式。",
+      "needsRebind": "此主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。"
+    },
     "unavailable": "该账号无法使用SSH访问。",
     "username": "SSH用户名"
   },
@@ -5626,6 +5630,7 @@
       "sshHelp": "SSH 仅保护 Runner 到 SSH 服务器这一跳。该服务器必须能够访问 RFB 目标。只有在聊天中同时启用该 SSH 主机，才能使用此路由。",
       "sshNeedsRebind": "此 VNC 连接使用的 SSH 主机需要重新绑定 Cloudflare Access。请先在 SSH 设置中重新绑定，或明确选择直连，再尝试连接。",
       "sshNeedsRebindStatus": "SSH 需要重新绑定",
+      "sshTailscaleNeedsRebind": "此 VNC 连接使用的 SSH 主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。",
       "title": "连接路由",
       "unavailable": "此账户无法使用SSH设置。",
       "via": "SSH主机："

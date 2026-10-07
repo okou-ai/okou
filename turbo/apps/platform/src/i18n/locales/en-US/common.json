@@ -5398,6 +5398,10 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
+    "tailscale": {
+      "editUnavailable": "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
+      "needsRebind": "This host needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet."
+    },
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
@@ -5643,6 +5647,7 @@
       "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. A chat can use this route only when that SSH host is also enabled.",
       "sshNeedsRebind": "The SSH host for this VNC connection needs a new Cloudflare Access binding. Rebind it or explicitly choose Direct in SSH settings before connecting.",
       "sshNeedsRebindStatus": "SSH needs rebind",
+      "sshTailscaleNeedsRebind": "The SSH host for this VNC connection needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
       "title": "Connection route",
       "unavailable": "SSH settings are not available for this account.",
       "via": "SSH host:"

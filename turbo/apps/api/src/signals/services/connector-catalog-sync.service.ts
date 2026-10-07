@@ -29,7 +29,6 @@ import type { ConnectorCatalogRelationshipRule } from "@okouai/connectors/connec
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
@@ -42,16 +41,11 @@ import {
   publishImmutableCatalogPointer,
 } from "./connector-catalog-immutable.service";
 import {
-  invalidateAllPiStableContextsSql,
-  invalidatePiStableContextsForCatalogSourceSql,
-} from "./pi-stable-context-generation.service";
-import {
   connectorCatalogSkillFailure,
   type ConnectorCatalogSkillFailure,
 } from "./connector-catalog-skill-registration.service";
 import {
   connectorCatalogSource,
-  connectorCatalogSourceIsTestScoped,
   type ConnectorCatalogSource,
 } from "./connector-catalog-source";
 import {
@@ -432,21 +426,10 @@ const publishCandidate$ = command(
         );
         signal.throwIfAborted();
         return await set(writeDb$).transaction(async (tx) => {
-          const at = nowDate();
           const { switched } = await publishImmutableCatalogPointer(tx, {
             schemaVersion: args.candidate.artifact.artifactSchemaVersion,
             hash,
           });
-          if (switched) {
-            await tx.execute(
-              connectorCatalogSourceIsTestScoped()
-                ? invalidatePiStableContextsForCatalogSourceSql(
-                    args.source.sourceId,
-                    at,
-                  )
-                : invalidateAllPiStableContextsSql(at),
-            );
-          }
           signal.throwIfAborted();
           return switched;
         });

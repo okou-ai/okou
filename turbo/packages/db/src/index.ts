@@ -14,6 +14,7 @@ import * as conversationSchema from "./schema/conversation";
 import * as checkpointSchema from "./schema/checkpoint";
 import * as agentSessionSchema from "./schema/agent-session";
 import * as storageSchema from "./schema/storage";
+import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
 import * as systemStoragePresignedUrlCacheSchema from "./schema/system-storage-presigned-url-cache";
 import * as blobSchema from "./schema/blob";
 
@@ -145,9 +146,7 @@ import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
-import * as piResourceSnapshotSchema from "./schema/pi-resource-snapshot";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
-import * as piStableContextSchema from "./schema/pi-stable-context";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
 import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
@@ -175,6 +174,7 @@ export const schema = {
   ...checkpointSchema,
   ...agentSessionSchema,
   ...storageSchema,
+  ...storagePublicationFenceSchema,
   ...systemStoragePresignedUrlCacheSchema,
   ...blobSchema,
 
@@ -307,9 +307,7 @@ export const schema = {
   ...browserSessionSchema,
   ...presentationTemplateSchema,
   ...userTemplateSchema,
-  ...piResourceSnapshotSchema,
   ...piResourceVersionIndexSchema,
-  ...piStableContextSchema,
   ...memorySummaryProjectionSchema,
   ...piMemoryStage1CandidateSchema,
   ...piMemoryPhase2JobSchema,

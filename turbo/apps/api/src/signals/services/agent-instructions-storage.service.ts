@@ -1,4 +1,3 @@
-import type { PiStableContextPublicationFence } from "./pi-stable-context-generation.service";
 import { command } from "ccstate";
 import {
   getInstructionsFilename,
@@ -22,7 +21,6 @@ interface WriteAgentInstructionsStorageArgs {
   readonly agentName: string;
   readonly instructions: string;
   readonly framework?: string;
-  readonly stableContextPublication?: PiStableContextPublicationFence;
 }
 
 function instructionFilesForFramework(args: {
@@ -48,9 +46,6 @@ function instructionVolumeInput(args: WriteAgentInstructionsStorageArgs) {
     orgId: args.orgId,
     storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
     piResourceIndex: true as const,
-    ...(args.stableContextPublication
-      ? { stableContextPublication: args.stableContextPublication }
-      : {}),
     files: instructionFilesForFramework({
       content: args.instructions,
       framework: args.framework,
@@ -74,10 +69,7 @@ export const writeAgentInstructionsStorage$ = command(
 export const prepareAgentInstructionsStorage$ = command(
   async (
     { set },
-    args: Omit<
-      WriteAgentInstructionsStorageArgs,
-      "stableContextPublication"
-    > & {
+    args: WriteAgentInstructionsStorageArgs & {
       readonly storage?: ServerSideVolumeStorage;
     },
     signal: AbortSignal,

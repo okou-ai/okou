@@ -222,6 +222,66 @@ final class ChatClientTests: XCTestCase {
     }
   }
 
+  func testCreatePreservesServiceTierOnlyWhenSupportedBySelectedModel() async throws {
+    struct CreatedRequest: Decodable, Sendable {
+      let model: String
+      let serviceTier: String?
+      let reasoningEffort: String?
+    }
+    let cases:
+      [(availability: String, offeredTier: String?, savedTier: String, expectedTier: String?)] = [
+        ("available", "priority", "priority", "priority"),
+        ("reconnect_required", "priority", "priority", "priority"),
+        ("plan_restricted", "priority", "priority", "priority"),
+        ("available", nil, "priority", nil),
+        ("available", "priority", "unsupported", nil),
+      ]
+    for selection in cases {
+      let createdRequests = Mutex<[CreatedRequest]>([])
+      let fixture = ChatHTTPFixture { request in
+        switch request.url?.path {
+        case "/api/agents":
+          return ChatHTTPResponse(
+            body: """
+              [{"agentId":"\(fixtureAgent)","isDefaultAgent":true,"displayName":"Okou"}]
+              """)
+        case "/api/user-model-preference":
+          return ChatHTTPResponse(
+            body: """
+              {"selectedModel":"gpt-5.6-sol","serviceTier":"\(selection.savedTier)",\
+              "modelSettings":{"gpt-5.6-sol":{"effort":"high"}}}
+              """)
+        case "/api/run-models":
+          return runModelsResponse([
+            SubscriptionRunModel(
+              model: "gpt-5.6-sol", providerType: "codex-oauth-token",
+              serviceTier: selection.offeredTier, availability: selection.availability)
+          ])
+        case "/api/model-catalog": return modelCatalogResponse()
+        case "/api/chat-threads":
+          let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
+          createdRequests.withLock { $0.append(body) }
+          return ChatHTTPResponse(
+            status: 201,
+            body: """
+              {"id":"\(newThread)","title":null,"createdAt":"\(fixtureDate)",\
+              "selectedModel":"gpt-5.6-sol"}
+              """)
+        default: throw URLError(.unsupportedURL)
+        }
+      }
+      _ = try await ChatCommands(
+        client: fixture.client, sync: ChatSync(client: fixture.client)
+      ).createThread()
+      let context =
+        "\(selection.availability), offered: \(selection.offeredTier ?? "none"), saved: \(selection.savedTier)"
+      XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["gpt-5.6-sol"], context)
+      XCTAssertEqual(
+        createdRequests.withLock { $0.map(\.serviceTier) }, [selection.expectedTier], context)
+      XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"], context)
+    }
+  }
+
   func testUpgradeRequiredBlocksHistory() async throws {
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(

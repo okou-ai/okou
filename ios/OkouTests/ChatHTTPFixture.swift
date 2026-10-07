@@ -128,6 +128,7 @@ struct SubscriptionRunModel {
   let model: String
   let providerType: String
   var serviceTier: String?
+  var availability = "available"
 }
 
 /// `/api/run-models` fixture: Auto plus the member's connected subscription rows.
@@ -142,7 +143,7 @@ func runModelsResponse(_ subscriptions: [SubscriptionRunModel] = []) -> ChatHTTP
     return """
       {"model":"\(row.model)","modelLabel":"\(row.model)","modelProviderId":null,\
       "memberEffective":{"providerType":"\(row.providerType)","runtimeProviderType":"\(row.providerType)",\
-      "credentialScope":"member","availability":"available","accountSelection":"capture_required"},\
+      "credentialScope":"member","availability":"\(row.availability)","accountSelection":"capture_required"},\
       "subscriptionOptions":{"efforts":["low","medium","high"],"serviceTier":\(tier)}}
       """
   }

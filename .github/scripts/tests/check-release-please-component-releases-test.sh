@@ -827,7 +827,6 @@ expect_failure \
   "$release_head" \
   "release PR generation base is not an ancestor of merge-group base"
 
-echo "check-release-please-component-releases-test: ok"
 
 setup_repo "standalone-ios-presence"
 mkdir -p "$REPO/ios/Okou" "$REPO/ios/Config"
@@ -849,3 +848,28 @@ expect_failure "$REPO" "$merge_base" "$merge_head" "$release_head" "ios has inte
 release_head=$(create_release_head "$REPO" release-both '.["turbo/apps/api"] = "1.0.1" | .ios = "0.1.1"')
 merge_head=$(create_merge_head "$REPO" merge-both "$merge_base" '.["turbo/apps/api"] = "1.0.1" | .ios = "0.1.1"')
 expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
+
+for desktop_source in desktop/Okou/App.swift desktop/ComputerUse/Package.swift desktop/ComputerUse/Package.resolved; do
+setup_repo "standalone-${desktop_source//\//-}"
+mkdir -p "$(dirname "$REPO/$desktop_source")"
+printf 'struct App {}\n' > "$REPO/$desktop_source"
+update_manifest "$REPO" '.desktop = "0.1.0"'
+jq '.packages.desktop = {"release-type":"simple","component":"desktop"}' "$REPO/release-please-config.json" > "$REPO/config.next"
+mv "$REPO/config.next" "$REPO/release-please-config.json"
+git -C "$REPO" add --all
+git -C "$REPO" commit -qm "baseline desktop"
+BASE=$(git -C "$REPO" rev-parse HEAD)
+release_head=$(create_release_head "$REPO" release-api '.["turbo/apps/api"] = "1.0.1"')
+git -C "$REPO" switch -q main
+printf 'struct NewView {}\n' >> "$REPO/$desktop_source"
+git -C "$REPO" add --all
+git -C "$REPO" commit -qm "feat(desktop): add a view"
+merge_base=$(git -C "$REPO" rev-parse HEAD)
+merge_head=$(create_merge_head "$REPO" merge-api "$merge_base" '.["turbo/apps/api"] = "1.0.1"')
+expect_failure "$REPO" "$merge_base" "$merge_head" "$release_head" "desktop has intervening source changes in desktop but no new release"
+release_head=$(create_release_head "$REPO" release-both '.["turbo/apps/api"] = "1.0.1" | .desktop = "0.1.1"')
+merge_head=$(create_merge_head "$REPO" merge-both "$merge_base" '.["turbo/apps/api"] = "1.0.1" | .desktop = "0.1.1"')
+expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
+done
+
+echo "check-release-please-component-releases-test: ok"

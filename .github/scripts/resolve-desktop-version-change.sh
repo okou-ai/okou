@@ -8,7 +8,6 @@ fi
 
 base_commit="$1"
 head_commit="$2"
-package_path="turbo/apps/desktop/package.json"
 
 for commit in "$base_commit" "$head_commit"; do
   if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
@@ -20,8 +19,15 @@ done
 read_version() {
   local commit="$1"
 
-  git show "${commit}:${package_path}" |
-    jq -er '.version | select(type == "string" and length > 0)'
+  if git cat-file -e "${commit}:desktop/version.txt" 2>/dev/null; then
+    git show "${commit}:desktop/version.txt" | tr -d '\n\r'
+  else
+    # The base commit can still be Electron during the repository migration.
+    # Remove after active comparisons and in-flight migration events use native
+    # base/head commits; track the drain in okou-ai/okou#37888.
+    git show "${commit}:turbo/apps/desktop/package.json" |
+      jq -er '.version | select(type == "string" and length > 0)'
+  fi
 }
 
 base_version="$(read_version "$base_commit")"

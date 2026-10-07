@@ -3,13 +3,9 @@ import { randomUUID } from "node:crypto";
 
 import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
-import {
-  piStableContextArtifactResources,
-  piStableContextHeads,
-} from "@okouai/db/schema/pi-stable-context";
 import { storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, exists, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import {
@@ -30,7 +26,6 @@ import { safeSync, settle } from "../utils";
 
 const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
-const HEAD_INVALIDATION_BATCH_SIZE = 256;
 const WORK_LEASE_MS = 5 * 60 * 1000;
 
 function indexQueueValues(
@@ -48,87 +43,6 @@ function indexQueueValues(
       sourceArchiveSize,
     };
   });
-}
-
-function repairedVersionHeadCondition(
-  db: Pick<Db, "select">,
-  changedVersionIds: readonly string[],
-) {
-  return or(
-    exists(
-      db
-        .select({ ordinal: piStableContextArtifactResources.ordinal })
-        .from(piStableContextArtifactResources)
-        .where(
-          and(
-            eq(
-              piStableContextArtifactResources.artifactDigest,
-              piStableContextHeads.artifactDigest,
-            ),
-            inArray(
-              piStableContextArtifactResources.storageVersionId,
-              changedVersionIds,
-            ),
-          ),
-        ),
-    ),
-    // Pending/running heads have no artifact edge yet. Their captured immutable
-    // mounts still bind the repaired Storage encoding.
-    sql`EXISTS (
-      SELECT 1
-      FROM jsonb_array_elements(
-        COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)
-      ) AS mount
-      WHERE ${inArray(sql`mount->>'versionId'`, changedVersionIds)}
-    )`,
-  );
-}
-
-async function invalidateRepairedVersionHeads(
-  db: Pick<Db, "select" | "update">,
-  changedVersionIds: readonly string[],
-  signal?: AbortSignal,
-): Promise<void> {
-  const condition = repairedVersionHeadCondition(db, changedVersionIds);
-  const heads = await db
-    .select({ id: piStableContextHeads.id })
-    .from(piStableContextHeads)
-    .where(condition)
-    .orderBy(asc(piStableContextHeads.id))
-    .for("update");
-  signal?.throwIfAborted();
-  const invalidatedAt = nowDate();
-  // Every bulk head writer uses the same UUID order. Update only the exact
-  // prelocked snapshot so a concurrent insert cannot enter an unlocked batch.
-  for (
-    let offset = 0;
-    offset < heads.length;
-    offset += HEAD_INVALIDATION_BATCH_SIZE
-  ) {
-    const ids = heads
-      .slice(offset, offset + HEAD_INVALIDATION_BATCH_SIZE)
-      .map((head) => {
-        return head.id;
-      });
-    await db
-      .update(piStableContextHeads)
-      .set({
-        generation: sql`${piStableContextHeads.generation} + 1`,
-        status: "missing",
-        input: null,
-        inputDigest: null,
-        artifactDigest: null,
-        validityHorizon: null,
-        leaseId: null,
-        leaseExpiresAt: null,
-        availableAt: invalidatedAt,
-        attemptCount: 0,
-        lastErrorClass: null,
-        updatedAt: invalidatedAt,
-      })
-      .where(inArray(piStableContextHeads.id, ids));
-    signal?.throwIfAborted();
-  }
 }
 
 export async function enqueuePiResourceVersionIndexes(
@@ -166,17 +80,16 @@ export async function enqueuePiResourceVersionIndexes(
       return row.storageVersionId;
     }),
   );
-  const changedVersionIds: string[] = [];
   // A first insert establishes indexing work but is not an encoding repair.
-  // Only a pre-existing row whose immutable archive encoding changed may clear
-  // stable-context demand. Insert-first also serializes concurrent enqueues
-  // without relying on PostgreSQL's internal tuple metadata.
+  // Only a pre-existing row whose immutable archive encoding changed is reset.
+  // Insert-first also serializes concurrent enqueues without relying on
+  // PostgreSQL's internal tuple metadata.
   for (const value of values) {
     if (insertedVersionIds.has(value.storageVersionId)) {
       continue;
     }
     const enqueuedAt = nowDate();
-    const [changed] = await db
+    await db
       .update(piResourceVersionIndexes)
       .set({
         status: "pending",
@@ -198,16 +111,7 @@ export async function enqueuePiResourceVersionIndexes(
           ),
           sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM ${value.sourceArchiveSize}`,
         ),
-      )
-      .returning({
-        storageVersionId: piResourceVersionIndexes.storageVersionId,
-      });
-    if (changed) {
-      changedVersionIds.push(changed.storageVersionId);
-    }
-  }
-  if (changedVersionIds.length > 0) {
-    await invalidateRepairedVersionHeads(db, changedVersionIds, signal);
+      );
   }
   signal?.throwIfAborted();
 }

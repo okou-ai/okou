@@ -27,26 +27,13 @@ actor ChatCommands {
       if agentID != nil { throw ChatError.agentUnavailable }
       throw ChatError.noDefaultAgent
     }
-    // A saved selection of a retired model resolves to its active replacement.
-    let savedModel = preference.selectedModel.flatMap { catalog.resolve($0) }
-    let usableSavedModel = savedModel.flatMap { model in
-      availableModels.models.contains { $0.model == model && $0.hasUsableRoute() }
-        ? model : nil
-    }
-    // Without a usable saved selection, the thread uses Auto (a nil model).
-    let model = usableSavedModel
-    let serviceTier = preference.serviceTier.flatMap { tier in
-      model != nil
-        && availableModels.models.contains {
-          $0.model == model && $0.supportsServiceTier(tier)
-        }
-        ? tier : nil
-    }
+    let selection = resolveThreadModelSelection(
+      preference: preference, availableModels: availableModels, catalog: catalog)
     let body = CreateThreadBody(
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
-      eventId: UUID().uuidString, model: model,
-      serviceTier: serviceTier,
-      reasoningEffort: model.flatMap { preference.modelSettings?[$0]?.effort })
+      eventId: UUID().uuidString, model: selection.model,
+      serviceTier: selection.serviceTier,
+      reasoningEffort: selection.reasoningEffort)
     let created: CreatedThread = try await client.request(
       "/api/chat-threads", method: "POST", body: JSONEncoder().encode(body))
     return ChatThread(

@@ -18,10 +18,6 @@ import {
   materializeConnectorRuntimeLookup,
   uniqueSortedConnectorSlugs,
 } from "./connector-catalog-runtime.service";
-import {
-  catalogIdentityFromCapture,
-  type ExternalCatalogIdentity,
-} from "./connector-catalog-view";
 
 /** Pure predicates: the reader executes its SQL on its own connection/transaction. */
 export function connectorCatalogCurrentWhere() {
@@ -51,13 +47,6 @@ interface CatalogSlugRow<
     readonly hash: string;
   };
   readonly entry: Entry | null;
-}
-
-interface CatalogSlugIdentityRow extends CatalogSlugRow {
-  readonly current: CatalogSlugRow["current"] & {
-    readonly schemaVersion: number;
-    readonly hash: string;
-  };
 }
 
 function currentFromRows<Row extends CatalogSlugRow<CatalogCompatibilityEntry>>(
@@ -124,15 +113,4 @@ export function connectorCatalogSlugRuntimeFromRows(
     runtimeConnectorSlugs: uniqueSortedConnectorSlugs(runtimeConnectorSlugs),
     metadataConnectorSlugs: uniqueSortedConnectorSlugs(metadataConnectorSlugs),
   });
-}
-
-/** Only the existing Pi recapture comparison consumes this matching identity. */
-export function connectorCatalogSlugIdentityFromRows(
-  rows: readonly CatalogSlugIdentityRow[],
-): ExternalCatalogIdentity {
-  const current = currentFromRows(rows);
-  return catalogIdentityFromCapture(
-    current,
-    connectorCatalogExecutableCapabilityState().digest,
-  );
 }

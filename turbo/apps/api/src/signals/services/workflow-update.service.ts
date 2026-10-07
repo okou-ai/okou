@@ -1,10 +1,10 @@
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
-  piStableContextGenerationReceiptSchema,
-  beginPiStableContextPublicationSql,
-  piStableContextPublicationFromReceipt,
-  piStableContextWorkflowPublicationKey,
-} from "./pi-stable-context-generation.service";
+  publicationGenerationReceiptSchema,
+  beginPublicationSql,
+  publicationFenceFromReceipt,
+  workflowPublicationKey,
+} from "./storage-publication-fence.service";
 import { randomUUID } from "node:crypto";
 
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
@@ -19,7 +19,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
-  isStalePiStableContextPublicationError,
+  isStalePublicationFenceError,
   uploadVolumeServerSide$,
 } from "./storage-volume-upload.service";
 import {
@@ -91,14 +91,14 @@ async function commitWorkflowMetadata(
         ? { userId: workflow.ownerUserId }
         : {}),
     };
-    const piMutation0Key = piStableContextWorkflowPublicationKey(workflow.id);
+    const piMutation0Key = workflowPublicationKey(workflow.id);
     const piMutation0Token = randomUUID();
-    const stableContextPublication = derived.volumeChanged
-      ? piStableContextPublicationFromReceipt(
+    const publicationFence = derived.volumeChanged
+      ? publicationFenceFromReceipt(
           parseRawRows(
-            piStableContextGenerationReceiptSchema,
+            publicationGenerationReceiptSchema,
             await tx.execute(
-              beginPiStableContextPublicationSql(
+              beginPublicationSql(
                 piMutation0Scope,
                 piMutation0Key,
                 piMutation0Token,
@@ -111,7 +111,7 @@ async function commitWorkflowMetadata(
           piMutation0Token,
         )
       : undefined;
-    return { updated: true as const, stableContextPublication };
+    return { updated: true as const, publicationFence };
   });
 }
 
@@ -188,8 +188,8 @@ export const updateWorkflow$ = command(
               ...attachedFiles,
             ],
             piResourceIndex: true,
-            ...(metadata.stableContextPublication
-              ? { stableContextPublication: metadata.stableContextPublication }
+            ...(metadata.publicationFence
+              ? { publicationFence: metadata.publicationFence }
               : {}),
           },
           signal,
@@ -197,7 +197,7 @@ export const updateWorkflow$ = command(
         signal,
       );
       if (!upload.ok) {
-        if (isStalePiStableContextPublicationError(upload.error)) {
+        if (isStalePublicationFenceError(upload.error)) {
           return false;
         }
         throw upload.error;

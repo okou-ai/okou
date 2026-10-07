@@ -1,14 +1,10 @@
 import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
-import { piStableContextHeads } from "@okouai/db/schema/pi-stable-context";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
 
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { executePiResourceIndexWork$ } from "../services/pi-resource-version-index.service";
-import { executePiStableContextWork } from "../services/pi-stable-context.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -30,42 +26,9 @@ const run$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  const db = set(writeDb$);
-  const owner = body.data.stableContextOwner;
-  const heads = owner
-    ? await db
-        .select({ id: piStableContextHeads.id })
-        .from(piStableContextHeads)
-        .where(
-          and(
-            eq(piStableContextHeads.orgId, owner.orgId),
-            eq(piStableContextHeads.userId, owner.userId),
-            eq(piStableContextHeads.agentId, owner.agentId),
-          ),
-        )
-        .limit(16)
-    : [];
-  signal.throwIfAborted();
-  const headIds = heads.map((head) => {
-    return head.id;
-  });
-  const stableContext =
-    headIds.length > 0
-      ? await executePiStableContextWork(db, signal, {
-          scope: { headIds },
-        })
-      : {
-          claimed: 0,
-          ready: 0,
-          pending: 0,
-          unindexable: 0,
-          failed: 0,
-          stale: 0,
-        };
-  signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: { success: true as const, ...result, stableContext },
+    body: { success: true as const, ...result },
   };
 });
 
