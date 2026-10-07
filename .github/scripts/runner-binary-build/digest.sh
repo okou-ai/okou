@@ -59,6 +59,11 @@ import re
 import sys
 
 
+class JsonInteger:
+    def __init__(self, token):
+        self.token = token
+
+
 class JsonObject(dict):
     def __init__(self, pairs):
         super().__init__()
@@ -94,7 +99,8 @@ try:
     if len(raw) > 16 * 1024:
         raise ValueError("oversized manifest")
     identity = fields(json.loads(
-        raw.decode("utf-8"), object_pairs_hook=JsonObject, parse_constant=invalid_constant
+        raw.decode("utf-8"), object_pairs_hook=JsonObject,
+        parse_int=JsonInteger, parse_constant=invalid_constant
     ), ("version", "package", "versions", "sessionConstruction"))
     package = identity["package"] = fields(identity["package"], ("path", "sha256", "size"))
     versions = identity["versions"] = fields(
@@ -102,9 +108,9 @@ try:
     )
     session = identity["sessionConstruction"] = fields(identity["sessionConstruction"], ("digest",))
     if (
-        type(identity["version"]) is not int or identity["version"] != 1
+        not isinstance(identity["version"], JsonInteger) or identity["version"].token != "1"
         or package["path"] != "package.tgz" or package["sha256"] != sys.argv[2]
-        or type(package["size"]) is not int or package["size"] != int(sys.argv[3])
+        or not isinstance(package["size"], JsonInteger) or package["size"].token != sys.argv[3]
         or not release_version(versions["cli"])
         or not release_version(versions["piAgentRuntime"])
         or not isinstance(versions["piSdk"], str)
@@ -115,6 +121,10 @@ try:
     sdk = versions["piSdk"].split("+okou.")
     if len(sdk) != 2 or not release_version(sdk[0]) or re.fullmatch(r"[0-9a-f]{12}", sdk[1]) is None:
         raise ValueError("invalid Pi SDK identity")
+    # Convert only the validated bounded fields; ignored integers may exceed
+    # Python's configurable int conversion limit without affecting compilation.
+    identity["version"] = 1
+    package["size"] = int(sys.argv[3])
 except (OSError, ValueError, KeyError, RecursionError):
     sys.exit(1)
 

@@ -455,6 +455,10 @@ for unused in \
   [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
     || fail "valid ignored JSON metadata must not affect the digest: ${unused}"
 done
+printf '%s,"unused":%s}\n' "${cli_manifest_compact%?}" \
+  "$(printf '1%.0s' {1..5000})" > "$cli_manifest"
+[ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
+  || fail "valid ignored integers must not hit Python's int conversion limit"
 cp "$cli_manifest_base" "$cli_manifest"
 
 printf 'changed bytes\n' >> "$cli_package"
