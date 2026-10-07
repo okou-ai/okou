@@ -245,7 +245,9 @@ the complete migration consistency command remain active.
 After Custom retirement (#37746), migration
 `1322_prune_retired_model_routes` removes obsolete execution routes. The only
 remaining route families are fixed Auto, personal Claude/Codex subscriptions,
-and the independent OpenRouter DeepSeek memory binding. Historical catalog
+and the independent OpenRouter DeepSeek memory binding. Migration
+`1331_retire_byok_route_and_thread_pin_schema` then limits the route checks to
+Built-in routes and personal subscription routes. Historical catalog
 metadata and pricing remain unchanged; active metadata without a route does
 not grant execution. This cleanup must follow the retirement API rollback
 floor. See [cleanup boundaries](../../../docs/retired-model-route-cleanup.md).

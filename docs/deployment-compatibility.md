@@ -1,5 +1,67 @@
 # Deployment Compatibility
 
+## Retired BYOK schema, provider types and Pi native generation 4
+
+This change contracts what the Custom model retirement (#37746) left behind.
+
+**Pi native generation 4.** Its only writer was removed by #37746 (API
+1.710.3, released 2026-10-06 15:33 UTC). The TypeScript contract, Runner
+reader, generated Rust types, CLI and pi-agent-runtime Messages/Bedrock
+adapters are removed, and Runners stop advertising generation 4. Claim
+capabilities accept any advertised list, so old Runners that still advertise 4
+keep claiming generations 1-3; no API at or above the rollback floor writes 4.
+MaskDB on 2026-10-07 02:51 UTC showed an empty `runner_job_queue` and no
+non-terminal Run created before 2026-10-06 16:00 UTC, so no stored context
+can still carry generation 4. The generation 1 provider enum drops
+`vercel-ai-gateway` and `moonshotai`, and the generation 2/3 API-key secrets
+drop `VERCEL_AI_GATEWAY_API_KEY` and `OKOU_MODEL_PROVIDER_API_KEY`; nothing
+has written them since #37746.
+
+**Plan entitlement.** Migration `1330_drop_org_plan_support_byok` drops
+`org_plan_entitlements.support_byok`, and `GET /api/billing/status` no longer
+returns `supportByok`. MaskDB showed no entitlement row with
+`support_byok = false`. The production App does not validate responses; an
+older App reads the missing field as `false`, which only marks a member route
+as plan-restricted when the catalog has no subscription route for the model,
+and such a route cannot run. iOS and the CLI never read the field.
+
+**Provider types and schema.** `vercel-ai-gateway`, `vercel-ai-gateway-codex`,
+`azure-foundry`, `aws-bedrock`, `custom-anthropic-messages` and
+`custom-openai-responses` leave the provider type enum and registry.
+Production `model_providers` and `model_routes` hold only `built-in` and the
+two personal subscription types. Request schemas that name a provider type
+reject these values with `400`. Historical `agent_runs.model_provider` stays a
+`varchar` and is not rewritten: its readers safe-parse the value, so run
+detail reports `providerType: null` for a retired type and a historical
+provider balance failure shows the generic model-unavailable message, as for
+providers retired earlier. Migration
+`1331_retire_byok_route_and_thread_pin_schema` drops the legacy
+`chat_threads.model_provider_id`, `model_provider_type` and
+`model_provider_credential_scope` columns (no live writer stored a value; the
+only reader discarded it; no response, event or snapshot carried them) and
+limits `model_routes` to Built-in routes without a subscription type and
+personal subscription routes whose subscription type equals the provider
+type. The 9 production routes already satisfy both checks; no API writes
+`model_routes` at runtime.
+
+Old and new versions during deploy:
+
+- Migrations run before API promotion. The previous API still declares
+  `support_byok` and the three `chat_threads` columns, so its inserts and bare
+  `select()`/`returning()` on `org_plan_entitlements` and `chat_threads`, and
+  its raw get-started wallet insert, receive `42703` until it drains, as with
+  `1274` and `1287`. `chat_threads` is a hot table; release this change at low
+  traffic.
+- New API with an older App: see the plan entitlement paragraph above.
+- New Runner with the previous API: the previous API at or above the floor
+  writes only generations 1-3.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit adding `.github/rollback-floors/retired-byok-schema`.
+Recovering past that commit requires a forward-fix migration that restores the
+columns and the previous route checks.
+
 ## Retired member API-key provider writes
 
 `POST /api/me/model-providers` now accepts only `claude-code-oauth-token` and
