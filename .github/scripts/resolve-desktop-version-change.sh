@@ -23,6 +23,8 @@ read_version() {
     git show "${commit}:desktop/version.txt" | tr -d '\n\r'
   else
     # The base commit can still be Electron during the repository migration.
+    # Remove after active comparisons and in-flight migration events use native
+    # base/head commits; track the drain in okou-ai/okou#37888.
     git show "${commit}:turbo/apps/desktop/package.json" |
       jq -er '.version | select(type == "string" and length > 0)'
   fi

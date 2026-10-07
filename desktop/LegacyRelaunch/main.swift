@@ -4,6 +4,8 @@ import Foundation
 // Squirrel.Mac executes this exact resource path in the replacement app on
 // macOS 11+, with: ShipIt ___launch___ <installed-app-path>. Keep this bridge
 // in every native ZIP that legacy Electron clients can download directly.
+// Remove only after the legacy feed cannot select a bridge-free native ZIP;
+// migration-hop/feed-policy and client-drain evidence: okou-ai/okou#37888.
 guard CommandLine.arguments.count == 3, CommandLine.arguments[1] == "___launch___" else { exit(64) }
 let url = URL(fileURLWithPath: CommandLine.arguments[2]).standardizedFileURL
 guard let bundle = Bundle(url: url), bundle.bundleIdentifier == "ai.okou.desktop" else { exit(65) }
