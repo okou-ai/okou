@@ -194,14 +194,14 @@ so supersedes, the earlier run model schema contraction
 (`014fe1867c6d1830fd35b03c3d77491da5aaa36a`). This does not claim production
 activation.
 
-Migration 1332 then drops the constant `model_providers.auth_method`,
+Migration 1333 then drops the constant `model_providers.auth_method`,
 `model_providers.is_default`, `model_providers.selected_model`,
 `model_routes.price_tier` and `run_model_catalog.is_system_default` columns.
 Every API built before it still selects them in personal subscription and
 model catalog reads, so the same no-rolling-compatibility rule applies: apply
-1332 only after no pre-1332 API serves, and the rollback resolver rejects
+1333 only after no pre-1333 API serves, and the rollback resolver rejects
 targets before the first-parent `main` commit that adds
-`1332_drop_dead_model_provider_columns.sql`. On the wire, `/api/model-catalog`
+`1333_drop_dead_model_provider_columns.sql`. On the wire, `/api/model-catalog`
 no longer sends `isSystemDefault` or `priceTier`, personal provider responses
 no longer send `secretName`, `authMethod`, `secretNames`, `isDefault` or
 `selectedModel`, the provider upsert request no longer accepts
