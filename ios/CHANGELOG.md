@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/okou-ai/okou/compare/ios-v0.6.3...ios-v0.6.4) (2026-10-07)
+
+
+### Refactoring
+
+* represent auto model selection as null ([#37901](https://github.com/okou-ai/okou/issues/37901)) ([d0e0b71](https://github.com/okou-ai/okou/commit/d0e0b7191fe168e8935e1abf3df1fa1806efea2a))
+
 ## [0.6.3](https://github.com/okou-ai/okou/compare/ios-v0.6.2...ios-v0.6.3) (2026-10-07)
 
 

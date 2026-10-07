@@ -12,6 +12,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1001.5](https://github.com/okou-ai/okou/compare/app-v0.1001.4...app-v0.1001.5) (2026-10-07)
+
+
+### Refactoring
+
+* represent auto model selection as null ([#37901](https://github.com/okou-ai/okou/issues/37901)) ([d0e0b71](https://github.com/okou-ai/okou/commit/d0e0b7191fe168e8935e1abf3df1fa1806efea2a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.14
+    * @okouai/connectors bumped to 3.16.6
+    * @okouai/core bumped to 8.734.7
+
 ## [0.1001.4](https://github.com/okou-ai/okou/compare/app-v0.1001.3...app-v0.1001.4) (2026-10-07)
 
 
