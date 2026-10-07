@@ -4,17 +4,14 @@ import { personalModelProvidersMainContract } from "@okouai/api-contracts/contra
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { refreshPersonalModelProviderSubscriptionUsage$ } from "../services/model-provider-subscription-usage.service";
-import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
-import { writeDb$ } from "../external/db";
+import { personalModelProviderAccounts } from "../services/model-provider-account.service";
 import type { RouteEntry } from "../route-entry";
+
+const accounts$ = personalModelProviderAccounts(organizationAuthContext$);
 
 const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const result = await listPersonalModelProviderAccounts({
-    db: set(writeDb$),
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
+  const result = await get(accounts$);
   signal.throwIfAborted();
   const refreshed = await set(
     refreshPersonalModelProviderSubscriptionUsage$,

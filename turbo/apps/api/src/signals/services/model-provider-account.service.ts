@@ -12,7 +12,7 @@ import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import {
   and,
   asc,
@@ -30,7 +30,7 @@ import {
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
 import { fetchClaudeCodeProfileMetadata } from "./claude-code-usage.service";
@@ -170,36 +170,41 @@ async function encryptAccountSecrets(
   return encrypted;
 }
 
-export async function listPersonalModelProviderAccounts(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<ModelProviderListResponse> {
-  const rows = await args.db
-    .select({ account: modelProviderAccounts, provider: providerColumns })
-    .from(modelProviderAccounts)
-    .innerJoin(
-      modelProviders,
-      eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-    )
-    .where(
-      and(
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-        isNull(modelProviderAccounts.disconnectedAt),
-      ),
-    )
-    .orderBy(
-      modelProviderAccounts.type,
-      desc(modelProviderAccounts.isActive),
-      asc(modelProviderAccounts.createdAt),
-      asc(modelProviderAccounts.id),
-    );
-  return {
-    modelProviders: rows.map((row) => {
-      return accountResponse(row);
-    }),
-  };
+export function personalModelProviderAccounts(
+  scope$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+  }>,
+) {
+  return computed(async (get): Promise<ModelProviderListResponse> => {
+    const scope = get(scope$);
+    const db = get(db$);
+    const rows = await db
+      .select({ account: modelProviderAccounts, provider: providerColumns })
+      .from(modelProviderAccounts)
+      .innerJoin(
+        modelProviders,
+        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, scope.orgId),
+          eq(modelProviderAccounts.userId, scope.userId),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      )
+      .orderBy(
+        modelProviderAccounts.type,
+        desc(modelProviderAccounts.isActive),
+        asc(modelProviderAccounts.createdAt),
+        asc(modelProviderAccounts.id),
+      );
+    return {
+      modelProviders: rows.map((row) => {
+        return accountResponse(row);
+      }),
+    };
+  });
 }
 
 function accountMetadataValues(args: {

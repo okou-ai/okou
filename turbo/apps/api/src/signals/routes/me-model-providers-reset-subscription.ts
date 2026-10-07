@@ -7,8 +7,9 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import { isNotFoundResponse, notFound } from "../../lib/error";
 import { consumePersonalCodexRateLimitResetCredit$ } from "../services/model-provider-subscription-usage.service";
 import type { RouteEntry } from "../route-entry";
-import { writeDb$ } from "../external/db";
-import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
+import { personalModelProviderAccounts } from "../services/model-provider-account.service";
+
+const accounts$ = personalModelProviderAccounts(organizationAuthContext$);
 
 const resetSubscriptionUsageInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -30,15 +31,11 @@ const resetSubscriptionUsageInner$ = command(
       return bodyResult.response;
     }
 
-    const activeAccount = (
-      await listPersonalModelProviderAccounts({
-        db: set(writeDb$),
-        orgId: auth.orgId,
-        userId: auth.userId,
-      })
-    ).modelProviders.find((provider) => {
-      return provider.type === params.type && provider.isActive;
-    });
+    const activeAccount = (await get(accounts$)).modelProviders.find(
+      (provider) => {
+        return provider.type === params.type && provider.isActive;
+      },
+    );
     if (!activeAccount) {
       return notFound(`Provider "${params.type}" not found`);
     }

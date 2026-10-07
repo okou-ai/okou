@@ -129,6 +129,12 @@ test("agents read all subscriptions and single-account live usage without a fail
       })
       .sort(),
   ).toStrictEqual([...accountIds].sort());
+  for (const account of listed.body.modelProviders) {
+    expect(account).not.toHaveProperty("secrets");
+    expect(account).not.toHaveProperty("externalAccountId");
+    expect(account).not.toHaveProperty("orgId");
+    expect(account).not.toHaveProperty("userId");
+  }
   const detail = await accept(
     app()(personalSubscriptionsContract).get({
       headers,
@@ -171,6 +177,11 @@ test("cLI account activation reuses the existing switch behavior", async () => {
     app()(personalModelProvidersMainContract).list({ headers }),
     [200],
   );
+  expect(
+    listed.body.modelProviders.map((account) => {
+      return account.id;
+    }),
+  ).toStrictEqual([accountIds[1], accountIds[0]]);
   expect(
     listed.body.modelProviders.find((account) => {
       return account.id === accountIds[0];
@@ -237,6 +248,11 @@ test("foreign users and organizations cannot read or activate the linked account
     createBddApi(context).user({ userId: actor.userId }),
   ]) {
     const headers = human(other);
+    const listed = await accept(
+      app()(personalModelProvidersMainContract).list({ headers }),
+      [200],
+    );
+    expect(listed.body.modelProviders).toStrictEqual([]);
     const existing = await accept(
       app()(personalSubscriptionsContract).get({
         headers,
