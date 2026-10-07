@@ -16,7 +16,7 @@ import {
   readMcpChatMessageHistory$,
 } from "./mcp-chat-message-history.service";
 import { readUnarchivedMcpChatInput$ } from "./mcp-chat-input-history.service";
-import { nativeRunStatus } from "./native-run-status.service";
+import { readNativeRunStatus$ } from "./native-run-status.service";
 
 interface Principal {
   readonly userId: string;
@@ -217,7 +217,7 @@ function publicRejection(
 
 const observeMcpChatInput$ = command(
   async (
-    { get, set },
+    { set },
     principal: Principal,
     input: McpGetChatInputInput,
     signal: AbortSignal,
@@ -260,8 +260,9 @@ const observeMcpChatInput$ = command(
         data: { ...identity, inputStatus: "queued", run: null, error: null },
       };
     }
-    const run = await awaitWithSignal(
-      get(nativeRunStatus({ ...principal, runId: current.runId })),
+    const run = await set(
+      readNativeRunStatus$,
+      { ...principal, runId: current.runId },
       signal,
     );
     if (!run) {
