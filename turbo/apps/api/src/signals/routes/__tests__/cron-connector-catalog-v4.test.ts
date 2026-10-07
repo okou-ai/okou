@@ -446,7 +446,7 @@ describe("connector catalog v4 preparation", () => {
               change === "removed"
                 ? {
                     target,
-                    state: "unresolved",
+                    state: "absent",
                     reason: "connector-unavailable",
                   }
                 : {

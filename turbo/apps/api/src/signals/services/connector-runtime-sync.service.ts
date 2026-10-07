@@ -186,6 +186,16 @@ function customUnresolvedResult(
   };
 }
 
+function builtinAbsentResult(
+  target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
+): ConnectorRuntimeBuiltinSyncResult {
+  return {
+    target,
+    state: "absent",
+    reason: "connector-unavailable",
+  };
+}
+
 function builtinUnresolvedResult(
   target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
 ): ConnectorRuntimeBuiltinSyncResult {
@@ -539,10 +549,10 @@ function resolveBuiltinTarget(args: {
   return {
     kind: "builtin",
     ...(credentialResolution === undefined ? {} : { credentialResolution }),
-    // Without a manifest a missing entry cannot prove the connector was
-    // retired. Keep the Run's registered scope (last-known-good) and retry.
+    // A connector that left the catalog is treated as never authorized: the
+    // Runner drops it, and a later catalog switch wakes the Run to restore it.
     result: !snapshot?.connectors.has(registration.connectorSlug)
-      ? builtinUnresolvedResult(target)
+      ? builtinAbsentResult(target)
       : refresh && credentialAccess?.kind === "ok"
         ? {
             target,
@@ -594,8 +604,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
                   : materializeConnectorCatalogRuntimeRow(row.entry),
             };
           }),
-          // Registered targets are required, but per target: a missing entry
-          // becomes `unresolved` below, never an authoritative `absent`.
+          // A registered target without an entry becomes `absent` below.
           {
             runtimeConnectorSlugs: builtinConnectorSlugs,
           },

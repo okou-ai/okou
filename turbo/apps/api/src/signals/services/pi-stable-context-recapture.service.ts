@@ -389,10 +389,7 @@ function builtinConnectorMounts(
   );
   for (const slug of allowedConnectorSlugs) {
     const connector = selection.connectors.get(slug);
-    if (!connector) {
-      continue;
-    }
-    if (connector.skill.kind !== "none") {
+    if (connector && connector.skill.kind !== "none") {
       desired.push({
         kind: "injected",
         orgId: SYSTEM_ORG_ID,

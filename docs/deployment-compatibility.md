@@ -282,7 +282,7 @@ is described under
 [business readers](#connector-catalog-business-readers-on-pointer-and-immutable-entries):
 every reader omits an agent-enabled connector that is missing from the
 captured generation, as if the user had never authorized it, and Runner
-runtime sync reports the target `unresolved`. A dedicated test covers
+runtime sync reports the target `absent`. A dedicated test covers
 recapture: it publishes a stable context that launch can read while the
 connector stays enabled.
 
@@ -310,10 +310,11 @@ its still-current content is:
 - An accepted change to a connector's runtime-bearing `mcp`, `authMethods` or
   `firewall` wakes affected builtin HTTP and MCP Runs so the Runner resolves the
   current endpoint, credentials and firewall policy. Removing a builtin
-  connector from the catalog is not terminal absence: runtime sync reports
-  the registered target `unresolved`, so a Run that is already active keeps its
-  last-known-good policy and credential injection until it ends, while new
-  launches omit the connector. Builtin MCP execution and Automatic
+  connector from the catalog wakes active Runs too, and runtime sync reports
+  the registered target `absent`, as if it were never authorized: the Runner
+  drops its policy and credential injection, and new launches omit the
+  connector. If a later generation restores the connector, the next wakeup
+  reports it `available` again. Builtin MCP execution and Automatic
   authentication are described under
   [Builtin MCP execution](#builtin-mcp-execution).
 
@@ -549,18 +550,20 @@ is:
   The agent keeps its enabled-connector setting, and the connector returns
   once a later generation contains it again (the catalog switch invalidates
   Pi stable contexts).
-- Runner runtime sync omits the missing entry and reports that registered
-  builtin target as `unresolved` (the Runner keeps last-known-good and
-  retries), never as authoritative `absent`.
+- Runner runtime sync reports that registered builtin target as `absent`
+  (`connector-unavailable`). The Runner removes its firewall policy, and a
+  later `available` result after the connector returns restores it.
+  `unresolved` remains for credential and refresh problems on a connector that
+  is still in the catalog.
 - Optional reads (search, discovery, connect items, connected briefs,
   single-item status/permission and account GETs, stored-connection lists,
   account lifecycle refresh, display filters, and metadata-only custom
   permission-bundle dependencies) omit the slug or return not-found.
 
 This contract does not probe all slugs or restore a manifest, and a
-missing slug in one reader is never a global catalog failure. Old Runners
-already treat `unresolved` as retain-and-retry, so no Runner protocol change
-is required. A missing pointer or an empty
+missing slug in one reader is never a global catalog failure. Runners
+already handle builtin `absent`, so no Runner protocol change is required.
+A missing pointer or an empty
 whole-catalog generation fails unavailable; there is no legacy or R2 read
 fallback. The pointer read selects only `schema_version` and `hash`; no
 business reader reads `connector_catalog.catalog_header`, which writers still
