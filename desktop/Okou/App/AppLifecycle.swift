@@ -1,4 +1,5 @@
 import AppKit
+import ClerkKit
 import OkouCore
 import Sparkle
 import SwiftUI
@@ -19,6 +20,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, SPUU
       let configuration = try DesktopConfiguration.load()
       if CommandLine.arguments.contains("--smoke-test") {
         try smokeTest(configuration: configuration)
+        NSApplication.shared.terminate(nil)
+        return
+      }
+      if CommandLine.arguments.contains("--auth-smoke-test") {
+        DesktopModel.configureAuthentication(configuration)
+        let proof: JSONValue = .object([
+          "keychainService": .string(DesktopModel.authKeychainService),
+          "signedIn": .bool(Clerk.shared.session != nil),
+        ])
+        print(proof.formatted)
         NSApplication.shared.terminate(nil)
         return
       }

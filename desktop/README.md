@@ -29,6 +29,11 @@ app in `desktop/out/` to exercise the real UI. `--smoke-test` verifies packaged
 configuration, helper presence, and the upgrade bridge without signing in or
 registering a host.
 
+`--auth-smoke-test` separately initializes the real Clerk SDK and reports its
+Keychain namespace and whether a session was restored, without opening a login
+window or registering a host. On the first Electron-to-native upgrade it must
+report `signedIn: false`, even when the old native helper has a saved session.
+
 ```bash
 CLERK_PUBLISHABLE_KEY=pk_live_example \
   python3 desktop/scripts/build.py --sign \
@@ -45,16 +50,13 @@ and creates, signs, notarizes, and staples a DMG. Archives retain the names
 ## Existing installations
 
 The bundle ID, URL scheme, Developer ID team, and Application Support directory
-stay unchanged. Native login continues using Keychain service `ai.okou.desktop`.
-Browser-login users sign in once with the native flow. The native application
+stay unchanged. All upgrading users sign in once with the native flow. Native
+authentication uses a fresh Keychain service `ai.okou.desktop.native-auth`;
+development builds use `ai.okou.desktop.dev.native-auth`. The application does
+not restore or migrate Electron's browser or native login credentials. Subsequent
+native launches and upgrades retain the new native session. The native application
 reads `desktop-preferences.json` and preserves the existing
 `computerUseInstallationId`, `keepAwakeEnabled`, and unrelated settings.
-
-macOS may ask once to allow the new main executable to read the existing native
-login from Keychain. The old SDK ran in the separately signed `clerk-auth-helper`
-executable; the native app runs it in `ai.okou.desktop`. Users must handle that
-system prompt themselves. Keeping the service and Developer ID does not bypass
-Keychain's executable access control.
 
 The legacy `RELEASES.json` endpoint and mutable release manifest continue serving
 the same ZIP. Old Electron/Squirrel versions replace the entire `.app`. On

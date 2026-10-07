@@ -107,13 +107,18 @@ final class DesktopModel: ObservableObject {
         self?.didChange?()
       })
   }
+  static var authKeychainService: String { "\(Bundle.main.bundleIdentifier!).native-auth" }
+  static func configureAuthentication(_ configuration: DesktopConfiguration) {
+    // Start a new login after Electron migration. Native releases reuse this
+    // namespace; changing it every launch would discard their own sessions.
+    Clerk.configure(
+      publishableKey: configuration.clerkPublishableKey,
+      options: .init(keychainConfig: .init(service: authKeychainService)))
+  }
   func start() {
     applyKeepAwake()
     authTask = Task {
-      // Show the app before SDK cache hydration can request Keychain access.
-      Clerk.configure(
-        publishableKey: configuration.clerkPublishableKey,
-        options: .init(keychainConfig: .init(service: Bundle.main.bundleIdentifier!)))
+      Self.configureAuthentication(configuration)
       do {
         try await refreshIdentity()
         try await refreshPermissions()
