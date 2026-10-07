@@ -11,99 +11,20 @@ import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import { dispatchRunCallbacks$ } from "../services/agent-run-callback.service";
 import { handleWorkflowAutomationResultEmailInternalCallback$ } from "../services/internal-workflow-automation-result-email-callback.service";
-import { executeMorningBriefEnrollmentForMember$ } from "../services/morning-brief-enrollment-worker.service";
-import { executeDueNotionAutomationEventsForAutomation$ } from "../services/notion-automation-event.service";
-import { executeDueStripeAutomationEventsForAutomation$ } from "../services/stripe-automation-event.service";
-import {
-  executeDueWorkflowAutomationsForAutomation$,
-  executeDueWorkflowAutomationsForWorkflow$,
-} from "../services/workflow-automation-poller.service";
+import { executeDueWorkflowAutomationsForAutomation$ } from "../services/workflow-automation-poller.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 
-const body$ = bodyResultOf(testWorkflowAutomationExecutionContract.execute);
 const agentBody$ = bodyResultOf(
   testWorkflowAutomationExecutionContract.executeForAgent,
-);
-const workflowBody$ = bodyResultOf(
-  testWorkflowAutomationExecutionContract.executeForWorkflow,
 );
 const dispatchBody$ = bodyResultOf(
   testWorkflowAutomationExecutionContract.dispatchCallbacks,
 );
 const interruptionBody$ = bodyResultOf(
   testWorkflowAutomationExecutionContract.interruptResultEmailCallback,
-);
-
-const executeTestWorkflowAutomation$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-
-    const bodyResult = await get(body$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    const automationId = bodyResult.data.automation_id;
-    const scheduled = await set(
-      executeDueWorkflowAutomationsForAutomation$,
-      automationId,
-      signal,
-    );
-    const notion = await set(
-      executeDueNotionAutomationEventsForAutomation$,
-      automationId,
-      signal,
-    );
-    const stripe = await set(
-      executeDueStripeAutomationEventsForAutomation$,
-      automationId,
-      signal,
-    );
-    signal.throwIfAborted();
-
-    return {
-      status: 200 as const,
-      body: {
-        success: true as const,
-        executed: scheduled.executed + notion.executed + stripe.executed,
-        skipped:
-          scheduled.skipped +
-          notion.skipped +
-          stripe.skipped +
-          stripe.failed +
-          stripe.retried,
-      },
-    };
-  },
-);
-
-const executeTestWorkflowAutomationsForWorkflow$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(workflowBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-    const result = await set(
-      executeDueWorkflowAutomationsForWorkflow$,
-      bodyResult.data.workflow_id,
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: { success: true as const, ...result },
-    };
-  },
 );
 
 const executeTestWorkflowAutomationsForAgent$ = command(
@@ -250,45 +171,10 @@ const interruptTestWorkflowAutomationResultEmailCallback$ = command(
   },
 );
 
-const enrollmentBody$ = bodyResultOf(
-  testWorkflowAutomationExecutionContract.enrollMorningBrief,
-);
-const enrollMorningBrief$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const body = await get(enrollmentBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const attempted = await set(
-      executeMorningBriefEnrollmentForMember$,
-      body.data,
-      signal,
-    );
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { attempted } };
-  },
-);
-
 export const testWorkflowAutomationExecutionRoutes: readonly RouteEntry[] = [
-  {
-    route: testWorkflowAutomationExecutionContract.enrollMorningBrief,
-    handler: enrollMorningBrief$,
-  },
-  {
-    route: testWorkflowAutomationExecutionContract.execute,
-    handler: executeTestWorkflowAutomation$,
-  },
   {
     route: testWorkflowAutomationExecutionContract.executeForAgent,
     handler: executeTestWorkflowAutomationsForAgent$,
-  },
-  {
-    route: testWorkflowAutomationExecutionContract.executeForWorkflow,
-    handler: executeTestWorkflowAutomationsForWorkflow$,
   },
   {
     route: testWorkflowAutomationExecutionContract.dispatchCallbacks,

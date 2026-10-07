@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { describe, expect, it } from "vitest";
 
+import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -18,7 +18,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
@@ -63,12 +62,6 @@ function authHeaders() {
 function automationsClient() {
   return setupApp({ context, routes: workflowAutomationsRoutes })(
     workflowAutomationsContract,
-  );
-}
-
-function executionClient() {
-  return setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
-    testWorkflowAutomationExecutionContract,
   );
 }
 
@@ -191,11 +184,11 @@ async function postWebhookDelivery(seeded: OwnedAutomations): Promise<number> {
 }
 
 async function runScheduleTick(automationId: string) {
-  const response = await accept(
-    executionClient().execute({ body: { automation_id: automationId } }),
-    [200],
+  const response = await executeWorkflowAutomationForTest(
+    { automationId },
+    context.signal,
   );
-  return response.body;
+  return response;
 }
 
 /** Automation reads are organization-scoped, so any admin can audit the row. */
@@ -253,10 +246,10 @@ describe("Org member cleanup disarms the departing member's automations", () => 
     // skipped by the poller's membership gate.
     await expect(
       runScheduleTick(departingAutomations.scheduleAutomationId),
-    ).resolves.toStrictEqual({ success: true, executed: 0, skipped: 0 });
+    ).resolves.toStrictEqual({ executed: 0, skipped: 0 });
     await expect(
       runScheduleTick(elsewhereAutomations.scheduleAutomationId),
-    ).resolves.toStrictEqual({ success: true, executed: 1, skipped: 0 });
+    ).resolves.toStrictEqual({ executed: 1, skipped: 0 });
 
     // Disabled, not deleted: the schedule keeps its configuration and its
     // creation-time anchor, so an administrator can re-enable or reassign it.
@@ -333,7 +326,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
     await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(404);
     await expect(
       runScheduleTick(departingAutomations.scheduleAutomationId),
-    ).resolves.toStrictEqual({ success: true, executed: 0, skipped: 0 });
+    ).resolves.toStrictEqual({ executed: 0, skipped: 0 });
     await expect(
       readAsAdmin(auditor, departingAutomations.webhookAutomationId),
     ).resolves.toMatchObject({

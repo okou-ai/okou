@@ -8,6 +8,7 @@ import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
+import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -178,15 +179,9 @@ describe("thread-bound Pi Automation execution", () => {
           throw new Error("Expected preserved recurrence");
         }
         mockNow(Date.parse(scheduled.nextRunAt) + 1000);
-        await accept(
-          setupApp({
-            context,
-            routes: testWorkflowAutomationExecutionRoutes,
-            usagePricingResolution,
-          })(testWorkflowAutomationExecutionContract).execute({
-            body: { automation_id: automation.id },
-          }),
-          [200],
+        await executeWorkflowAutomationForTest(
+          { automationId: automation.id, usagePricingResolution },
+          context.signal,
         );
       }
       const piRunId = await lastThreadPiAutomationRun(actor, threadId);

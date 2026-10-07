@@ -24,6 +24,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Cron } from "croner";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -599,12 +600,7 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
     at: number,
   ): Promise<void> {
     mockNow(at);
-    await accept(
-      automationExecutionClient().execute({
-        body: { automation_id: automationId },
-      }),
-      [200],
-    );
+    await executeWorkflowAutomationForTest({ automationId }, context.signal);
   }
 
   async function briefThreadId(

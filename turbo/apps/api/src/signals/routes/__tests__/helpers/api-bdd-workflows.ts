@@ -9,10 +9,10 @@ import {
   workflowVisibilityContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { HttpResponse, http } from "msw";
 import { randomUUID } from "node:crypto";
 
+import { executeWorkflowAutomationForTest } from "../../../../test-fixtures/workflow-automation-workers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
@@ -24,7 +24,6 @@ import { createRouteMocks } from "./route-test";
 import { readProjectedChatEvents } from "./chat-event-test-reader";
 import { chatThreadGetRoutes } from "../../chat-threads-get";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
-import { testWorkflowAutomationExecutionRoutes } from "../../test-workflow-automation-execution";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
@@ -293,7 +292,7 @@ export function createWorkflowsBddApi(context: TestContext) {
 
     /**
      * Starts a real schedule-triggered run: a due loop automation on a new
-     * workflow, executed through the scheduler's test execution route. The
+     * workflow, executed through the scoped scheduler worker. The
      * fired run's id is read from the automation's thread.
      */
     async startScheduledAutomationRun(
@@ -315,15 +314,10 @@ export function createWorkflowsBddApi(context: TestContext) {
         }),
         [201],
       );
-      const executed = await accept(
-        setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
-          testWorkflowAutomationExecutionContract,
-        ).execute({ body: { automation_id: created.body.id } }),
-        [200],
+      await executeWorkflowAutomationForTest(
+        { automationId: created.body.id },
+        context.signal,
       );
-      if (!executed.body.success) {
-        throw new Error("Expected the automation execution to succeed");
-      }
       // The tick only enqueues; its background pick finishes here.
       await flushWaitUntilForTest();
       authenticate(actor);
