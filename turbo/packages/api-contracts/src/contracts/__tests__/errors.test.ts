@@ -541,7 +541,7 @@ describe("formatRunErrorForExternalSurface", () => {
         },
       }),
     ).toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
     );
   });
 
@@ -563,7 +563,7 @@ describe("formatRunErrorForExternalSurface", () => {
     const rawRunError =
       "API Error: 400 We've updated our Consumer Terms and Privacy Policy. You'll need to accept them in claude.ai with the email in /status to continue.";
     const expectedMessage =
-      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.";
+      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.";
 
     expect(
       formatRunErrorForExternalSurface({
@@ -577,7 +577,7 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(isGenericRunErrorForDisplay(expectedMessage)).toBe(false);
   });
 
-  it("appends Model Providers to Claude Consumer Terms guidance", () => {
+  it("appends the model settings link to Claude Consumer Terms guidance", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
@@ -589,7 +589,7 @@ describe("formatRunErrorForExternalSurface", () => {
         },
       }),
     ).toBe(
-      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.\n\nOpen Model Providers: https://app.example.test/?settings=model",
+      "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.\n\nOpen model settings: https://app.example.test/?settings=model",
     );
   });
 
@@ -643,7 +643,7 @@ describe("formatRunErrorForExternalSurface", () => {
     const rawRunError =
       'unexpected status 502 Bad Gateway: {"error":"TOKEN_REFRESH_FAILED","message":"Access token expired and refresh failed for: codex-oauth-token. The connector may need to be reconnected.","permission":"model-provider:codex-oauth-token","base":"https://chatgpt.com/backend-api/codex","connectors":["codex-oauth-token"],"failureReason":"reconnect_required"}, url: https://chatgpt.com/backend-api/codex/responses';
     const expectedMessage =
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.";
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.";
 
     expect(
       formatRunErrorForExternalSurface({
@@ -667,7 +667,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);
@@ -683,7 +683,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);
@@ -699,7 +699,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);
@@ -715,7 +715,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: rawRunError,
       }),
     ).toBe(
-      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+      "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     );
     expect(isActionableRunError(rawRunError)).toBe(true);
     expect(isGenericRunErrorForDisplay(rawRunError)).toBe(false);

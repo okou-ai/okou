@@ -89,7 +89,7 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
   if (subscriptionModel) {
     installConnectedPersonalSubscriptions(context);
   }
-  const auto = autoPolicy();
+  const auto = autoRunModel();
   context.mocks.data.availableRunModels(
     subscriptionModel
       ? [
@@ -117,7 +117,7 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
   await screen.findByRole("textbox", { name: "Message" });
 }
 
-function autoPolicy(): AvailableRunModel {
+function autoRunModel(): AvailableRunModel {
   return {
     model: "okou-1.0",
     modelLabel: mockCatalogDisplayName("okou-1.0"),

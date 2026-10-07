@@ -190,18 +190,18 @@ test("Refreshes the account target on explicit reconnect after a remote account 
   let requestedAccount: unknown;
   installRunChat({ selectedModel: "gpt-5.6-sol" });
   context.mocks.api(runModelsMainContract.list, ({ respond }) => {
-    const currentPolicy = runModel(
+    const currentModel = runModel(
       switched ? "reconnect_required" : "available",
     );
     return respond(200, {
       defaultModel: "okou-1.0",
       models: [
         {
-          ...currentPolicy,
+          ...currentModel,
           defaultProviderType: "codex-oauth-token",
           runtimeProviderType: "codex-oauth-token",
           credentialScope: "member",
-          memberEffective: switched ? currentPolicy.memberEffective : undefined,
+          memberEffective: switched ? currentModel.memberEffective : undefined,
         },
       ],
     });

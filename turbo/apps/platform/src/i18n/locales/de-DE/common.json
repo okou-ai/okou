@@ -1897,7 +1897,7 @@
         "personalAccountDisconnected": "Persönliches Abonnement getrennt",
         "providerBalanceDescription": "Prüfe die Nutzung oder das Guthaben deines Abonnementkontos und versuche es dann erneut.",
         "providerBalanceTitle": "Dein Abonnementkonto benötigt mehr Guthaben",
-        "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Modellanbieter“ und versuchen Sie es erneut.",
+        "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Einstellungen > Modelle“ und versuchen Sie es erneut.",
         "providerQueueTimeoutTitle": "Das Modell wurde nicht rechtzeitig gestartet",
         "providerRateLimitedTitle": "Gerade gibt es zu viele Modellanfragen",
         "providerServerErrorTitle": "Beim Modellanbieter ist ein vorübergehender Fehler aufgetreten",
@@ -2231,7 +2231,7 @@
       "loading": "Abonnement wird geladen…",
       "noCredit": "Kein Reset-Guthaben verfügbar.",
       "nothingToReset": "Es gibt kein ausgeschöpftes Nutzungsfenster zum Zurücksetzen.",
-      "reconnect": "Dieses Abonnement unter Persönliche Modelle erneut verbinden.",
+      "reconnect": "Dieses Abonnement unter Einstellungen > Modelle erneut verbinden.",
       "reset": "Nutzung erfolgreich zurückgesetzt.",
       "resetting": "Wird zurückgesetzt…",
       "title": "Reset card",
@@ -4608,7 +4608,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} Credits / Monat",
         "emailSupport": "E-Mail-Support",
-        "ownKeys": "Bringen Sie Ihre eigenen LLM-Schlüssel mit",
         "payAsYouGo": "Danach zahlen Sie nach Bedarf",
         "prioritySupport": "Vorrangiger Support",
         "unlimitedAgents": "Unbegrenzte Gesamtanzahl an Agenten"
@@ -4621,14 +4620,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Guthaben hinzufügen",
-      "openModelProviders": "Modellanbieter öffnen",
+      "openModelSettings": "Modelleinstellungen öffnen",
       "reconnectClaude": "Claude Code erneut verbinden"
     },
     "askAdmin": "Bitten Sie einen Workspace-Administrator, Guthaben hinzuzufügen oder den Workspace-Tarif zu erweitern.",
-    "claudeReconnect": "Die Authentifizierung des Claude-Code-Abonnements ist fehlgeschlagen. Verbinden Sie Claude Code unter Modellanbieter erneut und versuchen Sie es noch einmal.",
-    "claudeTerms": "Claude Code erfordert die Zustimmung zu den aktualisierten Nutzungsbedingungen und der Datenschutzerklärung. Melden Sie sich unter https://claude.ai mit dem unter Modellanbieter verbundenen Claude-Konto an, stimmen Sie den Änderungen zu und versuchen Sie es erneut.",
+    "claudeReconnect": "Die Authentifizierung des Claude-Code-Abonnements ist fehlgeschlagen. Verbinden Sie Claude Code unter Einstellungen > Modelle erneut und versuchen Sie es noch einmal.",
+    "claudeTerms": "Claude Code erfordert die Zustimmung zu den aktualisierten Nutzungsbedingungen und der Datenschutzerklärung. Melden Sie sich unter https://claude.ai mit dem unter Einstellungen > Modelle verbundenen Claude-Konto an, stimmen Sie den Änderungen zu und versuchen Sie es erneut.",
     "codexOverloaded": "Das ausgewählte Modell ist ausgelastet. Bitte versuchen Sie ein anderes Modell.",
-    "codexReconnect": "Die ChatGPT-Sitzung muss erneut verbunden werden. Verbinden Sie ChatGPT (Codex) unter Modellanbieter erneut und versuchen Sie es noch einmal.",
+    "codexReconnect": "Die ChatGPT-Sitzung muss erneut verbunden werden. Verbinden Sie ChatGPT (Codex) unter Einstellungen > Modelle erneut und versuchen Sie es noch einmal.",
     "contentPolicyRejected": "Der Modellanbieter hat diese Anfrage aufgrund seiner Richtlinie zur Inhaltssicherheit abgelehnt. Ein erneuter Versuch mit derselben Eingabe wird wieder fehlschlagen. Formulieren Sie die Anfrage um, beginnen Sie eine neue Unterhaltung oder wechseln Sie das Modell.",
     "executionTimeout": "Dieser Lauf hat sein Zeitlimit erreicht.",
     "failed": "Lauf fehlgeschlagen",

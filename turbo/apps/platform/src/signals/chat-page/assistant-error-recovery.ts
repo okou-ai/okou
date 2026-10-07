@@ -512,10 +512,7 @@ function createCurrentPersonalSubscriptionComputed(
       return null;
     }
     const route = getMemberRunModelRoute(runModel);
-    if (
-      route.credentialScope !== "member" ||
-      !isPersonalSubscriptionProviderType(route.providerType)
-    ) {
+    if (!isPersonalSubscriptionProviderType(route.providerType)) {
       return null;
     }
     return {

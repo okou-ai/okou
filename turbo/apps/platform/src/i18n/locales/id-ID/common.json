@@ -1890,7 +1890,7 @@
         "personalAccountDisconnected": "Langganan pribadi terputus",
         "providerBalanceDescription": "Periksa penggunaan atau saldo kredit akun langganan Anda, lalu coba lagi.",
         "providerBalanceTitle": "Akun langganan Anda memerlukan lebih banyak kredit",
-        "providerConnectionDescription": "Buka Penyedia Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
+        "providerConnectionDescription": "Buka Setelan > Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
         "providerQueueTimeoutTitle": "Model tidak mulai tepat waktu",
         "providerRateLimitedTitle": "Saat ini ada terlalu banyak permintaan model",
         "providerServerErrorTitle": "Penyedia model mengalami kesalahan sementara",
@@ -2220,7 +2220,7 @@
       "loading": "Memuat langganan…",
       "noCredit": "Tidak ada kredit reset yang tersedia.",
       "nothingToReset": "Tidak ada periode penggunaan yang habis untuk direset.",
-      "reconnect": "Hubungkan kembali langganan ini di Model pribadi.",
+      "reconnect": "Hubungkan kembali langganan ini di Setelan > Model.",
       "reset": "Penggunaan berhasil direset.",
       "resetting": "Mereset…",
       "title": "Reset card",
@@ -4588,7 +4588,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} kredit / bulan",
         "emailSupport": "Dukungan email",
-        "ownKeys": "Gunakan kunci LLM Anda sendiri",
         "payAsYouGo": "Bayar sesuai pemakaian setelah itu",
         "prioritySupport": "Dukungan prioritas",
         "unlimitedAgents": "Total agen tak terbatas"
@@ -4601,14 +4600,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Tambah kredit",
-      "openModelProviders": "Buka Penyedia Model",
+      "openModelSettings": "Buka setelan model",
       "reconnectClaude": "Hubungkan kembali Claude Code"
     },
     "askAdmin": "Minta admin ruang kerja untuk menambah kredit atau meningkatkan paket ruang kerja.",
-    "claudeReconnect": "Autentikasi langganan Claude Code gagal. Hubungkan kembali Claude Code di Penyedia Model, lalu coba lagi.",
-    "claudeTerms": "Claude Code memerlukan persetujuan atas Ketentuan Penggunaan dan Kebijakan Privasi yang diperbarui. Masuk ke https://claude.ai dengan akun Claude yang terhubung di Penyedia Model, setujui pembaruan tersebut, lalu coba lagi.",
+    "claudeReconnect": "Autentikasi langganan Claude Code gagal. Hubungkan kembali Claude Code di Setelan > Model, lalu coba lagi.",
+    "claudeTerms": "Claude Code memerlukan persetujuan atas Ketentuan Penggunaan dan Kebijakan Privasi yang diperbarui. Masuk ke https://claude.ai dengan akun Claude yang terhubung di Setelan > Model, setujui pembaruan tersebut, lalu coba lagi.",
     "codexOverloaded": "Model yang dipilih sedang mencapai kapasitas maksimum. Silakan coba model lain.",
-    "codexReconnect": "Sesi ChatGPT perlu dihubungkan kembali. Hubungkan kembali ChatGPT (Codex) di Penyedia Model, lalu coba lagi.",
+    "codexReconnect": "Sesi ChatGPT perlu dihubungkan kembali. Hubungkan kembali ChatGPT (Codex) di Setelan > Model, lalu coba lagi.",
     "contentPolicyRejected": "Penyedia model menolak permintaan ini berdasarkan kebijakan keamanan kontennya. Mencoba lagi dengan masukan yang sama akan tetap gagal. Ubah kalimat permintaan, mulai percakapan baru, atau beralih ke model lain.",
     "executionTimeout": "Proses ini mencapai batas waktu eksekusi.",
     "failed": "Eksekusi gagal",

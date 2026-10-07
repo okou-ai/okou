@@ -1890,7 +1890,7 @@
         "personalAccountDisconnected": "个人订阅已断开",
         "providerBalanceDescription": "请检查订阅账号的用量或额度余额，然后重试。",
         "providerBalanceTitle": "你的订阅账号需要更多额度",
-        "providerConnectionDescription": "到“模型服务商”中重新连接或更新账户，然后再试。",
+        "providerConnectionDescription": "到「设置 > 模型」中重新连接或更新账户，然后再试。",
         "providerQueueTimeoutTitle": "模型等待启动的时间过长",
         "providerRateLimitedTitle": "当前模型请求过多",
         "providerServerErrorTitle": "模型服务商暂时出错",
@@ -2220,7 +2220,7 @@
       "loading": "正在读取订阅…",
       "noCredit": "没有可用的重置次数。",
       "nothingToReset": "没有需要重置的已耗尽用量窗口。",
-      "reconnect": "请在个人模型设置中重新连接此订阅。",
+      "reconnect": "请在「设置 > 模型」中重新连接此订阅。",
       "reset": "用量已成功重置。",
       "resetting": "正在重置…",
       "title": "Reset card",
@@ -4588,7 +4588,6 @@
       "features": {
         "creditsPerMonth": "每月{{credits}}积分",
         "emailSupport": "邮件支持",
-        "ownKeys": "使用自己的大模型密钥",
         "payAsYouGo": "超出后按量付费",
         "prioritySupport": "优先支持",
         "unlimitedAgents": "智能体总数不限"
@@ -4601,14 +4600,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "充值积分",
-      "openModelProviders": "打开模型服务商",
+      "openModelSettings": "打开模型设置",
       "reconnectClaude": "重新连接Claude Code"
     },
     "askAdmin": "请联系工作区管理员充值积分或升级工作区套餐。",
-    "claudeReconnect": "Claude Code订阅验证失败。请在「模型服务商」中重新连接Claude Code，然后重试。",
-    "claudeTerms": "Claude Code需要你接受更新后的消费者条款和隐私政策。请用「模型服务商」中已连接的Claude账号登录https://claude.ai，接受更新后的条款和政策，然后重试。",
+    "claudeReconnect": "Claude Code 订阅验证失败。请在「设置 > 模型」中重新连接 Claude Code，然后重试。",
+    "claudeTerms": "Claude Code 需要你接受更新后的消费者条款和隐私政策。请用「设置 > 模型」中已连接的 Claude 账号登录 https://claude.ai，接受更新后的条款和政策，然后重试。",
     "codexOverloaded": "所选模型已满负荷，请换一个模型试试。",
-    "codexReconnect": "ChatGPT会话需要重新连接。请在「模型服务商」中重新连接ChatGPT (Codex)，然后重试。",
+    "codexReconnect": "ChatGPT 会话需要重新连接。请在「设置 > 模型」中重新连接 ChatGPT (Codex)，然后重试。",
     "contentPolicyRejected": "模型服务商依据内容安全政策拒绝了这次请求。用相同内容重试仍会失败。可以换一种说法、开启新对话，或改用其他模型。",
     "executionTimeout": "本次运行已达到执行时长上限。",
     "failed": "运行失败",

@@ -203,7 +203,7 @@ describe("okou subscription", () => {
     }
   });
 
-  it("guides an empty subscription list to Personal Models", async () => {
+  it("guides an empty subscription list to model settings", async () => {
     server.use(
       http.get("http://localhost:3000/api/me/model-providers", () => {
         return HttpResponse.json({ modelProviders: [] });
@@ -211,8 +211,6 @@ describe("okou subscription", () => {
     );
     await subscriptionCommand.parseAsync(["node", "okou", "list"]);
     expect(output()).toContain("Subscriptions: 0");
-    expect(output()).toContain(
-      "Connect a subscription in Preferences / Personal Models",
-    );
+    expect(output()).toContain("Connect a subscription in Settings > Models");
   });
 });
