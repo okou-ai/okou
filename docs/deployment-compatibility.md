@@ -60,8 +60,9 @@ surface and records the final behavior; it has no schema migration.
 sync response now report `active: { catalogDigest }` only. The
 `active.catalogVersion` hash alias is gone from the contract, the API, the
 Platform debug panel (which shows the digest instead of an "active version")
-and its translations. Ethan confirmed (2026-10-07) that no client reading the
-alias remains. A new App against an older API ignores the extra field; the
+and its translations. Ethan confirmed (2026-10-07) that the old clients have
+exited; a staff debug panel loaded before the deploy shows the field as "None"
+until it reloads. A new App against an older API ignores the extra field; the
 release workflow only checks `active != null`. Other `catalogVersion` fields
 are not this alias and stay:
 
@@ -99,8 +100,10 @@ post-deploy sync. Each reads `connectors/v4/active.json` independently and
 last writer wins. If the publication advances between their reads and the
 writer holding the older publication commits last, the pointer briefly returns
 to the previous complete generation; the next hourly sync republishes the
-newer one. Readers always see a complete generation and Pi invalidation and
-wakeups follow each actual switch. Ethan accepted this (2026-10-07); there is
+newer one. Readers always see a complete generation and Pi invalidation
+follows each actual switch. Runtime wakeups compare against the generation the
+writer read before publishing, so a connector that differs only between the
+two newer publications may wait for that next sync to wake its Runs. Ethan accepted this (2026-10-07); there is
 no compare-and-swap or monotonic guard.
 
 **Final catalog architecture.** The former staged v4 rollout guide is removed;
@@ -114,11 +117,13 @@ its still-current content is:
   reject an otherwise valid catalog.
 - An accepted change to a connector's runtime-bearing `mcp`, `authMethods` or
   `firewall` wakes affected builtin HTTP and MCP Runs so the Runner resolves the
-  current endpoint, credentials and firewall policy. Removing a connector from
-  the catalog removes that owner from request matching without selecting
-  another connector's credentials for the same destination, and installs no
-  route tombstone. Builtin MCP execution and Automatic authentication are
-  described under [Builtin MCP execution](#builtin-mcp-execution).
+  current endpoint, credentials and firewall policy. Removing a builtin
+  connector from the catalog is not terminal absence: runtime sync reports
+  the registered target `unresolved`, so a Run that is already active keeps its
+  last-known-good policy and credential injection until it ends, while new
+  launches omit the connector. Builtin MCP execution and Automatic
+  authentication are described under
+  [Builtin MCP execution](#builtin-mcp-execution).
 
 ## Connector catalog Release 2 contraction (migration 1334)
 

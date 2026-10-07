@@ -24,10 +24,12 @@ while an earlier generation keeps serving.
   to the record. Unclassified exceptions keep the coarse failure code without
   an invented rule.
 - `catalogVersion` and `catalogDigest` identify the parsed candidate pointer,
-  not the serving generation, which `retainedServingHash` reports. A source or
-  pointer failure has no candidate identity, so those fields are absent.
-- `sourceId` identifies the storage authority and bucket. It is not a
-  candidate identifier.
+  not the serving generation, which `retainedServingHash` reports. They are
+  present whenever a pointer was parsed, including a later catalog download
+  failure reported as `source-unavailable`; a pointer download or parse
+  failure has no candidate identity, so they are absent.
+- `sourceId` identifies the storage authority, bucket and persisted-source
+  generation salt. It is not a candidate identifier.
 - `schemaVersion` identifies the sync target generation. Current APIs sync and
   serve only artifact schema version 4.
 
