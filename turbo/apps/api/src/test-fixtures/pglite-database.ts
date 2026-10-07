@@ -182,11 +182,17 @@ async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
         );
       });
       entry.on("end", () => {
+        if (!entry.mtime) {
+          parser.abort(
+            new Error(`Missing snapshot modification time: ${entry.path}`),
+          );
+          return;
+        }
         files.push({
           path: target,
           // MEMFS copies with .slice(); Buffer.slice() would alias the cache.
           data: new Uint8Array(Buffer.concat(chunks)),
-          modifiedAt: Math.floor((entry.mtime?.getTime() ?? 0) / 1000),
+          modifiedAt: Math.floor(entry.mtime.getTime() / 1000),
         });
       });
     },
