@@ -61,7 +61,16 @@ inventory still needs a separately reviewed exact immutable/mutable mount
 contract; repository/proc/device/ephemeral mounts cannot be equated with the
 pre-mount extracted tree or excluded by broad pathname prefixes.
 Archive hashes are checked against signed metadata before collision/path-safe
-extraction. No package installation or maintainer script runs. Declared usrmerge,
+extraction. Package tar headers are read incrementally: at most 50,000 payload
+entries and 50,001 raw entries including the ordinary root header. Skipped root
+headers also consume the raw budget. The first excess entry refuses before the
+whole header list can exhaust memory; no prefix is silently truncated or extracted.
+Public ar/tar format canaries exercise the real installed data decoder and parser,
+including child-local memory limits, exact entry capacity and skipped-root refusal.
+They contain no package programs or maintainer scripts and prove neither signatures,
+original input provenance nor native admission. The decoded-payload byte/time
+checks and complete bootstrap/parser/IO TCB obligations remain separate.
+No package installation or maintainer script runs. Declared usrmerge,
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace
 only their normal maintainer-generated inputs. Dangling package documentation
 and non-C locale aliases remain recorded, not executable/library/configuration

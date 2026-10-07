@@ -310,9 +310,20 @@ def extract_deb(archive, root):
             raise ValueError("source-pinned fixture package payload refused")
         payload.seek(0)
         with tarfile.open(fileobj=payload, mode="r:") as stream:
-            members = [member for member in stream.getmembers() if not (member.isdir() and pathlib.PurePosixPath(member.name) == pathlib.PurePosixPath("."))]
-            if len(members) > 50000:
-                raise ValueError("source-pinned fixture package entry budget refused")
+            members = []
+            raw_members = 0
+            # getmembers() allocates the entire untrusted header list before
+            # returning. Preserve 50,000 payload entries plus one ordinary
+            # root header, but never let skipped root headers evade the cap.
+            for member in stream:
+                if raw_members == 50001:
+                    raise ValueError("source-pinned fixture package entry budget refused")
+                raw_members += 1
+                if member.isdir() and pathlib.PurePosixPath(member.name) == pathlib.PurePosixPath("."):
+                    continue
+                if len(members) == 50000:
+                    raise ValueError("source-pinned fixture package entry budget refused")
+                members.append(member)
             for member in members:
                 relative = pathlib.PurePosixPath(member.name)
                 if relative.is_absolute() or ".." in relative.parts or not (member.isfile() or member.isdir() or member.issym() or member.islnk()):

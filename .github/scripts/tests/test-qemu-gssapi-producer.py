@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Public inert input tests; no QEMU/helper/signature/runtime is impersonated."""
 import ast
+import gzip
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
 import subprocess
+import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -22,6 +26,100 @@ class ProducerInputs(unittest.TestCase):
         cls.parent = ROOT / "crates/target/qemu-gssapi-runtime-tests"
         cls.parent.mkdir(parents=True, exist_ok=True)
         assert cls.parent.resolve() == cls.parent and not cls.parent.is_symlink()
+
+    def public_deb_format_canary(self, base, count, *, roots_only=False):
+        # Only a public ar/tar format canary, NOT a signed Ubuntu input. The
+        # real dpkg-deb decodes data; no package program/maintainer script exists.
+        packed = io.BytesIO()
+        root = tarfile.TarInfo('.')
+        root.type = tarfile.DIRTYPE
+        header = root.tobuf(format=tarfile.USTAR_FORMAT)
+        if not roots_only:
+            member = tarfile.TarInfo('public-parser-canary')
+            member.mode = 0o600
+            header = member.tobuf(format=tarfile.USTAR_FORMAT)
+        with gzip.GzipFile(fileobj=packed, mode='wb', compresslevel=1, mtime=0) as stream:
+            if not roots_only:
+                stream.write(root.tobuf(format=tarfile.USTAR_FORMAT))
+            chunk = header * 4096
+            for _ in range(count // 4096):
+                stream.write(chunk)
+            stream.write(header * (count % 4096))
+            stream.write(b'\0' * 1024)
+        archive = base / 'public-format-canary.deb'
+        with archive.open('xb') as output:
+            output.write(b'!<arch>\n')
+            for name, data in [('debian-binary', b'2.0\n'),
+                               ('control.tar.gz', gzip.compress(b'\0' * 10240, mtime=0)),
+                               ('data.tar.gz', packed.getvalue())]:
+                fields = ((name + '/').ljust(16) + '0'.ljust(12) + '0'.ljust(6)
+                          + '0'.ljust(6) + '100600'.ljust(8) + str(len(data)).ljust(10) + '`\n')
+                self.assertEqual(len(fields.encode()), 60)
+                output.write(fields.encode())
+                output.write(data)
+                if len(data) % 2:
+                    output.write(b'\n')
+        return archive
+
+    def test_package_entry_budget_refuses_before_unbounded_header_allocation(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = self.public_deb_format_canary(base, 900000)
+            destination = base / 'root'
+            destination.mkdir(mode=0o700)
+            # The public decoded bytes fit the unchanged512MiB limit. Use a
+            # real child-local memory limit to distinguish bounded refusal from
+            # eager getmembers() MemoryError, not a mocked decoder/result.
+            script = '''
+import importlib.util, pathlib, resource, sys
+resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
+spec = importlib.util.spec_from_file_location('real_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+try:
+    producer.extract_deb(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
+except ValueError as error:
+    if str(error) != 'source-pinned fixture package entry budget refused':
+        raise
+else:
+    raise AssertionError('over-budget public payload was accepted')
+if list(pathlib.Path(sys.argv[3]).iterdir()):
+    raise AssertionError('over-budget payload changed the extraction root')
+'''
+            result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
+                                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'),
+                                     str(archive), str(destination)], capture_output=True, text=True, timeout=60,
+                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(list(destination.iterdir()), [])
+            self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
+    def test_skipped_package_root_headers_cannot_evade_entry_budget(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = self.public_deb_format_canary(base, 50002, roots_only=True)
+            destination = base / 'root'
+            destination.mkdir(mode=0o700)
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.assertRaisesRegex(ValueError, 'package entry budget refused'):
+                self.producer.extract_deb(archive, destination)
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+            self.assertEqual(list(destination.iterdir()), [])
+            self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
+    def test_package_exact_entry_budget_and_root_header_remain_admitted(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = self.public_deb_format_canary(base, 50000)
+            destination = base / 'root'
+            destination.mkdir(mode=0o700)
+            self.producer.extract_deb(archive, destination)
+            # Repeated harmless headers intentionally count as entries rather
+            # than deduplicating names to defeat the resource limit.
+            self.assertEqual(list(path.name for path in destination.iterdir()), ['public-parser-canary'])
+            self.assertEqual((destination / 'public-parser-canary').read_bytes(), b'')
+            self.assertEqual((destination / 'public-parser-canary').stat().st_mode & 0o777, 0o600)
+            self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
 
     def test_native_elf_machine_is_bound_to_selected_architecture(self):
         for arch, machine in (("x86_64", 62), ("aarch64", 183)):
