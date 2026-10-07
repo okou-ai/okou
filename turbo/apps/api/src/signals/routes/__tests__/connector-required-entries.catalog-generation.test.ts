@@ -20,7 +20,6 @@ import {
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
-
 const {
   connectors,
   entitledNativeChatActor,
@@ -43,7 +42,7 @@ function withoutConnector(connectorSlug: string): ConnectorCatalogArtifact {
   };
 }
 
-describe("required connector catalog entries", () => {
+describe("connector catalog entries missing for authorized connectors", () => {
   it("launches without an enabled connector that has no entry at the captured hash", async () => {
     const publisher = createPublicConnectorCatalog(context, {
       isolatePg: true,
@@ -85,7 +84,7 @@ describe("required connector catalog entries", () => {
     await cancelChatRun(actor, restored.runId, restoredClaim.sandboxHeaders);
   });
 
-  it("fails the Run MCP list for an admitted account while optional reads omit the slug", async () => {
+  it("omits an admitted account from the Run MCP list like every other read", async () => {
     const publisher = createPublicConnectorCatalog(context, {
       isolatePg: true,
     });
@@ -123,10 +122,13 @@ describe("required connector catalog entries", () => {
 
     await publisher.publish(withoutConnector("manual-mcp"));
 
-    // Required: the admitted MCP scope fails instead of shrinking to empty.
-    await accept(mcp.list({ headers: runHeaders }), [500]);
+    // A delisted connector cannot be disconnected; treat it as unauthorized.
+    const omitted = await accept(mcp.list({ headers: runHeaders }), [200]);
+    expect(omitted.body.connectors).not.toContainEqual(
+      expect.objectContaining({ connectionId: connection.id }),
+    );
 
-    // Optional: single-item reads are not found and lists omit the slug.
+    // Single-item reads are not found and lists omit the slug.
     const headers = sessionHeaders(actor);
     const catalog = setupApp({ context, routes: connectorCatalogRoutes })(
       connectorCatalogContract,

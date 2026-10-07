@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.734.6](https://github.com/okou-ai/okou/compare/core-v8.734.5...core-v8.734.6) (2026-10-07)
+
+
+### Refactoring
+
+* remove custom provider and gateway traces ([#37890](https://github.com/okou-ai/okou/issues/37890)) ([f59490d](https://github.com/okou-ai/okou/commit/f59490d298d2c0b3c3b903d005846e13524bc59e))
+* retire cooldown, ultrafast, us routing and model provider leftovers ([#37884](https://github.com/okou-ai/okou/issues/37884)) ([a9c3270](https://github.com/okou-ai/okou/commit/a9c3270099034c0f7ee73f6c730b07efa7d1d733))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.13
+
 ## [8.734.5](https://github.com/okou-ai/okou/compare/core-v8.734.4...core-v8.734.5) (2026-10-07)
 
 

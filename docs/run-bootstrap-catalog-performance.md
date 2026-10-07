@@ -1,5 +1,10 @@
 # Run bootstrap catalog performance
 
+This is a historical implementation record. The current tests use the single
+API project and per-case database selection described in
+[API testing](./testing/api-testing.md#case-owned-database-selection); the old
+project split, pause mechanism, and corruption fixtures below have been retired.
+
 ## Scope
 
 Read only the connector entries needed by a Run from the existing immutable catalog. Preserve connector credential, skill/storage mounting, firewall, permission baseline, Pi identity, account, OAuth and claim behavior. Do not create a new cache, locking protocol, schema, migration or invalidation mechanism.

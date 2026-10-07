@@ -101,30 +101,6 @@ type ReadAction = Extract<
   { readonly action: "read" }
 >;
 
-async function cleanupTestState(db: Db, signal: AbortSignal): Promise<void> {
-  releaseStructureTransitionPromotionPause();
-  // This route is test-only; clearing the singleton projection is the only way
-  // to exercise independent initial-release scenarios through the public sync
-  // boundary without importing database helpers into route tests.
-  await db.delete(officialWorkflowReconciliationWork);
-  await db.delete(officialWorkflowCatalogState);
-  await db.delete(officialWorkflowCatalogReleases);
-  await db.delete(officialWorkflowDefinitionRevisions);
-  await db
-    .delete(storages)
-    .where(
-      and(
-        eq(storages.orgId, SYSTEM_ORG_ID),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        or(
-          like(storages.name, TEST_STORAGE_NAME_PATTERN),
-          inArray(storages.name, DEPLOYED_TEST_STORAGE_NAMES),
-        ),
-      ),
-    );
-  signal.throwIfAborted();
-}
-
 async function seedPreviousSchemaRelease(
   db: Db,
   signal: AbortSignal,
@@ -506,10 +482,6 @@ const officialWorkflowCatalogTestStateRoute$ = command(
       return bodyResult.response;
     }
     const db = set(writeDb$);
-    if (bodyResult.data.action === "cleanup") {
-      await cleanupTestState(db, signal);
-      return await stateResponse(db, undefined, null, signal);
-    }
     if (bodyResult.data.action === "seed-previous-schema-release") {
       await seedPreviousSchemaRelease(db, signal);
       return await stateResponse(db, undefined, null, signal);

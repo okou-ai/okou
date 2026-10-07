@@ -1,7 +1,7 @@
+import { reconcileBillingOrganizationsForTest } from "../../../test-fixtures/billing-workers";
 import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { randomUUID } from "node:crypto";
 
-import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
   billingStatusContract,
   billingUsagePackCheckoutContract,
@@ -20,7 +20,6 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockStripeClient } from "../../external/stripe-client";
 import { createDeferredPromise } from "../../utils";
-import { testBillingReconciliationStateRoutes } from "../test-billing-reconciliation-state";
 import {
   testUsagePackSubscriptionStateContract,
   testUsagePackSubscriptionStateRoutes,
@@ -270,16 +269,10 @@ async function postStripeEvent(
 }
 
 async function reconcileBillingOrganization(orgId: string) {
-  const response = await accept(
-    setupApp({
-      context,
-      routes: testBillingReconciliationStateRoutes,
-    })(testBillingReconciliationStateContract).reconcile({
-      body: { orgIds: [orgId] },
-    }),
-    [200],
+  return await reconcileBillingOrganizationsForTest(
+    { orgIds: [orgId] },
+    context.signal,
   );
-  return response.body;
 }
 
 async function usagePackStateAction(
@@ -2331,9 +2324,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
     );
     context.mocks.stripe.invoices.list.mockResolvedValue({ data: [] });
 
-    await expect(
-      reconcileBillingOrganization(fixture.orgId),
-    ).resolves.toStrictEqual(expect.objectContaining({ success: true }));
+    await reconcileBillingOrganization(fixture.orgId);
     const downgradedOrg = (await readUsagePackState(fixture)).org;
     expect(downgradedOrg).toStrictEqual(
       expect.objectContaining({
@@ -2429,7 +2420,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
     await expect(
       reconcileBillingOrganization(fixture.orgId),
-    ).resolves.toStrictEqual({ success: true, downgraded: 0 });
+    ).resolves.toStrictEqual({ downgraded: 0 });
     await expect(grantRows(fixture)).resolves.toHaveLength(2);
     const reconciled = (await readUsagePackState(fixture)).subscription;
     expect(reconciled).toStrictEqual(

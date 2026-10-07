@@ -58,6 +58,7 @@ import {
   piStableContextProjectionFromInput,
   preparePiStableContext,
 } from "../pi-stable-context.service";
+import { piStableContextVariantDigest } from "../pi-stable-context-digest.service";
 import { updateWorkflow$ } from "../workflow-update.service";
 import { normalizeMountOverlay } from "../storage-mount-overlay";
 
@@ -1131,14 +1132,13 @@ describe("Pi stable context generation fences", () => {
     ).resolves.toStrictEqual([{ storageId, storageVersionId: v2 }]);
   });
 
-  it("leaves the head missing while an enabled connector has no catalog entry", async () => {
+  it("publishes the context while an enabled connector has no catalog entry", async () => {
     const fixture = await seed();
     await db
       .delete(piStableContextHeads)
       .where(eq(piStableContextHeads.id, fixture.headId));
     // The current catalog generation has no entry for this enabled slug.
-    // Recapture treats enabled connectors as required, so it publishes no
-    // demand instead of a context with a silently reduced connector scope.
+    // Recapture drops it as if never authorized, matching Run launch.
     const missingSlug = `retired-${randomUUID().slice(0, 8)}`;
     await db.insert(userBuiltinConnectors).values({
       orgId: fixture.orgId,
@@ -1208,19 +1208,39 @@ describe("Pi stable context generation fences", () => {
         preparePiStableContext(args, AbortSignal.timeout(5000)),
       ),
     ).resolves.toMatchObject({ kind: "missing" });
-    await expect(variantHeads()).resolves.toStrictEqual([]);
+    await expect(variantHeads()).resolves.toStrictEqual([{ status: "ready" }]);
 
-    // Removing the connector from the agent lets the same demand register,
-    // and the next-use canonical repair publishes it.
-    await db
-      .delete(userBuiltinConnectors)
-      .where(eq(userBuiltinConnectors.agentId, fixture.agentId));
+    // Launch keys the cache on the stored, unfiltered connector scope, so the
+    // published context must carry that digest and serve the next launch.
+    const [published] = await db
+      .select({ input: piStableContextHeads.input })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.variantDigest, variantDigest));
+    const publishedSource = published?.input?.source;
+    if (!publishedSource) {
+      throw new Error("Expected published stable-context source");
+    }
+    expect(publishedSource.connectorScopeDigest).toBe(
+      piStableContextVariantDigest(args.semantic.connectorScope),
+    );
+    const launchSource = {
+      ...args.source,
+      catalogIdentity: publishedSource.catalogIdentity,
+      catalogSourceId: publishedSource.catalogSourceId,
+      agentIdentityDigest: publishedSource.agentIdentityDigest,
+      featurePromptDigest: publishedSource.featurePromptDigest,
+      permissionDigest: publishedSource.permissionDigest,
+      connectorScopeDigest: publishedSource.connectorScopeDigest,
+      validityHorizon: publishedSource.validityHorizon,
+    };
     await expect(
       createStore().get(
-        preparePiStableContext(args, AbortSignal.timeout(5000)),
+        preparePiStableContext(
+          { ...args, source: launchSource },
+          AbortSignal.timeout(5000),
+        ),
       ),
-    ).resolves.toMatchObject({ kind: "missing" });
-    await expect(variantHeads()).resolves.toStrictEqual([{ status: "ready" }]);
+    ).resolves.toMatchObject({ kind: "ready" });
   });
 
   it("keeps V2 demand when a delayed request captured latest instructions V1", async () => {

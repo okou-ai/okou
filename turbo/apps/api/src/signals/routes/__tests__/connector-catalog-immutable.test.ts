@@ -2,15 +2,8 @@ import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import {
-  customConnectorByIdContract,
-  customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
-import { customConnectorsRoutes } from "../custom-connectors";
-import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
-import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -54,8 +47,11 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
-import { createRouteMocks, createFixtureTracker } from "./helpers/route-test";
-import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  useLegacyConnectorCatalogPayloadFixture,
+} from "../../../test-fixtures/connector-catalog";
 
 import { describe, expect, it } from "vitest";
 import { replaceRunnerJobWithLegacyConnectorBaselineFixture } from "../../../test-fixtures/legacy-runner-job-context";
@@ -153,6 +149,45 @@ async function sync() {
   });
 }
 
+async function admittedMcpRun() {
+  const bdd = createBddApi(context);
+  const connectors = createConnectorBddApi(context);
+  const runs = createRunsApi(context);
+  const actor = bdd.user();
+  bdd.acceptAgentStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  const runnerGroup = runs.configureRunnerGroup();
+  await runs.grantProEntitlement(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Catalog MCP reader",
+  });
+  const connection = await connectors.connectManualGrant(
+    actor,
+    "manual-mcp",
+    "api-token",
+    { apiKey: "catalog-mcp-key" },
+    agent.agentId,
+  );
+  await runs.enableAgentConnectors(actor, agent.agentId, ["manual-mcp"]);
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Discover the admitted MCP connection",
+  });
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected a claimed Run's Okou token");
+  }
+  const client = setupApp({ context, routes: mcpConnectorsRoutes })(
+    mcpConnectorsContract,
+  );
+  const headers = { authorization: `Bearer ${token}` };
+  return { actor, connection, run, runs, client, headers };
+}
+
 describe("immutable connector catalog publication", () => {
   it("publishes the supplied digest and keeps repeated publication idempotent", async () => {
     const first = release("2099-01-01.first", "First lifecycle catalog");
@@ -241,41 +276,8 @@ describe("immutable connector catalog publication", () => {
     const first = release("2099-01-02.old", "Old MCP catalog", "manual-mcp");
     serve(first);
     await accept(sync(), [200]);
-    const bdd = createBddApi(context);
-    const connectors = createConnectorBddApi(context);
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Catalog MCP reader",
-    });
-    const connection = await connectors.connectManualGrant(
-      actor,
-      "manual-mcp",
-      "api-token",
-      { apiKey: "catalog-mcp-key" },
-      agent.agentId,
-    );
-    await runs.enableAgentConnectors(actor, agent.agentId, ["manual-mcp"]);
-    const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "Discover the admitted MCP connection",
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
-    if (!token) {
-      throw new Error("Expected a claimed Run's Okou token");
-    }
-    const client = setupApp({ context, routes: mcpConnectorsRoutes })(
-      mcpConnectorsContract,
-    );
-    const headers = { authorization: `Bearer ${token}` };
+    const { actor, connection, run, runs, client, headers } =
+      await admittedMcpRun();
     const original = await accept(client.list({ headers }), [200]);
     expect(original.body.connectors).toContainEqual(
       expect.objectContaining({
@@ -350,6 +352,85 @@ describe("slug-first current catalog business readers", () => {
     await directory(candidate);
     const oneClick = await accept(catalogClient().oneClick({ headers }), [200]);
     expect(oneClick.body.connectors.length).toBeGreaterThan(0);
+  });
+
+  it("serves payload-only entries written by an outgoing API after the column backfill", async () => {
+    const artifact = release(
+      `2099-02-01.${randomUUID()}`,
+      "Outgoing writer catalog",
+      "manual-mcp",
+    ).artifact;
+    const mcpConnector = artifact.connectors.find((connector) => {
+      return connector.slug === "manual-mcp";
+    });
+    if (!mcpConnector?.mcp) {
+      throw new Error("Missing fixed MCP connector");
+    }
+    mcpConnector.tags = [];
+    mcpConnector.generation = [];
+    const candidate = publication(artifact);
+    serve(candidate);
+    await accept(sync(), [200]);
+    const {
+      actor,
+      connection,
+      run,
+      runs,
+      client,
+      headers: runHeaders,
+    } = await admittedMcpRun();
+    routeMocks.clerk.session(actor.userId, actor.orgId);
+    const expectedHttp = await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
+      [200],
+    );
+
+    await useLegacyConnectorCatalogPayloadFixture(candidate.hash);
+
+    const listed = await accept(catalogClient().list({ headers }), [200]);
+    expect(listed.body.connectors).toContainEqual(
+      expect.objectContaining({
+        slug: mcpConnector.slug,
+        label: "Outgoing writer catalog",
+        tags: [],
+        generation: [],
+        mcp: mcpConnector.mcp,
+        permissionSummary: {
+          hasPermissions: false,
+          permissionCount: 0,
+          hasCategories: false,
+          hasDefaultPolicyOverrides: false,
+        },
+      }),
+    );
+    const actualHttp = await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
+      [200],
+    );
+    expect(actualHttp.body).toStrictEqual(expectedHttp.body);
+    const search = await accept(
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsSearchContract,
+      ).search({ headers, query: { keyword: mcpConnector.slug } }),
+      [200],
+    );
+    expect(search.body.connectors).toContainEqual(
+      expect.objectContaining({
+        slug: mcpConnector.slug,
+        label: "Outgoing writer catalog",
+      }),
+    );
+    const discovered = await accept(
+      client.list({ headers: runHeaders }),
+      [200],
+    );
+    expect(discovered.body.connectors).toContainEqual(
+      expect.objectContaining({
+        displayName: "Outgoing writer catalog",
+        connectionId: connection.id,
+      }),
+    );
+    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
   it.each(["claude-code", "pi"] as const)(
@@ -584,15 +665,7 @@ describe("current-publication account readers", () => {
   const routes = Object.freeze([
     ...connectorAccountRoutes,
     ...builtinConnectorsRoutes,
-    ...customConnectorsRoutes,
-    ...customConnectorsDeleteRoutes,
-    ...customConnectorsValuesSetRoutes,
   ]);
-
-  interface AccountCatalogFixture {
-    readonly orgId: string;
-    readonly userId: string;
-  }
 
   function authHeaders() {
     return { authorization: "Bearer clerk-session" };
@@ -602,130 +675,12 @@ describe("current-publication account readers", () => {
     return setupApp({ context, routes })(connectorAccountsContract);
   }
 
-  function customConnectorClient() {
-    return setupApp({ context, routes })(customConnectorsContract);
-  }
-
-  function customConnectorByIdClient() {
-    return setupApp({ context, routes })(customConnectorByIdContract);
-  }
-
-  async function deleteBuiltinAccountPage(
-    connectorSlug: "openai" | "github",
-    connections: readonly { readonly id: string }[],
-  ): Promise<void> {
-    const accountsApi = accountClient();
-    for (let offset = 0; offset < connections.length; offset += 4) {
-      const deleted = await Promise.allSettled(
-        connections.slice(offset, offset + 4).map(async (account) => {
-          await accept(
-            accountsApi.delete({
-              headers: authHeaders(),
-              params: { connectionId: account.id },
-              body: { target: { kind: "builtin", connectorSlug } },
-            }),
-            [200, 404],
-          );
-        }),
-      );
-      for (const result of deleted) {
-        if (result.status === "rejected") {
-          throw result.reason;
-        }
-      }
-    }
-  }
-
-  async function cleanupFixture(fixture: AccountCatalogFixture): Promise<void> {
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const accountsApi = accountClient();
-    for (const connectorSlug of ["openai", "github"] as const) {
-      let hasBuiltinAccounts = true;
-      while (hasBuiltinAccounts) {
-        const accounts = await accept(
-          accountsApi.connections({
-            headers: authHeaders(),
-            query: { kind: "builtin", connectorSlug, limit: 100 },
-          }),
-          [200, 404],
-        );
-        hasBuiltinAccounts =
-          accounts.status === 200 && accounts.body.connections.length > 0;
-        if (accounts.status !== 200) {
-          break;
-        }
-        await deleteBuiltinAccountPage(
-          connectorSlug,
-          accounts.body.connections,
-        );
-      }
-    }
-    const customConnectors = await accept(
-      customConnectorClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    for (const definition of customConnectors.body.connectors) {
-      const customAccounts = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "custom",
-            customConnectorId: definition.id,
-            limit: 100,
-          },
-        }),
-        [200, 404],
-      );
-      if (customAccounts.status === 200) {
-        for (const account of customAccounts.body.connections) {
-          await accept(
-            accountClient().delete({
-              headers: authHeaders(),
-              params: { connectionId: account.id },
-              body: {
-                target: {
-                  kind: "custom",
-                  customConnectorId: definition.id,
-                },
-              },
-            }),
-            [200, 404],
-          );
-        }
-      }
-      await accept(
-        customConnectorByIdClient().delete({
-          headers: authHeaders(),
-          params: { id: definition.id },
-        }),
-        [204, 404],
-      );
-    }
-  }
-
   describe("connector account lifecycle routes", () => {
-    const track = createFixtureTracker<AccountCatalogFixture>(cleanupFixture);
-
-    async function seedFixture(
-      overrides: Partial<AccountCatalogFixture> = {},
-    ): Promise<AccountCatalogFixture> {
-      const fixture = await track(
-        Promise.resolve({
-          orgId: overrides.orgId ?? `org_${randomUUID()}`,
-          userId: overrides.userId ?? `user_${randomUUID()}`,
-        }),
-      );
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-      return fixture;
-    }
-
     it("reviews requested scopes for one exact account across default changes", async () => {
-      const fixture = await seedFixture();
+      const actor = createBddApi(context).user();
       const currentScopes = ["repo", "project", "workflow"] as const;
-      const actor = createBddApi(context).user(fixture);
       const connectors = createConnectorBddApi(context);
       const catalog = createPublicConnectorCatalog(context, {
-        cleanupOwnership: "caller",
         isolatePg: true,
       });
       const staleCatalog = catalogWithAuthMethod(
@@ -737,22 +692,6 @@ describe("current-publication account readers", () => {
           return { ...method, grant: { ...method.grant, scopes: ["repo"] } };
         },
       );
-      const accountIds: string[] = [];
-      catalog.onCleanup(async () => {
-        const accounts = await connectors.listBuiltinConnectorAccounts(
-          actor,
-          "github",
-        );
-        for (const account of accounts) {
-          if (accountIds.includes(account.id)) {
-            await connectors.deleteBuiltinConnectorAccount(
-              actor,
-              "github",
-              account.id,
-            );
-          }
-        }
-      });
       const connectAccount = async (userId: number) => {
         mockGitHubConnectorOAuth({ userId, login: `scope-review-${userId}` });
         // Grants can be narrower than the selected catalog's requested scopes.
@@ -785,7 +724,6 @@ describe("current-publication account readers", () => {
         if (!account) {
           throw new Error("Expected the exact GitHub provider identity");
         }
-        accountIds.push(account.id);
         return account.id;
       };
       await catalog.publish(staleCatalog);
@@ -914,7 +852,8 @@ describe("current-publication account readers", () => {
         }),
         [404],
       );
-      await seedFixture();
+      const otherActor = createBddApi(context).user();
+      mocks.clerk.session(otherActor.userId, otherActor.orgId);
       await accept(
         accountClient().scopeDiff({
           headers: authHeaders(),
@@ -924,7 +863,7 @@ describe("current-publication account readers", () => {
         [404],
       );
 
-      mocks.clerk.session(fixture.userId, fixture.orgId);
+      mocks.clerk.session(actor.userId, actor.orgId);
       await accept(
         accountClient().delete({
           headers: authHeaders(),
@@ -941,15 +880,12 @@ describe("current-publication account readers", () => {
         }),
         [404],
       );
-      await catalog.cleanup();
     });
 
     it("treats a removed built-in catalog target as absent", async () => {
-      const fixture = await seedFixture();
-      const actor = createBddApi(context).user(fixture);
+      const actor = createBddApi(context).user();
       const connectors = createConnectorBddApi(context);
       const catalog = createPublicConnectorCatalog(context, {
-        cleanupOwnership: "caller",
         isolatePg: true,
       });
       const available = catalogWithManualConnector({
@@ -966,13 +902,6 @@ describe("current-publication account readers", () => {
         },
       );
       const accountId = account.id;
-      catalog.onCleanup(async () => {
-        await catalog.publish(available);
-        await connectors.deleteDefaultBuiltinConnectorAccount(
-          actor,
-          "retired-connector",
-        );
-      });
       await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
       const summary = await accept(
@@ -1017,7 +946,6 @@ describe("current-publication account readers", () => {
         }),
         [404],
       );
-      await catalog.cleanup();
     });
   });
 });

@@ -1,9 +1,9 @@
 import { syncBuiltinESMExports } from "node:module";
 import { resetApiTestMocks } from "./mocks";
-import { afterAll, afterEach, aroundEach, beforeAll, beforeEach } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 
 import { clearMockedEnv, mockEnv } from "../lib/env";
-import { withSecretKmsClientForTest } from "../lib/secret-kms-client";
+import { setSecretKmsClientForTests } from "../lib/secret-kms-client";
 import { createApiTestKmsClient } from "./secret-kms";
 import { clearMockNow } from "../lib/time";
 import { server } from "../mocks/server";
@@ -16,10 +16,6 @@ import {
 // Install the same defaults for the first case as afterEach installs thereafter.
 resetApiTestMocks();
 
-aroundEach(async (runTest) => {
-  await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
-});
-
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
   // SDK transports can import named HTTP exports instead of the CJS module.
@@ -28,8 +24,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  // Ordinary business tests share this source. Legacy lifecycle cases may
-  // select their own source inside the case until those mechanisms retire.
+  setSecretKmsClientForTests(createApiTestKmsClient());
   mockEnv(
     "R2_USER_STORAGES_BUCKET_NAME",
     API_TEST_CONNECTOR_CATALOG_SOURCE.bucket,
@@ -47,6 +42,7 @@ afterEach(async () => {
 });
 
 afterAll(() => {
+  setSecretKmsClientForTests(undefined);
   server.close();
   syncBuiltinESMExports();
 });

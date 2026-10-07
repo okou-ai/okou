@@ -300,6 +300,7 @@ import { connectorAccountTargetKey } from "./connector-account-resolution.servic
 import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
+  connectorScopeForRuntimeSnapshot,
   getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
 import {
@@ -13374,26 +13375,6 @@ function storedConnectorTimingDimensions(args: {
 interface PreparedConnectorContext {
   readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
-}
-
-function connectorScopeForRuntimeSnapshot(
-  scope: EffectiveConnectorScope,
-  snapshot: ConnectorRuntimeSelection,
-): EffectiveConnectorScope {
-  return {
-    ...scope,
-    allowedConnectorSlugs: scope.allowedConnectorSlugs.filter(
-      (connectorSlug) => {
-        const connector = getConnectorRuntimeConnector(snapshot, connectorSlug);
-        return (
-          connector !== undefined &&
-          [...connector.methods.values()].some((method) => {
-            return method.executable;
-          })
-        );
-      },
-    ),
-  };
 }
 
 function connectorScopeFromCreateArgs(args: {

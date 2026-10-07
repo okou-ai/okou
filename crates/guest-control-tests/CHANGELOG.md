@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.12.41](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.40...guest-control-tests-v0.12.41) (2026-10-07)
+
 ## [0.12.40](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.39...guest-control-tests-v0.12.40) (2026-10-07)
 
 ## [0.12.39](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.38...guest-control-tests-v0.12.39) (2026-10-07)

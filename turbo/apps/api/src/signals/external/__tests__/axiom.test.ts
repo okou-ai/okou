@@ -1,3 +1,4 @@
+import { processOrgUsageEventsForTest } from "../../../test-fixtures/billing-workers";
 import { randomUUID } from "node:crypto";
 
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
@@ -401,7 +402,7 @@ describe("shared SDK ingestion", () => {
   });
 
   it("emits settlement timing only for committed nonempty work", async () => {
-    // Telemetry-client suite exception: observe the committed route and SDK
+    // Telemetry-client suite exception: observe the real settlement worker and SDK
     // boundary together; do not inspect financial tables or service internals.
     mockEnv("ENV", "development");
     const store = createStore();
@@ -451,7 +452,10 @@ describe("shared SDK ingestion", () => {
         categories: ["tokens.input"],
       });
     });
-    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
+    await processOrgUsageEventsForTest(
+      { orgId: fixture.orgId },
+      context.signal,
+    );
     await store.set(
       insertUsageEvent$,
       {
@@ -484,7 +488,10 @@ describe("shared SDK ingestion", () => {
     };
     expect(settlementTimings()).toStrictEqual([]);
 
-    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
+    await processOrgUsageEventsForTest(
+      { orgId: fixture.orgId },
+      context.signal,
+    );
     expect(settlementTimings()).toStrictEqual([
       expect.objectContaining({
         timing_scope: "standalone",
@@ -574,7 +581,10 @@ describe("shared SDK ingestion", () => {
       },
       context.signal,
     );
-    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
+    await processOrgUsageEventsForTest(
+      { orgId: fixture.orgId },
+      context.signal,
+    );
     expect(settlementTimings()).toHaveLength(2);
     expect(settlementTimings()[1]).toStrictEqual(
       expect.objectContaining({
@@ -584,7 +594,10 @@ describe("shared SDK ingestion", () => {
         grant_rows: 1,
       }),
     );
-    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
+    await processOrgUsageEventsForTest(
+      { orgId: fixture.orgId },
+      context.signal,
+    );
     expect(settlementTimings()).toHaveLength(2);
   });
 

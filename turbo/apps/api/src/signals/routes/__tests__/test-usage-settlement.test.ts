@@ -1,3 +1,4 @@
+import { processOrgUsageEventsForTest } from "../../../test-fixtures/billing-workers";
 import { randomUUID } from "node:crypto";
 
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
@@ -34,11 +35,10 @@ import {
 const context = testContext();
 const store = createStore();
 
-function client(usagePricingResolution?: UsagePricingFixture["resolution"]) {
+function client() {
   return setupApp({
     context,
     routes: testUsageSettlementRoutes,
-    usagePricingResolution,
   })(testUsageSettlementContract);
 }
 
@@ -214,9 +214,9 @@ async function processSettlement(
   orgId: string,
   usagePricingResolution?: UsagePricingFixture["resolution"],
 ): Promise<void> {
-  await accept(
-    client(usagePricingResolution).process({ body: { org_id: orgId } }),
-    [200],
+  await processOrgUsageEventsForTest(
+    { orgId, usagePricingResolution },
+    context.signal,
   );
 }
 
@@ -224,18 +224,7 @@ async function readSettlementState(orgId: string) {
   return await accept(client().state({ body: { org_id: orgId } }), [200]);
 }
 
-describe("POST /api/test/usage-settlement/process", () => {
-  it("returns 404 when the test endpoint is not allowed", async () => {
-    mockEnv("ENV", "production");
-
-    const response = await accept(
-      client().process({ body: { org_id: "org_test" } }),
-      [404],
-    );
-
-    expect(response.body).toBe("Not found");
-  });
-
+describe("usage settlement", () => {
   it("prices every usage event from server-side pricing", async () => {
     const fixture = await setupSettlementFixture(10_000);
     const modelIdempotencyKey = randomUUID();

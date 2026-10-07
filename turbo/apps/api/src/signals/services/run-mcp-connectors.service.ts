@@ -73,14 +73,13 @@ function builtinMcpConnectors(args: {
     if (admitted.length === 0) {
       return [];
     }
-    // These accounts were admitted to the Run. A missing catalog entry must
-    // not silently shrink the Run's MCP scope, so it fails the request.
+    // An admitted account whose connector left the catalog is omitted below,
+    // as if it had never been authorized.
     const snapshot = await get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: admitted.map((row) => {
           return row.slug;
         }),
-        missingEntries: "reject",
       }),
     );
     return admitted.flatMap((row): McpConnector[] => {

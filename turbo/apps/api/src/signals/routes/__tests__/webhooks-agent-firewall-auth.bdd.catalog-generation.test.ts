@@ -79,7 +79,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
   it("does not call the provider for a known storage version mismatch", async () => {
     const fw = createFirewallApi(context);
-    const connectors = createConnectorBddApi(context);
     const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const versionTwo = catalogWithAuthMethod(
       { connectorSlug: "test-oauth", authMethodId: "oauth" },
@@ -89,15 +88,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     );
     await catalog.publish(versionTwo);
     const { actor, headers } = await publicConnections.run();
-    catalog.onCleanup(async () => {
-      await publicConnections.cleanup();
-      await catalog.publish(versionTwo);
-      await connectors.deleteDefaultBuiltinConnectorAccount(
-        actor,
-        "test-oauth",
-      );
-      await connectors.deleteFeatureSwitches(actor);
-    });
     await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
@@ -134,6 +124,5 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(response.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
     expect(providerCalls).toBe(0);
-    await catalog.cleanup();
   });
 });

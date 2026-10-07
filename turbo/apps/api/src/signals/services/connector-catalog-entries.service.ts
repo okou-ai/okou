@@ -19,7 +19,10 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { catalogIdentityFromCapture } from "./connector-catalog-view";
-import { assertRequiredConnectorCatalogEntries } from "./connector-catalog-external-reader.service";
+import {
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogRuntimeRow,
+} from "./connector-catalog-columns";
 
 export interface ImmutableConnectorCatalogCapture {
   readonly schemaVersion: number;
@@ -36,17 +39,13 @@ export interface ImmutableConnectorRuntimeSelection extends ConnectorRuntimeLook
 }
 
 /**
- * Each caller decides whether its requested slugs are business-required.
- * `reject` throws `RequiredConnectorCatalogEntriesMissingError` when any
- * requested slug has no entry at the captured hash; `omit` leaves it absent
- * (search, display filters, optional capability checks). Metadata-only
- * dependencies are always optional and never grant execution.
+ * A requested slug with no entry at the captured hash is left absent, exactly
+ * as if the user had never authorized it: a delisted connector cannot be
+ * disconnected, so no reader may fail on it. Metadata-only dependencies never
+ * grant execution.
  */
-export type MissingConnectorCatalogEntryPolicy = "reject" | "omit";
-
 interface SelectionInput {
   readonly requestedConnectorSlugs: readonly ConnectorSlug[];
-  readonly missingEntries: MissingConnectorCatalogEntryPolicy;
   readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
   readonly capturedCatalog?: ImmutableConnectorCatalogCapture;
 }
@@ -86,10 +85,7 @@ function capturedEntries(
                 schemaVersion: connectorCatalog.schemaVersion,
                 hash: connectorCatalog.hash,
               },
-              entry: {
-                slug: connectorCatalogEntries.slug,
-                payload: connectorCatalogEntries.payload,
-              },
+              entry: connectorCatalogRuntimeColumns,
             })
             .from(connectorCatalog)
             .leftJoin(
@@ -107,8 +103,17 @@ function capturedEntries(
             )
         : await db
             .select({
-              slug: connectorCatalogEntries.slug,
-              payload: connectorCatalogEntries.payload,
+              slug: connectorCatalogRuntimeColumns.slug,
+              label: connectorCatalogRuntimeColumns.label,
+              description: connectorCatalogRuntimeColumns.description,
+              category: connectorCatalogRuntimeColumns.category,
+              icon: connectorCatalogRuntimeColumns.icon,
+              tags: connectorCatalogRuntimeColumns.tags,
+              generation: connectorCatalogRuntimeColumns.generation,
+              authMethods: connectorCatalogRuntimeColumns.authMethods,
+              mcp: connectorCatalogRuntimeColumns.mcp,
+              skill: connectorCatalogRuntimeColumns.skill,
+              firewall: connectorCatalogRuntimeColumns.firewall,
             })
             .from(connectorCatalogEntries)
             .where(
@@ -122,10 +127,13 @@ function capturedEntries(
       if ("current" in row) {
         captured = row.current;
         if (row.entry !== null) {
-          entries.set(row.entry.slug, row.entry.payload);
+          entries.set(
+            row.entry.slug,
+            materializeConnectorCatalogRuntimeRow(row.entry),
+          );
         }
       } else {
-        entries.set(row.slug, row.payload);
+        entries.set(row.slug, materializeConnectorCatalogRuntimeRow(row));
       }
     }
     if (captured === undefined) {
@@ -133,12 +141,6 @@ function capturedEntries(
     }
     if (captured.schemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION) {
       throw new Error("Immutable connector catalog schema is unsupported");
-    }
-    if (input.missingEntries === "reject") {
-      assertRequiredConnectorCatalogEntries(
-        entries,
-        input.requestedConnectorSlugs,
-      );
     }
     return {
       input,
@@ -180,7 +182,6 @@ export function createConnectorRuntimeSelection(
     return requested
       ? {
           requestedConnectorSlugs: requested.runtimeConnectorSlugs,
-          missingEntries: "omit" as const,
           metadataConnectorSlugs: requested.metadataConnectorSlugs,
         }
       : null;

@@ -32,11 +32,6 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  reconcileBillingEntitlementsForOrganizations$,
-  reconcileUndeliveredStripePaidCheckoutSessions$,
-  reconcileUndeliveredStripePaidInvoices$,
-} from "../services/cron-billing-entitlements.service";
-import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
@@ -45,9 +40,6 @@ import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitleme
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const actionBody$ = bodyResultOf(testBillingReconciliationStateContract.action);
-const reconcileBody$ = bodyResultOf(
-  testBillingReconciliationStateContract.reconcile,
-);
 
 interface FixtureReference {
   readonly kind: BillingReconciliationFixtureKind;
@@ -875,45 +867,9 @@ const mutateTestBillingReconciliationState$ = command(
   },
 );
 
-const reconcileTestBillingState$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(reconcileBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    if (bodyResult.data.replayUndeliveredPaidCheckouts) {
-      await set(reconcileUndeliveredStripePaidCheckoutSessions$, signal);
-      signal.throwIfAborted();
-    }
-    if (bodyResult.data.replayUndeliveredPaidInvoices) {
-      await set(reconcileUndeliveredStripePaidInvoices$, signal);
-      signal.throwIfAborted();
-    }
-    const result = await set(
-      reconcileBillingEntitlementsForOrganizations$,
-      bodyResult.data.orgIds,
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: { success: true as const, ...result },
-    };
-  },
-);
-
 export const testBillingReconciliationStateRoutes: readonly RouteEntry[] = [
   {
     route: testBillingReconciliationStateContract.action,
     handler: mutateTestBillingReconciliationState$,
-  },
-  {
-    route: testBillingReconciliationStateContract.reconcile,
-    handler: reconcileTestBillingState$,
   },
 ];

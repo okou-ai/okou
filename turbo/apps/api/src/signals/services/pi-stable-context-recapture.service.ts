@@ -38,7 +38,10 @@ import {
   buildAgentToolsPromptInputs,
 } from "./agent-tools-prompt.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import {
+  connectorScopeForRuntimeSnapshot,
+  type ConnectorRuntimeSelection,
+} from "./connector-catalog-runtime.service";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -49,6 +52,10 @@ import {
   connectorCatalogSlugRuntimeFromRows,
   connectorCatalogSlugIdentityFromRows,
 } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogRuntimeRow,
+} from "./connector-catalog-columns";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import {
   ORG_SENTINEL_USER_ID,
@@ -279,10 +286,7 @@ async function loadStableContextSourceSnapshot(
           schemaVersion: connectorCatalog.schemaVersion,
           hash: connectorCatalog.hash,
         },
-        entry: {
-          slug: connectorCatalogEntries.slug,
-          payload: connectorCatalogEntries.payload,
-        },
+        entry: connectorCatalogRuntimeColumns,
       })
       .from(connectorCatalog)
       .leftJoin(
@@ -290,18 +294,22 @@ async function loadStableContextSourceSnapshot(
         connectorCatalogSlugJoin(connectorScope.allowedConnectorSlugs),
       )
       .where(connectorCatalogCurrentWhere());
-    catalogSelection = {
-      kind: "scoped",
-      selection: {
-        // Enabled connectors are required: a missing entry throws the typed
-        // unavailable error below and leaves the head missing.
-        ...connectorCatalogSlugRuntimeFromRows(catalogRows, {
-          runtimeConnectorSlugs: connectorScope.allowedConnectorSlugs,
-          missingRuntimeEntries: "reject",
-        }),
-        catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogRows),
-      },
+    const catalogSourceRows = catalogRows.map((row) => {
+      return {
+        ...row,
+        entry:
+          row.entry === null
+            ? null
+            : materializeConnectorCatalogRuntimeRow(row.entry),
+      };
+    });
+    const selection = {
+      ...connectorCatalogSlugRuntimeFromRows(catalogSourceRows, {
+        runtimeConnectorSlugs: connectorScope.allowedConnectorSlugs,
+      }),
+      catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogSourceRows),
     };
+    catalogSelection = { kind: "scoped", selection };
   }
   const permissionPolicies =
     catalogSelection.kind === "empty"
@@ -373,10 +381,16 @@ function builtinConnectorMounts(
   }
   const selection = snapshot.catalogSelection.selection;
   const desired: DesiredDynamicMount[] = [];
-  for (const slug of snapshot.connectorScope.allowedConnectorSlugs) {
+  // Mirrors Run launch: cache identity keeps the stored scope, while mounts
+  // drop a connector that left the catalog as if it were never authorized.
+  const { allowedConnectorSlugs } = connectorScopeForRuntimeSnapshot(
+    snapshot.connectorScope,
+    selection,
+  );
+  for (const slug of allowedConnectorSlugs) {
     const connector = selection.connectors.get(slug);
     if (!connector) {
-      return null;
+      continue;
     }
     if (connector.skill.kind !== "none") {
       desired.push({

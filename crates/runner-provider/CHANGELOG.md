@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.7...runner-provider-v0.5.8) (2026-10-07)
+
+
+### Refactoring
+
+* remove custom provider and gateway traces ([#37890](https://github.com/okou-ai/okou/issues/37890)) ([f59490d](https://github.com/okou-ai/okou/commit/f59490d298d2c0b3c3b903d005846e13524bc59e))
+
 ## [0.5.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.6...runner-provider-v0.5.7) (2026-10-07)
 
 ## [0.5.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.5...runner-provider-v0.5.6) (2026-10-07)

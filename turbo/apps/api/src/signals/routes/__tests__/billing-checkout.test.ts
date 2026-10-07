@@ -1,9 +1,9 @@
+import { reconcileBillingOrganizationsForTest } from "../../../test-fixtures/billing-workers";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
-import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
   type BillingStatusResponse,
   type UsagePackCreditsResponse,
@@ -64,7 +64,6 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { testBillingReconciliationStateRoutes } from "../test-billing-reconciliation-state";
 import { billingCheckoutRoutes } from "../billing-checkout";
 import { billingConcurrencyCheckoutRoutes } from "../billing-concurrency-checkout";
 import { billingConcurrencySubscriptionRoutes } from "../billing-concurrency-subscriptions";
@@ -116,14 +115,9 @@ async function readUsagePackState(
 }
 
 async function reconcileBillingOrganization(orgId: string): Promise<void> {
-  await accept(
-    setupApp({
-      context,
-      routes: testBillingReconciliationStateRoutes,
-    })(testBillingReconciliationStateContract).reconcile({
-      body: { orgIds: [orgId] },
-    }),
-    [200],
+  await reconcileBillingOrganizationsForTest(
+    { orgIds: [orgId] },
+    context.signal,
   );
 }
 

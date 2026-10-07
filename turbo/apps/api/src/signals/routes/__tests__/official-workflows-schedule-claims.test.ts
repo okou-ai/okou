@@ -14,7 +14,6 @@ import {
   type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { officialWorkflowInstallationsContract } from "@okouai/api-contracts/contracts/official-workflows";
-import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
@@ -23,7 +22,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Cron } from "croner";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -36,12 +35,11 @@ import {
 } from "../cron-official-workflow-catalog";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
-import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -50,7 +48,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
 
 const context = testContext();
-const bdd = createBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
@@ -114,22 +111,22 @@ function activeDefinition(
   };
 }
 
-function syncClient(candidate: unknown) {
-  return setupApp({
+async function syncClient(candidate: unknown) {
+  const app = await setupApp({
     context,
     routes: createCronOfficialWorkflowCatalogRoutes(candidate),
-  })(cronOfficialWorkflowCatalogContract);
+    isolatePg: true,
+  });
+  return app(cronOfficialWorkflowCatalogContract);
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await (async () => {
-    return await accept(
-      syncClient(candidate).sync({
-        headers: { authorization: `Bearer ${CRON_SECRET}` },
-      }),
-      [200],
-    );
-  })();
+  return await accept(
+    (await syncClient(candidate)).sync({
+      headers: { authorization: `Bearer ${CRON_SECRET}` },
+    }),
+    [200],
+  );
 }
 
 function connectorDoctorDefinition(): ActiveDefinition {
@@ -151,28 +148,10 @@ function connectorDoctorDefinition(): ActiveDefinition {
 
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
-  return await (async () => {
-    return await accept(
-      setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-        cronOfficialWorkflowCatalogContract,
-      ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-      [200],
-    );
-  })();
-}
-
-async function stateClient() {
-  const app = await setupApp({
-    context,
-    routes: testOfficialWorkflowCatalogStateRoutes,
-    isolatePg: true,
-  });
-  return app(testOfficialWorkflowCatalogStateContract);
-}
-
-async function cleanupCatalog() {
-  await accept(
-    (await stateClient()).action({ body: { action: "cleanup" } }),
+  return await accept(
+    setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+      cronOfficialWorkflowCatalogContract,
+    ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
 }
@@ -411,9 +390,8 @@ async function listMorningBriefInstallations(actor: ApiTestUser) {
   });
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
-  await cleanupCatalog();
 });
 
 async function readMorningBriefAutomations(
@@ -500,33 +478,6 @@ async function readBriefState(brief: {
   };
 }
 
-async function prepareBriefMember({
-  actor = bdd.user(),
-  createdAt = new Date("2030-01-01T00:00:00.000Z"),
-  catalogAvailable = true,
-  bootstrap = true,
-}: {
-  readonly actor?: ApiTestUser;
-  readonly createdAt?: Date;
-  readonly catalogAvailable?: boolean;
-  readonly bootstrap?: boolean;
-} = {}) {
-  installCatalogStorageFixture();
-  if (catalogAvailable) {
-    await syncDeployedCatalog();
-  }
-  mockBriefMemberships([{ actor, createdAt }]);
-  await setOfficialWorkflowsEnabled(actor, false);
-  if (bootstrap) {
-    await deliverClerkOrganizationCreated(actor, createdAt);
-  }
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await cleanupCatalog();
-  });
-  return { actor, createdAt };
-}
-
 describe("Morning Brief schedule lifecycle through public APIs", () => {
   /** The published Morning Brief cadence, evaluated independently of the API. */
   function briefOccurrenceAfter(
@@ -549,9 +500,14 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
     timezone = "Asia/Shanghai",
     model: BriefDefaultModel = "claude-fable-5-1",
   ): Promise<JournaledBrief> {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
     // A subscribed org, so the legacy Run and its credit checks stay real.
     const { actor } = await workflowBdd.setupWorkflowOrg({ tier: "pro" });
-    await prepareBriefMember({ actor });
+    const createdAt = new Date("2030-01-01T00:00:00.000Z");
+    mockBriefMemberships([{ actor, createdAt }]);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await deliverClerkOrganizationCreated(actor, createdAt);
     await selectBuiltInDefaultModel(actor, model);
     await initializeBriefMember(actor, timezone);
     await accept(
@@ -875,9 +831,6 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
   it("preserves ordinary cron and loop callback behavior", async () => {
     const brief = await installJournaledBrief();
     const ordinaryAgent = await workflowBdd.createAgent(brief.actor);
-    onTestFinished(async () => {
-      await bdd.deleteAgent(brief.actor, ordinaryAgent.agentId);
-    });
     const ordinaryWorkflowId = await workflowBdd.createWorkflow(brief.actor, {
       agentId: ordinaryAgent.agentId,
       name: "ordinary-callback-compatibility",

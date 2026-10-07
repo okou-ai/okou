@@ -34,10 +34,6 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
         apiKey: "unavailable-method-secret",
       },
     );
-    catalog.onCleanup(async () => {
-      await catalog.publish(available);
-      await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "openai");
-    });
     await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
     const response = await connectorsApi.requestScopeDiff(
@@ -48,6 +44,5 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
 
     expectApiError(response.body);
     expect(response.body.error.code).toBe("NOT_FOUND");
-    await catalog.cleanup();
   });
 });

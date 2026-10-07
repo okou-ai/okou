@@ -302,10 +302,8 @@ export {
 } from "./test-usage-state";
 export {
   testUsageSettlementContract,
-  testUsageSettlementRequestSchema,
   testUsageSettlementResponseSchema,
   type TestUsageSettlementContract,
-  type TestUsageSettlementRequest,
   type TestUsageSettlementResponse,
 } from "./test-usage-settlement";
 export {

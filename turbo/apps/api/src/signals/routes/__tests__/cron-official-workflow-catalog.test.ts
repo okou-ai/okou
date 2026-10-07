@@ -177,36 +177,36 @@ function retiredDefinition(
   };
 }
 
-function syncClient(candidate: unknown) {
-  return setupApp({
+async function syncClient(candidate: unknown) {
+  const app = await setupApp({
     context,
     routes: createCronOfficialWorkflowCatalogRoutes(candidate),
-  })(cronOfficialWorkflowCatalogContract);
+    isolatePg: true,
+  });
+  return app(cronOfficialWorkflowCatalogContract);
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await (async () => {
-    return await accept(
-      syncClient(candidate).sync({ headers: cronHeaders() }),
-      [200],
-    );
-  })();
+  return await accept(
+    (await syncClient(candidate)).sync({ headers: cronHeaders() }),
+    [200],
+  );
 }
 
 async function syncDeployedCatalog() {
-  return await (async () => {
-    return await accept(
-      setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-        cronOfficialWorkflowCatalogContract,
-      ).sync({ headers: cronHeaders() }),
-      [200],
-    );
-  })();
+  return await accept(
+    setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+      cronOfficialWorkflowCatalogContract,
+    ).sync({ headers: cronHeaders() }),
+    [200],
+  );
 }
 
 async function syncCatalogUnauthorized(candidate: unknown) {
   return await accept(
-    syncClient(candidate).sync({ headers: cronHeaders("wrong-secret") }),
+    (await syncClient(candidate)).sync({
+      headers: cronHeaders("wrong-secret"),
+    }),
     [401],
   );
 }
@@ -339,16 +339,12 @@ function installVolumeS3Fixture() {
   };
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockEnv(
     "R2_USER_STORAGES_BUCKET_NAME",
     `official-workflow-catalog-test-${randomUUID()}`,
   );
-  // The accepted catalog is one infrastructure-owned singleton with no reset
-  // endpoint. This test-only external route is the narrow exception needed to
-  // construct independent initial-release scenarios without importing DB state.
-  await stateAction({ action: "cleanup" });
 });
 
 describe("Official Workflow catalog release boundary", () => {

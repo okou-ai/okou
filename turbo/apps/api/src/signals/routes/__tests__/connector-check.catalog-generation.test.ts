@@ -15,12 +15,6 @@ import {
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
 import { connectorCheckRoutes } from "../connector-check";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-
-const TEST_APP_ROUTES = Object.freeze([
-  ...connectorCheckRoutes,
-  ...testCronCleanupSandboxesStateRoutes,
-]);
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -28,7 +22,9 @@ const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 
 function client() {
-  return setupApp({ context, routes: TEST_APP_ROUTES })(connectorCheckContract);
+  return setupApp({ context, routes: connectorCheckRoutes })(
+    connectorCheckContract,
+  );
 }
 
 async function checkWithSession(
@@ -64,13 +60,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
     await connectorsApi.connectManualGrant(actor, "removed-connector", "api", {
       credential: "removed-connector-secret",
     });
-    catalog.onCleanup(async () => {
-      await catalog.publish(available);
-      await connectorsApi.deleteDefaultBuiltinConnectorAccount(
-        actor,
-        "removed-connector",
-      );
-    });
     await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
     const response = await checkWithSession(actor, {
@@ -83,6 +72,5 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       connector: { connectorSlug: "github" },
     });
-    await catalog.cleanup();
   });
 });

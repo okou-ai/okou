@@ -211,11 +211,16 @@ inherit the case's database; omitting `isolatePg` never switches an isolated cas
 back to shared PostgreSQL. The same binding covers direct fixture writes,
 services, HTTP requests, and their asynchronous background work.
 
-When every case in a file or group requires isolation, its `beforeEach` may
-use `setupApp({ context, routes, isolatePg: true })` in its real API fixture or
-`beforeEach`, and use the returned client for that action. Do not initialize
-isolation through an unused client with an empty route slice. Each case receives
-a separate engine; keep `testContext()` at module or describe scope.
+Select isolation in the case's first real API request or API fixture operation,
+and use the returned client. Do not initialize it with an unused client, an
+empty route slice, or a database cleanup action. Each case receives a separate
+engine; keep `testContext()` at module or describe scope.
+
+An isolated database is discarded after the case. Do not enumerate and delete
+its rows in teardown, clear catalogs before starting, or republish an obsolete
+catalog just to delete its accounts. Keep business deletion assertions and
+cleanup that stops background work, releases external resources, or restores
+external mocks. Shared PostgreSQL fixtures still own and clean up their rows.
 
 `src/__tests__/global-setup.ts` seeds the shared PostgreSQL pricing and complete
 fixed connector catalog once per run. It also migrates and seeds one PGlite,
@@ -225,8 +230,10 @@ replay migrations or reseed their isolated database. Shared fixture installation
 uses `ifAbsent: true` and must never replace an existing catalog pointer.
 
 `src/__tests__/external-setup.ts` restores the fixed source and provider
-configuration before each case. Shared PostgreSQL cases may read the seeded
-catalog but must not rotate, mutate, or delete its authority. Readers use a
+configuration and installs a fresh KMS mock before each case. The mock remains
+available through finished callbacks and is cleared after the file. Shared
+PostgreSQL cases may read the seeded catalog but must not rotate, mutate, or
+delete its authority. Readers use a
 current pointer keyed only by schema version; changing the S3 bucket does not
 isolate that pointer. Catalog-generation and publisher cases therefore use
 `isolatePg: true` and publish their prerequisites into their own databases.

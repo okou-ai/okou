@@ -1,8 +1,8 @@
+import { processOrgUsageEventsForTest } from "../../../../test-fixtures/billing-workers";
 import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
-import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { bankingContract } from "@okouai/api-contracts/contracts/banking";
 import {
   billingAutoRechargeContract,
@@ -46,7 +46,6 @@ import {
   mockListStripeInvoices,
   mockStripeClient,
 } from "../../../external/stripe-client";
-import { testUsageSettlementRoutes } from "../../test-usage-settlement";
 import type { ApiTestUser } from "./api-bdd";
 import { mockGoogleMapsGrounding } from "./google-maps-grounding";
 import { createRouteMocks } from "./route-test";
@@ -514,14 +513,9 @@ export function createBillingMediaApi(context: TestContext) {
       if (!actor.orgId) {
         throw new Error("Cannot process usage without an organization");
       }
-      const client = setupApp({
-        context,
-        routes: testUsageSettlementRoutes,
-        usagePricingResolution,
-      })(testUsageSettlementContract);
-      return await accept(
-        client.process({ body: { org_id: actor.orgId } }),
-        [200],
+      return await processOrgUsageEventsForTest(
+        { orgId: actor.orgId, usagePricingResolution },
+        context.signal,
       );
     },
 

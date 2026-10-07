@@ -36,6 +36,7 @@ import {
   workflowsDetailContract,
   workflowVisibilityContract,
 } from "@okouai/api-contracts/contracts/workflows";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   getCustomSkillStorageName,
@@ -70,6 +71,7 @@ import {
   createCronOfficialWorkflowCatalogRoutes,
   cronOfficialWorkflowCatalogRoutes,
 } from "../cron-official-workflow-catalog";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
@@ -1026,22 +1028,22 @@ function retiredDefinition(
   };
 }
 
-function syncClient(candidate: unknown) {
-  return setupApp({
+async function syncClient(candidate: unknown) {
+  const app = await setupApp({
     context,
     routes: createCronOfficialWorkflowCatalogRoutes(candidate),
-  })(cronOfficialWorkflowCatalogContract);
+    isolatePg: true,
+  });
+  return app(cronOfficialWorkflowCatalogContract);
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await (async () => {
-    return await accept(
-      syncClient(candidate).sync({
-        headers: { authorization: `Bearer ${CRON_SECRET}` },
-      }),
-      [200],
-    );
-  })();
+  return await accept(
+    (await syncClient(candidate)).sync({
+      headers: { authorization: `Bearer ${CRON_SECRET}` },
+    }),
+    [200],
+  );
 }
 
 function connectorDoctorDefinition(): ActiveDefinition {
@@ -1063,28 +1065,24 @@ function connectorDoctorDefinition(): ActiveDefinition {
 
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
-  return await (async () => {
-    return await accept(
-      setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-        cronOfficialWorkflowCatalogContract,
-      ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-      [200],
-    );
-  })();
+  return await accept(
+    setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+      cronOfficialWorkflowCatalogContract,
+    ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+    [200],
+  );
 }
 
-async function stateClient() {
-  const app = await setupApp({
+function stateClient() {
+  return setupApp({
     context,
     routes: testOfficialWorkflowCatalogStateRoutes,
-    isolatePg: true,
-  });
-  return app(testOfficialWorkflowCatalogStateContract);
+  })(testOfficialWorkflowCatalogStateContract);
 }
 
 async function runOfficialWorkflowReconciliationWorker() {
   const response = await accept(
-    (await stateClient()).action({
+    stateClient().action({
       body: { action: "run-reconciliation-worker" },
     }),
     [200],
@@ -1102,7 +1100,7 @@ async function readOfficialWorkflowReconciliationState(args: {
   readonly workflowId?: string;
 }) {
   return await accept(
-    (await stateClient()).action({
+    stateClient().action({
       body: { action: "read", ...args },
     }),
     [200],
@@ -1113,7 +1111,7 @@ async function simulateOfficialWorkflowReconciliationWorkerCrash(
   definitionName: string,
 ): Promise<void> {
   await accept(
-    (await stateClient()).action({
+    stateClient().action({
       body: {
         action: "simulate-reconciliation-worker-crash",
         definitionName,
@@ -1125,7 +1123,7 @@ async function simulateOfficialWorkflowReconciliationWorkerCrash(
 
 async function pauseNextStructureTransitionPromotion(): Promise<void> {
   await accept(
-    (await stateClient()).action({
+    stateClient().action({
       body: { action: "pause-next-structure-transition-promotion" },
     }),
     [200],
@@ -1134,7 +1132,7 @@ async function pauseNextStructureTransitionPromotion(): Promise<void> {
 
 async function waitForStructureTransitionPromotionPause(): Promise<void> {
   await accept(
-    (await stateClient()).action({
+    stateClient().action({
       body: { action: "wait-for-structure-transition-promotion-pause" },
     }),
     [200],
@@ -1143,7 +1141,7 @@ async function waitForStructureTransitionPromotionPause(): Promise<void> {
 
 async function resumeStructureTransitionPromotion(): Promise<void> {
   await accept(
-    (await stateClient()).action({
+    stateClient().action({
       body: { action: "resume-structure-transition-promotion" },
     }),
     [200],
@@ -1154,16 +1152,9 @@ async function makeOfficialWorkflowReconciliationWorkDue(
   definitionName: string,
 ): Promise<void> {
   await accept(
-    (await stateClient()).action({
+    stateClient().action({
       body: { action: "make-reconciliation-work-due", definitionName },
     }),
-    [200],
-  );
-}
-
-async function cleanupCatalog() {
-  await accept(
-    (await stateClient()).action({ body: { action: "cleanup" } }),
     [200],
   );
 }
@@ -1329,7 +1320,7 @@ async function runDueOfficialWorkflowReconciliationRetry() {
 
 async function readAcceptedDefinitionFixture(definitionName: string) {
   const response = await accept(
-    (await stateClient()).action({ body: { action: "read", definitionName } }),
+    stateClient().action({ body: { action: "read", definitionName } }),
     [200],
   );
   if (!response.body.definition || !response.body.storage) {
@@ -1629,10 +1620,17 @@ async function setOfficialWorkflowsEnabled(
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
   }
-  await updateFeatureSwitchesForUser(
+  const app = await setupApp({
     context,
-    { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.OfficialWorkflows]: enabled },
+    routes: featureSwitchesRoutes,
+    isolatePg: true,
+  });
+  await accept(
+    app(featureSwitchesContract).update({
+      headers: authHeaders(actor),
+      body: { switches: { [FeatureSwitchKey.OfficialWorkflows]: enabled } },
+    }),
+    [200],
   );
 }
 
@@ -1893,11 +1891,7 @@ async function installResultEmailLoopScenario(
   const runnerGroup = runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await bdd.deleteAgent(actor, agentId);
-    await cleanupCatalog();
-  });
+
   return {
     actor,
     agentId,
@@ -1933,10 +1927,7 @@ async function installOfficialWorkflowLifecycleScenario() {
   }
   const { agentId } = await workflowBdd.createAgent(actor);
   onTestFinished(async () => {
-    installCatalogStorageFixture();
     await publicResults.cleanup(actor);
-    await bdd.deleteAgent(actor, agentId);
-    await cleanupCatalog();
   });
   const headers = authHeaders(actor);
   await setOfficialWorkflowsEnabled(actor, true);
@@ -2039,8 +2030,6 @@ async function installStaleAdmissionScenario() {
       await runs.requestCancelRun(actor, run.id, [200, 400]);
     }
     await flushWaitUntilForTest();
-    await bdd.deleteAgent(actor, agentId);
-    await cleanupCatalog();
   });
   const automation = installed.body.workflow.automations[0];
   if (!automation?.official) {
@@ -2058,9 +2047,8 @@ async function installStaleAdmissionScenario() {
   };
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
-  await cleanupCatalog();
 });
 
 describe("Morning Brief preference", () => {
@@ -2079,29 +2067,8 @@ describe("Morning Brief preference", () => {
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected a default Agent");
     }
-    const defaultAgentId = onboarding.defaultAgentId;
     onTestFinished(async () => {
-      installCatalogStorageFixture();
       await publicResults.cleanup(actor);
-      await accept(
-        morningBriefPreferenceClient().update({
-          headers: authHeaders(actor),
-          body: { enabled: false },
-        }),
-        [200],
-      );
-      for (const installation of await listMorningBriefInstallations(actor)) {
-        if (installation.agentId === defaultAgentId) {
-          await accept(
-            installationClient().uninstall({
-              headers: authHeaders(actor),
-              params: { workflowId: installation.id },
-            }),
-            [204],
-          );
-        }
-      }
-      await cleanupCatalog();
     });
     await connectBriefSource(actor);
     const headers = authHeaders(actor);
@@ -2397,11 +2364,7 @@ describe("Morning Brief preference", () => {
       throw new Error("Expected a default Agent");
     }
     const alternate = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, alternate.agentId);
-      await cleanupCatalog();
-    });
+
     await setOfficialWorkflowsEnabled(actor, true);
     const headers = authHeaders(actor);
     const onDefaultAgent = await installMorningBriefFromCatalog(
@@ -2460,11 +2423,7 @@ describe("Morning Brief preference", () => {
       throw new Error("Expected a default Agent");
     }
     const alternate = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, alternate.agentId);
-      await cleanupCatalog();
-    });
+
     await connectBriefSource(actor);
     await setOfficialWorkflowsEnabled(actor, false);
     const headers = authHeaders(actor);
@@ -2531,12 +2490,7 @@ describe("Morning Brief preference", () => {
       throw new Error("Expected a default Agent");
     }
     const replacement = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await setOrgDefaultAgentFixture({ orgId, agentId: originalAgentId });
-      await bdd.deleteAgent(actor, replacement.agentId);
-      await cleanupCatalog();
-    });
+
     await connectBriefSource(actor);
     await setOfficialWorkflowsEnabled(actor, false);
     const headers = authHeaders(actor);
@@ -2606,11 +2560,7 @@ describe("Morning Brief preference", () => {
       throw new Error("Expected organization-scoped actor");
     }
     const alternate = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, alternate.agentId);
-      await cleanupCatalog();
-    });
+
     await connectBriefSource(actor);
     await setOfficialWorkflowsEnabled(actor, false);
     const headers = authHeaders(actor);
@@ -2841,10 +2791,6 @@ async function prepareBriefMember({
   if (bootstrap) {
     await deliverClerkOrganizationCreated(actor, createdAt);
   }
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await cleanupCatalog();
-  });
   return { actor, createdAt };
 }
 
@@ -3514,10 +3460,7 @@ describe("Official Workflow installations", () => {
     }
     const { agentId } = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
-      installCatalogStorageFixture();
       await publicResults.cleanup(actor);
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     const headers = authHeaders(actor);
     await setOfficialWorkflowsEnabled(actor, true);
@@ -3614,11 +3557,7 @@ describe("Official Workflow installations", () => {
     }
     await selectPersonalDefaultModel(actor);
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     const headers = authHeaders(actor);
     await setOfficialWorkflowsEnabled(actor, true);
 
@@ -3685,11 +3624,7 @@ describe("Official Workflow installations", () => {
 
     const { actor } = await workflowBdd.setupWorkflowOrg();
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     const headers = authHeaders(actor);
     await setOfficialWorkflowsEnabled(actor, true);
 
@@ -3746,11 +3681,7 @@ describe("Official Workflow installations", () => {
       timezone: "Asia/Shanghai",
     });
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     await setOfficialWorkflowsEnabled(actor, true);
     const headers = authHeaders(actor);
     const blueprintBindings = (budget: number) => {
@@ -3819,11 +3750,7 @@ describe("Official Workflow installations", () => {
       throw new Error("Expected organization-scoped actor");
     }
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     const headers = authHeaders(actor);
     await accept(officialClient().list({ headers }), [403]);
     await setOfficialWorkflowsEnabled(actor, true);
@@ -3839,11 +3766,7 @@ describe("Official Workflow installations", () => {
       sharedAgentOwner,
       { visibility: "private" },
     );
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(sharedAgentOwner, publicAgentId);
-      await bdd.deleteAgent(sharedAgentOwner, privateAgentId);
-    });
+
     authHeaders(actor);
     const publicAgentInstallation = await accept(
       officialClient().install({
@@ -4302,13 +4225,7 @@ describe("Official Workflow installations", () => {
       await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
     const { agentId: secondAgentId } = await workflowBdd.createAgent(actor);
-    let secondAgentDeleted = false;
-    onTestFinished(async () => {
-      if (!secondAgentDeleted) {
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, secondAgentId);
-      }
-    });
+
     const secondInstallation = await accept(
       officialClient().install({
         headers,
@@ -4319,7 +4236,6 @@ describe("Official Workflow installations", () => {
     );
     expect(secondInstallation.body.workflow.id).not.toBe(firstWorkflowId);
     await bdd.deleteAgent(actor, secondAgentId);
-    secondAgentDeleted = true;
     await accept(
       installationClient().get({
         headers,
@@ -4342,14 +4258,8 @@ describe("Official Workflow installations", () => {
     const { actor, definitionName, headers, installBody, installed } =
       await installOfficialWorkflowLifecycleScenario();
     const { agentId: ordinaryAgentId } = await workflowBdd.createAgent(actor);
-    let ordinaryAgentDeleted = false;
-    onTestFinished(async () => {
-      if (!ordinaryAgentDeleted) {
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, ordinaryAgentId);
-      }
-    });
-    const ordinaryWorkflowId = await workflowBdd.createWorkflow(actor, {
+
+    await workflowBdd.createWorkflow(actor, {
       agentId: ordinaryAgentId,
       name: definitionName,
       visibility: "private",
@@ -4365,15 +4275,6 @@ describe("Official Workflow installations", () => {
     expect(ordinaryConflict.body.error.message).toBe(
       `A private workflow named "${definitionName}" already exists on this agent`,
     );
-    await accept(
-      workflowClient().delete({
-        headers,
-        params: { workflowId: ordinaryWorkflowId },
-      }),
-      [204],
-    );
-    await bdd.deleteAgent(actor, ordinaryAgentId);
-    ordinaryAgentDeleted = true;
 
     const unchanged = await accept(
       installationClient().get({
@@ -4597,14 +4498,6 @@ describe("Official Workflow installations", () => {
     );
 
     const { agentId: activeCopyAgentId } = await workflowBdd.createAgent(actor);
-    let activeCopyAgentDeleted = false;
-    onTestFinished(async () => {
-      if (!activeCopyAgentDeleted) {
-        installCatalogStorageFixture();
-        await publicResults.cleanup(actor);
-        await bdd.deleteAgent(actor, activeCopyAgentId);
-      }
-    });
     installCatalogStorageFixture();
     const activeCopy = await accept(
       workflowClient().copy({
@@ -4664,17 +4557,9 @@ describe("Official Workflow installations", () => {
     );
     await observeInstalledResultEmail(actor, activeCopiedDaily.id, false);
     await publicResults.cleanup(actor);
-    await bdd.deleteAgent(actor, activeCopyAgentId);
-    activeCopyAgentDeleted = true;
 
     const { agentId: failedCopyAgentId } = await workflowBdd.createAgent(actor);
-    let failedCopyAgentDeleted = false;
-    onTestFinished(async () => {
-      if (!failedCopyAgentDeleted) {
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, failedCopyAgentId);
-      }
-    });
+
     const failingCopyStorage = installCatalogStorageFixture();
     failingCopyStorage.failNextWrite(new Error("copy archive upload failed"));
     await expect(
@@ -4693,8 +4578,6 @@ describe("Official Workflow installations", () => {
       [200],
     );
     expect(failedCopyTargetWorkflows.body).toStrictEqual([]);
-    await bdd.deleteAgent(actor, failedCopyAgentId);
-    failedCopyAgentDeleted = true;
   });
 
   it("uninstalls and reinstalls Official Workflows, including zero-Blueprint installations", async () => {
@@ -4795,9 +4678,6 @@ describe("Official Workflow installations", () => {
         await cancelAgentRunsThroughLogs(actor, agentId);
       }
       await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, targetAgentId);
-      await bdd.deleteAgent(actor, sourceAgentId);
-      await cleanupCatalog();
     });
 
     await expect(
@@ -4934,18 +4814,10 @@ describe("Official Workflow installations", () => {
       const pending: {
         copying?: Promise<unknown>;
         releaseCopy?: () => void;
-        independentThreadId?: string;
       } = {};
       onTestFinished(async () => {
         pending.releaseCopy?.();
         await pending.copying;
-        if (pending.independentThreadId) {
-          await chat.deleteThread(actor, pending.independentThreadId);
-        }
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, targetAgentId);
-        await bdd.deleteAgent(actor, sourceAgentId);
-        await cleanupCatalog();
       });
       const headers = authHeaders(actor);
       await setOfficialWorkflowsEnabled(actor, true);
@@ -4993,7 +4865,6 @@ describe("Official Workflow installations", () => {
         agentId: sourceAgentId,
         title: "Independent work during an Official copy upload",
       });
-      pending.independentThreadId = independentThread.id;
       await expect(
         chat.readThreadMetadata(actor, independentThread.id),
       ).resolves.toMatchObject({ id: independentThread.id });
@@ -5090,11 +4961,7 @@ describe("Official Workflow installations", () => {
       });
       const actor = setup.actor;
       const { agentId } = await workflowBdd.createAgent(actor);
-      onTestFinished(async () => {
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
-      });
+
       mockGmailConnectorOAuth({
         email: `official-race-${suffix}@example.test`,
       });
@@ -5498,14 +5365,7 @@ describe("Official Workflow installations", () => {
       });
       const actor = setup.actor;
       const { agentId } = await workflowBdd.createAgent(actor);
-      let agentDeleted = false;
-      onTestFinished(async () => {
-        if (!agentDeleted) {
-          installCatalogStorageFixture();
-          await bdd.deleteAgent(actor, agentId);
-        }
-        await cleanupCatalog();
-      });
+
       mockGmailConnectorOAuth({ email: `official-${suffix}@example.test` });
       await workflowBdd.connectConnector(actor, "gmail");
       mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
@@ -5666,7 +5526,6 @@ describe("Official Workflow installations", () => {
       }
 
       await bdd.deleteAgent(actor, agentId);
-      agentDeleted = true;
       await accept(
         installationClient().get({
           headers,
@@ -5695,11 +5554,7 @@ describe("Official Workflow installations", () => {
         throw new Error("Expected organization-scoped actor");
       }
       const { agentId } = await workflowBdd.createAgent(actor);
-      onTestFinished(async () => {
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
-      });
+
       mockGoogleFormsConnectorOAuth();
       await workflowBdd.connectConnector(actor, "google-forms");
       const nextFormId =
@@ -5817,11 +5672,7 @@ describe("Official Workflow installations", () => {
       throw new Error("Expected organization-scoped actor");
     }
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     mockGoogleFormsConnectorOAuth();
     await workflowBdd.connectConnector(actor, "google-forms");
     const headers = authHeaders(actor);
@@ -5923,11 +5774,7 @@ describe("Official Workflow installations", () => {
       throw new Error("Expected organization-scoped actor");
     }
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     mockNotionConnectorOAuth();
     await workflowBdd.connectConnector(actor, "notion");
     configureOfficialNotionPageMock();
@@ -6039,11 +5886,7 @@ describe("Official Workflow installations", () => {
       throw new Error("Expected organization-scoped actor");
     }
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     const meet = configureOfficialGoogleMeetMock();
     await updateFeatureSwitchesForUser(
       context,
@@ -6128,11 +5971,7 @@ describe("Official Workflow installations", () => {
       });
       const { actor } = setup;
       const { agentId } = await workflowBdd.createAgent(actor);
-      onTestFinished(async () => {
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
-      });
+
       await setOfficialWorkflowsEnabled(actor, true);
       const headers = authHeaders(actor);
       const installed = await accept(
@@ -6470,8 +6309,6 @@ describe("Official Workflow installations", () => {
         for (const run of createdRuns.runs) {
           await runs.requestCancelRun(actor, run.id, [200, 400]);
         }
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
       });
       await setOfficialWorkflowsEnabled(actor, true);
       const headers = authHeaders(actor);
@@ -6750,8 +6587,6 @@ describe("Official Workflow installations", () => {
       installCatalogStorageFixture();
       await cancelAgentRunsThroughLogs(actor, agentId);
       await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     mockGmailConnectorOAuth({
       email: `materialize-${suffix}@example.test`,
@@ -6869,8 +6704,6 @@ describe("Official Workflow installations", () => {
       installCatalogStorageFixture();
       await cancelAgentRunsThroughLogs(actor, agentId);
       await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     await updateFeatureSwitchesForUser(
       context,
@@ -7084,9 +6917,6 @@ describe("Official Workflow installations", () => {
     onTestFinished(async () => {
       pendingPreparation.current?.release();
       await pendingPreparation.current?.settled;
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     await setOfficialWorkflowsEnabled(actor, true);
     const headers = authHeaders(actor);
@@ -7205,8 +7035,6 @@ describe("Official Workflow installations", () => {
       installCatalogStorageFixture();
       await cancelAgentRunsThroughLogs(actor, agentId);
       await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     mockGmailConnectorOAuth({
       email: `structure-transition-${suffix}@example.test`,
@@ -7424,9 +7252,6 @@ describe("Official Workflow installations", () => {
     const { agentId } = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
       await resumeStructureTransitionPromotion();
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     await setOfficialWorkflowsEnabled(actor, true);
 
@@ -7603,8 +7428,6 @@ describe("Official Workflow installations", () => {
       installCatalogStorageFixture();
       await cancelAgentRunsThroughLogs(actor, agentId);
       await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     mockGmailConnectorOAuth({ email: `reconcile-${suffix}@example.test` });
     await workflowBdd.connectConnector(actor, "gmail");
@@ -7780,11 +7603,6 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
 
     const firstAccepted = await readAcceptedDefinitionFixture(firstName);
     const secondAccepted = await readAcceptedDefinitionFixture(secondName);
@@ -7819,17 +7637,6 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    onTestFinished(async () => {
-      await accept(
-        storageClient().action({
-          body: {
-            action: "cleanup-owned-storages",
-            storage_ids: [shadowStorageId],
-          },
-        }),
-        [200],
-      );
-    });
 
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
@@ -7977,11 +7784,7 @@ describe("Official Workflow Run admission", () => {
           }),
           [201],
         );
-        onTestFinished(async () => {
-          installCatalogStorageFixture();
-          await bdd.deleteAgent(actor, agentId);
-          await cleanupCatalog();
-        });
+
         const runnerGroup = runs.configureRunnerGroup();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
@@ -8568,11 +8371,7 @@ describe("Official Workflow Run admission", () => {
     });
     const { actor } = setup;
     const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
+
     await setOfficialWorkflowsEnabled(actor, true);
     const headers = authHeaders(actor);
     const atTime = new Date(now() + 60_000).toISOString();
@@ -8739,10 +8538,6 @@ describe("Official Workflow Run admission", () => {
   it("launches an idle Official agent-run input with the annotated source budget", async () => {
     const definitionName = `api-test-idle-official-${randomUUID()}`;
     const sourceDefinitionName = `api-test-idle-source-${randomUUID()}`;
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      model: "claude-fable-5-1",
-    });
-    const { agentId } = await workflowBdd.createAgent(actor);
     installCatalogStorageFixture();
     await syncCatalog(
       catalog([
@@ -8750,6 +8545,10 @@ describe("Official Workflow Run admission", () => {
         activeDefinition(sourceDefinitionName, [loopBlueprint()]),
       ]),
     );
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
+    const { agentId } = await workflowBdd.createAgent(actor);
     await setOfficialWorkflowsEnabled(actor, true);
     const installation = await accept(
       officialClient().install({
@@ -8769,8 +8568,6 @@ describe("Official Workflow Run admission", () => {
         await runs.requestCancelRun(actor, run.id, [200, 400]);
       }
       await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
     });
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
@@ -8888,10 +8685,6 @@ describe("Official Workflow Run admission", () => {
     async (queueCase) => {
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = `api-test-queued-success-${suffix}`;
-      const { actor } = await workflowBdd.setupWorkflowOrg({
-        model: "claude-fable-5-1",
-      });
-      const { agentId } = await workflowBdd.createAgent(actor);
       installCatalogStorageFixture();
       context.mocks.s3.send.mockClear();
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
@@ -8914,6 +8707,10 @@ describe("Official Workflow Run admission", () => {
           "Expected the accepted Official definition's published archive identity",
         );
       }
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        model: "claude-fable-5-1",
+      });
+      const { agentId } = await workflowBdd.createAgent(actor);
       const headers = authHeaders(actor);
       await setOfficialWorkflowsEnabled(actor, true);
       const installation = await accept(
@@ -8941,8 +8738,6 @@ describe("Official Workflow Run admission", () => {
           }
         }
         await flushWaitUntilForTest();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
       });
 
       runs.configureRunnerGroup();
@@ -9088,13 +8883,13 @@ describe("Official Workflow Run admission", () => {
     async (queueCase) => {
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = `api-test-queued-source-${suffix}`;
+      installCatalogStorageFixture();
+      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
       const setup = await workflowBdd.setupWorkflowOrg({
         model: "claude-fable-5-1",
       });
       const { actor } = setup;
       const { agentId } = await workflowBdd.createAgent(actor);
-      installCatalogStorageFixture();
-      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
       const headers = authHeaders(actor);
       await setOfficialWorkflowsEnabled(actor, true);
       const installation = await accept(
@@ -9115,8 +8910,6 @@ describe("Official Workflow Run admission", () => {
           await runs.requestCancelRun(actor, run.id, [200, 400]);
         }
         await flushWaitUntilForTest();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
       });
 
       runs.configureRunnerGroup();
