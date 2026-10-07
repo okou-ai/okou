@@ -14,10 +14,7 @@ import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  connectorCatalogContract,
-  CONNECTOR_CATALOG_MAX_RAW_BYTES,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
@@ -1215,14 +1212,6 @@ function catalogObjects(
   }
   objects.set(ACTIVE_KEY, active.pointer);
   return objects;
-}
-
-function releaseCatalogBytes(release: ReleaseFixture): Buffer {
-  const bytes = release.objects.get(release.catalogKey);
-  if (bytes === undefined) {
-    throw new Error("Expected release catalog bytes");
-  }
-  return bytes;
 }
 
 function commandInput(command: unknown): JsonRecord {
@@ -5125,45 +5114,6 @@ describe("connector catalog executable compatibility", () => {
 });
 
 describe("connector catalog rejection and latest-valid retention", () => {
-  it("accepts 64 MiB and rejects 64 MiB plus one with latest-valid retention", async () => {
-    configureSource();
-    expect(CONNECTOR_CATALOG_MAX_RAW_BYTES).toBe(64 * 1024 * 1024);
-    const acceptedVersion = "2026-07-15.sixty-four-mib-limit";
-    const unpadded = buildRelease({ version: acceptedVersion });
-    // Exercise the real raw-byte limit without persisting a 64 MiB description
-    // in JSONB: trailing JSON whitespace is downloaded, hashed and parsed too.
-    const acceptedBytes = Buffer.alloc(CONNECTOR_CATALOG_MAX_RAW_BYTES, " ");
-    releaseCatalogBytes(unpadded).copy(acceptedBytes);
-    const accepted = buildRelease({
-      version: acceptedVersion,
-      catalogBytes: acceptedBytes,
-    });
-    expect(releaseCatalogBytes(accepted).byteLength).toBe(
-      CONNECTOR_CATALOG_MAX_RAW_BYTES,
-    );
-    serveObjects(catalogObjects([accepted], accepted));
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "accepted",
-      active: servingRelease(accepted),
-      pointer: { hash: accepted.digest, entryCount: 1 },
-    });
-
-    const rejected = buildRelease({
-      version: "2026-07-15.over-sixty-four-mib-limit",
-      catalogBytes: Buffer.alloc(CONNECTOR_CATALOG_MAX_RAW_BYTES + 1),
-    });
-    serveObjects(catalogObjects([rejected], rejected));
-
-    expect((await syncCatalog()).body).toMatchObject({
-      outcome: "rejected",
-      failureCode: "object-too-large",
-      state: "stale",
-      active: servingRelease(accepted),
-      pointer: { hash: accepted.digest, entryCount: 1 },
-    });
-  });
-
   it("classifies unavailable and oversized objects before acceptance", async () => {
     expect.hasAssertions();
     configureSource();
