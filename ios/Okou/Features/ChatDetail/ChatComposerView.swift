@@ -1,61 +1,40 @@
 import SwiftUI
 
 struct ChatComposerView: View {
-  @Bindable var store: WorkspaceStore
-  let thread: ChatThread?
+  @Binding var draft: String
+  let isBusy: Bool
+  let showsProgress: Bool
+  let canStop: Bool
+  let needsUpgrade: Bool
+  let error: String?
+  let attachmentURL: URL
+  let submit: @MainActor () async -> Void
+  let refresh: (@MainActor () async -> Void)?
 
   @FocusState private var isFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private var draft: Binding<String> {
-    if let thread {
-      Binding(
-        get: { store.drafts[thread.id] ?? "" },
-        set: { store.drafts[thread.id] = $0 })
-    } else {
-      Binding(get: { store.newChatDraft }, set: { store.newChatDraft = $0 })
-    }
-  }
-
-  private var hasText: Bool {
-    !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-  }
-
-  private var showsStop: Bool {
-    guard let thread else { return false }
-    return (store.histories[thread.id] ?? .empty).canStop && !hasText
-  }
-
-  private var isBusy: Bool {
-    if let thread {
-      return store.sendingThreads.contains(thread.id) || store.stoppingThreads.contains(thread.id)
-    }
-    return store.isCreating
-  }
-
-  private var attachmentURL: URL {
-    if let thread { return store.webURL.appending(path: "chats/\(thread.id)") }
-    return store.webURL
-  }
+  private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  private var showsStop: Bool { canStop && !hasText }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      if let thread, let error = store.threadErrors[thread.id] {
+      if let error {
         VStack(alignment: .leading, spacing: 6) {
           Text(error).foregroundStyle(.red)
-          HStack {
-            Button("Refresh") { Task { await store.loadHistory(thread.id) } }
-            Spacer()
-            Link("Open on web", destination: attachmentURL)
+          if let refresh {
+            HStack {
+              Button("Refresh") { Task { await refresh() } }
+              Spacer()
+              Link("Open on web", destination: attachmentURL)
+            }
           }
         }
         .font(.caption)
         .padding(.horizontal, 12)
-      } else if thread == nil, let error = store.error {
-        Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal, 12)
       }
 
-      TextField("Message Okou", text: draft, axis: .vertical)
+      TextField("Message Okou", text: $draft, axis: .vertical)
         .font(.system(size: 16))
         .lineLimit(isFocused ? 2...6 : 1...1)
         .focused($isFocused)
@@ -80,16 +59,10 @@ struct ChatComposerView: View {
         }
         .overlay(alignment: isFocused ? .bottomTrailing : .trailing) {
           Button {
-            Task {
-              if let thread {
-                if showsStop { await store.stop(thread) } else { await store.send(in: thread) }
-              } else {
-                await store.sendNewChat()
-              }
-            }
+            Task { await submit() }
           } label: {
             Group {
-              if store.isCreating && thread == nil {
+              if showsProgress {
                 ProgressView()
               } else {
                 Image(systemName: showsStop ? "stop.fill" : "arrow.up")
@@ -100,7 +73,7 @@ struct ChatComposerView: View {
             .foregroundStyle(Color(uiColor: .systemBackground))
             .background(Color.primary.opacity((hasText || showsStop) ? 1 : 0.38), in: Circle())
           }
-          .disabled((!hasText && !showsStop) || isBusy || store.needsUpgrade)
+          .disabled((!hasText && !showsStop) || isBusy || needsUpgrade)
           .accessibilityLabel(showsStop ? "Stop" : "Send message")
           .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
           .padding(.trailing, 7)

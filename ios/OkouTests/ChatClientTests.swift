@@ -12,7 +12,7 @@ private let newThread = "10000000-0000-4000-8000-000000000005"
 private let fixtureDate = "2026-09-17T10:00:00.000Z"
 
 @MainActor
-final class ChatServiceTests: XCTestCase {
+final class ChatClientTests: XCTestCase {
   func testNativeThreadActionsUseCanonicalEndpoints() async throws {
     let requests = Mutex<[(String, String, String)]>([])
     let fixture = ChatHTTPFixture { request in
@@ -25,7 +25,7 @@ final class ChatServiceTests: XCTestCase {
       }
       return ChatHTTPResponse(status: 204, body: "")
     }
-    let service = ChatService(client: fixture.client)
+    let service = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     try await service.setPinned(threadID: fixtureThread, pinned: true)
     try await service.setPinned(threadID: fixtureThread, pinned: false)
     try await service.setArchived(threadID: fixtureThread, archived: true)
@@ -81,10 +81,14 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let created = try await ChatService(client: fixture.client).createThread()
+    let created = try await ChatCommands(
+      client: fixture.client, sync: ChatSync(client: fixture.client)
+    ).createThread()
     XCTAssertEqual(created.agentID, fixtureAgent)
     XCTAssertEqual(created.selectedModel, "gpt-5.6-sol")
-    let selected = try await ChatService(client: fixture.client).createThread(
+    let selected = try await ChatCommands(
+      client: fixture.client, sync: ChatSync(client: fixture.client)
+    ).createThread(
       agentID: secondaryAgent)
     XCTAssertEqual(selected.agentID, secondaryAgent)
     XCTAssertEqual(createdRequests.withLock { $0.map(\.agentId) }, [fixtureAgent, secondaryAgent])
@@ -124,7 +128,9 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let created = try await ChatService(client: fixture.client).createThread()
+    let created = try await ChatCommands(
+      client: fixture.client, sync: ChatSync(client: fixture.client)
+    ).createThread()
     XCTAssertNil(created.selectedModel)
     XCTAssertEqual(explicitNullModels.withLock { $0 }, [true])
   }
@@ -166,7 +172,9 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let created = try await ChatService(client: fixture.client).createThread()
+    let created = try await ChatCommands(
+      client: fixture.client, sync: ChatSync(client: fixture.client)
+    ).createThread()
     XCTAssertEqual(created.selectedModel, "claude-opus-5-5")
     XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["claude-opus-5-5"])
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"])
@@ -205,7 +213,9 @@ final class ChatServiceTests: XCTestCase {
         default: throw URLError(.unsupportedURL)
         }
       }
-      let created = try await ChatService(client: fixture.client).createThread()
+      let created = try await ChatCommands(
+        client: fixture.client, sync: ChatSync(client: fixture.client)
+      ).createThread()
       XCTAssertNil(created.selectedModel)
       XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, [nil])
       XCTAssertNil(createdRequests.withLock { $0.first?.serviceTier })
@@ -218,7 +228,7 @@ final class ChatServiceTests: XCTestCase {
         status: 426, body: "{\"error\":{\"message\":\"Client update required\"}}")
     }
     do {
-      _ = try await ChatService(client: fixture.client).history(threadID: fixtureThread)
+      _ = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
       XCTFail("Expected upgrade-required response")
     } catch let error as APIClientError {
       XCTAssertEqual(error.statusCode, 426)
@@ -242,7 +252,7 @@ final class ChatServiceTests: XCTestCase {
     }
 
     do {
-      _ = try await ChatService(client: fixture.client).history(threadID: fixtureThread)
+      _ = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
       XCTFail("A missing thread must not render as empty history")
     } catch let error as APIClientError {
       XCTAssertEqual(error.statusCode, 404)
@@ -269,7 +279,7 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let threads = try await ChatService(client: fixture.client).threads()
+    let threads = try await ChatSync(client: fixture.client).threads()
     XCTAssertEqual(Set(threads.map(\.id)), [fixtureThread, newThread])
     XCTAssertEqual(threads.first(where: { $0.id == fixtureThread })?.title, "Latest title")
     XCTAssertEqual(threads.first(where: { $0.id == fixtureThread })?.indicator, .unread)
@@ -293,7 +303,7 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let archived = try await ChatService(client: snapshotOnly.client).threads()
+    let archived = try await ChatSync(client: snapshotOnly.client).threads()
     XCTAssertEqual(archived.first?.isArchived, true)
 
     let unarchivedEvent = ChatHTTPFixture { request in
@@ -311,7 +321,7 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let unarchived = try await ChatService(client: unarchivedEvent.client).threads()
+    let unarchived = try await ChatSync(client: unarchivedEvent.client).threads()
     XCTAssertEqual(unarchived.first?.isArchived, false)
   }
 
@@ -369,16 +379,16 @@ final class ChatServiceTests: XCTestCase {
     }
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "warm-cache-user", workspaceID: "warm-cache-workspace")
-    let first = ChatService(client: fixture.client)
-    await first.configureCache(scope: scope, directory: directory)
+    let first = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let firstThreads = try await first.threads()
     let firstHistory = try await first.history(threadID: fixtureThread)
     XCTAssertEqual(firstThreads.first?.title, "Synced title")
     XCTAssertEqual(firstHistory.messages.map(\.text), ["Hello", "Answer"])
 
     let requestsBeforeRestart = requests.withLock { $0.count }
-    let restarted = ChatService(client: fixture.client)
-    await restarted.configureCache(scope: scope, directory: directory)
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let cachedThreads = await restarted.cachedThreads()
     let cachedHistory = await restarted.cachedHistory(threadID: fixtureThread)
     XCTAssertEqual(cachedThreads?.first?.title, "Synced title")
@@ -473,16 +483,16 @@ final class ChatServiceTests: XCTestCase {
     }
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "rebase-user", workspaceID: "rebase-workspace")
-    let first = ChatService(client: fixture.client)
-    await first.configureCache(scope: scope, directory: directory)
+    let first = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let firstThreads = try await first.threads()
     let firstHistory = try await first.history(threadID: fixtureThread)
     XCTAssertEqual(firstThreads.first?.title, "Old title")
     XCTAssertEqual(firstHistory.messages.map(\.text), ["Old question"])
 
     generation.withLock { $0 = 2 }
-    let restarted = ChatService(client: fixture.client)
-    await restarted.configureCache(scope: scope, directory: directory)
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let oldThreads = await restarted.cachedThreads()
     let oldHistory = await restarted.cachedHistory(threadID: fixtureThread)
     XCTAssertEqual(oldThreads?.first?.title, "Old title")
@@ -559,15 +569,15 @@ final class ChatServiceTests: XCTestCase {
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "paged-rebase-user",
       workspaceID: "paged-rebase-workspace")
-    let first = ChatService(client: fixture.client)
-    await first.configureCache(scope: scope, directory: directory)
+    let first = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let resolved = try await first.threads()
     XCTAssertEqual(resolved.map(\.title), ["Final title"])
     let cached = await first.cachedThreads()
     XCTAssertEqual(cached?.map(\.title), ["Final title"])
 
-    let restarted = ChatService(client: fixture.client)
-    await restarted.configureCache(scope: scope, directory: directory)
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let restored = await restarted.cachedThreads()
     XCTAssertEqual(restored?.map(\.title), ["Final title"])
     let caughtUp = try await restarted.threads()
@@ -636,7 +646,7 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let service = ChatService(client: fixture.client)
+    let service = ChatSync(client: fixture.client)
     let first = try await service.history(threadID: fixtureThread)
     XCTAssertEqual(first.messages.map(\.text), ["Hello", "First answer"])
     XCTAssertEqual(first.executionState, .running)
@@ -686,7 +696,7 @@ final class ChatServiceTests: XCTestCase {
       }
     }
 
-    let history = try await ChatService(client: fixture.client).history(threadID: fixtureThread)
+    let history = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
 
     XCTAssertEqual(
       history.messages.map(\.text),
@@ -738,7 +748,9 @@ final class ChatServiceTests: XCTestCase {
       }
       throw URLError(.unsupportedURL)
     }
-    let receipt = try await ChatService(client: fixture.client).send(
+    let receipt = try await ChatCommands(
+      client: fixture.client, sync: ChatSync(client: fixture.client)
+    ).send(
       thread: sampleThread(), text: "Steer this task", clientEventID: fixtureRun)
     XCTAssertEqual(receipt.clientEventID, fixtureRun)
     XCTAssertEqual(receipt.threadID, fixtureThread)
@@ -772,11 +784,11 @@ final class ChatServiceTests: XCTestCase {
       }
       throw URLError(.unsupportedURL)
     }
-    let service = ChatService(client: fixture.client)
+    let service = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     do {
       _ = try await service.send(thread: sampleThread(), text: "Hello", clientEventID: fixtureRun)
       XCTFail("Expected an ambiguous network failure")
-    } catch ChatServiceError.sendUncertain {}
+    } catch ChatError.sendUncertain {}
     XCTAssertEqual(attempts.withLock { $0 }, [fixtureRun])
     _ = try await service.send(thread: sampleThread(), text: "Hello", clientEventID: fixtureRun)
     XCTAssertEqual(attempts.withLock { $0 }, [fixtureRun, fixtureRun])
@@ -812,7 +824,8 @@ final class ChatServiceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    try await ChatService(client: fixture.client).stop(thread: sampleThread())
+    try await ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client)).stop(
+      thread: sampleThread())
     XCTAssertEqual(
       commands.withLock { $0.compactMap(\.revokesEventId) }, [eventIdentity(2), eventIdentity(3)])
     XCTAssertEqual(commands.withLock { $0.compactMap(\.interruptsRunId) }, [fixtureRun])
