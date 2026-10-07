@@ -260,7 +260,20 @@ try {
   assert.deepEqual(await routes(), after, "SQL retry is a no-op");
   // A distinct data migration preserves launch defaults on the exact personal
   // routes; the destructive cleanup above still leaves retained columns intact.
-  await applyPendingMigrations(sql);
+  // Stop there: later schema contractions are validated by their own checks.
+  const defaultEntry = journal.entries.find((item) => {
+    return item.tag.endsWith("_preserve_subscription_route_effort_defaults");
+  });
+  assert.ok(defaultEntry);
+  const defaultMigration = readMigrationFiles({
+    migrationsFolder: DRIZZLE_MIGRATE_OUT,
+  }).find((item) => {
+    return item.folderMillis === defaultEntry.when;
+  });
+  assert.ok(defaultMigration);
+  await applyPendingMigrations(sql, {
+    beforeMillis: defaultMigration.folderMillis + 1,
+  });
   const defaults = await sql<
     { model: string; default_effort: string | null }[]
   >`
@@ -287,16 +300,6 @@ try {
     }),
     futureRoute,
   );
-  const defaultEntry = journal.entries.find((item) => {
-    return item.tag.endsWith("_preserve_subscription_route_effort_defaults");
-  });
-  assert.ok(defaultEntry);
-  const defaultMigration = readMigrationFiles({
-    migrationsFolder: DRIZZLE_MIGRATE_OUT,
-  }).find((item) => {
-    return item.folderMillis === defaultEntry.when;
-  });
-  assert.ok(defaultMigration);
   const defaultsAfter = await routes();
   for (const statement of defaultMigration.sql) await sql.unsafe(statement);
   assert.deepEqual(

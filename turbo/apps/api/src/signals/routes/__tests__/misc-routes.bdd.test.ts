@@ -343,7 +343,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
       {
         type: "claude-code-oauth-token",
         secret: "bdd-claude-oauth-token",
-        selectedModel: "claude-sonnet-5",
       },
       [201],
     );
@@ -351,8 +350,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
       created: true,
       provider: {
         type: "claude-code-oauth-token",
-        secretName: "CLAUDE_CODE_OAUTH_TOKEN",
-        selectedModel: "claude-sonnet-5",
         modelProviderId: expect.any(String),
         isActive: true,
       },
@@ -378,8 +375,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
     expect(listed.body.modelProviders).toHaveLength(1);
     expect(listed.body.modelProviders[0]).toMatchObject({
       type: "claude-code-oauth-token",
-      secretName: "CLAUDE_CODE_OAUTH_TOKEN",
-      selectedModel: "claude-sonnet-5",
     });
 
     // Tokens without a resolved upstream identity replace the concrete account,
@@ -389,7 +384,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
       {
         type: "claude-code-oauth-token",
         secret: "bdd-updated-claude-oauth-token",
-        selectedModel: "claude-opus-5",
       },
       [201],
     );
@@ -397,7 +391,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
       created: true,
       provider: {
         type: "claude-code-oauth-token",
-        selectedModel: "claude-opus-5",
         modelProviderId: created.body.provider.modelProviderId,
         isActive: true,
       },
@@ -414,7 +407,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
     expect(afterReplace.body.modelProviders[0]).toMatchObject({
       id: replaced.body.provider.id,
       modelProviderId: created.body.provider.modelProviderId,
-      selectedModel: "claude-opus-5",
       isActive: true,
     });
 
