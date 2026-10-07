@@ -3,7 +3,7 @@
 ## Frozen model provider state dropped (2026-10-07)
 
 Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
-Custom migration `1337_retire_unused_model_route_data` clears
+Custom migration `1336_retire_unused_model_route_data` clears
 `run_model_catalog.pi_route_class` values other than `gpt-codex`, resets the
 already-rejected `chat_threads.selected_model = 'deepseek/deepseek-v4-pro'`
 pins to NULL (unpinned, which resolves to Auto), and deletes every
@@ -12,7 +12,7 @@ pins to NULL (unpinned, which resolves to Auto), and deletes every
 run history. The retired vendor keys are revoked upstream by the owner,
 outside this change.
 
-Generated migration `1338_drop_frozen_model_provider_state` narrows
+Generated migration `1337_retire_model_route_state` narrows
 `chk_run_model_catalog_pi_route_class` to NULL or `gpt-codex` (the table has a
 handful of rows, so the check is added and validated directly), drops
 `model_provider_auth_sessions.sandbox_id` with its partial index, and drops the
@@ -24,22 +24,22 @@ new API selects explicit `model_providers` columns, and the Pi memory phase 2
 credential gate uses the account's `needs_reconnect` only.
 
 Database ordering: migrations run before API promotion. An API built before
-1338 selects every `model_providers` column when listing, connecting,
+1337 selects every `model_providers` column when listing, connecting,
 activating or deleting personal subscription accounts, and every
 `model_provider_auth_sessions` column in the Claude Code and Codex device
 authorization flows, so those paths receive `42703` until it drains. This drop
 is **not rolling-compatible**. A new API against the old schema is compatible
-because it never names the dropped columns. An API built before 1337 that is
+because it never names the dropped columns. An API built before 1336 that is
 still draining is unaffected by the data changes: the cleared pins and keys
 were already rejected or unused.
 
-**Rollout interruption (1338): owner acceptance pending.** No acceptance is
+**Rollout interruption (1337, model provider columns): owner acceptance pending.** No acceptance is
 recorded here. Do not deploy until the owner explicitly accepts the bounded
 interruption above or a preparatory release that stops these reads ships
 first.
 
 Rollback floor: the rollback resolver resolves the first-parent `main` commit
-that added `1338_drop_frozen_model_provider_state.sql` and rejects earlier
+that added `1337_retire_model_route_state.sql` and rejects earlier
 targets before artifact or host access. Recovering below it requires a reviewed
 forward migration that recreates the columns before an older API serves. This
 does not claim production activation.
@@ -47,10 +47,10 @@ does not claim production activation.
 ## Ultrafast service tier retired (2026-10-07)
 
 Ultrafast is retired across the App, API, contracts, runner and proxy pricing.
-Migration `1334_retire_ultrafast_data` clears stored Ultrafast selections:
+Migration `1335_retire_ultrafast_data` clears stored Ultrafast selections:
 `chat_threads.codex_service_tier`, `org_members_metadata.service_tier`, and the
 `model_routes.service_tiers` / `default_service_tier` values. Migration
-`1335_tighten_model_route_service_tiers` then limits route tiers to `priority`
+`1337_retire_model_route_state` then limits route tiers to `priority`
 and adds `chk_chat_threads_codex_service_tier` (NULL or `fast`) and
 `chk_org_members_metadata_service_tier` (NULL or `priority`). The two new checks
 are added `NOT VALID` and validated in a separate statement, so new writes are
@@ -60,10 +60,10 @@ New requests that send `ultrafast` are rejected with 400. Immutable history
 (thread events, snapshots, client caches and queued chat input model
 selections) still reads a stored Ultrafast value as Standard (null) instead of
 failing; `agent_runs.codex_service_tier` and usage `.ultrafast` categories stay
-readable for historical runs and billing. An API built before 1335 that is
+readable for historical runs and billing. An API built before 1337 that is
 still draining can only fail when it writes `ultrafast`, which the current
 catalog no longer offers. Rolling back below this change restores no Ultrafast
-offering because 1334 removed it from the catalog data.
+offering because 1335 removed it from the catalog data.
 
 ## Built-in model candidate cooldown removed (2026-10-07)
 
@@ -73,7 +73,7 @@ longer reads or writes a route cooldown when resolving Auto for new runs, queued
 claims or Pi memory maintenance. The staff cooldown diagnostics endpoints
 (`GET`/`DELETE /api/model-providers/cooldown-diagnostics`), their Settings
 debug block, and the test-runtime cooldown actions are removed. Generated
-migration `1336_drop_built_in_model_candidate_cooldown` drops
+migration `1337_retire_model_route_state` drops
 `built_in_model_candidate_cooldown`; its rows were transient deadlines with no
 history value, so nothing is converted or archived.
 
@@ -92,22 +92,22 @@ the removed diagnostics endpoint inside that debug-only block; no user flow
 depends on it.
 
 Database ordering: migrations run before API promotion. Every API built before
-1336 queries the table while resolving the Auto route for run claims and Pi
+1337 queries the table while resolving the Auto route for run claims and Pi
 memory maintenance, and writes it from runner failure reports, so it receives
 `42P01` on those paths until it drains. This drop is not rolling-compatible.
 A new API against the old schema is compatible because it never names the
 table.
 
-**Accepted rollout interruption (1336):** Ethan explicitly accepted
+**Accepted rollout interruption (1337, cooldown table):** Ethan explicitly accepted
 (2026-10-07) a brief unavailability during deployment while the outgoing API
 drains, so Auto run claims, Pi memory maintenance and runner failure reports
-handled by a pre-1336 API may receive `42P01` in that window. No preparatory
+handled by a pre-1337 API may receive `42P01` in that window. No preparatory
 release or old-table compatibility branch is required. Prefer the same rollout
 as 1332/1333 or low traffic. Acceptance of that risk is not an instruction to
 deploy.
 
 Rollback floor: the rollback resolver resolves the first-parent `main` commit
-that added `1336_drop_built_in_model_candidate_cooldown.sql` and rejects earlier
+that added `1337_retire_model_route_state.sql` and rejects earlier
 targets before artifact or host access. Recovering below it requires a reviewed
 forward migration that recreates the table before an older API serves. This
 does not claim production activation.
@@ -129,6 +129,111 @@ Built-in US-routed run since 2026-10-04 and no in-flight run carrying a US
 endpoint, so no drain gate or migration is required. Runner, guest, and mitm
 code never special-cased the US origin; old Runners receive the same built-in
 firewall name they already resolve. No persisted schema changes.
+
+## Connector catalog Release 2 contraction (migration 1334)
+
+Release 2 removes the legacy connector catalog storage and writer state that
+Release 1 (#37820, #37861) stopped reading. Migration
+`1334_connector_catalog_release_2_contraction` drops
+`connector_catalog_runtime_projections`,
+`connector_catalog_runtime_projection_sets`,
+`connector_catalog_compatibility_evaluation`,
+`connector_catalog_active_snapshot` and `connector_catalog_sync_state`
+(dependents first, without `CASCADE`; the only foreign keys are among these
+tables). It also drops `connector_catalog.activated_at`, `catalog_version`,
+`catalog_header` and `entry_slugs`, and the redundant
+`connector_catalog_entries` projections `label`, `description`, `category`,
+`auth_methods`, `firewall`, `storage_name`, `version_id` and `mcp_endpoint`.
+No reader selected those projections; every consumer reads `payload`. The
+final schema is the pointer `connector_catalog(schema_version PK, hash)` and
+immutable entries `connector_catalog_entries(hash, slug, payload)` with
+`PK(hash, slug)`. There is no data conversion or backfill: existing entry rows
+and payloads, including generations captured by Runs, Pi contexts and
+permission baselines, are kept unchanged and stay readable by hash.
+
+**Writer.** `/api/cron/sync-connector-catalog` (hourly, plus the release
+workflow call) downloads `connectors/v4/active.json` with a plain GET. A
+pointer whose digest equals the serving hash is `unchanged` without downloading
+the catalog, because only complete, validated generations are ever published.
+Otherwise it downloads the referenced release and keeps every existing
+validation boundary: pointer schema and canonical release key, size limits,
+byte digest, artifact schema, public-leakage and relationship checks, and the
+bundled skill storage/version identity checks at registration. It then
+prepares the complete generation (reusing entries already present at that
+hash, registering missing skills, and inserting the rest with batched
+`INSERT ... ON CONFLICT DO NOTHING` of at most 100 rows) before one
+transaction upserts the pointer and, only if the hash actually changed,
+invalidates Pi stable contexts. The upsert is conditional, so exactly one
+concurrent writer observes a given switch, including the very first
+publication; runtime wakeups follow that commit. A failure or interruption
+before the pointer commit leaves the previous generation serving and at most an
+unreferenced partial generation that a retry at the same hash completes.
+Entries of earlier hashes are never rewritten or deleted, and unreferenced
+generations are not garbage-collected.
+
+One scheduled writer is assumed and last writer wins; there is no sync state,
+compare-and-swap, revision, ETag reuse or rejection cache. A rejected
+publication is not persisted: each attempt logs a warning with the failure
+code and is revalidated by the next attempt, while the current pointer keeps
+serving. Compatibility is evaluated on demand from captured entries and the
+current executable capability; the persisted evaluation and its cron
+reconciler are removed. Existing hash, schema, source, capability-digest and
+validator-identity fences (including the permission-baseline validation
+authority fast path) are unchanged, and there is no legacy gzip or R2 read
+fallback. The connectors package drops its now-unused gzip snapshot codec.
+
+**Response contracts.** The cron sync response is the staff diagnostics body
+(`schemaVersion`, `state`, `active`, `pointer`, `filtering`,
+`credentialStorage`) plus `outcome` and `failureCode` for the attempt just
+made. `state` is `stale` when that attempt was rejected while a pointer
+serves. `lastAttempt`, `lastSuccessAt`, `rejectedCandidate` and
+`active.activatedAt` are removed, and `active.catalogVersion` carries the hash
+as in staff diagnostics. The release workflow's post-deploy call logs
+`outcome`, `failureCode`, `state` and `pointer.entryCount`; its readiness check
+(`state == "current"`, `active != null`, `filtering.stale == false`) keeps its
+meaning and remains a best-effort warning that never fails the deploy. Staff
+diagnostics are unchanged. The preview seed response keeps
+`catalogVersion` (the validated publication label, which is not stored),
+`catalogDigest` and the sorted `connectorSlugs` of the validated publication,
+so the CI preview workflow is unchanged.
+
+**Compatibility and drain.** Migrations run before the API is promoted, so the
+previous production API serves while 1334 is applied.
+
+- A Release 1 API (descending from `e664957caa2056a336595e55f475001b81247fd0`,
+  #37861) reads only `connector_catalog(schema_version, hash)` and
+  `connector_catalog_entries(hash, slug, payload)` in business, runtime, App
+  and staff paths, so those keep working against the contracted schema. Its
+  catalog writer (cron sync, compatibility reconcile, preview and dev seed)
+  still names the dropped tables and columns and fails with `42P01`/`42703`
+  before it can change the pointer; the next scheduled sync from the new API
+  publishes normally. No user-facing read depends on that writer.
+- An API without #37861 (production served API 1.712.3,
+  `e1e0a3851dcdb35c6b7f8ddb41bc21cd746f50f7`, when this change was written)
+  still reads the legacy stores in business paths. It must never serve after
+  1334: connector lists, runs and diagnostics would fail.
+- A new API against a database without 1334 is unsupported: its pointer insert
+  omits the old `NOT NULL` columns.
+
+**Required order.** Merging to `main` is not a deployment, but the next
+release applies 1334 automatically before promoting its API. Therefore:
+
+1. A release containing #37861 must first be deployed to production through
+   the normal release path, and production `/api/build-info` must report a
+   commit descending from `e664957caa2056a336595e55f475001b81247fd0`.
+2. Every API instance and background task built before #37861 must have
+   drained, so the only API that can serve while 1334 runs is a Release 1 API.
+3. Only then may this change merge, so that its release is the one that runs 1334. If it merges earlier, Release 1 and Release 2 would ship in one
+   release and 1334 would run while a pre-Release-1 API serves.
+
+This document does not record that those preconditions are met, nor any
+production deployment, migration or query plan.
+
+**Rollback floor.** The rollback resolver resolves the first-parent `main`
+commit that adds `1334_connector_catalog_release_2_contraction.sql` and rejects
+earlier targets before artifact or host access. It descends from the 1333
+floor. After 1334 no earlier API is a rollback target: Release 1 APIs lose
+their catalog writer and older APIs lose their catalog readers.
 
 ## Legacy chat thread provider pin columns dropped
 
@@ -169,6 +274,10 @@ the columns before an older API serves. This does not claim production
 activation.
 
 ## Additive immutable connector entry columns
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
 
 Migrations `1328_connector_catalog_entry_columns` and
 `1329_backfill_connector_catalog_entry_columns` add and backfill `label`,
@@ -222,6 +331,10 @@ metadata. Rolling back restores that stricter catalog acceptance behavior.
 No production migration, deployment or storage write is executed by this PR.
 
 ## Connector catalog business readers on pointer and immutable entries
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
 
 Release 1 moves catalog consumers off legacy storage. It is not the
 destructive Release 2. Business/runtime reads (Run capture, Pi
@@ -447,6 +560,10 @@ generation and connectors retain their existing storage. See
 [current model APIs](model-catalog.md).
 
 ## Complete official connector catalog initialization in CI preview
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
 
 `deploy-api` still runs `db:dev-seed --preview-onboarding-catalog` and then
 calls `/api/cron/seed-preview-onboarding-catalog`; the flag and path keep their

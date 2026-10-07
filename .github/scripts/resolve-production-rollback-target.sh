@@ -59,8 +59,8 @@ readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_
 readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql
 readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql
 readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql
-readonly BUILT_IN_MODEL_CANDIDATE_COOLDOWN_DROP_PATH=turbo/packages/db/src/migrations/1336_drop_built_in_model_candidate_cooldown.sql
-readonly FROZEN_MODEL_PROVIDER_STATE_DROP_PATH=turbo/packages/db/src/migrations/1338_drop_frozen_model_provider_state.sql
+readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql
+readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1337_retire_model_route_state.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -299,30 +299,34 @@ if ! git merge-base --is-ancestor "$dead_model_provider_columns_drop_commit" "$T
   fail "Rollback target predates the dead model provider column drop: ${dead_model_provider_columns_drop_commit}."
 fi
 
-# Migration 1336 drops built_in_model_candidate_cooldown. Every earlier API
-# reads it while resolving the Auto route for run claims and Pi memory
-# maintenance, and writes it from runner failure reports, so it cannot serve
-# after 1336.
-built_in_model_candidate_cooldown_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$BUILT_IN_MODEL_CANDIDATE_COOLDOWN_DROP_PATH" | sed -n '1p')
-if [[ ! "$built_in_model_candidate_cooldown_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged built-in model candidate cooldown drop on main."
+# Migration 1334 is the connector catalog Release 2 contraction. It drops the
+# legacy catalog sync state, active snapshot, compatibility evaluation and
+# runtime projection tables plus the redundant pointer and entry columns. Every
+# earlier API still writes them from its catalog synchronizer and preview seed,
+# and APIs before Release 1 (#37861) also read them in business paths, so no
+# earlier API can serve after 1334. This floor descends from the 1333 floor.
+connector_catalog_release_2_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CONNECTOR_CATALOG_RELEASE_2_PATH" | sed -n '1p')
+if [[ ! "$connector_catalog_release_2_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged connector catalog Release 2 contraction on main."
 fi
-if ! git merge-base --is-ancestor "$built_in_model_candidate_cooldown_drop_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the built-in model candidate cooldown drop: ${built_in_model_candidate_cooldown_drop_commit}."
+if ! git merge-base --is-ancestor "$connector_catalog_release_2_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the connector catalog Release 2 contraction: ${connector_catalog_release_2_commit}."
 fi
 
-# Migration 1338 drops the frozen OAuth copies on model_providers and
-# model_provider_auth_sessions.sandbox_id. Every earlier API selects every
-# column of both tables in personal subscription account and device
-# authorization paths, so it cannot serve after 1338.
-frozen_model_provider_state_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$FROZEN_MODEL_PROVIDER_STATE_DROP_PATH" | sed -n '1p')
-if [[ ! "$frozen_model_provider_state_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged frozen model provider state drop on main."
+# Migration 1337 drops built_in_model_candidate_cooldown, the frozen OAuth
+# copies on model_providers and model_provider_auth_sessions.sandbox_id, and
+# tightens the service tier and Pi route class checks. Every earlier API reads
+# the cooldown table while resolving the Auto route and selects every column of
+# both provider tables, so it cannot serve after 1337. This floor descends from
+# the 1334 floor.
+model_route_state_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$MODEL_ROUTE_STATE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$model_route_state_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged model route state retirement on main."
 fi
-if ! git merge-base --is-ancestor "$frozen_model_provider_state_drop_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the frozen model provider state drop: ${frozen_model_provider_state_drop_commit}."
+if ! git merge-base --is-ancestor "$model_route_state_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the model route state retirement: ${model_route_state_retirement_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

@@ -234,34 +234,33 @@ function release(args: {
   };
 }
 
+function requestedKey(command: unknown): string | undefined {
+  if (
+    typeof command !== "object" ||
+    command === null ||
+    !("input" in command) ||
+    typeof command.input !== "object" ||
+    command.input === null ||
+    !("Key" in command.input) ||
+    typeof command.input.Key !== "string"
+  ) {
+    return undefined;
+  }
+  return command.input.Key;
+}
+
 function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      typeof command !== "object" ||
-      command === null ||
-      !("input" in command) ||
-      typeof command.input !== "object" ||
-      command.input === null ||
-      !("Key" in command.input) ||
-      typeof command.input.Key !== "string"
-    ) {
+    const key = requestedKey(command);
+    if (key === undefined) {
       return Promise.reject(new Error("Unexpected object request"));
     }
-    const object = objects.get(command.input.Key);
+    const object = objects.get(key);
     if (object === undefined) {
       return Promise.reject(new Error("Object unavailable"));
     }
-    const etag = `"${digest(object)}"`;
-    if ("IfNoneMatch" in command.input && command.input.IfNoneMatch === etag) {
-      return Promise.reject(
-        Object.assign(new Error("Not modified"), {
-          $metadata: { httpStatusCode: 304 },
-        }),
-      );
-    }
     return Promise.resolve({
       ContentLength: object.length,
-      ETag: etag,
       Body: {
         async *[Symbol.asyncIterator]() {
           yield object;
@@ -588,7 +587,7 @@ describe("connector catalog v4 preparation", () => {
     const rejected = await sync();
     expect(rejected.body).toMatchObject({
       outcome: "rejected",
-      lastAttempt: { failureCode: "source-unavailable" },
+      failureCode: "source-unavailable",
     });
     expect(rejected.body.credentialStorage).toStrictEqual(healthy);
     context.mocks.s3.send.mockClear();
@@ -726,11 +725,13 @@ describe("connector catalog v4 preparation", () => {
 
     serveObjects(new Map());
     const rejected = await sync();
+    // The rejected attempt reports the retained pointer as stale; without a
+    // pointer there is nothing to retain.
     expect(rejected.body).toMatchObject({
       outcome: "rejected",
-      state: "never-synced",
-      active: null,
-      lastAttempt: { failureCode: "source-unavailable" },
+      failureCode: "source-unavailable",
+      state: before.body.pointer === null ? "never-synced" : "stale",
+      active: before.body.active,
     });
     expect(rejected.body.pointer).toStrictEqual(before.body.pointer);
     context.mocks.s3.send.mockClear();
@@ -769,7 +770,7 @@ describe("connector catalog v4 preparation", () => {
     expect(accepted.body).toMatchObject({
       outcome: "accepted",
       active: {
-        catalogVersion: initial.pointer.catalogVersion,
+        catalogVersion: initial.pointer.catalogDigest,
         catalogDigest: initial.pointer.catalogDigest,
       },
       pointer: { hash: initial.pointer.catalogDigest },
@@ -825,7 +826,7 @@ describe("connector catalog v4 preparation", () => {
     expect(replaced.body).toMatchObject({
       outcome: "accepted",
       active: {
-        catalogVersion: replacement.pointer.catalogVersion,
+        catalogVersion: replacement.pointer.catalogDigest,
         catalogDigest: replacement.pointer.catalogDigest,
       },
       pointer: { hash: replacement.pointer.catalogDigest },
@@ -877,12 +878,10 @@ describe("connector catalog v4 preparation", () => {
     expect((await sync()).body).toMatchObject({
       outcome: "rejected",
       schemaVersion: 4,
+      failureCode: "invalid-artifact",
       state: "stale",
       active: { catalogDigest: accepted.pointer.catalogDigest },
-      rejectedCandidate: {
-        catalogDigest: invalid.pointer.catalogDigest,
-        failureCode: "invalid-artifact",
-      },
+      pointer: { hash: accepted.pointer.catalogDigest },
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { label: "Last accepted" },
@@ -901,21 +900,25 @@ describe("connector catalog v4 preparation", () => {
     );
     serveObjects(objects);
 
-    expect((await sync()).body).toMatchObject({
+    const rejected = await sync();
+    expect(rejected.body).toMatchObject({
       outcome: "rejected",
+      failureCode: "invalid-pointer",
       schemaVersion: 4,
-      active: null,
-      lastAttempt: { failureCode: "invalid-pointer" },
     });
+    expect(rejected.body.pointer?.hash).not.toBe(
+      candidate.pointer.catalogDigest,
+    );
   });
 
-  it("rejects changed bytes under the accepted digest without replacing the accepted projection", async () => {
+  it("treats a pointer to the serving digest as unchanged without downloading its catalog", async () => {
     const accepted = release({ label: "Verified bytes" });
     serveObjects(accepted.objects);
-    await sync();
+    expect((await sync()).body.outcome).toBe("accepted");
     const changed = release({ label: "Unverified bytes" });
-    // A new pointer identity forces fetching the candidate; its declared digest
-    // deliberately belongs to the old bytes, not to this new immutable object.
+    // A new publication label and key whose declared digest is the serving
+    // hash. The pointer only references validated complete generations, so
+    // the writer trusts the digest and never reads the changed bytes.
     const catalogKey = "connectors/v4/releases/2026-09-18.fixture/catalog.json";
     serveObjects(
       new Map([
@@ -930,11 +933,19 @@ describe("connector catalog v4 preparation", () => {
         [catalogKey, changed.catalogBytes],
       ]),
     );
+    context.mocks.s3.send.mockClear();
     expect((await sync()).body).toMatchObject({
-      outcome: "rejected",
+      outcome: "unchanged",
+      failureCode: null,
+      state: "current",
       active: { catalogDigest: accepted.pointer.catalogDigest },
-      lastAttempt: { failureCode: "digest-mismatch" },
+      pointer: { hash: accepted.pointer.catalogDigest },
     });
+    expect(
+      context.mocks.s3.send.mock.calls.map(([command]) => {
+        return requestedKey(command);
+      }),
+    ).toStrictEqual(["connectors/v4/active.json"]);
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { label: "Verified bytes" },
     ]);

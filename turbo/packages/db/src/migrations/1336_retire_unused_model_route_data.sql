@@ -1,7 +1,7 @@
 -- Retire model-route data that no live reader uses.
 --
 -- * run_model_catalog.pi_route_class: only `gpt-codex` routes remain on Pi.
---   Clear the retired classes before the CHECK narrows in the next migration.
+--   Clear the retired classes before the CHECK narrows in the following migration.
 -- * chat_threads.selected_model: the DeepSeek v4 Pro pin is already rejected
 --   on use. NULL is the thread's "no explicit pin" state, which resolves to
 --   Auto like every other thread without a selection.

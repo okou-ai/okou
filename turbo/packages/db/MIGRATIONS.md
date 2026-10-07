@@ -289,42 +289,42 @@ target) is built from the commit that adds it. The production rollback
 resolver enforces this as a floor on the first-parent `main` commit that adds 1333. `test-model-catalog-permanent.ts` and `test-model-catalog-seed.ts` cover
 the surviving catalog and route invariants.
 
-Migration `1334_retire_ultrafast_data` clears stored Ultrafast selections from
+Migration `1335_retire_ultrafast_data` clears stored Ultrafast selections from
 `chat_threads.codex_service_tier`, `org_members_metadata.service_tier` and
-`model_routes` service tiers. `1335_tighten_model_route_service_tiers` limits
+`model_routes` service tiers. `1337_retire_model_route_state` limits
 route tiers to `priority` and adds the thread and member service tier checks
 `NOT VALID` with a separate `VALIDATE`, per the online constraint rule below.
 See
 [deployment compatibility](../../../docs/deployment-compatibility.md#ultrafast-service-tier-retired-2026-10-07).
 
-Migration `1336_drop_built_in_model_candidate_cooldown` drops
+Migration `1337_retire_model_route_state` drops
 `built_in_model_candidate_cooldown`; Auto no longer cools its route down after a
-provider failure. There is no data conversion. Every API built before 1336
+provider failure. There is no data conversion. Every API built before 1337
 reads the table on the run claim path, so this is not a rolling-compatible
 contraction; Ethan explicitly accepted (2026-10-07) the bounded interruption
-while a pre-1336 API drains, recorded in deployment compatibility. The
+while a pre-1337 API drains, recorded in deployment compatibility. The
 production rollback resolver enforces this as a floor on the first-parent
-`main` commit that adds 1336. The permanent `test-built-in-model-cooldown-permanent.ts` validator is
+`main` commit that adds 1337. The permanent `test-built-in-model-cooldown-permanent.ts` validator is
 deleted with the table it checked. See
 [deployment compatibility](../../../docs/deployment-compatibility.md#built-in-model-candidate-cooldown-removed-2026-10-07).
 
-Migration `1337_retire_unused_model_route_data` clears data no live reader
+Migration `1336_retire_unused_model_route_data` clears data no live reader
 uses: `run_model_catalog.pi_route_class` values other than `gpt-codex`,
 `chat_threads.selected_model = 'deepseek/deepseek-v4-pro'` (NULL is the
 unpinned state and resolves to Auto) and every `built_in_model_keys` row other
 than `openrouter` (no foreign key references that table;
 `agent_runs.built_in_model_key_id` stays as unconstrained history). Migration
-`1338_drop_frozen_model_provider_state` then narrows
+`1337_retire_model_route_state` then narrows
 `chk_run_model_catalog_pi_route_class` to `gpt-codex` (the table is tiny, so
 the check is added directly), drops `model_provider_auth_sessions.sandbox_id`
 with `idx_model_provider_auth_sessions_sandbox`, and drops the frozen OAuth
 copies on `model_providers` (`token_expires_at`, `needs_reconnect`,
 `last_refresh_error_code`, `workspace_name`, `plan_type`,
 `subscription_reset_period`, `subscription_next_reset_at`); the live values are
-on `model_provider_accounts`. Rollout: an API built before 1338 selects every
+on `model_provider_accounts`. Rollout: an API built before 1337 selects every
 `model_providers` and `model_provider_auth_sessions` column, so this is not a
 rolling-compatible contraction. The production rollback resolver enforces a
-floor on the first-parent `main` commit that adds 1338. See
+floor on the first-parent `main` commit that adds 1337. See
 [deployment compatibility](../../../docs/deployment-compatibility.md#frozen-model-provider-state-dropped-2026-10-07).
 
 The 1325–1327 transition validators (`test-custom-model-retirement.ts`,

@@ -163,7 +163,10 @@ export function immutableConnectorRuntimeSelection(
   });
 }
 
-/** A Run's enabled connectors are required; metadata dependencies are not. */
+/**
+ * An agent can keep a connector whose entry has left the catalog; the Run
+ * launches without it instead of failing.
+ */
 interface CatalogRequest {
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
@@ -177,7 +180,7 @@ export function createConnectorRuntimeSelection(
     return requested
       ? {
           requestedConnectorSlugs: requested.runtimeConnectorSlugs,
-          missingEntries: "reject" as const,
+          missingEntries: "omit" as const,
           metadataConnectorSlugs: requested.metadataConnectorSlugs,
         }
       : null;

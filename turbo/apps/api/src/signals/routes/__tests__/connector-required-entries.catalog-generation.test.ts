@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
@@ -22,13 +21,11 @@ import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog
 
 const context = testContext();
 const {
-  chat,
   connectors,
   entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
   cancelChatRun,
-  waitForThreadMessages,
   sessionHeaders,
 } = createChatEventsFixture(context);
 
@@ -46,7 +43,7 @@ function withoutConnector(connectorSlug: string): ConnectorCatalogArtifact {
 }
 
 describe("required connector catalog entries", () => {
-  it("rejects a run whose enabled connector has no entry at the captured hash", async () => {
+  it("launches without an enabled connector that has no entry at the captured hash", async () => {
     const publisher = createPublicConnectorCatalog(context);
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
@@ -62,62 +59,27 @@ describe("required connector catalog entries", () => {
     ]);
     await publisher.publish(withoutConnector("openai"));
 
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "run without the missing enabled connector",
-        clientEventId,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the send to be accepted for preparation");
-    }
-    await flushWaitUntilForTest();
-    const page = await waitForThreadMessages(
-      actor,
-      sent.body.threadId,
-      (items) => {
-        return items.some((event) => {
-          return event.eventType === "input.rejected";
-        });
-      },
-    );
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "conflict",
-      }),
-    );
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "conflict",
-        content:
-          "Connectors enabled for this agent are unavailable: openai. Remove them from the agent or try again later.",
-      }),
-    );
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "run without the missing enabled connector",
+    });
+    const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(
-      page.events.filter((event) => {
-        return event.runId !== undefined;
-      }),
-    ).toStrictEqual([]);
+      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toBeUndefined();
+    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
 
-    // The failure belongs to the missing entry, not the catalog as a whole.
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const restored = await sendChatRun(actor, {
       agentId,
-      threadId: sent.body.threadId,
+      threadId: run.threadId,
       prompt: "run after the entry is published again",
     });
-    const claimed = await claimChatRun(runnerGroup, restored.runId);
+    const restoredClaim = await claimChatRun(runnerGroup, restored.runId);
     expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      restoredClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: connection.id });
-    await cancelChatRun(actor, restored.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, restored.runId, restoredClaim.sandboxHeaders);
   });
 
   it("fails the Run MCP list for an admitted account while optional reads omit the slug", async () => {

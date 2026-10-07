@@ -9,6 +9,13 @@ completed the first-v4 bootstrap before the retained-v3 reader was removed under
 Builtin MCP execution supports none/manual authentication and Automatic MCP
 authentication, which discovers either an unauthenticated endpoint or OAuth.
 
+> Current storage: after the
+> [Release 2 contraction](deployment-compatibility.md#connector-catalog-release-2-contraction-migration-1334),
+> sync validates the publication, prepares complete immutable entries and then
+> moves the `connector_catalog` hash pointer. The accepted snapshot, sync
+> state, persisted compatibility evaluation and runtime projections described
+> below are removed; compatibility is evaluated on demand.
+
 ## Publication and bootstrap
 
 Publish and validate the complete v4 catalog before deploying this consumer.

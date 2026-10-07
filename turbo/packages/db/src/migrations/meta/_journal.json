@@ -1797,36 +1797,29 @@
     {
       "idx": 1334,
       "version": "7",
-      "when": 1791356236174,
-      "tag": "1334_retire_ultrafast_data",
+      "when": 1791356658491,
+      "tag": "1334_connector_catalog_release_2_contraction",
       "breakpoints": true
     },
     {
       "idx": 1335,
       "version": "7",
-      "when": 1791356254595,
-      "tag": "1335_tighten_model_route_service_tiers",
+      "when": 1791366214844,
+      "tag": "1335_retire_ultrafast_data",
       "breakpoints": true
     },
     {
       "idx": 1336,
       "version": "7",
-      "when": 1791357116817,
-      "tag": "1336_drop_built_in_model_candidate_cooldown",
+      "when": 1791366226468,
+      "tag": "1336_retire_unused_model_route_data",
       "breakpoints": true
     },
     {
       "idx": 1337,
       "version": "7",
-      "when": 1791360671861,
-      "tag": "1337_retire_unused_model_route_data",
-      "breakpoints": true
-    },
-    {
-      "idx": 1338,
-      "version": "7",
-      "when": 1791360689069,
-      "tag": "1338_drop_frozen_model_provider_state",
+      "when": 1791366235769,
+      "tag": "1337_retire_model_route_state",
       "breakpoints": true
     }
   ]

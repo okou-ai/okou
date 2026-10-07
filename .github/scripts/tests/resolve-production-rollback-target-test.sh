@@ -78,10 +78,10 @@ case "${1:-}" in
       [ "${MOCK_CHAT_THREAD_PROVIDER_PIN_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1818181818181818181818181818181818181818" ]; then
       [ "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "3636363636363636363636363636363636363636" ]; then
-      [ "${MOCK_BUILT_IN_MODEL_COOLDOWN_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "3838383838383838383838383838383838383838" ]; then
-      [ "${MOCK_FROZEN_MODEL_PROVIDER_STATE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1919191919191919191919191919191919191919" ]; then
+      [ "${MOCK_CONNECTOR_CATALOG_RELEASE_2_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3737373737373737373737373737373737373737" ]; then
+      [ "${MOCK_MODEL_ROUTE_STATE_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -113,10 +113,10 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CHAT_THREAD_PROVIDER_PIN_COMMIT-1717171717171717171717171717171717171717}"
     elif [[ "$*" == *1333_drop_dead_model_provider_columns.sql* ]]; then
       printf '%s\n' "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_COMMIT-1818181818181818181818181818181818181818}"
-    elif [[ "$*" == *1336_drop_built_in_model_candidate_cooldown.sql* ]]; then
-      printf '%s\n' "${MOCK_BUILT_IN_MODEL_COOLDOWN_COMMIT-3636363636363636363636363636363636363636}"
-    elif [[ "$*" == *1338_drop_frozen_model_provider_state.sql* ]]; then
-      printf '%s\n' "${MOCK_FROZEN_MODEL_PROVIDER_STATE_COMMIT-3838383838383838383838383838383838383838}"
+    elif [[ "$*" == *1334_connector_catalog_release_2_contraction.sql* ]]; then
+      printf '%s\n' "${MOCK_CONNECTOR_CATALOG_RELEASE_2_COMMIT-1919191919191919191919191919191919191919}"
+    elif [[ "$*" == *1337_retire_model_route_state.sql* ]]; then
+      printf '%s\n' "${MOCK_MODEL_ROUTE_STATE_COMMIT-3737373737373737373737373737373737373737}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -245,10 +245,10 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 1717171717171717171717171717171717171717 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread provider pin column drop floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql" "${tmp_dir}/boundaries.log" || fail "dead model provider column floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 1818181818181818181818181818181818181818 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the dead model provider column drop floor"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1336_drop_built_in_model_candidate_cooldown.sql" "${tmp_dir}/boundaries.log" || fail "built-in model cooldown floor must resolve the canonical main migration"
-grep -Fxq "git merge-base --is-ancestor 3636363636363636363636363636363636363636 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the built-in model cooldown drop floor"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1338_drop_frozen_model_provider_state.sql" "${tmp_dir}/boundaries.log" || fail "frozen model provider state floor must resolve the canonical main migration"
-grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the frozen model provider state drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql" "${tmp_dir}/boundaries.log" || fail "connector catalog Release 2 floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1919191919191919191919191919191919191919 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the connector catalog Release 2 floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1337_retire_model_route_state.sql" "${tmp_dir}/boundaries.log" || fail "model route state floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 3737373737373737373737373737373737373737 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model route state floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -473,38 +473,38 @@ fi
 
 for drop_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged built-in model candidate cooldown drop" \
-    run_resolver "${tmp_dir}/built-in-model-cooldown-history.output" "MOCK_BUILT_IN_MODEL_COOLDOWN_COMMIT=${drop_commit}"
-  [ ! -s "${tmp_dir}/built-in-model-cooldown-history.output" ] || fail "invalid built-in model cooldown history must not publish outputs"
+  assert_failure "Cannot resolve the merged connector catalog Release 2 contraction" \
+    run_resolver "${tmp_dir}/connector-catalog-release-2-history.output" "MOCK_CONNECTOR_CATALOG_RELEASE_2_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/connector-catalog-release-2-history.output" ] || fail "invalid connector catalog Release 2 history must not publish outputs"
   if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-    fail "invalid built-in model cooldown history must fail before artifact or host access"
+    fail "invalid connector catalog Release 2 history must fail before artifact or host access"
   fi
 done
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the built-in model candidate cooldown drop" \
-  run_resolver "${tmp_dir}/built-in-model-cooldown-floor.output" MOCK_BUILT_IN_MODEL_COOLDOWN_FLOOR_VALID=0
-grep -Fq '3636363636363636363636363636363636363636' "${tmp_dir}/failure.err" || fail "built-in model cooldown rejection must identify the canonical main commit"
-[ ! -s "${tmp_dir}/built-in-model-cooldown-floor.output" ] || fail "pre-drop API must not publish outputs"
+assert_failure "Rollback target predates the connector catalog Release 2 contraction" \
+  run_resolver "${tmp_dir}/connector-catalog-release-2-floor.output" MOCK_CONNECTOR_CATALOG_RELEASE_2_FLOOR_VALID=0
+grep -Fq '1919191919191919191919191919191919191919' "${tmp_dir}/failure.err" || fail "connector catalog Release 2 rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/connector-catalog-release-2-floor.output" ] || fail "pre-Release 2 API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "built-in model cooldown floor must fail before artifact or host access"
+  fail "connector catalog Release 2 floor must fail before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged frozen model provider state drop" \
-    run_resolver "${tmp_dir}/frozen-model-provider-state-history.output" "MOCK_FROZEN_MODEL_PROVIDER_STATE_COMMIT=${drop_commit}"
-  [ ! -s "${tmp_dir}/frozen-model-provider-state-history.output" ] || fail "invalid frozen model provider state history must not publish outputs"
+  assert_failure "Cannot resolve the merged model route state retirement" \
+    run_resolver "${tmp_dir}/model-route-state-history.output" "MOCK_MODEL_ROUTE_STATE_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/model-route-state-history.output" ] || fail "invalid model route state history must not publish outputs"
   if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-    fail "invalid frozen model provider state history must fail before artifact or host access"
+    fail "invalid model route state history must fail before artifact or host access"
   fi
 done
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the frozen model provider state drop" \
-  run_resolver "${tmp_dir}/frozen-model-provider-state-floor.output" MOCK_FROZEN_MODEL_PROVIDER_STATE_FLOOR_VALID=0
-grep -Fq '3838383838383838383838383838383838383838' "${tmp_dir}/failure.err" || fail "frozen model provider state rejection must identify the canonical main commit"
-[ ! -s "${tmp_dir}/frozen-model-provider-state-floor.output" ] || fail "pre-drop API must not publish outputs"
+assert_failure "Rollback target predates the model route state retirement" \
+  run_resolver "${tmp_dir}/model-route-state-floor.output" MOCK_MODEL_ROUTE_STATE_FLOOR_VALID=0
+grep -Fq '3737373737373737373737373737373737373737' "${tmp_dir}/failure.err" || fail "model route state rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/model-route-state-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "frozen model provider state floor must fail before artifact or host access"
+  fail "model route state floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do

@@ -1,6 +1,0 @@
-ALTER TABLE "model_routes" DROP CONSTRAINT "chk_model_routes_service_tiers";--> statement-breakpoint
-ALTER TABLE "model_routes" ADD CONSTRAINT "chk_model_routes_service_tiers" CHECK ("model_routes"."service_tiers" <@ ARRAY['priority']::text[] AND ("model_routes"."default_service_tier" IS NULL OR "model_routes"."default_service_tier" = ANY("model_routes"."service_tiers")));--> statement-breakpoint
-ALTER TABLE "chat_threads" ADD CONSTRAINT "chk_chat_threads_codex_service_tier" CHECK ("chat_threads"."codex_service_tier" IS NULL OR "chat_threads"."codex_service_tier" = 'fast') NOT VALID;--> statement-breakpoint
-ALTER TABLE "chat_threads" VALIDATE CONSTRAINT "chk_chat_threads_codex_service_tier";--> statement-breakpoint
-ALTER TABLE "org_members_metadata" ADD CONSTRAINT "chk_org_members_metadata_service_tier" CHECK ("org_members_metadata"."service_tier" IS NULL OR "org_members_metadata"."service_tier" = 'priority') NOT VALID;--> statement-breakpoint
-ALTER TABLE "org_members_metadata" VALIDATE CONSTRAINT "chk_org_members_metadata_service_tier";
