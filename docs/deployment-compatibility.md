@@ -67,7 +67,7 @@ invalidates, records demand for, materializes, garbage-collects or drains
 stable-context heads, artifacts or Pi resource snapshots. The materialize cron
 response no longer has a `stableContext` field (only Vercel cron calls it).
 
-Migration `1341_retire_pi_stable_context` drops `pi_stable_context_heads`,
+Migration `1342_retire_pi_stable_context` drops `pi_stable_context_heads`,
 `pi_stable_context_artifacts`, `pi_stable_context_artifact_resources` and
 `pi_resource_snapshots` with their indexes, checks and foreign keys. It keeps
 the reserve-before-IO publication fence for Agent instructions and Workflow
@@ -80,7 +80,7 @@ generation table drops `publication_state` and its state check, which only the
 stable-context reader consumed.
 
 Database ordering: migrations run before API promotion. Every API built before
-1341 writes the dropped tables and the old generation and publication table
+1342 writes the dropped tables and the old generation and publication table
 names on Agent update, instructions, Workflow create/update/delete/visibility,
 Storage HEAD publication, connector, permission, feature-switch and catalog
 writes, Clerk and Agent deletion, and its crons. It fails on those paths
@@ -90,7 +90,7 @@ decision (2026-10-07). No preparatory release or compatibility branch is
 required. Acceptance of that risk is not an instruction to deploy.
 
 Rollback floor: the rollback resolver resolves the first-parent `main` commit
-that added `1341_retire_pi_stable_context.sql` and rejects earlier targets
+that added `1342_retire_pi_stable_context.sql` and rejects earlier targets
 before artifact or host access. Recovering below it requires a reviewed forward
 migration that recreates the old tables before an older API serves.
 
@@ -5211,7 +5211,7 @@ cron convergence after release; a deferred watermark is never advanced.
 
 ## Pi stable-context schema rollout and rollback
 
-Status: retired by migration `1341_retire_pi_stable_context`; see
+Status: retired by migration `1342_retire_pi_stable_context`; see
 [Pi stable-context tables retired](#pi-stable-context-tables-retired-2026-10-07).
 The history below describes the original rollout.
 

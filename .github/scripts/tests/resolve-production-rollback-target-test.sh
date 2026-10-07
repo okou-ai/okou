@@ -119,7 +119,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CONNECTOR_CATALOG_RELEASE_2_COMMIT-1919191919191919191919191919191919191919}"
     elif [[ "$*" == *1338_retire_model_route_state.sql* ]]; then
       printf '%s\n' "${MOCK_MODEL_ROUTE_STATE_COMMIT-3737373737373737373737373737373737373737}"
-    elif [[ "$*" == *1341_retire_pi_stable_context.sql* ]]; then
+    elif [[ "$*" == *1342_retire_pi_stable_context.sql* ]]; then
       printf '%s\n' "${MOCK_PI_STABLE_CONTEXT_COMMIT-3838383838383838383838383838383838383838}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
@@ -253,7 +253,7 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 1919191919191919191919191919191919191919 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the connector catalog Release 2 floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1338_retire_model_route_state.sql" "${tmp_dir}/boundaries.log" || fail "model route state floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 3737373737373737373737373737373737373737 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model route state floor"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1341_retire_pi_stable_context.sql" "${tmp_dir}/boundaries.log" || fail "Pi stable-context retirement floor must resolve the canonical main migration"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1342_retire_pi_stable_context.sql" "${tmp_dir}/boundaries.log" || fail "Pi stable-context retirement floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi stable-context retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"

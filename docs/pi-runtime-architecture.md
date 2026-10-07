@@ -76,7 +76,7 @@ dialect-specific tier policy remain at their existing trust boundaries.
 The Pi stable-context projection (an owner-bound, generation-fenced cache of
 the stable prompt and resource snapshot) never had a production reader and has
 been removed. Run launch builds the stable prompt directly from the canonical
-composers on every claim. Migration `1341_retire_pi_stable_context` dropped its
+composers on every claim. Migration `1342_retire_pi_stable_context` dropped its
 heads, artifacts, artifact resources and the Pi resource snapshot table.
 
 Only the reserve-before-IO publication fence survives, in
