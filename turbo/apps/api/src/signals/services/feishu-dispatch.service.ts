@@ -39,10 +39,11 @@ import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
 import {
+  integrationModelOptionValue,
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
-import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
@@ -93,7 +94,8 @@ export interface FeishuDispatchConnection {
 }
 
 interface FeishuModelOption {
-  readonly model: string;
+  /** Null is Auto. */
+  readonly model: string | null;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -615,14 +617,14 @@ const feishuModelPickerState$ = command(
     { set },
     orgId: string,
     userId: string,
-    currentSelectedModel: string,
+    currentSelectedModel: string | null,
     signal: AbortSignal,
   ): Promise<{
     readonly options: readonly FeishuModelOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const { response: runModels, systemDefaultModel } = await set(
-      listAvailableRunModelsWithDefault$,
+    const runModels = await set(
+      listAvailableRunModels$,
       { orgId, userId },
       signal,
     );
@@ -633,7 +635,7 @@ const feishuModelPickerState$ = command(
           return {
             model: runModel.model,
             label: runModel.modelLabel,
-            isDefault: runModel.model === systemDefaultModel,
+            isDefault: runModel.model === null,
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),
@@ -725,7 +727,7 @@ function feishuModelCommandOptions(
 ) {
   return options.map((option) => {
     return {
-      commandValue: option.model,
+      commandValue: integrationModelOptionValue(option.model),
       label: `${option.label}${option.isDefault ? " (default)" : ""}`,
       current: currentSelectedModel === option.model,
     };
@@ -739,7 +741,7 @@ function findFeishuModelOption(
   const normalized = input.toLowerCase();
   return options.find((option) => {
     return (
-      option.model.toLowerCase() === normalized ||
+      integrationModelOptionValue(option.model).toLowerCase() === normalized ||
       option.label.toLowerCase() === normalized
     );
   });
@@ -762,7 +764,7 @@ const handleModelCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const currentSelectedModel = await set(
+    const currentModel = await set(
       readIntegrationChatThreadModel$,
       {
         orgId: args.installation.orgId,
@@ -772,7 +774,7 @@ const handleModelCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!currentSelectedModel) {
+    if (currentModel.kind === "no_thread") {
       await replyNotice(
         {
           db: args.db,
@@ -789,7 +791,7 @@ const handleModelCommand$ = command(
       feishuModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
-      currentSelectedModel,
+      currentModel.selectedModel,
       signal,
     );
     signal.throwIfAborted();

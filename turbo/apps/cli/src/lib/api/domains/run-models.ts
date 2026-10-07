@@ -35,10 +35,10 @@ export async function getUserModelPreference() {
 
 /**
  * The API requires `serviceTier` on every write and treats null as "clear",
- * so callers pass the tier to store explicitly.
+ * so callers pass the tier to store explicitly. A null model selects Auto.
  */
 export async function selectRunModel(
-  model: string,
+  model: string | null,
   serviceTier: ChatThreadServiceTier | null,
 ) {
   const client = initClient(

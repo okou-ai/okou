@@ -190,7 +190,8 @@ export interface ChatRunSendBody {
   readonly threadId?: string;
   readonly clientThreadId?: string;
   readonly clientEventId?: string;
-  readonly model?: string;
+  /** Null selects Auto. */
+  readonly model?: string | null;
   readonly runOptions?: ChatRunOptionsRequest;
   readonly template?: GenerationTemplateRequest;
   readonly computerUseHostId?: string | null;
@@ -592,13 +593,16 @@ export function createChatEventsFixture(context: TestContext) {
     return fixture.selectedModel;
   }
 
-  /** Platform execution is fixed to Auto; personal subscriptions are separate. */
+  /**
+   * Platform execution is fixed to Auto: seed its run model's keys and store
+   * the Auto (null) member preference. Personal subscriptions are separate.
+   */
   async function configureBuiltInPiModel(
     actor: ApiTestUser,
-    selectedModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
+    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
   ): Promise<void> {
-    await seedBuiltInModelKey(selectedModel);
-    await api.updateUserModelPreference(actor, selectedModel);
+    await seedBuiltInModelKey(runModel);
+    await api.updateUserModelPreference(actor, null);
   }
 
   async function configureUserOwnedGptPiModel(
@@ -648,12 +652,13 @@ export function createChatEventsFixture(context: TestContext) {
     return { oauth, accountSourceId: completed.body.provider.id };
   }
 
+  /** Returns the Auto selection (null) a send names to run on OpenRouter. */
   async function configureBuiltInPiModelOnOpenRouter(
     actor: ApiTestUser,
-    selectedModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
-  ): Promise<string> {
-    await configureBuiltInPiModel(actor, selectedModel);
-    return selectedModel;
+    runModel: typeof AUTO_RUN_MODEL = AUTO_RUN_MODEL,
+  ): Promise<null> {
+    await configureBuiltInPiModel(actor, runModel);
+    return null;
   }
 
   async function sendChatRun(
@@ -787,7 +792,7 @@ export function createChatEventsFixture(context: TestContext) {
   async function expectThreadCreatedModelEvent(
     actor: ApiTestUser,
     threadId: string,
-    selectedModel: string,
+    selectedModel: string | null,
   ): Promise<void> {
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     expect(threadEvents.status).toBe(200);
@@ -1495,7 +1500,8 @@ export function createChatEventsFixture(context: TestContext) {
     readonly runnerGroup: string;
     readonly prompt: string;
     readonly codexServiceTier?: "fast";
-    readonly selectedModel?: "okou-1.0";
+    /** The Auto run model whose keys and pricing are seeded. */
+    readonly selectedModel?: typeof AUTO_RUN_MODEL;
   }): Promise<{
     readonly anchor: { readonly runId: string; readonly threadId: string };
     readonly anchorClaim: Awaited<ReturnType<typeof claimChatRun>>;
@@ -1528,7 +1534,7 @@ export function createChatEventsFixture(context: TestContext) {
       );
     }
     const anchorClaim = await claimChatRun(args.runnerGroup, anchor.runId);
-    const selectedModel = args.selectedModel ?? "okou-1.0";
+    const selectedModel = args.selectedModel ?? AUTO_RUN_MODEL;
     const model = await configureBuiltInPiModelOnOpenRouter(
       args.actor,
       selectedModel,

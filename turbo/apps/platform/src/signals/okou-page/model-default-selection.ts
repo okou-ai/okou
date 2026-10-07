@@ -19,13 +19,16 @@ interface UserModelDefaultSource {
 
 /**
  * A stored selection (member preference, thread pin) resolves along the
- * catalog replacement chain. Unknown models are not selectable.
+ * catalog replacement chain; null is Auto. Unknown models are not selectable.
  */
 function createModelFirstSelection(
   selectedModel: string | null | undefined,
   catalog: ModelCatalog | null | undefined,
   modelSettings: ModelSettings = {},
 ): ModelProviderSelection | null {
+  if (selectedModel === null) {
+    return { selectedModel: null, modelSettings };
+  }
   const resolvedModel = catalog?.resolve(selectedModel);
   if (!resolvedModel) {
     return null;
@@ -57,6 +60,7 @@ export function isRunModelFastModeAvailable(
 ): boolean {
   return (
     !!runModel &&
+    runModel.model !== null &&
     isMemberRunModelConfigurable(runModel) &&
     runModel.subscriptionOptions?.serviceTier === "priority"
   );
@@ -71,10 +75,11 @@ export function isCodexFastModeAvailableForSelection(params: {
 
 function hasUsableModelRoute(
   models: AvailableRunModelsResponse | null | undefined,
-  model: string,
+  model: string | null,
 ): boolean {
   // Before models load there is no route evidence to reject the preference.
-  if (!models) {
+  // Auto is always offered.
+  if (!models || model === null) {
     return true;
   }
   // A plan-restricted route stays selected so the composer can offer the
@@ -90,8 +95,8 @@ function hasUsableModelRoute(
 
 /**
  * Default for a new chat: the member's saved preference (resolved through the
- * catalog) when its route is usable, otherwise the catalog system default.
- * Null until the catalog loads: there is no product default without it.
+ * catalog) when its route is usable, otherwise Auto. Null until the catalog
+ * loads: a saved preference cannot be resolved without it.
  */
 export function resolveDefaultModelSelection(params: {
   userPreference: UserModelDefaultSource | null | undefined;
@@ -109,7 +114,7 @@ export function resolveDefaultModelSelection(params: {
     return userSelection;
   }
   return {
-    selectedModel: params.catalog.systemDefaultModel,
+    selectedModel: null,
     modelSettings: params.userPreference?.modelSettings ?? {},
   };
 }

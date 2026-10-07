@@ -18,12 +18,12 @@ const path = new URL(url).pathname;
 fs.appendFileSync(process.env.REQUESTS, JSON.stringify({path, method, body, args}) + "\\n");
 let response;
 if (path === "/api/run-models" && method === "GET") {
-  const models = [{model: "okou-1.0", modelProviderId: null, memberEffective: {providerType: "built-in", credentialScope: "org"}}];
+  const models = [{model: process.env.INVALID_AUTO === "true" ? "retired-model" : null, modelProviderId: null, memberEffective: {providerType: "built-in", credentialScope: "org"}}];
   if (process.env.PERSONAL === "true") {
     models.push({model: "claude-sonnet-5-5", memberEffective: {providerType: "claude-code-oauth-token", credentialScope: "member"}},
       {model: "gpt-6-astra", memberEffective: {providerType: "codex-oauth-token", credentialScope: "member"}});
   }
-  response = {defaultModel: process.env.INVALID_AUTO === "true" ? "retired-model" : "okou-1.0", models};
+  response = {models};
 } else if (path === "/api/feature-switches" && method === "POST") {
   response = {effectiveSwitches: body.switches};
 } else if (path === "/api/user-model-preference" && method === "PUT") {
@@ -79,7 +79,7 @@ async function runBootstrap(context, script, args, environment = {}) {
 }
 
 for (const realAgent of ["true", "false"]) {
-  test(`Auto bootstrap selects the preset model with real runtime ${realAgent}`, async (context) => {
+  test(`Auto bootstrap selects Auto (null) with real runtime ${realAgent}`, async (context) => {
     const { result, calls } = await runBootstrap(
       context,
       "runner-auto-bootstrap.bash",
@@ -93,7 +93,7 @@ for (const realAgent of ["true", "false"]) {
         {
           path: "/api/user-model-preference",
           method: "PUT",
-          body: { selectedModel: "okou-1.0", serviceTier: null },
+          body: { selectedModel: null, serviceTier: null },
         },
         {
           path: "/api/feature-switches",
@@ -105,7 +105,7 @@ for (const realAgent of ["true", "false"]) {
   });
 }
 
-test("Auto bootstrap rejects an unexpected default before writing preferences", async (context) => {
+test("Auto bootstrap rejects a non-null Auto entry before writing preferences", async (context) => {
   const { result, calls } = await runBootstrap(
     context,
     "runner-auto-bootstrap.bash",

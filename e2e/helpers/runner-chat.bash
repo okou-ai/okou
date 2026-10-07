@@ -415,6 +415,7 @@ _runner_chat_post_parts() {
 
     # Mock Codex probes select their model through the profile; explicit real
     # model probes pass a model directly rather than inheriting this default.
+    # The selection `auto` is sent as `model: null`, the only Auto selection.
     if [[ -z "$thread_id" && -z "$selected_model" ]]; then
         selected_model="${E2E_MOCK_CODEX_MODEL:-}"
     fi
@@ -449,7 +450,9 @@ _runner_chat_post_parts() {
                 clientEventId: $clientEventId,
                 userMessage: {version: 1, parts: $parts},
                 hasTextContent: true
-            } + (if $model == "" then {} else {model: $model} end)
+            } + (if $model == "" then {}
+                 elif $model == "auto" then {model: null}
+                 else {model: $model} end)
               + if $captureNetworkBodies then {captureNetworkBodies: true} else {} end')"
     fi
 

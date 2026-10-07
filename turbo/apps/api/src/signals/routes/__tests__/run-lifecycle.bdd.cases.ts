@@ -4626,7 +4626,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           api.readThreadRunRejection(actor, {
             agentId: agent.agentId,
             prompt: builtInPrompt,
-            model: "okou-1.0",
+            model: null,
           }),
         ).resolves.toBe("insufficient_credits");
 
@@ -4971,7 +4971,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           api.readThreadRunRejection(actor, {
             agentId: agent.agentId,
             prompt: builtInPrompt,
-            model: "okou-1.0",
+            model: null,
           }),
         ).resolves.toBe("insufficient_credits");
 
@@ -5013,14 +5013,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           credits: 1000,
           onboardingPaymentPending: false,
         });
-        // A new organization starts in Auto with only the fixed default.
+        // A new organization starts in Auto, the null selection.
         const runModels = await misc.listRunModels(actor);
-        expect(runModels.defaultModel).toBe("okou-1.0");
         expect(
           runModels.models.map((runModel) => {
             return runModel.model;
           }),
-        ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+        ).toStrictEqual([null]);
 
         await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
         // The fixed default is Pi-eligible, so the limited-free default chat run
@@ -5117,11 +5116,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await api.updateUserModelPreference(actor, selectedModel);
+        await api.updateUserModelPreference(actor, null);
         const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "built-in model provider",
-          model: selectedModel,
+          model: null,
         });
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(run.runId);
@@ -5226,7 +5225,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await releaseSlackFixture();
 
         const { actor, agentId } = await entitledRunActor();
-        await api.updateUserModelPreference(actor, selectedModel);
+        await api.updateUserModelPreference(actor, null);
 
         // Admission, not provider execution, is under test.
         preparePiSandboxClaim();
@@ -5234,7 +5233,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const sent = await chat.sendAndLaunch(actor, {
           agentId,
           prompt: "built-in DeepSeek admission after shared fixture release",
-          model: selectedModel,
+          model: null,
         });
         // The pick admitted the built-in route and created the run.
         await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
@@ -11565,7 +11564,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, latest.runId, [200]);
         await finishCancelledRun(latest.runId, latestClaim.sandboxToken);
 
-        const builtInModel = await seedBuiltInDefaultModelKey();
+        await seedBuiltInDefaultModelKey();
         // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
         await createBddIntegrationApi(context)
           .configureNativeSubscriptionModels(actor)
@@ -11595,7 +11594,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const builtIn = await api.createThreadRun(actor, {
           agentId,
           prompt: "keep native web search disabled for built-in routing",
-          model: builtInModel,
+          model: null,
         });
         const builtInClaim = await api.claimRunnerJob(builtIn.runId);
         expect(builtInClaim.platformEnvironment).not.toHaveProperty(
@@ -13030,7 +13029,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const { actor, agentId, runnerGroup } = await entitledRunActor();
           const run = await chat.sendAndLaunch(actor, {
             agentId,
-            model: selectedModel,
+            // Auto is the null selection; its runs report the Auto run model.
+            model: modelProvider === "built-in" ? null : selectedModel,
             prompt: `fail ${modelProvider} with ${args.failureReason}`,
           });
           await api.heartbeatRunner(runnerGroup);
@@ -14613,8 +14613,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const billing = createBillingMediaApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
-        const builtInModel = await seedBuiltInDefaultModelKey();
-        await api.updateUserModelPreference(actor, builtInModel);
+        await seedBuiltInDefaultModelKey();
+        await api.updateUserModelPreference(actor, null);
         const modelProvider = `bdd-model-pricing-${randomUUID()}`;
         onTestFinished(async () => {
           await deleteUsagePricingRows({
@@ -14636,7 +14636,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "generate server-priced model usage",
-          model: builtInModel,
+          model: null,
         });
         await setRunModelProviderFixture({
           runId: run.runId,
@@ -14788,7 +14788,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const memberRun = await api.createThreadRun(member, {
           agentId: memberAgent.agentId,
           prompt: "member usage",
-          model: "okou-1.0",
+          model: null,
         });
 
         await api.heartbeatRunner(runnerGroup);

@@ -8,6 +8,19 @@ import { publishThreadListChanged } from "../external/realtime";
 import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
 import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
 
+export type IntegrationChatThreadModel =
+  | { readonly kind: "no_thread" }
+  /** `selectedModel` is null for Auto. */
+  | { readonly kind: "thread"; readonly selectedModel: string | null };
+
+/**
+ * The string an integration `/model` picker uses for a run model option.
+ * Auto is the empty (null) selection, so pickers carry it as `auto`.
+ */
+export function integrationModelOptionValue(model: string | null): string {
+  return model ?? "auto";
+}
+
 type IntegrationChatThreadModelResult =
   | { readonly kind: "updated" }
   | { readonly kind: "no_thread" }
@@ -27,9 +40,9 @@ export const readIntegrationChatThreadModel$ = command(
       readonly chatThreadId: string | undefined;
     },
     signal: AbortSignal,
-  ): Promise<string | null> => {
+  ): Promise<IntegrationChatThreadModel> => {
     if (!args.chatThreadId) {
-      return null;
+      return { kind: "no_thread" };
     }
     const db = set(writeDb$);
     const [thread] = await db
@@ -48,7 +61,10 @@ export const readIntegrationChatThreadModel$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!thread) {
-      return null;
+      return { kind: "no_thread" };
+    }
+    if (thread.selectedModel === null) {
+      return { kind: "thread", selectedModel: null };
     }
     const model = await set(
       resolveChatInputModelSelection$,
@@ -63,7 +79,11 @@ export const readIntegrationChatThreadModel$ = command(
     signal.throwIfAborted();
     // A stored selection that no longer captures is still the thread's model;
     // the next queued input rejects it instead of switching models silently.
-    return "status" in model ? thread.selectedModel : model.selectedModel;
+    return {
+      kind: "thread",
+      selectedModel:
+        "status" in model ? thread.selectedModel : model.selectedModel,
+    };
   },
 );
 
@@ -74,7 +94,8 @@ export const updateIntegrationChatThreadModel$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly chatThreadId: string | undefined;
-      readonly model: string;
+      /** Null selects Auto. */
+      readonly model: string | null;
     },
     signal: AbortSignal,
   ): Promise<IntegrationChatThreadModelResult> => {

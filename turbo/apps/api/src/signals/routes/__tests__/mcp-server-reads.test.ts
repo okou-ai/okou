@@ -2,7 +2,6 @@ import {
   mcpListAgentsOutputSchema,
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import {
   seedRetentionOutputEvent$,
@@ -2842,11 +2841,14 @@ describe("MCP ordinary discovery", () => {
     });
   });
 
-  it("discovers the projected system default without a member preference", async () => {
+  it("discovers Auto as the null default without a member preference", async () => {
     const auth = await fixture();
     const models = await listModels(auth.token());
+    expect(models.models).toContainEqual(
+      expect.objectContaining({ id: null, name: "Auto" }),
+    );
     expect(models.defaultModel).toStrictEqual({
-      model: SEEDED_SYSTEM_DEFAULT_MODEL,
+      model: null,
       source: "org_default",
     });
   });

@@ -129,6 +129,17 @@ are enforced by the integration ingress tests.
   no-op. Retire it once the migration has shipped and the journal squash line
   passes it.
 
+- `scripts/test-auto-model-selection-null.ts` protects migration
+  `1341_auto_model_selection_null`: thread and member selections of active
+  catalog models without an enabled subscription route (`okou-1.0` and
+  Built-in-only models, by catalog or unique upstream id, plus retired models
+  replaced into them such as `okou-1.0-pro`) return to NULL with
+  their tiers cleared, threads get ordered `model_selection_updated` and
+  `service_tier_updated` events in contiguous per-stream positions, agentless
+  threads get no event, subscription and NULL selections are kept,
+  and a rerun is a no-op. Retire it once the migration has shipped and the
+  journal squash line passes it.
+
 - `scripts/test-file-run-provenance.ts` protects migration
   `1323_detach_file_run_provenance`: unreconciled thread/org associations reject
   the contraction, existing files keep their identities and owners, Run and

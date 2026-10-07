@@ -31,7 +31,6 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const personalModelProviderTestRoutes = Object.freeze([
   ...meModelProvidersListRoutes,
@@ -346,7 +345,7 @@ describe("POST /api/welcome-chat-threads", () => {
       }),
       [200],
     );
-    expect(metadata.body.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
+    expect(metadata.body.selectedModel).toBeNull();
     expect((await runs.readBillingStatus(actor)).credits).toBe(0);
     await expect(
       chat.listThreadEventRows(actor, body.id),

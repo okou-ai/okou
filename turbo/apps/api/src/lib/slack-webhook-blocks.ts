@@ -4,7 +4,7 @@ import type {
   SlackAnyBlock,
   SlackView,
 } from "../signals/external/slack-block-kit";
-
+import { integrationModelOptionValue } from "../signals/services/integration-chat-thread-model.service";
 import { env } from "./env";
 import {
   OFFICIAL_SLACK_APP_NAME,
@@ -19,7 +19,8 @@ export const MODEL_PICKER_BLOCK_ID = "model_select_block";
 export const MODEL_PICKER_ACTION_ID = "model_select";
 
 interface ModelPickerOption {
-  readonly model: string;
+  /** Null is Auto. */
+  readonly model: string | null;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -384,6 +385,7 @@ function formatModelPickerOptionLabel(option: ModelPickerOption): string {
 
 export function buildModelPickerModal(args: {
   readonly options: readonly ModelPickerOption[];
+  /** Null is Auto. */
   readonly currentSelectedModel: string | null;
   readonly privateMetadata?: string;
 }): SlackView {
@@ -393,20 +395,21 @@ export function buildModelPickerModal(args: {
         type: "plain_text" as const,
         text: formatModelPickerOptionLabel(option),
       },
-      value: option.model,
+      value: integrationModelOptionValue(option.model),
     };
   });
-  const currentOption = args.currentSelectedModel
-    ? selectOptions.find((option) => {
-        return option.value === args.currentSelectedModel;
-      })
-    : undefined;
+  const currentValue = integrationModelOptionValue(args.currentSelectedModel);
+  const currentOption = selectOptions.find((option) => {
+    return option.value === currentValue;
+  });
   const defaultModel = args.options.find((option) => {
     return option.isDefault;
-  })?.model;
-  const defaultOption = selectOptions.find((option) => {
-    return option.value === defaultModel;
   });
+  const defaultOption = defaultModel
+    ? selectOptions.find((option) => {
+        return option.value === integrationModelOptionValue(defaultModel.model);
+      })
+    : undefined;
   const initialOption = currentOption ?? defaultOption ?? selectOptions[0];
 
   return {

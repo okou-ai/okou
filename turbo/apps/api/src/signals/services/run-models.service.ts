@@ -3,7 +3,7 @@ import type {
   AvailableRunModel,
   AvailableRunModelsResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { AUTO_RUN_MODEL, AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
+import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { loadMemberModelRouteContext } from "./effective-model-route.service";
 import { loadMemberSubscriptionModels } from "./member-subscription-models.service";
 import { db$ } from "../external/db";
@@ -31,8 +31,9 @@ export const listAvailableRunModels$ = command(
     signal.throwIfAborted();
     // A suspended entitlement still blocks execution and must be shown as such.
     const personalPlanRestricted = capabilities?.status !== "active";
+    // Auto is the empty selection; its run model is resolved at execution.
     const auto: AvailableRunModel = {
-      model: AUTO_RUN_MODEL,
+      model: null,
       modelLabel: "Auto",
       modelProviderId: null,
       memberEffective: {
@@ -44,7 +45,6 @@ export const listAvailableRunModels$ = command(
       },
     };
     return {
-      defaultModel: AUTO_RUN_MODEL,
       models: [
         auto,
         ...subscriptions.map((entry): AvailableRunModel => {
@@ -71,16 +71,5 @@ export const listAvailableRunModels$ = command(
         }),
       ],
     };
-  },
-);
-
-export const listAvailableRunModelsWithDefault$ = command(
-  async (
-    { set },
-    params: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
-  ) => {
-    const response = await set(listAvailableRunModels$, params, signal);
-    return { response, systemDefaultModel: response.defaultModel };
   },
 );

@@ -1044,11 +1044,11 @@ const chatThreadCreateBodySchema = z.object({
     })
     .optional(),
   /**
-   * Selected model id. The API resolves the effective model provider from org
-   * policy and available credentials. Omit it to store the member default, or
-   * the organization default when the member preference is unavailable.
+   * Selected model id, or null for Auto. The API resolves the effective model
+   * provider from org policy and available credentials. Omit it to store the
+   * member default, or Auto when the member preference is unavailable.
    */
-  model: selectedModelRequestSchema.optional(),
+  model: selectedModelRequestSchema.nullable().optional(),
   /**
    * Priority service tier for the new thread. Omit it to use the initial model
    * preference, use `priority` to enable it, or null for standard.
@@ -1060,9 +1060,7 @@ const chatThreadCreateBodySchema = z.object({
 });
 
 const chatThreadModelSelectionUpdateBodySchema = z.object({
-  /**
-   * Selected model id, or null to clear the thread's selected model.
-   */
+  /** Selected model id, or null for Auto. */
   model: selectedModelRequestSchema.nullable(),
   /** Omit to keep all model settings; a value patches the selected model. */
   reasoningEffort: reasoningEffortSchema.optional(),
@@ -1092,11 +1090,11 @@ const chatNormalSendBodyShape = {
    */
   sourceRunId: z.string().uuid().optional(),
   /**
-   * Selected model id. The API resolves the effective provider from org
-   * policy and available credentials. Existing threads may omit it to
-   * reuse the thread's persisted model.
+   * Selected model id, or null for Auto. The API resolves the effective
+   * provider from org policy and available credentials. Existing threads may
+   * omit it to reuse the thread's persisted selection.
    */
-  model: selectedModelRequestSchema.optional(),
+  model: selectedModelRequestSchema.nullable().optional(),
   runOptions: chatRunOptionsRequestSchema.optional(),
   userMessage: userMessageDocumentSchema,
   computerUseHostId: z.string().uuid().nullable().optional(),
@@ -1216,8 +1214,8 @@ export const chatThreadsContract = c.router({
         id: z.string(),
         title: z.string().nullable(),
         createdAt: z.string(),
-        /** The model the thread was pinned to. */
-        selectedModel: z.string(),
+        /** The model the thread was pinned to; null is Auto. */
+        selectedModel: z.string().nullable(),
         serviceTier: chatThreadServiceTierSchema.nullable(),
       }),
       400: apiErrorSchema,

@@ -120,8 +120,8 @@ model identifier sent to the provider.
 _Avoid_: Upstream model, requested model
 
 **Pi request model**:
-The model identifier sent to the selected provider endpoint. For Auto
-(`okou-1.0`), this is the OpenRouter preset `@preset/okou-1-0` unless an
+The model identifier sent to the selected provider endpoint. For Auto (the
+`null` selection, run as `okou-1.0`), this is the OpenRouter preset `@preset/okou-1-0` unless an
 operator-only `org_metadata.openrouter_preset` override applies.
 _Avoid_: Catalog model, logical model
 

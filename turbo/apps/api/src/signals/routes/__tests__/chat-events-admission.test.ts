@@ -704,7 +704,7 @@ describe("CHAT-02: admission without spendable credits", () => {
       const sendBody: ChatRunSendBody = {
         agentId: agent.agentId,
         prompt: "blocked by suspended plan",
-        model: "okou-1.0",
+        model: null,
         clientEventId,
       };
       const sent = await chat.requestSendEvent(actor, sendBody, [201]);

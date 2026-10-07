@@ -4,16 +4,8 @@ import { initContract } from "./base";
 
 const c = initContract();
 
-export const testWorkflowAutomationExecutionRequestSchema = z.object({
-  automation_id: z.string().uuid(),
-});
-
 export const testWorkflowAutomationAgentExecutionRequestSchema = z.object({
   agent_id: z.string().uuid(),
-});
-
-export const testWorkflowAutomationWorkflowExecutionRequestSchema = z.object({
-  workflow_id: z.string().uuid(),
 });
 
 export const testWorkflowAutomationExecutionResponseSchema = z.object({
@@ -63,28 +55,6 @@ export const testWorkflowAutomationCallbackInterruptionResponseSchema = z
   .strict();
 
 export const testWorkflowAutomationExecutionContract = c.router({
-  enrollMorningBrief: {
-    method: "POST",
-    path: "/api/test/workflow-automation-execution/enroll-morning-brief",
-    body: z
-      .object({ orgId: z.string().min(1), userId: z.string().min(1) })
-      .strict(),
-    responses: {
-      200: z.object({ attempted: z.number().int().nonnegative() }),
-      404: z.string(),
-    },
-    summary: "Run Morning Brief enrollment for one test-owned member",
-  },
-  execute: {
-    method: "POST",
-    path: "/api/test/workflow-automation-execution/execute",
-    body: testWorkflowAutomationExecutionRequestSchema,
-    responses: {
-      200: testWorkflowAutomationExecutionResponseSchema,
-      404: z.string(),
-    },
-    summary: "Execute one workflow automation in API tests",
-  },
   executeForAgent: {
     method: "POST",
     path: "/api/test/workflow-automation-execution/execute-for-agent",
@@ -94,16 +64,6 @@ export const testWorkflowAutomationExecutionContract = c.router({
       404: z.string(),
     },
     summary: "Execute visible workflow automations for one agent in API tests",
-  },
-  executeForWorkflow: {
-    method: "POST",
-    path: "/api/test/workflow-automation-execution/execute-for-workflow",
-    body: testWorkflowAutomationWorkflowExecutionRequestSchema,
-    responses: {
-      200: testWorkflowAutomationExecutionResponseSchema,
-      404: z.string(),
-    },
-    summary: "Exercise the scheduler batch for one test-owned workflow",
   },
   dispatchCallbacks: {
     method: "POST",
@@ -128,9 +88,6 @@ export const testWorkflowAutomationExecutionContract = c.router({
   },
 });
 
-export type TestWorkflowAutomationExecutionRequest = z.infer<
-  typeof testWorkflowAutomationExecutionRequestSchema
->;
 export type TestWorkflowAutomationAgentExecutionRequest = z.infer<
   typeof testWorkflowAutomationAgentExecutionRequestSchema
 >;

@@ -519,7 +519,7 @@ describe("okou workflow automation commands", () => {
       expect(mockExit).not.toHaveBeenCalled();
     });
 
-    it("should report the system default for an unpinned thread", async () => {
+    it("should report Auto for a null thread selection", async () => {
       captureCreateAutomation(cronAutomation);
       server.use(
         http.get(THREAD_METADATA_URL, () => {
@@ -542,7 +542,7 @@ describe("okou workflow automation commands", () => {
       ]);
 
       expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-        "Thread model: Auto (okou-1.0)",
+        "Thread model: Auto\n",
       );
     });
 

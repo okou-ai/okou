@@ -25,7 +25,7 @@ type MockRunModelAvailability =
 /** Auto, exactly as the API lists it. */
 export function mockAutoRunModel(): AvailableRunModel {
   return {
-    model: getMockModelCatalog().systemDefaultModel,
+    model: null,
     modelLabel: "Auto",
     modelProviderId: null,
     memberEffective: {
@@ -88,10 +88,9 @@ export function mockSubscriptionRunModel(
 
 function response(): AvailableRunModelsResponse {
   const catalog = getMockModelCatalog();
-  const defaultModel = catalog.systemDefaultModel;
   const personal = getMockPersonalModelProviders();
   const models: AvailableRunModel[] = catalog.models.flatMap((entry) => {
-    if (entry.replacedBy !== null || entry.model === defaultModel) {
+    if (entry.replacedBy !== null) {
       return [];
     }
     const account = personal.find((provider) => {
@@ -119,11 +118,10 @@ function response(): AvailableRunModelsResponse {
     ];
   });
   return {
-    defaultModel,
     models: [
       mockAutoRunModel(),
       ...(mockAvailableRunModels ?? models).filter(
-        (entry) => entry.model !== defaultModel,
+        (entry) => entry.model !== null,
       ),
     ],
   };

@@ -31,7 +31,8 @@ export const mcpListModelsInputSchema = z.strictObject({});
 export const mcpListModelsOutputSchema = z.strictObject({
   models: z.array(
     z.strictObject({
-      id: mcpChatModelIdSchema,
+      /** Null is Auto. */
+      id: mcpChatModelIdSchema.nullable(),
       name: z.string().max(512),
       selectable: z.boolean(),
       availability: z.enum([

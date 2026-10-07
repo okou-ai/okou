@@ -63,7 +63,6 @@ import {
   readThreadConnectorSelectionState,
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({});
 const TERMINAL_RUN_STATUSES = [
@@ -841,14 +840,13 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       remaining: 1000,
     });
     expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
-    // A new organization starts in Auto with only the fixed default.
+    // A new organization starts in Auto, the null selection.
     const available = await createMiscRoutesApi(context).listRunModels(admin);
-    expect(available.defaultModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(
       available.models.map((model) => {
         return model.model;
       }),
-    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+    ).toStrictEqual([null]);
   });
 
   it("keeps Clerk membership creation from duplicating bootstrap state", async () => {

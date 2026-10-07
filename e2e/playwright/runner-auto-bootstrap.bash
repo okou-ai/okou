@@ -15,15 +15,15 @@ fi
 # Platform models are read-only. New accounts need no provider connection or
 # Debug gate to use Auto.
 curl -fsS "${headers[@]}" "${api_url}/api/run-models" | jq -e '
-    .defaultModel == "okou-1.0" and
+    (has("defaultModel") | not) and
     (.models | length == 1) and
-    .models[0].model == "okou-1.0" and
+    .models[0].model == null and
     .models[0].memberEffective.providerType == "built-in" and
     .models[0].memberEffective.credentialScope == "org" and
     .models[0].modelProviderId == null
 ' >/dev/null
 curl -fsS "${headers[@]}" -X PUT \
-    -d '{"selectedModel":"okou-1.0","serviceTier":null}' \
+    -d '{"selectedModel":null,"serviceTier":null}' \
     "${api_url}/api/user-model-preference" >/dev/null
 payload=$(jq -nc --argjson realAgent "$real_agent" '{switches: {_realAgentInPreview: $realAgent}}')
 curl -fsS "${headers[@]}" -X POST -d "$payload" \

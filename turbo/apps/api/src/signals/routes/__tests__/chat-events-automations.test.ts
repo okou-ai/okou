@@ -8,6 +8,7 @@ import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
+import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -142,7 +143,12 @@ describe("thread-bound Pi Automation execution", () => {
         selectedModel === "okou-1.0" ? "@preset/okou-1-0" : selectedModel;
       const runtimeProvider =
         selectedModel === "okou-1.0" ? "openrouter" : "openai-codex";
-      await chat.updateThreadModelSelection(actor, threadId, selectedModel);
+      // Auto is the null selection; its run model is the built-in one.
+      await chat.updateThreadModelSelection(
+        actor,
+        threadId,
+        selectedModel === "okou-1.0" ? null : selectedModel,
+      );
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
@@ -178,15 +184,9 @@ describe("thread-bound Pi Automation execution", () => {
           throw new Error("Expected preserved recurrence");
         }
         mockNow(Date.parse(scheduled.nextRunAt) + 1000);
-        await accept(
-          setupApp({
-            context,
-            routes: testWorkflowAutomationExecutionRoutes,
-            usagePricingResolution,
-          })(testWorkflowAutomationExecutionContract).execute({
-            body: { automation_id: automation.id },
-          }),
-          [200],
+        await executeWorkflowAutomationForTest(
+          { automationId: automation.id, usagePricingResolution },
+          context.signal,
         );
       }
       const piRunId = await lastThreadPiAutomationRun(actor, threadId);

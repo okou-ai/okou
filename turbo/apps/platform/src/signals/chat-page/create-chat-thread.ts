@@ -394,12 +394,32 @@ function createModelSelection(
     return get(threadMeta$)?.modelSettings ?? {};
   });
 
+  /**
+   * The selection the composer shows and sends. A pin of a retired model runs
+   * as its catalog replacement; a pin without an offered route runs as Auto
+   * (null).
+   */
+  const effectiveSelectedModel$ = computed(
+    async (get): Promise<string | null> => {
+      const [models, catalog] = await Promise.all([
+        get(availableRunModels$),
+        get(modelCatalog$),
+      ]);
+      const resolvedModel = catalog.resolve(get(selectedModel$));
+      return resolvedModel !== undefined &&
+        models.models.some((runModel) => {
+          return runModel.model === resolvedModel;
+        })
+        ? resolvedModel
+        : null;
+    },
+  );
+
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
-    const [models, catalog] = await Promise.all([
+    const [models, selectedModel] = await Promise.all([
       get(availableRunModels$),
-      get(modelCatalog$),
+      get(effectiveSelectedModel$),
     ]);
-    const selectedModel = catalog.resolve(get(selectedModel$));
     if (
       !isCodexFastModeAvailableForSelection({
         models,
@@ -414,10 +434,11 @@ function createModelSelection(
   const {
     oauthAvailable$: selectedModelOauthAvailable$,
     configure$: configureSelectedModel$,
-  } = createPersonalModelProviderAuthSignals(selectedModel$);
+  } = createPersonalModelProviderAuthSignals(effectiveSelectedModel$);
 
   return {
     selectedModel$,
+    effectiveSelectedModel$,
     codexFastModeActive$,
     modelSettings$,
     selectedModelOauthAvailable$,
@@ -426,30 +447,46 @@ function createModelSelection(
   };
 }
 
+interface ModelSelectionForSend {
+  readonly selection: ModelProviderSelection;
+}
+
 function createModelSelectionForSend({
   selectedModel$,
+  effectiveSelectedModel$,
   codexFastModeActive$,
+  setModelSelection$,
 }: {
   selectedModel$: Computed<string | null>;
+  effectiveSelectedModel$: Computed<Promise<string | null>>;
   codexFastModeActive$: Computed<Promise<boolean>>;
+  setModelSelection$: Command<
+    Promise<void>,
+    [ModelProviderSelection | null, AbortSignal]
+  >;
 }) {
   return command(
     async (
-      { get },
+      { get, set },
       signal: AbortSignal,
-    ): Promise<ModelProviderSelection | null> => {
-      const catalog = await get(modelCatalog$);
+    ): Promise<ModelSelectionForSend> => {
+      const [selectedModel, codexFastModeActive] = await Promise.all([
+        get(effectiveSelectedModel$),
+        get(codexFastModeActive$),
+      ]);
       signal.throwIfAborted();
-      // A pin of a retired model sends its catalog replacement.
-      const selectedModel = catalog.resolve(get(selectedModel$));
-      if (!selectedModel) {
-        return null;
+      // A pin without an offered route is shown as Auto. Switch the thread to
+      // Auto the way the picker does, so the send runs what the composer shows
+      // without changing the member's default model.
+      if (selectedModel === null && get(selectedModel$) !== null) {
+        await set(setModelSelection$, { selectedModel: null }, signal);
+        signal.throwIfAborted();
       }
-      const codexFastModeActive = await get(codexFastModeActive$);
-      signal.throwIfAborted();
-      return codexFastModeActive
-        ? { selectedModel, codexServiceTier: "fast" }
-        : { selectedModel };
+      return {
+        selection: codexFastModeActive
+          ? { selectedModel, codexServiceTier: "fast" }
+          : { selectedModel },
+      };
     },
   );
 }
@@ -3100,7 +3137,7 @@ interface SendMessageDeps {
   readonly threadId: string;
   readonly agentId: string;
   modelSelectionForSend$: Command<
-    Promise<ModelProviderSelection | null>,
+    Promise<ModelSelectionForSend>,
     [AbortSignal]
   >;
   draft: DraftSignals;
@@ -3113,7 +3150,7 @@ interface ValidatedSendMessageRequest {
   readonly prompt: string;
   readonly options: SendMessageOptions | undefined;
   readonly agentId: string;
-  readonly modelSelection: ModelProviderSelection | null;
+  readonly modelSelection: ModelSelectionForSend;
 }
 
 function generationTemplateForSend(
@@ -3157,7 +3194,7 @@ function sendInputForRequest(args: {
     prompt: result.prompt,
     hasTextContent: result.hasTextContent,
     userMessage: args.userMessage,
-    selectedModel: request.modelSelection?.selectedModel ?? null,
+    selectedModel: request.modelSelection.selection.selectedModel,
     ...(args.runOptions === undefined ? {} : { runOptions: args.runOptions }),
     ...(args.realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
     ...(request.options && "computerUseHostId" in request.options
@@ -3218,7 +3255,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         get(featureSwitch$),
-        request.modelSelection,
+        request.modelSelection.selection,
       );
       await Promise.all([
         flushDraftForSend(request.options?.forward, () => {
@@ -3321,7 +3358,7 @@ function createQueueMessage(deps: SendMessageDeps) {
 
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         features,
-        modelSelection,
+        modelSelection.selection,
       );
       await Promise.all([
         options.forward ? Promise.resolve() : set(flushDraftClear$, signal),
@@ -3334,7 +3371,7 @@ function createQueueMessage(deps: SendMessageDeps) {
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,
-            selectedModel: modelSelection?.selectedModel ?? null,
+            selectedModel: modelSelection.selection.selectedModel,
             ...(runOptions === undefined ? {} : { runOptions }),
             ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
             ...(options.computerUseHostId === undefined
@@ -3664,24 +3701,11 @@ function createChatThreadComposerSignals(
 ): ComposerSignals {
   const { modelSelection, computerUseHostSelection, messageActions } = options;
   const composerModelSelection$ = computed(
-    async (get): Promise<ModelProviderSelection | null> => {
-      const [models, catalog] = await Promise.all([
-        get(availableRunModels$),
-        get(modelCatalog$),
-      ]);
-      // Thread pins of retired models display their catalog replacement.
-      const selectedModel = catalog.resolve(get(modelSelection.selectedModel$));
-      if (!selectedModel) {
-        return null;
-      }
-      const effectiveModel = models.models.some((runModel) => {
-        return runModel.model === selectedModel;
-      })
-        ? selectedModel
-        : catalog.systemDefaultModel;
+    async (get): Promise<ModelProviderSelection> => {
+      const selectedModel = await get(modelSelection.effectiveSelectedModel$);
       const modelSettings = get(modelSelection.modelSettings$);
       return {
-        selectedModel: effectiveModel,
+        selectedModel,
         ...((await get(modelSelection.codexFastModeActive$))
           ? { codexServiceTier: "fast" as const }
           : {}),

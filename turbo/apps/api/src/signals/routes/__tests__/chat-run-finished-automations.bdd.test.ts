@@ -781,7 +781,7 @@ describe("chat-run-finished workflow automations", () => {
     });
     const otherThread = await chat.createThread(otherUser, {
       agentId: otherAgent.agentId,
-      model: "okou-1.0",
+      model: null,
     });
     // Restore the fixture actor's session after acting as the other member.
     await bdd.readMe(fixture.actor);
@@ -808,7 +808,7 @@ describe("chat-run-finished workflow automations", () => {
     const fixture = await setupChatAutomationFixture();
     const workflowThread = await chat.createThread(fixture.actor, {
       agentId: fixture.agentId,
-      model: "okou-1.0",
+      model: null,
     });
     const workflowId = await wf.createWorkflow(fixture.actor, {
       agentId: fixture.agentId,

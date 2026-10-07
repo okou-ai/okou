@@ -54,6 +54,7 @@ import type {
   AgentRunRequestAgent,
 } from "./agent-run-contracts";
 import {
+  resolveDefaultModelFirstPin$,
   resolveRunSelectionModel,
   type ModelSelectionBootstrap,
 } from "./model-selection.service";
@@ -95,7 +96,6 @@ import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   notifyRunningChatRunOfPendingInput$,
@@ -133,7 +133,8 @@ interface NormalSendBody {
   readonly chatThreadEventId?: string;
   readonly chatThreadSortEventId?: string;
   readonly sourceRunId?: string;
-  readonly model?: string;
+  /** Null selects Auto; omission keeps the thread selection. */
+  readonly model?: string | null;
   readonly runOptions?: {
     readonly codexServiceTier?: CodexServiceTier;
     readonly reasoningEffort?: ReasoningEffort;
@@ -655,7 +656,9 @@ function requestedThreadRunSettings(
     readonly codexServiceTier: CodexServiceTier | null;
   },
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
-  const selectedModel = body.model ?? current.selectedModel;
+  // An explicit null selects Auto; omission keeps the current selection.
+  const selectedModel =
+    body.model === undefined ? current.selectedModel : body.model;
   const effort = resolveChatReasoningEffort({
     catalog,
     selectedModel,
@@ -864,9 +867,12 @@ const resolveSendThread$ = command(
     const initialModel =
       args.body.model === undefined
         ? await set(
-            resolveRequiredDefaultChatThreadModelPin$,
-            { ...member, modelBootstrap: args.modelBootstrap },
-            args.orgPlanCapabilities,
+            resolveDefaultModelFirstPin$,
+            {
+              ...member,
+              orgPlanCapabilities: args.orgPlanCapabilities,
+              modelBootstrap: args.modelBootstrap,
+            },
             signal,
           )
         : null;
@@ -1439,7 +1445,7 @@ const prepareNormalSend$ = command(
     const catalog = (await get(args.context.modelFacts$)).catalog;
     signal.throwIfAborted();
     if (
-      args.body.model !== undefined &&
+      typeof args.body.model === "string" &&
       resolveRunSelectionModel(catalog, args.body.model) === null
     ) {
       return badRequestMessage(`Unknown model "${args.body.model}"`);

@@ -14,7 +14,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -198,7 +197,7 @@ describe("member source-first onboarding", () => {
       policies.body.models.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+    ).toStrictEqual([null]);
   });
 
   it("does not pull a member who already chats in the workspace into onboarding", async () => {
@@ -289,9 +288,7 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.models.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
-    // A new organization starts in Auto.
-    expect(policies.body.defaultModel).toBe("okou-1.0");
+    ).toStrictEqual([null]);
   });
 
   it("completes an admin's onboarding with the field the source-first flow answered", async () => {

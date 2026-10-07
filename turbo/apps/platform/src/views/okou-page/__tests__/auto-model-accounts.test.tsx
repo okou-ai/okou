@@ -71,7 +71,6 @@ function mockAutoMode(): void {
   });
   context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, {
-      defaultModel: "okou-1.0",
       models: [mockAutoRunModel()],
     });
   });

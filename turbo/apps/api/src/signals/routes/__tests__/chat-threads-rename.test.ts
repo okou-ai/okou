@@ -15,7 +15,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadRenameRoutes } from "../chat-threads-rename";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const store = createStore();
@@ -129,7 +128,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       pinnedAt: null,
       archived: false,
       muted: false,
-      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+      selectedModel: null,
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,

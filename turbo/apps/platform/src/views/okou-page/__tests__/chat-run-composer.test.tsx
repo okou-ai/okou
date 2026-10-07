@@ -5,7 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, fill } from "../../../__tests__/page-helper.ts";
-import { buildRunModel } from "./chat-composer-test-helpers.ts";
 import {
   mockPushBrowserSupport,
   setupPage,
@@ -163,24 +162,17 @@ test("Send a large image with Auto", async () => {
   const user = userEvent.setup({ delay: null });
   let sentMessage:
     | {
-        readonly model?: string;
+        readonly model?: string | null;
         readonly userMessage?: UserMessageDocument;
       }
     | undefined;
   installRunChat({
-    selectedModel: "okou-1.0",
+    selectedModel: null,
     onRunCreate(body) {
       sentMessage = { model: body.model, userMessage: body.userMessage };
     },
   });
-  context.mocks.data.availableRunModels([
-    buildRunModel({
-      model: "okou-1.0",
-      modelLabel: "Auto",
-      providerType: "built-in",
-      modelProviderId: null,
-    }),
-  ]);
+  context.mocks.data.availableRunModels([]);
   context.mocks.upload.success({
     id: "large-image-upload",
     filename: "launch-board.png",

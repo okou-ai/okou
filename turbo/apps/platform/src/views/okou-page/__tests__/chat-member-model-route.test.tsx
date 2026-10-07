@@ -163,7 +163,6 @@ test("Refreshes the account target on explicit reconnect after a remote account 
       switched ? "reconnect_required" : "available",
     );
     return respond(200, {
-      defaultModel: "okou-1.0",
       models: [currentModel],
     });
   });

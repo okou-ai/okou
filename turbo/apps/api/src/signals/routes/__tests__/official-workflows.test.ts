@@ -45,6 +45,10 @@ import AdmZip from "adm-zip";
 import { http, HttpResponse } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import {
+  enrollMorningBriefForMemberForTest,
+  executeWorkflowAutomationForTest,
+} from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -2777,13 +2781,9 @@ async function tickBriefEnrollment(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped member");
   }
-  return await accept(
-    setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
-      testWorkflowAutomationExecutionContract,
-    ).enrollMorningBrief({
-      body: { orgId: actor.orgId, userId: actor.userId },
-    }),
-    [200],
+  return await enrollMorningBriefForMemberForTest(
+    { orgId: actor.orgId, userId: actor.userId },
+    context.signal,
   );
 }
 
@@ -8062,18 +8062,16 @@ describe("Official Workflow Run admission", () => {
           const scheduled = await withMockNowForTest(
             now() + 120_000,
             async () => {
-              const tick = await accept(
-                automationExecutionClient().execute({
-                  body: { automation_id: loopAutomation.id },
-                }),
-                [200],
+              const tick = await executeWorkflowAutomationForTest(
+                { automationId: loopAutomation.id },
+                context.signal,
               );
               // The tick only enqueues; its background pick launches the run.
               await flushWaitUntilForTest();
               return tick;
             },
           );
-          expect(scheduled.body.executed).toBe(1);
+          expect(scheduled.executed).toBe(1);
           const scheduledRunId = await requireActiveOfficialRunId(
             actor,
             agentId,
@@ -8093,16 +8091,14 @@ describe("Official Workflow Run admission", () => {
 
         if (producerKind === "once") {
           const once = await withMockNowForTest(now() + 120_000, async () => {
-            const tick = await accept(
-              automationExecutionClient().execute({
-                body: { automation_id: onceAutomation.id },
-              }),
-              [200],
+            const tick = await executeWorkflowAutomationForTest(
+              { automationId: onceAutomation.id },
+              context.signal,
             );
             await flushWaitUntilForTest();
             return tick;
           });
-          expect(once.body.executed).toBe(1);
+          expect(once.executed).toBe(1);
           const onceRunId = await requireActiveOfficialRunId(actor, agentId);
           producerRuns.push({
             runId: onceRunId,
@@ -8669,11 +8665,9 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toStrictEqual(before);
 
     await withMockNowForTest(now() + 24 * 60 * 60 * 1000, async () => {
-      await accept(
-        automationExecutionClient().execute({
-          body: { automation_id: daily.id },
-        }),
-        [200],
+      await executeWorkflowAutomationForTest(
+        { automationId: daily.id },
+        context.signal,
       );
       await flushWaitUntilForTest();
     });
@@ -8684,11 +8678,9 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toStrictEqual(before);
 
     await withMockNowForTest(now() + 120_000, async () => {
-      await accept(
-        automationExecutionClient().execute({
-          body: { automation_id: once.id },
-        }),
-        [200],
+      await executeWorkflowAutomationForTest(
+        { automationId: once.id },
+        context.signal,
       );
       await flushWaitUntilForTest();
     });

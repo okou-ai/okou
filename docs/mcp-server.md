@@ -109,9 +109,9 @@ is original accepted-input time for users and output-event time for assistants;
 and `metadataUpdatedAt` metadata change. These clocks are not interchangeable
 and none proves delivery, index/archive completeness or Run success.
 
-`list_models` adapts the ordinary Web model catalog (fixed Auto plus the
-caller's personal subscription routes), the system default and current member
-preference. It does not maintain a second route/admission implementation;
+`list_models` adapts the ordinary Web model catalog (Auto, with a `null` id,
+plus the caller's personal subscription routes) and the current member
+preference; without a preference the default is Auto (`null`, `org_default`). It does not maintain a second route/admission implementation;
 `selectable` and `availability` remain observations, and actual permission,
 credentials, money and quota are checked on send. The read does not cause
 MCP-specific repair writes.
@@ -146,8 +146,10 @@ Model metadata is a read-only view of current policy. A null `effectiveModel`
 means no usable policy route was resolved; it does not invent a default or
 repair stored settings. `admission: "checked_on_send"` means credentials, quota,
 policy and other execution checks still apply when a future message is sent.
-When the stored selection is null, `source` reports `org_default` if the
-catalog system default (currently `okou-1.0`, Auto) has a usable route. Enqueue captures that model for the input without
+A null stored selection is Auto: `source` reports `org_default` and
+`effectiveModel` is null because Auto resolves its run model on send. Pass
+`model: null` to `send_chat_message` or `update_chat_thread` to select Auto.
+Enqueue captures the run model for the input without
 rewriting the thread selection. A model selected after enqueue does not change
 that input or an already-running execution.
 

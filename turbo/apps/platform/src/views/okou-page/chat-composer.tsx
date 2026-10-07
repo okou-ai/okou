@@ -259,7 +259,10 @@ import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
-import type { ModelProviderSelection } from "./components/model-provider-picker.tsx";
+import {
+  selectedModelDisplayName,
+  type ModelProviderSelection,
+} from "./components/model-provider-picker.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
@@ -8355,7 +8358,7 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const autoOnly =
     models === undefined ||
     models.models.every((runModel) => {
-      return runModel.model === models.defaultModel;
+      return runModel.model === null;
     });
   if (modelPickerLoading || value === null || autoOnly) {
     return null;
@@ -8462,8 +8465,7 @@ function ComposerTemporaryModelNotice({
     return withChatScrollLayout(null);
   }
   const updating = updateLoadable.state === "loading";
-  const modelName =
-    catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
+  const modelName = selectedModelDisplayName(catalog, selection.selectedModel);
   const runSpeedLabel = t(($) => {
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast
@@ -8482,16 +8484,17 @@ function ComposerTemporaryModelNotice({
     if (updating) {
       return;
     }
+    const { selectedModel } = selection;
     detach(
       updatePreference(
         {
-          selectedModel: selection.selectedModel,
+          selectedModel,
           serviceTier: selectionServiceTier,
-          ...(effort === undefined
+          ...(effort === undefined || selectedModel === null
             ? {}
             : {
                 modelSettingsPatch: {
-                  model: selection.selectedModel,
+                  model: selectedModel,
                   effort,
                 },
               }),

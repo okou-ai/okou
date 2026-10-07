@@ -24,9 +24,6 @@ export function integrationChatThreadValues(
     readonly cloudBrowserEnabled: boolean;
   },
 ) {
-  if (!args.initialModel.selectedModel) {
-    throw new Error("A model selection is required");
-  }
   return {
     id,
     userId: args.userId,

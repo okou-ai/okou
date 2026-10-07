@@ -7,7 +7,8 @@ export const mcpSendChatMessageInputSchema = z.strictObject({
   agentId: z.uuid().toLowerCase(),
   prompt: z.string().max(32_000).regex(/\S/u, "Prompt must not be blank"),
   threadId: z.uuid().toLowerCase().optional(),
-  model: mcpChatModelIdSchema.optional(),
+  /** Null selects Auto; omission keeps the thread's selection. */
+  model: mcpChatModelIdSchema.nullable().optional(),
 });
 const inputAcknowledgementShape = {
   threadId: z.uuid(),

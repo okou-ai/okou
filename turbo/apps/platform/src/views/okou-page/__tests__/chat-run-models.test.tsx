@@ -306,8 +306,8 @@ test.each(STRUCTURED_FAILURE_CASES)(
   },
 );
 
-test("shows Auto once for a configured Okou model", async () => {
-  configureConnectedRunModels(["okou-1.0", "gpt-5.6-luna"]);
+test("Offer Auto once, ahead of subscription models", async () => {
+  configureConnectedRunModels(["gpt-5.6-luna"]);
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   await setupPage({
     context,
@@ -319,16 +319,12 @@ test("shows Auto once for a configured Okou model", async () => {
   const optionNames = queryAllByRoleFast("radio", chatModels).map((option) => {
     return option.textContent ?? "";
   });
+  expect(optionNames[0]).toBe("Auto");
   expect(
     optionNames.filter((name) => {
       return name.includes("Auto");
     }),
   ).toHaveLength(1);
-  expect(
-    optionNames.some((name) => {
-      return name.includes("Okou 1.0");
-    }),
-  ).toBeFalsy();
   expect(
     optionNames.some((name) => {
       return name.includes("GPT 5.6 Luna");
@@ -857,7 +853,7 @@ test("Show a disconnected subscription on the current route", async () => {
 
 test("Leave a usage limit neutral once the thread leaves the subscription", async () => {
   installRunChat({
-    selectedModel: "okou-1.0",
+    selectedModel: null,
     chatEvents: failedRunEvents(
       "You've hit your usage limit.",
       "gpt-5.6-sol",

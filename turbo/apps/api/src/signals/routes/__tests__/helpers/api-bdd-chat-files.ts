@@ -101,7 +101,6 @@ import {
   readProjectedChatEvents,
 } from "./chat-event-test-reader";
 import { createRouteMocks } from "./route-test";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
 
 interface AuthHeaders {
   readonly authorization?: string;
@@ -113,7 +112,8 @@ type BddSendEventBody =
       readonly prompt: string;
       readonly threadId?: string;
       readonly clientThreadId?: string;
-      readonly model?: string;
+      /** Null selects Auto. */
+      readonly model?: string | null;
       readonly runOptions?: ChatRunOptionsRequest;
       readonly userMessage?: UserMessageDocument;
       readonly hasTextContent?: boolean;
@@ -350,12 +350,12 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(runModelsMainContract);
   }
 
-  /** The member preference, else the system default, as a client sends it. */
+  /** The member preference, else Auto (null), as a client sends it. */
   async function defaultCreateThreadModel(
     actor: ApiTestUser | null,
-  ): Promise<string> {
+  ): Promise<string | null> {
     if (!actor?.orgId) {
-      return SEEDED_SYSTEM_DEFAULT_MODEL;
+      return null;
     }
     const available = await accept(
       runModelsClient().list({ headers: authenticate(context, actor) }),
@@ -373,7 +373,7 @@ export function createChatFilesBddApi(context: TestContext) {
         return model.model === preferred;
       })
       ? preferred
-      : available.body.defaultModel;
+      : null;
   }
 
   function threadByIdClient() {
@@ -473,7 +473,9 @@ export function createChatFilesBddApi(context: TestContext) {
   }
 
   return {
-    async getDefaultCreateThreadModel(actor: ApiTestUser): Promise<string> {
+    async getDefaultCreateThreadModel(
+      actor: ApiTestUser,
+    ): Promise<string | null> {
       return await defaultCreateThreadModel(actor);
     },
 
@@ -519,7 +521,8 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: string;
+        /** Null selects Auto; omitted, the member default applies. */
+        readonly model?: string | null;
       },
     ): Promise<{ readonly id: string; readonly title: string | null }> {
       const response = await accept(
@@ -532,7 +535,10 @@ export function createChatFilesBddApi(context: TestContext) {
               ? {}
               : { clientThreadId: body.clientThreadId }),
             ...(body.eventId === undefined ? {} : { eventId: body.eventId }),
-            model: body.model ?? (await defaultCreateThreadModel(actor)),
+            model:
+              body.model === undefined
+                ? await defaultCreateThreadModel(actor)
+                : body.model,
           },
         }),
         [201],
@@ -547,7 +553,8 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: string;
+        /** Null selects Auto; omitted, the member default applies. */
+        readonly model?: string | null;
       },
       statuses: readonly (201 | 400 | 401 | 402 | 404)[],
     ) {
@@ -561,7 +568,10 @@ export function createChatFilesBddApi(context: TestContext) {
               ? {}
               : { clientThreadId: body.clientThreadId }),
             ...(body.eventId === undefined ? {} : { eventId: body.eventId }),
-            model: body.model ?? (await defaultCreateThreadModel(actor)),
+            model:
+              body.model === undefined
+                ? await defaultCreateThreadModel(actor)
+                : body.model,
           },
         }),
         statuses,
@@ -1618,7 +1628,9 @@ export function createChatFilesBddApi(context: TestContext) {
       const requestBody =
         "prompt" in body
           ? (() => {
-              const selectedModel = body.model ?? defaultModel;
+              // An explicit null selects Auto.
+              const selectedModel =
+                body.model === undefined ? defaultModel : body.model;
               return {
                 agentId: body.agentId,
                 prompt: body.prompt,

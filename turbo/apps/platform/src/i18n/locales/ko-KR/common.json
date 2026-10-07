@@ -4846,6 +4846,7 @@
         "useAccount": "사용"
       },
       "picker": {
+        "auto": "Auto",
         "chatModels": "채팅 모델",
         "effort": "강도",
         "effortScale": {

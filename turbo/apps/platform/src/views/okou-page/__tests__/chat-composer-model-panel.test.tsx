@@ -62,16 +62,20 @@ function hasAutoModelTrigger(): boolean {
   });
 }
 
-async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
-  installRunChat({ selectedModel: "okou-1.0" });
+async function setupAutoComposer(
+  subscriptionModel?: string,
+  onThreadCreate?: Parameters<typeof setupPanel>[1],
+): Promise<HTMLElement> {
+  installRunChat({
+    selectedModel: null,
+    ...(onThreadCreate ? { onThreadCreate } : {}),
+  });
   if (subscriptionModel) {
     installConnectedPersonalSubscriptions(context);
   }
-  const auto = buildRunModel({ model: "okou-1.0" });
   context.mocks.data.availableRunModels(
     subscriptionModel
       ? [
-          auto,
           {
             ...buildRunModel({
               model: subscriptionModel,
@@ -83,14 +87,14 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
             },
           },
         ]
-      : [auto],
+      : [],
   );
 
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
   });
-  await screen.findByRole("textbox", { name: "Message" });
+  return await screen.findByRole("textbox", { name: "Message" });
 }
 
 test("Auto hides the model picker until a subscription adds models", async () => {
@@ -106,8 +110,11 @@ test("Auto shows the model picker once a subscription adds models", async () => 
   });
 });
 
-test("Choose a connected subscription model and return to Auto", async () => {
-  await setupAutoComposer("gpt-6-sol");
+test("Choose a connected subscription model, return to Auto and send Auto", async () => {
+  const creates: { model?: string | null }[] = [];
+  const composer = await setupAutoComposer("gpt-6-sol", (body) => {
+    creates.push(body);
+  });
   await waitFor(() => {
     expect(hasAutoModelTrigger()).toBeTruthy();
   });
@@ -120,6 +127,13 @@ test("Choose a connected subscription model and return to Auto", async () => {
   await user.click(modelOption(/^Auto/u, panel));
   await waitFor(() => {
     expect(modelOption(/^Auto/u, panel)).toBeChecked();
+  });
+  await closeModelPanel();
+  await user.click(composer);
+  await fillComposer(composer, "Run this on Auto");
+  click(await findButton("Send"));
+  await waitFor(() => {
+    expect(creates).toContainEqual(expect.objectContaining({ model: null }));
   });
 });
 
@@ -186,7 +200,7 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
 test("Send with the model and effort chosen in the panel", async () => {
   const user = userEvent.setup({ delay: null });
   const creates: {
-    model?: string;
+    model?: string | null;
     reasoningEffort?: string;
   }[] = [];
   const composer = await setupPanel(

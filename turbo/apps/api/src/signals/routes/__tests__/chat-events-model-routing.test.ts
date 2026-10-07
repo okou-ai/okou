@@ -39,6 +39,8 @@ const {
   configureBuiltInPiModelOnOpenRouter,
   configureSubscriptionPiModel,
   sendChatRun,
+  requestSendEventRaw,
+  expectThreadCreatedModelEvent,
   claimChatRun,
   waitForThreadMessages,
   completeChatRunOk,
@@ -286,6 +288,117 @@ describe("CHAT-02: model-first routing", () => {
     expectApiError(response.body);
   });
 
+  it("rejects the internal Auto run model as a send selection", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+    for (const threadId of [undefined, thread.id]) {
+      const response = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          ...(threadId === undefined ? {} : { threadId }),
+          prompt: "select Auto by its run model id",
+          model: "okou-1.0",
+          clientEventId: randomUUID(),
+        },
+        [400],
+      );
+      expectApiError(response.body);
+      expect(response.body.error.message).toBe('Unknown model "okou-1.0"');
+    }
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
+  });
+
+  it("stores Auto as a null selection on a new thread and captures the Auto run model", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    // Clears the member preference, so Auto is the default.
+    await configureBuiltInPiModel(actor);
+    await preparePiResourceHandoff(actor, agentId);
+    const clientThreadId = randomUUID();
+    const clientEventId = randomUUID();
+    const prompt = "start a thread without naming a model";
+    const sent = await requestSendEventRaw(actor, {
+      agentId,
+      clientThreadId,
+      clientEventId,
+      prompt,
+      userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+      hasTextContent: true,
+    });
+    expect(sent).toMatchObject({
+      status: 201,
+      body: { threadId: clientThreadId },
+    });
+    await expect(
+      chat.readThreadMetadata(actor, clientThreadId),
+    ).resolves.toMatchObject({ selectedModel: null });
+    await expectThreadCreatedModelEvent(actor, clientThreadId, null);
+
+    const { picked } = await waitForPickedInput(
+      actor,
+      clientThreadId,
+      clientEventId,
+    );
+    expect(picked).toMatchObject({
+      eventType: "input.prompt",
+      userMessage: {
+        parts: expect.arrayContaining([
+          expect.objectContaining({ type: "model", selectedModel: "okou-1.0" }),
+        ]),
+      },
+    });
+    if (picked.runId === undefined) {
+      throw new Error("Expected the Auto input to launch a run");
+    }
+    const { claim } = await claimChatRun(runnerGroup, picked.runId);
+    expect(claim.modelUsageProvider).toBe("okou-1.0");
+    await expect(
+      chat.readThreadMetadata(actor, clientThreadId),
+    ).resolves.toMatchObject({ selectedModel: null });
+    await cancelChatRun(actor, picked.runId);
+  }, 90_000);
+
+  it("switches a subscription-pinned thread to Auto when a send selects null", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
+    await preparePiResourceHandoff(actor, agentId);
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "continue this thread on Auto",
+      model: null,
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: null });
+    await expect(
+      chat.requestThreadEvents(actor, {}, [200]),
+    ).resolves.toMatchObject({
+      body: {
+        events: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "model_selection_updated",
+            chatThreadId: thread.id,
+            selectedModel: null,
+          }),
+        ]),
+      },
+    });
+    const { claim } = await claimChatRun(runnerGroup, run.runId);
+    expect(claim.modelUsageProvider).toBe("okou-1.0");
+    await cancelChatRun(actor, run.runId);
+  }, 90_000);
+
   it("exposes the owner's run trace URL after tracing is disabled", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
@@ -308,7 +421,7 @@ describe("CHAT-02: model-first routing", () => {
     const traced = await sendChatRun(actor, {
       agentId,
       prompt: tracedPrompt,
-      model: "okou-1.0",
+      model: null,
     });
     await completeSandboxFirstPiRun({
       actor,
@@ -334,7 +447,7 @@ describe("CHAT-02: model-first routing", () => {
       agentId,
       threadId: traced.threadId,
       prompt: "continue without tracing",
-      model: "okou-1.0",
+      model: null,
     });
     await flushWaitUntilForTest();
     expect((await api.readRun(actor, untraced.runId)).status).toBe("pending");
@@ -379,7 +492,7 @@ describe("CHAT-02: model-first routing", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "preserve the Langfuse trace gate through claim",
-      model: "okou-1.0",
+      model: null,
     });
     await flushWaitUntilForTest();
 
@@ -414,7 +527,7 @@ describe("CHAT-02: model-first routing", () => {
     const untraced = await sendChatRun(actor, {
       agentId,
       prompt: "run without trace admission",
-      model: "okou-1.0",
+      model: null,
     });
     await flushWaitUntilForTest();
     const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
@@ -452,14 +565,13 @@ describe("CHAT-02: model-first routing", () => {
       await flushWaitUntilForTest();
 
       await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-      await seedBuiltInModelKey("okou-1.0");
       await misc.deletePersonalModelProvider(
         actor,
         "claude-code-oauth-token",
         [204],
       );
       // The member preference does not replace an unavailable thread model.
-      await api.updateUserModelPreference(actor, "okou-1.0");
+      await api.updateUserModelPreference(actor, null);
       await preparePiResourceHandoff(actor, agentId);
 
       const clientEventId = randomUUID();
@@ -491,7 +603,7 @@ describe("CHAT-02: model-first routing", () => {
       ).resolves.toMatchObject({
         selectedModel: requestedModel ?? "claude-fable-5-1",
       });
-      await chat.updateThreadModelSelection(actor, first.threadId, "okou-1.0");
+      await chat.updateThreadModelSelection(actor, first.threadId, null);
       const fallback = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
@@ -504,7 +616,7 @@ describe("CHAT-02: model-first routing", () => {
       await expect(
         chat.readThreadMetadata(actor, first.threadId),
       ).resolves.toMatchObject({
-        selectedModel: "okou-1.0",
+        selectedModel: null,
       });
       await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
     },
@@ -548,8 +660,7 @@ describe("CHAT-02: model-first routing", () => {
       expect.objectContaining({ runId: first.runId }),
     );
 
-    await api.updateUserModelPreference(actor, "okou-1.0");
-    await chat.updateUserModelPreference(actor, "okou-1.0");
+    await api.updateUserModelPreference(actor, null);
     await chat.updateThreadModelSelection(actor, first.threadId, null);
     expect(
       (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
@@ -594,13 +705,17 @@ describe("CHAT-02: model-first routing", () => {
     if (threadEvents.status !== 200) {
       throw new Error("Expected chat thread events to load");
     }
-    expect(threadEvents.body.events).not.toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        chatThreadId: first.threadId,
-        selectedModel: "okou-1.0",
+    // Only the explicit Auto selection updated the thread; the promoted pick
+    // did not write its captured model back.
+    expect(
+      threadEvents.body.events.filter((event) => {
+        return (
+          event.kind === "model_selection_updated" &&
+          event.chatThreadId === first.threadId &&
+          event.selectedModel !== "claude-fable-5-1"
+        );
       }),
-    );
+    ).toStrictEqual([expect.objectContaining({ selectedModel: null })]);
 
     await cancelChatRun(actor, promotedRunId, promotedClaim.sandboxHeaders);
   }, 90_000);
@@ -616,7 +731,7 @@ describe("CHAT-02: model-first routing", () => {
       agentId,
       model: "claude-fable-5-1",
     });
-    await api.updateUserModelPreference(actor, "okou-1.0");
+    await api.updateUserModelPreference(actor, null);
 
     const racedEventId = randomUUID();
     const [sent, updated] = await Promise.all([
@@ -682,7 +797,7 @@ describe("CHAT-02: model-first routing", () => {
         return (
           event.kind === "model_selection_updated" &&
           event.chatThreadId === thread.id &&
-          event.selectedModel === "okou-1.0"
+          event.selectedModel === null
         );
       }).length,
     ).toBeLessThanOrEqual(1);
@@ -876,7 +991,7 @@ describe("CHAT-02: model-first routing", () => {
       await preparePiResourceHandoff(actor, agentId);
       await chat.updateUserModelPreference(actor, null);
 
-      // No thread pin or member preference: the system default applies.
+      // No thread pin or member preference: Auto applies.
       const run = await sendChatRun(actor, {
         agentId,
         prompt: "capture the managed Okou Preset route",
@@ -923,7 +1038,7 @@ describe("CHAT-02: model-first routing", () => {
     ] as const) {
       const run = await sendChatRun(owner.actor, {
         agentId: owner.agentId,
-        model: "okou-1.0",
+        model: null,
         prompt: "use this organization's preset",
       });
       const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
@@ -940,7 +1055,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     const reset = await sendChatRun(first.actor, {
       agentId: first.agentId,
-      model: "okou-1.0",
+      model: null,
       prompt: "use the catalog route after clearing the override",
     });
     const { claim } = await claimChatRun(first.runnerGroup, reset.runId);
@@ -963,7 +1078,7 @@ describe("CHAT-02: model-first routing", () => {
       const { picked } = await sendUntilPicked(actor, {
         agentId,
         prompt: "operator configuration must fail closed",
-        model: "okou-1.0",
+        model: null,
       });
       expect(picked).toMatchObject({
         eventType: "input.rejected",
@@ -984,7 +1099,7 @@ describe("CHAT-02: model-first routing", () => {
 
     const run = await sendChatRun(actor, {
       agentId,
-      model: "okou-1.0",
+      model: null,
       prompt: "run the free plan's model",
     });
     const { claim } = await claimChatRun(runnerGroup, run.runId);

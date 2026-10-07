@@ -1227,6 +1227,29 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
+  it("switches the existing DM thread to Auto as an empty selection", async () => {
+    const { actor, send, sends, complete } = await modelSessionScenario({
+      channel: "sms",
+      withConversation: false,
+    });
+    const original = await complete(
+      "start before the Auto switch",
+      "claude-fable-5-1",
+    );
+
+    await send("/model");
+    expect(lastSend(sends).body).toContain("/model auto - Auto (default)");
+    await send("/model auto");
+    expect(lastSend(sends).body).toContain("Switched to Auto.");
+    const metadata = await createChatFilesBddApi(context).readThreadMetadata(
+      actor,
+      original.threadId,
+    );
+    expect(metadata.selectedModel).toBeNull();
+    await send("/model");
+    expect(lastSend(sends).body).toContain("Current: Auto");
+  });
+
   it("rejects unavailable personal DM input without silently billing Auto", async () => {
     const integrations = createBddIntegrationApi(context);
     const runs = createRunsApi(context);
@@ -1245,7 +1268,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "okou-1.0",
+      selectedModel: null,
     });
     await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     await send("use the system default");

@@ -335,7 +335,7 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(
           status: 201,
           body: """
-            {"id":"\(storeThreadID)","title":null,"createdAt":"\(storeDate)","selectedModel":"okou-1.0","serviceTier":null}
+            {"id":"\(storeThreadID)","title":null,"createdAt":"\(storeDate)","selectedModel":null,"serviceTier":null}
             """)
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Latest title")
       case "/api/chat-threads/events":

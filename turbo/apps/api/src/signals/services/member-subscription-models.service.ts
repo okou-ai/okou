@@ -2,7 +2,6 @@ import {
   reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
@@ -164,7 +163,7 @@ export async function resetDisconnectedMemberModelSelection(
     )
     .limit(1);
   const selectedModel = member?.selectedModel;
-  if (!selectedModel || selectedModel === AUTO_RUN_MODEL) {
+  if (!selectedModel) {
     return;
   }
   const remaining = await loadMemberSubscriptionModels(
@@ -181,7 +180,7 @@ export async function resetDisconnectedMemberModelSelection(
   await db
     .update(orgMembersMetadata)
     .set({
-      selectedModel: AUTO_RUN_MODEL,
+      selectedModel: null,
       serviceTier: null,
       updatedAt: nowDate(),
     })
