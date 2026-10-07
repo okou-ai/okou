@@ -9,6 +9,27 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.712.4](https://github.com/okou-ai/okou/compare/api-v1.712.3...api-v1.712.4) (2026-10-07)
+
+
+### Refactoring
+
+* **api:** retire native morning brief storage dependencies ([#37874](https://github.com/okou-ai/okou/issues/37874)) ([094ef4c](https://github.com/okou-ai/okou/commit/094ef4c402089b1acdcafede8af8f7e081506d2f))
+* move release 1 connector catalog consumers off legacy storage ([#37861](https://github.com/okou-ai/okou/issues/37861)) ([e664957](https://github.com/okou-ai/okou/commit/e664957caa2056a336595e55f475001b81247fd0))
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+* remove retired per-agent ssh access traces ([#37876](https://github.com/okou-ai/okou/issues/37876)) ([dc33264](https://github.com/okou-ai/okou/commit/dc332649051e79460f1075a294ba8d3707f8504f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.11
+    * @okouai/connectors bumped to 3.16.3
+    * @okouai/core bumped to 8.734.4
+    * @okouai/db bumped to 1.323.5
+    * @okouai/pi-agent-runtime bumped to 1.46.18
+
 ## [1.712.3](https://github.com/okou-ai/okou/compare/api-v1.712.2...api-v1.712.3) (2026-10-07)
 
 

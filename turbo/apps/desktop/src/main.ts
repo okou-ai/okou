@@ -81,7 +81,10 @@ import {
   DesktopAuthWindow,
   type DesktopAuthWindowRequest,
 } from "./desktop-auth-window";
-import { DesktopClerkNative } from "./desktop-clerk-native";
+import {
+  DesktopClerkNative,
+  desktopClerkExecutablePath,
+} from "./desktop-clerk-native";
 import {
   readDesktopLoginMethod,
   writeDesktopLoginMethod,
@@ -143,7 +146,7 @@ function nativeClerkAvailable(): boolean {
   return (
     process.platform === "darwin" &&
     config.clerkPublishableKey !== null &&
-    existsSync(path.join(path.dirname(process.execPath), "clerk-auth-helper"))
+    existsSync(desktopClerkExecutablePath())
   );
 }
 function initializeLoginMethod(): void {

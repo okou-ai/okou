@@ -1273,6 +1273,8 @@ describe("connector account lifecycle routes", () => {
         expect(projection).toMatchObject({
           id: definition.body.id,
           connected: true,
+          connectedAccountId: connectedAccountIds[0],
+          connectedAccountUpdatedAt: expect.any(String),
           configuredFieldKeys: ["secret"],
           missingRequiredFields: [],
         });
@@ -1415,6 +1417,39 @@ describe("connector account lifecycle routes", () => {
         }),
         [200],
       );
+      const defaultDetail = await accept(
+        customConnectorByIdClient().get({
+          headers: authHeaders(),
+          params: { id: definition.body.id },
+        }),
+        [200],
+      );
+      const defaultDefinitions = await accept(
+        customConnectorClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      for (const projection of [
+        defaultDetail.body,
+        defaultDefinitions.body.connectors.find((connector) => {
+          return connector.id === definition.body.id;
+        }),
+      ]) {
+        expect(projection).toMatchObject({
+          id: definition.body.id,
+          connected: true,
+          connectedAccountId: personal.id,
+          connectedAccountUpdatedAt: expect.any(String),
+          configuredFieldKeys: ["secret"],
+          missingRequiredFields: [],
+        });
+      }
+      const defaultVisible = JSON.stringify([
+        defaultDetail.body,
+        defaultDefinitions.body,
+      ]);
+      expect(defaultVisible).not.toContain("token-work");
+      expect(defaultVisible).not.toContain("token-personal");
+
       const impact = await accept(
         accountClient().deletionImpact({
           headers: authHeaders(),

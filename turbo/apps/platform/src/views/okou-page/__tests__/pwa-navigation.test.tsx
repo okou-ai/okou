@@ -14,6 +14,7 @@ import {
   click,
   queryAllByRoleFast,
   setupPage,
+  swipeBack,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -508,6 +509,51 @@ test("Slide conversations in from the mobile chat list and out back to the tabs"
     ["push"],
     ["pop"],
   ]);
+});
+
+test("Leave the slide to the browser after an edge swipe back", async () => {
+  mockDisplayMode({ standalone: false, desktop: false });
+  const viewTransition = context.mocks.browser.viewTransition();
+  const thread = continuityThread(85, 1, "Plan the offsite");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 85,
+    threads: [thread],
+  });
+  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: CHAT_LIST_PATH,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+    ...workspace.pageOptions,
+  });
+
+  await screen.findByText("Plan the offsite");
+
+  click(linkTo(`/chats/${thread.id}`));
+
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
+
+  act(() => {
+    swipeBack();
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("textbox", { name: "Message" }),
+    ).not.toBeInTheDocument();
+  });
+  await screen.findByText("Plan the offsite");
+  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
+  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
 });
 
 test("Change desktop pages without a slide", async () => {

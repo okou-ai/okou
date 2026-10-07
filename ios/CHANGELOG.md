@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.2](https://github.com/okou-ai/okou/compare/ios-v0.6.1...ios-v0.6.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **ios:** restore sidebar gestures and stabilize chat rendering ([#37877](https://github.com/okou-ai/okou/issues/37877)) ([232e9c8](https://github.com/okou-ai/okou/commit/232e9c829a9fdc63f36042999f6fc405676c8dab))
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+
 ## [0.6.1](https://github.com/okou-ai/okou/compare/ios-v0.6.0...ios-v0.6.1) (2026-10-06)
 
 

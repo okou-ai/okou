@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.49.72](https://github.com/okou-ai/okou/compare/desktop-v0.49.71...desktop-v0.49.72) (2026-10-07)
+
+
+### Bug Fixes
+
+* **desktop:** go online after interactive sign-in ([#37879](https://github.com/okou-ai/okou/issues/37879)) ([80252ed](https://github.com/okou-ai/okou/commit/80252eda19b7c79f39ea1ff5821d4a16cdea9618))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.11
+
 ## [0.49.71](https://github.com/okou-ai/okou/compare/desktop-v0.49.70...desktop-v0.49.71) (2026-10-07)
 
 

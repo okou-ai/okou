@@ -325,6 +325,7 @@ function runForge(
   const nativeResource = join(appPath, "Contents", "Resources", "native");
   mkdirSync(nativeResource, { recursive: true });
   mkdirSync(join(appPath, "Contents", "MacOS"), { recursive: true });
+  writeFileSync(join(appPath, "Contents", "Resources", "icon.icns"), "icon");
   writeFileSync(
     join(nativeResource, "clerk-auth-helper"),
     "native auth helper",

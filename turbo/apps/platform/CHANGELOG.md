@@ -12,6 +12,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1001.2](https://github.com/okou-ai/okou/compare/app-v0.1001.1...app-v0.1001.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **platform:** skip the pwa slide after a browser swipe navigation ([#37880](https://github.com/okou-ai/okou/issues/37880)) ([90e4f4a](https://github.com/okou-ai/okou/commit/90e4f4acc7bdc8fdb2dd02a06904a1c57c77f0b2))
+
+
+### Refactoring
+
+* move release 1 connector catalog consumers off legacy storage ([#37861](https://github.com/okou-ai/okou/issues/37861)) ([e664957](https://github.com/okou-ai/okou/commit/e664957caa2056a336595e55f475001b81247fd0))
+* **platform:** start the pwa slide before the route moves ([#37868](https://github.com/okou-ai/okou/issues/37868)) ([892d17e](https://github.com/okou-ai/okou/commit/892d17e1f2096acbaf24e9c822c24f0a38db2f01))
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+* remove retired per-agent ssh access traces ([#37876](https://github.com/okou-ai/okou/issues/37876)) ([dc33264](https://github.com/okou-ai/okou/commit/dc332649051e79460f1075a294ba8d3707f8504f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.11
+    * @okouai/connectors bumped to 3.16.3
+    * @okouai/core bumped to 8.734.4
+
 ## [0.1001.1](https://github.com/okou-ai/okou/compare/app-v0.1001.0...app-v0.1001.1) (2026-10-07)
 
 

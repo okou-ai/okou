@@ -105,6 +105,7 @@ mkdir -p "$forge_output/Okou.app/Contents/Resources/native" \
   "$forge_output/Okou.app/Contents/MacOS"
 printf '#!/bin/sh\nexit 0\n' > "$forge_output/Okou.app/Contents/Resources/native/clerk-auth-helper"
 chmod +x "$forge_output/Okou.app/Contents/Resources/native/clerk-auth-helper"
+printf 'icon' > "$forge_output/Okou.app/Contents/Resources/icon.icns"
 
 OKOU_DESKTOP_SKIP_SIGNING=true node - "$repo_root" "$forge_output" <<'NODE'
 const fs = require("node:fs");
@@ -127,7 +128,7 @@ if (forgeConfig.packagerConfig.appBundleId !== "ai.okou.desktop") {
 forgeConfig.hooks
   .postPackage({}, { platform: "darwin", outputPaths: [outputPath] })
   .then(() => {
-    const helperPath = path.join(outputPath, "Okou.app/Contents/MacOS/clerk-auth-helper");
+    const helperPath = path.join(outputPath, "Okou.app/Contents/Helpers/Okou.app/Contents/MacOS/Okou");
     if (!fs.statSync(helperPath).isFile()) {
       throw new Error("Packaged native Clerk helper is missing");
     }

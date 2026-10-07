@@ -222,19 +222,22 @@ const moveRouteState$ = command(({ set }, move: RouteMove) => {
 
 // The browser captures the page on screen, then the update moves the route.
 // The incoming page is a live layer, so it renders inside the slide as the
-// next route's setup runs. Without a slide the route moves synchronously.
-const moveRoute$ = command(
-  ({ set }, direction: PwaPageTransitionDirection, move: RouteMove) => {
-    if (direction === "none") {
-      set(moveRouteState$, move);
-      return;
-    }
-    return document.startViewTransition({
+// next route's setup runs.
+const slideRoute$ = command(
+  async (
+    { set },
+    direction: "push" | "pop",
+    move: RouteMove,
+    signal: AbortSignal,
+  ) => {
+    await document.startViewTransition({
       update: () => {
+        signal.throwIfAborted();
         set(moveRouteState$, move);
       },
       types: [direction],
     }).updateCallbackDone;
+    signal.throwIfAborted();
   },
 );
 
@@ -247,19 +250,20 @@ export const initRoutes$ = command(
       "popstate",
       onDomEventFn(async (event: PopStateEvent) => {
         // The browser has already moved to the destination, while the route
-        // state still describes the page on screen.
-        const direction = set(
-          pageTransitionDirectionTo$,
-          pathname(),
-          new URLSearchParams(search()),
-        );
-        const moved = set(moveRoute$, direction, {
-          kind: "pop",
-          historyState: event.state,
-        });
-        if (moved) {
-          await moved;
-          signal.throwIfAborted();
+        // state still describes the page on screen. After an edge swipe the
+        // browser has animated the change itself, so a slide would play twice.
+        const direction = event.hasUAVisualTransition
+          ? "none"
+          : set(
+              pageTransitionDirectionTo$,
+              pathname(),
+              new URLSearchParams(search()),
+            );
+        const move: RouteMove = { kind: "pop", historyState: event.state };
+        if (direction === "none") {
+          set(moveRouteState$, move);
+        } else {
+          await set(slideRoute$, direction, move, signal);
         }
         set(navigateToDefaultWhenInvalid$);
         await set(loadRoute$, signal);
@@ -302,13 +306,14 @@ const navigate$ = command(
       pathname,
       options.searchParams ?? new URLSearchParams(),
     );
-    const moved = set(moveRoute$, direction, {
+    const move: RouteMove = {
       kind: options.replace ? "replace" : "push",
       path: newPath,
-    });
-    if (moved) {
-      await moved;
-      signal.throwIfAborted();
+    };
+    if (direction === "none") {
+      set(moveRouteState$, move);
+    } else {
+      await set(slideRoute$, direction, move, signal);
     }
     // Use rootSignal$ (not the caller's route signal) so the new route gets
     // a fresh, non-aborted signal.  resetRouteSignal$ inside loadRoute$ will

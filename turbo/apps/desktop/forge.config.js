@@ -71,9 +71,19 @@ async function signPackagedDarwinApps(_forgeConfig, packageResult) {
 
   for (const outputPath of packageResult.outputPaths) {
     const appPath = path.join(outputPath, `${desktopIdentity.displayName}.app`);
-    // A binary in Contents/Resources has no Bundle.main identifier. ClerkKit
-    // uses that identifier for Keychain storage and native callback validation.
-    fs.copyFileSync(
+    // Give the authentication process its own branded application executable.
+    // macOS can use its executable name in the system sign-in consent dialog.
+    // Keep the Desktop bundle identity for Clerk callbacks and Keychain storage.
+    const authContents = path.join(
+      appPath,
+      "Contents",
+      "Helpers",
+      "Okou.app",
+      "Contents",
+    );
+    fs.mkdirSync(path.join(authContents, "MacOS"), { recursive: true });
+    fs.mkdirSync(path.join(authContents, "Resources"), { recursive: true });
+    fs.renameSync(
       path.join(
         appPath,
         "Contents",
@@ -81,7 +91,29 @@ async function signPackagedDarwinApps(_forgeConfig, packageResult) {
         "native",
         "clerk-auth-helper",
       ),
-      path.join(appPath, "Contents", "MacOS", "clerk-auth-helper"),
+      path.join(authContents, "MacOS", "Okou"),
+    );
+    fs.copyFileSync(
+      path.join(appPath, "Contents", "Resources", "icon.icns"),
+      path.join(authContents, "Resources", "icon.icns"),
+    );
+    fs.writeFileSync(
+      path.join(authContents, "Info.plist"),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>Okou</string>
+  <key>CFBundleName</key><string>Okou</string>
+  <key>CFBundleDisplayName</key><string>Okou</string>
+  <key>CFBundleIdentifier</key><string>${desktopIdentity.bundleId}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>${packageMetadata.version}</string>
+  <key>CFBundleShortVersionString</key><string>${packageMetadata.version}</string>
+  <key>CFBundleIconFile</key><string>icon.icns</string>
+  <key>LSMinimumSystemVersion</key><string>${MINIMUM_MACOS_VERSION}</string>
+  <key>LSUIElement</key><true/>
+</dict></plist>
+`,
     );
 
     if (!signModule) continue;
