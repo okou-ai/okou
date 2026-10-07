@@ -160,8 +160,6 @@ surface; the index does not replace their detailed rules.
   ranking and writing pipeline, its first-party evidence, and the refresh claim.
 - [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
   ordering, delayed events, visibility, and the newest-20 boundary.
-- [Pi native provider preparation](./pi-native-provider-preparation.md): additive
-  native readers, transport/auth ownership, accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
   explicit API ownership, guarded trigger retirement, parent cleanup, audit
   receipts and the B rollback floor.

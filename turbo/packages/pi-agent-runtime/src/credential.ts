@@ -1,4 +1,3 @@
-import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contracts/pi-native";
 import type { PiModelConfig } from "@okouai/api-contracts/contracts/runners";
 import {
   normalizePiExecutionRoute,
@@ -89,103 +88,6 @@ async function resolvedCredentialValue(args: {
   return value;
 }
 
-/** Official Claude subscription credentials are never valid Pi API credentials. */
-export function assertPiNativeCredential(value: string): void {
-  if (
-    !value.trim() ||
-    /sk-ant-(?:oat|ort)/iu.test(value) ||
-    /[\r\n]/u.test(value)
-  ) {
-    throw new Error(
-      "Pi native credential is unavailable or is a Claude subscription token",
-    );
-  }
-}
-
-async function materializeNative(args: {
-  readonly config: Extract<
-    PiExecutionRoute,
-    { readonly dialect: "anthropic-messages" | "bedrock-converse-stream" }
-  >;
-  readonly target: PiAgentCredentialTarget;
-  readonly resolveCredential: (
-    binding: PiAgentCredentialReference,
-  ) => string | Promise<string>;
-}): Promise<PiAgentModelConfig> {
-  const config = args.config;
-  const values = new Map<PiAgentCredentialReference["kind"], string>();
-  for (const binding of config.credentialBindings) {
-    const value = await resolvedCredentialValue({
-      binding,
-      resolveCredential: args.resolveCredential,
-    });
-    assertPiNativeCredential(value);
-    if (
-      args.target === "sandbox-firewall" &&
-      value !== PI_NATIVE_CREDENTIAL_PLACEHOLDER
-    ) {
-      throw new Error(
-        "Pi native sandbox credentials must be opaque firewall markers",
-      );
-    }
-    values.set(binding.kind, value);
-  }
-  const required = (kind: PiAgentCredentialReference["kind"]): string => {
-    const value = values.get(kind);
-    if (!value) throw new Error(`Pi native ${kind} credential is unavailable`);
-    return value;
-  };
-  const route = {
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-    model: config.model,
-    catalogModel: config.catalogModel,
-    thinkingLevel: config.thinkingLevel,
-  };
-  if (config.dialect === "anthropic-messages") {
-    const binding = config.credentialBindings[0];
-    if (!binding) throw new Error("Pi native API-key binding is unavailable");
-    assertPiNativeCredential(binding.credentialHeader.valueTemplate);
-    const credential = resolvePiAgentCredential({
-      credential: required("api-key"),
-      header: binding.credentialHeader,
-      target: args.target,
-    });
-    return {
-      ...route,
-      provider: config.provider,
-      dialect: config.dialect,
-      transport: config.transport,
-      ...credential,
-      requestHeaders: {
-        "x-api-key": null,
-        authorization: null,
-        ...credential.requestHeaders,
-      },
-    };
-  }
-  return {
-    ...route,
-    provider: config.provider,
-    dialect: config.dialect,
-    transport: config.transport,
-    // Explicit dummy prevents Pi's model registry from resolving ambient auth.
-    apiKey: "unused",
-    region: config.region,
-    bedrockAuth:
-      config.authMode === "bearer"
-        ? { kind: "bearer", token: required("aws-bearer-token") }
-        : {
-            kind: "sigv4",
-            accessKeyId: required("aws-access-key-id"),
-            secretAccessKey: required("aws-secret-access-key"),
-            ...(values.has("aws-session-token")
-              ? { sessionToken: required("aws-session-token") }
-              : {}),
-          },
-  };
-}
-
 /**
  * Materialize one validated route at an execution edge. Callers control where
  * values come from: maintenance workers supply decrypted secrets, while Sandbox launch
@@ -214,13 +116,6 @@ export async function materializePiExecutionRoute(args: {
   ) => string | Promise<string>;
 }): Promise<PiAgentModelConfig> {
   const config = structuredClone(args.route);
-  if (
-    config.dialect === "anthropic-messages" ||
-    config.dialect === "bedrock-converse-stream"
-  ) {
-    return await materializeNative({ ...args, config });
-  }
-
   if (config.dialect === "openai-responses") {
     const { credentialBindings, ...route } = config;
     const binding = credentialBindings[0];

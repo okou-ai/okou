@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { piCredentialHeaderSchema } from "./pi-credential";
-import { piModelConfigV4Schema } from "./pi-native";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
@@ -22,11 +21,6 @@ import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
 } from "./runner-primitives";
-
-export {
-  PI_MODEL_CONFIG_NATIVE_GENERATION,
-  piModelConfigV4Schema,
-} from "./pi-native";
 
 export { BUILTIN_FIREWALL_CATALOG_MAX_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 
@@ -1177,7 +1171,6 @@ export const piModelConfigSchema = z.union([
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
-  piModelConfigV4Schema,
 ]);
 
 const lowercaseSha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);

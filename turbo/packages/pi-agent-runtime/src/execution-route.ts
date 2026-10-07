@@ -3,13 +3,8 @@ import {
   type PiModelConfig,
   type PiModelConfigLegacy,
 } from "@okouai/api-contracts/contracts/runners";
-import type { PiModelConfigV4 } from "@okouai/api-contracts/contracts/pi-native";
 
 import type { PiAgentCredentialReference } from "./types";
-
-type NativeRoute<T = PiModelConfigV4> = T extends PiModelConfigV4
-  ? Omit<T, "schemaVersion"> & { readonly serviceTier?: never }
-  : never;
 
 type ResponsesRoute = Omit<
   PiModelConfigLegacy,
@@ -35,8 +30,7 @@ export type PiExecutionRoute =
         CredentialBinding<"access-token">,
         CredentialBinding<"account-id">,
       ];
-    })
-  | NativeRoute;
+    });
 
 /**
  * Normalize the supported readers, taking owned copies of nested policy before
@@ -63,10 +57,6 @@ export function normalizePiExecutionRoute(
         },
       ],
     };
-  }
-  if (config.schemaVersion === 4) {
-    const { schemaVersion: _schemaVersion, ...route } = config;
-    return route;
   }
   const {
     schemaVersion: _schemaVersion,

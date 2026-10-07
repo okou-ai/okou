@@ -14302,25 +14302,6 @@ function buildStoredUntrustedEnvironment(args: {
   );
 }
 
-function assertNativeCredentialOverrides(
-  provider: ResolvedModelProviderEnvironment | null,
-  bodySecrets: Record<string, string> | undefined,
-): void {
-  const native = provider?.piModelConfig;
-  if (
-    native &&
-    "schemaVersion" in native &&
-    native.schemaVersion === 4 &&
-    native.credentialBindings.some((binding) => {
-      return bodySecrets?.[binding.secretName] !== undefined;
-    })
-  ) {
-    throw new PiModelConfigurationError(
-      "Native Pi credentials cannot be overridden after route capture",
-    );
-  }
-}
-
 function piLangfuseExecutionEnvironment(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly includeOkouTokenSecret: boolean | undefined;
@@ -14429,7 +14410,6 @@ function buildStoredExecutionContextDraft(
 ): BuiltStoredExecutionContextDraft {
   const permissions = args.permissionManifest;
   const langfuseEnvironment = piLangfuseExecutionEnvironment(args);
-  assertNativeCredentialOverrides(args.modelProvider, args.body.secrets);
   const executionSecrets = buildStoredExecutionSecrets({
     connectorContext: args.connectorContext,
     modelProvider: args.modelProvider,
@@ -14475,7 +14455,6 @@ function buildStoredExecutionContextDraft(
     ...environment,
     ...platformEnvironment,
   };
-  assertNativeEnvironment(args.modelProvider, effectiveEnvironment);
   const environmentKeyByValue = new Map<string, string>();
   for (const [key, value] of Object.entries(effectiveEnvironment)) {
     if (!environmentKeyByValue.has(value)) {
@@ -17527,43 +17506,6 @@ async function buildPermissionManifest(
       );
     },
   );
-}
-
-function assertNativeEnvironment(
-  provider: ResolvedModelProviderEnvironment | null,
-  effectiveEnvironment: Record<string, string>,
-): void {
-  const nativeConfig = provider?.piModelConfig;
-  if (
-    nativeConfig &&
-    "schemaVersion" in nativeConfig &&
-    nativeConfig.schemaVersion === 4
-  ) {
-    for (const key of [
-      "AWS_ACCESS_KEY_ID",
-      "AWS_SECRET_ACCESS_KEY",
-      "AWS_SESSION_TOKEN",
-      "AWS_BEARER_TOKEN_BEDROCK",
-      "AWS_PROFILE",
-      "AWS_DEFAULT_PROFILE",
-      "AWS_WEB_IDENTITY_TOKEN_FILE",
-      "AWS_CONTAINER_CREDENTIALS_FULL_URI",
-      "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-      "ANTHROPIC_FOUNDRY_API_KEY",
-      "CLAUDE_CODE_OAUTH_TOKEN",
-      "ANTHROPIC_API_KEY",
-      "ANTHROPIC_AUTH_TOKEN",
-      "OPENROUTER_API_KEY",
-      "VERCEL_AI_GATEWAY_API_KEY",
-      "OKOU_MODEL_PROVIDER_API_KEY",
-    ]) {
-      if (effectiveEnvironment[key]) {
-        throw new PiModelConfigurationError(
-          "Native Pi context cannot carry ambient provider authentication",
-        );
-      }
-    }
-  }
 }
 
 function sanitizeEnvironment(

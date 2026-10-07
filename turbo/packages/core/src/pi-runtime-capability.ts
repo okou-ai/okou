@@ -7,8 +7,8 @@
  * so a model added only as catalog rows is admitted to Pi when its route points
  * at an upstream model listed here (for example a new catalog model whose
  * `openrouter-codex` route sends `openai/gpt-6-luna`). Only routes that pin
- * `catalogModel` (native Claude, the Codex subscription, custom gateways and
- * OpenRouter presets) resolve by the catalog model ID.
+ * `catalogModel` (the Codex subscription and OpenRouter presets) resolve by the
+ * catalog model ID.
  *
  * This is a leaf data module on purpose. `@okouai/core/pi-execution` is part of
  * the Platform browser bundle graph, so Pi admission must never reach for
@@ -24,7 +24,6 @@
  * direction.
  */
 export const PI_CATALOG_PROVIDERS = [
-  "anthropic",
   "deepseek",
   "openai",
   "openai-codex",
@@ -40,14 +39,6 @@ export interface PiRuntimeIdentity {
 }
 
 export const PI_RUNTIME_RESOLVABLE_MODELS = {
-  // `claude-fable-5-1` is absent because the Fable frontier line runs on the
-  // Claude Code vendor harness, so no admitted route asks Pi to resolve it.
-  anthropic: [
-    "claude-opus-5-5",
-    "claude-opus-5",
-    "claude-sonnet-5-5",
-    "claude-sonnet-5",
-  ],
   // `deepseek-flash` and `deepseek-v4.1-flash` exist only as hand-pinned
   // definitions; the pinned upstream DeepSeek catalog does not carry them.
   deepseek: ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash"],

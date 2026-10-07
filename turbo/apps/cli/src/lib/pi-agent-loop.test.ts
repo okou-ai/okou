@@ -3,8 +3,6 @@ import { http, HttpResponse } from "msw";
 import fsSync, { promises as fs } from "node:fs";
 import { server } from "../mocks/server";
 import terminalFixtures from "../../../../../fixtures/pi-memory-phase2-terminal.json";
-import nativePiFixtures from "../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
-import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contracts/pi-native";
 import { zstdDecompressSync } from "node:zlib";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -1612,39 +1610,4 @@ describe("sandbox Pi agent loop", () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 20_000);
-});
-
-describe("native Pi launch context reader", () => {
-  it.each(nativePiFixtures)(
-    "reads $name without changing the independent launch snapshot",
-    async ({ config }) => {
-      const launchPayload = {
-        ...CONFIG.launchPayload,
-        launchConfig: {
-          ...CONFIG.launchPayload.launchConfig,
-          memoryRecall: {
-            status: "no-content",
-            memoryStorageId: "native-memory",
-            storageVersionId: "native-version",
-          },
-        },
-      };
-      await writeFile(launchPayloadFile, JSON.stringify(launchPayload));
-      const env = piEnv({ OKOU_RUN_ID: RUN_ID });
-      env.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
-      for (const binding of config.credentialBindings)
-        env[binding.environment] = PI_NATIVE_CREDENTIAL_PLACEHOLDER;
-      const resolved = await piSandboxAgentConfigFromEnv(env);
-      expect(resolved.launchPayload).toStrictEqual(launchPayload);
-      expect(resolved.model).toMatchObject({
-        model: config.model,
-        catalogModel: config.catalogModel,
-        dialect: config.dialect,
-        transport: config.transport,
-      });
-      expect(JSON.stringify(resolved.model)).not.toContain(
-        "AWS_SECRET_ACCESS_KEY",
-      );
-    },
-  );
 });

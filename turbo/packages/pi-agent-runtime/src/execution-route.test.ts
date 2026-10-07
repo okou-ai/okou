@@ -1,19 +1,10 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import {
-  piModelConfigSchema,
-  type PiModelConfig,
-} from "@okouai/api-contracts/contracts/runners";
-import fixtures from "../../api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
+import type { PiModelConfig } from "@okouai/api-contracts/contracts/runners";
 
-import {
-  materializePiAgentModelConfig,
-  materializePiExecutionRoute,
-} from "./credential";
-import { normalizePiExecutionRoute } from "./execution-route";
+import { materializePiAgentModelConfig } from "./credential";
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 import { piAgentStreamForConfig } from "./model";
 import { registeredModelConfig } from "./session-model";
-import { streamPiNative } from "./native-stream";
 
 describe("captured Pi execution intent", () => {
   it("preserves dialect requirements through execution and registration helpers", () => {
@@ -22,14 +13,6 @@ describe("captured Pi execution intent", () => {
       { dialect: "openai-codex-responses" }
     >;
     type Public = Extract<PiAgentModelConfig, { dialect: "openai-responses" }>;
-    type Messages = Extract<
-      PiAgentModelConfig,
-      { dialect: "anthropic-messages" }
-    >;
-    type Bedrock = Extract<
-      PiAgentModelConfig,
-      { dialect: "bedrock-converse-stream" }
-    >;
     expectTypeOf<
       Omit<Codex, "accountId">
     >().not.toMatchTypeOf<PiAgentModelConfig>();
@@ -48,30 +31,6 @@ describe("captured Pi execution intent", () => {
     expectTypeOf<
       Omit<Codex, "serviceTier"> & { serviceTier: "priority" }
     >().not.toMatchTypeOf<PiAgentModelConfig>();
-    expectTypeOf<
-      Omit<Messages, "catalogModel">
-    >().not.toMatchTypeOf<PiAgentModelConfig>();
-    expectTypeOf<
-      Omit<Messages, "requestHeaders">
-    >().not.toMatchTypeOf<PiAgentModelConfig>();
-    expectTypeOf<
-      Omit<Messages, "serviceTier"> & { serviceTier: "priority" }
-    >().not.toMatchTypeOf<PiAgentModelConfig>();
-    expectTypeOf<Omit<Bedrock, "region">>().not.toMatchTypeOf<
-      Parameters<typeof streamPiNative>[0]
-    >();
-    expectTypeOf<
-      Omit<Bedrock, "bedrockAuth">
-    >().not.toMatchTypeOf<PiAgentStreamConfig>();
-    expectTypeOf<
-      Omit<Bedrock, "transport"> & { transport: "sse" }
-    >().not.toMatchTypeOf<PiAgentModelConfig>();
-    expectTypeOf<{ kind: "sigv4"; accessKeyId: string }>().not.toMatchTypeOf<
-      Bedrock["bedrockAuth"]
-    >();
-    expectTypeOf<{ kind: "bearer" }>().not.toMatchTypeOf<
-      Bedrock["bedrockAuth"]
-    >();
   });
 
   it.each([1, 2, 3] as const)(
@@ -129,43 +88,6 @@ describe("captured Pi execution intent", () => {
           "X-Selected-Key": "Key selected-secret",
         },
       });
-    },
-  );
-
-  it.each(fixtures)(
-    "owns $name native references without rewriting the wire",
-    async ({ config }) => {
-      // JSON fixtures model the untrusted wire; normalization performs the same
-      // strict contract validation used by the actual launch reader.
-      const wire = piModelConfigSchema.parse(config);
-      const before = JSON.stringify(wire);
-      const route = normalizePiExecutionRoute(wire);
-      expect(route).not.toHaveProperty("schemaVersion");
-      expect(route).toMatchObject({
-        dialect: config.dialect,
-        model: config.model,
-        catalogModel: config.catalogModel,
-        billingOwner: config.billingOwner,
-        credentialOwner: config.credentialOwner,
-        requestPolicy: { maxAttempts: 1, cacheRetention: "short" },
-      });
-      const materializing = materializePiExecutionRoute({
-        route,
-        target: "direct",
-        async resolveCredential() {
-          await Promise.resolve();
-          return "selected-native-secret";
-        },
-      });
-      Object.defineProperty(route, "catalogModel", {
-        value: "unselected-catalog",
-      });
-      Object.defineProperty(route, "model", { value: "unselected-model" });
-      const materialized = await materializing;
-      expect(materialized.model).toBe(config.model);
-      expect(materialized.catalogModel).toBe(config.catalogModel);
-      expect(JSON.stringify(wire)).toBe(before);
-      expect(JSON.stringify(route)).not.toContain("selected-native-secret");
     },
   );
 });

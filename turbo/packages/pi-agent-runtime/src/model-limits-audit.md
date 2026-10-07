@@ -32,23 +32,18 @@ changing its advertised ceiling does not pin or reroute to a different provider.
 Numbers below are the effective Pi context/output after this correction.
 Grouped rows explicitly enumerate every catalog identity they cover.
 
-| Catalog provider                         | Exact model identities                                                               | Context / output    | Disposition                                                                                                        |
-| ---------------------------------------- | ------------------------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `openai`                                 | `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-luna`                             | 1,050,000 / 128,000 | Correct the pinned 272,000 API context; output unchanged.                                                          |
-| `openai`                                 | `gpt-6.1-sol`                                                                        | 1,050,000 / 128,000 | Existing hand pin already matches the API.                                                                         |
-| `openai-codex`                           | `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-luna`                             | 272,000 / 128,000   | Existing official subscription default retained.                                                                   |
-| `openai-codex`                           | `gpt-6.1-sol`                                                                        | 272,000 / 128,000   | Correct the hand pin that copied the API's 1,050,000 context into a subscription binding.                          |
-| `openrouter`                             | `openai/gpt-6-sol`, `openai/gpt-6-luna`, `openai/gpt-5.6-sol`, `openai/gpt-5.6-luna` | 1,050,000 / 128,000 | Live primary-provider metadata matches the pinned catalog.                                                         |
-| `anthropic` and derived `amazon-bedrock` | `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5-5`, `claude-sonnet-5`           | 1,000,000 / 128,000 | Unchanged; synchronous streaming limits match official model documentation.                                        |
-| `deepseek`                               | `deepseek-flash`, explicitly mapped `deepseek-v4.1-flash`                            | 1,048,576 / 393,216 | Correct 384,000 to the exact V4.1 maximum in the provider's Models documentation.                                  |
-| `deepseek`                               | `deepseek-v4-flash`                                                                  | 1,000,000 / 384,000 | Preserve the provider's explicit legacy Pi definition; do not substitute V4.1.                                     |
-| `openrouter`                             | `deepseek/deepseek-v4.1-flash`                                                       | 1,048,576 / 943,718 | Correct the old output snapshot to the live primary-provider ceiling. This is not the direct DeepSeek API ceiling. |
-| `openrouter`                             | `deepseek/deepseek-v4-flash`                                                         | 1,024,000 / 384,000 | Primary-provider metadata matches the pinned catalog, even though aggregate context is 1,048,576.                  |
-| `openrouter`                             | product-owned `okou-1.0` / request preset `@preset/okou-1-0`                         | 1,050,000 / 128,000 | Existing backing-model metadata matches the OpenRouter GPT-6 Luna route.                                           |
-
-The native reader vocabulary also contains older/other Claude names, but those
-are not newly Pi-admitted by this change. Its 300K output beta is Message
-Batches-only, not the synchronous Messages/Converse stream used here.
+| Catalog provider | Exact model identities                                                               | Context / output    | Disposition                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `openai`         | `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-luna`                             | 1,050,000 / 128,000 | Correct the pinned 272,000 API context; output unchanged.                                                          |
+| `openai`         | `gpt-6.1-sol`                                                                        | 1,050,000 / 128,000 | Existing hand pin already matches the API.                                                                         |
+| `openai-codex`   | `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-luna`                             | 272,000 / 128,000   | Existing official subscription default retained.                                                                   |
+| `openai-codex`   | `gpt-6.1-sol`                                                                        | 272,000 / 128,000   | Correct the hand pin that copied the API's 1,050,000 context into a subscription binding.                          |
+| `openrouter`     | `openai/gpt-6-sol`, `openai/gpt-6-luna`, `openai/gpt-5.6-sol`, `openai/gpt-5.6-luna` | 1,050,000 / 128,000 | Live primary-provider metadata matches the pinned catalog.                                                         |
+| `deepseek`       | `deepseek-flash`, explicitly mapped `deepseek-v4.1-flash`                            | 1,048,576 / 393,216 | Correct 384,000 to the exact V4.1 maximum in the provider's Models documentation.                                  |
+| `deepseek`       | `deepseek-v4-flash`                                                                  | 1,000,000 / 384,000 | Preserve the provider's explicit legacy Pi definition; do not substitute V4.1.                                     |
+| `openrouter`     | `deepseek/deepseek-v4.1-flash`                                                       | 1,048,576 / 943,718 | Correct the old output snapshot to the live primary-provider ceiling. This is not the direct DeepSeek API ceiling. |
+| `openrouter`     | `deepseek/deepseek-v4-flash`                                                         | 1,024,000 / 384,000 | Primary-provider metadata matches the pinned catalog, even though aggregate context is 1,048,576.                  |
+| `openrouter`     | product-owned `okou-1.0` / request preset `@preset/okou-1-0`                         | 1,050,000 / 128,000 | Existing backing-model metadata matches the OpenRouter GPT-6 Luna route.                                           |
 
 ## First-party sources
 
@@ -73,16 +68,6 @@ The [configuration reference](https://developers.openai.com/codex/config-referen
 distinguishes the active context budget from the auto-compaction threshold.
 Their existing 128,000 Pi output ceilings are unchanged; this audit does not
 infer subscription capacity or availability from a public API model page.
-
-### Native Anthropic and Bedrock
-
-- [Current model overview](https://platform.claude.com/docs/en/models/overview)
-- [Opus 5](https://platform.claude.com/docs/en/models/opus-5/overview)
-- [Sonnet 5](https://platform.claude.com/docs/en/models/sonnet-5/overview)
-
-These document 1M context / 128K synchronous output and the corresponding
-Bedrock bindings. The overview also documents the newer Opus 5.5 and Sonnet 5.5
-limits and separates the Batch-only output beta.
 
 ### DeepSeek direct API
 

@@ -323,7 +323,6 @@ function snapshotModel(
 ): Readonly<PiMemoryPhase2LocalConsolidationArgs["model"]> {
   const snapshot = structuredClone(model);
   if (snapshot.requestHeaders) Object.freeze(snapshot.requestHeaders);
-  if (snapshot.bedrockAuth) Object.freeze(snapshot.bedrockAuth);
   return Object.freeze(snapshot);
 }
 

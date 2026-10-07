@@ -8,7 +8,6 @@ export const isPiAgentModelSupported: (config: PiAgentModelConfig) => boolean =
   isPiAgentModelSupportedImpl;
 
 export {
-  assertPiNativeCredential,
   materializePiAgentModelConfig,
   materializePiExecutionRoute,
   resolvePiAgentCredential,

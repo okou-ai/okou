@@ -11,9 +11,7 @@ import {
 const usRouted: readonly (readonly [OpenRouterApi, string])[] = [
   ["messages", "anthropic/claude-opus-5.5"],
   ["messages", "anthropic/claude-opus-5"],
-  ["messages", "anthropic/claude-opus-4.8"],
   ["messages", "anthropic/claude-sonnet-5"],
-  ["messages", "anthropic/claude-sonnet-4.6"],
   ["responses", "openai/gpt-6-astra"],
   ["responses", "openai/gpt-5.6-sol"],
   ["responses", "openai/gpt-5.6-luna"],
@@ -78,7 +76,7 @@ describe("platform OpenRouter regional selection", () => {
   });
 
   it("binds US Messages auth to /api/v1/messages and leaves direct providers unchanged", () => {
-    const routing = { model: "anthropic/claude-sonnet-4.6" };
+    const routing = { model: "anthropic/claude-sonnet-5" };
     expect(
       getModelProviderFirewall("openrouter-api-key", routing)?.apis,
     ).toEqual([

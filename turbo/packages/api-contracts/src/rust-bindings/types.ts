@@ -13,7 +13,6 @@ import {
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
-import { piNativeTypeBindings } from "./pi-native-types";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
@@ -186,7 +185,6 @@ export const rustTypeBindings = [
   },
   ...sshTypeBindings,
   ...vncTypeBindings,
-  ...piNativeTypeBindings,
   {
     schema: modelProviderCodexRuntimeConfigSchema,
     rustModulePath: ["runners", "runs"],

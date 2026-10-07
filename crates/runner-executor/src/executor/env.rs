@@ -1,11 +1,8 @@
-mod native;
-
 use std::collections::HashMap;
 
 use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
 use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-    PI_MODEL_CONFIG_NATIVE_GENERATION,
 };
 use api_contracts::generated::types::runners::{
     runs::{CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3},
@@ -139,7 +136,6 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
     validate_resume_session_id(context)?;
     validate_model_provider_env_placeholders(context)?;
     validate_pi_execution_context(context)?;
-    native::validate_environment(context)?;
     validate_user_environment_for_guest(context)?;
     let prepared_run_payload =
         prepare_run_payload_for_run(context).map_err(|error| match error {
@@ -522,11 +518,6 @@ fn validate_pi_model_config(value: &serde_json::Value) -> Result<(), String> {
             if generation.as_u64() == Some(u64::from(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION)) =>
         {
             validate_pi_model_config_v3(value)
-        }
-        Some(serde_json::Value::Number(generation))
-            if generation.as_u64() == Some(u64::from(PI_MODEL_CONFIG_NATIVE_GENERATION)) =>
-        {
-            native::validate(value)
         }
         Some(_) => Err("Pi model config generation is unsupported".to_string()),
     }

@@ -211,7 +211,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
         params: { id: run.runId },
         body: {
           runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+          capabilities: { piModelConfigGenerations: [1, 2, 3] },
         },
       }),
       [200],

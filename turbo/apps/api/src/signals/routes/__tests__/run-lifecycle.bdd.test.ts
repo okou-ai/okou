@@ -3,7 +3,6 @@ import {
   createPublicRunnerMemory,
   memoryArchive,
 } from "./helpers/public-runner-memory";
-import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
@@ -6292,44 +6291,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
   });
-
-  // Historical persisted-state exception (docs/testing.md rollout coexistence;
-  // testing-external-behavior.md historical states): current admission no
-  // longer writes these stored Pi generations, which
-  // pi-model-config-claim-capability.ts still reads and negotiates. Delete with
-  // that reader once older generations can no longer be pending.
-  it.each(nativePiFixtures)(
-    "claims stored native $name only with generation 4 capability",
-    async ({ config: piModelConfig }) => {
-      const api = createRunsApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createThreadRun(actor, {
-        agentId,
-        prompt: "read a future native context",
-      });
-      await setRunnerJobPiContextAsVersionedWriter(
-        context,
-        run.runId,
-        piModelConfig,
-      );
-      await api.heartbeatRunner(runnerGroup);
-      await api.requestClaimRunnerJob(true, run.runId, [404], {
-        capabilities: { piModelConfigGenerations: [1, 2, 3] },
-      });
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "pending",
-      });
-      const claim = await api.claimRunnerJob(run.runId, {
-        capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
-      });
-      expect(claim).toMatchObject({
-        cliAgentType: "pi",
-        piSessionId: run.runId,
-        piModelConfig,
-      });
-      await api.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
 
   // Current admission cannot produce generation 3 or future/invalid rows.
   // The explicit stored-writer fixture exercises claim/read API behavior first.

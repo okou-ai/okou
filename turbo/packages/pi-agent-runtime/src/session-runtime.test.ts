@@ -15,7 +15,7 @@ import { piMemorySummaryTokenCount } from "./memory-recall";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import type { PiPreparationObservation } from "./preparation-timing";
-import type { PiAgentModelConfig, PiAgentRequestHeaders } from "./types";
+import type { PiAgentRequestHeaders } from "./types";
 import { materializePiAgentModelConfig } from "./credential";
 
 const GPT_MODELS = ["gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"] as const;
@@ -1621,37 +1621,6 @@ describe("Pi session credential storage", () => {
       model: LUNA_MODEL,
       snapshot: undefined,
       defaultStore: true,
-    },
-    {
-      name: "native Messages Sandbox",
-      model: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-6",
-        catalogModel: "claude-sonnet-4-6",
-        baseUrl: "https://api.anthropic.com",
-        apiKey: "test-native-key",
-        requestHeaders: { "x-api-key": "test-native-key" },
-        dialect: "anthropic-messages",
-        transport: "sse",
-      } satisfies PiAgentModelConfig,
-      snapshot: undefined,
-      defaultStore: false,
-    },
-    {
-      name: "native Bedrock Sandbox",
-      model: {
-        provider: "amazon-bedrock",
-        model: "claude-sonnet-4-6",
-        catalogModel: "claude-sonnet-4-6",
-        baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
-        apiKey: "test-native-key",
-        region: "us-east-1",
-        bedrockAuth: { kind: "bearer", token: "test-native-key" },
-        dialect: "bedrock-converse-stream",
-        transport: "aws-event-stream",
-      } satisfies PiAgentModelConfig,
-      snapshot: undefined,
-      defaultStore: false,
     },
   ])("preserves credential-file behavior for $name", async (entry) => {
     const root = await mkdtemp(join(tmpdir(), "pi-session-credentials-"));

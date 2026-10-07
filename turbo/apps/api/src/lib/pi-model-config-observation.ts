@@ -1,5 +1,5 @@
 export interface PiModelConfigObservation {
-  readonly piModelConfigGeneration: 1 | 2 | 3 | 4 | "unknown";
+  readonly piModelConfigGeneration: 1 | 2 | 3 | "unknown";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -21,9 +21,7 @@ export function piModelConfigObservation(
   }
   const generation = !("schemaVersion" in config)
     ? 1
-    : config.schemaVersion === 2 ||
-        config.schemaVersion === 3 ||
-        config.schemaVersion === 4
+    : config.schemaVersion === 2 || config.schemaVersion === 3
       ? config.schemaVersion
       : "unknown";
   return {

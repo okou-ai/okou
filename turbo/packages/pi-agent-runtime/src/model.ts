@@ -1,11 +1,8 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   isOkouRunModel,
   type OkouRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { streamPiNative } from "./native-stream";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import {
   stream as streamResponses,
@@ -88,10 +85,6 @@ function okouSourceModel(
 
 function providerModels(provider: string): readonly Model<Api>[] {
   switch (provider) {
-    case "anthropic":
-    case "amazon-bedrock": {
-      return anthropicProvider().getModels();
-    }
     case "deepseek": {
       return deepseekProvider().getModels();
     }
@@ -108,12 +101,6 @@ function providerModels(provider: string): readonly Model<Api>[] {
       return [];
     }
   }
-}
-
-function isMessagesModel(
-  model: Model<Api>,
-): model is Model<"anthropic-messages"> {
-  return model.api === "anthropic-messages";
 }
 
 function isResponsesModel(
@@ -135,37 +122,6 @@ function catalogSourceModel(
   const okouModel = okouSourceModel(provider, model);
   if (okouModel) {
     return okouModel;
-  }
-  // The pinned pi-ai 0.87.1 catalog predates Sonnet 5.5. Anthropic publishes
-  // the same context, output and token rates as Sonnet 5, with the newer
-  // adaptive-thinking and conversation-bound thinking behavior.
-  if (provider === "anthropic" && model === "claude-sonnet-5-5") {
-    const sonnet5 = providerModels(provider).find((entry) => {
-      return entry.id === "claude-sonnet-5";
-    });
-    if (!sonnet5) return undefined;
-    return {
-      ...sonnet5,
-      id: model,
-      name: "Claude Sonnet 5.5",
-      thinkingLevelMap: {
-        off: null,
-        low: "low",
-        medium: "medium",
-        high: "high",
-        xhigh: "xhigh",
-        max: "max",
-      },
-      compat: {
-        ...sonnet5.compat,
-        supportsMidConvoEffort: true,
-        supportsMidConvoSystemMessages: true,
-        supportsMidConvoToolChanges: true,
-        forceAdaptiveThinking: true,
-        supportsTemperature: false,
-        supportsStrictTools: true,
-      },
-    };
   }
   // The pinned Pi catalog predates 6.1 Sol. Only direct OpenAI and the
   // ChatGPT subscription are approved; do not infer OpenRouter support.
@@ -378,12 +334,6 @@ export function piAgentStreamForConfig(
       // The immutable route owns tier even when standard omits it.
       serviceTier: config.serviceTier,
     };
-    if (
-      config.dialect === "anthropic-messages" ||
-      config.dialect === "bedrock-converse-stream"
-    ) {
-      return streamPiNative(config, model, context, configuredOptions);
-    }
     const start = (fetch: NonNullable<PiAgentStreamOptions["fetch"]>) => {
       // Observe transport evidence before a body guard can consume or reject it.
       // Every public route still drops markup and bounds opaque gateway errors.
@@ -427,45 +377,10 @@ export function piAgentStreamForConfig(
   };
 }
 
-function resolveNativeModel(
-  config: PiAgentModelConfig,
-): Model<"anthropic-messages"> | Model<"bedrock-converse-stream"> | null {
-  if (
-    config.serviceTier !== undefined ||
-    !piNativeCatalogModelSchema.safeParse(config.catalogModel).success ||
-    !config.catalogModel ||
-    config.provider !==
-      (config.dialect === "anthropic-messages" ? "anthropic" : "amazon-bedrock")
-  )
-    return null;
-  const native = sourceModel("anthropic", config.catalogModel);
-  if (!native || !isMessagesModel(native)) return null;
-  const common = {
-    ...native,
-    id: config.model,
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-  };
-  return config.dialect === "anthropic-messages"
-    ? { ...common, api: "anthropic-messages" }
-    : {
-        ...common,
-        api: "bedrock-converse-stream",
-        compat: {
-          supportsStrictMode: native.compat?.supportsStrictTools,
-        },
-      };
-}
-
 /** Resolve model metadata from Pi's native provider catalog. */
 export function resolvePiAgentModel(
   config: PiAgentModelConfig,
-):
-  | Model<"openai-responses">
-  | Model<"openai-codex-responses">
-  | Model<"anthropic-messages">
-  | Model<"bedrock-converse-stream">
-  | null {
+): Model<"openai-responses"> | Model<"openai-codex-responses"> | null {
   if (
     config.serviceTier !== undefined &&
     config.serviceTier !==
@@ -478,12 +393,6 @@ export function resolvePiAgentModel(
     )
   ) {
     return null;
-  }
-  if (
-    config.dialect === "anthropic-messages" ||
-    config.dialect === "bedrock-converse-stream"
-  ) {
-    return resolveNativeModel(config);
   }
   const source = sourceModel(
     config.provider,

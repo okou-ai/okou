@@ -556,7 +556,7 @@ function useClaimedFixture() {
         params: { id: runId },
         body: {
           runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+          capabilities: { piModelConfigGenerations: [1, 2, 3] },
         },
       }),
       [200],
