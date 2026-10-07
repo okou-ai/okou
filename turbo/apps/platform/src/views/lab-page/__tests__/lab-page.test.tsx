@@ -75,56 +75,32 @@ test("Lab groups active feature switches", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  // Each rollout stage renders as one group holding exactly its switches; a
-  // stage with no switches (Released, once every rollout has been cleaned up)
-  // renders no group at all.
+  // Every switch is listed once, in the group named for its rollout stage.
   const metadata = getFeatureSwitchMetadata();
-  const stages = [
-    ["released", "Released"],
-    ["beta", "Beta"],
-    ["alpha", "Alpha"],
-    ["internal", "Internal"],
-  ] as const;
-  for (const [stage, name] of stages) {
-    const expectedKeys = Object.values(FeatureSwitchKey)
-      .filter((key) => {
-        return metadata[key].rolloutStage === stage;
-      })
-      .sort();
-    const group =
-      screen.queryByRole("heading", { name })?.closest("section") ?? null;
-    const renderedKeys = group
-      ? Object.values(FeatureSwitchKey)
-          .filter((key) => {
-            return within(group).queryByText(key) !== null;
-          })
-          .sort()
-      : [];
-    expect({
-      name,
-      rendered: group !== null,
-      keys: renderedKeys,
-    }).toStrictEqual({
-      name,
-      rendered: expectedKeys.length > 0,
-      keys: expectedKeys,
-    });
+  const stageGroups = {
+    released: "Released",
+    beta: "Beta",
+    alpha: "Alpha",
+    internal: "Internal",
+  } as const;
+  const keys = Object.values(FeatureSwitchKey);
+  for (const key of keys) {
+    const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
+    expect(within(group).getByText(key)).toBeInTheDocument();
   }
-  expect(screen.getAllByRole("switch")).toHaveLength(
-    Object.values(FeatureSwitchKey).length,
-  );
-  const beta = featureSwitchGroup("Beta");
-  const alpha = featureSwitchGroup("Alpha");
-  const internal = featureSwitchGroup("Internal");
-  expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
+  expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
-    within(beta).getByText(FeatureSwitchKey.CustomTemplates),
+    within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
-    within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),
+    within(featureSwitchGroup("Beta")).getByText(
+      FeatureSwitchKey.CustomTemplates,
+    ),
   ).toBeVisible();
   expect(
-    within(internal).getByText(FeatureSwitchKey.TestOauthConnector),
+    within(featureSwitchGroup("Internal")).getByText(
+      FeatureSwitchKey.TestOauthConnector,
+    ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
 });

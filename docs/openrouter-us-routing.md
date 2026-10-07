@@ -2,11 +2,9 @@
 
 Platform OpenRouter routing selects `https://us.openrouter.ai` for all users,
 but only for platform-owned keys and the product-approved non-DeepSeek
-model/API pairs in `openrouter-routing.ts`. The former `openRouterUsRouting`
-feature switch was fully rolled out and removed; there is no per-user or staff
-override. It does not change built-in provider priority or any
-DeepSeek endpoint. BYOK, connection presets, saved URLs, other direct providers
-and model defaults are unchanged.
+model/API pairs in `openrouter-routing.ts`. It does not change built-in
+provider priority or any DeepSeek endpoint. BYOK, connection presets, saved
+URLs, other direct providers and model defaults are unchanged.
 
 Platform-owned built-in DeepSeek models always skip the direct `deepseek`
 candidate and evaluate the remaining candidates in their canonical order for
@@ -76,12 +74,12 @@ needed. New readers continue accepting existing global contexts.
 
 Pi native Messages has a strict endpoint reader in both TypeScript and Rust.
 The new reader accepts US only for eligible builtin-owned Messages routes.
-Readers continue to accept captured global contexts for eligible routes, so
-work captured before US routing reached every user stays readable. Retain
-supporting readers for captured US contexts; an older API/Runner rollback can
-reject them. Prefer reverting the writer policy while keeping the readers that
-understand captured US contexts. Eligible routes use Pi for all users. No
-additional compatibility path is introduced.
+Readers also accept captured global contexts for eligible routes, so already
+captured work stays readable. Retain supporting readers for captured US
+contexts; an older API/Runner rollback can reject them. Prefer reverting the
+writer policy while keeping the readers that understand captured US contexts.
+Eligible routes use Pi for all users. No additional compatibility path is
+introduced.
 Follow [deployment compatibility](deployment-compatibility.md) when planning
 rollout or rollback. Changing the route policy does not itself deploy this
 revision.

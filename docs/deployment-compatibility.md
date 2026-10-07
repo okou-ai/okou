@@ -1054,8 +1054,10 @@ every member. There is no migration.
 With video generation retired (#37242), new threads pin no media model at
 all. The composer never shows the image model: the staff `composerModelPanel`
 switch still chooses between the #37229 panel and the legacy menu with its
-effort chip, and both list only chat models. The undocumented `birefnet` and
-`clarity-upscaler` transform models are removed.
+effort chip, and both list only chat models. #37848 has since removed that
+switch and the legacy menu; the composer uses the #37229 panel, which lists
+only chat models. The undocumented `birefnet` and `clarity-upscaler` transform
+models are removed.
 
 The compatibility layer this release kept for older Web App builds, iOS and
 released CLIs (the thread image-model route, the create body `imageModel`, the

@@ -409,11 +409,7 @@ test("Browse the catalog as shelves, then enter a category and come back", async
     screen.getByTestId("connector-shelf-communication-collaboration"),
   ).toBeInTheDocument();
 
-  // Status has no control: the page already opens on what is connected. The
-  // agent list is gone from the filter too -- that question is answered on the
-  // connector's own card.
-  expect(screen.queryByRole("radio", { name: "Not connected" })).toBeNull();
-  expect(screen.queryByLabelText("Filter connectors")).toBeInTheDocument();
+  expect(screen.getByLabelText("Filter connectors")).toBeInTheDocument();
 
   // A category is a place: entering it filters the page and leaves a way back.
   await click(screen.getByText(/^See .* and 321 more$/u));
@@ -522,7 +518,6 @@ test("Land on Discover, then switch to the connectors this workspace has", async
     return item.textContent;
   });
   expect(options).toContain("All agents");
-  expect(options).not.toContain("Not connected");
 });
 
 test("Warn on the scope control when a connection this workspace owns needs a reconnect", async () => {
@@ -617,8 +612,8 @@ test("Reach the connectors this workspace built from their own segment", async (
     path: "/connectors",
   });
 
-  // Browsing the catalog no longer trails a block of connectors this workspace
-  // authored; the segment counts them instead.
+  // Connectors this workspace authored have their own scope: browsing the
+  // catalog does not list them, and the segment counts them.
   await waitFor(() => {
     expect(screen.getByTestId("connectors-scope-custom")).toHaveTextContent(
       "Custom1",

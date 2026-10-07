@@ -55,7 +55,7 @@ independently of current credits; the card never enables a Claude Code reset.
 
 ## Authorization
 
-Run tokens always carry the `subscription:read` and `subscription:switch`
+Run tokens carry the `subscription:read` and `subscription:switch`
 capabilities. The list and single-account read routes require
 `subscription:read` for agent credentials, and activation requires
 `subscription:switch`. Human settings reads and activation use the user's own

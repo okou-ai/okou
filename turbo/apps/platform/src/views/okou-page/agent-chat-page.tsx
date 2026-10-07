@@ -361,10 +361,11 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                     AGENT_AVATAR_FRAME,
                     "cursor-pointer",
                     textureUrl
-                      ? // The frame's background is behind the texture and the
-                        // border this used to recolour is gone, so hover needs a
-                        // layer of its own above the artwork. Same token and the
-                        // same 150ms, so hover does not change how it feels.
+                      ? // The frame's background is behind the texture and a
+                        // textured frame has no border to recolour, so hover
+                        // needs a layer of its own above the artwork. Same token
+                        // and the same 150ms, so hover does not change how it
+                        // feels.
                         "group relative"
                       : cn(
                           AGENT_AVATAR_BORDER,

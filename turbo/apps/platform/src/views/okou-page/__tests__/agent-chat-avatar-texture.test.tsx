@@ -155,10 +155,11 @@ test("Sit the greeting avatar on the frame's bottom edge once a texture is behin
   expect(artworkBottom(artworkTransform(frame))).toBeCloseTo(100, 5);
 });
 
-test("Leave an agent that cannot take a texture exactly as it was", async () => {
+test("Keep an agent that cannot take a texture untextured and centred", async () => {
   // An uploaded image has no sweater or hair colour for the pairing rule to
-  // clear, so it gets no texture — and must therefore keep the centred
-  // placement, since nothing is drawn behind it to reveal the cut edge. The frame's hairline follows the same answer.
+  // clear, so it gets no texture — and therefore keeps the centred placement,
+  // since nothing is drawn behind it to reveal the cut edge. The frame's
+  // hairline follows the same answer.
   mountedAgent("https://example.test/uploaded-avatar.png");
   context.mocks.browser.matchMedia(false);
   await setupPage({
@@ -202,8 +203,8 @@ test("Keep every other avatar surface untextured", async () => {
 
 test("Give the organization default agent its own texture", async () => {
   // The avatar every workspace's chat home opens on. It is a drawn file rather
-  // than a composer configuration, so it used to fall through to no texture at
-  // all — on the one surface this feature exists for.
+  // than a composer configuration, so it needs a texture of its own rather
+  // than falling through to none — on the one surface this feature exists for.
   mountedAgent(DEFAULT_AGENT_AVATAR_URL);
   context.mocks.browser.matchMedia(false);
   await setupPage({

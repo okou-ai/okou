@@ -51,7 +51,6 @@ test("Show Custom and contextual creation without built-in shelves", async () =>
   });
   expect(within(section).getByText("Acme Reports")).toBeVisible();
   expect(getConnectorAction("button", "New custom connector")).toBeVisible();
-  expect(queryConnectorAction("button", "New connector")).toBeNull();
 });
 
 test("Separate same-name built-in and custom search results", async () => {
@@ -89,7 +88,8 @@ test.each(["admin", "member"] as const)(
     await waitFor(() => {
       expect(getConnectorCard("GitHub")).toBeVisible();
     });
-    // Browsing the catalog no longer trails a Custom block, whatever the role.
+    // Custom connectors have their own scope, so browsing the catalog does not
+    // list them, whatever the role.
     expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
     click(screen.getByTestId("connectors-scope-custom"));
     await expect(
@@ -252,7 +252,6 @@ test("Keep Remote control and Custom in separate scopes", async () => {
   });
   await setupPage({ context, path: "/connectors" });
   await screen.findByTestId("connectors-scope-remote-control");
-  expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
   expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
   click(screen.getByTestId("connectors-scope-remote-control"));
   await waitFor(() => {

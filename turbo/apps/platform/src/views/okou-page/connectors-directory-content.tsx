@@ -198,9 +198,9 @@ export function ConnectorsDirectoryContent({
   const showCreated = useSet(showCreatedDirectoryConnector$);
   const retryCatalog = useSet(reloadBuiltinConnectors$);
   const connectors = custom.state === "hasData" ? custom.data : [];
-  // Custom is its own scope now, so the catalog no longer carries it as a
-  // trailing block. Browsing is scoped; searching is not, so a keyword still
-  // reaches across and reports its custom matches in their own section.
+  // Custom is its own scope, so browsing the catalog does not list custom
+  // connectors. Browsing is scoped; searching is not, so a keyword reaches
+  // across and reports its custom matches in their own section.
   const showCustom = customOnly || (Boolean(search) && category === null);
   const showBuiltin = !customOnly;
   const sources = [
